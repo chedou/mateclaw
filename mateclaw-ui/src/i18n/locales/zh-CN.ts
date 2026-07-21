@@ -499,6 +499,8 @@ export default {
     agentContext: '智能体上下文',
     skills: '技能',
     wiki: '知识库',
+    troubleshooting: '排障 SOP',
+    loopEngineering: '工程闭环',
     enterprise: '企业场景',
     tools: '工具',
     plugins: '插件',

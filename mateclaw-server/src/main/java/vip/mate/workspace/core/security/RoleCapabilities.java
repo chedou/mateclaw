@@ -31,6 +31,7 @@ public final class RoleCapabilities {
         Set<String> member = new LinkedHashSet<>(viewer);
         member.add(Capability.VIEW_MEMORY);
         member.add(Capability.VIEW_DASHBOARD);
+        member.add(Capability.VIEW_TROUBLESHOOTING);
         member.add(Capability.MANAGE_WIKI);
         member.add(Capability.MANAGE_AGENTS);
 
@@ -40,6 +41,7 @@ public final class RoleCapabilities {
         admin.add(Capability.MANAGE_MODELS);
         admin.add(Capability.MANAGE_SECURITY);
         admin.add(Capability.MANAGE_SETTINGS);
+        admin.add(Capability.MANAGE_TROUBLESHOOTING);
 
         // Owner currently has the same capability set as admin. Owner-only actions
         // (workspace deletion, transferring owner role) are enforced at the

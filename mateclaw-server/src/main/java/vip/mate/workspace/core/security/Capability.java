@@ -27,6 +27,9 @@ public final class Capability {
     /** Dashboard, token usage, cron run history. */
     public static final String VIEW_DASHBOARD = "view:dashboard";
 
+    /** Troubleshooting SOP catalog, routing preview, and case run traces. */
+    public static final String VIEW_TROUBLESHOOTING = "view:troubleshooting";
+
     /** Wiki write: KB CRUD, transformations, research, hot cache. */
     public static final String MANAGE_WIKI = "manage:wiki";
 
@@ -47,4 +50,7 @@ public final class Capability {
 
     /** System settings, feature flags, MCP, plugins, ACP, workflow, trigger, members. */
     public static final String MANAGE_SETTINGS = "manage:settings";
+
+    /** Troubleshooting SOP authoring/configuration. */
+    public static final String MANAGE_TROUBLESHOOTING = "manage:troubleshooting";
 }

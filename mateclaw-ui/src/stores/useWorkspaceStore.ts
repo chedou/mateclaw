@@ -53,7 +53,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const isGlobalAdmin = computed(() => Boolean(currentWorkspace.value?.isGlobalAdmin))
 
   function can(cap: Capability): boolean {
-    return accessLoaded.value && currentCapabilities.value.has(cap)
+    if (!accessLoaded.value) return false
+    if (currentCapabilities.value.has(cap)) return true
+    // Compatibility for users who loaded workspace access before the
+    // troubleshooting capability existed. Admins who can manage settings should
+    // still be allowed into the Settings-hosted SOP page after a frontend hot
+    // reload; a backend restart/refresh will then return the explicit capability.
+    if (cap === 'view:troubleshooting') {
+      return currentCapabilities.value.has('manage:settings')
+    }
+    return false
   }
 
   function isAtLeast(role: WorkspaceRole): boolean {

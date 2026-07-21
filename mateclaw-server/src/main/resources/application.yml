@@ -189,6 +189,10 @@ mateclaw:
       # unconstrained behaviour for unconfigured conversations.
       enabled: ${MATECLAW_WORKSPACE_SANDBOX_ENABLED:true}
       root: ${MATECLAW_WORKSPACE_SANDBOX_ROOT:${user.dir}/data/workspace}
+  loop:
+    # Local artifacts for Loop Engineering runs. Each run stores worktree/logs
+    # under run-{id}/ so the UI can audit the evidence path.
+    run-root: ${MATECLAW_LOOP_RUN_ROOT:data/loop-runs}
   chat:
     upload:
       # Root directory for conversation chat attachments when neither the active
@@ -239,6 +243,61 @@ mateclaw:
   plugin:
     enabled: true
     user-dir: ${user.home}/.mateclaw/plugins
+  troubleshooting:
+    evidence:
+      dataflux:
+        enabled: ${DATAFLUX_ENABLED:false}
+        base-url: ${DATAFLUX_BASE_URL:}
+        query-path: ${DATAFLUX_QUERY_PATH:/api/v1/query}
+        token: ${DATAFLUX_TOKEN:}
+        token-header: ${DATAFLUX_TOKEN_HEADER:Authorization}
+        token-prefix: ${DATAFLUX_TOKEN_PREFIX:Bearer }
+        connect-timeout: 2s
+        read-timeout: 5s
+        max-response-chars: 4000
+      log-search:
+        enabled: ${LOG_SEARCH_ENABLED:false}
+        base-url: ${LOG_SEARCH_BASE_URL:}
+        query-path: ${LOG_SEARCH_QUERY_PATH:/api/v1/search}
+        token: ${LOG_SEARCH_TOKEN:}
+        token-header: ${LOG_SEARCH_TOKEN_HEADER:Authorization}
+        token-prefix: ${LOG_SEARCH_TOKEN_PREFIX:Bearer }
+        window: ${LOG_SEARCH_WINDOW:alert_time +/- 15m}
+        limit: ${LOG_SEARCH_LIMIT:50}
+        payload-template: ${LOG_SEARCH_PAYLOAD_TEMPLATE:}
+        connect-timeout: 2s
+        read-timeout: 5s
+        max-response-chars: 4000
+      release-platform:
+        enabled: ${RELEASE_PLATFORM_ENABLED:false}
+        base-url: ${RELEASE_PLATFORM_BASE_URL:}
+        query-path: ${RELEASE_PLATFORM_QUERY_PATH:/api/v1/releases/search}
+        token: ${RELEASE_PLATFORM_TOKEN:}
+        token-header: ${RELEASE_PLATFORM_TOKEN_HEADER:Authorization}
+        token-prefix: ${RELEASE_PLATFORM_TOKEN_PREFIX:Bearer }
+        window: ${RELEASE_PLATFORM_WINDOW:alert_time - 2h to alert_time + 15m}
+        limit: ${RELEASE_PLATFORM_LIMIT:20}
+        payload-template: ${RELEASE_PLATFORM_PAYLOAD_TEMPLATE:}
+        connect-timeout: 2s
+        read-timeout: 5s
+        max-response-chars: 4000
+      guance:
+        enabled: ${GUANCE_ENABLED:false}
+        base-url: ${GUANCE_BASE_URL:}
+        synthetics-path: ${GUANCE_SYNTHETICS_PATH:/api/v1/synthetics/search}
+        metrics-path: ${GUANCE_METRICS_PATH:/api/v1/df/query_data_v1}
+        token: ${GUANCE_TOKEN:}
+        token-header: ${GUANCE_TOKEN_HEADER:Authorization}
+        token-prefix: ${GUANCE_TOKEN_PREFIX:Bearer }
+        window: ${GUANCE_SYNTHETICS_WINDOW:alert_time +/- 15m}
+        limit: ${GUANCE_SYNTHETICS_LIMIT:20}
+        payload-template: ${GUANCE_SYNTHETICS_PAYLOAD_TEMPLATE:}
+        metrics-window: ${GUANCE_METRICS_WINDOW:alert_time +/- 15m}
+        metrics-limit: ${GUANCE_METRICS_LIMIT:50}
+        metrics-payload-template: ${GUANCE_METRICS_PAYLOAD_TEMPLATE:}
+        connect-timeout: 2s
+        read-timeout: 5s
+        max-response-chars: 4000
   # RFC-017: 声明式 Hook 系统
   hooks:
     enabled: true

@@ -61,6 +61,18 @@ const router = createRouter({
           meta: { title: 'Wiki', requiredCapability: 'view:wiki' },
         },
         {
+          path: 'troubleshooting',
+          name: 'Troubleshooting',
+          component: () => import('@/views/Troubleshooting.vue'),
+          meta: { title: 'Troubleshooting SOP', requiredCapability: 'view:troubleshooting' },
+        },
+        {
+          path: 'loop-engineering',
+          name: 'LoopEngineering',
+          component: () => import('@/views/LoopEngineering.vue'),
+          meta: { title: 'Loop Engineering', requiredCapability: 'chat' },
+        },
+        {
           path: 'enterprise',
           name: 'Enterprise',
           component: () => import('@/views/Enterprise/index.vue'),
@@ -212,6 +224,10 @@ const router = createRouter({
               name: 'SettingsWorkflows',
               component: () => import('@/views/Workflows.vue'),
               meta: { title: 'Settings - Workflows', requiredCapability: 'manage:settings' },
+            },
+            {
+              path: 'troubleshooting',
+              redirect: '/troubleshooting',
             },
             {
               path: 'datasources',

@@ -2,6 +2,8 @@
 name: systematic-debugging
 description: '4-phase root cause debugging: understand bugs before fixing.'
 version: 1.1.0
+type: prompt
+category: troubleshooting
 tags:
 - debugging
 - troubleshooting
@@ -9,6 +11,18 @@ tags:
 - root-cause
 - investigation
 author: ported
+troubleshooting:
+  domain: generic
+  scenario: systematic_debugging
+  match:
+    severities: []
+    labels: []
+    keywords: []
+  requiredEvidence: []
+  optionalEvidence: [metrics, logs, release, k8s, runbook]
+  outputSchema: sop-checklist-v1
+  owner: platform-sre
+  reviewCycleDays: 180
 ---
 # Systematic Debugging
 

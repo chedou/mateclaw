@@ -125,6 +125,24 @@ public class SkillManifest {
     @Builder.Default
     private List<ScriptDef> scripts = List.of();
 
+    // ==================== Troubleshooting SOP binding ====================
+
+    /**
+     * Optional SOP metadata for troubleshooting skills. The Markdown body stays
+     * the executable instruction contract; this block makes the skill routable,
+     * auditable, and previewable before an Agent run starts.
+     */
+    private TroubleshootingBinding troubleshooting;
+
+    // ==================== Loop Engineering superpower binding ====================
+
+    /**
+     * Optional metadata for Loop Engineering superpowers. These skills are not
+     * troubleshooting SOPs: they describe repeatable engineering loops such as
+     * fixing a reproducible failing test or reviewing a risky PR.
+     */
+    private SuperpowerBinding superpower;
+
     // ==================== Forward-compat catch-all ====================
 
     /** Unknown frontmatter keys are stashed here so a future field
@@ -269,6 +287,100 @@ public class SkillManifest {
          */
         @Builder.Default
         private String argStyle = "json";
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class TroubleshootingBinding {
+        /** Fault domain, e.g. api_service, database, cache. */
+        private String domain;
+        /** Concrete scenario inside the domain, e.g. http_5xx. */
+        private String scenario;
+        /** Deterministic routing hints. */
+        private TroubleshootingMatch match;
+        @Builder.Default
+        private List<String> requiredEvidence = List.of();
+        @Builder.Default
+        private List<String> optionalEvidence = List.of();
+        /** Expected output contract, e.g. sop-checklist-v1. */
+        private String outputSchema;
+        private String owner;
+        private Integer reviewCycleDays;
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class TroubleshootingMatch {
+        @Builder.Default
+        private List<String> severities = List.of();
+        @Builder.Default
+        private List<String> labels = List.of();
+        @Builder.Default
+        private List<String> keywords = List.of();
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class SuperpowerBinding {
+        /** Engineering domain, e.g. code_refix. */
+        private String domain;
+        /** Concrete loop scenario, e.g. fix_failing_test. */
+        private String scenario;
+        private SuperpowerTrigger trigger;
+        private SuperpowerWorkspace workspace;
+        private SuperpowerPolicy policy;
+        private SuperpowerVerification verification;
+        @Builder.Default
+        private List<String> outputs = List.of();
+        private String owner;
+        private Integer reviewCycleDays;
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class SuperpowerTrigger {
+        /** manual | ci_failure | pr_comment | schedule. */
+        private String type;
+        @Builder.Default
+        private List<String> sources = List.of();
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class SuperpowerWorkspace {
+        /** none | git_worktree | external_workspace. */
+        private String isolation;
+        @Builder.Default
+        private List<String> allowedPaths = List.of();
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class SuperpowerPolicy {
+        private Integer maxIterations;
+        private Integer maxChangedFiles;
+        @Builder.Default
+        private boolean requireHumanBeforePush = true;
+        @Builder.Default
+        private List<String> allowedCommands = List.of();
+        @Builder.Default
+        private List<String> allowedRepairCommands = List.of();
+    }
+
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class SuperpowerVerification {
+        @Builder.Default
+        private List<String> required = List.of();
+        @Builder.Default
+        private List<String> recommended = List.of();
     }
 
     @Data

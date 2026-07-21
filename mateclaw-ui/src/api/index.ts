@@ -1387,6 +1387,367 @@ export const triggerApi = {
   }) => http.post('/triggers/events', envelope),
 }
 
+// ==================== Troubleshooting SOP ====================
+
+export interface TroubleshootingSopSummary {
+  skillId: number | string
+  name: string
+  description?: string
+  version?: string
+  builtin: boolean
+  domain: string
+  scenario: string
+  severities: string[]
+  labels: string[]
+  keywords: string[]
+  requiredEvidence: string[]
+  optionalEvidence: string[]
+  outputSchema?: string
+  owner?: string
+  reviewCycleDays?: number
+  reviewDueAt?: string
+  expired: boolean
+}
+
+export interface TroubleshootingRouteRequest {
+  eventId?: string
+  source?: string
+  severity?: string
+  alertName?: string
+  status?: string
+  serviceName?: string
+  env?: string
+  cluster?: string
+  namespace?: string
+  pod?: string
+  instance?: string
+  endpoint?: string
+  metricName?: string
+  message?: string
+  rawText?: string
+  labels?: Record<string, unknown>
+  topK?: number
+}
+
+export interface TroubleshootingRouteCandidate {
+  skillId: number | string
+  name: string
+  domain: string
+  scenario: string
+  version?: string
+  score: number
+  confidence: number
+  reason: string
+  missingSignals: string[]
+  requiredEvidence: string[]
+  optionalEvidence: string[]
+  owner?: string
+  fallback: boolean
+}
+
+export interface TroubleshootingRouteResult {
+  selected: TroubleshootingRouteCandidate | null
+  candidates: TroubleshootingRouteCandidate[]
+  lowConfidence: boolean
+  usedFallback: boolean
+  missingSignals: string[]
+  inputSummary: string
+}
+
+export interface TroubleshootingSopRun {
+  id: number | string
+  workspaceId: number | string
+  caseId: string
+  sopSkillId?: number | string
+  sopName?: string
+  sopVersion?: string
+  domain?: string
+  scenario?: string
+  confidence?: number
+  status: string
+  routeReason?: string
+  alertJson?: string
+  stepResultsJson?: string
+  finalReportJson?: string
+  validationErrorsJson?: string
+  startedAt?: string
+  completedAt?: string
+  createTime?: string
+  updateTime?: string
+}
+
+export interface TroubleshootingSopStepResult {
+  stepId: string
+  status: 'passed' | 'failed' | 'inconclusive' | 'skipped' | string
+  evidenceIds: string[]
+  evidenceTypes: string[]
+  observation: string
+  interpretation: string
+  nextDecision: 'continue' | 'stop' | 'switch_sop' | 'need_human' | string
+}
+
+export interface TroubleshootingSopValidationResult {
+  valid: boolean
+  missingEvidence: string[]
+  errors: string[]
+}
+
+export interface TroubleshootingEvidenceRecord {
+  id: number | string
+  evidenceId: string
+  evidenceType: string
+  source: string
+  status: string
+  title?: string
+  summary?: string
+  contentJson?: string
+  collectedAt?: string
+}
+
+export interface TroubleshootingSopRunStartResponse {
+  run: TroubleshootingSopRun
+  route: TroubleshootingRouteResult
+  sop: TroubleshootingSopSummary
+  executionPrompt: string
+  sampleStepResults: TroubleshootingSopStepResult[]
+  finalReportTemplate: Record<string, unknown>
+}
+
+export interface TroubleshootingSopRunCompleteResponse {
+  run: TroubleshootingSopRun
+  validation: TroubleshootingSopValidationResult
+  groupReport: string
+}
+
+export interface TroubleshootingEvidenceCollectResponse {
+  run: TroubleshootingSopRun
+  evidenceRecords: TroubleshootingEvidenceRecord[]
+  stepResults: TroubleshootingSopStepResult[]
+  finalReportTemplate: Record<string, unknown>
+}
+
+export interface TroubleshootingQueryTemplate {
+  id: number | string
+  workspaceId: number | string
+  provider: string
+  evidenceType: string
+  templateKey: string
+  name: string
+  description?: string
+  payloadTemplate: string
+  dqlTemplate?: string
+  matchJson?: string
+  enabled: boolean
+  defaultTemplate: boolean
+  priority: number
+  createTime?: string
+  updateTime?: string
+}
+
+export interface TroubleshootingQueryTemplateRequest {
+  provider: string
+  evidenceType: string
+  templateKey: string
+  name: string
+  description?: string
+  payloadTemplate: string
+  dqlTemplate?: string
+  matchJson?: string
+  enabled?: boolean
+  defaultTemplate?: boolean
+  priority?: number
+}
+
+export interface TroubleshootingQueryTemplatePreviewRequest {
+  template: TroubleshootingQueryTemplateRequest
+  alert: TroubleshootingRouteRequest
+}
+
+export interface TroubleshootingQueryTemplatePreviewResponse {
+  provider: string
+  evidenceType: string
+  templateKey: string
+  status: string
+  source: string
+  title?: string
+  summary?: string
+  endpoint?: string
+  request?: unknown
+  normalized: Record<string, unknown>
+  responsePreview?: string
+  error?: string
+  durationMs?: number
+}
+
+export interface TroubleshootingConnectorConfig {
+  provider: string
+  persisted: boolean
+  enabled: boolean
+  baseUrl?: string
+  syntheticsPath?: string
+  metricsPath?: string
+  tokenHeader?: string
+  tokenPrefix?: string
+  tokenConfigured: boolean
+  tokenSource: 'database' | 'environment' | 'none' | string
+  window?: string
+  syntheticsLimit?: number
+  metricsWindow?: string
+  metricsLimit?: number
+  maxResponseChars?: number
+}
+
+export interface TroubleshootingConnectorConfigRequest {
+  enabled?: boolean
+  baseUrl?: string
+  syntheticsPath?: string
+  metricsPath?: string
+  token?: string
+  clearToken?: boolean
+  tokenHeader?: string
+  tokenPrefix?: string
+  window?: string
+  syntheticsLimit?: number
+  metricsWindow?: string
+  metricsLimit?: number
+  maxResponseChars?: number
+}
+
+export const troubleshootingApi = {
+  listSops: () => http.get<TroubleshootingSopSummary[]>('/troubleshooting/sops'),
+  previewRoute: (data: TroubleshootingRouteRequest) =>
+    http.post<TroubleshootingRouteResult>('/troubleshooting/sops/preview-route', data),
+  listCaseRuns: (caseId: string) =>
+    http.get<TroubleshootingSopRun[]>(`/troubleshooting/cases/${encodeURIComponent(caseId)}/sop-runs`),
+  createCaseRun: (caseId: string, data: TroubleshootingRouteRequest) =>
+    http.post<TroubleshootingSopRunStartResponse>(
+      `/troubleshooting/cases/${encodeURIComponent(caseId)}/sop-runs`,
+      data,
+    ),
+  completeRun: (
+    runId: string | number,
+    data: { stepResults: TroubleshootingSopStepResult[]; finalReport: Record<string, unknown> },
+  ) =>
+    http.post<TroubleshootingSopRunCompleteResponse>(
+      `/troubleshooting/sop-runs/${encodeURIComponent(String(runId))}/complete`,
+      data,
+    ),
+  collectEvidence: (
+    runId: string | number,
+    data?: { evidenceTypes?: string[]; includeOptional?: boolean },
+  ) =>
+    http.post<TroubleshootingEvidenceCollectResponse>(
+      `/troubleshooting/sop-runs/${encodeURIComponent(String(runId))}/collect-evidence`,
+      data || {},
+    ),
+  listEvidence: (runId: string | number) =>
+    http.get<TroubleshootingEvidenceRecord[]>(
+      `/troubleshooting/sop-runs/${encodeURIComponent(String(runId))}/evidence`,
+    ),
+  listQueryTemplates: (params?: { provider?: string; evidenceType?: string }) =>
+    http.get<TroubleshootingQueryTemplate[]>('/troubleshooting/query-templates', { params }),
+  getGuanceConnectorConfig: () =>
+    http.get<TroubleshootingConnectorConfig>('/troubleshooting/connectors/guance'),
+  saveGuanceConnectorConfig: (data: TroubleshootingConnectorConfigRequest) =>
+    http.put<TroubleshootingConnectorConfig>('/troubleshooting/connectors/guance', data),
+  createQueryTemplate: (data: TroubleshootingQueryTemplateRequest) =>
+    http.post<TroubleshootingQueryTemplate>('/troubleshooting/query-templates', data),
+  seedGuanceDefaultTemplates: () =>
+    http.post<TroubleshootingQueryTemplate[]>('/troubleshooting/query-templates/guance/defaults'),
+  previewQueryTemplate: (data: TroubleshootingQueryTemplatePreviewRequest) =>
+    http.post<TroubleshootingQueryTemplatePreviewResponse>('/troubleshooting/query-templates/preview', data),
+  updateQueryTemplate: (id: string | number, data: TroubleshootingQueryTemplateRequest) =>
+    http.put<TroubleshootingQueryTemplate>(
+      `/troubleshooting/query-templates/${encodeURIComponent(String(id))}`,
+      data,
+    ),
+  deleteQueryTemplate: (id: string | number) =>
+    http.delete(`/troubleshooting/query-templates/${encodeURIComponent(String(id))}`),
+}
+
+// ==================== Loop Engineering ====================
+
+export interface LoopSuperpowerSummary {
+  skillId: string | number
+  name: string
+  description?: string
+  version?: string
+  domain?: string
+  scenario?: string
+  triggerType?: string
+  workspaceIsolation?: string
+  maxIterations?: number
+  maxChangedFiles?: number
+  requireHumanBeforePush: boolean
+  requiredChecks: string[]
+  outputs: string[]
+  owner?: string
+}
+
+export interface LoopSuperpowerPreviewRequest {
+  repoPath?: string
+  command?: string
+  repairCommand?: string
+  goal?: string
+}
+
+export interface LoopSuperpowerPreviewResponse {
+  selected?: LoopSuperpowerSummary | null
+  confidence: number
+  reasons: string[]
+  missingSignals: string[]
+  candidates: LoopSuperpowerSummary[]
+}
+
+export interface LoopRunCreateRequest {
+  superpowerSkillId?: string | number
+  domain?: string
+  scenario?: string
+  repoPath?: string
+  command?: string
+  repairCommand?: string
+  goal?: string
+  branch?: string
+  externalCaseId?: string
+  input?: Record<string, unknown>
+}
+
+export interface LoopRunResponse {
+  id: string | number
+  workspaceId: string | number
+  superpowerSkillId?: string | number
+  superpowerName?: string
+  superpowerVersion?: string
+  domain?: string
+  scenario?: string
+  status: string
+  inputJson?: string
+  stepResultsJson?: string
+  artifactsJson?: string
+  finalReportJson?: string
+  startedAt?: string
+  completedAt?: string
+  createTime?: string
+  updateTime?: string
+}
+
+export interface LoopRunExecuteResponse {
+  run: LoopRunResponse
+  message: string
+}
+
+export const loopEngineeringApi = {
+  listSuperpowers: () => http.get<LoopSuperpowerSummary[]>('/loop-engineering/superpowers'),
+  previewSuperpower: (data: LoopSuperpowerPreviewRequest) =>
+    http.post<LoopSuperpowerPreviewResponse>('/loop-engineering/superpowers/preview', data),
+  createRun: (data: LoopRunCreateRequest) =>
+    http.post<LoopRunResponse>('/loop-engineering/runs', data),
+  getRun: (runId: string | number) =>
+    http.get<LoopRunResponse>(`/loop-engineering/runs/${encodeURIComponent(String(runId))}`),
+  executeRun: (runId: string | number) =>
+    http.post<LoopRunExecuteResponse>(`/loop-engineering/runs/${encodeURIComponent(String(runId))}/execute`, undefined, { timeout: 120000 }),
+}
+
 // ==================== Persistent goals ====================
 //
 // Snowflake IDs are sent as strings end-to-end — the backend's

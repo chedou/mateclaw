@@ -40,6 +40,8 @@ public class SkillManifestParser {
             "dashboard", "self-evolution", "self_evolution",
             "knowledge",
             "acp",
+            "troubleshooting",
+            "superpower",
             "scripts",
             "constraints",
             // legacy / housekeeping fields that aren't manifest-relevant
@@ -106,6 +108,8 @@ public class SkillManifestParser {
                 .acp(parseAcp(fm.get("acp")))
                 .scripts(parseScripts(fm.get("scripts")))
                 .constraints(stringList(fm.get("constraints")))
+                .troubleshooting(parseTroubleshooting(fm.get("troubleshooting")))
+                .superpower(parseSuperpower(fm.get("superpower")))
                 .extras(extractUnknown(fm));
 
         return b.build();
@@ -316,6 +320,94 @@ public class SkillManifestParser {
                 .build();
     }
 
+    @SuppressWarnings("unchecked")
+    private SkillManifest.TroubleshootingBinding parseTroubleshooting(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        SkillManifest.TroubleshootingMatch match = null;
+        Object rawMatch = m.get("match");
+        if (rawMatch instanceof Map<?, ?> matchMap) {
+            Map<String, Object> mm = (Map<String, Object>) matchMap;
+            match = SkillManifest.TroubleshootingMatch.builder()
+                    .severities(stringList(mm.get("severities")))
+                    .labels(stringList(mm.get("labels")))
+                    .keywords(stringList(mm.get("keywords")))
+                    .build();
+        }
+        return SkillManifest.TroubleshootingBinding.builder()
+                .domain(string(m, "domain"))
+                .scenario(string(m, "scenario"))
+                .match(match)
+                .requiredEvidence(stringList(coalesce(m, "requiredEvidence", "required_evidence")))
+                .optionalEvidence(stringList(coalesce(m, "optionalEvidence", "optional_evidence")))
+                .outputSchema(stringOrDefault(m, "output_schema",
+                        stringOrDefault(m, "outputSchema", null)))
+                .owner(string(m, "owner"))
+                .reviewCycleDays(intObject(coalesce(m, "reviewCycleDays", "review_cycle_days")))
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SkillManifest.SuperpowerBinding parseSuperpower(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        return SkillManifest.SuperpowerBinding.builder()
+                .domain(string(m, "domain"))
+                .scenario(string(m, "scenario"))
+                .trigger(parseSuperpowerTrigger(m.get("trigger")))
+                .workspace(parseSuperpowerWorkspace(m.get("workspace")))
+                .policy(parseSuperpowerPolicy(m.get("policy")))
+                .verification(parseSuperpowerVerification(m.get("verification")))
+                .outputs(stringList(m.get("outputs")))
+                .owner(string(m, "owner"))
+                .reviewCycleDays(intObject(coalesce(m, "reviewCycleDays", "review_cycle_days")))
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SkillManifest.SuperpowerTrigger parseSuperpowerTrigger(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        return SkillManifest.SuperpowerTrigger.builder()
+                .type(string(m, "type"))
+                .sources(stringList(m.get("sources")))
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SkillManifest.SuperpowerWorkspace parseSuperpowerWorkspace(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        return SkillManifest.SuperpowerWorkspace.builder()
+                .isolation(string(m, "isolation"))
+                .allowedPaths(stringList(coalesce(m, "allowedPaths", "allowed_paths")))
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SkillManifest.SuperpowerPolicy parseSuperpowerPolicy(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        return SkillManifest.SuperpowerPolicy.builder()
+                .maxIterations(intObject(coalesce(m, "maxIterations", "max_iterations")))
+                .maxChangedFiles(intObject(coalesce(m, "maxChangedFiles", "max_changed_files")))
+                .requireHumanBeforePush(bool(m, "requireHumanBeforePush",
+                        bool(m, "require_human_before_push", true)))
+                .allowedCommands(stringList(coalesce(m, "allowedCommands", "allowed_commands")))
+                .allowedRepairCommands(stringList(coalesce(m, "allowedRepairCommands", "allowed_repair_commands")))
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SkillManifest.SuperpowerVerification parseSuperpowerVerification(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> m = (Map<String, Object>) map;
+        return SkillManifest.SuperpowerVerification.builder()
+                .required(stringList(m.get("required")))
+                .recommended(stringList(m.get("recommended")))
+                .build();
+    }
+
     // ==================== helpers ====================
 
     private Map<String, Object> extractUnknown(Map<String, Object> fm) {
@@ -348,6 +440,12 @@ public class SkillManifestParser {
         if (v == null) return fallback;
         if (v instanceof Number n) return n.intValue();
         try { return Integer.parseInt(v.toString().trim()); } catch (NumberFormatException e) { return fallback; }
+    }
+
+    private static Integer intObject(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(v.toString().trim()); } catch (NumberFormatException e) { return null; }
     }
 
     @SuppressWarnings("unchecked")

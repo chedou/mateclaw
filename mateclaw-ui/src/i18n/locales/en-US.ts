@@ -496,6 +496,8 @@ export default {
     agentContext: 'Agent Context',
     skills: 'Skills',
     wiki: 'Wiki',
+    troubleshooting: 'Troubleshooting SOP',
+    loopEngineering: 'Loop Engineering',
     enterprise: 'Enterprise',
     tools: 'Tools',
     plugins: 'Plugins',

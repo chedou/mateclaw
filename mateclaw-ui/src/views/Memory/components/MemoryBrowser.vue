@@ -50,6 +50,8 @@ const files = ref<FileInfo[]>([])
 const currentFile = ref('')
 const sections = ref<MemorySectionData[]>([])
 const loading = ref(false)
+const userEditedMarkerPrefix = '<' + '!-- user-edited'
+const userEditedMarkerRegex = new RegExp('^[ \\t]*' + userEditedMarkerPrefix + ':.*-->[ \\t]*$', 'gm')
 
 watch(() => props.agentId, () => { loadFileList() }, { immediate: true })
 
@@ -95,7 +97,7 @@ function parseSections(content: string): MemorySectionData[] {
       // `\x3c` escapes the `<` so Vite's esbuild dep-scan doesn't treat
       // the embedded `<!-- ... -->` sequence as an HTML-like line comment
       // and conflate this string literal with the one in stripMarker below.
-      const userEdited = rawBody.includes('\x3c!-- user-edited')
+      const userEdited = rawBody.includes(userEditedMarkerPrefix)
       // Strip the hidden marker from the display body — it is metadata, and
       // since renderMarkdown escapes HTML it would otherwise show as raw text.
       result.push({ heading, body: stripMarker(rawBody), userEdited })
@@ -110,8 +112,7 @@ function parseSections(content: string): MemorySectionData[] {
 // Strip the hidden user-edited marker so it never shows up as raw text in the
 // editor (and never accumulates when a section is edited repeatedly).
 function stripMarker(body: string): string {
-  // `\x3c` escape — same reason as in parseSections above.
-  return body.replace(/^[ \t]*\x3c!-- user-edited:.*-->[ \t]*$/gm, '').trim()
+  return body.replace(userEditedMarkerRegex, '').trim()
 }
 
 /**

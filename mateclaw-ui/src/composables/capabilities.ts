@@ -13,6 +13,7 @@ export type Capability =
   | 'view:wiki'
   | 'view:memory'
   | 'view:dashboard'
+  | 'view:troubleshooting'
   | 'manage:wiki'
   | 'manage:agents'
   | 'manage:skills'
@@ -20,6 +21,7 @@ export type Capability =
   | 'manage:models'
   | 'manage:security'
   | 'manage:settings'
+  | 'manage:troubleshooting'
 
 export type WorkspaceRole = 'viewer' | 'member' | 'admin' | 'owner'
 

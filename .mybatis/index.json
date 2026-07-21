@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "timestamp": 1779381522664,
+  "projectRoot": "/Users/weibinhuang/code/open_source/mateclaw/mateclaw",
+  "entries": [
+    {
+      "path": "mateclaw-server/target/classes/vip/mate/agent/delegation/SubagentHeartbeatConfig.class",
+      "mtime": 1779381444036.5798,
+      "size": 1293
+    },
+    {
+      "path": "mateclaw-server/target/classes/vip/mate/memory/MemoryAutoConfiguration.class",
+      "mtime": 1779381445546.4717,
+      "size": 558
+    },
+    {
+      "path": "mateclaw-server/target/classes/vip/mate/stt/SttTransportConfig.class",
+      "mtime": 1779381446134.9187,
+      "size": 1522
+    },
+    {
+      "path": "mateclaw-server/target/classes/vip/mate/wiki/job/WikiKbConfig.class",
+      "mtime": 1779381447012.7908,
+      "size": 4769
+    },
+    {
+      "path": "mateclaw-server/target/classes/vip/mate/MateClawApplication.class",
+      "mtime": 1779381521604.8438,
+      "size": 2207
+    }
+  ]
+}

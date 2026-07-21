@@ -284,6 +284,103 @@ class SkillManifestParserTest {
     }
 
     @Test
+    @DisplayName("troubleshooting block parses SOP routing metadata")
+    void troubleshootingBlockParses() {
+        String content = """
+            ---
+            name: api-service-5xx
+            type: prompt
+            category: troubleshooting
+            troubleshooting:
+              domain: api_service
+              scenario: http_5xx
+              match:
+                severities: [P1, P2]
+                labels: [serviceName, env, cluster, endpoint]
+                keywords: [500, 502, timeout]
+              requiredEvidence: [metrics, logs, release]
+              optionalEvidence: [k8s, gateway]
+              outputSchema: sop-checklist-v1
+              owner: platform-sre
+              reviewCycleDays: 90
+            ---
+            body
+            """;
+
+        SkillManifest m = parser.parse(content);
+
+        assertNotNull(m);
+        assertEquals("troubleshooting", m.getCategory());
+        assertNotNull(m.getTroubleshooting());
+        assertEquals("api_service", m.getTroubleshooting().getDomain());
+        assertEquals("http_5xx", m.getTroubleshooting().getScenario());
+        assertEquals(2, m.getTroubleshooting().getMatch().getSeverities().size());
+        assertEquals(4, m.getTroubleshooting().getMatch().getLabels().size());
+        assertEquals(3, m.getTroubleshooting().getMatch().getKeywords().size());
+        assertEquals("metrics", m.getTroubleshooting().getRequiredEvidence().get(0));
+        assertEquals("gateway", m.getTroubleshooting().getOptionalEvidence().get(1));
+        assertEquals("sop-checklist-v1", m.getTroubleshooting().getOutputSchema());
+        assertEquals("platform-sre", m.getTroubleshooting().getOwner());
+        assertEquals(90, m.getTroubleshooting().getReviewCycleDays());
+    }
+
+    @Test
+    @DisplayName("superpower block parses loop engineering metadata")
+    void superpowerBlockParses() {
+        String content = """
+            ---
+            name: loop-fix-failing-test
+            type: prompt
+            category: superpower
+            superpower:
+              domain: code_refix
+              scenario: fix_failing_test
+              trigger:
+                type: manual
+                sources: [manual, ci_failure]
+              workspace:
+                isolation: git_worktree
+                allowedPaths: [src, test]
+              policy:
+                maxIterations: 3
+                maxChangedFiles: 8
+                requireHumanBeforePush: true
+                allowedCommands: [mvn test, npm test]
+                allowedRepairCommands: [npm run loop:repair]
+              verification:
+                required: [baseline_failure_reproduced, target_tests_pass, diff_review_passed]
+                recommended: [lint_passed]
+              outputs: [evidence.md, diff.patch, review.md, result.json]
+              owner: engineering-platform
+              reviewCycleDays: 90
+            ---
+            body
+            """;
+
+        SkillManifest m = parser.parse(content);
+
+        assertNotNull(m);
+        assertEquals("superpower", m.getCategory());
+        assertNotNull(m.getSuperpower());
+        assertEquals("code_refix", m.getSuperpower().getDomain());
+        assertEquals("fix_failing_test", m.getSuperpower().getScenario());
+        assertEquals("manual", m.getSuperpower().getTrigger().getType());
+        assertEquals("ci_failure", m.getSuperpower().getTrigger().getSources().get(1));
+        assertEquals("git_worktree", m.getSuperpower().getWorkspace().getIsolation());
+        assertEquals("src", m.getSuperpower().getWorkspace().getAllowedPaths().get(0));
+        assertEquals(3, m.getSuperpower().getPolicy().getMaxIterations());
+        assertEquals(8, m.getSuperpower().getPolicy().getMaxChangedFiles());
+        assertTrue(m.getSuperpower().getPolicy().isRequireHumanBeforePush());
+        assertEquals("npm test", m.getSuperpower().getPolicy().getAllowedCommands().get(1));
+        assertEquals("npm run loop:repair", m.getSuperpower().getPolicy().getAllowedRepairCommands().get(0));
+        assertEquals("target_tests_pass", m.getSuperpower().getVerification().getRequired().get(1));
+        assertEquals("lint_passed", m.getSuperpower().getVerification().getRecommended().get(0));
+        assertEquals("review.md", m.getSuperpower().getOutputs().get(2));
+        assertEquals("engineering-platform", m.getSuperpower().getOwner());
+        assertEquals(90, m.getSuperpower().getReviewCycleDays());
+    }
+
+    @Test
     @DisplayName("preserves unknown keys in extras for forward-compat")
     void preservesUnknownKeysInExtras() {
         String content = """
