@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能排障 · 故障处置页原型</title>
+<style>
+  :root{
+    --primary:#409EFF;--primary-d:#337ecc;--success:#67C23A;--warning:#E6A23C;
+    --danger:#F56C6C;--info:#909399;
+    --t1:#303133;--t2:#606266;--t3:#909399;--t4:#A8ABB2;
+    --bd:#DCDFE6;--bd-l:#EBEEF5;--bg:#F5F7FA;--bg2:#FAFAFA;--white:#fff;
+    --radius:4px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--t1);background:var(--bg);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .app{display:flex;height:100vh;overflow:hidden}
+
+  /* platform shell nav */
+  .nav{width:200px;background:#141a26;color:#c0c4cc;flex-shrink:0;display:flex;flex-direction:column}
+  .nav .brand{height:56px;display:flex;align-items:center;gap:8px;padding:0 18px;color:#fff;font-weight:600;font-size:15px;border-bottom:1px solid #232a38}
+  .nav .brand .logo{width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#409EFF,#67C23A);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .nav .grp{padding:12px 18px 4px;font-size:11px;color:#5c6474;letter-spacing:.5px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 18px;color:#c0c4cc;text-decoration:none;font-size:13px;border-left:2px solid transparent}
+  .nav a:hover{background:#1c2432;color:#fff}
+  .nav a.active{background:#1c2432;color:#fff;border-left-color:var(--primary)}
+  .nav a .ic{width:16px;text-align:center;opacity:.9}
+
+  /* top bar */
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .top{height:56px;background:var(--white);border-bottom:1px solid var(--bd-l);display:flex;align-items:center;padding:0 20px;gap:14px;flex-shrink:0}
+  .crumb{color:var(--t3);font-size:13px}
+  .crumb b{color:var(--t1);font-weight:600}
+  .top .sp{flex:1}
+  .stage-pill{display:flex;align-items:center;gap:7px;background:#f0f9eb;color:var(--success);border:1px solid #e1f3d8;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:500}
+  .stage-pill.s0{background:#fdf6ec;color:var(--warning);border-color:#faecd8}
+  .stage-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+  .usr{width:30px;height:30px;border-radius:50%;background:#e9ecf2;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:12px;font-weight:600}
+
+  /* incident switcher */
+  .switcher{display:flex;gap:8px;background:var(--bg);border-radius:6px;padding:3px}
+  .switcher button{border:none;background:transparent;padding:5px 12px;border-radius:4px;font-size:12px;color:var(--t2);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px}
+  .switcher button.on{background:var(--white);color:var(--t1);box-shadow:var(--shadow);font-weight:600}
+  .switcher .rt{width:8px;height:8px;border-radius:50%}
+  .rt.det{background:var(--success)}
+  .rt.llm{background:var(--warning)}
+
+  /* three column body */
+  .body{flex:1;display:grid;grid-template-columns:290px 1fr 340px;gap:14px;padding:14px 16px;overflow:hidden}
+  .col{overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--white);border:1px solid var(--bd-l);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card .hd{padding:11px 14px;border-bottom:1px solid var(--bd-l);font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+  .card .hd .ic{color:var(--primary)}
+  .card .bd{padding:12px 14px}
+  .card .hd .r{margin-left:auto;font-weight:400;font-size:12px;color:var(--t3)}
+
+  /* left: context */
+  .kv{display:flex;padding:6px 0;font-size:12.5px;border-bottom:1px dashed var(--bd-l)}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--t3);width:82px;flex-shrink:0}
+  .kv .v{color:var(--t1);font-weight:500;word-break:break-all}
+  .tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:3px;font-size:11.5px;font-weight:500;line-height:18px}
+  .tag.blue{background:#ecf5ff;color:var(--primary);border:1px solid #d9ecff}
+  .tag.green{background:#f0f9eb;color:var(--success);border:1px solid #e1f3d8}
+  .tag.orange{background:#fdf6ec;color:var(--warning);border:1px solid #faecd8}
+  .tag.red{background:#fef0f0;color:var(--danger);border:1px solid #fde2e2}
+  .tag.gray{background:#f4f4f5;color:var(--info);border:1px solid #e9e9eb}
+  .raw{background:var(--bg2);border:1px solid var(--bd-l);border-radius:4px;padding:8px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--t2);white-space:pre-wrap;max-height:120px;overflow:auto}
+
+  /* center: pipeline */
+  .pipe{display:flex;flex-direction:column;gap:0}
+  .step{display:flex;gap:12px;position:relative;padding-bottom:14px}
+  .step:last-child{padding-bottom:0}
+  .step .rail{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+  .step .node{width:24px;height:24px;border-radius:50%;border:2px solid var(--bd);background:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--t4);z-index:1;font-weight:600}
+  .step .line{flex:1;width:2px;background:var(--bd-l);margin:2px 0}
+  .step:last-child .line{display:none}
+  .step.done .node{border-color:var(--success);background:var(--success);color:#fff}
+  .step.done .line{background:var(--success)}
+  .step.cur .node{border-color:var(--primary);background:var(--primary);color:#fff;box-shadow:0 0 0 4px #ecf5ff}
+  .step.abstain .node{border-color:var(--warning);background:var(--warning);color:#fff}
+  .step .content{flex:1;padding-top:1px}
+  .step .st-t{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+  .step.todo .st-t{color:var(--t4)}
+  .step .st-d{font-size:12px;color:var(--t3);margin-top:2px}
+  .step .panel{margin-top:9px;background:var(--bg2);border:1px solid var(--bd-l);border-radius:4px;padding:11px 12px}
+
+  .concl{display:flex;gap:10px;align-items:flex-start}
+  .concl .badge{flex-shrink:0;width:44px;height:44px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+  .concl .badge.hi{background:#f0f9eb;color:var(--success)}
+  .concl .badge.lo{background:#fdf6ec;color:var(--warning)}
+  .concl .badge b{font-size:15px;line-height:1}
+  .concl .txt{flex:1}
+  .concl .rc{font-weight:600;font-size:13.5px}
+  .concl .meta{font-size:12px;color:var(--t3);margin-top:3px}
+
+  .cite{display:inline-flex;align-items:center;gap:3px;background:#ecf5ff;color:var(--primary);border:1px solid #d9ecff;border-radius:3px;padding:0 6px;font-size:11px;cursor:pointer;line-height:17px;margin:2px 3px 0 0}
+  .cite:hover{background:#d9ecff}
+  .cite.hl{background:var(--primary);color:#fff}
+
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+  .btn{border:1px solid var(--bd);background:var(--white);color:var(--t2);padding:7px 15px;border-radius:4px;font-size:12.5px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;transition:.15s}
+  .btn:hover:not(:disabled){color:var(--primary);border-color:#c6e2ff;background:#ecf5ff}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.primary:hover:not(:disabled){background:var(--primary-d);border-color:var(--primary-d);color:#fff}
+  .btn.warn{background:var(--warning);border-color:var(--warning);color:#fff}
+  .btn.warn:hover:not(:disabled){opacity:.9;color:#fff}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn .ic{font-size:13px}
+
+  .redline{margin-top:10px;background:#fef0f0;border:1px solid #fde2e2;border-radius:4px;padding:9px 11px;font-size:11.5px;color:#c45656;display:flex;gap:7px;align-items:flex-start}
+  .redline .ic{color:var(--danger);flex-shrink:0}
+  .callout{background:#ecf5ff;border:1px solid #d9ecff;border-radius:4px;padding:9px 11px;font-size:11.5px;color:var(--primary-d);display:flex;gap:7px;margin-top:9px}
+
+  /* agent trace */
+  .trace{display:flex;flex-direction:column;gap:8px}
+  .tstep{display:flex;gap:9px;font-size:12px}
+  .tstep .ti{flex-shrink:0;width:20px;height:20px;border-radius:5px;background:#fdf6ec;color:var(--warning);display:flex;align-items:center;justify-content:center;font-size:11px}
+  .tstep .tc{flex:1}
+  .tstep .tool{font-family:ui-monospace,monospace;font-size:11px;background:var(--bg2);border:1px solid var(--bd-l);border-radius:3px;padding:1px 6px;color:var(--t2)}
+  .tstep .tr{color:var(--t3);margin-top:2px}
+  .ro-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--success);background:#f0f9eb;border-radius:3px;padding:0 5px;margin-left:5px}
+
+  /* right: evidence */
+  .ev{border:1px solid var(--bd-l);border-radius:4px;margin-bottom:10px;overflow:hidden;transition:.15s}
+  .ev.hl{border-color:var(--primary);box-shadow:0 0 0 2px #ecf5ff}
+  .ev .eh{padding:8px 11px;background:var(--bg2);display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;border-bottom:1px solid var(--bd-l)}
+  .ev .eh .eid{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--primary);background:#ecf5ff;border-radius:3px;padding:0 5px}
+  .ev .eh .plat{margin-left:auto;font-weight:400;font-size:11px;color:var(--t3)}
+  .ev .eb{padding:9px 11px}
+  .obs{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;font-family:ui-monospace,monospace;border-bottom:1px dashed var(--bd-l)}
+  .obs:last-child{border-bottom:none}
+  .obs .of{color:var(--t3)}
+  .obs .ov{color:var(--t1);font-weight:600}
+  .obs .ov.bad{color:var(--danger)}
+  .ev .ef{padding:6px 11px;background:var(--bg2);border-top:1px solid var(--bd-l);display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t3)}
+  .verok{color:var(--success)}
+  .vermiss{color:var(--warning)}
+  .missing{padding:14px;text-align:center;color:var(--t4);font-size:12px}
+
+  .empty{padding:30px 14px;text-align:center;color:var(--t4)}
+  .empty .big{font-size:26px;margin-bottom:8px}
+  h4.sec{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;margin:2px 0 6px}
+  .note{font-size:11px;color:var(--t4);margin-top:6px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- platform nav -->
+  <nav class="nav">
+    <div class="brand"><span class="logo">太</span> MateClaw</div>
+    <div class="grp">平台</div>
+    <a href="#"><span class="ic">▦</span> Dashboard</a>
+    <a href="#"><span class="ic">◈</span> Agents</a>
+    <a href="#"><span class="ic">▤</span> Wiki</a>
+    <a href="#"><span class="ic">◇</span> Memory</a>
+    <a href="#"><span class="ic">⚙</span> Workflows</a>
+    <div class="grp">运维</div>
+    <a href="#" class="active"><span class="ic">🩺</span> 智能排障</a>
+    <a href="#"><span class="ic">▧</span> Channels</a>
+    <a href="#"><span class="ic">🛡</span> Security</a>
+  </nav>
+
+  <div class="main">
+    <div class="top">
+      <div class="crumb">智能排障 / <b id="crumb-id">CSDP-903001</b></div>
+      <div class="switcher">
+        <button class="on" onclick="load('hit')"><span class="rt det"></span>命中路样本</button>
+        <button onclick="load('miss')"><span class="rt llm"></span>未命中路样本</button>
+      </div>
+      <div class="sp"></div>
+      <div class="stage-pill" id="ladder"><span class="dot"></span><span id="ladder-t">CSDP · 放权档位 S2（只读自动取证）</span></div>
+      <div class="usr">值</div>
+    </div>
+
+    <div class="body">
+      <!-- LEFT: incident context -->
+      <div class="col">
+        <div class="card">
+          <div class="hd"><span class="ic">◉</span> 故障上下文 <span class="r" id="ctx-mode"></span></div>
+          <div class="bd" id="ctx"></div>
+        </div>
+        <div class="card">
+          <div class="hd"><span class="ic">✉</span> 原始输入</div>
+          <div class="bd"><div class="raw" id="raw"></div>
+            <div class="note">接入源经 PAT 鉴权（webhook）/ 人工录入；completeness 驱动路由。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: diagnosis + state machine -->
+      <div class="col">
+        <div class="card">
+          <div class="hd"><span class="ic">⌘</span> 诊断与处置流水线 <span class="r" id="route-badge"></span></div>
+          <div class="bd"><div class="pipe" id="pipe"></div></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: evidence (D8) -->
+      <div class="col">
+        <div class="card">
+          <div class="hd"><span class="ic">🔎</span> 证据面板 <span class="r">D8 · Observability</span></div>
+          <div class="bd" id="evidence"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- two incident fixtures ---------- */
+const DATA = {
+  hit: {
+    id:"CSDP-903001", mode:"命中（确定性）", route:"det",
+    ladder:"CSDP · 放权档位 S2（只读自动取证）", ladderCls:"",
+    ctx:[
+      ["系统","CSDP"],["error_code","903001"],["服务","order-svc"],
+      ["接入源",'<span class="tag blue">告警 webhook</span>'],
+      ["completeness",'<span class="tag green">FULL</span>'],
+      ["路由键","(CSDP, 903001) ✓ 命中"],["首次发生","2026-07-24 09:12:07"],
+    ],
+    raw:'[ALERT] code=903001 svc=order-svc\nmsg="Mongo connection pool exhausted"\nhost=csdp-mongo-03  trace=7f3a91c',
+    evidence:[
+      {id:"EV-1",kind:"log_count",title:"错误日志计数",plat:"观测云 (guance)",ver:true,
+       obs:[["count","148",true],["trace_id","7f3a91c",false]],rule:"numeric_gte(count,1) → 确认发生"},
+      {id:"EV-2",kind:"metric",title:"Mongo 连接与可用性",plat:"观测云 (guance)",ver:true,
+       obs:[["reachable","true",false],["connections_current","2000",true],["connections_available","0",true],["slow_query_count","37",true]],
+       rule:"ratio_of_sum_gt(current,available) → 连接打满"},
+      {id:"EV-3",kind:"trace",title:"失败调用链定位",plat:"观测云 (guance)",ver:false,
+       obs:[["failed_hop","mongo.find",false],["status","timeout",false],["duration_ms","30012",true]],
+       rule:"contains_and_in(status,[timeout,error]) → DB 失败跳"},
+    ],
+    diagnosis:{conf:"HIGH",confN:"0.94",rc:"Mongo 连接池打满导致 order-svc 数据库调用超时",
+      cites:["EV-1","EV-2","EV-3"],
+      action:{type:"WRITE",label:"扩容连接池 / 重启 mongos 路由（生产写操作）"}},
+    abstain:false,
+  },
+  miss: {
+    id:"CSDP-777012", mode:"未命中（agent 兜底）", route:"llm",
+    ladder:"CSDP · 放权档位 S2（只读自动取证）", ladderCls:"",
+    ctx:[
+      ["系统","CSDP"],["error_code",'<span class="tag gray">无 / 未抽出</span>'],["服务","（未知）"],
+      ["接入源",'<span class="tag orange">人工录入</span>'],
+      ["completeness",'<span class="tag orange">SYMPTOM</span>'],
+      ["路由键",'<span class="tag red">未命中任何 SOP</span>'],["首次发生","2026-07-24 09:40:22"],
+    ],
+    raw:'客户反馈：CSDP 工单列表偶发打开很慢，有时转圈几十秒，\n刷新几次又好了。没有明确报错码。',
+    evidence:[
+      {id:"EV-A",kind:"log_count",title:"agent 只读查询：近 15m 错误日志",plat:"观测云 (guance)",ver:false,ro:true,
+       obs:[["count","3",false],["trace_id","—",false]],rule:"agent 观察：错误量低，非硬故障"},
+      {id:"EV-B",kind:"metric",title:"agent 只读查询：网关 P99 延迟",plat:"观测云 (guance)",ver:false,ro:true,
+       obs:[["p99_ms","8400",true],["p50_ms","210",false]],rule:"agent 观察：长尾延迟高、但无稳定规则命中"},
+    ],
+    diagnosis:{conf:"LOW",confN:"0.38",abstainReason:"无 (system,error_code) 命中；agent 只读探索未达置信阈值，疑似网关长尾但证据不足以定因。",
+      cites:["EV-A","EV-B"]},
+    abstain:true,
+    trace:[
+      {tool:"collect_evidence(log_count, service=csdp-web)",r:"返回 count=3，错误量低"},
+      {tool:"collect_evidence(metric, metric=gateway_p99)",r:"返回 p99=8400ms，长尾偏高"},
+      {tool:"—",r:"置信度 0.38 < 阈值 0.7 → 停止探索，弃权转人工（未强行给结论）"},
+    ],
+  }
+};
+
+/* ---------- pipeline definition ---------- */
+// stages shared; hit path runs full write-disposition; miss path stops at 转人工
+const HIT_STAGES = [
+  {k:"intake",t:"故障接入",d:"告警 webhook 命中路由键，创建 case/run，5 分钟桶幂等"},
+  {k:"evidence",t:"自动取证",d:"按 SOP evidence_requests 拉 3 项只读证据（S2 自动）"},
+  {k:"confirm",t:"诊断确认",d:"规则引擎合成根因，人工确认（需 operate:troubleshooting）"},
+  {k:"transfer",t:"结构化转派",d:"携带 case/run/trace/根因/置信/证据 ID 快照转派 owner"},
+  {k:"approve",t:"人工批准",d:"批准仅推进状态机，系统不执行任何生产写"},
+  {k:"record",t:"外部处置登记",d:"人在 MateClaw 外执行后，登记处置结果 + 恢复验证"},
+  {k:"close",t:"关闭归档",d:"生成 candidate 知识候选，进专家审核队列"},
+];
+const MISS_STAGES = [
+  {k:"intake",t:"故障接入",d:"人工录入，completeness=SYMPTOM，无 error_code"},
+  {k:"route",t:"路由判定",d:"未命中任何 (system,error_code) SOP → 转未命中路"},
+  {k:"agent",t:"数字员工只读分诊",d:"ReAct 探索，工具绑定锁死只读，ToolGuard BLOCK 写/shell"},
+  {k:"abstain",t:"弃权 · 转人工",d:"置信不足，不强凑结论，携已取证据转一线值班"},
+];
+
+let cur, curStage;
+function load(which){
+  cur = DATA[which];
+  document.querySelectorAll('.switcher button').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.switcher button')[which==='hit'?0:1].classList.add('on');
+  document.getElementById('crumb-id').textContent = cur.id;
+  document.getElementById('ctx-mode').textContent = cur.mode;
+  document.getElementById('ladder-t').textContent = cur.ladder;
+  document.getElementById('route-badge').innerHTML = cur.route==='det'
+    ? '<span class="tag green">🟢 确定性 · 零 LLM</span>'
+    : '<span class="tag orange">🟡 未命中 · agent 只读</span>';
+  // context
+  document.getElementById('ctx').innerHTML = cur.ctx.map(([k,v])=>
+    `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+  document.getElementById('raw').textContent = cur.raw;
+  // start stage: hit begins at 'confirm' (intake+evidence done), miss ends at abstain
+  curStage = which==='hit' ? 2 : 3;
+  renderPipe(); renderEvidence();
+}
+
+function renderPipe(){
+  const stages = cur.route==='det'?HIT_STAGES:MISS_STAGES;
+  const pipe = document.getElementById('pipe');
+  pipe.innerHTML = stages.map((s,i)=>{
+    let cls = i<curStage?'done':(i===curStage?'cur':'todo');
+    if(cur.abstain && s.k==='abstain') cls='abstain cur';
+    const nodeInner = cls.includes('done')?'✓':(cls.includes('abstain')?'!':(i+1));
+    let panel='';
+    if(i===curStage || (cur.abstain&&s.k==='abstain')) panel = stagePanel(s.k);
+    return `<div class="step ${cls}">
+      <div class="rail"><div class="node">${nodeInner}</div><div class="line"></div></div>
+      <div class="content">
+        <div class="st-t">${s.t}</div>
+        <div class="st-d">${s.d}</div>
+        ${panel}
+      </div></div>`;
+  }).join('');
+}
+
+function stagePanel(k){
+  const d = cur.diagnosis;
+  if(k==='confirm'){
+    return `<div class="panel">
+      <div class="concl">
+        <div class="badge hi"><b>${d.confN}</b>置信</div>
+        <div class="txt">
+          <div class="rc">${d.rc}</div>
+          <div class="meta">规则引擎合成 · 置信度 ${d.conf} · 引用证据：</div>
+          <div>${d.cites.map(c=>`<span class="cite" onmouseenter="hlEv('${c}',1)" onmouseleave="hlEv('${c}',0)" onclick="hlEv('${c}',1)">🔗 ${c}</span>`).join('')}</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="adv()">✓ 确认诊断</button>
+        <button class="btn" onclick="alert('转人工：携带当前上下文快照')">转人工复核</button>
+      </div>
+      <div class="callout"><span>ℹ️</span><span>确认动作只把状态机推进到「结构化转派」，不触发任何执行。命中路结论全程零 LLM，来自 <code>diagnosis_rules</code> 匹配。</span></div>
+    </div>`;
+  }
+  if(k==='transfer'){
+    return `<div class="panel">
+      <h4 class="sec">转派上下文快照（结构化）</h4>
+      <div class="kv"><span class="k">目标 owner</span><span class="v">DBA · 张（占位）</span></div>
+      <div class="kv"><span class="k">根因</span><span class="v">${d.rc}</span></div>
+      <div class="kv"><span class="k">证据</span><span class="v">${d.cites.join(', ')}</span></div>
+      <div class="actions">
+        <button class="btn primary" onclick="adv()">→ 结构化转派</button>
+        <button class="btn" onclick="stepBack()">返回</button>
+      </div>
+    </div>`;
+  }
+  if(k==='approve'){
+    return `<div class="panel">
+      <h4 class="sec">待批准的恢复动作</h4>
+      <div class="concl"><div class="txt">
+        <div class="rc"><span class="tag red">生产写</span> ${d.action.label}</div>
+        <div class="meta">动作类型：${d.action.type} · 由有权限的人在 MateClaw 外执行</div>
+      </div></div>
+      <div class="actions">
+        <button class="btn warn" onclick="adv()">✅ 批准（推进状态，不执行）</button>
+        <button class="btn" onclick="alert('驳回：状态回到诊断确认')">驳回</button>
+      </div>
+      <div class="redline"><span class="ic">⛔</span><span><b>红线 R1/R2：</b>页面没有"执行"按钮。批准只把状态从 <code>PENDING_APPROVAL</code> 推进到 <code>APPROVED_NOT_EXECUTED</code>；生产写执行器不接入平台，绝不由页面触发。</span></div>
+    </div>`;
+  }
+  if(k==='record'){
+    return `<div class="panel">
+      <h4 class="sec">登记外部处置结果（人在平台外执行后回填）</h4>
+      <div class="kv"><span class="k">处置人</span><span class="v">DBA · 张</span></div>
+      <div class="kv"><span class="k">处置动作</span><span class="v">已扩容连接池 mongos → 4000</span></div>
+      <div class="kv"><span class="k">恢复验证</span><span class="v"><span class="tag green">已恢复 · 复测 count=0</span></span></div>
+      <div class="actions">
+        <button class="btn primary" onclick="adv()">↧ 登记并进入关闭</button>
+      </div>
+      <div class="callout"><span>ℹ️</span><span>红线 R3：写操作永远外部人工 + 结果登记；平台只记录「谁做了什么、是否恢复」，不连生产写执行器。</span></div>
+    </div>`;
+  }
+  if(k==='close'){
+    return `<div class="panel">
+      <h4 class="sec">关闭归档 → 知识沉淀</h4>
+      <div class="meta">系统预填知识候选（证据 / 推荐动作 / 实际处置 / 根因 / 关闭摘要），进入专家审核队列——不直接覆盖 SOP。</div>
+      <div class="actions">
+        <button class="btn primary" onclick="alert('已关闭。生成 candidate #C-903001-a，进入知识候选审核队列（manage:troubleshooting）。')">✓ 关闭并生成知识候选</button>
+      </div>
+      <div class="callout"><span>🌱</span><span>D6 群众路线：候选从一线关闭沉淀中来，专家审核毕业（candidate→approved）后回到一线工作台/卡片。</span></div>
+    </div>`;
+  }
+  if(k==='agent'){
+    return `<div class="panel">
+      <h4 class="sec">agent 只读探索轨迹（ReAct）</h4>
+      <div class="trace">${cur.trace.map((t,i)=>`
+        <div class="tstep"><div class="ti">${i+1}</div><div class="tc">
+          <span class="tool">${t.tool}</span>${t.tool!=='—'?'<span class="ro-tag">🔒 只读</span>':''}
+          <div class="tr">${t.r}</div></div></div>`).join('')}</div>
+      <div class="redline"><span class="ic">🔒</span><span><b>红线 R4：</b>agent 工具绑定锁死只读（<code>AgentToolBinding</code> 白名单），ToolGuard 对 shell/file/写类 <code>BLOCK</code>。探索不改动任何生产状态。</span></div>
+    </div>`;
+  }
+  if(k==='abstain'){
+    const d2=cur.diagnosis;
+    return `<div class="panel">
+      <div class="concl">
+        <div class="badge lo"><b>${d2.confN}</b>置信</div>
+        <div class="txt">
+          <div class="rc">⚠️ 系统弃权（abstain）· 转一线值班</div>
+          <div class="meta">${d2.abstainReason}</div>
+          <div>${d2.cites.map(c=>`<span class="cite" onmouseenter="hlEv('${c}',1)" onmouseleave="hlEv('${c}',0)" onclick="hlEv('${c}',1)">🔗 ${c}</span>`).join('')}</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="alert('已携带 EV-A/EV-B 与 agent 轨迹转派一线值班。')">→ 转一线值班</button>
+        <button class="btn" onclick="alert('登记为知识缺口 backlog，供后续补 SOP。')">记为知识缺口</button>
+      </div>
+      <div class="callout"><span>ℹ️</span><span>置信度校准 + abstain：未命中且证据不足时，页面显式弃权、绝不硬凑结论；已取证据随转派带走，不浪费。</span></div>
+    </div>`;
+  }
+  return '';
+}
+
+function renderEvidence(){
+  const box = document.getElementById('evidence');
+  if(!cur.evidence || !cur.evidence.length){ box.innerHTML='<div class="missing">暂无证据</div>'; return; }
+  box.innerHTML = cur.evidence.map(e=>`
+    <div class="ev" id="ev-${e.id}">
+      <div class="eh"><span class="eid">${e.id}</span> ${e.title}
+        ${e.ro?'<span class="ro-tag">🔒 只读</span>':''}
+        <span class="plat">${e.plat}</span></div>
+      <div class="eb">
+        ${e.obs.map(([f,v,bad])=>`<div class="obs"><span class="of">${f}</span><span class="ov ${bad?'bad':''}">${v}</span></div>`).join('')}
+      </div>
+      <div class="ef">
+        <span>判据：${e.rule}</span>
+        <span style="margin-left:auto" class="${e.ver?'verok':'vermiss'}">${e.ver?'● 已核实':'○ 待内网核实'}</span>
+      </div>
+    </div>`).join('');
+}
+
+function hlEv(id,on){
+  const el=document.getElementById('ev-'+id); if(!el)return;
+  el.classList.toggle('hl',!!on);
+  document.querySelectorAll('.cite').forEach(c=>{ if(c.textContent.includes(id)) c.classList.toggle('hl',!!on); });
+  if(on) el.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function adv(){ curStage++; renderPipe(); }
+function stepBack(){ if(curStage>0){curStage--;renderPipe();} }
+
+load('hit');
+</script>
+</body>
+</html>
