@@ -1,0 +1,149 @@
+package vip.mate.troubleshooting.model;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class DiagnosisContractTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void persistedPayloadRejectsUnknownContractVersion() throws Exception {
+        String json = objectMapper.writeValueAsString(diagnosis())
+                .replace("\"contractVersion\":\"1.3\"", "\"contractVersion\":\"9.9\"");
+
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.readValue(json, Diagnosis.class));
+    }
+
+    @Test
+    void persistedPayloadRejectsMissingContractVersion() throws Exception {
+        String json = objectMapper.writeValueAsString(diagnosis())
+                .replace("\"contractVersion\":\"1.3\",", "");
+
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.readValue(json, Diagnosis.class));
+    }
+
+    @Test
+    void initialFactoryRejectsLifecycleJump() {
+        Diagnosis diagnosis = diagnosis();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        diagnosis.diagnosisId(),
+                        diagnosis.caseId(),
+                        diagnosis.runId(),
+                        diagnosis.incident(),
+                        diagnosis.routeMode(),
+                        DiagnosisStatus.CLOSED,
+                        diagnosis.summary(),
+                        diagnosis.rootCause(),
+                        diagnosis.confidence(),
+                        false,
+                        diagnosis.sopKey(),
+                        diagnosis.sopTitle(),
+                        diagnosis.evidence(),
+                        diagnosis.triggeredSignals(),
+                        diagnosis.recommendedActions(),
+                        diagnosis.routeToTeam(),
+                        diagnosis.rehearsal(),
+                        diagnosis.fixtureMode(),
+                        diagnosis.warnings()));
+    }
+
+    @Test
+    void aggregateCannotCloseRecoveredIncidentBeforeApprovalAndVerifiedOutcome() {
+        Diagnosis base = diagnosis();
+        Diagnosis ready = Diagnosis.initial(
+                base.diagnosisId(),
+                base.caseId(),
+                base.runId(),
+                base.incident(),
+                base.routeMode(),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "ready",
+                "MongoDB unavailable",
+                Confidence.HIGH,
+                false,
+                base.sopKey(),
+                base.sopTitle(),
+                base.evidence(),
+                base.triggeredSignals(),
+                List.of(RecommendedAction.manualWrite(
+                        "restart-mongodb", "restart MongoDB", "external only")),
+                null,
+                false,
+                true,
+                List.of());
+        TimelineEvent confirmation = new TimelineEvent(
+                Instant.parse("2026-07-25T01:01:00Z"),
+                "confirmed",
+                "on-call",
+                "done");
+        Diagnosis confirmed = ready.confirmed(List.of(confirmation));
+        ClosureRecord recovered = new ClosureRecord(
+                ClosureOutcome.RECOVERED,
+                "recovered",
+                true,
+                null,
+                null,
+                "on-call",
+                Instant.parse("2026-07-25T01:02:00Z"));
+        TimelineEvent closing = new TimelineEvent(
+                Instant.parse("2026-07-25T01:02:00Z"),
+                "closed",
+                "on-call",
+                "done");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> confirmed.closed(recovered, List.of(), List.of(confirmation, closing)));
+    }
+
+    private Diagnosis diagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "inc-contract",
+                "CSDP",
+                "csdp-wechat",
+                "903001",
+                "database error",
+                "P1",
+                "pending",
+                null,
+                Instant.parse("2026-07-25T01:00:00Z"),
+                null,
+                "test",
+                IncidentCompleteness.STRUCTURED,
+                null);
+        return Diagnosis.initial(
+                "diag-contract",
+                "case-contract",
+                "run-contract",
+                incident,
+                RouteMode.DETERMINISTIC,
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "insufficient evidence",
+                "unknown",
+                Confidence.LOW,
+                true,
+                "csdp:903001",
+                "SOP",
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                false,
+                true,
+                List.of());
+    }
+}

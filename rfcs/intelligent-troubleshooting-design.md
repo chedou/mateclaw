@@ -59,7 +59,7 @@ vip.mate.troubleshooting
 
 ```
 webhook/REST → controller → service（自跑循环）
-  → engine（5 种 criterion，纯 Java pattern-matching）
+  → engine（6 种 criterion，纯 Java pattern-matching；含 903001 依赖的 boolean_equals）
   → evidence（D8 SourceAdapter，只读取证）
   → statemachine（Diagnosis 聚合 + 状态推进）
   → repository（自有表 + 事务 Outbox，Flyway）
@@ -167,7 +167,9 @@ MateClaw 惯例（已坐实）：持久化 = **MyBatis-Plus**（`*Entity` + `@Ta
 
 **分层纪律**：契约层用 record（给规则引擎和测试，可脱库单测），持久化层用 `*Entity`，中间加映射；规则引擎只吃 record，绝不直接读 Entity。这是 Python MVP 38 个测试可测性的来源，翻 Java 要守住。
 
-成本：① 新增表要在 `mysql/h2/kingbase` 三个方言目录各写一份 `V481+__troubleshooting_*.sql`；② 保留 `Diagnosis.contract_version` 作跨版本兼容闸门（D2）。
+成本：① 新增表要在 `mysql/h2/kingbase` 三个方言目录各写一份迁移；P0 实际落点为
+`V172__troubleshooting_domain.sql`（RFC 编写时预估的 `V481+` 已被仓库真实版本校正）；② 保留
+`Diagnosis.contract_version` 作跨版本兼容闸门（D2）。
 
 ---
 
@@ -256,12 +258,20 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ### P0 · 领域骨架与契约（无外部依赖，可先跑通端到端合同）
 
-- [ ] 新增 `vip.mate.troubleshooting` 包骨架（controller/service/engine/statemachine/evidence/knowledge/card/model/repository/event）。
-- [ ] 契约层 record：`IncidentContext`/`SopEntry`/`Diagnosis`/`EvidenceRequest`/`EvidenceResult`/`TransferContextSnapshot`（含 `contract_version`）。
-- [ ] 规则引擎：`sealed interface Criterion` + 5 实现 + Java 21 pattern-match 求值；**脱库单测**（对齐 Python MVP 38 测试）。
-- [ ] 状态机领域 service：拒绝跳步（诊断确认→审批→外部结果→恢复验证）；`/execute` 恒 409。
-- [ ] 持久化：`*Entity` + `*Mapper` + `V481+__troubleshooting_*.sql`（mysql/h2/kingbase 三份）；知识发布 outbox 表 + poller。
-- [ ] 幂等：`(system, error_code, service, 5 分钟桶)`，rehearsal 排除，无 error_code 不去重。
+- [x] 新增 `vip.mate.troubleshooting` 包骨架（controller/service/engine/statemachine/evidence/knowledge/card/model/repository/event）。
+- [x] 契约层 record：`IncidentContext`/`SopEntry`/`Diagnosis`/`EvidenceRequest`/`EvidenceResult`/`TransferContextSnapshot`（含 `contract_version`）。
+- [x] 规则引擎：`sealed interface Criterion` + 6 实现 + Java 21 pattern-match 求值；含 Python MVP 已验证的
+  `boolean_equals`，当前 P0/Persistence 合同共 33 个 Java 定向测试（其余 API/竖切合同随 P1/P2 补齐）。
+- [x] 确定性命中编排：`IncidentContext + SopEntry + EvidenceResult` 依次经过 engine→state machine
+  初始化→repository，生产服务中零 LLM。
+- [x] 状态机领域 service：拒绝跳步（诊断确认→审批但系统未执行→外部结果→恢复验证）；
+  领域内 `executeAction` 兼容缝恒 409，真实 `/execute` REST 路由留待 P2。
+- [x] 持久化：`*Entity` + `*Mapper` + `V172__troubleshooting_domain.sql`（mysql/h2/kingbase 三份）；
+  知识发布 outbox 表 + lease/retry poller，全程携带 `workspace_id`。
+- [x] 幂等：`(system, error_code, service, 5 分钟桶)`，rehearsal 排除，无 error_code 不去重。
+
+**P0 验证（2026-07-25）**：`mvn -pl mateclaw-server -am -Dtest='vip.mate.troubleshooting.**.*Test'
+-Dsurefire.failIfNoSpecifiedTests=false test`，33 tests passed；H2 真实执行 V172 并校验 3 张表及唯一索引。
 
 ### P1 · 接入与身份（打通安全入口）
 
@@ -271,7 +281,8 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ### P2 · 交付与人工确认（红线落地）
 
-- [ ] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`）。
+- [ ] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`，
+  以及始终返回 409 的 `/execute`）。
 - [ ] 注册领域 `FeishuCardKind`（前缀 `ts.`）+ `FeishuCardHandler`，按钮回调只打领域端点、推进状态机（**验证：执行 0 个工具**）。
 - [ ] R1/R2/R3 回归测试：写动作恒 `PENDING→APPROVED_NOT_EXECUTED`、`record-outcome` 登记外部处置、生产写执行器不在工具表。
 
@@ -314,9 +325,9 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ### 14.1 当前阶段主要矛盾
 
-- **⭐ 主要矛盾**：[已验证的完备设计] vs [尚不存在的可运行实现]。RFC 逐条源码核对通过，但 Java 代码为零——
-  当前系统的性质仍由「实现缺位」这一主要方面所规定。解决了它，其余矛盾才有载体：知识质量矛盾要靠清洗
-  闸门与影子回归**跑在实现上**才能持续暴露；信任矛盾要靠 S0 影子**产出数据**才能化解。
+- **⭐ 主要矛盾**：[已验证的 P0 领域内核] vs [P1/P2 尚未接成可用竖切]。规则、状态机、持久化、Outbox
+  与幂等已落 Java；当前系统性质由「安全接入、身份门控、REST/工作台未连接」规定。解决 P1/P2 后，
+  知识质量与信任矛盾才会得到真实运行数据。
 - **性质**：非对抗性（工程演进矛盾）→ 分阶段实施、集中兵力，不搞两线作战。
 - **⚠️ 矛盾转化监控**：P0–P2 竖切跑通后，[知识质量 vs 自动化范围] 上升为主要矛盾——它是全过程的根本
   天花板（只读可自动化 30/146≈21%），因此本设计从不承诺「上线即全自动」。若内网联调窗口先到，
@@ -326,7 +337,7 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 | 方向 | 内容 | 原则 |
 |---|---|---|
-| **主攻** | P0→P1→P2 顺序单点突破；验收 = 903001 fixture 竖切端到端 + 对齐 Python MVP 38 测试 | 集中兵力打歼灭战，竖切是根据地 |
+| **主攻** | P0 已完成；继续 P1→P2 顺序单点突破。验收 = 903001 fixture 竖切端到端 + 补齐 Python MVP 合同测试 | 集中兵力打歼灭战，竖切是根据地 |
 | **钳制/并行** | L0 数据 blocker（owner 裁决 + 回源表恢复）、内网联调窗口准备 | 依赖人力/环境，不占工程主力 |
 | **后续梯队** | P3 D8 适配器 → P4 未命中 agent → P5 放权阶梯 | 梯次投入，前一梯队验收后进场 |
 | **底线（贯穿）** | §13 四条红线每 PR 自检 | 不随阶段转移 |

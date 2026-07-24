@@ -4,6 +4,10 @@
 当前的**活跃工作**：在 MateClaw 之上落地 **IT 智能排障系统**（首个域 CSDP 工单/客服链路），
 形态为 mateclaw-server 内的确定性领域模块 `vip.mate.troubleshooting`。
 
+当前实施状态：**P0 领域内核已完成，P1 接入与身份尚未开始**。P0 包含 record 契约、6 类 sealed
+规则、确定性命中编排、人工控制状态机、三方言 V172、租户化事务 Outbox 与五分钟幂等；
+定向测试 33 项通过。
+
 ## 接续这项工作，先读（两份即可上手）
 
 1. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 会话记忆：8 个已锁定决策（D1–D8）、
@@ -24,7 +28,8 @@
 
 ## 纪律
 
-- 排障工作当前分支 `claude/intelligent-troubleshooting-design`；以用户当前明确选择的分支为准。
+- 排障工作当前本地分支 `intelligent-troubleshooting-design`（原 PR 分支已合并并从远端删除）；
+  以用户当前明确选择的分支为准。
 - 不擅自开 PR；改 RFC 保持 § 编号连续。
 - 旧仓库 **webonne/MetaClaw** 已归档为只读参考（Python MVP 参考实现在其 `zhinengpaizhang-dev` 分支），
   一切新工作只在本仓库进行。
