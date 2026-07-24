@@ -1,0 +1,309 @@
+# IT 智能排障系统设计文档（on MateClaw）
+
+> 状态：草案 v1 · 逐条源码核对已合入
+> 作者：MateClaw Team
+> 首个落地域：CSDP 工单/客服链路
+> 关联 ISSUE：待创建（动工前在上游开 issue）
+
+## 0. 一句话与阅读指南
+
+把故障处理从「人工翻系统 + 经验判断」升级为「告警/工单驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环」。
+
+本设计的每一个结论都对照 MateClaw `dev` 分支的 Java 源码逐条核对过（见 §12 核对证据）。核心判断只有一句：
+**排障的「确定性命中路」不能表达为一条 native MateClaw Workflow，必须做成一个确定性领域模块 `vip.mate.troubleshooting`；MateClaw 的 Agent/Workflow 只承载「未命中路」。**
+
+---
+
+## 1. 决定性事实：为什么不能直接用 Workflow 承载命中路
+
+MateClaw 的 Workflow 里，每一个「干活步」最终都是调 LLM agent，没有「确定性函数步」：
+
+| 事实 | 源码位置 | 内容 |
+|---|---|---|
+| work-step 默认走 agent 执行器 | `workflow/runtime/SequentialStepAdapter.java` | `execute()` → `executor.run(step, context)`，executor 是 `AgentStepExecutor`；注释 "default mode for any agent-call step" |
+| agent 执行器必调 LLM | `workflow/runtime/AgentStepExecutor.java` | `run()`：resolveAgentId → renderPrompt(Pebble) → `agentInvoker.invoke(agentId, prompt, conversationId)` → parseResponse |
+| 其余 StepMode 都不「干活」 | `workflow/compiler/ir/StepMode.java` | sealed：Sequential / FanOut / Collect / Conditional / AwaitApproval / DispatchChannel / WriteMemory —— 除 Sequential(=agent) 外都是编排/审批/分发/写记忆 |
+| AwaitApproval 不执行任何东西 | `workflow/runtime/mode/AwaitApprovalStepAdapter.java` | 插 pause 行 → `StepResult.paused()` → 通知 approverChannels → 靠 `WorkflowResumeController`+pauseToken 恢复；执行 0 个工具 |
+
+**推论**：若把命中路做成 Workflow，每步都会塞进一次 LLM 调用，直接违反「确定性优先、命中即零 LLM」的第一原则（D1）。因此命中路必须是确定性 Java。
+
+---
+
+## 2. 顶层形态：确定性领域模块
+
+排障系统 = MateClaw-server 内的一个**确定性领域模块** `vip.mate.troubleshooting`：纯 Java 引擎 + 自有持久化 + 自有状态机 + 自有 REST/webhook。它是既有 Python MVP（`metaclaw_troubleshooting`：类型化规则引擎 + 状态机 + 事务 Outbox，38 测试通过、无架构性偏差）的同构 Spring 重表达，不是重新发明。
+
+**落点（T4，已坐实）**：MateClaw-server 是**单 Maven 模块**，所有领域都是 `vip.mate.*` 下的平级包（acp/agent/approval/audit/auth/channel/cron/dashboard/goal/hook/kbopen/llm/memory/planning/skill/tool/trigger/wiki/workflow/workspace…），每域内部同一套 `controller/service/repository/model/event` 骨架。排障域照此新增顶层包，**不新建 Maven module、不新建独立 Spring 应用**，复用同一鉴权/持久化/Flyway/启动。
+
+```
+vip.mate.troubleshooting
+├── controller      REST + webhook 接入（自有幂等）
+├── service         自跑编排循环（等价 Python orchestrator）
+├── engine          类型化规则引擎（sealed Criterion + Java 21 pattern match）
+├── statemachine    Diagnosis 聚合 + 状态推进（拒绝跳步）
+├── evidence        D8 EvidenceSourceAdapter / Router / 绑定注册表
+├── knowledge       SopEntry / KnowledgeCandidate 审核生命周期 + Outbox
+├── card            领域 FeishuCardKind（前缀 ts.）+ handler
+├── model           record 契约层 + *Entity 持久化层
+├── repository      MyBatis-Plus *Mapper
+└── event           领域事件
+```
+
+---
+
+## 3. 双路脊柱
+
+总原则（D1）：命中即确定性、零 LLM；未命中才叫 agent，且套笼子。
+
+### 3.1 命中路（deterministic hit-path）—— 全程领域包内，零 agent
+
+```
+webhook/REST → controller → service（自跑循环）
+  → engine（5 种 criterion，纯 Java pattern-matching）
+  → evidence（D8 SourceAdapter，只读取证）
+  → statemachine（Diagnosis 聚合 + 状态推进）
+  → repository（自有表 + 事务 Outbox，Flyway）
+```
+
+这条路**不碰 `AgentService`、不碰 Workflow 引擎、不碰 `agentInvoker`**，一次 LLM 都不调。
+
+### 3.2 未命中路（miss-path）—— 调 MateClaw 数字员工，套笼子
+
+交接接缝（已坐实）：`vip.mate.agent.AgentService` 暴露进程内可编程入口
+`String chat(Long agentId, String message, String conversationId)`。
+
+领域 service 在 `completeness==SYMPTOM / 无 error_code / 无 SOP` 时，同进程直接调 `AgentService.chat()`（**ReAct**，探索型分诊：看一眼证据再决定下一步查什么；不用 `execute()` 的预先规划），叫起一个**专用排障数字员工**做受控分诊。
+
+笼子（均有源码支撑）：
+
+| 笼子 | 源码机制 | 落地 |
+|---|---|---|
+| 只读工具白名单 | `agent/binding/model/AgentToolBinding{agentId, toolName, enabled}` | 只绑只读取证工具，不绑任何写/shell/file 工具 |
+| 平台级兜底拦截 | `tool/guard`（ToolGuard，RBAC+approval） | 对 shell/file/写类工具配 **BLOCK**；绝不给排障 agent 用 NEEDS_APPROVAL |
+| 低置信 + 转人工 | 领域 service 置信度校准 | agent 产出只作「建议 + 证据引用」，回落领域状态机，仍需人工确认 |
+
+对比 Python MVP：MVP 的 `_fallback` 是纯 abstain 占位（缺口 G1）；到 MateClaw 未命中路终于有真身——一个工具绑定被锁死为只读的数字员工。**能力补上，红线不松。**
+
+---
+
+## 4. 六层架构 → MateClaw 映射
+
+| 层 | 职责 | 承载物 | 状态 |
+|---|---|---|---|
+| ① 接入 | 告警/工单/人工多入口汇聚 | 领域自有 controller（webhook+REST），自带幂等（5 分钟桶） | 自建；**不复用 `trigger`**（T1） |
+| ② 路由 | `(system,error_code)` 命中判定 | 领域 service 内查（domain 表 + `SopKeyCollisionError` fail-closed） | 纯领域逻辑 |
+| ③ 编排 | 命中=确定性 / 未命中=agent | 命中→领域 service；未命中→`AgentService.chat()` | §3 |
+| ④ 工具/取证 | 只读取证、多平台 | `evidence` 包 D8 adapter，同时 `@Tool` 包成 ToolCallback | §6 一份两调用方 |
+| ⑤ 交付 | IM 卡片 + 故障上下文 Web 台 | `channel`（飞书/企微 card kind）+ 领域 Web 台 | §5 双确认 |
+| ⑥ 反馈闭环 | 知识沉淀、经验固化 | 领域表（结构化权威）+ `wiki`（叙事）+ `memory/lifecycle` + `skill/lessons` | §8 |
+
+**① 为什么不寄生 Trigger（T1，已坐实）**：`TriggerEntity.targetType` 只有 `agent`/`workflow` 两种取值（均带 LLM），且 `TriggerDispatcher` 在 v0 只接了 Workflow（第 54 行 "target_type not supported in v0; skipping fire"）。Trigger **没有「分发到确定性领域 bean」这条路**，接入走 Trigger 会被拖回「每步 LLM」的 Workflow。可当库借用 `TriggerRateLimiter`/`TriggerEventEnvelope`/`BotSelfFilter`，但不走 `TriggerEventIngestService`→dispatcher。
+
+---
+
+## 5. 交付与人工确认（红线核心，安全命门）
+
+### 5.1 大前提（已坐实）
+
+MateClaw 的 `vip.mate.approval` 域 = ToolGuard 的 **approve-then-execute** 闸门：`ApprovalService.createPending` 存 `toolCallPayload`，`ResolveOutcome` 注释明写批准后要「reach the consumed payload (tool call JSON) for **replay**」——**批准 = 回放执行被扣住的工具**。平台里不存在「批准了但不执行」这种语义。
+
+### 5.2 四条红线
+
+| # | 红线 | 源码依据 | 落地 |
+|---|---|---|---|
+| R1 | 生产写工具一个都不注册 | ToolGuard NEEDS_APPROVAL → replay → 执行 | agent 只绑只读取证工具；写执行器根本不进工具注册表 |
+| R2 | 人工确认 ≠ ToolGuard 批准 | ToolGuard 批准会执行；我们要的确认只推进状态 | 确认走领域状态机 + 领域自有 Channel 卡片，回调打领域 REST，只推进状态/登记，执行 0 个工具（≡ Python MVP `/execute` 恒 409、`approve_action` 只记「系统未执行」） |
+| R3 | 写操作永远外部人工 + 结果登记 | —— | 写恢复 = `human_contact` 转派给有权限的人 → 人在 MateClaw 外执行 → 回来 `record-outcome` 登记处置 + 恢复验证；平台从不连生产写执行器 |
+| R4 | 未命中路 agent 锁死只读 | `AgentToolBinding` 白名单 + ToolGuard BLOCK | 见 §3 |
+
+**枢纽洞察**：平台的 `approval` 是「先授权、后执行工具」；排障的写要的是「永不自动执行、只把人叫来登记结果」。二者语义相反，**所以生产写绝不能挂进 ToolGuard/approval**——否则「人工确认」变成「人点一下就真执行」，红线当场破。确认必须停在领域状态机层，批准只让状态 `PENDING_APPROVAL → APPROVED_NOT_EXECUTED`，永不碰执行器。
+
+### 5.3 IM + Web 双确认（T2，已坐实）
+
+`FeishuCardDispatcher` 是通用路由分发器：卡片按 `FeishuCardKind{name, actionPrefix}` 注册，按钮点击带 `action.value.action`，按前缀匹配选 handler（前缀冲突注册时抛错）；`FeishuCardHandler` 可插拔；`registerKinds()` 注释 "Add lines here as new card kinds land"——ToolGuard 只是众多卡片种类之一。
+
+| 路径 | 承载 | 回调动作 |
+|---|---|---|
+| IM 确认 | 领域自有 `FeishuCardKind`（前缀 `ts.`）+ handler | 打领域 REST `/troubleshooting/.../{confirm,approve,record-outcome}`，只推进状态机 |
+| Web 确认 | 领域故障工作台 + 领域 REST | 同一批领域端点 |
+
+成本：卡片回调是逐 IM 平台机制（飞书 `FeishuCardDispatcher`，企微平行 `wecom/cards`）。建议 IM 确认先落一个平台，其余平台先只做通知、确认回落 Web 台。
+
+---
+
+## 6. 证据源开放适配（D8）
+
+原则不变：SOP 存平台无关意图 `EvidenceRequest`；`EvidenceSourceRouter` 按 `(system, signal_kind)` 选适配器；每平台一个 `EvidenceSourceAdapter` 负责「造查询→执行→归一到 canonical `observed`」；anomaly_criteria 规则引擎跑在归一后字段上，跨平台零改。
+
+**一份 adapter，两个调用方（已坐实）**：
+
+```
+        EvidenceSourceAdapter (Spring @Component bean)
+        guance / zabbix / prometheus / loki / recorded / fixture
+         │                                    │
+   命中路：领域 service 直接 Java 调用       未命中路：@Tool 暴露为 ToolCallback
+   adapter.collect(request, incident)        collect_evidence(signal_kind, service, ...)
+   经 Router，零 LLM                         Spring AI 自动包成 ToolCallback
+                                             → AgentToolBinding 绑给 agent
+                                             → ToolGuard ALLOW 只读
+```
+
+源码依据：内建工具（`tool/builtin/*`）就是 `@Component` + `@Tool`/`@ToolParam` 方法，Spring AI 收集成 ToolCallback（见 `BrowserUseTool`）。领域取证方法加一个 `@Tool` 注解即自动成为 agent 可用只读工具，无需另写一套。
+
+好处：① 零重复取证代码；② 写类方法不加 `@Tool`、天然不进工具表（呼应 R1）；③ D8「每平台各自毕业」照旧（`verification_status` 按 per-platform per-binding 记）。加 Zabbix = 加一个 bean + 一份 binding yaml，不动任何 SOP、不动 anomaly_criteria、不动这两个调用方。
+
+---
+
+## 7. 契约与规则引擎 → Java
+
+MateClaw 惯例（已坐实）：持久化 = **MyBatis-Plus**（`*Entity` + `@TableId(ASSIGN_ID)` + 逻辑删除 `Integer deleted` + `*Mapper`）；**Flyway 多方言** `db/migration/{mysql,h2,kingbase}/V{n}__desc.sql`（现有 480 个）；**record + sealed interface** 是既用惯例（`StepMode`）。
+
+| Python MVP 物件 | Java 落法 |
+|---|---|
+| `IncidentContext`/`SopEntry`/`Diagnosis`/`EvidenceRequest`/`EvidenceResult`/`TransferContextSnapshot` | Java `record`（不可变契约层） |
+| 类型化规则引擎（`numeric_gte`/`missing_or_lte`/`ratio_of_sum_gt`/`multiple_gt`/`contains_and_in`） | `sealed interface Criterion permits …` + Java 21 pattern-matching `switch` |
+| SQLite 聚合 + 事务 Outbox | MyBatis-Plus `*Entity` + `*Mapper` + outbox 表 + poller |
+| 状态机（拒绝跳步） | 领域 `service`（不进 workflow 引擎，见 §1） |
+
+**分层纪律**：契约层用 record（给规则引擎和测试，可脱库单测），持久化层用 `*Entity`，中间加映射；规则引擎只吃 record，绝不直接读 Entity。这是 Python MVP 38 个测试可测性的来源，翻 Java 要守住。
+
+成本：① 新增表要在 `mysql/h2/kingbase` 三个方言目录各写一份 `V481+__troubleshooting_*.sql`；② 保留 `Diagnosis.contract_version` 作跨版本兼容闸门（D2）。
+
+---
+
+## 8. 两层知识（D1 边界 + D2 生命周期）
+
+查证：`kbopen` 是 KB 开放 API（无 candidate→approved 审核队列语义）；`wiki` 只有 `knowledgeLayer`/`metadataValidationStatus`/stale 标记，且其结构化抽取是 **LLM 管道 + 轻量必填检查**。**MateClaw 没有现成的「确定性 SOP 审核生命周期」可复用**。
+
+| 知识层 | 内容 | 落点 | 权威性/生命周期 |
+|---|---|---|---|
+| 确定性层 | 路由键、anomaly_criteria、actions、owner 归属 | **领域表** | **唯一决策权威**；D2 `candidate→approved→deprecated` 领域自建 |
+| 知识面层 | 方法论、恢复叙事、根因、runbook | **Wiki**（可挂结构化 metadata 供检索） | 供人 + 未命中路 agent 消费；**永不做命中路权威** |
+
+**D2 必须领域自建的推论**：SOP 规则是命中路零-LLM 判定的权威；若审核生命周期托给 LLM 填充的 wiki，等于让 LLM 管道决定「哪条恢复规则可用」，破 D1。所以状态、审核队列、专家评审入口都必须和规则本体一起待在领域表。这套 Python MVP 已建好（`KnowledgeCandidate` + status + 事务 Outbox + 只进审核队列不覆盖 SOP），直译即可。
+
+**与 Wiki 的接缝**：SOP 由 `candidate` 升 `approved` 时，可顺带派生一篇 Wiki 恢复叙事（`sourceEntries` 指回 SOP id）——**单向派生（领域表→Wiki），Wiki 永不回写决策权威**。
+
+---
+
+## 9. 身份与鉴权（复用 MateClaw，解决 G3）
+
+源码事实：`config/JwtAuthFilter.java`（每请求 JWT，可信 principal）；`auth/pat/*`（PAT，供 webhook/程序化鉴权）；`auth/sso/*`（SSO 现成）；`workspace/core/security/Capability.java`（能力常量）；`workspace/core/security/RoleCapabilities.java`（权威 role→capability，`viewer/member/admin/owner`）。
+
+Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopback 兜底）；接进 MateClaw，领域 controller 坐在 `JwtAuthFilter` 后即得可信 principal + workspace + role，**G3 消失**。
+
+新增排障域 capability（挂进 `RoleCapabilities`）：
+
+| capability | 授予角色 | 门控 |
+|---|---|---|
+| `view:troubleshooting` | viewer+ | 看工作台、证据、诊断 |
+| `operate:troubleshooting` | member+ | 确认诊断、结构化转派、推进状态机的「批准」（R2：只推进不执行） |
+| `manage:troubleshooting` | admin+ | 编辑 SOP、审核知识候选 `candidate→approved`（D6：专家才可评审） |
+
+接缝：① webhook 接入用 PAT 鉴权（堵伪造告警灌入）；② R2 的「批准」按 `operate:troubleshooting` 门控，SOP 审核按 `manage:troubleshooting`——把 D6「专家才可评审」落到 RBAC 而非约定。
+
+---
+
+## 10. 放权阶梯（D5，写永远人工）
+
+阶梯：S0 影子（跑但不发）→ S1 建议（发只读卡片）→ S2 只读自动取证（ToolGuard ALLOW 只读）→ S3 半自动（更细 RBAC/ToolGuard）。每格逐系统毕业。
+
+| 格 | 行为 | 承载机制（已坐实） |
+|---|---|---|
+| S0 影子 | 命中路照跑、诊断照生成，不发卡片/不转派 | 状态机 + 交付层开关关闭；结果入库供回归比对 |
+| S1 建议 | 发只读诊断卡片给人 | 领域 `FeishuCardKind`（`ts.`）通知卡，无写按钮 |
+| S2 只读自动取证 | agent 自主跑只读取证 | `AgentToolBinding` 只绑 `collect_*` + ToolGuard ALLOW 只读 |
+| S3 半自动 | 更细分诊自主度，写永远人工 | capability 细分 + ToolGuard 逐工具策略 |
+
+**门闸（已坐实）**：`system/featureflag`（`FeatureFlagService.isEnabled`，**fail-closed**：未知 flag→false；支持 whitelist + 百分比灰度）。精确分工：
+
+- **逐系统档位**（CSDP 在 S2、系统 X 在 S0）= 领域自有 per-system 配置表（列 `delegation_stage`）——业务状态，不塞进通用 flag whitelist（其键是 kbId/userId，非「系统」）。
+- **FeatureFlag 当全局总闸/kill-switch**（`ts.auto_evidence.enabled`、`ts.agent_dispatch.enabled`）：fail-closed，出事一键全域降级；灰度拨盘可先对 5% 流量放 S2。
+
+**数据驱动毕业**：S0 影子跑出的诊断入库即历史回归集数据源，比对「系统若自动处置 vs 人工实际处置」一致率，达标才把 `delegation_stage` 往上推一格。
+
+---
+
+## 11. 决策与待坐实点核对结论
+
+**D1–D8 全部兑现**：D1 命中路零 LLM 领域引擎（§1/§3）· D2 领域自建审核生命周期（§8）· D3 领域 Web 台 + IM/Web 双确认（§5）· D4 领域 service 自跑 + adapter 兼 ToolCallback（§2/§6）· D5 FeatureFlag×档位 + 影子回归（§10）· D6 capability 门控评审（§9）· D7 同 JAR 内领域包、逻辑不寄生 Workflow（§2）· D8 一份 adapter 两调用方 + Router + 归一（§6）。
+
+**T1–T4 全部坐实**：T1 Trigger 无确定性分发路→接入自建 · T2 `FeishuCardDispatcher` 可插拔→注册 `ts.` card kind · T3 Wiki 结构化是 LLM 管道→只做知识面 · T4 单模块内新增 `vip.mate.troubleshooting` 兄弟包。
+
+---
+
+## 12. 核对证据（源码位置索引）
+
+| 结论 | 源码位置 |
+|---|---|
+| Workflow 每步调 LLM | `workflow/runtime/{SequentialStepAdapter,AgentStepExecutor}.java`、`workflow/compiler/ir/StepMode.java`、`workflow/runtime/mode/AwaitApprovalStepAdapter.java` |
+| agent 可编程入口 | `agent/AgentService.java`（`chat`/`execute`） |
+| agent 工具白名单 | `agent/binding/model/AgentToolBinding.java` |
+| ToolGuard 批准即执行 | `approval/ApprovalService.java`、`approval/ResolveOutcome.java`、`approval/model/ToolApprovalEntity.java` |
+| Trigger 只分发 workflow/agent | `trigger/model/TriggerEntity.java`、`trigger/dispatch/TriggerDispatcher.java` |
+| 卡片可插拔分发 | `channel/feishu/cards/{FeishuCardDispatcher,FeishuCardHandler,FeishuCardKind}.java` |
+| Wiki 结构化是 LLM 管道 | `wiki/model/{WikiPageEntity,WikiPageTypeProfileEntity}.java`、`wiki/model/WikiTransformationEntity.java` |
+| 内建工具 = @Component+@Tool | `tool/builtin/BrowserUseTool.java` |
+| 身份/RBAC | `config/JwtAuthFilter.java`、`auth/{pat,sso}/*`、`workspace/core/security/{Capability,RoleCapabilities}.java` |
+| 放权门闸 | `system/featureflag/{FeatureFlagService,FeatureFlagEntity,FlagContext}.java` |
+| 持久化惯例 | `pom.xml`（mybatis-plus/flyway）、`db/migration/{mysql,h2,kingbase}/` |
+
+---
+
+## 13. 整体实施清单
+
+> 阶段划分遵循「先夯确定性命中路与安全边界，再接未命中路与放权」。每项标注依赖的决策/红线。
+
+### P0 · 领域骨架与契约（无外部依赖，可先跑通端到端合同）
+
+- [ ] 新增 `vip.mate.troubleshooting` 包骨架（controller/service/engine/statemachine/evidence/knowledge/card/model/repository/event）。
+- [ ] 契约层 record：`IncidentContext`/`SopEntry`/`Diagnosis`/`EvidenceRequest`/`EvidenceResult`/`TransferContextSnapshot`（含 `contract_version`）。
+- [ ] 规则引擎：`sealed interface Criterion` + 5 实现 + Java 21 pattern-match 求值；**脱库单测**（对齐 Python MVP 38 测试）。
+- [ ] 状态机领域 service：拒绝跳步（诊断确认→审批→外部结果→恢复验证）；`/execute` 恒 409。
+- [ ] 持久化：`*Entity` + `*Mapper` + `V481+__troubleshooting_*.sql`（mysql/h2/kingbase 三份）；知识发布 outbox 表 + poller。
+- [ ] 幂等：`(system, error_code, service, 5 分钟桶)`，rehearsal 排除，无 error_code 不去重。
+
+### P1 · 接入与身份（打通安全入口）
+
+- [ ] 接入 controller：webhook + REST，自有幂等；**不走 Trigger**（可借用 `TriggerRateLimiter`/`BotSelfFilter` 作库）。
+- [ ] webhook 用 `auth/pat` 发受限 PAT 鉴权，堵伪造告警。
+- [ ] 新增 3 个 capability（`view/operate/manage:troubleshooting`）挂进 `RoleCapabilities`；领域端点逐个门控。
+
+### P2 · 交付与人工确认（红线落地）
+
+- [ ] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`）。
+- [ ] 注册领域 `FeishuCardKind`（前缀 `ts.`）+ `FeishuCardHandler`，按钮回调只打领域端点、推进状态机（**验证：执行 0 个工具**）。
+- [ ] R1/R2/R3 回归测试：写动作恒 `PENDING→APPROVED_NOT_EXECUTED`、`record-outcome` 登记外部处置、生产写执行器不在工具表。
+
+### P3 · 证据源开放适配（D8）
+
+- [ ] `EvidenceSourceAdapter` 接口 + `EvidenceSourceRouter`（按 system+signal 选源，fail-closed 降级）。
+- [ ] 归一词汇表（先只定 903001 用到的 `log_count`/`metric`/`trace`）+ 绑定注册表（yaml/configJson）。
+- [ ] `GuanceAdapter`（首实现）；同一 adapter 方法加 `@Tool` 暴露为只读 ToolCallback。
+- [ ] `RecordedReplayAdapter` + 903001 录制样本 + 回归打分骨架。
+- [ ] `/readyz`、capabilities 汇总各源 `health` + per-binding `verification_status`。
+
+### P4 · 未命中路数字员工（补 G1）
+
+- [ ] 建专用排障 agent；`AgentToolBinding` 只绑 `collect_*` 只读工具。
+- [ ] ToolGuard 对 shell/file/写类配 **BLOCK**。
+- [ ] 领域 service 在未命中时调 `AgentService.chat()`（ReAct）；产出回落状态机 + 强制证据引用 + 低置信 abstain。
+
+### P5 · 放权阶梯与知识运营（D5/D6）
+
+- [ ] per-system 配置表（`delegation_stage`）+ FeatureFlag 全局闸（`ts.auto_evidence.enabled`/`ts.agent_dispatch.enabled`，fail-closed）。
+- [ ] S0 影子：跑但不发，结果入库 → 历史回归集。
+- [ ] 回归比对「自动 vs 人工」一致率，达标才升档。
+- [ ] 知识候选审核队列 + `manage:troubleshooting` 门控；`approved` 时单向派生 Wiki 叙事。
+
+### 阻塞项（数据侧，与代码并行）
+
+- [ ] 清 L0 数据 blocker：3 个路由键一码多义冲突（101014/101034/101040）+ 103 处疑似字符丢失（回源表恢复）。
+- [ ] 内网核实 903001 的 `evidence_dql`/`anomaly_criteria`（观测云 `*.prd.sangfor.com` 需内网联调）。
+
+### 全程红线（每个 PR 自检）
+
+1. 生产写工具永不注册；未命中路 agent 只绑只读。
+2. 人工确认只推进状态机、执行 0 个工具（≠ ToolGuard 批准）。
+3. 写操作永远外部人工 + 结果登记；平台不连生产写执行器。
+4. 命中路零 LLM；规则引擎只吃 record、可脱库单测。
