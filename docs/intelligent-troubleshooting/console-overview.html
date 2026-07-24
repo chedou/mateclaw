@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能排障 · 值班总览（处置阶段看板）</title>
+<style>
+  :root{
+    --primary:#409EFF;--primary-d:#337ecc;--success:#67C23A;--warning:#E6A23C;
+    --danger:#F56C6C;--danger-d:#c45656;--info:#909399;
+    --t1:#303133;--t2:#606266;--t3:#909399;--t4:#A8ABB2;
+    --bd:#DCDFE6;--bd-l:#EBEEF5;--bg:#F5F7FA;--bg2:#FAFAFA;--white:#fff;
+    --radius:6px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--t1);background:var(--bg);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .app{display:flex;height:100vh;overflow:hidden}
+  .nav{width:52px;background:#141a26;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:4px}
+  .nav .logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#409EFF,#67C23A);display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;margin-bottom:6px}
+  .nav a{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#8890a0;text-decoration:none;font-size:15px}
+  .nav a.active{background:#1c2432;color:#fff}
+
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{height:52px;background:var(--white);border-bottom:1px solid var(--bd-l);display:flex;align-items:center;padding:0 20px;gap:14px;flex-shrink:0}
+  .topbar h1{font-size:15px;font-weight:600}
+  .topbar .sub{font-size:11.5px;color:var(--t3)}
+  .filters{margin-left:auto;display:flex;gap:6px}
+  .filters .fg{display:flex;background:var(--bg);border-radius:6px;padding:2px}
+  .filters .fg span{font-size:11.5px;color:var(--t2);padding:4px 10px;border-radius:4px;cursor:pointer}
+  .filters .fg span.on{background:var(--white);color:var(--primary);font-weight:600;box-shadow:var(--shadow)}
+
+  /* summary strip */
+  .summary{display:flex;align-items:stretch;gap:10px;padding:12px 20px;background:var(--white);border-bottom:1px solid var(--bd-l);flex-shrink:0}
+  .stat{display:flex;flex-direction:column;justify-content:center;padding:4px 16px 4px 0;border-right:1px solid var(--bd-l)}
+  .stat .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+  .stat .l{font-size:11px;color:var(--t3);margin-top:3px}
+  .stat.you .n{color:var(--primary)}
+  .stat.p0 .n{color:var(--danger)}
+  .stat.firing .n{color:var(--danger)}
+  .stat.risk .n{color:var(--warning)}
+  .bottleneck{flex:1;display:flex;align-items:center;gap:10px;background:#fef6ec;border:1px solid #faecd8;border-radius:var(--radius);padding:8px 14px;margin-left:6px}
+  .bottleneck .bi{font-size:18px}
+  .bottleneck .bt{font-size:12.5px;color:#b8760f;font-weight:600}
+  .bottleneck .bd2{font-size:11px;color:#c99a4e;margin-top:1px}
+  .bottleneck .jump{margin-left:auto;font-size:11.5px;color:var(--primary);cursor:pointer;white-space:nowrap}
+
+  /* board */
+  .board{flex:1;display:flex;gap:12px;padding:14px 20px;overflow-x:auto;overflow-y:hidden}
+  .col{width:224px;flex-shrink:0;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--bd-l);border-radius:var(--radius);overflow:hidden}
+  .col.auto{opacity:.72}                     /* 系统自动列褪到背景 */
+  .col.human{border-color:#c6e2ff;background:#fbfdff}
+  .col.danger{border-color:#f5c6c6;background:#fffbfb}
+  .col.external{border-color:#f3d9b0}
+  .col.miss{border-color:#f3d9b0;background:#fffdf8}
+  .ch{padding:10px 12px;border-bottom:1px solid var(--bd-l);flex-shrink:0}
+  .ch .cr1{display:flex;align-items:center;gap:8px}
+  .ch .cname{font-weight:600;font-size:13px}
+  .ch .ccount{margin-left:auto;font-size:12px;font-weight:700;background:var(--white);border:1px solid var(--bd);border-radius:10px;min-width:22px;text-align:center;padding:0 6px}
+  .col.human .ccount{border-color:#a0cfff;color:var(--primary)}
+  .col.danger .ccount{border-color:#f0a0a0;color:var(--danger)}
+  .ch .resp{font-size:10.5px;margin-top:5px;display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:3px;font-weight:600}
+  .resp.sys{background:#f4f4f5;color:var(--info)}
+  .resp.you{background:#ecf5ff;color:var(--primary)}
+  .resp.danger{background:#fef0f0;color:var(--danger)}
+  .resp.ext{background:#fdf6ec;color:#b8760f}
+  .resp.fin{background:#f0f9eb;color:#5aaa2e}
+  .ch .pile{font-size:10.5px;color:var(--danger);margin-top:5px;font-weight:600;display:none}
+  .col.piled .ch .pile{display:block}
+
+  .clist{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+  .clist::-webkit-scrollbar{width:6px}.clist::-webkit-scrollbar-thumb{background:#dcdfe6;border-radius:3px}
+
+  /* card */
+  .cd{background:var(--white);border:1px solid var(--bd-l);border-radius:5px;padding:9px 10px;cursor:pointer;box-shadow:var(--shadow);border-left:3px solid var(--bd)}
+  .cd:hover{border-color:#c6e2ff}
+  .cd.p0{border-left-color:var(--danger)}
+  .cd.p1{border-left-color:var(--warning)}
+  .cd .c1{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .cd .prio{font-size:9px;font-weight:700;padding:0 4px;border-radius:2px;letter-spacing:.2px}
+  .cd .prio.p0{background:#fef0f0;color:var(--danger)}
+  .cd .prio.p1{background:#fdf6ec;color:var(--warning)}
+  .cd .code{font-family:ui-monospace,monospace;font-size:11.5px;font-weight:600}
+  .cd .live{margin-left:auto;width:7px;height:7px;border-radius:50%}
+  .cd .live.firing{background:var(--danger);box-shadow:0 0 0 0 rgba(245,108,108,.5);animation:pl 1.6s infinite}
+  .cd .live.recover{background:var(--warning)}
+  .cd .live.resolved{background:var(--success)}
+  @keyframes pl{0%{box-shadow:0 0 0 0 rgba(245,108,108,.5)}70%{box-shadow:0 0 0 5px rgba(245,108,108,0)}100%{box-shadow:0 0 0 0 rgba(245,108,108,0)}}
+  .cd .desc{font-size:11.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+  .cd .c3{display:flex;align-items:center;gap:6px;font-size:10.5px}
+  .rchip{display:inline-flex;align-items:center;gap:3px;font-weight:600;padding:0 5px;border-radius:3px;font-size:10px}
+  .rchip .sh{width:7px;height:7px;flex-shrink:0}
+  .rchip.det{background:#f0f9eb;color:#5aaa2e}.rchip.det .sh{background:#67C23A;border-radius:50%}
+  .rchip.llm{background:#fdf6ec;color:#b88230}.rchip.llm .sh{background:#E6A23C;transform:rotate(45deg)}
+  .cd .instage{margin-left:auto;color:var(--t3);font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:3px}
+  .cd .instage.aging{color:var(--warning);font-weight:600}
+  .cd .instage.stuck{color:var(--danger);font-weight:700}
+  .cd .c4{display:flex;align-items:center;gap:8px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--bd-l);font-size:10.5px;color:var(--t3)}
+  .cd .imp{display:inline-flex;align-items:center;gap:3px}
+  .cd .imp.up{color:var(--danger);font-weight:600}
+  .cd .sla{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums}
+  .cd .sla.warn{color:var(--warning);font-weight:600}.cd .sla.crit{color:var(--danger);font-weight:700}
+  .cd .who{color:var(--primary);font-size:10px}
+
+  .flowhint{position:absolute;font-size:16px;color:var(--t4)}
+  .legend{padding:8px 20px;background:var(--white);border-top:1px solid var(--bd-l);display:flex;gap:18px;align-items:center;font-size:11px;color:var(--t3);flex-shrink:0}
+  .legend b{color:var(--t2)}
+  .legend .li{display:flex;align-items:center;gap:5px}
+  .lg-sh{width:9px;height:9px}
+  .lg-sh.det{background:#67C23A;border-radius:50%}.lg-sh.llm{background:#E6A23C;transform:rotate(45deg)}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="nav"><div class="logo">太</div><a>▦</a><a>◈</a><a class="active">🩺</a><a>▧</a></nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div><h1>值班总览 · 处置阶段看板</h1><div class="sub">所有活跃故障按状态机阶段铺开 · 看流动与积压</div></div>
+      <div class="filters">
+        <div class="fg"><span class="on">全部系统</span><span>CSDP</span><span>渠道</span><span>主数据</span></div>
+        <div class="fg"><span class="on">全部</span><span>P0</span><span>命中</span><span>未命中</span></div>
+      </div>
+    </div>
+
+    <div class="summary" id="summary"></div>
+    <div class="board" id="board"></div>
+
+    <div class="legend">
+      <span><b>阅读方式：</b>系统自动的列（接入·取证）已褪到背景，你的注意力应落在高亮的「等人」列</span>
+      <span class="li"><span class="lg-sh det"></span>命中·确定性</span>
+      <span class="li"><span class="lg-sh llm"></span>未命中·agent</span>
+      <span class="li">⏱ 在此阶段停留时长 → 越久越该看</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* columns: responsibility drives attention.
+   auto = 系统自动(褪背景); human = 等你; danger = 等你·危险闸门; external = 等外部; fin = 收尾; miss = 未命中调查 */
+const COLS=[
+  {k:"intake",name:"接入·取证",resp:"sys",respT:"系统自动·秒级",cls:"auto"},
+  {k:"confirm",name:"诊断确认",resp:"you",respT:"等你 · operate",cls:"human"},
+  {k:"transfer",name:"结构化转派",resp:"you",respT:"进行中",cls:""},
+  {k:"approve",name:"人工批准",resp:"danger",respT:"等你 · 危险闸门",cls:"danger"},
+  {k:"external",name:"外部处置",resp:"ext",respT:"等外部处置·最久",cls:"external"},
+  {k:"close",name:"关闭归档",resp:"fin",respT:"收尾",cls:"fin"},
+  {k:"miss",name:"未命中 · 调查",resp:"ext",respT:"agent / 待一线",cls:"miss"},
+];
+
+/* incidents. instage = 在本阶段停留秒；sla = 剩余秒 */
+const INC=[
+  // intake·evidence (system, fast, few)
+  {id:"CSDP-880021",sys:"CSDP",desc:"支付回执缺失",prio:"p1",route:"det",live:"firing",stage:"intake",instage:22,imp:"4 工单",impUp:0,sla:2900},
+  {id:"CSDP-903044",sys:"CSDP",desc:"订单状态不同步",prio:"p1",route:"det",live:"firing",stage:"intake",instage:8,imp:"7 工单",impUp:1,sla:3400},
+  // confirm (等你)
+  {id:"CSDP-901002",sys:"CSDP",desc:"微信模板消息发送失败",prio:"p1",route:"det",live:"firing",stage:"confirm",instage:95,imp:"11 工单",impUp:1,sla:2600},
+  {id:"CSDP-2000001",sys:"渠道",desc:"渠道回调签名校验失败",prio:"p1",route:"det",live:"recover",stage:"confirm",instage:40,imp:"3 工单",impUp:0,sla:3900},
+  {id:"CSDP-770330",sys:"CSDP",desc:"导出任务堆积",prio:"p1",route:"det",live:"firing",stage:"confirm",instage:210,imp:"5 工单",impUp:0,sla:1500,aging:1},
+  // transfer (进行中)
+  {id:"CSDP-660015",sys:"主数据",desc:"组织架构同步延迟",prio:"p1",route:"det",live:"firing",stage:"transfer",instage:60,imp:"8 工单",impUp:0,sla:2200,who:"→ 平台组·刘"},
+  {id:"CSDP-903044b",sys:"CSDP",desc:"库存扣减重复",prio:"p1",route:"det",live:"recover",stage:"transfer",instage:130,imp:"6 工单",impUp:0,sla:2800,who:"→ 交易组·陈"},
+  // approve (等你·危险) — BOTTLENECK
+  {id:"CSDP-903001",sys:"CSDP",desc:"Mongo 连接池打满",prio:"p0",route:"det",live:"firing",stage:"approve",instage:190,imp:"148 工单",impUp:1,sla:1278,aging:1,who:"待 DBA·张 签收"},
+  {id:"CSDP-801008",sys:"主数据",desc:"主数据同步中断·批量超时",prio:"p0",route:"det",live:"firing",stage:"approve",instage:1330,imp:"32 工单",impUp:1,sla:277,stuck:1,who:"待 DBA·王 签收"},
+  {id:"CSDP-455120",sys:"CSDP",desc:"缓存击穿·热点 key",prio:"p1",route:"det",live:"firing",stage:"approve",instage:520,imp:"14 工单",impUp:0,sla:1600,aging:1},
+  {id:"CSDP-333090",sys:"渠道",desc:"限流阈值误触发",prio:"p1",route:"det",live:"recover",stage:"approve",instage:310,imp:"9 工单",impUp:0,sla:2100,aging:1},
+  // external (等外部·最久)
+  {id:"CSDP-712004",sys:"CSDP",desc:"证书过期·外部续期中",prio:"p0",route:"det",live:"firing",stage:"external",instage:2470,imp:"40 工单",impUp:0,sla:900,stuck:1,who:"运维·周 处置中 41min"},
+  {id:"CSDP-208871",sys:"主数据",desc:"磁盘水位告警",prio:"p1",route:"det",live:"recover",stage:"external",instage:1600,imp:"—",impUp:0,sla:3000,who:"运维·孙 处置中"},
+  {id:"CSDP-119023",sys:"CSDP",desc:"MQ 消费积压",prio:"p1",route:"det",live:"recover",stage:"external",instage:900,imp:"12 工单",impUp:0,sla:2400,who:"中间件组 处置中"},
+  // close (收尾)
+  {id:"CSDP-550012",sys:"渠道",desc:"回调地址配置漂移",prio:"p1",route:"det",live:"resolved",stage:"close",instage:120,imp:"已恢复",impUp:0,sla:5200},
+  {id:"CSDP-441200",sys:"CSDP",desc:"登录态失效·瞬态",prio:"p1",route:"det",live:"resolved",stage:"close",instage:60,imp:"已恢复",impUp:0,sla:5600},
+  // miss (未命中·调查)
+  {id:"CSDP-777012",sys:"CSDP",desc:"工单列表偶发很慢（无报错码）",prio:"p1",route:"llm",live:"firing",stage:"miss",instage:70,imp:"6 工单",impUp:1,sla:3500,who:"agent 已弃权·待一线"},
+  {id:"CSDP-778440",sys:"CSDP",desc:"导入偶发失败·现象不清",prio:"p1",route:"llm",live:"firing",stage:"miss",instage:260,imp:"零星",impUp:0,sla:3100,who:"agent 探索中"},
+];
+
+function fmt(s){s=Math.max(0,Math.round(s));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+function liveLabel(l){return l==='firing'?'进行中':l==='recover'?'恢复中':'已解决';}
+
+function renderSummary(){
+  const active=INC.length;
+  const you=INC.filter(i=>['confirm','approve'].includes(i.stage)).length;
+  const p0=INC.filter(i=>i.prio==='p0').length;
+  const firing=INC.filter(i=>i.live==='firing').length;
+  const risk=INC.filter(i=>i.sla<600).length;
+  document.getElementById('summary').innerHTML=`
+    <div class="stat"><div class="n">${active}</div><div class="l">活跃故障</div></div>
+    <div class="stat you"><div class="n">${you}</div><div class="l">等你处理</div></div>
+    <div class="stat p0"><div class="n">${p0}</div><div class="l">P0</div></div>
+    <div class="stat firing"><div class="n">${firing}</div><div class="l">进行中</div></div>
+    <div class="stat risk"><div class="n">${risk}</div><div class="l">SLA 临界</div></div>
+    <div class="bottleneck">
+      <span class="bi">⚠️</span>
+      <div><div class="bt">瓶颈在「人工批准」：积压 4 单，最久 22:10</div>
+      <div class="bd2">另有 1 单在「外部处置」已 41min 未回结果（712004·证书续期）· SLA 剩 04:37 临界</div></div>
+      <span class="jump">跳到批准列 →</span>
+    </div>`;
+}
+
+function card(i){
+  const inCls=i.stuck?'stuck':(i.aging?'aging':'');
+  const slaCls=i.sla<300?'crit':(i.sla<600?'warn':'');
+  return `<div class="cd ${i.prio}" onclick="alert('打开处置页：${i.id}（下钻到单故障处置面 v3）')">
+    <div class="c1"><span class="prio ${i.prio}">${i.prio.toUpperCase()}</span>
+      <span class="code">${i.id}</span>
+      <span class="live ${i.live}" title="${liveLabel(i.live)}"></span></div>
+    <div class="desc">${i.desc}</div>
+    <div class="c3">
+      <span class="rchip ${i.route}"><span class="sh"></span>${i.route==='det'?'命中':'未命中'}</span>
+      <span class="instage ${inCls}">⏱ ${fmt(i.instage)}${i.stuck?' 滞留':''}</span>
+    </div>
+    <div class="c4">
+      <span class="imp ${i.impUp?'up':''}">${i.impUp?'▲':'▦'} ${i.imp}</span>
+      <span class="sla ${slaCls}">SLA ${fmt(i.sla)}</span>
+    </div>
+    ${i.who?`<div class="c4" style="border:none;padding-top:3px;margin-top:2px"><span class="who">${i.who}</span></div>`:''}
+  </div>`;
+}
+
+function renderBoard(){
+  const board=document.getElementById('board');
+  board.innerHTML=COLS.map(c=>{
+    const items=INC.filter(i=>i.stage===c.k);
+    const piled=(c.k==='approve'&&items.length>=4);
+    const oldest=items.reduce((m,i)=>Math.max(m,i.instage),0);
+    return `<div class="col ${c.cls} ${piled?'piled':''}">
+      <div class="ch">
+        <div class="cr1"><span class="cname">${c.name}</span><span class="ccount">${items.length}</span></div>
+        <span class="resp ${c.resp}">${c.respT}</span>
+        <div class="pile">积压 · 最久停留 ${fmt(oldest)}</div>
+      </div>
+      <div class="clist">${items.map(card).join('')||'<div style="text-align:center;color:var(--t4);font-size:11px;padding:16px 0">—</div>'}</div>
+    </div>`;
+  }).join('');
+}
+
+renderSummary();renderBoard();
+</script>
+</body>
+</html>

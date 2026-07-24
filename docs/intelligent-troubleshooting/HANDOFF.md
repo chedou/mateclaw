@@ -82,13 +82,43 @@
 **后续梯队**：P3 D8 适配器（Guance 首个 + RecordedReplay 回归）→ P4 未命中 ReAct agent（只读笼，补旧 G1）
 → P5 放权阶梯 + 知识运营（覆盖率/可自动化率纳入考核）。
 
+## 5.5 前端/页面设计（本轮已收敛方向 · 尚是 HTML 原型，未落 Vue）
+
+**产物入口**：`docs/intelligent-troubleshooting/index.html`（设计门户，汇报用；串起下列所有原型 + 设计主线叙事）。
+
+**产品定位锁定（关键，别再跑偏）**：这套系统的页面**主角是「帮开发从现象快速定位到根因」**——不是运维审批流转台。用户明确纠正过两次：
+1. "阶段"指的是**单次事件从症状到根因的定位过程**，不是处置流程（接入/批准/关闭）的人工流转；
+2. 详情页要能看到这条**根因定位链**，服务于开发快速定位。
+
+**设计主线（四次迭代收敛，index.html 有可视化）**：
+- v1 `console-disposition.html`——信息陈列（三栏工作台）；
+- v2 `console-disposition-v2.html`——决策中心（Diagnosis 提为常驻主角、流程降为进度带、置信阈值参照、批准前强制复核）；
+- v3 `console-disposition-v3.html`——注意力自适应（按 不确定性×影响 三种姿态：高影响确认/自动驾驶/调查工作台；补影响面、活体状态、拆解式置信、异议一等公民）；
+- **现行 `console-rca.html`——根因定位视图**（答案先行 + 收敛漏斗「全平台→系统→服务→依赖→根因」+ 五阶段定位链 现象/范围定位/取证/判定推理/根因，证据与 DQL 可展开重放；命中路 2 秒定位，未命中路 agent 探索到半路弃权、把开发放到"跑起来的起点"）。
+
+**另一现行屏**：`console-overview.html`——值班总览看板（所有故障按处置阶段铺开、系统自动列褪背景/等人列高亮、卡片显示阶段滞留时长、主动喊瓶颈；点卡片下钻到定位视图）。
+
+**视觉基线（已定，后续 Vue 实现照此）**：冷调中性 + 单一信号蓝 `#2f5cf5`；语义色只在有意义处（红=现象/绿=根因/琥珀=弃权）；**字体双角色有含义**——机器吐出的数据（错误码/指标/DQL/时间戳/置信度）用等宽，人读叙述用无衬线；统一描边 SVG 图标（不用 emoji）；避开"左侧色条+圆角卡"套路；支持浅/深双主题。
+
+**页面上必须守的红线（对齐 §3）**：无"执行"按钮；批准=推进状态机、不执行；写恢复动作显示为"转派+外部登记结果"；agent 步骤标只读；结论强制挂证据引用。
+
+**下一步（UI 线，与后端 P0 并行、非阻塞）**：
+- [ ] 现行两屏（`console-rca` 根因定位 + `console-overview` 总览）经用户/一线值班验证信息架构后，落成 **Vue 3 + Element Plus** 组件，进 `mateclaw-ui/src/views/Troubleshooting/`，路由 `meta.requiredCapability='view:troubleshooting'`（对齐 §9 capability）。
+- [ ] 定位链的**阶段划分**（现象/范围定位/取证/判定/根因）需与一线实际排障心智核对，可能微调。
+- [ ] 证据的"▷重放 DQL"要接 D8 真实适配器（P3）后才有真数据；当前是 fixture 演示。
+- [ ] 原型里的"影响面/活体状态/在场签收"等维度是否全部进 MVP，按放权阶段裁剪。
+
 ## 6. 指针与安全口径
 
 - **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
   每条结论有源码位置索引）。
-- **本目录其余文件是 MetaClaw 时期的历史资产**（蓝图 v0.3 HTML、走读复核 architecture-review.md
-  含 G1–G7 缺口表、D7/D8 设计稿、三个原型 HTML）：架构结论已被 RFC 吸收/取代；**`l0/` 数据资产仍现行
-  有效**（sop_kb.json 146 码已脱敏、inventory/quality 报告、清洗闸门脚本、903001 取证草案）。
+- **前端设计门户**：`docs/intelligent-troubleshooting/index.html`（汇报入口，串起现行原型 + 演进；详见 §5.5）。
+  现行原型 `console-rca.html`（主推·根因定位）、`console-overview.html`（总览看板）；
+  迭代过程 `console-disposition{,-v2,-v3}.html`。
+- **MetaClaw 时期历史资产**（架构结论已被 RFC 吸收/取代）：蓝图 v0.3 `architecture-blueprint.html`、
+  走读复核 `architecture-review.md`（含 G1–G7 缺口表）、D7/D8 设计稿、旧原型
+  `console-prototype{,-b}.html` / `console-workbench.html`、`executive-summary.html`。
+  **`l0/` 数据资产仍现行有效**（sop_kb.json 146 码已脱敏、inventory/quality 报告、清洗闸门脚本、903001 取证草案）。
 - **Python MVP 参考实现**（规则引擎/状态机/Outbox/38 测试的同构翻译源）：在 **webonne/MetaClaw** 仓库
   `zhinengpaizhang-dev` 分支的 `metaclaw_troubleshooting/` + `tests/`。本地克隆已剔除，远端仍在、只读参考。
 - **安全**：源表《故障与措施》xlsx **含真实 Bearer/JWT token、内网 IP、人名，从未入库**（在用户本地）。

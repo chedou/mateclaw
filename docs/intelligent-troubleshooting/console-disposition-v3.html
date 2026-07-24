@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能排障 · 处置面原型 v3（注意力自适应）</title>
+<style>
+  :root{
+    --primary:#409EFF;--primary-d:#337ecc;--success:#67C23A;--warning:#E6A23C;
+    --danger:#F56C6C;--danger-d:#c45656;--info:#909399;
+    --t1:#303133;--t2:#606266;--t3:#909399;--t4:#A8ABB2;
+    --bd:#DCDFE6;--bd-l:#EBEEF5;--bg:#F5F7FA;--bg2:#FAFAFA;--white:#fff;
+    --radius:6px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--t1);background:var(--bg);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .app{display:flex;height:100vh;overflow:hidden}
+  .nav{width:52px;background:#141a26;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:4px}
+  .nav .logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#409EFF,#67C23A);display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;margin-bottom:6px}
+  .nav a{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#8890a0;text-decoration:none;font-size:15px}
+  .nav a.active{background:#1c2432;color:#fff}
+
+  /* QUEUE — sorted by attention score (uncertainty × impact) */
+  .queue{width:238px;background:var(--white);border-right:1px solid var(--bd-l);flex-shrink:0;display:flex;flex-direction:column;overflow:hidden}
+  .qh{padding:12px 14px;border-bottom:1px solid var(--bd-l)}
+  .qh .qt{display:flex;align-items:center;gap:8px}.qh b{font-size:14px}
+  .qh .sortby{font-size:10.5px;color:var(--t3);margin-top:4px}
+  .qh .sortby b{color:var(--primary);font-weight:600}
+  .qlist{flex:1;overflow-y:auto}
+  .qitem{padding:10px 12px 11px;border-bottom:1px solid var(--bd-l);cursor:pointer;border-left:3px solid transparent;position:relative}
+  .qitem:hover{background:var(--bg2)}
+  .qitem.active{background:#ecf5ff;border-left-color:var(--primary)}
+  .att{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .qitem .r1{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+  .qitem .code{font-family:ui-monospace,monospace;font-size:12px;font-weight:600}
+  .qitem .r2{font-size:11.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qitem .r3{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:10.5px;flex-wrap:wrap}
+  .posture{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:.2px}
+  .posture.auto{background:#f0f9eb;color:#5aaa2e}
+  .posture.stakes{background:#fef0f0;color:var(--danger)}
+  .posture.invest{background:#fdf6ec;color:#b88230}
+  .impact-mini{display:inline-flex;align-items:center;gap:3px;color:var(--t3)}
+  .live{display:inline-flex;align-items:center;gap:3px;font-weight:600}
+  .live .pulse{width:7px;height:7px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 0 rgba(245,108,108,.6);animation:pl 1.6s infinite}
+  .live.firing{color:var(--danger)}
+  .live.recover{color:var(--warning)}.live.recover .pulse{background:var(--warning);animation:none}
+  .live.resolved{color:var(--success)}.live.resolved .pulse{background:var(--success);animation:none}
+  @keyframes pl{0%{box-shadow:0 0 0 0 rgba(245,108,108,.5)}70%{box-shadow:0 0 0 6px rgba(245,108,108,0)}100%{box-shadow:0 0 0 0 rgba(245,108,108,0)}}
+
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{height:50px;background:var(--white);border-bottom:1px solid var(--bd-l);display:flex;align-items:center;padding:0 18px;gap:12px;flex-shrink:0}
+  .crumb{color:var(--t3)}.crumb b{color:var(--t1)}
+  .demoflag{font-size:10.5px;color:var(--t4);border:1px dashed var(--bd);border-radius:4px;padding:2px 7px}
+  .switcher{display:flex;gap:6px;margin-left:auto}
+  .switcher button{border:1px solid var(--bd);background:var(--white);padding:5px 10px;border-radius:5px;font-size:11.5px;color:var(--t2);cursor:pointer;font-family:inherit}
+  .switcher button.on{border-color:var(--primary);color:var(--primary);background:#ecf5ff;font-weight:600}
+
+  .stage{flex:1;overflow-y:auto;padding:16px 20px;max-width:1080px;width:100%;margin:0 auto}
+
+  /* posture banner */
+  .postbanner{display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:var(--radius);margin-bottom:14px;font-size:12.5px}
+  .postbanner.auto{background:#f0f9eb;border:1px solid #e1f3d8;color:#4e9128}
+  .postbanner.stakes{background:#fef0f0;border:1px solid #fde2e2;color:var(--danger-d)}
+  .postbanner.invest{background:#fdf6ec;border:1px solid #faecd8;color:#b8760f}
+  .postbanner b{font-weight:700}
+  .postbanner .why{margin-left:auto;font-size:11px;opacity:.85}
+
+  /* IMPACT-FIRST header */
+  .impbar{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;background:var(--white);border:1px solid var(--bd-l);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px;margin-bottom:12px}
+  .impbar .idcode{font-family:ui-monospace,monospace;font-size:19px;font-weight:700}
+  .impbar .idsub{font-size:11.5px;color:var(--t3);margin-top:2px}
+  .impgrid{display:flex;gap:22px}
+  .imp{text-align:center}
+  .imp .n{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+  .imp .n.up{color:var(--danger)}
+  .imp .l{font-size:10.5px;color:var(--t3);margin-top:3px}
+  .imp .trend{font-size:11px;font-weight:600}
+  .imp .trend.up{color:var(--danger)}.imp .trend.down{color:var(--success)}
+  .livebox{text-align:right}
+  .livebox .lstat{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
+  .livebox .lsub{font-size:10.5px;color:var(--t3);margin-top:3px}
+
+  .cols{display:grid;grid-template-columns:1fr 300px;gap:12px}
+  .colM{display:flex;flex-direction:column;gap:12px}
+  .colS{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--white);border:1px solid var(--bd-l);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card .hd{padding:10px 14px;border-bottom:1px solid var(--bd-l);font-weight:600;font-size:12.5px;display:flex;align-items:center;gap:8px}
+  .card .hd .r{margin-left:auto;font-weight:400;font-size:11px;color:var(--t3)}
+  .card .bd{padding:13px 15px}
+
+  /* root cause */
+  .rc{font-size:17px;font-weight:700;line-height:1.4}
+  .rc.abst{color:var(--warning)}
+  .rcsub{font-size:12px;color:var(--t3);margin-top:4px}
+
+  /* DECOMPOSED confidence */
+  .confdec{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .cd{display:grid;grid-template-columns:70px 1fr 42px;align-items:center;gap:10px}
+  .cd .cl{font-size:12px;color:var(--t2)}
+  .cd .ctrack{height:7px;background:var(--bd-l);border-radius:4px;position:relative;overflow:hidden}
+  .cd .cfill{height:100%;border-radius:4px}
+  .cd .cthr{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--t3);left:70%}
+  .cd .cn{font-size:12px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .cd.hi .cfill{background:var(--success)}.cd.hi .cn{color:#5aaa2e}
+  .cd.mid .cfill{background:var(--warning)}.cd.mid .cn{color:#b8760f}
+  .cd.lo .cfill{background:var(--danger)}.cd.lo .cn{color:var(--danger)}
+  .cd .warn-i{font-size:11px;color:var(--warning);margin-left:4px}
+  .confnote{margin-top:8px;font-size:11px;color:var(--t3);background:var(--bg2);border:1px solid var(--bd-l);border-radius:4px;padding:7px 10px}
+
+  .cite{display:inline-flex;align-items:center;gap:3px;background:#ecf5ff;color:var(--primary);border:1px solid #d9ecff;border-radius:3px;padding:0 6px;cursor:pointer;line-height:18px;font-size:11px;margin:2px 3px 0 0}
+  .cite:hover,.cite.hl{background:var(--primary);color:#fff}
+
+  /* recommended action w/ staleness */
+  .recact{background:var(--bg2);border:1px solid var(--bd-l);border-radius:5px;padding:11px 13px;margin-top:12px}
+  .recact .rt{font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px}
+  .recact .rd{font-size:11.5px;color:var(--t3);margin-top:3px}
+  .stale{font-size:10.5px;color:var(--warning);background:#fdf6ec;border:1px solid #faecd8;border-radius:3px;padding:0 6px;font-weight:600}
+
+  /* evidence */
+  .ev{border:1px solid var(--bd-l);border-radius:5px;margin-bottom:8px;overflow:hidden}
+  .ev.decisive{border-color:#f5c98a}.ev.hl{border-color:var(--primary);box-shadow:0 0 0 2px #ecf5ff}
+  .ev .eh{padding:8px 11px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--bd-l)}
+  .lev{display:flex;gap:2px}.lev i{width:4px;height:11px;border-radius:1px;background:var(--bd)}.lev i.on{background:var(--warning)}
+  .eid{font-family:ui-monospace,monospace;font-size:10px;color:var(--primary);background:#ecf5ff;border-radius:3px;padding:0 5px}
+  .etitle{font-weight:600;font-size:12px}
+  .keyflag{font-size:9.5px;font-weight:700;color:#b8760f;background:#fdf6ec;border:1px solid #f5dab0;border-radius:3px;padding:0 5px}
+  .live-ev{font-size:9.5px;font-weight:700;border-radius:3px;padding:0 5px}
+  .live-ev.on{color:var(--danger);background:#fef0f0}.live-ev.off{color:#5aaa2e;background:#f0f9eb}
+  .ro-tag{font-size:9.5px;color:#5aaa2e;background:#f0f9eb;border-radius:3px;padding:0 5px}
+  .plat{margin-left:auto;font-size:10.5px;color:var(--t3)}
+  .ev .eb{padding:7px 11px;display:grid;grid-template-columns:1fr 1fr;gap:1px 16px}
+  .obs{display:flex;justify-content:space-between;font-size:11.5px;font-family:ui-monospace,monospace;padding:1px 0}
+  .obs .of{color:var(--t3)}.obs .ov{font-weight:600}.obs .ov.bad{color:var(--danger)}
+  .ef{padding:6px 11px;background:var(--bg2);border-top:1px solid var(--bd-l);font-size:11px;color:var(--t2);display:flex;gap:8px;align-items:center}
+  .ver{margin-left:auto;display:inline-flex;gap:4px;align-items:center}.ver .vd{width:8px;height:8px;border-radius:50%}
+  .ver.ok{color:#5aaa2e}.ver.ok .vd{background:var(--success)}
+  .ver.miss{color:var(--warning)}.ver.miss .vd{border:1.5px solid var(--warning)}
+
+  /* TIMELINE */
+  .tl{display:flex;flex-direction:column}
+  .tli{display:flex;gap:10px;font-size:11.5px;padding-bottom:10px;position:relative}
+  .tli:last-child{padding-bottom:0}
+  .tld{width:9px;height:9px;border-radius:50%;background:var(--primary);flex-shrink:0;margin-top:3px;z-index:1}
+  .tld.sys{background:var(--info)}.tld.human{background:var(--primary)}.tld.now{background:var(--danger)}
+  .tll{position:absolute;left:4px;top:12px;bottom:0;width:1.5px;background:var(--bd-l)}
+  .tli:last-child .tll{display:none}
+  .tlt{color:var(--t4);font-variant-numeric:tabular-nums;flex-shrink:0;width:44px}
+  .tlc b{font-weight:600}
+
+  /* presence / ack */
+  .presence{display:flex;align-items:center;gap:8px;font-size:11.5px}
+  .ava{width:24px;height:24px;border-radius:50%;background:#e9ecf2;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--t2);border:2px solid var(--white);margin-left:-8px}
+  .ava:first-child{margin-left:0}
+  .ack{font-size:11px;padding:1px 7px;border-radius:3px;font-weight:600}
+  .ack.wait{background:#fdf6ec;color:#b8760f}.ack.done{background:#f0f9eb;color:#5aaa2e}
+
+  /* SLA + progress + action (colS) */
+  .sla .clk{display:flex;align-items:baseline;gap:8px}
+  .sla .big{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+  .sla .lbl{font-size:11px;color:var(--t3)}
+  .sla .remain{font-size:12px;margin-top:5px}.sla .remain b{font-variant-numeric:tabular-nums}
+  .sla .remain.warn{color:var(--warning)}.sla .remain.crit{color:var(--danger)}
+  .bar{height:5px;border-radius:3px;background:var(--bd-l);margin-top:7px;overflow:hidden}.bar i{display:block;height:100%}
+
+  .act h2{font-size:14px;margin-bottom:3px}
+  .act .ad{font-size:11.5px;color:var(--t3);margin-bottom:11px}
+  .btn{width:100%;border:1px solid var(--bd);background:var(--white);color:var(--t2);padding:9px;border-radius:5px;font-size:12.5px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:7px}
+  .btn:hover:not(:disabled){color:var(--primary);border-color:#c6e2ff;background:#ecf5ff}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.primary:hover:not(:disabled){background:var(--primary-d);color:#fff}
+  .btn.danger{border-color:#f0a0a0;color:var(--danger)}.btn.danger.armed{background:var(--danger);border-color:var(--danger);color:#fff}
+  .btn.ghost{border-style:dashed}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .friction{background:#fef6f6;border:1px solid #fde2e2;border-radius:5px;padding:10px 11px;margin-bottom:9px}
+  .friction .ft{font-size:11.5px;font-weight:600;color:var(--danger-d);margin-bottom:7px}
+  .chk{display:flex;gap:7px;font-size:11.5px;color:var(--t2);cursor:pointer;margin-bottom:5px;line-height:1.4}
+  .redline{background:#fef0f0;border:1px solid #fde2e2;border-radius:5px;padding:8px 10px;font-size:10.5px;color:var(--danger-d);display:flex;gap:6px;margin-top:4px}
+  .callout{background:#ecf5ff;border:1px solid #d9ecff;border-radius:5px;padding:8px 10px;font-size:10.5px;color:var(--primary-d);display:flex;gap:6px;margin-top:7px}
+  .tag{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:3px;font-size:10.5px;font-weight:600}
+  .tag.red{background:#fef0f0;color:var(--danger);border:1px solid #fde2e2}
+
+  /* disagreement first-class */
+  .disagree{border:1px dashed #f0a0a0;border-radius:5px;padding:9px 11px;margin-top:9px}
+  .disagree .dt{font-size:11.5px;font-weight:600;color:var(--danger-d);display:flex;align-items:center;gap:6px;cursor:pointer}
+  .disagree .dbody{margin-top:9px;display:none}
+  .disagree.open .dbody{display:block}
+  .disagree textarea{width:100%;border:1px solid var(--bd);border-radius:4px;padding:7px;font-family:inherit;font-size:11.5px;resize:vertical;min-height:52px}
+  .disagree .dnote{font-size:10px;color:var(--t3);margin-top:5px}
+
+  .autopanel{text-align:center;padding:16px}
+  .autopanel .big{font-size:15px;font-weight:600;margin-bottom:6px}
+  .autopanel .sub{font-size:12px;color:var(--t3);margin-bottom:14px}
+  .nextsteps{background:#ecf5ff;border:1px solid #d9ecff;border-radius:5px;padding:9px 11px;margin-top:8px}
+  .nextsteps .nt{font-size:10.5px;font-weight:700;color:var(--primary-d);margin-bottom:5px}
+  .nextsteps ul{margin:0 0 0 15px;font-size:11.5px;color:var(--t2)}
+  .trace{display:flex;flex-direction:column;gap:7px}
+  .tstep{display:flex;gap:8px;font-size:11.5px}
+  .tstep .ti{width:18px;height:18px;border-radius:5px;background:#fdf6ec;color:var(--warning);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0}
+  .tool{font-family:ui-monospace,monospace;font-size:10.5px;background:var(--bg2);border:1px solid var(--bd-l);border-radius:3px;padding:0 5px}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="nav"><div class="logo">太</div><a>▦</a><a>◈</a><a class="active">🩺</a><a>▧</a></nav>
+
+  <aside class="queue">
+    <div class="qh"><div class="qt"><b>值班队列</b></div>
+      <div class="sortby">排序：<b>注意力分 = 不确定性 × 影响</b>（非时间）</div></div>
+    <div class="qlist" id="qlist"></div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">智能排障 / <b id="crumb"></b></div>
+      <span class="demoflag">演示：切换器展示同一控制台的三种姿态</span>
+      <div class="switcher">
+        <button onclick="load('stakes')">高影响确认</button>
+        <button onclick="load('auto')">自动驾驶</button>
+        <button onclick="load('invest')">调查工作台</button>
+      </div>
+    </div>
+    <div class="stage" id="stage"></div>
+  </div>
+</div>
+
+<script>
+const D={
+ stakes:{ // high conf + HIGH impact → 903001
+  id:"CSDP-903001",posture:"stakes",postureT:"高影响 · 需审视后确认",
+  why:"识别与定因高置信，但影响面 P0、赌注大 → 提升审视",
+  sub:"CSDP · error_code 903001 · order-svc · 告警 webhook",
+  impact:{tickets:148,trend:"up",trendN:"+32/5min",customers:"12 大客户",spread:"扩散中"},
+  live:{state:"firing",t:"指标仍在恶化 · 连接可用=0"},
+  openedMs:8*60000+42000,slaMs:30*60000,
+  rc:"Mongo 连接池打满，导致 order-svc 数据库调用超时",
+  rcsub:"路由键 (CSDP,903001) 命中 · 规则引擎合成 · 零 LLM",
+  conf:[["识别",0.99,"hi","(system,error_code) 精确命中"],
+        ["定因",0.94,"hi","3 项证据一致，含 1 决定性"],
+        ["处置建议",0.61,"mid","恢复动作上次验证于 94 天前，可能过时",true]],
+  confnote:"三段置信独立：识别几乎确定，但『处置建议』偏低——批准前重点审视恢复动作是否仍适用。",
+  cites:["EV-2","EV-1","EV-3"],
+  recact:{title:"扩容连接池 / 重启 mongos 路由",stale:"94 天前验证",type:"write"},
+  evidence:[
+   {id:"EV-2",title:"Mongo 连接与可用性",plat:"观测云",ver:true,lev:3,key:true,live:"on",
+    obs:[["connections_current","2000",1],["connections_available","0",1],["slow_query","37",1],["reachable","true",0]],rule:"ratio_of_sum_gt → 连接打满"},
+   {id:"EV-1",title:"错误日志计数",plat:"观测云",ver:true,lev:2,key:false,live:"on",
+    obs:[["count","148",1],["trace_id","7f3a91c",0]],rule:"numeric_gte(count,1)"},
+   {id:"EV-3",title:"失败调用链定位",plat:"观测云",ver:false,lev:2,key:false,live:"off",
+    obs:[["failed_hop","mongo.find",0],["status","timeout",0]],rule:"contains_and_in(status,…)"},
+  ],
+  timeline:[["09:12","sys","<b>告警触发</b> code=903001（webhook）"],
+            ["09:12","sys","<b>自动取证完成</b> 3 项证据（S2 只读）"],
+            ["09:12","sys","<b>规则命中</b> 生成诊断，置信 0.94"],
+            ["09:14","human","<b>值班-李</b> 打开处置面"],
+            ["now","now","<b>当前</b> 待人工批准恢复动作"]],
+  presence:[["李","me"],["王",""]],ack:null,
+  stage:"approve",
+ },
+ auto:{ // high conf + LOW impact → collapses to autopilot
+  id:"CSDP-2000001",posture:"auto",postureT:"自动驾驶 · 一键确认即可",
+  why:"识别/定因/处置均高置信，影响面低（3 工单、无扩散、非核心）→ 收成快车道",
+  sub:"CSDP · error_code 2000001 · channel-svc · 告警 webhook",
+  impact:{tickets:3,trend:"flat",trendN:"稳定",customers:"1 客户",spread:"未扩散"},
+  live:{state:"recover",t:"指标回落中 · 疑似瞬时抖动"},
+  openedMs:2*60000,slaMs:60*60000,
+  rc:"渠道回调签名时钟偏移，触发校验失败（已知瞬态）",
+  rcsub:"路由键命中 · 历史 96% 同类为自愈",
+  conf:[["识别",0.98,"hi",""],["定因",0.95,"hi",""],["处置建议",0.92,"hi","只读复核+等待自愈，无写操作"]],
+  confnote:"三段均高、影响低、无写操作——系统建议：确认建议、置观察，无需展开调查。",
+  cites:["EV-9"],
+  recact:{title:"仅观察 · 校验时钟同步（只读，无生产写）",stale:null,type:"read"},
+  evidence:[{id:"EV-9",title:"签名校验失败计数",plat:"观测云",ver:true,lev:2,key:true,live:"off",
+    obs:[["count","3",0],["clock_skew_ms","1200",1]],rule:"multiple_gt → 时钟偏移"}],
+  timeline:[["11:58","sys","<b>告警触发</b> code=2000001"],["11:58","sys","<b>诊断完成</b> 置信 0.95 · 判为已知瞬态"],["now","now","<b>当前</b> 待一键确认"]],
+  presence:[],ack:null,
+  stage:"autopilot",
+ },
+ invest:{ // low conf / miss → full investigation workbench
+  id:"CSDP-777012",posture:"invest",postureT:"调查工作台 · 需人机协同",
+  why:"未命中 SOP、agent 只读探索未达阈值 → 展开完整调查面",
+  sub:"CSDP · 无 error_code · 人工录入 · completeness=SYMPTOM",
+  impact:{tickets:6,trend:"up",trendN:"+2/10min",customers:"零星",spread:"观察中"},
+  live:{state:"firing",t:"仍有零星慢请求"},
+  openedMs:3*60000+10000,slaMs:60*60000,
+  rc:"系统弃权：证据不足以定因，转一线值班",
+  rcsub:"未命中任何 (system,error_code) SOP",
+  abst:true,
+  conf:[["识别",0.20,"lo","无 error_code，仅症状"],["定因",0.38,"lo","长尾疑似网关，证据不足"],["处置建议",0.00,"lo","不产出动作（弃权）"]],
+  confnote:"识别与定因均低于阈值 → 系统弃权、绝不硬凑结论。已把线索打包供人接手。",
+  cites:["EV-B","EV-A"],
+  evidence:[
+   {id:"EV-B",title:"网关 P99 延迟（agent 只读）",plat:"观测云",ver:false,lev:2,key:false,ro:true,live:"on",
+    obs:[["p99_ms","8400",1],["p50_ms","210",0]],rule:"agent 观察：长尾高、无规则命中"},
+   {id:"EV-A",title:"近 15m 错误日志（agent 只读）",plat:"观测云",ver:false,lev:1,key:false,ro:true,live:"off",
+    obs:[["count","3",0]],rule:"agent 观察：错误量低"}],
+  trace:[["collect_evidence(log_count, csdp-web)","count=3，错误量低"],
+         ["collect_evidence(metric, gateway_p99)","p99=8400ms，长尾偏高"],
+         ["置信 0.38 < 阈值 0.70","停止探索，弃权（未强凑结论）"]],
+  nextsteps:["核对网关近 1h 是否有发布/扩缩容","抓一条慢 trace 看卡在哪一跳","确认是否集中在某可用区"],
+  similar:[["CSDP-771too","网关长尾→GC 停顿",0.72],["CSDP-760x","连接复用泄漏→P99 抬升",0.65]],
+  timeline:[["09:40","human","<b>客服-赵</b> 录入工单（无报错码）"],["09:40","sys","<b>路由</b> 未命中 SOP → 未命中路"],["09:41","sys","<b>agent 只读探索</b> 2 步 → 置信 0.38"],["09:41","sys","<b>系统弃权</b> 打包线索"],["now","now","<b>当前</b> 待一线接手"]],
+  presence:[["赵",""]],ack:null,
+  stage:"abstain",
+ }
+};
+
+const QUEUE=[
+ {k:"stakes",id:"CSDP-903001",desc:"Mongo 连接池打满 · order-svc",posture:"stakes",live:"firing",imp:"148 工单↑",att:"#F56C6C"},
+ {k:"invest",id:"CSDP-777012",desc:"工单列表偶发很慢（无报错码）",posture:"invest",live:"firing",imp:"6 工单",att:"#E6A23C"},
+ {k:"auto",id:"CSDP-2000001",desc:"渠道回调签名校验失败",posture:"auto",live:"recover",imp:"3 工单",att:"#67C23A"},
+];
+const POSTURE_LABEL={stakes:"高影响",auto:"自动驾驶",invest:"调查"};
+let cur,ticker;
+
+function fmt(ms){const s=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+
+function renderQueue(id){
+ document.getElementById('qlist').innerHTML=QUEUE.map(q=>`
+  <div class="qitem ${q.id===id?'active':''}" onclick="load('${q.k}')">
+   <div class="att" style="background:${q.att}"></div>
+   <div class="r1"><span class="code">${q.id}</span>
+     <span class="posture ${q.posture}" style="margin-left:auto">${POSTURE_LABEL[q.posture]}</span></div>
+   <div class="r2">${q.desc}</div>
+   <div class="r3">
+     <span class="live ${q.live}"><span class="pulse"></span>${q.live==='firing'?'进行中':q.live==='recover'?'恢复中':'已解决'}</span>
+     <span class="impact-mini" style="margin-left:auto">▦ ${q.imp}</span></div>
+  </div>`).join('');
+}
+
+function load(which){
+ cur=D[which];
+ document.querySelectorAll('.switcher button').forEach((b,i)=>b.classList.toggle('on',i===['stakes','auto','invest'].indexOf(which)));
+ document.getElementById('crumb').textContent=cur.id;
+ renderQueue(cur.id);
+ render();
+ clearInterval(ticker);
+ const start=Date.now()-cur.openedMs;
+ ticker=setInterval(()=>{const el=document.getElementById('slaclk');if(el){const open=Date.now()-start,rem=cur.slaMs-open;el.querySelector('.big').textContent=fmt(open);const r=el.querySelector('.remain');r.querySelector('b').textContent=fmt(rem);}},1000);
+}
+
+function confRow([l,v,cls,note,warn]){
+ return `<div class="cd ${cls}"><span class="cl">${l}</span>
+   <div class="ctrack"><div class="cfill" style="width:${v*100}%"></div><div class="cthr"></div></div>
+   <span class="cn">${v.toFixed(2)}${warn?'<span class="warn-i">⚠</span>':''}</span></div>
+   ${note?`<div style="grid-column:1/4;font-size:10.5px;color:${warn?'#b8760f':'var(--t3)'};margin:-4px 0 0 80px">${note}</div>`:''}`;
+}
+
+function render(){
+ const imp=cur.impact, liveClass=cur.live.state;
+ const liveLabel={firing:'进行中',recover:'恢复中',resolved:'已解决'}[liveClass];
+ const s=document.getElementById('stage');
+ s.innerHTML=`
+  <div class="postbanner ${cur.posture}">
+    <b>${cur.postureT}</b>
+    <span class="why">姿态判定：${cur.why}</span>
+  </div>
+
+  <div class="impbar">
+    <div><div class="idcode">${cur.id}</div><div class="idsub">${cur.sub}</div></div>
+    <div class="impgrid">
+      <div class="imp"><div class="n ${imp.trend==='up'?'up':''}">${imp.tickets}</div><div class="l">受影响工单</div><div class="trend ${imp.trend}">${imp.trend==='up'?'▲ '+imp.trendN:imp.trendN}</div></div>
+      <div class="imp"><div class="n">${imp.customers}</div><div class="l">客户范围</div></div>
+      <div class="imp"><div class="n" style="font-size:14px;padding-top:3px">${imp.spread}</div><div class="l">扩散趋势</div></div>
+    </div>
+    <div class="livebox">
+      <div class="lstat"><span class="live ${liveClass}"><span class="pulse"></span></span>${liveLabel}</div>
+      <div class="lsub">${cur.live.t}</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="colM">
+      <div class="card">
+        <div class="hd">诊断结论 · Diagnosis<span class="r">contract v1</span></div>
+        <div class="bd">
+          <div class="rc ${cur.abst?'abst':''}">${cur.abst?'⚠ ':''}${cur.rc}</div>
+          <div class="rcsub">${cur.rcsub}</div>
+          <div class="confdec">${cur.conf.map(confRow).join('')}</div>
+          <div class="confnote">${cur.confnote}</div>
+          ${cur.recact?`<div class="recact"><div class="rt">${cur.recact.type==='write'?'<span class="tag red">生产写</span>':''}${cur.recact.title} ${cur.recact.stale?`<span class="stale">↻ ${cur.recact.stale}</span>`:''}</div><div class="rd">${cur.recact.type==='write'?'需转派有权限的人在平台外执行 · 平台不执行':'只读/观察动作'}</div></div>`:''}
+          <div style="margin-top:11px;font-size:11.5px;color:var(--t3)">引用证据（按诊断杠杆）：${cur.cites.map(c=>`<span class="cite" onmouseenter="hl('${c}',1)" onmouseleave="hl('${c}',0)" onclick="scrollEv('${c}')">🔗 ${c}</span>`).join('')}</div>
+        </div>
+      </div>
+
+      ${cur.abst?investigateCard():''}
+
+      <div class="card">
+        <div class="hd">取证 <span class="r">${cur.abst?'agent 只读采集':'决定性证据置顶'}</span></div>
+        <div class="bd" style="padding:11px 13px">${cur.evidence.map(evCard).join('')}</div>
+      </div>
+    </div>
+
+    <div class="colS">
+      <div class="card"><div class="bd sla" id="slaclk">
+        <div class="clk"><span class="big">${fmt(cur.openedMs)}</span><span class="lbl">已开启</span></div>
+        <div class="remain ${cur.slaMs-cur.openedMs<6e5?'crit':'warn'}">SLA 剩余 <b>${fmt(cur.slaMs-cur.openedMs)}</b></div>
+        <div class="bar"><i style="width:${Math.min(100,cur.openedMs/cur.slaMs*100)}%;background:${cur.slaMs-cur.openedMs<6e5?'#F56C6C':'#E6A23C'}"></i></div>
+      </div></div>
+
+      <div class="card"><div class="hd">当前处置</div><div class="bd act">${actPanel()}</div></div>
+
+      <div class="card"><div class="hd">在场 · 签收</div><div class="bd">
+        <div class="presence">
+          <div style="display:flex">${cur.presence.length?cur.presence.map(([a,me])=>`<div class="ava" title="${me==='me'?'你':a}">${a}</div>`).join(''):'<span style="color:var(--t4);font-size:11.5px">暂无人查看</span>'}</div>
+          ${cur.presence.length?'<span style="color:var(--t3);font-size:11px">在看</span>':''}
+        </div>
+        ${cur.stage==='approve'?'<div style="margin-top:9px;font-size:11.5px">转派签收：<span class="ack wait">DBA·张 待签收</span></div>':''}
+      </div></div>
+
+      <div class="card"><div class="hd">故障时间线</div><div class="bd"><div class="tl">${cur.timeline.map(([t,k,c])=>`<div class="tli"><div class="tld ${k}"></div><div class="tll"></div><span class="tlt">${t}</span><div class="tlc">${c}</div></div>`).join('')}</div></div></div>
+    </div>
+  </div>`;
+}
+
+function evCard(e){return `<div class="ev ${e.key?'decisive':''}" id="ev-${e.id}">
+  <div class="eh"><span class="lev">${[1,2,3].map(i=>`<i class="${i<=e.lev?'on':''}"></i>`).join('')}</span>
+   <span class="eid">${e.id}</span><span class="etitle">${e.title}</span>
+   ${e.key?'<span class="keyflag">🔑 决定性</span>':''}
+   ${e.live?`<span class="live-ev ${e.live}">${e.live==='on'?'● 实时仍异常':'○ 已回落'}</span>`:''}
+   ${e.ro?'<span class="ro-tag">🔒只读</span>':''}<span class="plat">${e.plat}</span></div>
+  <div class="eb">${e.obs.map(([f,v,b])=>`<div class="obs"><span class="of">${f}</span><span class="ov ${b?'bad':''}">${v}</span></div>`).join('')}</div>
+  <div class="ef"><span>${e.rule}</span><span class="ver ${e.ver?'ok':'miss'}"><span class="vd"></span>${e.ver?'已核实':'待核实'}</span></div></div>`;}
+
+function investigateCard(){return `<div class="card"><div class="hd">🔒 agent 只读探索 · 系统替你减负<span class="r">ToolGuard BLOCK 写/shell</span></div>
+  <div class="bd">
+   <div class="trace">${cur.trace.map((t,i)=>`<div class="tstep"><div class="ti">${i+1}</div><div><span class="tool">${t[0]}</span><div style="color:var(--t3);margin-top:2px">${t[1]}</div></div></div>`).join('')}</div>
+   <div class="nextsteps"><div class="nt">↳ 建议人工下一步先查</div><ul>${cur.nextsteps.map(n=>`<li>${n}</li>`).join('')}</ul></div>
+   <div class="nextsteps" style="background:var(--bg2);border-color:var(--bd-l)"><div class="nt" style="color:var(--t3)">相似历史故障</div>
+     ${cur.similar.map(([c,d,s])=>`<div style="display:flex;font-size:11.5px;padding:3px 0"><b style="font-family:ui-monospace,monospace;color:var(--primary)">${c}</b><span style="margin:0 6px">${d}</span><span style="margin-left:auto;color:var(--t3)">相似 ${s}</span></div>`).join('')}</div>
+  </div></div>`;}
+
+function actPanel(){
+ const st=cur.stage;
+ if(st==='autopilot')return `<div class="autopanel">
+   <div class="big" style="color:#5aaa2e">✓ 建议：确认并置观察</div>
+   <div class="sub">高置信 · 低影响 · 无写操作。系统建议一键确认，无需展开调查。</div>
+   <button class="btn primary" onclick="alert('已确认并置 30min 观察窗；若自愈自动关闭并沉淀。')">一键确认 · 置观察</button>
+   <button class="btn ghost" onclick="alert('已加入批量：可对同类瞬态一次性确认。')">加入批量确认</button>
+   ${disagreeBlock()}
+   <div class="callout"><span>ℹ️</span><span>快车道也留异议口——若你觉得不是瞬态，一键升级为调查。</span></div>
+  </div>`;
+ if(st==='approve')return `<h2>人工批准</h2>
+   <div class="ad">恢复动作（生产写）待批准。注意『处置建议』置信仅 0.61。</div>
+   <div class="friction"><div class="ft">⛔ 批准前必须复核（含过时动作）</div>
+    <label class="chk"><input type="checkbox" onchange="arm()"> 我已复核 3 项证据，根因成立</label>
+    <label class="chk"><input type="checkbox" onchange="arm()"> 我确认恢复动作（94 天前验证）仍适用当前环境</label>
+    <label class="chk"><input type="checkbox" onchange="arm()"> 我确认此写由外部有权限者执行、非本页触发</label></div>
+   <button class="btn danger" id="ab" disabled onclick="alert('批准：状态 → APPROVED_NOT_EXECUTED（系统不执行）。')">批准（推进状态，系统不执行）</button>
+   ${disagreeBlock()}
+   <div class="redline"><b>R1/R2</b><span>页面无执行按钮；生产写执行器不接入平台。</span></div>`;
+ if(st==='abstain')return `<h2>转一线值班</h2>
+   <div class="ad">系统弃权，未强凑结论。已打包 agent 线索、下一步建议、相似故障。</div>
+   <button class="btn primary" onclick="alert('已带全部线索转一线值班。')">→ 转一线（带线索）</button>
+   <button class="btn" onclick="alert('登记知识缺口 backlog。')">记为知识缺口</button>
+   ${disagreeBlock('我其实知道原因')}
+   <div class="callout"><span>🌱</span><span>你若当场定因，填入即成 candidate 知识候选，直接喂知识闭环（D2）。</span></div>`;
+ return '';
+}
+
+function disagreeBlock(label){return `<div class="disagree" id="dis"><div class="dt" onclick="document.getElementById('dis').classList.toggle('open')">
+   ✋ ${label||'我不同意机器的判断'}<span style="margin-left:auto;font-weight:400;color:var(--t3)">展开</span></div>
+   <div class="dbody">
+    <textarea placeholder="机器说 X，我认为 Y，因为 Z……（此异议将进入 D5 回归集与 D2 知识评审）"></textarea>
+    <button class="btn" style="margin-top:7px" onclick="alert('异议已记录：进入回归集 + 知识评审队列。机器与人不一致，是最有价值的学习信号。')">提交异议</button>
+    <div class="dnote">异议是一等公民：不一致处被结构化捕获，喂 D2 知识演进 / D5 回归，而非默默盖章或默默推翻。</div>
+   </div></div>`;}
+
+function arm(){const cs=document.querySelectorAll('#dis ~ *, .friction input');const chk=[...document.querySelectorAll('.friction input')].every(c=>c.checked);const b=document.getElementById('ab');b.disabled=!chk;b.classList.toggle('armed',chk);}
+function hl(id,on){const el=document.getElementById('ev-'+id);if(el)el.classList.toggle('hl',!!on);}
+function scrollEv(id){const el=document.getElementById('ev-'+id);if(el){el.classList.add('hl');el.scrollIntoView({block:'center',behavior:'smooth'});setTimeout(()=>el.classList.remove('hl'),1400);}}
+
+load('stakes');
+</script>
+</body>
+</html>

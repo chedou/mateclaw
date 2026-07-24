@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能排障 · 根因定位</title>
+<style>
+  :root{
+    --bg:#eef1f6; --surface:#ffffff; --surface-2:#f6f8fb; --surface-3:#eef2f7;
+    --ink-1:#0f1622; --ink-2:#3b4453; --ink-3:#727e91; --ink-4:#a3adbd;
+    --line:#e3e7ee; --line-2:#eef1f6;
+    --accent:#2f5cf5; --accent-weak:#eaeffe; --accent-line:#c7d4fb;
+    --good:#0e9f6e; --good-weak:#e6f6ef;
+    --warn:#d98207; --warn-weak:#fbf1e0;
+    --crit:#e14b4b; --crit-weak:#fceceb;
+    --console:#0e1420; --console-ink:#c9d6ef; --console-dim:#5f6f8f; --console-line:#20293a;
+    --shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);
+    --shadow-md:0 2px 4px rgba(15,22,34,.05),0 4px 12px rgba(15,22,34,.06);
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --r-lg:12px; --r-md:9px; --r-sm:6px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0b0e14; --surface:#141922; --surface-2:#1a2029; --surface-3:#202834;
+    --ink-1:#eef1f6; --ink-2:#c0c8d4; --ink-3:#8591a1; --ink-4:#5b6675;
+    --line:#26303d; --line-2:#1e2632;
+    --accent:#6a8bff; --accent-weak:#1a2540; --accent-line:#2f3f6b;
+    --good:#2fbb85; --good-weak:#12271f;
+    --warn:#e6a13c; --warn-weak:#2a2113;
+    --crit:#ef6b6b; --crit-weak:#2c1717;
+    --console:#0a0e16; --console-ink:#c3d2ef; --console-dim:#556584; --console-line:#1a2333;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 4px 14px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="light"]{
+    --bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;--ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;--line:#e3e7ee;--line-2:#eef1f6;--accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;--good:#0e9f6e;--good-weak:#e6f6ef;--warn:#d98207;--warn-weak:#fbf1e0;--crit:#e14b4b;--crit-weak:#fceceb;--console:#0e1420;--console-ink:#c9d6ef;--console-dim:#5f6f8f;--console-line:#20293a;--shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);--shadow-md:0 2px 4px rgba(15,22,34,.05),0 4px 12px rgba(15,22,34,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;--ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;--accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;--good:#2fbb85;--good-weak:#12271f;--warn:#e6a13c;--warn-weak:#2a2113;--crit:#ef6b6b;--crit-weak:#2c1717;--console:#0a0e16;--console-ink:#c3d2ef;--console-dim:#556584;--console-line:#1a2333;--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 4px 14px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:var(--sans);color:var(--ink-2);background:var(--bg);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .num,.mono{font-variant-numeric:tabular-nums}
+  svg{display:block;flex-shrink:0}
+  .app{display:flex;height:100vh;overflow:hidden}
+
+  .rail{width:52px;background:var(--ink-1);flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:12px;gap:3px}
+  @media (prefers-color-scheme:dark){.rail{background:#05070b}}
+  :root[data-theme="dark"] .rail{background:#05070b}
+  .rail .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(140deg,var(--accent),#12a3c9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;margin-bottom:8px}
+  .rail a{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#6b7686;text-decoration:none;transition:.15s}
+  .rail a:hover{color:#c3ccd8}
+  .rail a.active{background:rgba(255,255,255,.08);color:#fff}
+
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .top{height:52px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0}
+  .crumb{color:var(--ink-3);font-size:12.5px;display:flex;align-items:center;gap:7px}
+  .crumb .id{font-family:var(--mono);color:var(--ink-1);font-weight:600}
+  .crumb svg{color:var(--ink-4)}
+  .demoflag{font-size:11px;color:var(--ink-4);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+  .seg{margin-left:auto;display:flex;background:var(--surface-3);border-radius:8px;padding:3px;gap:2px}
+  .seg button{border:none;background:transparent;padding:6px 13px;border-radius:6px;font-size:12px;color:var(--ink-3);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:7px;transition:.15s}
+  .seg button:hover{color:var(--ink-2)}
+  .seg button.on{background:var(--surface);color:var(--ink-1);font-weight:600;box-shadow:var(--shadow-sm)}
+  .seg .dot{width:7px;height:7px;border-radius:2px}
+  .seg .dot.det{border-radius:50%;background:var(--good)}
+  .seg .dot.llm{background:var(--warn);transform:rotate(45deg)}
+
+  .content{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 306px;overflow:hidden}
+  .locate{overflow-y:auto;padding:22px 26px 40px}
+  .locate::-webkit-scrollbar,.side::-webkit-scrollbar,.qbody::-webkit-scrollbar{width:8px}
+  .locate::-webkit-scrollbar-thumb,.side::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;border:2px solid var(--bg)}
+  .side{border-left:1px solid var(--line);background:var(--surface);overflow-y:auto;padding:18px 18px 30px;display:flex;flex-direction:column;gap:14px}
+
+  /* identity */
+  .idrow{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:18px}
+  .idcode{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink-1)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;line-height:1}
+  .chip .sh{width:7px;height:7px}
+  .chip.det{background:var(--good-weak);color:var(--good)}.chip.det .sh{border-radius:50%;background:currentColor}
+  .chip.llm{background:var(--warn-weak);color:var(--warn)}.chip.llm .sh{background:currentColor;transform:rotate(45deg)}
+  .idkv{font-size:12px;color:var(--ink-3)}
+  .idkv b{color:var(--ink-2);font-weight:600}
+  .idkv .m{font-family:var(--mono);color:var(--ink-1);font-weight:600}
+  .vsep{width:1px;height:13px;background:var(--line)}
+
+  /* ROOT CAUSE — answer first */
+  .answer{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:19px 22px;position:relative;overflow:hidden}
+  .answer::after{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:linear-gradient(90deg,var(--good),transparent 65%)}
+  .answer.abst::after{background:linear-gradient(90deg,var(--warn),transparent 65%)}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+  .eyebrow .glyph{width:15px;height:15px;color:var(--good)}
+  .answer.abst .eyebrow .glyph{color:var(--warn)}
+  .eyebrow .speed{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--good);letter-spacing:.01em;text-transform:none;font-weight:600}
+  .answer.abst .eyebrow .speed{color:var(--warn)}
+  .rc{font-size:22px;line-height:1.34;font-weight:700;letter-spacing:-.015em;color:var(--ink-1);margin:11px 0 0;text-wrap:balance}
+  .rc.abst{color:var(--warn)}
+  .rcmeta{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:13px;font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+  .conf{display:inline-flex;align-items:center;gap:8px}
+  .conf .track{width:96px;height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+  .conf .fill{height:100%;border-radius:3px}
+  .conf .fill.hi{background:linear-gradient(90deg,#3bb98a,var(--good))}
+  .conf .fill.lo{background:linear-gradient(90deg,#eab35a,var(--warn))}
+  .conf b{font-weight:700;font-size:12.5px}.conf b.hi{color:var(--good)}.conf b.lo{color:var(--warn)}
+  .rcmeta .mdot{width:3px;height:3px;border-radius:50%;background:var(--ink-4)}
+
+  /* narrowing funnel */
+  .funnel{margin:18px 0 22px;display:flex;align-items:stretch;gap:0;flex-wrap:wrap;row-gap:12px}
+  .funnel .flabel{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding-right:14px;margin-right:2px}
+  .funnel .flabel svg{width:14px;height:14px;color:var(--ink-4)}
+  .fstep{display:flex;align-items:center}
+  .fnode{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+  .fnode .fb{font-family:var(--mono);font-size:12px;font-weight:600;padding:4px 11px;border-radius:7px;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);white-space:nowrap;transition:.15s}
+  .fnode.narrow .fb{background:var(--accent-weak);border-color:var(--accent-line);color:var(--accent)}
+  .fnode.final .fb{background:var(--good);border-color:var(--good);color:#fff}
+  .fnode.final.abst .fb{background:var(--warn);border-color:var(--warn)}
+  .fnode .fc{font-family:var(--mono);font-size:9.5px;color:var(--ink-4);padding-left:2px;letter-spacing:.02em}
+  .fconn{width:26px;height:1.5px;background:var(--line);margin:0 3px;position:relative;flex-shrink:0}
+  .fconn::after{content:"";position:absolute;right:0;top:-2px;border-left:4px solid var(--line);border-top:2.5px solid transparent;border-bottom:2.5px solid transparent}
+
+  /* chain */
+  .spinehd{display:flex;align-items:center;gap:9px;margin-bottom:15px}
+  .spinehd .st{font-size:14px;font-weight:650;letter-spacing:-.01em;color:var(--ink-1)}
+  .spinehd .sh-ic{width:16px;height:16px;color:var(--accent)}
+  .spinehd .hint{margin-left:auto;font-size:11px;color:var(--ink-4)}
+  .chain{display:flex;flex-direction:column}
+  .stg{display:flex;gap:15px;position:relative;padding-bottom:12px}
+  .stg:last-child{padding-bottom:0}
+  .srail{display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:36px}
+  .snode{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;z-index:1;border:1px solid transparent}
+  .snode svg{width:17px;height:17px}
+  .snode .n{font-family:var(--mono);font-size:14px;font-weight:700}
+  .snode.sym{background:var(--crit-weak);color:var(--crit)}
+  .snode.loc,.snode.ev,.snode.rsn{background:var(--accent-weak);color:var(--accent)}
+  .snode.hyp{background:var(--surface-3);color:var(--ink-3);border-color:var(--line)}
+  .snode.dead{background:var(--surface-2);color:var(--ink-4)}
+  .snode.root{background:var(--good);color:#fff}
+  .snode.root.abst{background:var(--warn)}
+  .sconn{flex:1;width:2px;background:var(--line);margin:4px 0;border-radius:2px}
+  .stg:last-child .sconn{display:none}
+  .sbody{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-sm);overflow:hidden;transition:border-color .15s}
+  .sbody.root{border-color:var(--good);box-shadow:0 0 0 1px var(--good-weak),var(--shadow-sm)}
+  .sbody.deadcard{opacity:.72}
+  .shd{padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+  .shd:hover{background:var(--surface-2)}
+  .shd .stt{font-size:13px;font-weight:650;color:var(--ink-1);letter-spacing:-.005em}
+  .shd .stime{font-family:var(--mono);font-size:10.5px;color:var(--ink-4);margin-left:auto;letter-spacing:.01em}
+  .shd .caret{width:15px;height:15px;color:var(--ink-4);transition:transform .22s ease}
+  .stg.open .caret{transform:rotate(90deg)}
+  .sfind{padding:0 14px 12px;font-size:12.5px;color:var(--ink-2);line-height:1.55}
+  .sfind b{color:var(--ink-1);font-weight:650}
+  .sfind .mn{font-family:var(--mono);font-size:11.5px;background:var(--surface-3);border-radius:4px;padding:1px 5px;color:var(--ink-1)}
+  .narrowto{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--accent);background:var(--accent-weak);border:1px solid var(--accent-line);border-radius:6px;padding:3px 9px}
+  .narrowto svg{width:12px;height:12px}
+  .narrowto.dead{color:var(--warn);background:var(--warn-weak);border-color:transparent}
+  .sdrawer{display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s ease}
+  .stg.open .sdrawer{grid-template-rows:1fr}
+  .sdinner{overflow:hidden}
+  .sdpad{border-top:1px solid var(--line-2);padding:12px 14px;background:var(--surface-2)}
+  .sdpad>.txt{font-size:12px;color:var(--ink-2);line-height:1.6}
+  .sdpad>.txt .mn{font-family:var(--mono);font-size:11px;background:var(--surface-3);border-radius:4px;padding:1px 5px;color:var(--ink-1)}
+
+  /* reasoning verdicts */
+  .verdict{display:flex;gap:9px;align-items:flex-start;font-size:12px;padding:5px 0;line-height:1.5}
+  .verdict+.verdict{border-top:1px dashed var(--line)}
+  .vmark{width:17px;height:17px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .vmark svg{width:11px;height:11px}
+  .verdict.pos .vmark{background:var(--good-weak);color:var(--good)}
+  .verdict.maybe .vmark{background:var(--warn-weak);color:var(--warn)}
+  .verdict.neg .vmark{background:var(--surface-3);color:var(--ink-4)}
+  .verdict .vt{color:var(--ink-2)}.verdict .vt b{color:var(--ink-1);font-weight:650}
+
+  /* evidence */
+  .ev{border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}
+  .ev+.ev{margin-top:9px}
+  .ev.key{border-color:var(--accent-line)}
+  .evh{padding:8px 11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .eid{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent);background:var(--accent-weak);border-radius:4px;padding:2px 6px;letter-spacing:.02em}
+  .ett{font-size:12px;font-weight:600;color:var(--ink-1)}
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.02em}
+  .badge svg{width:10px;height:10px}
+  .badge.key{color:var(--warn);background:var(--warn-weak)}
+  .badge.ro{color:var(--good);background:var(--good-weak)}
+  .evh .plat{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-4)}
+  .query{background:var(--console);color:var(--console-ink);font-family:var(--mono);font-size:10.5px;line-height:1.7;padding:9px 11px;overflow-x:auto;display:flex;align-items:center;gap:10px;white-space:pre}
+  .query .q{color:var(--console-dim)}
+  .query .qk{color:#6aa3ff}.query .qs{color:#4bbf9a}
+  .query .run{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;gap:4px;color:#67d29a;border:1px solid var(--console-line);border-radius:5px;padding:3px 8px;cursor:pointer;font-size:10px;transition:.15s}
+  .query .run:hover{background:rgba(103,210,154,.12)}
+  .query .run svg{width:10px;height:10px}
+  .obsgrid{padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:2px 20px}
+  .obs{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11px;padding:2px 0}
+  .obs .of{color:var(--ink-3)}
+  .obs .ov{font-weight:600;color:var(--ink-1)}
+  .obs .ov.bad{color:var(--crit)}
+  .evf{padding:6px 11px;border-top:1px solid var(--line-2);background:var(--surface-2);display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--ink-3)}
+  .ver{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-weight:600}
+  .ver .vd{width:7px;height:7px;border-radius:50%}
+  .ver.ok{color:var(--good)}.ver.ok .vd{background:currentColor}
+  .ver.miss{color:var(--warn)}.ver.miss .vd{border:1.5px solid currentColor}
+
+  /* handoff */
+  .handoff{border:1px solid var(--accent-line);background:var(--accent-weak);border-radius:var(--r-sm);padding:11px 13px}
+  .handoff .ht{font-size:11.5px;font-weight:700;color:var(--accent);margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .handoff .ht svg{width:13px;height:13px}
+  .handoff ol{margin:0;padding-left:0;list-style:none;counter-reset:h}
+  .handoff li{counter-increment:h;font-size:12px;color:var(--ink-2);padding:3px 0 3px 24px;position:relative;line-height:1.5}
+  .handoff li::before{content:counter(h);position:absolute;left:0;top:3px;width:16px;height:16px;border-radius:5px;background:var(--surface);border:1px solid var(--accent-line);color:var(--accent);font-family:var(--mono);font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .similar{margin-top:11px}
+  .similar .slh{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+  .simrow{display:flex;align-items:center;gap:9px;font-size:12px;padding:5px 0;border-top:1px solid var(--line)}
+  .simrow .sc{font-family:var(--mono);font-weight:600;color:var(--accent)}
+  .simrow .sd{color:var(--ink-2)}
+  .simrow .ss{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+
+  /* side */
+  .card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 15px}
+  .card .clabel{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .card .clabel svg{width:13px;height:13px;color:var(--ink-4)}
+  .clk{display:flex;align-items:baseline;gap:8px}
+  .clk .big{font-family:var(--mono);font-size:21px;font-weight:700;color:var(--ink-1);letter-spacing:-.01em}
+  .clk .u{font-size:11px;color:var(--ink-3)}
+  .rem{font-family:var(--mono);font-size:12px;margin-top:6px;color:var(--warn)}
+  .rem b{font-weight:700}
+  .rem.crit{color:var(--crit)}
+  .recact .rt{font-size:12.5px;font-weight:650;color:var(--ink-1);display:flex;align-items:center;gap:7px;flex-wrap:wrap;line-height:1.4}
+  .recact .rd{font-size:11px;color:var(--ink-3);margin-top:5px;line-height:1.5}
+  .tagw{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--crit-weak);color:var(--crit)}
+  .stale{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--warn);background:var(--warn-weak);border-radius:4px;padding:2px 6px}
+  .stale svg{width:10px;height:10px}
+  .btn{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);padding:9px;border-radius:var(--r-sm);font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:9px;transition:.15s}
+  .btn:hover{color:var(--accent);border-color:var(--accent-line);background:var(--accent-weak)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{filter:brightness(1.06);color:#fff}
+  .btn svg{width:14px;height:14px}
+  .note{display:flex;gap:7px;font-size:10.5px;line-height:1.5;color:var(--ink-3);margin-top:10px}
+  .note .k{font-family:var(--mono);font-weight:700;color:var(--crit);flex-shrink:0}
+
+  .mtl{display:flex;flex-direction:column}
+  .mtli{display:flex;gap:10px;font-size:11.5px;padding-bottom:11px;position:relative}
+  .mtli:last-child{padding-bottom:0}
+  .mtd{width:7px;height:7px;border-radius:50%;background:var(--ink-4);flex-shrink:0;margin-top:4px;z-index:1}
+  .mtd.now{background:var(--crit);box-shadow:0 0 0 3px var(--crit-weak)}
+  .mtl-line{position:absolute;left:3px;top:12px;bottom:0;width:1.5px;background:var(--line)}
+  .mtli:last-child .mtl-line{display:none}
+  .mtt{font-family:var(--mono);font-size:10px;color:var(--ink-4);flex-shrink:0;width:52px}
+  .mtc{color:var(--ink-2)}
+
+  a:focus-visible,button:focus-visible,.shd:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:900px){.content{grid-template-columns:1fr}.side{border-left:none;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <div class="logo">太</div>
+    <a href="#" aria-label="总览">▦</a>
+    <a href="#" class="active" aria-label="智能排障" id="navrca"></a>
+    <a href="#" aria-label="设置">▧</a>
+  </nav>
+  <div class="main">
+    <div class="top">
+      <div class="crumb">智能排障 <span id="c-sep"></span> <span class="id" id="crumb"></span> <span id="c-sep2"></span> 根因定位</div>
+      <span class="demoflag">演示 · 切换命中路定位到根因 / 未命中路半程移交</span>
+      <div class="seg">
+        <button class="on" onclick="load('hit')"><span class="dot det"></span>命中路 · 定位到根因</button>
+        <button onclick="load('miss')"><span class="dot llm"></span>未命中路 · 半程移交</button>
+      </div>
+    </div>
+    <div class="content">
+      <div class="locate" id="locate"></div>
+      <div class="side" id="side"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- icon set (consistent 1.6 stroke) ---------- */
+const P={
+  alert:'<path d="M12 4 3.5 19.5h17z"/><path d="M12 10v4"/><path d="M12 16.6h.01"/>',
+  target:'<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22"/>',
+  database:'<ellipse cx="12" cy="5.8" rx="7" ry="2.7"/><path d="M5 5.8v12.4c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7V5.8"/><path d="M5 12c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7"/>',
+  deduce:'<path d="M4 5h5M4 12h9M4 19h5"/><path d="M13 5.5 18.5 12 13 18.5"/>',
+  check:'<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/>',
+  key:'<circle cx="8.5" cy="15.5" r="3.4"/><path d="M10.9 13.1 19 5M16.5 7.5 19 10M14 10l2 2"/>',
+  lock:'<rect x="5.5" y="11" width="13" height="8.5" rx="2"/><path d="M8.4 11V8a3.6 3.6 0 0 1 7.2 0v3"/>',
+  bolt:'<path d="M12.5 2 5 13.2h5L9 22l8-11.6h-5.5z" fill="currentColor" stroke="none"/>',
+  refresh:'<path d="M19.5 12a7.5 7.5 0 1 1-2.1-5.2"/><path d="M19.6 3.8v4.6H15"/>',
+  chevron:'<path d="M9 5.5 15.5 12 9 18.5"/>',
+  play:'<path d="M8 5.4v13.2L18.5 12z" fill="currentColor" stroke="none"/>',
+  clock:'<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 2"/>',
+  funnel:'<path d="M3.5 5.5h17l-6.6 7.7V19l-3.8 1.6v-8.4z"/>',
+  arrow:'<path d="M5 12h13M13 6.5 18.5 12 13 17.5"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8"/>',
+  wrench:'<path d="M14.5 6.5a3.8 3.8 0 0 0-5 5l-5.5 5.5 2 2 5.5-5.5a3.8 3.8 0 0 0 5-5l-2.3 2.3-2-2z"/>',
+  route:'<circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 6h6a4 4 0 0 1 4 4v6"/>'
+};
+function ic(n,cls){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${cls?`class="${cls}"`:''}>${P[n]||''}</svg>`;}
+const STAGE_IC={sym:'alert',loc:'target',ev:'database',rsn:'deduce'};
+
+/* ---------- data ---------- */
+const D={
+ hit:{
+  id:"CSDP-903001",route:"det",
+  ident:[["系统","CSDP",0],["error_code","903001",1],["服务","order-svc",1],["接入","告警 webhook",0]],
+  root:"Mongo 连接池打满，order-svc 数据库调用超时",
+  rootMeta:{conf:0.94,speed:"定位耗时 2.1s",evidence:"3 项证据",rule:"diagnosis_rules 命中"},
+  funnel:[["全平台","6 系统"],["CSDP","41 服务"],["order-svc","8 依赖"],["Mongo","连接层"],["连接池打满",""]],
+  stages:[
+   {t:"sym",label:"现象",time:"09:12:03.0",
+    find:'告警触发 <span class="mn">code=903001</span> · order-svc · 5 分钟内 <b>148</b> 工单激增 · trace <span class="mn">7f3a91c</span>',
+    narrow:"起点 · 全平台 6 系统",
+    detail:{txt:'从告警载荷提取路由信号：<span class="mn">system=CSDP</span>、<span class="mn">error_code=903001</span>、<span class="mn">service=order-svc</span>。completeness=FULL，可走确定性路由。'}},
+   {t:"loc",label:"范围定位",time:"09:12:03.2",
+    find:'路由键 <span class="mn">(CSDP, 903001)</span> 精确命中已知故障模式，直接收敛到 order-svc 的 Mongo 依赖链',
+    narrow:"6 系统 → order-svc / Mongo",narrowKind:"to",
+    detail:{txt:'确定性查表：<span class="mn">SopEntry(CSDP,903001)</span> status=approved，预声明故障域=Mongo 连接层，evidence_requests 直指连接指标 / 错误日志 / 失败 trace——无需全量扫描。'}},
+   {t:"ev",label:"取证",time:"09:12:05.0",
+    find:"在定位点拉 3 项只读证据（观测云），坐实现场数据",
+    evidence:[
+     {id:"EV-2",title:"Mongo 连接与可用性",key:true,ro:true,plat:"guance",ver:true,
+      q:[["k","M::"],["n","mongodb"],["p",":(connections_current,connections_available,slow_query_count) "],["s","{host='csdp-mongo-03'}"],["p"," [-15m]"]],
+      obs:[["connections_current","2000",1],["connections_available","0",1],["slow_query_count","37",1],["reachable","true",0]]},
+     {id:"EV-1",title:"错误日志计数",key:false,ro:true,plat:"guance",ver:true,
+      q:[["k","L::"],["n","order-svc"],["p",":(count,trace_id) "],["s","{error_code='903001'}"],["p"," [-15m]"]],
+      obs:[["count","148",1],["trace_id","7f3a91c",0]]},
+     {id:"EV-3",title:"失败调用链定位",key:false,ro:true,plat:"guance",ver:false,
+      q:[["k","T::"],["n","order-svc"],["p",":(failed_hop,status,duration_ms) "],["s","{trace_id='7f3a91c'}"]],
+      obs:[["failed_hop","mongo.find",0],["status","timeout",0],["duration_ms","30012",1]]},
+    ]},
+   {t:"rsn",label:"判定推理",time:"09:12:05.1",
+    find:"3 条判据逐条求值，把范围收敛到根因",
+    reasons:[
+     ["pos",'<span class="mn">EV-2</span> · ratio_of_sum_gt(current, available) → 连接可用 = 0，<b>连接池打满</b>（决定性）'],
+     ["pos",'<span class="mn">EV-3</span> · contains_and_in(status, [timeout,error]) → 失败跳 = mongo.find，<b>定位在 DB 层</b>'],
+     ["pos",'<span class="mn">EV-1</span> · numeric_gte(count, 1) → 148 次，确认故障正在发生']]},
+   {t:"root",label:"根因",time:"确认",root:true,
+    find:'<b>Mongo 连接池打满</b>，order-svc 所有 DB 调用排队至 30s 超时——三条证据一致指向，含 1 项决定性判据。'},
+  ],
+  timeline:[["09:12:03","告警触发"],["09:12:03","定位到 Mongo 依赖"],["09:12:05","取证 3 项"],["09:12:05","根因确认 · 0.94"],["now","待人工批准恢复动作"]],
+  recact:{title:"扩容连接池 / 重启 mongos 路由",stale:"94 天前验证",write:true},
+  openedMs:8*60000+42000,slaMs:30*60000,
+ },
+ miss:{
+  id:"CSDP-777012",route:"llm",abst:true,
+  ident:[["系统","CSDP",0],["error_code","无 / 未抽出",0],["接入","人工录入",0],["completeness","SYMPTOM",1]],
+  root:"定位到半路：疑似网关长尾，未收敛到根因",
+  rootMeta:{conf:0.38,speed:"agent 探索 2 步后弃权",evidence:"2 项只读",rule:"置信 0.38 < 阈值 0.70"},
+  funnel:[["全平台","6 系统"],["CSDP","41 服务"],["网关 / csdp-web","疑似"],["? 根因","未收敛"]],
+  stages:[
+   {t:"sym",label:"现象",time:"09:40:22",
+    find:'客服录入：<b>工单列表偶发打开很慢</b>，转圈几十秒，刷新几次又好，<span class="mn">无报错码</span>',
+    narrow:"起点 · 无结构化信号",
+    detail:{txt:'人工录入，completeness=SYMPTOM。无 error_code 可抽取 → 无法走确定性路由。'}},
+   {t:"loc",label:"范围定位",time:"09:40:23",
+    find:'未命中任何 <span class="mn">(system, error_code)</span> SOP → 无法确定性收敛 → 转 agent 只读探索',
+    narrow:"确定性收敛失败，交 agent",narrowKind:"dead",
+    detail:{txt:'路由表无匹配。降级到未命中路：启动专用排障数字员工，工具绑定锁死只读（AgentToolBinding 白名单 + ToolGuard BLOCK 写 / shell）。'}},
+   {t:"hyp",n:"1",label:"假设 1 · 错误率偏高？",time:"09:40:41",dead:true,
+    find:"agent 查近 15m 错误日志",narrow:"排除 · 错误量低，非硬故障",narrowKind:"dead",
+    evidence:[{id:"EV-A",title:"错误日志计数",ro:true,plat:"guance",ver:false,
+      q:[["k","L::"],["n","csdp-web"],["p",":(count) {} [-15m]"]],obs:[["count","3",0]]}]},
+   {t:"hyp",n:"2",label:"假设 2 · 网关延迟？",time:"09:41:08",
+    find:"agent 查网关 P99 延迟",narrow:"疑似命中 · 长尾高，但无稳定判据可定因",narrowKind:"maybe",
+    evidence:[{id:"EV-B",title:"网关 P99 延迟",key:true,ro:true,plat:"guance",ver:false,
+      q:[["k","M::"],["n","gateway"],["p",":(p99_ms,p50_ms) "],["s","{service='csdp-web'}"],["p"," [-30m]"]],
+      obs:[["p99_ms","8400",1],["p50_ms","210",0]]}]},
+   {t:"root",label:"弃权 · 移交开发",time:"09:41",root:true,abst:true,
+    find:'agent 已把范围<b>从全平台收敛到「网关长尾」</b>，但置信 0.38 < 阈值 → <b>不硬凑根因</b>，带半程结论移交。',
+    handoff:{next:["核对网关近 1h 是否有发布 / 扩缩容变更","抓一条慢请求 trace，看卡在哪一跳","确认是否集中在某可用区 / 实例"],
+     similar:[["CSDP-771002","网关长尾 → GC 停顿","0.72"],["CSDP-760418","连接复用泄漏 → P99 抬升","0.65"]]}},
+  ],
+  timeline:[["09:40:22","工单录入"],["09:40:23","未命中 → agent"],["09:41:08","收敛到网关长尾"],["09:41","弃权移交"],["now","待开发接手"]],
+  openedMs:3*60000+10000,slaMs:60*60000,
+ }
+};
+
+let cur,ticker;
+function fmt(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+
+function load(which){
+ cur=D[which];
+ document.querySelectorAll('.seg button').forEach((b,i)=>b.classList.toggle('on',i===(which==='hit'?0:1)));
+ document.getElementById('crumb').textContent=cur.id;
+ renderLocate();renderSide();
+ clearInterval(ticker);const start=Date.now()-cur.openedMs;
+ ticker=setInterval(()=>{const e=document.getElementById('slaclk');if(!e)return;const open=Date.now()-start,rem=cur.slaMs-open;e.querySelector('.big').textContent=fmt(open);const r=e.querySelector('.rem b');if(r)r.textContent=fmt(rem);},1000);
+}
+
+function renderLocate(){
+ const hi=!cur.abst,m=cur.rootMeta;
+ const funnel=cur.funnel.map((f,i)=>{
+   const last=i===cur.funnel.length-1;
+   const cls=last?('final'+(cur.abst?' abst':'')):(i>0?'narrow':'');
+   const conn=last?'':`<span class="fconn"></span>`;
+   return `<div class="fstep"><div class="fnode ${cls}"><span class="fb">${f[0]}</span>${f[1]?`<span class="fc">${f[1]}</span>`:''}</div>${conn}</div>`;
+ }).join('');
+ document.getElementById('locate').innerHTML=`
+  <div class="idrow">
+    <span class="idcode">${cur.id}</span>
+    <span class="chip ${cur.route}"><span class="sh"></span>${cur.route==='det'?'命中 · 确定性':'未命中 · agent'}</span>
+    <span class="vsep"></span>
+    ${cur.ident.map(([k,v,mono])=>`<span class="idkv">${k} <${mono?'span class="m"':'b'}>${v}</${mono?'span':'b'}></span>`).join('<span class="vsep"></span>')}
+  </div>
+
+  <div class="answer ${cur.abst?'abst':''}">
+    <div class="eyebrow">${ic(cur.abst?'route':'check','glyph')}${cur.abst?'定位结论 · 半程移交':'根因 · Root Cause'}
+      <span class="speed">${ic('bolt')}${m.speed}</span></div>
+    <h1 class="rc ${cur.abst?'abst':''}">${cur.root}</h1>
+    <div class="rcmeta">
+      <span class="conf">置信 <span class="track"><span class="fill ${hi?'hi':'lo'}" style="width:${m.conf*100}%"></span></span><b class="${hi?'hi':'lo'}">${m.conf.toFixed(2)}</b></span>
+      <span class="mdot"></span><span>${m.evidence}</span><span class="mdot"></span><span>${m.rule}</span>
+    </div>
+  </div>
+
+  <div class="funnel"><span class="flabel">${ic('funnel')}收敛路径</span>${funnel}</div>
+
+  <div class="spinehd">${ic('route','sh-ic')}<span class="st">根因定位链</span><span class="hint">单事件阶段 · 点开看证据与查询</span></div>
+  <div class="chain">${cur.stages.map((s,i)=>stageHtml(s,i)).join('')}</div>`;
+}
+
+function stageHtml(s,i){
+ const nodeIc = s.t==='hyp' ? `<span class="n">${s.n}</span>` : (s.t==='root'?ic(s.abst?'alert':'check'):ic(STAGE_IC[s.t]));
+ const nodeCls = s.t==='hyp' ? (s.dead?'hyp dead':'hyp') : s.t + (s.abst?' abst':'');
+ let inner='';
+ if(s.detail&&s.detail.txt) inner=`<div class="txt">${s.detail.txt}</div>`;
+ if(s.reasons) inner=s.reasons.map(([k,t])=>`<div class="verdict ${k}"><span class="vmark">${ic(k==='pos'?'check':k==='maybe'?'spark':'arrow')}</span><span class="vt">${t}</span></div>`).join('');
+ if(s.evidence) inner=s.evidence.map(evHtml).join('');
+ if(s.handoff){
+   inner=`<div class="handoff"><div class="ht">${ic('spark')}系统替开发减负 · 建议下一步先查</div>
+     <ol>${s.handoff.next.map(n=>`<li>${n}</li>`).join('')}</ol>
+     <div class="similar"><div class="slh">相似历史故障 · 可借鉴定位路径</div>
+       ${s.handoff.similar.map(([c,d,sc])=>`<div class="simrow"><span class="sc">${c}</span><span class="sd">${d}</span><span class="ss">相似 ${sc}</span></div>`).join('')}</div></div>`;
+ }
+ const hasDrawer=inner!=='';
+ const openByDefault = s.root||s.t==='ev'||s.t==='rsn'||s.t==='hyp';
+ const narrowCls = (s.narrowKind==='dead'||s.narrowKind==='maybe')?'narrowto dead':'narrowto';
+ return `<div class="stg ${openByDefault?'open':''}" id="stg-${i}">
+   <div class="srail"><div class="snode ${nodeCls}">${nodeIc}</div><div class="sconn"></div></div>
+   <div class="sbody ${s.root?'root':''} ${s.dead?'deadcard':''}">
+     <div class="shd" tabindex="0" role="button" onclick="tog(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tog(${i})}">
+       <span class="stt">${s.label}</span><span class="stime">${s.time}</span>${hasDrawer?ic('chevron','caret'):''}</div>
+     <div class="sfind">${s.find}${s.narrow?`<br><span class="${narrowCls}">${ic('arrow')}${s.narrow}</span>`:''}</div>
+     ${hasDrawer?`<div class="sdrawer"><div class="sdinner"><div class="sdpad">${inner}</div></div></div>`:''}
+   </div></div>`;
+}
+
+function evHtml(e){
+ const q=e.q.map(([c,t])=>c==='k'?`<span class="qk">${t}</span>`:c==='s'?`<span class="qs">${t}</span>`:c==='n'?`<span>${t}</span>`:`<span class="q">${t}</span>`).join('');
+ return `<div class="ev ${e.key?'key':''}">
+  <div class="evh"><span class="eid">${e.id}</span><span class="ett">${e.title}</span>
+    ${e.key?`<span class="badge key">${ic('key')}决定性</span>`:''}${e.ro?`<span class="badge ro">${ic('lock')}只读</span>`:''}
+    <span class="plat">${e.plat}</span></div>
+  <div class="query">${q}<span class="run" onclick="alert('在观测云重放此查询（只读）')">${ic('play')}重放</span></div>
+  <div class="obsgrid">${e.obs.map(([f,v,b])=>`<div class="obs"><span class="of">${f}</span><span class="ov ${b?'bad':''}">${v}</span></div>`).join('')}</div>
+  <div class="evf"><span>${e.plat} · 归一字段</span><span class="ver ${e.ver?'ok':'miss'}"><span class="vd"></span>${e.ver?'已核实':'待核实'}</span></div></div>`;
+}
+
+function renderSide(){
+ const open=cur.openedMs,rem=cur.slaMs-open,critCls=rem<5*60000?'crit':'';
+ const dispo=cur.recact?`
+   <div class="card"><div class="clabel">${ic('wrench')}推荐处置 · 定位后</div>
+     <div class="recact"><div class="rt"><span class="tagw">生产写</span> ${cur.recact.title} ${cur.recact.stale?`<span class="stale">${ic('refresh')}${cur.recact.stale}</span>`:''}</div>
+     <div class="rd">由有权限的人在平台外执行 · 平台不执行</div></div>
+     <button class="btn primary" onclick="alert('进入处置流程：确认 → 转派 → 批准（批准≠执行）')">${ic('arrow')}进入处置流程</button>
+     <div class="note"><span class="k">R1/R2</span><span>定位与处置分离：本页只负责定位到根因；写操作在处置页，且批准仅推进状态、系统不执行。</span></div>
+   </div>`:`
+   <div class="card"><div class="clabel">${ic('route')}半程移交</div>
+     <div class="recact"><div class="rt">未产出处置动作 · 弃权</div>
+     <div class="rd">已把 agent 定位到的范围、下一步建议、相似故障打包，供开发从半程接手。</div></div>
+     <button class="btn primary" onclick="alert('认领并从「网关长尾」这一步继续定位')">${ic('target')}认领 · 从半程继续</button>
+     <button class="btn" onclick="alert('填入根因即成 candidate 知识候选，喂知识闭环 D2')">${ic('check')}我已定位到根因</button>
+   </div>`;
+ document.getElementById('side').innerHTML=`
+  <div class="card" id="slaclk"><div class="clabel">${ic('clock')}时间</div>
+    <div class="clk"><span class="big">${fmt(open)}</span><span class="u">已开启</span></div>
+    <div class="rem ${critCls}">SLA 剩余 <b>${fmt(rem)}</b></div></div>
+  ${dispo}
+  <div class="card"><div class="clabel">${ic('route')}定位时间线</div>
+    <div class="mtl">${cur.timeline.map(([t,c])=>`<div class="mtli"><span class="mtd ${t==='now'?'now':''}"></span><span class="mtl-line"></span><span class="mtt">${t==='now'?'现在':t}</span><span class="mtc">${c}</span></div>`).join('')}</div></div>`;
+}
+
+function tog(i){document.getElementById('stg-'+i).classList.toggle('open');}
+document.getElementById('navrca').innerHTML=ic('target');
+load('hit');
+</script>
+</body>
+</html>
