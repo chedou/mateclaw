@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT 智能排障系统 · 设计门户</title>
+<style>
+  :root{
+    --bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;
+    --ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;
+    --line:#e3e7ee;--line-2:#eef1f6;
+    --accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;
+    --good:#0e9f6e;--good-weak:#e6f6ef;--warn:#d98207;--warn-weak:#fbf1e0;--crit:#e14b4b;--crit-weak:#fceceb;
+    --shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);
+    --shadow-md:0 2px 4px rgba(15,22,34,.05),0 6px 20px rgba(15,22,34,.07);
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;
+    --ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;
+    --accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;
+    --good:#2fbb85;--good-weak:#12271f;--warn:#e6a13c;--warn-weak:#2a2113;--crit:#ef6b6b;--crit-weak:#2c1717;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 6px 24px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{--bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;--ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;--accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;--good:#2fbb85;--good-weak:#12271f;--warn:#e6a13c;--warn-weak:#2a2113;--crit:#ef6b6b;--crit-weak:#2c1717;--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 6px 24px rgba(0,0,0,.4)}
+  :root[data-theme="light"]{--bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;--ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;--line:#e3e7ee;--line-2:#eef1f6;--accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;--good:#0e9f6e;--good-weak:#e6f6ef;--warn:#d98207;--warn-weak:#fbf1e0;--crit:#e14b4b;--crit-weak:#fceceb;--shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);--shadow-md:0 2px 4px rgba(15,22,34,.05),0 6px 20px rgba(15,22,34,.07)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--ink-2);background:var(--bg);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  svg{display:block;flex-shrink:0}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+
+  /* header */
+  header{border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10;backdrop-filter:saturate(1.1) blur(6px)}
+  .hin{display:flex;align-items:center;gap:12px;height:60px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,var(--accent),#12a3c9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px}
+  .brand b{color:var(--ink-1);font-size:15px;font-weight:650;letter-spacing:-.01em;display:block;line-height:1.2}
+  .brand span{font-size:11px;color:var(--ink-3);font-family:var(--mono)}
+  .hrepo{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);border:1px solid var(--line);border-radius:20px;padding:5px 12px;display:flex;align-items:center;gap:7px}
+  .hrepo .dot{width:7px;height:7px;border-radius:50%;background:var(--good)}
+
+  /* hero */
+  .hero{padding:52px 0 34px}
+  .kicker{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:9px;margin-bottom:16px}
+  .kicker::before{content:"";width:26px;height:1.5px;background:var(--accent)}
+  h1{font-size:34px;line-height:1.22;font-weight:750;letter-spacing:-.02em;color:var(--ink-1);max-width:20ch;text-wrap:balance}
+  .lead{margin-top:16px;font-size:15.5px;color:var(--ink-2);max-width:64ch;line-height:1.7}
+  .lead b{color:var(--ink-1);font-weight:650}
+  .metrics{display:flex;gap:34px;margin-top:30px;flex-wrap:wrap}
+  .metric .n{font-family:var(--mono);font-size:25px;font-weight:700;color:var(--ink-1);letter-spacing:-.01em}
+  .metric .n .u{font-size:14px;color:var(--ink-3);font-weight:500;margin-left:2px}
+  .metric .l{font-size:12px;color:var(--ink-3);margin-top:3px}
+
+  /* thread / design narrative */
+  .thread{margin:14px 0 48px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 28px;box-shadow:var(--shadow-sm)}
+  .thread h2{font-size:13px;font-weight:650;color:var(--ink-1);display:flex;align-items:center;gap:9px;margin-bottom:20px}
+  .thread h2 svg{width:16px;height:16px;color:var(--accent)}
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;row-gap:16px}
+  .fnode{flex:1;min-width:150px;padding-right:22px;position:relative}
+  .fnode:not(:last-child)::after{content:"";position:absolute;right:9px;top:9px;width:11px;height:11px;border-top:1.6px solid var(--ink-4);border-right:1.6px solid var(--ink-4);transform:rotate(45deg)}
+  .fnode .fs{font-family:var(--mono);font-size:10px;color:var(--ink-4);letter-spacing:.05em}
+  .fnode .ft{font-size:13.5px;font-weight:650;color:var(--ink-1);margin:5px 0 3px}
+  .fnode .fd{font-size:11.5px;color:var(--ink-3);line-height:1.5}
+  .fnode.final .ft{color:var(--accent)}
+
+  /* section */
+  section{margin-bottom:46px}
+  .sechd{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .sechd h2{font-size:18px;font-weight:700;letter-spacing:-.01em;color:var(--ink-1)}
+  .sechd .sc{font-family:var(--mono);font-size:12px;color:var(--ink-4)}
+  .sechd .sd{margin-left:auto;font-size:12.5px;color:var(--ink-3)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+  .grid.two{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+
+  .card{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;box-shadow:var(--shadow-sm);transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+  .card:hover{transform:translateY(-3px);box-shadow:var(--shadow-md);border-color:var(--accent-line)}
+  .card .thumb{height:118px;position:relative;overflow:hidden;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+  .card .ci{width:40px;height:40px;color:var(--accent);opacity:.9;z-index:1}
+  .card .cbody{padding:15px 17px 17px;display:flex;flex-direction:column;flex:1}
+  .card .ct{font-size:15px;font-weight:650;color:var(--ink-1);letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .card .cf{margin-left:auto;color:var(--ink-4);transition:.16s}
+  .card:hover .cf{color:var(--accent);transform:translateX(2px)}
+  .card .cd{font-size:12.5px;color:var(--ink-3);margin-top:7px;line-height:1.55;flex:1}
+  .card .cmeta{display:flex;align-items:center;gap:8px;margin-top:13px}
+  .fname{font-family:var(--mono);font-size:10.5px;color:var(--ink-4);margin-left:auto}
+
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.02em}
+  .tag .d{width:6px;height:6px;border-radius:50%}
+  .tag.now{background:var(--accent-weak);color:var(--accent)}.tag.now .d{background:currentColor}
+  .tag.iter{background:var(--surface-3);color:var(--ink-3)}.tag.iter .d{background:currentColor}
+  .tag.doc{background:var(--good-weak);color:var(--good)}.tag.doc .d{background:currentColor}
+  .tag.arch{background:var(--warn-weak);color:var(--warn)}.tag.arch .d{background:currentColor}
+
+  /* thumbs — abstract, subject-grounded, css only */
+  .th-grad{position:absolute;inset:0;opacity:.5}
+  .thumb.t-rca .th-grad{background:radial-gradient(120% 90% at 15% 20%,var(--accent-weak),transparent 60%),radial-gradient(90% 80% at 90% 90%,var(--good-weak),transparent 55%)}
+  .thumb.t-over .th-grad{background:radial-gradient(100% 90% at 85% 15%,var(--accent-weak),transparent 60%),radial-gradient(80% 80% at 10% 90%,var(--warn-weak),transparent 55%)}
+  .thumb.t-iter .th-grad{background:linear-gradient(120deg,var(--surface-3),transparent)}
+  .thumb.t-doc .th-grad{background:radial-gradient(90% 90% at 20% 20%,var(--good-weak),transparent 60%)}
+  .thumb.t-arch .th-grad{background:linear-gradient(120deg,var(--warn-weak),transparent 70%)}
+  .th-lines{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 26px;opacity:.35}
+  .th-lines i{height:5px;border-radius:3px;background:var(--ink-4)}
+
+  footer{border-top:1px solid var(--line);margin-top:20px;padding:26px 0 46px;color:var(--ink-3);font-size:12px}
+  footer .fin{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  footer .mono{color:var(--ink-4)}
+  .redline{background:var(--crit-weak);border:1px solid transparent;border-radius:10px;padding:14px 16px;margin-top:8px;display:flex;gap:11px}
+  .redline svg{width:16px;height:16px;color:var(--crit);flex-shrink:0;margin-top:2px}
+  .redline .rt{font-size:12.5px;color:var(--ink-2);line-height:1.6}
+  .redline .rt b{color:var(--ink-1)}
+
+  .themebtn{margin-left:12px;width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .themebtn:hover{color:var(--accent);border-color:var(--accent-line)}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:640px){h1{font-size:27px}.wrap{padding:0 18px}}
+</style>
+</head>
+<body>
+<header><div class="wrap hin">
+  <div class="logo">太</div>
+  <div class="brand"><b>IT 智能排障系统</b><span>on MateClaw · 设计门户</span></div>
+  <span class="hrepo"><span class="dot"></span>webonne/mateclaw</span>
+  <button class="themebtn" id="tb" aria-label="切换主题" title="切换深/浅色"></button>
+</div></header>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="kicker">Fault Localization Console · 设计原型</div>
+    <h1>帮开发从现象一步步定位到根因</h1>
+    <p class="lead">把故障处理从「人工翻系统 + 经验判断」升级为<b>告警驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环</b>。核心是一条从症状到根因的<b>定位链</b>：命中已知故障模式时确定性地几秒定位；未命中时由只读 agent 探索到半路、把开发放到一个"跑起来的起点"。</p>
+    <div class="metrics">
+      <div class="metric"><div class="n">146<span class="u">码</span></div><div class="l">L0 结构化 SOP 路由键</div></div>
+      <div class="metric"><div class="n">2.1<span class="u">s</span></div><div class="l">命中路定位耗时（示例）</div></div>
+      <div class="metric"><div class="n">S0<span class="u">→S3</span></div><div class="l">放权阶梯 · 写操作永不自动</div></div>
+      <div class="metric"><div class="n">D1<span class="u">–D8</span></div><div class="l">已锁定决策 · 逐条源码核对</div></div>
+    </div>
+  </div>
+
+  <div class="thread">
+    <h2 id="thread-h"></h2>
+    <div class="flow">
+      <div class="fnode"><div class="fs">v1</div><div class="ft">信息陈列</div><div class="fd">三栏工作台，把一个故障的信息摆全</div></div>
+      <div class="fnode"><div class="fs">v2</div><div class="ft">决策中心</div><div class="fd">诊断提为常驻主角，流程降为进度带</div></div>
+      <div class="fnode"><div class="fs">v3</div><div class="ft">注意力自适应</div><div class="fd">按不确定性×影响，收成快车道或展成工作台</div></div>
+      <div class="fnode final"><div class="fs">现行</div><div class="ft">根因定位链</div><div class="fd">锚定"帮开发快速定位根因"，主角是症状→根因的收敛过程</div></div>
+    </div>
+  </div>
+
+  <!-- 现行主推 -->
+  <section>
+    <div class="sechd"><h2>现行主推</h2><span class="sc" id="sc1"></span><span class="sd">最新设计 · 建议汇报重点看这两屏</span></div>
+    <div class="grid two" id="g-now"></div>
+  </section>
+
+  <!-- 处置页设计演进 -->
+  <section>
+    <div class="sechd"><h2>处置页 · 设计演进</h2><span class="sc" id="sc2"></span><span class="sd">保留迭代过程，展示设计思路的收敛</span></div>
+    <div class="grid" id="g-iter"></div>
+  </section>
+
+  <!-- 架构与摘要 -->
+  <section>
+    <div class="sechd"><h2>架构与摘要</h2><span class="sc" id="sc3"></span><span class="sd">决策与蓝图（结论以 rfcs/ 为准）</span></div>
+    <div class="grid" id="g-doc"></div>
+  </section>
+
+  <!-- 历史归档 -->
+  <section>
+    <div class="sechd"><h2>历史原型 · 归档</h2><span class="sc" id="sc4"></span><span class="sd">MetaClaw 时期，结论已被现行设计吸收</span></div>
+    <div class="grid" id="g-arch"></div>
+  </section>
+
+  <div class="redline" id="redline"></div>
+
+  <footer><div class="fin">
+    <span>设计原型 · 均为单文件、浏览器直接打开</span><span class="mono">·</span>
+    <span>现行架构见 <span class="mono">rfcs/intelligent-troubleshooting-design.md</span></span><span class="mono">·</span>
+    <span>会话记忆见 <span class="mono">docs/intelligent-troubleshooting/HANDOFF.md</span></span>
+  </div></footer>
+</div>
+
+<script>
+const P={
+  route:'<circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 6h6a4 4 0 0 1 4 4v6"/>',
+  target:'<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22"/>',
+  board:'<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>',
+  layers:'<path d="M12 3 3 8l9 5 9-5z"/><path d="M3 13l9 5 9-5M3 8v5m18-5v5"/>',
+  doc:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8"/>',
+  arrow:'<path d="M5 12h13M13 6.5 18.5 12 13 17.5"/>',
+  grid:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+  shield:'<path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  sun:'<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19"/>'
+};
+function ic(n,s){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${s?`style="width:${s}px;height:${s}px"`:''}>${P[n]||''}</svg>`;}
+
+function thumb(kind,icon){
+  const lines=kind==='t-iter'?'<div class="th-lines"><i style="width:70%"></i><i style="width:45%"></i><i style="width:85%"></i></div>':
+    (kind==='t-over'?'<div class="th-lines" style="flex-direction:row;align-items:stretch;gap:8px;padding:20px 26px"><i style="width:20%;height:auto"></i><i style="width:20%;height:auto"></i><i style="width:20%;height:auto"></i><i style="width:20%;height:auto"></i></div>':'');
+  return `<div class="thumb ${kind}"><div class="th-grad"></div>${lines}<span class="ci">${ic(icon,40)}</span></div>`;
+}
+function card(c){
+  return `<a class="card" href="${c.f}"><div class="thumb-wrap">${thumb(c.thumb,c.icon)}</div>
+    <div class="cbody">
+      <div class="ct">${c.t}<span class="cf">${ic('arrow',18)}</span></div>
+      <div class="cd">${c.d}</div>
+      <div class="cmeta"><span class="tag ${c.tag}"><span class="d"></span>${c.tagT}</span><span class="fname">${c.f}</span></div>
+    </div></a>`;
+}
+const NOW=[
+  {t:"根因定位视图",d:"详情页看单事件从现象到根因的阶段：答案先行 + 收敛漏斗 + 五阶段定位链（证据与 DQL 可展开重放）。命中路 2 秒定位，未命中路半程移交开发。",f:"console-rca.html",icon:"target",thumb:"t-rca",tag:"now",tagT:"最新 · 主推"},
+  {t:"值班总览看板",d:"所有活跃故障按处置阶段铺开：系统自动的列褪到背景、等人的列高亮，卡片显示阶段滞留时长，顶部主动喊出瓶颈。点卡片下钻到定位视图。",f:"console-overview.html",icon:"board",thumb:"t-over",tag:"now",tagT:"最新 · 主推"},
+];
+const ITER=[
+  {t:"处置页 v1 · 信息陈列",d:"三栏布局：左上下文 / 中状态机流水线 / 右证据面板。命中与未命中同页按状态切换。设计起点。",f:"console-disposition.html",icon:"grid",thumb:"t-iter",tag:"iter",tagT:"迭代 v1"},
+  {t:"处置页 v2 · 决策中心",d:"把 Diagnosis 提为常驻英雄区，流水线降为进度带；加 SLA 时钟、置信阈值参照、证据按杠杆排序、批准前强制复核。",f:"console-disposition-v2.html",icon:"spark",thumb:"t-iter",tag:"iter",tagT:"迭代 v2"},
+  {t:"处置页 v3 · 注意力自适应",d:"同一控制台三种姿态：高影响确认 / 自动驾驶 / 调查工作台。补影响面、活体状态、拆解式置信、时间线、异议一等公民。",f:"console-disposition-v3.html",icon:"layers",thumb:"t-iter",tag:"iter",tagT:"迭代 v3"},
+];
+const DOC=[
+  {t:"架构与演进蓝图",d:"完整设计（16 节）：分层架构、双路脊柱、全过程运转图、三契约、L0→L5 演进、决策记录 D1–D8、落地热力矩阵。",f:"architecture-blueprint.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"文档"},
+  {t:"执行摘要 · 一页纸",d:"给团队 / 领导的两分钟版：做什么、怎么安全、承诺什么、第一步与所需支持。",f:"executive-summary.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"文档"},
+];
+const ARCH=[
+  {t:"版式 A · 单故障详情",d:"IM 卡片 + 故障上下文 Web 台。MetaClaw 时期原型。",f:"console-prototype.html",icon:"grid",thumb:"t-arch",tag:"arch",tagT:"归档"},
+  {t:"版式 B · 值班驾驶舱",d:"三栏应用式（左队列 / 中处置 / 右证据）。MetaClaw 时期原型。",f:"console-prototype-b.html",icon:"board",thumb:"t-arch",tag:"arch",tagT:"归档"},
+  {t:"故障工作台 · 列表→详情",d:"列表到详情的处置闭环原型。MetaClaw 时期。",f:"console-workbench.html",icon:"grid",thumb:"t-arch",tag:"arch",tagT:"归档"},
+];
+document.getElementById('g-now').innerHTML=NOW.map(card).join('');
+document.getElementById('g-iter').innerHTML=ITER.map(card).join('');
+document.getElementById('g-doc').innerHTML=DOC.map(card).join('');
+document.getElementById('g-arch').innerHTML=ARCH.map(card).join('');
+document.getElementById('sc1').textContent='02';document.getElementById('sc2').textContent='03';
+document.getElementById('sc3').textContent='02';document.getElementById('sc4').textContent='03';
+document.getElementById('thread-h').innerHTML=ic('route',16)+' 设计主线 · 四次迭代如何收敛到「根因定位」';
+document.getElementById('redline').innerHTML=ic('shield')+'<div class="rt"><b>贯穿全程的安全底线（汇报可强调）：</b>命中路零 LLM；生产写工具永不注册；人工确认只推进状态机、系统不执行任何写操作；未命中路 agent 工具绑定锁死只读。设计与源码逐条核对，见 <span class="mono">rfcs/intelligent-troubleshooting-design.md §5 / §12</span>。</div>';
+
+// theme toggle
+const tb=document.getElementById('tb');
+function setIcon(){tb.innerHTML=ic('sun',16);}
+setIcon();
+tb.onclick=()=>{const r=document.documentElement;const cur=r.getAttribute('data-theme');const dark=cur?cur==='dark':matchMedia('(prefers-color-scheme:dark)').matches;r.setAttribute('data-theme',dark?'light':'dark');};
+</script>
+</body>
+</html>
