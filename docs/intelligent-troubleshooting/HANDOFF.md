@@ -1,153 +1,102 @@
-# 交接 / 会话记忆 —— IT 智能排障系统
+# HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
-> 本文件是一次完整设计会话的记忆快照，供**本地 Claude 无缝接续**。读完这份 + `architecture-blueprint.html`
-> 就能掌握全部决策与现状。原会话分支 `claude/session-moz2pc` 已合入 `zhinengpaizhang-dev`；后续以用户
-> 当前明确选择的分支为准。
-
----
-
-## 一、这是什么
-
-在 **MetaClaw**（元学习代理平台，本仓库）之上做一个 **IT 智能排障系统**。首个落地域：**CSDP** 工单/客服链路。
-目标：把故障处理从「人工翻系统 + 经验判断」→「告警/工单驱动 · 智能路由 · 自动取证 · 人机协同 · 知识闭环」。
-
-**MetaClaw 能复用的**：代理层（`api_server.py` 单轮把 skill 注入 system prompt）、Skills、长期记忆、Skill Evolver、candidate→promotion。
-**关键实现事实**：MetaClaw 的 skill 注入是**单轮拼进 system prompt**，工具调用在客户端执行——它**注入方法+学习，但不跑多步循环、不执行工具**。
+> 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
+> 状态：架构已逐条源码核对通过并落 RFC；实施尚未动工（Java 代码为零）。
+> 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
+> 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
 ---
 
-## 二、八个已锁定决策（D1–D8）
+## 1. 一句话
 
-| # | 决策 | 要点 |
+把故障处理从「人工翻系统 + 经验判断」升级为「告警/工单驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环」。
+首个域：CSDP 工单/客服链路。落法：**MateClaw-server 内的确定性领域模块 `vip.mate.troubleshooting`**。
+
+## 2. 八个已锁定决策（D1–D8，全部在 mateclaw 源码上核对兑现）
+
+| # | 决策 | mateclaw 兑现（详见 RFC 对应节） |
 |---|---|---|
-| **D1** | 确定性/智能边界 = 「(system,error_code) 是否命中」 | 命中走确定性查表+DQL取证；未命中才上 LLM |
-| **D2** | 知识库可演进 | candidate→approved→deprecated；复用 MetaClaw memory 机制 |
-| **D3** | 中长期收敛「故障上下文 Web 台」 | 强制 API-first：核心只产出「诊断结论对象」，IM/Web 都是视图 |
-| **D4** | 编排 = 自建 orchestrator（LLM 走 MetaClaw）+ 工具走 MCP | orchestrator 跑循环/调 MCP/输出校验；每次 LLM 调用经 MetaClaw；SOP 分两层 |
-| **D5** | 上线取信 = 影子 + 历史回归集 + 放权阶梯 | S0 影子→S1 建议→S2 只读自动取证→S3 半自动；写操作永不自动；按错误码逐格毕业 |
-| **D6** | 知识运营 = 沉淀嵌进流程 + 贡献者受益 + 专家只审核 | 三来源（存量挖掘/增量沉淀/主动补全 backlog）；覆盖率进 KPI |
-| **D7** | MetaClaw 集成 = 产品一体、Module 与运行时分开 | 同仓同包、统一启动；排障先独立进程，通过 reasoning / knowledge Adapter 复用 MetaClaw；RBAC/可信身份完成前保持 loopback |
-| **D8** | 证据源开放适配（Observability Abstraction Layer） | SOP 存平台无关「意图」(EvidenceRequest)，绑定放注册表(D-A)，按 system+signal 路由(D-B)，各适配器归一到 canonical `observed` 字段(D-C)；观测云是首个适配器，Zabbix/Prometheus/日志平台可插拔加入、零改 SOP。详见 `observability-abstraction-design.md` |
+| D1 | 确定性/AI 边界 =「(system,error_code) 命中？」 | 命中路=领域引擎零 LLM；Workflow 每步调 LLM 故不可承载（RFC §1/§3） |
+| D2 | 知识库可演进（candidate→approved→deprecated） | 领域表自建审核生命周期；Wiki 是 LLM 管道、永不做权威（RFC §8） |
+| D3 | API-first 故障上下文 Web 台 | 领域 Web 台 + IM/Web 双确认（RFC §5） |
+| D4 | 自建 orchestrator + 工具走 MCP/ToolCallback | 领域 service 自跑循环；adapter 兼 `@Tool`（RFC §3/§6） |
+| D5 | 影子 + 回归集 + 放权阶梯（写永不自动） | FeatureFlag(fail-closed)×per-system 档位 + 影子回归毕业（RFC §10） |
+| D6 | 知识运营（沉淀嵌入流程、专家才评审） | `manage:troubleshooting` capability 门控审核（RFC §9） |
+| D7 | 与平台产品一体、运行时隔离 | 单 JAR 内兄弟包、逻辑不寄生 Workflow（RFC §2） |
+| D8 | 证据源开放适配（OAL，观测云首适配器） | 一份 `EvidenceSourceAdapter` 两个调用方 + Router + 归一（RFC §6） |
 
----
+**信任工程五约束**（沿用）：①确定性优先（LLM 不生成恢复动作）②强制引用证据 ③结构化输出+校验闸门
+④置信度校准+abstain ⑤上下文预算。
 
-## 三、架构骨架（详见蓝图 §3–§12）
+## 3. 四条红线（每个 PR 自检，源码依据见 RFC §5/§12）
 
-- **六层**：①接入 ②路由 ③编排 ④能力(工具) ⑤协同/交付 ⑥闭环。MetaClaw 只在 ③⑥ 出力。
-- **双路脊柱**：命中→确定性 workflow（code-planned）；未命中→ReAct 式 agent（套笼子：DQL 白名单+低置信+人工确认）。
-- **三契约**：`IncidentContext`（含 intake_source/completeness/raw_input）→ `SopEntry`（key=(system,error_code)，含 evidence_dql/anomaly_criteria/action_type）→ `Diagnosis`（唯一对外契约）。
-- **两层 SOP**：结构化 KB（确定性数据，orchestrator 用 MCP 工具查，凭证不入模型）＋ MetaClaw skill（方法论，注入 prompt）。
-- **取证 = 可插拔多平台（D8）**：SOP 存平台无关意图，各平台适配器归一到 canonical `observed` 字段供规则引擎判读。
-  **观测云是首个适配器**——DQL 语法 `命名空间::数据源:(字段){过滤}[时间范围]`（L::日志 M::指标 T::链路 D::拨测），
-  端点 `df-openapi.prd.sangfor.com/api/v1/df/query_data_v1`，`DF-API-KEY` 鉴权（内网，沙箱不可达）。后续可接 Zabbix/Prometheus/日志平台。
-- **信任工程五约束**：①确定性优先(LLM 不生成恢复动作) ②强制引用证据 ③结构化输出+校验闸门 ④置信度校准+abstain ⑤上下文预算。
-- **intake**：webhook + 手动录入（贴日志/现象→LLM 抽取 error_code）；completeness 驱动路由；幂等键 (system,error_code,service,时间桶) + 疑似重复提示。
+1. **生产写工具一个都不注册**（ToolGuard 批准=回放执行，语义与我们相反）。
+2. **人工确认只推进领域状态机、执行 0 个工具**（≠ ToolGuard 批准）。
+3. **写操作永远外部人工 + `record-outcome` 登记**；平台不连生产写执行器。
+4. **未命中路 agent 锁死只读**（`AgentToolBinding` 白名单 + ToolGuard BLOCK）＋命中路零 LLM。
 
----
+## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
-## 四、主要矛盾（务必记住）
+**矛盾清单**：
+- [已验证的完备设计] vs [尚不存在的可运行实现]（RFC 通过、Java 代码为零）
+- [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
+- [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
+- [单点竖切验证]（903001 需内网联调）vs [面上铺开]（146 码、多系统）
+- [信任建立]（影子期慢积累）vs [见效压力]
 
-**系统天花板 = 知识质量，不是技术。** L0 清洗后按 D1 唯一路由键重算：146 个键，62% 有恢复方案，
-仅 **30/146 · 约 21%** 含明确只读自动化步骤（旧 32% 口径误计了部分写操作/未知动作），且仍有质量阻断；
-`evidence_dql`/`anomaly_criteria` 几乎全为空。所以**不承诺"上线即全自动"**，走"先证明、逐格放权、越用越全"。
-补齐是**持久战**：高频优先、和放权阶梯咬合。
+**⭐ 主要矛盾**：[已验证的设计] vs [零实现]。理由：解决了它（P0–P2 竖切在 mateclaw 跑通），知识质量
+矛盾才有载体去暴露（清洗闸门、影子回归都要跑在实现上），信任矛盾才有数据来源；反之任何知识/信任工作都悬空。
+**性质**：非对抗性（工程演进矛盾）→ 分阶段实施 + 集中兵力解决。
+**矛盾的主要方面**：在「实现缺位」一侧——当前系统的性质仍是"纸面系统"，由未实现所规定。
+**应对**：集中兵力主攻 P0→P1→P2（903001 fixture 竖切在 mateclaw 复活，对齐 Python MVP 38 测试）；
+数据侧 blocker 走 owner 裁决流程并行推进（不占工程主力）。
+**⚠️ 需监控（矛盾转化）**：P0–P2 跑通后，[知识质量 vs 自动化范围] 将上升为主要矛盾——它是全过程的
+根本天花板（前一阶段已确立：**系统天花板 = 知识质量，不是技术**，故不承诺"上线即全自动"）；若内网
+联调窗口先到，临时优先核实 903001 真实取证。
 
----
+**持久战三阶段映射**（底线不随阶段转移：写操作永远人工）：
+- 战略防御 = S0 影子：纪律为王、不承诺自动化、积累回归数据；
+- 战略相持 = S1–S2：建议卡 + 只读自动取证，知识候选闭环开始造血（146 码逐批审核毕业）；
+- 战略反攻 = S3：半自动 + 多系统接入 + 平台化复用。
 
-## 五、已交付（都在本分支）
+**群众路线**：知识候选从一线关闭沉淀中来，审核毕业后回到一线工作台/卡片中去（D6 贡献者收益、覆盖率进 KPI）。
+**批评与自我批评**：每 PR 四条红线自检；影子回归一致率是客观批评者。
+**实事求是**：一切结论逐源码核对（已做，RFC §12）；内网核实 903001 DQL 前不宣称"取证已验证"。
+**星火燎原**：903001 竖切 = 根据地；先 1 个码全闭环 → 18 个 P0/P1 → 146。
 
-```
-docs/intelligent-troubleshooting/
-├── README.md                     # 索引
-├── HANDOFF.md                    # 本文件
-├── executive-summary.html        # 给领导一页纸
-├── architecture-blueprint.html   # 蓝图 v0.3（16 节，D1–D7 + 落地热力矩阵）
-├── architecture-review.md        # 实施走读复核（无偏差 + G1–G7 缺口清单）
-├── metaclaw-integration-design.md # D7：MetaClaw 产品集成与分阶段实施合同
-├── observability-abstraction-design.md # D8：证据源开放适配（多平台 OAL）契约
-├── console-prototype.html        # 原型 A：单故障详情
-├── console-prototype-b.html      # 原型 B：值班驾驶舱
-├── console-workbench.html        # 文档入口：跳转到包内正式工作台
-└── l0/
-    ├── sop_kb.json               # 146 错误码结构化 SOP 库（脱敏，status=candidate）
-    ├── inventory_report.md       # 家底盘点
-    ├── build_sop_kb.py           # 解析脚本（需源表 f.xlsx，未入库，见下）
-    ├── clean_sop_kb.py           # 保守清洗、脱敏、质量闸门 CLI
-    ├── quality_report.md         # 当前阻断项与人工复核队列
-    └── activated/903001.md       # 首个取证草案（evidence_dql+anomaly_criteria，待联调核实）
+## 5. 刷新后的代办（集中兵力重排；细目见 RFC §13）
 
-metaclaw_troubleshooting/
-├── static/console-workbench.html # wheel 内正式工作台：列表→详情 + 主流程处置
-└── migrations/
-    ├── 001_initial.sql           # Diagnosis 聚合、复合幂等与知识 Outbox
-    └── 002_outbox_delivery.sql   # 租约 claim / ack / failure retry
-```
-- **原型均单文件零依赖**，浏览器直接打开。（本会话环境 Artifact 在线发布被拦，故走 git + 文件推送。）
-- **方法论 skills** 已装在 `.claude/skills/`（qiushi-skill：矛盾分析/调查研究/批评与自我批评等，下个会话可 `/` 调用）。
-- **L0 清洗/质量闸门已补齐**：旧解析器会误把 IP、`.limit(10)` / `.skip(0)` 中的数字当步骤号，
-  新解析器已用回归测试锁住“不丢字符”；当前 KB 中的 4 处残余 token 形态已再次脱敏。
-- **当前数据阻断**：`101014`、`101034`、`101040` 在拆分多码单元格后均对应多个业务上下文，
-  与 D1 `(system,error_code)` 唯一路由前提冲突；另有 103 处疑似被旧解析器截断的 IP、组件版本、
-  联系人手机号、`limit/skip` 调用。清洗器把两类问题都设为阻断并拒绝自动落盘，详见 `quality_report.md`。
-- **D7 P1 + P2 已落地**：HTTP 已收口到 `TroubleshootingModule`；`DiagnosisRepository` 统一承担
-  副本隔离、5 分钟桶幂等和命令原子更新。运行时默认使用 `SQLiteDiagnosisRepository`，schema migration v2
-  持久化完整 Diagnosis 聚合与知识发布 Outbox；关闭事务与候选入队原子提交，消费合同支持租约 claim、ack、
-  失败重试和唯一候选约束。工作台与 SQL 已进入 wheel package-data，`/readyz`、capabilities、503 错误 ID
-  可追踪；重启恢复和 wheel 安装已实测。`KnowledgePublisher` 仍等 P3 真实 MetaClaw Adapter 再抽取。
-  当前 `actor` 仍是请求体审计标签而非可信身份，官方启动命令在 P5 认证前硬拒绝非 loopback。
+**主攻（顺序执行，单点突破）**：
+1. **P0** 领域骨架 + record 契约 + sealed 规则引擎（脱库单测）+ 状态机 + MyBatis-Plus/Flyway 三方言 + Outbox + 幂等；
+2. **P1** 接入 controller（不走 Trigger）+ PAT webhook 鉴权 + 3 个 capability；
+3. **P2** Web 工作台 + 领域 REST + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
+   **验收 = 903001 fixture 竖切在 mateclaw 端到端跑通，测试对齐 Python MVP 38 项。**
 
----
+**钳制/并行（不占主力，多为需内网/人力项）**：
+- L0 数据 blocker：3 个路由键一码多义（101014/101034/101040）owner 裁决 + 103 处字符丢失回源表恢复
+  （清洗器 fail-closed，阻断未解决前拒绝覆盖 canonical KB，见 `l0/quality_report.md`）；
+- 内网联调窗口准备（观测云 `*.prd.sangfor.com`，DF-API-KEY 鉴权）→ 核实 `l0/activated/903001.md` 的
+  `«待核实»` 字段；
+- 903001 模式复制到其他高频码（901002/2000001/801008…backlog 见 `l0/inventory_report.md`）。
 
-## 六、下一步（❗需内网/人力，沙箱做不了）
+**后续梯队**：P3 D8 适配器（Guance 首个 + RecordedReplay 回归）→ P4 未命中 ReAct agent（只读笼，补旧 G1）
+→ P5 放权阶梯 + 知识运营（覆盖率/可自动化率纳入考核）。
 
-1. **争取内网联调环境** → 核实 `903001.md` 里 `«待核实»` 的观测云数据源/字段名与查询延迟。
-2. **审核 sop_kb.json** → 先裁决质量报告中的 3 个路由键冲突，再由各系统 owner 补 level/scenario；
-   recovery_steps 已可由清洗器保守合并（拆码前 683 → 483；拆码后候选共 500 个步骤），阻断项未解决前
-   不覆盖 canonical KB。
-3. **给 903001 补好 evidence_dql/anomaly_criteria** → 走通 L0→L1 竖线 → 建 20–30 条历史回归集 → 接影子模式。
-4. **把覆盖率/可自动化率纳入考核** → 驱动知识补全。
+## 6. 指针与安全口径
 
-## 本地 Claude 可直接继续的活（不需内网）
-
-- 把 `903001.md` 的模式**复制到其他高频码**（901002 微信 / 2000001 渠道 / 801008 主数据…backlog 见 inventory_report）。
-- 用 owner 结论处理 `quality_report.md` 的 3 个 `KEY_COLLISION`，再执行结构化清洗落库。
-- 起草 P3 的 `MetaClawReasoningAdapter` / `MetaClawKnowledgeAdapter` 外部合同；只有真实调用方出现时才抽取
-  `ReasoningGateway` / `KnowledgePublisher` Protocol，并让 Publisher 消费现有租约 Outbox。
-- 起草 **观测云 MCP server** 与 **SOP 查询 MCP server** 的接口定义。
-
-## ⚠️ 敏感数据说明
-
-源表《故障与措施》xlsx **含真实 Bearer/JWT token、内网 IP、人名**，**未入库**（`f.xlsx` 在用户本地）。
-`sop_kb.json` 已脱敏（Bearer/JWT→`<BEARER_TOKEN>`，查询/JSON token→`<TOKEN>`，IP/人名保留）。
-**若把源表纳入版本管理，务必先脱敏 token。** 已进入 Git 历史的旧快照仍可能保留本次修复前的 token，
-如确认属于有效凭证，应立即轮换；未经明确授权不要擅自改写 Git 历史。
-
----
-
-## 六·五、架构走读复核结论（2026-07-23，独立复核会话）
-
-对 `metaclaw_troubleshooting` MVP 做了第一性原理走读 + 实跑测试（**38 passed + 7 subtests**）。
-**结论：无架构性偏差，多处比蓝图更严谨**（`anomaly_criteria` 类型化规则引擎、全链路 fail-closed、
-诚实不造空接口假装集成）。四条生命线（安全边界 / 确定性优先 / 人机闸门 / 契约一致性）全部对齐。
-
-**完整结论见 [`architecture-review.md`](./architecture-review.md)**。未推进缺口（后续接续用）：
-
-- **G1** 未命中路 ReAct 式 agent（自主探索 + DQL 白名单沙箱）未实现，`_fallback` 仅 abstain 占位 🟡
-- **G2** MetaClaw 未真接线（LLM 走代理 / 上下文预算 / Skill Evolver），设计空位已声明 🟡
-- **G3** `actor` 是请求体标签、非可信身份，靠 loopback-only 兜底，放网前须接 RBAC/SSO 🟡
-- **G4** `route_to_team` 依赖 `owner_team`（KB 多为空）🟢 ·
-  **G5** collector.status 与规则引擎 signal 两套判断，展示应以规则引擎为准 🟢 ·
-  **G6** L0 数据 blocker（3 路由键冲突 + 103 处字符丢失）待 owner 裁决 + 回源表恢复 🟢
-- **G7** 证据源当前与 Guance/fixture 耦合；已出 **D8** 多平台 OAL 设计，待重构 `EvidenceQuery→EvidenceRequest` + `SourceAdapter`/`Router` + 归一词汇表 🟡
-
-均为 fail-safe 缺口、在设计预期的后续阶段，不改架构即可继续。
-
----
-
-## 七、工作纪律（沿用）
-
-- 旧开发分支 `claude/session-moz2pc` 已合入 `zhinengpaizhang-dev`；不要依据旧快照擅自切回，
-  以后以用户当前明确选择的分支为准。
-- 新提交沿用仓库现有提交说明约定；不要冒用并未参与本轮工作的 Co-Authored-By 身份。
-- 不擅自开 PR。
-- 改蓝图注意 §编号连续（当前 01–16）；改完可用 git 提交，浏览器验证渲染。
+- **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
+  每条结论有源码位置索引）。
+- **本目录其余文件是 MetaClaw 时期的历史资产**（蓝图 v0.3 HTML、走读复核 architecture-review.md
+  含 G1–G7 缺口表、D7/D8 设计稿、三个原型 HTML）：架构结论已被 RFC 吸收/取代；**`l0/` 数据资产仍现行
+  有效**（sop_kb.json 146 码已脱敏、inventory/quality 报告、清洗闸门脚本、903001 取证草案）。
+- **Python MVP 参考实现**（规则引擎/状态机/Outbox/38 测试的同构翻译源）：在 **webonne/MetaClaw** 仓库
+  `zhinengpaizhang-dev` 分支的 `metaclaw_troubleshooting/` + `tests/`。本地克隆已剔除，远端仍在、只读参考。
+- **安全**：源表《故障与措施》xlsx **含真实 Bearer/JWT token、内网 IP、人名，从未入库**（在用户本地）。
+  `l0/sop_kb.json` 已脱敏（Bearer/JWT→`<BEARER_TOKEN>`，查询/JSON token→`<TOKEN>`，IP/人名保留）。
+  若把源表纳入版本管理，务必先脱敏 token；webonne/MetaClaw 的旧 Git 历史快照可能保留修复前 token，
+  如确认属有效凭证应立即轮换；未经明确授权不擅自改写 Git 历史。
+- **纪律**：当前分支 `claude/intelligent-troubleshooting-design`；以用户当前明确选择的分支为准；
+  不擅自开 PR；改 RFC 保持 § 编号连续；沿用仓库现有提交说明约定；不冒用未参与本轮工作的
+  Co-Authored-By 身份。
+- **方法论 skills**：已迁至本仓库 `.claude/skills/`（矛盾分析/集中兵力/持久战/群众路线/批评与自我批评等，
+  `/<name>` 调用）。

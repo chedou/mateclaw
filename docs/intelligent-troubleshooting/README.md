@@ -1,5 +1,11 @@
 # IT 智能排障系统 · 设计文档
 
+> **⚠️ 归档说明（2026-07-24）**：本目录自 webonne/MetaClaw 仓库原样迁入。其中的架构结论已被
+> **`rfcs/intelligent-troubleshooting-design.md`**（现行唯一设计，基于 MateClaw 逐条源码核对）吸收/取代；
+> 会话记忆与最新代办见 **`HANDOFF.md`**（已刷新为 MateClaw 纪元版）。**`l0/` 知识资产仍现行有效。**
+> 下文提到的 Python 包 `metaclaw_troubleshooting`（竖切 MVP 及其运行/测试命令）不在本仓库——
+> 参考实现保留在 webonne/MetaClaw 的 `zhinengpaizhang-dev` 分支。
+
 基于 MetaClaw 元学习平台构建的 IT 智能排障能力，目标是把故障处理从
 「人工翻系统 + 经验判断」升级为「告警驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环」。
 
