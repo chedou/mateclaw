@@ -64,6 +64,42 @@
   .fnode .fd{font-size:11.5px;color:var(--ink-3);line-height:1.5}
   .fnode.final .ft{color:var(--accent)}
 
+  /* development status */
+  .devstatus{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-sm)}
+  .devtop{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);gap:0;border-bottom:1px solid var(--line)}
+  .devlead,.devverdict{padding:24px 26px}
+  .devverdict{border-left:1px solid var(--line);background:var(--surface-2)}
+  .eyebrow{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.11em;color:var(--accent);text-transform:uppercase}
+  .devlead h3{font-size:21px;line-height:1.35;color:var(--ink-1);letter-spacing:-.015em;margin-top:7px}
+  .devlead p{font-size:12.5px;color:var(--ink-3);line-height:1.65;margin-top:7px;max-width:66ch}
+  .devmeta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+  .devmeta span{display:inline-flex;align-items:center;gap:6px}
+  .devmeta span:not(:last-child)::after{content:"";width:3px;height:3px;border-radius:50%;background:var(--ink-4);margin-left:3px}
+  .devverdict .vlabel{font-size:11px;color:var(--ink-3);font-weight:650}
+  .devverdict strong{display:block;color:var(--ink-1);font-size:15px;line-height:1.5;margin:8px 0 10px}
+  .devverdict a{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-size:11.5px;font-weight:650;text-decoration:none}
+  .devverdict a:hover{text-decoration:underline;text-underline-offset:3px}
+  .phase-track{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));padding:22px 26px 24px;gap:0;animation:status-in .45s ease both}
+  .phase{position:relative;padding:23px 16px 0 0;min-height:112px}
+  .phase:not(:last-child)::after{content:"";position:absolute;top:5px;left:10px;right:0;height:1px;background:var(--line)}
+  .phase-dot{position:absolute;top:0;left:0;width:11px;height:11px;border-radius:50%;background:var(--surface);border:2px solid var(--ink-4);z-index:1;transition:transform .16s ease,background .16s ease,border-color .16s ease}
+  .phase.done .phase-dot{background:var(--good);border-color:var(--good);box-shadow:0 0 0 4px var(--good-weak)}
+  .phase.next .phase-dot{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-weak)}
+  .phase:hover .phase-dot{transform:scale(1.16)}
+  .phase .pid{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--ink-4);letter-spacing:.06em}
+  .phase.done .pid{color:var(--good)}.phase.next .pid{color:var(--accent)}
+  .phase .pt{font-size:12.5px;font-weight:650;color:var(--ink-1);margin-top:4px}
+  .phase .pd{font-size:10.5px;color:var(--ink-3);line-height:1.5;margin-top:4px;max-width:15ch}
+  .phase .ps{display:inline-flex;margin-top:8px;font-size:9.5px;font-weight:700;border-radius:20px;padding:2px 7px;background:var(--surface-3);color:var(--ink-3)}
+  .phase.done .ps{background:var(--good-weak);color:var(--good)}.phase.next .ps{background:var(--accent-weak);color:var(--accent)}
+  .next-focus{display:flex;align-items:center;gap:14px;border-top:1px solid var(--line);padding:16px 26px;background:var(--surface-2)}
+  .next-focus .nfkey{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--accent);border:1px solid var(--accent-line);border-radius:20px;padding:3px 8px;background:var(--accent-weak)}
+  .next-focus .nfcopy{min-width:0}
+  .next-focus .nfcopy b{font-size:12.5px;color:var(--ink-1)}
+  .next-focus .nfcopy span{font-size:11.5px;color:var(--ink-3);margin-left:7px}
+  .next-focus .nfstage{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+  @keyframes status-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
   /* section */
   section{margin-bottom:46px}
   .sechd{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
@@ -114,8 +150,13 @@
   .themebtn{margin-left:12px;width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);cursor:pointer;display:flex;align-items:center;justify-content:center}
   .themebtn:hover{color:var(--accent);border-color:var(--accent-line)}
   a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-  @media (max-width:640px){h1{font-size:27px}.wrap{padding:0 18px}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media (max-width:760px){
+    .devtop{grid-template-columns:1fr}.devverdict{border-left:0;border-top:1px solid var(--line)}
+    .phase-track{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:22px}.phase:nth-child(2n)::after{display:none}
+    .next-focus{align-items:flex-start;flex-wrap:wrap}.next-focus .nfstage{width:100%;margin-left:0;padding-left:50px}
+  }
+  @media (max-width:640px){h1{font-size:27px}.wrap{padding:0 18px}.devlead,.devverdict{padding:21px 20px}.phase-track{padding:22px 20px 24px}.next-focus{padding:15px 20px}}
 </style>
 </head>
 <body>
@@ -148,6 +189,39 @@
       <div class="fnode final"><div class="fs">现行</div><div class="ft">根因定位链</div><div class="fd">锚定"帮开发快速定位根因"，主角是症状→根因的收敛过程</div></div>
     </div>
   </div>
+
+  <!-- 当前开发进度 -->
+  <section id="development-status">
+    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-25</span><span class="sd">以 903001 可用竖切为验收口径</span></div>
+    <div class="devstatus">
+      <div class="devtop">
+        <div class="devlead">
+          <div class="eyebrow">Current implementation baseline</div>
+          <h3>P0 领域内核已完成，产品入口尚未接通</h3>
+          <p>确定性规则、诊断编排、人工控制状态机、三方言持久化、事务 Outbox 与幂等已经进入 Java 代码；Webhook、身份门控、领域 REST 与 Vue 工作台仍待 P1/P2 接入。</p>
+          <div class="devmeta"><span>branch intelligent-troubleshooting-design</span><span>commit 2a5d66bb</span><span>33 targeted tests passed</span></div>
+        </div>
+        <div class="devverdict">
+          <div class="vlabel">当前判断</div>
+          <strong>内核可运行，但用户还不能在 MateClaw 中发起并完成一次智能排障。</strong>
+          <a href="HANDOFF.md">查看完整交接清单 <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <div class="phase-track" aria-label="P0 到 P5 开发阶段">
+        <div class="phase done"><span class="phase-dot"></span><div class="pid">P0</div><div class="pt">领域内核</div><div class="pd">规则、状态、持久化、Outbox</div><span class="ps">已完成</span></div>
+        <div class="phase next"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">接入与身份</div><div class="pd">Webhook、PAT、Capability</div><span class="ps">下一步</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">产品交付</div><div class="pd">领域 REST、Vue、飞书卡片</div><span class="ps">待开始</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">真实取证</div><div class="pd">Guance 与录制回放适配器</div><span class="ps">待开始</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P4</div><div class="pt">未命中 Agent</div><div class="pd">只读 ReAct 与低置信弃权</div><span class="ps">待开始</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P5</div><div class="pt">放权与运营</div><div class="pd">影子回归、升档、知识审核</div><span class="ps">待开始</span></div>
+      </div>
+      <div class="next-focus">
+        <span class="nfkey">NEXT</span>
+        <div class="nfcopy"><b>903001 端到端竖切</b><span>接入 → 鉴权 → 确定性诊断 → 人工确认 → 外部结果登记</span></div>
+        <span class="nfstage">P1 → P2</span>
+      </div>
+    </div>
+  </section>
 
   <!-- 现行主推 -->
   <section>

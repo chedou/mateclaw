@@ -42,7 +42,7 @@
   body{font-family:var(--sans);color:var(--ink-2);background:var(--bg);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   .num,.mono{font-variant-numeric:tabular-nums}
   svg{display:block;flex-shrink:0}
-  .app{display:flex;height:100vh;overflow:hidden}
+  .app{display:flex;height:100dvh;overflow:hidden}
 
   .rail{width:52px;background:var(--ink-1);flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:12px;gap:3px}
   @media (prefers-color-scheme:dark){.rail{background:#05070b}}
@@ -84,7 +84,7 @@
   .idkv .m{font-family:var(--mono);color:var(--ink-1);font-weight:600}
   .vsep{width:1px;height:13px;background:var(--line)}
 
-  /* ROOT CAUSE — answer first */
+  /* ROOT CAUSE: answer first */
   .answer{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:19px 22px;position:relative;overflow:hidden}
   .answer::after{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:linear-gradient(90deg,var(--good),transparent 65%)}
   .answer.abst::after{background:linear-gradient(90deg,var(--warn),transparent 65%)}
@@ -247,30 +247,224 @@
   .mtc{color:var(--ink-2)}
 
   a:focus-visible,button:focus-visible,.shd:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   @media (max-width:900px){.content{grid-template-columns:1fr}.side{border-left:none;border-top:1px solid var(--line)}}
+</style>
+<style id="rca-polish">
+  /* Visual system: panels 14px, controls 8px, semantic labels pill-shaped. */
+  :root{
+    --bg:#edf1f7;--surface:#fcfdff;--surface-2:#f5f7fb;--surface-3:#eaf0f7;
+    --ink-1:#111827;--ink-2:#344054;--ink-3:#667085;--ink-4:#98a2b3;
+    --line:#dce3ed;--line-2:#e9edf3;--line-strong:#cbd5e1;
+    --accent:#3157d5;--accent-weak:#e9efff;--accent-line:#b9c8f7;
+    --good:#087a55;--good-weak:#e4f5ee;
+    --warn:#b75e00;--warn-weak:#fff1dc;
+    --crit:#c43842;--crit-weak:#fce9eb;
+    --console:#111827;--console-ink:#d7e1f2;--console-dim:#8796b0;--console-line:#293548;
+    --shadow-sm:0 1px 2px rgba(31,50,81,.05),0 4px 14px rgba(31,50,81,.04);
+    --shadow-md:0 1px 2px rgba(31,50,81,.06),0 14px 38px rgba(31,50,81,.10);
+    --mono:"SFMono-Regular","SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"SF Pro Display","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --r-lg:14px;--r-md:10px;--r-sm:7px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0d1118;--surface:#151b24;--surface-2:#19212c;--surface-3:#222c39;
+    --ink-1:#edf2f8;--ink-2:#c3ccd9;--ink-3:#8d99aa;--ink-4:#667284;
+    --line:#2a3442;--line-2:#212a36;--line-strong:#354255;
+    --accent:#7894ff;--accent-weak:#202b49;--accent-line:#405487;
+    --good:#51c89b;--good-weak:#153329;
+    --warn:#e7a74d;--warn-weak:#352716;
+    --crit:#ef7c83;--crit-weak:#391e23;
+    --console:#0b1018;--console-ink:#d0dcf0;--console-dim:#73819b;--console-line:#202c3e;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.22),0 5px 18px rgba(0,0,0,.16);
+    --shadow-md:0 2px 4px rgba(0,0,0,.28),0 18px 46px rgba(0,0,0,.24);
+  }}
+  :root[data-theme="light"]{
+    --bg:#edf1f7;--surface:#fcfdff;--surface-2:#f5f7fb;--surface-3:#eaf0f7;--ink-1:#111827;--ink-2:#344054;--ink-3:#667085;--ink-4:#98a2b3;--line:#dce3ed;--line-2:#e9edf3;--line-strong:#cbd5e1;--accent:#3157d5;--accent-weak:#e9efff;--accent-line:#b9c8f7;--good:#087a55;--good-weak:#e4f5ee;--warn:#b75e00;--warn-weak:#fff1dc;--crit:#c43842;--crit-weak:#fce9eb;--console:#111827;--console-ink:#d7e1f2;--console-dim:#8796b0;--console-line:#293548;--shadow-sm:0 1px 2px rgba(31,50,81,.05),0 4px 14px rgba(31,50,81,.04);--shadow-md:0 1px 2px rgba(31,50,81,.06),0 14px 38px rgba(31,50,81,.10)
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1118;--surface:#151b24;--surface-2:#19212c;--surface-3:#222c39;--ink-1:#edf2f8;--ink-2:#c3ccd9;--ink-3:#8d99aa;--ink-4:#667284;--line:#2a3442;--line-2:#212a36;--line-strong:#354255;--accent:#7894ff;--accent-weak:#202b49;--accent-line:#405487;--good:#51c89b;--good-weak:#153329;--warn:#e7a74d;--warn-weak:#352716;--crit:#ef7c83;--crit-weak:#391e23;--console:#0b1018;--console-ink:#d0dcf0;--console-dim:#73819b;--console-line:#202c3e;--shadow-sm:0 1px 2px rgba(0,0,0,.22),0 5px 18px rgba(0,0,0,.16);--shadow-md:0 2px 4px rgba(0,0,0,.28),0 18px 46px rgba(0,0,0,.24)
+  }
+
+  body{font-size:13.5px;line-height:1.55;background:var(--bg)}
+  .app{min-height:100dvh;height:100dvh;background:var(--bg)}
+  .main,.content,.locate,.side{min-width:0}
+  .rail{width:66px;padding-top:14px;gap:7px;background:#111824;border-right:1px solid rgba(255,255,255,.06)}
+  @media (prefers-color-scheme:dark){.rail{background:#080c12}}
+  :root[data-theme="dark"] .rail{background:#080c12}
+  :root[data-theme="light"] .rail{background:#111824}
+  .rail .logo{width:36px;height:36px;border-radius:10px;margin-bottom:10px;background:var(--accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.22);font-size:15px}
+  .rail a{width:42px;height:42px;border-radius:9px;color:#768295;font-size:15px;position:relative}
+  .rail a:hover{color:#d4dbe6;background:rgba(255,255,255,.05)}
+  .rail a.active{background:#202b3b;color:#f3f6fa;box-shadow:inset 2px 0 0 var(--accent)}
+  .rail a svg{width:19px;height:19px}
+
+  .top{height:64px;padding:0 24px;background:color-mix(in srgb,var(--surface) 94%,transparent);border-bottom-color:var(--line);gap:14px}
+  .crumb{font-size:13px;color:var(--ink-3);gap:8px;white-space:nowrap}
+  .crumb .id{font-size:12px;color:var(--ink-1)}
+  .crumb-sep{color:var(--ink-4);font-family:var(--mono)}
+  .demoflag{font-size:11px;color:var(--ink-3);border:0;border-left:1px solid var(--line);border-radius:0;padding:1px 0 1px 14px}
+  .top-actions{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .seg{margin-left:0;border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:3px}
+  .seg button{min-height:34px;padding:6px 12px;border-radius:7px;color:var(--ink-3);font-weight:550}
+  .seg button:hover{color:var(--ink-1);background:var(--surface-3)}
+  .seg button.on{background:var(--surface);color:var(--ink-1);box-shadow:var(--shadow-sm)}
+  .seg .dot{width:6px;height:6px}
+  .themebtn{width:36px;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-3);cursor:pointer;font-family:var(--mono);font-size:15px;transition:transform .16s ease,border-color .16s ease,color .16s ease}
+  .themebtn:hover{border-color:var(--accent-line);color:var(--accent)}
+  .themebtn:active{transform:scale(.97)}
+
+  .content{grid-template-columns:minmax(0,1fr) 336px;background:var(--bg)}
+  .locate{padding:28px 32px 56px;scrollbar-gutter:stable}
+  .side{padding:24px 20px 36px;gap:12px;background:var(--surface-2);border-left-color:var(--line);scrollbar-gutter:stable}
+  .locate::-webkit-scrollbar-thumb,.side::-webkit-scrollbar-thumb{background:var(--line-strong);border-color:var(--bg)}
+
+  .idrow{gap:10px;margin-bottom:17px;min-height:28px}
+  .idcode{font-size:15px;font-weight:700;letter-spacing:-.02em}
+  .chip{font-size:10.5px;padding:5px 9px;border-radius:999px}
+  .idkv{font-size:11.5px}.idkv b,.idkv .m{font-weight:650}
+  .vsep{height:16px;background:var(--line-strong)}
+
+  .answer{border-color:var(--line-strong);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:0;isolation:isolate}
+  .answer::after{height:3px;background:var(--good)}
+  .answer.abst::after{background:var(--warn)}
+  .answer-top{display:flex;align-items:center;gap:12px;padding:19px 22px 0}
+  .eyebrow{font-size:10px;letter-spacing:.08em;color:var(--ink-3)}
+  .route-proof{margin-left:auto;font-family:var(--mono);font-size:9.5px;font-weight:750;letter-spacing:.06em;color:var(--good);background:var(--good-weak);border-radius:999px;padding:4px 8px}
+  .answer.abst .route-proof{color:var(--warn);background:var(--warn-weak)}
+  .answer-grid{display:grid;grid-template-columns:minmax(0,1fr) 148px;gap:24px;padding:13px 22px 21px;align-items:end}
+  .rc{font-size:25px;line-height:1.3;font-weight:740;letter-spacing:-.025em;margin:0;max-width:32ch;text-wrap:balance}
+  .answer-score{border-left:1px solid var(--line);padding-left:22px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end}
+  .score-label{font-size:10px;color:var(--ink-3);font-weight:650}
+  .score-value{font-family:var(--mono);font-size:36px;line-height:1.05;letter-spacing:-.05em;color:var(--good);margin-top:5px}
+  .answer.abst .score-value{color:var(--warn)}
+  .score-value small{font-size:15px;letter-spacing:0;margin-left:2px}
+  .score-state{font-size:10px;color:var(--ink-3);margin-top:4px}
+  .answer-foot{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:11px 22px;border-top:1px solid var(--line-2);background:var(--surface-2);font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+  .answer-foot span{display:inline-flex;align-items:center;gap:6px}
+  .answer-foot svg{width:12px;height:12px;color:var(--ink-4)}
+  .answer-foot .speed{color:var(--good);font-weight:700;margin-left:auto}
+  .answer.abst .answer-foot .speed{color:var(--warn)}
+
+  .funnel-shell{margin:19px 0 26px;padding:15px 0 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .funnel-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:11px;color:var(--ink-3)}
+  .funnel-head svg{width:14px;height:14px;color:var(--accent)}
+  .funnel-head b{font-size:12px;color:var(--ink-1)}
+  .funnel-head .fhmeta{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-4)}
+  .funnel{margin:0;flex-wrap:nowrap;overflow-x:auto;padding:2px 0 4px}
+  .funnel .flabel{display:none}
+  .fstep{min-width:0}
+  .fnode .fb{font-size:11.5px;padding:5px 10px;border-radius:7px;border-color:var(--line-strong);background:var(--surface);box-shadow:0 1px 1px rgba(31,50,81,.03)}
+  .fnode.narrow .fb{background:var(--accent-weak);border-color:var(--accent-line)}
+  .fnode.final .fb{background:var(--good);border-color:var(--good);color:#f5fffb}
+  .fnode.final.abst .fb{background:var(--warn);border-color:var(--warn);color:#fffaf2}
+  .fnode .fc{font-size:9px;margin-top:1px}
+  .fconn{width:30px;background:var(--line-strong)}
+  .fconn::after{border-left-color:var(--line-strong)}
+
+  .spinehd{margin:0 0 15px;padding:0 2px}
+  .spinehd .st{font-size:15px;font-weight:720}
+  .spinehd .hint{font-size:10.5px}
+  .chain{gap:2px}
+  .stg{gap:14px;padding-bottom:11px}
+  .srail{width:38px}.snode{width:38px;height:38px;border-radius:10px}
+  .snode svg{width:18px;height:18px}
+  .snode.loc,.snode.ev,.snode.rsn{background:var(--accent-weak);color:var(--accent);border-color:color-mix(in srgb,var(--accent-line) 62%,transparent)}
+  .snode.root{background:var(--good);color:#f5fffb;box-shadow:0 0 0 4px var(--good-weak)}
+  .snode.root.abst{background:var(--warn);color:#fffaf2;box-shadow:0 0 0 4px var(--warn-weak)}
+  .sconn{background:var(--line-strong)}
+  .sbody{border-color:var(--line);border-radius:var(--r-md);box-shadow:none;background:var(--surface);transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
+  .stg.open .sbody{border-color:var(--line-strong);box-shadow:var(--shadow-sm)}
+  .sbody.root{border-color:color-mix(in srgb,var(--good) 55%,var(--line));box-shadow:var(--shadow-sm);background:color-mix(in srgb,var(--surface) 94%,var(--good-weak))}
+  .shd{padding:13px 15px}.shd:hover{background:var(--surface-2)}
+  .shd .stt{font-size:13.5px;font-weight:700}.shd .stime{font-size:10px}
+  .sfind{padding:0 15px 14px;font-size:12.5px;line-height:1.6}
+  .sfind .mn,.sdpad>.txt .mn{border:1px solid var(--line-2);padding:1px 5px}
+  .narrowto{margin-top:10px;border-radius:6px;padding:4px 9px}
+  .sdpad{padding:13px 14px;background:var(--surface-2)}
+  .evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .evidence-grid .ev{margin:0;min-width:0}
+  .evidence-grid .ev.key{grid-column:1/-1}
+
+  .verdict{padding:7px 0}.verdict+.verdict{border-top:1px solid var(--line)}
+  .vmark{width:19px;height:19px;border-radius:6px}
+  .ev{border-color:var(--line-strong);border-radius:8px;background:var(--surface);box-shadow:0 1px 2px rgba(31,50,81,.03)}
+  .ev.key{border-color:var(--accent-line)}
+  .evh{padding:10px 12px;gap:7px}.eid{font-size:9.5px;border-radius:5px}.ett{font-size:12.5px}
+  .badge{border-radius:999px;padding:3px 7px}.evh .plat{font-size:9.5px}
+  .query{min-height:42px;padding:10px 12px;font-size:10px;line-height:1.65;gap:8px}
+  .query .run{appearance:none;background:transparent;font-family:inherit;margin-left:auto;color:#6ed7aa;border-color:var(--console-line);border-radius:6px;padding:4px 8px}
+  .query .run:hover{background:rgba(110,215,170,.10)}
+  .query .run:active{transform:scale(.97)}
+  .obsgrid{padding:10px 12px;gap:4px 18px}.obs{font-size:10.5px;padding:3px 0}
+  .evf{padding:7px 12px;background:var(--surface-2)}
+
+  .handoff{border-radius:9px;padding:13px 14px}.handoff .ht{font-size:12px;margin-bottom:8px}
+  .handoff li{padding-top:4px;padding-bottom:4px}.simrow{padding:7px 0}
+
+  .sidehead{padding:0 2px 8px;display:flex;align-items:flex-start;gap:10px}
+  .sidehead b{display:block;font-size:13px;color:var(--ink-1)}
+  .sidehead span{display:block;font-size:10.5px;color:var(--ink-3);margin-top:2px}
+  .sidehead .readonly{margin-left:auto;font-family:var(--mono);font-size:9.5px;font-weight:700;color:var(--good);background:var(--good-weak);border-radius:999px;padding:4px 7px;white-space:nowrap}
+  .card{background:var(--surface);border-color:var(--line);border-radius:var(--r-md);padding:15px 16px;box-shadow:var(--shadow-sm)}
+  .card .clabel{font-size:9.5px;margin-bottom:11px;color:var(--ink-3)}
+  .time-card{display:grid;grid-template-columns:1fr auto;align-items:end;gap:4px 12px}
+  .time-card .clabel{grid-column:1/-1}.time-card .rem{margin:0;text-align:right;align-self:end}
+  .clk .big{font-size:24px}.clk .u{font-size:10.5px}
+  .action-card{border-color:var(--line-strong)}
+  .recact .rt{font-size:13px;line-height:1.45}.recact .rd{font-size:11.5px;margin-top:7px}
+  .tagw,.stale{border-radius:999px;padding:3px 7px}
+  .btn{min-height:38px;border-radius:8px;font-size:12.5px;font-weight:650;margin-top:10px;transition:transform .16s ease,border-color .16s ease,background .16s ease,color .16s ease}
+  .btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.985)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#f8fbff}
+  .btn.primary:hover{background:color-mix(in srgb,var(--accent) 90%,var(--ink-1));filter:none;color:#f8fbff}
+  .note{margin-top:12px;padding-top:11px;border-top:1px solid var(--line-2);font-size:10.5px}
+  .timeline-card{box-shadow:none;background:transparent;padding:5px 3px;border-color:transparent}
+  .timeline-card .clabel{padding:0 2px}
+  .mtli{gap:9px;padding-bottom:13px}.mtd{width:7px;height:7px}.mtd.now{box-shadow:0 0 0 3px var(--crit-weak)}
+  .mtl-line{background:var(--line-strong)}.mtt{width:54px}.mtc{font-size:11.5px}
+
+  a:focus-visible,button:focus-visible,.shd:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media (max-width:1120px){.content{grid-template-columns:minmax(0,1fr) 310px}.locate{padding-left:24px;padding-right:24px}.side{padding-left:16px;padding-right:16px}}
+  @media (max-width:920px){
+    .app{height:auto;min-height:100dvh;overflow:visible}.rail{position:sticky;top:0;height:100dvh}.main{overflow:visible}.top{position:sticky;top:0;z-index:20}
+    .content{display:block;overflow:visible}.locate,.side{overflow:visible}.side{border-left:0;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.sidehead,.timeline-card{grid-column:1/-1}
+  }
+  @media (max-width:720px){
+    .rail{display:none}.main{width:100%}.top{height:auto;min-height:64px;padding:10px 14px;flex-wrap:wrap}.demoflag{display:none}.top-actions{width:100%;min-width:0;margin-left:0}.seg{flex:1;min-width:0}.seg button{flex:1;min-width:0;justify-content:center;padding-left:8px;padding-right:8px}.themebtn{flex:0 0 36px}
+    .locate{padding:20px 15px 42px}.idrow{gap:8px}.idrow .vsep{display:none}.idkv{margin-right:8px}
+    .answer-grid{grid-template-columns:1fr;padding-bottom:18px}.answer-score{border-left:0;border-top:1px solid var(--line);padding:14px 0 0;flex-direction:row;align-items:baseline;gap:8px}.score-value{font-size:28px}.score-state{margin:0}
+    .answer-foot{gap:11px}.answer-foot .speed{margin-left:0;width:100%}
+    .funnel-shell{overflow:hidden}.funnel{min-width:max-content}.spinehd .hint{display:none}.stg{gap:10px}.srail{width:32px}.snode{width:32px;height:32px}.snode svg{width:15px;height:15px}
+    .evidence-grid{grid-template-columns:1fr}.evidence-grid .ev.key{grid-column:auto}.obsgrid{grid-template-columns:1fr}
+    .side{display:flex;padding:20px 15px 34px}.sidehead,.timeline-card{grid-column:auto}.rc{font-size:21px}
+  }
 </style>
 </head>
 <body>
 <div class="app">
-  <nav class="rail">
+  <nav class="rail" aria-label="产品导航">
     <div class="logo">太</div>
     <a href="#" aria-label="总览">▦</a>
     <a href="#" class="active" aria-label="智能排障" id="navrca"></a>
     <a href="#" aria-label="设置">▧</a>
   </nav>
   <div class="main">
-    <div class="top">
-      <div class="crumb">智能排障 <span id="c-sep"></span> <span class="id" id="crumb"></span> <span id="c-sep2"></span> 根因定位</div>
-      <span class="demoflag">演示 · 切换命中路定位到根因 / 未命中路半程移交</span>
-      <div class="seg">
-        <button class="on" onclick="load('hit')"><span class="dot det"></span>命中路 · 定位到根因</button>
-        <button onclick="load('miss')"><span class="dot llm"></span>未命中路 · 半程移交</button>
+    <header class="top">
+      <div class="crumb">智能排障 <span class="crumb-sep">/</span> <span class="id" id="crumb"></span> <span class="crumb-sep">/</span> 根因定位</div>
+      <span class="demoflag">演示场景：命中定位 / 未命中移交</span>
+      <div class="top-actions">
+        <div class="seg" role="group" aria-label="诊断路径演示">
+          <button class="on" type="button" data-route="hit" aria-pressed="true" onclick="load('hit')"><span class="dot det"></span>命中路：定位到根因</button>
+          <button type="button" data-route="miss" aria-pressed="false" onclick="load('miss')"><span class="dot llm"></span>未命中路：半程移交</button>
+        </div>
+        <button class="themebtn" id="themebtn" type="button" aria-label="切换到深色主题" title="切换到深色主题">◐</button>
       </div>
-    </div>
+    </header>
     <div class="content">
-      <div class="locate" id="locate"></div>
-      <div class="side" id="side"></div>
+      <main class="locate" id="locate" aria-live="polite"></main>
+      <aside class="side" id="side" aria-label="处置上下文"></aside>
     </div>
   </div>
 </div>
@@ -309,13 +503,13 @@ const D={
   funnel:[["全平台","6 系统"],["CSDP","41 服务"],["order-svc","8 依赖"],["Mongo","连接层"],["连接池打满",""]],
   stages:[
    {t:"sym",label:"现象",time:"09:12:03.0",
-    find:'告警触发 <span class="mn">code=903001</span> · order-svc · 5 分钟内 <b>148</b> 工单激增 · trace <span class="mn">7f3a91c</span>',
-    narrow:"起点 · 全平台 6 系统",
+    find:'告警触发：<span class="mn">code=903001</span>，服务 order-svc，5 分钟内 <b>148</b> 工单激增，trace <span class="mn">7f3a91c</span>',
+    narrow:"起点：全平台 6 系统",
     detail:{txt:'从告警载荷提取路由信号：<span class="mn">system=CSDP</span>、<span class="mn">error_code=903001</span>、<span class="mn">service=order-svc</span>。completeness=FULL，可走确定性路由。'}},
    {t:"loc",label:"范围定位",time:"09:12:03.2",
     find:'路由键 <span class="mn">(CSDP, 903001)</span> 精确命中已知故障模式，直接收敛到 order-svc 的 Mongo 依赖链',
     narrow:"6 系统 → order-svc / Mongo",narrowKind:"to",
-    detail:{txt:'确定性查表：<span class="mn">SopEntry(CSDP,903001)</span> status=approved，预声明故障域=Mongo 连接层，evidence_requests 直指连接指标 / 错误日志 / 失败 trace——无需全量扫描。'}},
+    detail:{txt:'确定性查表：<span class="mn">SopEntry(CSDP,903001)</span> status=approved，预声明故障域=Mongo 连接层，evidence_requests 直指连接指标 / 错误日志 / 失败 trace，因此无需全量扫描。'}},
    {t:"ev",label:"取证",time:"09:12:05.0",
     find:"在定位点拉 3 项只读证据（观测云），坐实现场数据",
     evidence:[
@@ -332,13 +526,13 @@ const D={
    {t:"rsn",label:"判定推理",time:"09:12:05.1",
     find:"3 条判据逐条求值，把范围收敛到根因",
     reasons:[
-     ["pos",'<span class="mn">EV-2</span> · ratio_of_sum_gt(current, available) → 连接可用 = 0，<b>连接池打满</b>（决定性）'],
-     ["pos",'<span class="mn">EV-3</span> · contains_and_in(status, [timeout,error]) → 失败跳 = mongo.find，<b>定位在 DB 层</b>'],
-     ["pos",'<span class="mn">EV-1</span> · numeric_gte(count, 1) → 148 次，确认故障正在发生']]},
+     ["pos",'<span class="mn">EV-2</span>: ratio_of_sum_gt(current, available) → 连接可用 = 0，<b>连接池打满</b>（决定性）'],
+     ["pos",'<span class="mn">EV-3</span>: contains_and_in(status, [timeout,error]) → 失败跳 = mongo.find，<b>定位在 DB 层</b>'],
+     ["pos",'<span class="mn">EV-1</span>: numeric_gte(count, 1) → 148 次，确认故障正在发生']]},
    {t:"root",label:"根因",time:"确认",root:true,
-    find:'<b>Mongo 连接池打满</b>，order-svc 所有 DB 调用排队至 30s 超时——三条证据一致指向，含 1 项决定性判据。'},
+    find:'<b>Mongo 连接池打满</b>，order-svc 所有 DB 调用排队至 30s 超时。三条证据一致指向，含 1 项决定性判据。'},
   ],
-  timeline:[["09:12:03","告警触发"],["09:12:03","定位到 Mongo 依赖"],["09:12:05","取证 3 项"],["09:12:05","根因确认 · 0.94"],["now","待人工批准恢复动作"]],
+  timeline:[["09:12:03","告警触发"],["09:12:03","定位到 Mongo 依赖"],["09:12:05","取证 3 项"],["09:12:05","根因确认 0.94"],["now","待人工批准恢复动作"]],
   recact:{title:"扩容连接池 / 重启 mongos 路由",stale:"94 天前验证",write:true},
   openedMs:8*60000+42000,slaMs:30*60000,
  },
@@ -351,22 +545,22 @@ const D={
   stages:[
    {t:"sym",label:"现象",time:"09:40:22",
     find:'客服录入：<b>工单列表偶发打开很慢</b>，转圈几十秒，刷新几次又好，<span class="mn">无报错码</span>',
-    narrow:"起点 · 无结构化信号",
+    narrow:"起点：无结构化信号",
     detail:{txt:'人工录入，completeness=SYMPTOM。无 error_code 可抽取 → 无法走确定性路由。'}},
    {t:"loc",label:"范围定位",time:"09:40:23",
     find:'未命中任何 <span class="mn">(system, error_code)</span> SOP → 无法确定性收敛 → 转 agent 只读探索',
     narrow:"确定性收敛失败，交 agent",narrowKind:"dead",
     detail:{txt:'路由表无匹配。降级到未命中路：启动专用排障数字员工，工具绑定锁死只读（AgentToolBinding 白名单 + ToolGuard BLOCK 写 / shell）。'}},
-   {t:"hyp",n:"1",label:"假设 1 · 错误率偏高？",time:"09:40:41",dead:true,
-    find:"agent 查近 15m 错误日志",narrow:"排除 · 错误量低，非硬故障",narrowKind:"dead",
+   {t:"hyp",n:"1",label:"假设 1：错误率偏高？",time:"09:40:41",dead:true,
+    find:"agent 查近 15m 错误日志",narrow:"排除：错误量低，非硬故障",narrowKind:"dead",
     evidence:[{id:"EV-A",title:"错误日志计数",ro:true,plat:"guance",ver:false,
       q:[["k","L::"],["n","csdp-web"],["p",":(count) {} [-15m]"]],obs:[["count","3",0]]}]},
-   {t:"hyp",n:"2",label:"假设 2 · 网关延迟？",time:"09:41:08",
-    find:"agent 查网关 P99 延迟",narrow:"疑似命中 · 长尾高，但无稳定判据可定因",narrowKind:"maybe",
+   {t:"hyp",n:"2",label:"假设 2：网关延迟？",time:"09:41:08",
+    find:"agent 查网关 P99 延迟",narrow:"疑似命中：长尾高，但无稳定判据可定因",narrowKind:"maybe",
     evidence:[{id:"EV-B",title:"网关 P99 延迟",key:true,ro:true,plat:"guance",ver:false,
       q:[["k","M::"],["n","gateway"],["p",":(p99_ms,p50_ms) "],["s","{service='csdp-web'}"],["p"," [-30m]"]],
       obs:[["p99_ms","8400",1],["p50_ms","210",0]]}]},
-   {t:"root",label:"弃权 · 移交开发",time:"09:41",root:true,abst:true,
+   {t:"root",label:"弃权：移交开发",time:"09:41",root:true,abst:true,
     find:'agent 已把范围<b>从全平台收敛到「网关长尾」</b>，但置信 0.38 < 阈值 → <b>不硬凑根因</b>，带半程结论移交。',
     handoff:{next:["核对网关近 1h 是否有发布 / 扩缩容变更","抓一条慢请求 trace，看卡在哪一跳","确认是否集中在某可用区 / 实例"],
      similar:[["CSDP-771002","网关长尾 → GC 停顿","0.72"],["CSDP-760418","连接复用泄漏 → P99 抬升","0.65"]]}},
@@ -381,7 +575,11 @@ function fmt(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000);return `${String(
 
 function load(which){
  cur=D[which];
- document.querySelectorAll('.seg button').forEach((b,i)=>b.classList.toggle('on',i===(which==='hit'?0:1)));
+ document.querySelectorAll('.seg button[data-route]').forEach((b)=>{
+   const active=b.dataset.route===which;
+   b.classList.toggle('on',active);
+   b.setAttribute('aria-pressed',String(active));
+ });
  document.getElementById('crumb').textContent=cur.id;
  renderLocate();renderSide();
  clearInterval(ticker);const start=Date.now()-cur.openedMs;
@@ -397,26 +595,39 @@ function renderLocate(){
    return `<div class="fstep"><div class="fnode ${cls}"><span class="fb">${f[0]}</span>${f[1]?`<span class="fc">${f[1]}</span>`:''}</div>${conn}</div>`;
  }).join('');
  document.getElementById('locate').innerHTML=`
-  <div class="idrow">
+ <div class="idrow">
     <span class="idcode">${cur.id}</span>
-    <span class="chip ${cur.route}"><span class="sh"></span>${cur.route==='det'?'命中 · 确定性':'未命中 · agent'}</span>
+    <span class="chip ${cur.route}"><span class="sh"></span>${cur.route==='det'?'命中 / 确定性':'未命中 / agent'}</span>
     <span class="vsep"></span>
     ${cur.ident.map(([k,v,mono])=>`<span class="idkv">${k} <${mono?'span class="m"':'b'}>${v}</${mono?'span':'b'}></span>`).join('<span class="vsep"></span>')}
   </div>
 
-  <div class="answer ${cur.abst?'abst':''}">
-    <div class="eyebrow">${ic(cur.abst?'route':'check','glyph')}${cur.abst?'定位结论 · 半程移交':'根因 · Root Cause'}
-      <span class="speed">${ic('bolt')}${m.speed}</span></div>
-    <h1 class="rc ${cur.abst?'abst':''}">${cur.root}</h1>
-    <div class="rcmeta">
-      <span class="conf">置信 <span class="track"><span class="fill ${hi?'hi':'lo'}" style="width:${m.conf*100}%"></span></span><b class="${hi?'hi':'lo'}">${m.conf.toFixed(2)}</b></span>
-      <span class="mdot"></span><span>${m.evidence}</span><span class="mdot"></span><span>${m.rule}</span>
+  <div class="answer ${cur.abst?'abst':''}" role="status">
+    <div class="answer-top">
+      <div class="eyebrow">${ic(cur.abst?'route':'check','glyph')}${cur.abst?'定位结论：半程移交':'根因 / Root Cause'}</div>
+      <span class="route-proof">${hi?'DETERMINISTIC':'ABSTAIN'}</span>
+    </div>
+    <div class="answer-grid">
+      <h1 class="rc ${cur.abst?'abst':''}">${cur.root}</h1>
+      <div class="answer-score" aria-label="置信度 ${Math.round(m.conf*100)}%">
+        <span class="score-label">置信度</span>
+        <strong class="score-value">${Math.round(m.conf*100)}<small>%</small></strong>
+        <span class="score-state">${hi?'高置信':'低置信，已弃权'}</span>
+      </div>
+    </div>
+    <div class="answer-foot">
+      <span>${ic('database')}${m.evidence}</span>
+      <span>${ic('deduce')}${m.rule}</span>
+      <span class="speed">${ic('bolt')}${m.speed}</span>
     </div>
   </div>
 
-  <div class="funnel"><span class="flabel">${ic('funnel')}收敛路径</span>${funnel}</div>
+  <div class="funnel-shell">
+    <div class="funnel-head">${ic('funnel')}<b>收敛路径</b><span class="fhmeta">${cur.funnel.length} 个定位节点</span></div>
+    <div class="funnel">${funnel}</div>
+  </div>
 
-  <div class="spinehd">${ic('route','sh-ic')}<span class="st">根因定位链</span><span class="hint">单事件阶段 · 点开看证据与查询</span></div>
+  <div class="spinehd">${ic('route','sh-ic')}<span class="st">根因定位链</span><span class="hint">展开阶段查看证据与查询</span></div>
   <div class="chain">${cur.stages.map((s,i)=>stageHtml(s,i)).join('')}</div>`;
 }
 
@@ -426,11 +637,11 @@ function stageHtml(s,i){
  let inner='';
  if(s.detail&&s.detail.txt) inner=`<div class="txt">${s.detail.txt}</div>`;
  if(s.reasons) inner=s.reasons.map(([k,t])=>`<div class="verdict ${k}"><span class="vmark">${ic(k==='pos'?'check':k==='maybe'?'spark':'arrow')}</span><span class="vt">${t}</span></div>`).join('');
- if(s.evidence) inner=s.evidence.map(evHtml).join('');
+ if(s.evidence) inner=`<div class="evidence-grid">${s.evidence.map(evHtml).join('')}</div>`;
  if(s.handoff){
-   inner=`<div class="handoff"><div class="ht">${ic('spark')}系统替开发减负 · 建议下一步先查</div>
+   inner=`<div class="handoff"><div class="ht">${ic('spark')}系统替开发减负：建议下一步先查</div>
      <ol>${s.handoff.next.map(n=>`<li>${n}</li>`).join('')}</ol>
-     <div class="similar"><div class="slh">相似历史故障 · 可借鉴定位路径</div>
+     <div class="similar"><div class="slh">相似历史故障：可借鉴定位路径</div>
        ${s.handoff.similar.map(([c,d,sc])=>`<div class="simrow"><span class="sc">${c}</span><span class="sd">${d}</span><span class="ss">相似 ${sc}</span></div>`).join('')}</div></div>`;
  }
  const hasDrawer=inner!=='';
@@ -439,7 +650,7 @@ function stageHtml(s,i){
  return `<div class="stg ${openByDefault?'open':''}" id="stg-${i}">
    <div class="srail"><div class="snode ${nodeCls}">${nodeIc}</div><div class="sconn"></div></div>
    <div class="sbody ${s.root?'root':''} ${s.dead?'deadcard':''}">
-     <div class="shd" tabindex="0" role="button" onclick="tog(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tog(${i})}">
+     <div class="shd" tabindex="0" role="button" aria-expanded="${openByDefault?'true':'false'}" onclick="tog(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tog(${i})}">
        <span class="stt">${s.label}</span><span class="stime">${s.time}</span>${hasDrawer?ic('chevron','caret'):''}</div>
      <div class="sfind">${s.find}${s.narrow?`<br><span class="${narrowCls}">${ic('arrow')}${s.narrow}</span>`:''}</div>
      ${hasDrawer?`<div class="sdrawer"><div class="sdinner"><div class="sdpad">${inner}</div></div></div>`:''}
@@ -452,37 +663,57 @@ function evHtml(e){
   <div class="evh"><span class="eid">${e.id}</span><span class="ett">${e.title}</span>
     ${e.key?`<span class="badge key">${ic('key')}决定性</span>`:''}${e.ro?`<span class="badge ro">${ic('lock')}只读</span>`:''}
     <span class="plat">${e.plat}</span></div>
-  <div class="query">${q}<span class="run" onclick="alert('在观测云重放此查询（只读）')">${ic('play')}重放</span></div>
+  <div class="query">${q}<button class="run" type="button" onclick="alert('在观测云重放此查询（只读）')">${ic('play')}重放</button></div>
   <div class="obsgrid">${e.obs.map(([f,v,b])=>`<div class="obs"><span class="of">${f}</span><span class="ov ${b?'bad':''}">${v}</span></div>`).join('')}</div>
-  <div class="evf"><span>${e.plat} · 归一字段</span><span class="ver ${e.ver?'ok':'miss'}"><span class="vd"></span>${e.ver?'已核实':'待核实'}</span></div></div>`;
+  <div class="evf"><span>${e.plat} / 归一字段</span><span class="ver ${e.ver?'ok':'miss'}"><span class="vd"></span>${e.ver?'已核实':'待核实'}</span></div></div>`;
 }
 
 function renderSide(){
  const open=cur.openedMs,rem=cur.slaMs-open,critCls=rem<5*60000?'crit':'';
  const dispo=cur.recact?`
-   <div class="card"><div class="clabel">${ic('wrench')}推荐处置 · 定位后</div>
+   <div class="card action-card"><div class="clabel">${ic('wrench')}推荐处置</div>
      <div class="recact"><div class="rt"><span class="tagw">生产写</span> ${cur.recact.title} ${cur.recact.stale?`<span class="stale">${ic('refresh')}${cur.recact.stale}</span>`:''}</div>
-     <div class="rd">由有权限的人在平台外执行 · 平台不执行</div></div>
+     <div class="rd">由有权限的人在平台外执行，平台不执行</div></div>
      <button class="btn primary" onclick="alert('进入处置流程：确认 → 转派 → 批准（批准≠执行）')">${ic('arrow')}进入处置流程</button>
      <div class="note"><span class="k">R1/R2</span><span>定位与处置分离：本页只负责定位到根因；写操作在处置页，且批准仅推进状态、系统不执行。</span></div>
    </div>`:`
-   <div class="card"><div class="clabel">${ic('route')}半程移交</div>
-     <div class="recact"><div class="rt">未产出处置动作 · 弃权</div>
+   <div class="card action-card"><div class="clabel">${ic('route')}半程移交</div>
+     <div class="recact"><div class="rt">未产出处置动作：已弃权</div>
      <div class="rd">已把 agent 定位到的范围、下一步建议、相似故障打包，供开发从半程接手。</div></div>
-     <button class="btn primary" onclick="alert('认领并从「网关长尾」这一步继续定位')">${ic('target')}认领 · 从半程继续</button>
+     <button class="btn primary" onclick="alert('认领并从「网关长尾」这一步继续定位')">${ic('target')}认领并从半程继续</button>
      <button class="btn" onclick="alert('填入根因即成 candidate 知识候选，喂知识闭环 D2')">${ic('check')}我已定位到根因</button>
    </div>`;
  document.getElementById('side').innerHTML=`
-  <div class="card" id="slaclk"><div class="clabel">${ic('clock')}时间</div>
+  <div class="sidehead"><div><b>处置上下文</b><span>诊断完成后的人工动作与审计</span></div><span class="readonly">只读诊断</span></div>
+  <div class="card time-card" id="slaclk"><div class="clabel">${ic('clock')}时间</div>
     <div class="clk"><span class="big">${fmt(open)}</span><span class="u">已开启</span></div>
     <div class="rem ${critCls}">SLA 剩余 <b>${fmt(rem)}</b></div></div>
   ${dispo}
-  <div class="card"><div class="clabel">${ic('route')}定位时间线</div>
+  <div class="card timeline-card"><div class="clabel">${ic('route')}定位时间线</div>
     <div class="mtl">${cur.timeline.map(([t,c])=>`<div class="mtli"><span class="mtd ${t==='now'?'now':''}"></span><span class="mtl-line"></span><span class="mtt">${t==='now'?'现在':t}</span><span class="mtc">${c}</span></div>`).join('')}</div></div>`;
 }
 
-function tog(i){document.getElementById('stg-'+i).classList.toggle('open');}
+function tog(i){
+ const stage=document.getElementById('stg-'+i);
+ const open=stage.classList.toggle('open');
+ stage.querySelector('.shd')?.setAttribute('aria-expanded',String(open));
+}
 document.getElementById('navrca').innerHTML=ic('target');
+const themeBtn=document.getElementById('themebtn');
+function updateThemeLabel(){
+ const selected=document.documentElement.getAttribute('data-theme');
+ const dark=selected?selected==='dark':window.matchMedia('(prefers-color-scheme:dark)').matches;
+ const label=dark?'切换到浅色主题':'切换到深色主题';
+ themeBtn.setAttribute('aria-label',label);
+ themeBtn.setAttribute('title',label);
+}
+themeBtn.addEventListener('click',()=>{
+ const selected=document.documentElement.getAttribute('data-theme');
+ const dark=selected?selected==='dark':window.matchMedia('(prefers-color-scheme:dark)').matches;
+ document.documentElement.setAttribute('data-theme',dark?'light':'dark');
+ updateThemeLabel();
+});
+updateThemeLabel();
 load('hit');
 </script>
 </body>
