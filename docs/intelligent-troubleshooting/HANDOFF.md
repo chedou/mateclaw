@@ -1,7 +1,7 @@
 # HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
 > 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
-> 状态：架构已逐条源码核对通过并落 RFC；**P0 领域内核已于 2026-07-25 完成，P1 尚未开始**。
+> 状态：架构已逐条源码核对通过并落 RFC；**P0 领域内核 + P1 接入与身份已于 2026-07-25 完成，P2 尚未开始**。
 > 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
 > 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
@@ -37,20 +37,22 @@
 
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
-**矛盾清单**：
-- [P0 可运行领域内核] vs [P1/P2 尚未接成 903001 竖切]（规则/状态/持久化已在，安全入口与交付未接）
+**矛盾清单**（P1 完成后已转化，2026-07-25 二次刷新）：
+- [已能接入并产出诊断] vs [产出后无法处置与闭环]（P1 打通了「报障→诊断→读取」，
+  但确认/转派/批准/登记/关闭这条人机协同链和工作台都还没有）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
 - [单点竖切验证]（903001 需内网联调）vs [面上铺开]（146 码、多系统）
 - [信任建立]（影子期慢积累）vs [见效压力]
 
-**⭐ 主要矛盾**：[已验证的 P0 内核] vs [尚未接通的 P1/P2 产品竖切]。P0 已把规则、状态、持久化、
-Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份、REST/工作台尚未接入”规定。只有 P1/P2 跑通，
-知识质量与信任问题才会有真实运行数据。
+**⭐ 主要矛盾**：[能接入并产出诊断] vs [产出后无法处置与闭环]。P1 已让用户能在 MateClaw
+发起一次诊断并读到结果，入口与身份不再是瓶颈；当前系统性质由「诊断出来了却没人能对它做什么」规定
+——确认、转派、批准、外部结果登记、关闭沉淀这条链没有 REST 与界面，知识候选 Outbox 因此永远空转，
+D2 知识演进和 D5 影子回归都拿不到真实数据。
 **性质**：非对抗性（工程演进矛盾）→ 分阶段实施 + 集中兵力解决。
-**矛盾的主要方面**：在「安全入口与交付缺位」一侧——领域内核可测，但用户还不能在 MateClaw 发起和完成一次诊断。
-**应对**：集中兵力主攻 P1→P2（903001 fixture 竖切在 mateclaw 复活，继续补齐 Python MVP 合同测试）；
-数据侧 blocker 走 owner 裁决流程并行推进（不占工程主力）。
+**矛盾的主要方面**：在「交付与闭环缺位」一侧——状态机在代码里完备且有 6 项测试，但外部无从驱动它。
+**应对**：集中兵力主攻 P2（生命周期 REST + 工作台 + 列表查询），把 903001 fixture 竖切从
+「报障→诊断」延到「关闭→知识候选」；数据侧 blocker 走 owner 裁决流程并行推进（不占工程主力）。
 **⚠️ 需监控（矛盾转化）**：P0–P2 跑通后，[知识质量 vs 自动化范围] 将上升为主要矛盾——它是全过程的
 根本天花板（前一阶段已确立：**系统天花板 = 知识质量，不是技术**，故不承诺"上线即全自动"）；若内网
 联调窗口先到，临时优先核实 903001 真实取证。
@@ -71,10 +73,19 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 - **P0** 领域骨架 + record 契约 + 6 类 sealed 规则引擎 + `DeterministicDiagnosisService`
   命中路端到端编排 + 人工控制状态机 + MyBatis-Plus/Flyway `V172` 三方言 +
   携带 `workspace_id` 的事务 Outbox/poller + 五分钟幂等；`vip.mate.troubleshooting.**.*Test` 共 33 项通过。
+- **P1 接入与身份**：`TroubleshootingIntakeService`（路由→确定性诊断→持久化）+
+  `TroubleshootingController`（`POST /api/v1/troubleshooting/incidents` 接入、
+  `GET /diagnoses/{id}` 读取、`POST .../actions/{id}/execute` 恒 409）+
+  三个 capability 挂进 `RoleCapabilities`（viewer→view / member→operate / admin→manage）。
+  排障域测试增至 **40 项**，连同 workspace 域回归共 153 项通过。
+  三条诚实性约束已固化为测试：**未注册 SOP → 409 知识缺口**（不编造诊断）、
+  **无 error_code / SYMPTOM → 409**（未命中路未接线，不假装能处理）、
+  **`fixtureMode` 恒 true**（P3 取证适配器未到位前，调用方不得声称证据已核实）。
+  webhook 鉴权**不需要新过滤器**：`JwtAuthFilter` 已按 `mc_` 前缀识别 PAT，告警源用受限 PAT 即成为正常主体。
 
 **主攻（顺序执行，单点突破）**：
-1. **P1** 接入 controller（不走 Trigger）+ PAT webhook 鉴权 + 3 个 capability；
-2. **P2** Web 工作台 + 领域 REST + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
+1. **P2** Web 工作台 + 生命周期 REST（confirm / transfer / approve / record-outcome / close）
+   + 诊断列表查询 + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
    **验收 = 903001 fixture 竖切在 mateclaw 端到端跑通，测试对齐 Python MVP 38 项。**
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
@@ -117,7 +128,7 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 
 - **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
   每条结论有源码位置索引）。
-- **P0 实现入口**：`mateclaw-server/src/main/java/vip/mate/troubleshooting/`；迁移为三方言
+- **P0/P1 实现入口**：`mateclaw-server/src/main/java/vip/mate/troubleshooting/`（`controller/` 已落 P1 接入）；迁移为三方言
   `V172__troubleshooting_domain.sql`；测试入口 `mateclaw-server/src/test/java/vip/mate/troubleshooting/`。
 - **前端设计门户**：`docs/intelligent-troubleshooting/index.html`（汇报入口，串起现行原型 + 演进；详见 §5.5）。
   现行原型 `console-rca.html`（主推·根因定位）、`console-overview.html`（总览看板）；

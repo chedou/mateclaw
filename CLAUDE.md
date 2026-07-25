@@ -4,9 +4,10 @@
 当前的**活跃工作**：在 MateClaw 之上落地 **IT 智能排障系统**（首个域 CSDP 工单/客服链路），
 形态为 mateclaw-server 内的确定性领域模块 `vip.mate.troubleshooting`。
 
-当前实施状态：**P0 领域内核已完成，P1 接入与身份尚未开始**。P0 包含 record 契约、6 类 sealed
-规则、确定性命中编排、人工控制状态机、三方言 V172、租户化事务 Outbox 与五分钟幂等；
-定向测试 33 项通过。
+当前实施状态：**P0 领域内核 + P1 接入与身份已完成，P2 工作台与生命周期 REST 尚未开始**。
+P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、租户化事务
+Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）与三个
+capability。排障域定向测试 40 项通过。
 
 ## 接续这项工作，先读（两份即可上手）
 

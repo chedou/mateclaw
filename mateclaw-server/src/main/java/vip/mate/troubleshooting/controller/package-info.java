@@ -1,2 +1,6 @@
-/** REST and webhook adapters added in P1; deterministic domain logic must not live here. */
+/**
+ * REST and webhook adapters. Protocol conversion only — routing, evidence
+ * evaluation and lifecycle rules stay in the domain services and the state
+ * machine, so no diagnostic decision is ever made in this package.
+ */
 package vip.mate.troubleshooting.controller;

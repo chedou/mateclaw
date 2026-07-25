@@ -47,4 +47,18 @@ public final class Capability {
 
     /** System settings, feature flags, MCP, plugins, ACP, workflow, trigger, members. */
     public static final String MANAGE_SETTINGS = "manage:settings";
+
+    /** Troubleshooting console read: incidents, diagnoses, evidence, timeline. */
+    public static final String VIEW_TROUBLESHOOTING = "view:troubleshooting";
+
+    /**
+     * Drive a diagnosis lifecycle: report an incident, confirm a conclusion,
+     * transfer it, approve a manual write and record its external outcome.
+     * Approval only advances the state machine — MateClaw never executes a
+     * production write.
+     */
+    public static final String OPERATE_TROUBLESHOOTING = "operate:troubleshooting";
+
+    /** Curate the SOP knowledge base and review knowledge candidates. */
+    public static final String MANAGE_TROUBLESHOOTING = "manage:troubleshooting";
 }
