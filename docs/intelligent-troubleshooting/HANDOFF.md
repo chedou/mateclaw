@@ -1,7 +1,7 @@
 # HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
 > 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
-> 状态：架构已逐条源码核对通过并落 RFC；实施尚未动工（Java 代码为零）。
+> 状态：架构已逐条源码核对通过并落 RFC；**P0 领域内核已于 2026-07-25 完成，P1 尚未开始**。
 > 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
 > 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
@@ -38,17 +38,18 @@
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
 **矛盾清单**：
-- [已验证的完备设计] vs [尚不存在的可运行实现]（RFC 通过、Java 代码为零）
+- [P0 可运行领域内核] vs [P1/P2 尚未接成 903001 竖切]（规则/状态/持久化已在，安全入口与交付未接）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
 - [单点竖切验证]（903001 需内网联调）vs [面上铺开]（146 码、多系统）
 - [信任建立]（影子期慢积累）vs [见效压力]
 
-**⭐ 主要矛盾**：[已验证的设计] vs [零实现]。理由：解决了它（P0–P2 竖切在 mateclaw 跑通），知识质量
-矛盾才有载体去暴露（清洗闸门、影子回归都要跑在实现上），信任矛盾才有数据来源；反之任何知识/信任工作都悬空。
+**⭐ 主要矛盾**：[已验证的 P0 内核] vs [尚未接通的 P1/P2 产品竖切]。P0 已把规则、状态、持久化、
+Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份、REST/工作台尚未接入”规定。只有 P1/P2 跑通，
+知识质量与信任问题才会有真实运行数据。
 **性质**：非对抗性（工程演进矛盾）→ 分阶段实施 + 集中兵力解决。
-**矛盾的主要方面**：在「实现缺位」一侧——当前系统的性质仍是"纸面系统"，由未实现所规定。
-**应对**：集中兵力主攻 P0→P1→P2（903001 fixture 竖切在 mateclaw 复活，对齐 Python MVP 38 测试）；
+**矛盾的主要方面**：在「安全入口与交付缺位」一侧——领域内核可测，但用户还不能在 MateClaw 发起和完成一次诊断。
+**应对**：集中兵力主攻 P1→P2（903001 fixture 竖切在 mateclaw 复活，继续补齐 Python MVP 合同测试）；
 数据侧 blocker 走 owner 裁决流程并行推进（不占工程主力）。
 **⚠️ 需监控（矛盾转化）**：P0–P2 跑通后，[知识质量 vs 自动化范围] 将上升为主要矛盾——它是全过程的
 根本天花板（前一阶段已确立：**系统天花板 = 知识质量，不是技术**，故不承诺"上线即全自动"）；若内网
@@ -66,10 +67,14 @@
 
 ## 5. 刷新后的代办（集中兵力重排；细目见 RFC §13）
 
+**已完成（2026-07-25）**：
+- **P0** 领域骨架 + record 契约 + 6 类 sealed 规则引擎 + `DeterministicDiagnosisService`
+  命中路端到端编排 + 人工控制状态机 + MyBatis-Plus/Flyway `V172` 三方言 +
+  携带 `workspace_id` 的事务 Outbox/poller + 五分钟幂等；`vip.mate.troubleshooting.**.*Test` 共 33 项通过。
+
 **主攻（顺序执行，单点突破）**：
-1. **P0** 领域骨架 + record 契约 + sealed 规则引擎（脱库单测）+ 状态机 + MyBatis-Plus/Flyway 三方言 + Outbox + 幂等；
-2. **P1** 接入 controller（不走 Trigger）+ PAT webhook 鉴权 + 3 个 capability；
-3. **P2** Web 工作台 + 领域 REST + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
+1. **P1** 接入 controller（不走 Trigger）+ PAT webhook 鉴权 + 3 个 capability；
+2. **P2** Web 工作台 + 领域 REST + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
    **验收 = 903001 fixture 竖切在 mateclaw 端到端跑通，测试对齐 Python MVP 38 项。**
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
@@ -112,6 +117,8 @@
 
 - **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
   每条结论有源码位置索引）。
+- **P0 实现入口**：`mateclaw-server/src/main/java/vip/mate/troubleshooting/`；迁移为三方言
+  `V172__troubleshooting_domain.sql`；测试入口 `mateclaw-server/src/test/java/vip/mate/troubleshooting/`。
 - **前端设计门户**：`docs/intelligent-troubleshooting/index.html`（汇报入口，串起现行原型 + 演进；详见 §5.5）。
   现行原型 `console-rca.html`（主推·根因定位）、`console-overview.html`（总览看板）；
   迭代过程 `console-disposition{,-v2,-v3}.html`。
@@ -125,7 +132,7 @@
   `l0/sop_kb.json` 已脱敏（Bearer/JWT→`<BEARER_TOKEN>`，查询/JSON token→`<TOKEN>`，IP/人名保留）。
   若把源表纳入版本管理，务必先脱敏 token；webonne/MetaClaw 的旧 Git 历史快照可能保留修复前 token，
   如确认属有效凭证应立即轮换；未经明确授权不擅自改写 Git 历史。
-- **纪律**：当前分支 `claude/intelligent-troubleshooting-design`；以用户当前明确选择的分支为准；
+- **纪律**：当前本地分支 `intelligent-troubleshooting-design`（原 PR 分支已合并并删除）；以用户当前明确选择的分支为准；
   不擅自开 PR；改 RFC 保持 § 编号连续；沿用仓库现有提交说明约定；不冒用未参与本轮工作的
   Co-Authored-By 身份。
 - **方法论 skills**：已迁至本仓库 `.claude/skills/`（矛盾分析/集中兵力/持久战/群众路线/批评与自我批评等，
