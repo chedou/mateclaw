@@ -20,6 +20,9 @@ export type Capability =
   | 'manage:models'
   | 'manage:security'
   | 'manage:settings'
+  | 'view:troubleshooting'
+  | 'operate:troubleshooting'
+  | 'manage:troubleshooting'
 
 export type WorkspaceRole = 'viewer' | 'member' | 'admin' | 'owner'
 

@@ -69,6 +69,16 @@ const router = createRouter({
           meta: { title: 'Enterprise Scenarios', requiredCapability: 'manage:agents' },
         },
         {
+          // Read access is enough to open the console. Driving a lifecycle
+          // transition needs operate:troubleshooting, enforced per endpoint on
+          // the backend rather than per route — the queue stays readable to
+          // anyone on duty even if they cannot act on a case.
+          path: 'troubleshooting',
+          name: 'Troubleshooting',
+          component: () => import('@/views/Troubleshooting/index.vue'),
+          meta: { title: 'Troubleshooting', requiredCapability: 'view:troubleshooting' },
+        },
+        {
           path: 'memory',
           name: 'Memory',
           component: () => import('@/views/Memory/index.vue'),
