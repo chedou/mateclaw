@@ -1696,6 +1696,46 @@ export interface DiagnosisSummary {
   updateTime: string
 }
 
+/** Why a signal did or did not contribute — see CriterionOutcome on the server. */
+export type CriterionOutcome = 'SATISFIED' | 'EXCLUDED' | 'UNEVALUATED'
+
+export interface CriterionEvaluation {
+  signal: string
+  sourceRequestId: string
+  description: string
+  kind: string
+  /** The rule as authored, e.g. `count ≥ 1`. */
+  expression: string
+  /** The same rule with observed values filled in, rendered server-side. */
+  substitution: string
+  outcome: CriterionOutcome
+  evidenceStatus: EvidenceStatus
+}
+
+export interface RuleEvaluation {
+  ruleId: string
+  requiredSignals: string[]
+  rootCause: string
+  confidence: Confidence
+  fired: boolean
+  /** Required signals whose criteria evaluated false — genuinely ruled out. */
+  unsatisfiedByExclusion: string[]
+  /** Required signals whose evidence never arrived — still untested. */
+  unsatisfiedByGap: string[]
+  /** Required signals no criterion produces at all — a gap in the SOP. */
+  undefinedSignals: string[]
+}
+
+export interface DiagnosisDerivation {
+  diagnosisId: string
+  sopKey: string
+  /** False when the SOP changed since, so the chain no longer describes what happened. */
+  faithful: boolean
+  note: string | null
+  criteria: CriterionEvaluation[]
+  rules: RuleEvaluation[]
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: Record<string, unknown>) =>
@@ -1706,6 +1746,10 @@ export const troubleshootingApi = {
 
   get: (diagnosisId: string) =>
     http.get<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}`),
+
+  /** How the conclusion was reached: criteria with substituted arithmetic, and losing rules. */
+  derivation: (diagnosisId: string) =>
+    http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
 
   confirm: (diagnosisId: string) =>
     http.post<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}/confirm`),

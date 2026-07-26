@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vip.mate.common.result.R;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.model.DiagnosisDerivation;
+import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
@@ -57,6 +59,7 @@ public class TroubleshootingController {
 
     private final TroubleshootingIntakeService intakeService;
     private final DiagnosisLifecycleService lifecycleService;
+    private final DiagnosisDerivationService derivationService;
     private final TroubleshootingPersistenceService persistence;
 
     // ---------- intake and read ----------
@@ -103,6 +106,22 @@ public class TroubleshootingController {
             @PathVariable String diagnosisId,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(persistence.get(resolveWorkspace(workspaceId), diagnosisId));
+    }
+
+    /**
+     * Explains how the diagnosis reached its conclusion.
+     *
+     * <p>Separate from the aggregate because it is a projection over the
+     * diagnosis and its SOP, not stored state — and because the criteria behind
+     * a conclusion belong to the knowledge base, which evolves independently of
+     * any single case.</p>
+     */
+    @GetMapping("/diagnoses/{diagnosisId}/derivation")
+    @RequireWorkspaceRole("viewer")
+    public R<DiagnosisDerivation> derivation(
+            @PathVariable String diagnosisId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(derivationService.explain(resolveWorkspace(workspaceId), diagnosisId));
     }
 
     // ---------- human-controlled lifecycle ----------

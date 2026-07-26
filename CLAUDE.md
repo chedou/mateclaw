@@ -8,7 +8,7 @@
 联跑待收尾）。P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（`views/Troubleshooting/`）与
-`ts.` 飞书 card kind。排障域定向测试 59 项通过（含 903001 端到端竖切 `Vertical903001Test`）。
+`ts.` 飞书 card kind。排障域定向测试 65 项通过（含 903001 端到端竖切 `Vertical903001Test` 与推导投影 `DiagnosisDerivationService`）。
 
 ## 接续这项工作，先读（两份即可上手）
 
