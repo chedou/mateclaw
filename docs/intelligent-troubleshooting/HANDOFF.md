@@ -83,10 +83,20 @@ D2 知识演进和 D5 影子回归都拿不到真实数据。
   **`fixtureMode` 恒 true**（P3 取证适配器未到位前，调用方不得声称证据已核实）。
   webhook 鉴权**不需要新过滤器**：`JwtAuthFilter` 已按 `mc_` 前缀识别 PAT，告警源用受限 PAT 即成为正常主体。
 
+- **P2 交付与闭环**：`DiagnosisLifecycleService`（加载→状态机→乐观版本写回）+ 生命周期 REST
+  （confirm / transfer / actions/{id}/approve / actions/{id}/record-outcome / close）+ 队列列表
+  （只读索引列、不解析聚合）+ **Vue 工作台** `mateclaw-ui/src/views/Troubleshooting/`
+  （队列 + 判定链组件 + 处置弹窗，路由挂 `view:troubleshooting`）+ **`ts.` 飞书 card kind**。
+  排障域测试增至 **56 项**，连同飞书卡片域共 71 项通过；`vue-tsc` 无错。
+  关键设计判断：①操作人取自认证主体、不信请求体，审计不可伪造；②关闭与知识候选入 Outbox
+  同事务，崩溃不会丢教训；③卡片点击必须能映射到 MateClaw 用户（走 `ExternalIdentityEntity`
+  SSO 绑定），**未绑定即拒绝**——卡片不是绕过身份与权限的旁路；④卡片只放"确认"，
+  批准生产写与关闭归档留在工作台（卡片摘要不足以支撑这两个决定）。
+
 **主攻（顺序执行，单点突破）**：
-1. **P2** Web 工作台 + 生命周期 REST（confirm / transfer / approve / record-outcome / close）
-   + 诊断列表查询 + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
-   **验收 = 903001 fixture 竖切在 mateclaw 端到端跑通，测试对齐 Python MVP 38 项。**
+1. **P2 收尾**：出站卡片推送（平台 `FeishuCardRenderer` 接口是 `ApprovalNotice` 形状、不适配诊断，
+   且"哪个群收哪个系统的故障"这一绑定尚未设计——**当前只接通了入站点击**）；
+   903001 fixture 端到端联跑（注册 SOP → 报障 → 确认 → 转派 → 批准 → 登记 → 关闭 → 候选出队）。
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
 - L0 数据 blocker：3 个路由键一码多义（101014/101034/101040）owner 裁决 + 103 处字符丢失回源表恢复

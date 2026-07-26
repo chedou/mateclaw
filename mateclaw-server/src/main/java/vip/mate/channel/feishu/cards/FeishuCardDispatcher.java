@@ -3,6 +3,7 @@ package vip.mate.channel.feishu.cards;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import vip.mate.channel.feishu.cards.tool_guard.ToolGuardCardKindFactory;
+import vip.mate.channel.feishu.cards.troubleshooting.TroubleshootingCardKindFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -40,16 +41,23 @@ public class FeishuCardDispatcher {
     private final Map<String, FeishuCardKind> byName = new HashMap<>();
 
     private final ToolGuardCardKindFactory toolGuardFactory;
+    private final TroubleshootingCardKindFactory troubleshootingFactory;
 
-    public FeishuCardDispatcher(ToolGuardCardKindFactory toolGuardFactory) {
+    public FeishuCardDispatcher(
+            ToolGuardCardKindFactory toolGuardFactory,
+            TroubleshootingCardKindFactory troubleshootingFactory) {
         this.toolGuardFactory = toolGuardFactory;
+        this.troubleshootingFactory = troubleshootingFactory;
         registerKinds();
     }
 
     private void registerKinds() {
-        // Currently single kind. Add lines here as new card kinds land.
+        // Add lines here as new card kinds land.
         // Order doesn't matter — disjoint-prefix invariant prevents ambiguity.
         register(toolGuardFactory.create());
+        // Troubleshooting cards only advance a state machine; unlike tool-guard
+        // approvals they never replay the action they authorized.
+        register(troubleshootingFactory.create());
     }
 
     private void register(FeishuCardKind kind) {
