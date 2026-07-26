@@ -94,6 +94,36 @@ public class TroubleshootingPersistenceService {
         return new StoredDiagnosis(diagnosis, expectedVersion + 1, false);
     }
 
+    /**
+     * Lists queue rows for one workspace, newest first.
+     *
+     * <p>Reads indexed columns only — the stored aggregate is never parsed here,
+     * so rendering a queue costs the same whether a diagnosis carries three
+     * pieces of evidence or thirty. {@code status} and {@code system} narrow the
+     * list when supplied; a blank value means "no filter" rather than "match
+     * blank", because that is what an empty console filter box means.</p>
+     */
+    public java.util.List<DiagnosisSummary> list(
+            long workspaceId, String status, String system, int limit) {
+        validateWorkspace(workspaceId);
+        int capped = Math.min(Math.max(limit, 1), 200);
+        LambdaQueryWrapper<TroubleshootingDiagnosisEntity> query =
+                new LambdaQueryWrapper<TroubleshootingDiagnosisEntity>()
+                        .eq(TroubleshootingDiagnosisEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingDiagnosisEntity::getDeleted, 0)
+                        .orderByDesc(TroubleshootingDiagnosisEntity::getId)
+                        .last("LIMIT " + capped);
+        if (status != null && !status.isBlank()) {
+            query.eq(TroubleshootingDiagnosisEntity::getStatus, status.trim());
+        }
+        if (system != null && !system.isBlank()) {
+            query.eq(TroubleshootingDiagnosisEntity::getSystem, system.trim());
+        }
+        return diagnosisMapper.selectList(query).stream()
+                .map(DiagnosisSummary::from)
+                .toList();
+    }
+
     @Transactional
     public StoredDiagnosis updateAndEnqueue(
             long workspaceId,
