@@ -24,6 +24,7 @@ public record Diagnosis(
         String sopKey,
         String sopTitle,
         List<EvidenceResult> evidence,
+        List<String> evidenceCitations,
         List<String> triggeredSignals,
         List<RecommendedAction> recommendedActions,
         List<RecommendedAction> pendingWrites,
@@ -38,9 +39,9 @@ public record Diagnosis(
         boolean writeExecutionEnabled,
         List<String> warnings) {
 
-    public static final String CURRENT_CONTRACT_VERSION = "1.3";
+    public static final String CURRENT_CONTRACT_VERSION = "1.4";
     private static final Set<String> SUPPORTED_CONTRACT_VERSIONS =
-            Set.of(CURRENT_CONTRACT_VERSION);
+            Set.of("1.3", CURRENT_CONTRACT_VERSION);
 
     public Diagnosis {
         diagnosisId = required(diagnosisId, "diagnosisId");
@@ -57,6 +58,7 @@ public record Diagnosis(
         summary = summary == null ? "" : summary;
         rootCause = rootCause == null ? "" : rootCause;
         evidence = immutable(evidence);
+        evidenceCitations = immutable(evidenceCitations);
         triggeredSignals = immutable(triggeredSignals);
         recommendedActions = immutable(recommendedActions);
         pendingWrites = immutable(pendingWrites);
@@ -67,6 +69,17 @@ public record Diagnosis(
         warnings = immutable(warnings);
         if (writeExecutionEnabled) {
             throw new IllegalArgumentException("production write execution must remain disabled");
+        }
+        validateEvidenceCitations(evidence, evidenceCitations);
+        if (routeMode == RouteMode.LLM_FALLBACK) {
+            if (!recommendedActions.isEmpty() || !pendingWrites.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "LLM fallback must not recommend or execute actions");
+            }
+            if (!abstained && evidenceCitations.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "non-abstained LLM fallback requires evidence citations");
+            }
         }
         validateLifecycle(
                 diagnosisId,
@@ -168,6 +181,7 @@ public record Diagnosis(
                 sopKey,
                 sopTitle,
                 evidence,
+                List.of(),
                 triggeredSignals,
                 recommendedActions,
                 pendingWrites,
@@ -181,6 +195,49 @@ public record Diagnosis(
                 fixtureMode,
                 false,
                 warnings);
+    }
+
+    /** Creates an initial miss-path aggregate after Agent output validation. */
+    public static Diagnosis initialAgentFallback(
+            AgentTriageDraft draft,
+            DiagnosisStatus status,
+            List<TimelineEvent> timeline) {
+        if (draft == null) {
+            throw new IllegalArgumentException("Agent triage draft is required");
+        }
+        if (status != DiagnosisStatus.READY_FOR_HUMAN
+                && status != DiagnosisStatus.NEEDS_INVESTIGATION) {
+            throw new IllegalArgumentException("Agent triage must start before human confirmation");
+        }
+        return new Diagnosis(
+                draft.diagnosisId(),
+                CURRENT_CONTRACT_VERSION,
+                draft.caseId(),
+                draft.runId(),
+                draft.incident(),
+                RouteMode.LLM_FALLBACK,
+                status,
+                draft.summary(),
+                draft.hypothesis(),
+                draft.confidence(),
+                draft.abstained(),
+                null,
+                null,
+                draft.evidence(),
+                draft.evidenceCitations(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                timeline,
+                draft.rehearsal(),
+                draft.fixtureMode(),
+                false,
+                draft.warnings());
     }
 
     public Diagnosis confirmed(List<TimelineEvent> newTimeline) {
@@ -302,7 +359,7 @@ public record Diagnosis(
         return new Diagnosis(
                 diagnosisId, contractVersion, caseId, runId, incident, routeMode,
                 newStatus, summary, rootCause, confidence, abstained,
-                sopKey, sopTitle, evidence, triggeredSignals, newActions,
+                sopKey, sopTitle, evidence, evidenceCitations, triggeredSignals, newActions,
                 newPendingWrites, newRouteToTeam, newTransfers, newActionOutcomes,
                 newClosure, newKnowledgeCandidates, newTimeline, rehearsal,
                 fixtureMode, false, warnings);
@@ -432,6 +489,27 @@ public record Diagnosis(
         if (candidates.stream()
                 .anyMatch(candidate -> !diagnosisId.equals(candidate.sourceDiagnosisId()))) {
             throw new IllegalArgumentException("knowledge candidate belongs to another diagnosis");
+        }
+    }
+
+    private static void validateEvidenceCitations(
+            List<EvidenceResult> evidence,
+            List<String> evidenceCitations) {
+        Set<String> usableEvidence = evidence.stream()
+                .filter(item -> item.status() != EvidenceStatus.MISSING)
+                .map(EvidenceResult::queryId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> uniqueCitations = new java.util.LinkedHashSet<>();
+        for (String citation : evidenceCitations) {
+            String queryId = required(citation, "evidenceCitation");
+            if (!uniqueCitations.add(queryId)) {
+                throw new IllegalArgumentException(
+                        "duplicate evidence citation: " + queryId);
+            }
+            if (!usableEvidence.contains(queryId)) {
+                throw new IllegalArgumentException(
+                        "evidence citation is missing or unknown: " + queryId);
+            }
         }
     }
 

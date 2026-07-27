@@ -2,12 +2,15 @@ package vip.mate.troubleshooting.model;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DiagnosisContractTest {
 
@@ -16,7 +19,7 @@ class DiagnosisContractTest {
     @Test
     void persistedPayloadRejectsUnknownContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.3\"", "\"contractVersion\":\"9.9\"");
+                .replace("\"contractVersion\":\"1.4\"", "\"contractVersion\":\"9.9\"");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -26,11 +29,23 @@ class DiagnosisContractTest {
     @Test
     void persistedPayloadRejectsMissingContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.3\",", "");
+                .replace("\"contractVersion\":\"1.4\",", "");
 
         assertThrows(
                 JsonProcessingException.class,
                 () -> objectMapper.readValue(json, Diagnosis.class));
+    }
+
+    @Test
+    void persistedVersion13PayloadDefaultsMissingEvidenceCitationsToEmpty() throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.3");
+        payload.remove("evidenceCitations");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.3", restored.contractVersion());
+        assertTrue(restored.evidenceCitations().isEmpty());
     }
 
     @Test

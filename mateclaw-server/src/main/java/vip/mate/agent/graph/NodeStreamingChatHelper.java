@@ -91,6 +91,13 @@ public class NodeStreamingChatHelper {
      */
     private final vip.mate.llm.failover.AvailableProviderPool providerPool;
 
+    /**
+     * Hard-scoped graphs may parse raw model tool arguments here before the
+     * executor sees them. Invalid JSON diagnostics must therefore withhold the
+     * argument prefix and parser message at this earlier boundary too.
+     */
+    private boolean sensitiveArgumentSideChannelsSuppressed;
+
     public NodeStreamingChatHelper(ChatStreamTracker streamTracker) {
         this(streamTracker, List.of(), null, null, null, null);
     }
@@ -180,6 +187,10 @@ public class NodeStreamingChatHelper {
 
     public void setContextLimitObserver(Consumer<String> observer) {
         this.contextLimitObserver = observer;
+    }
+
+    public void setSensitiveArgumentSideChannelsSuppressed(boolean suppressed) {
+        this.sensitiveArgumentSideChannelsSuppressed = suppressed;
     }
 
     private static List<vip.mate.llm.failover.FallbackEntry> wrap(ChatModel m) {
@@ -756,7 +767,8 @@ public class NodeStreamingChatHelper {
         // stored by an older build) bypass that path. Strict providers reject
         // the whole request with HTTP 400 when any function.arguments is not
         // parseable JSON, so harmonize them here at the single send chokepoint.
-        prompt = normalizeToolCallArguments(prompt);
+        prompt = normalizeToolCallArguments(
+                prompt, sensitiveArgumentSideChannelsSuppressed);
 
         // 在开始 LLM 调用前检查停止标志
         if (streamTracker.isStopRequested(conversationId)) {
@@ -1745,6 +1757,12 @@ public class NodeStreamingChatHelper {
      * nothing needs fixing.
      */
     static Prompt normalizeToolCallArguments(Prompt prompt) {
+        return normalizeToolCallArguments(prompt, false);
+    }
+
+    private static Prompt normalizeToolCallArguments(
+            Prompt prompt,
+            boolean suppressSensitiveDetails) {
         if (prompt == null) {
             return null;
         }
@@ -1764,7 +1782,8 @@ public class NodeStreamingChatHelper {
             List<AssistantMessage.ToolCall> calls = am.getToolCalls();
             for (int j = 0; j < calls.size(); j++) {
                 AssistantMessage.ToolCall tc = calls.get(j);
-                String safe = sanitizeToolCallArguments(tc.name(), tc.arguments());
+                String safe = sanitizeToolCallArguments(
+                        tc.name(), tc.arguments(), suppressSensitiveDetails);
                 if (!safe.equals(tc.arguments())) {
                     if (fixedCalls == null) fixedCalls = new ArrayList<>(calls);
                     fixedCalls.set(j, new AssistantMessage.ToolCall(tc.id(), tc.type(), tc.name(), safe));
@@ -2403,7 +2422,10 @@ public class NodeStreamingChatHelper {
                     acc.id,
                     acc.type != null ? acc.type : "function",
                     acc.name,
-                    sanitizeToolCallArguments(acc.name, acc.arguments.toString())));
+                    sanitizeToolCallArguments(
+                            acc.name,
+                            acc.arguments.toString(),
+                            sensitiveArgumentSideChannelsSuppressed)));
         }
         return result;
     }
@@ -2426,7 +2448,10 @@ public class NodeStreamingChatHelper {
      * arguments and surfaces a per-tool error if the empty payload is wrong
      * for that tool.
      */
-    private static String sanitizeToolCallArguments(String toolName, String arguments) {
+    private static String sanitizeToolCallArguments(
+            String toolName,
+            String arguments,
+            boolean suppressSensitiveDetails) {
         if (arguments == null || arguments.isBlank()) {
             return "{}";
         }
@@ -2434,14 +2459,20 @@ public class NodeStreamingChatHelper {
             TOOL_ARG_JSON_MAPPER.readTree(arguments);
             return arguments;
         } catch (Exception e) {
-            log.warn("Tool '{}' arguments are not valid JSON after stream aggregation "
-                            + "(len={}, head={}); replacing with empty object so the "
-                            + "follow-up chat-completions request stays well-formed. "
-                            + "Parse error: {}",
-                    toolName,
-                    arguments.length(),
-                    arguments.substring(0, Math.min(80, arguments.length())),
-                    e.getMessage());
+            if (suppressSensitiveDetails) {
+                log.warn("Tool '{}' arguments are not valid JSON after stream aggregation "
+                                + "(len={}, {}; details withheld); replacing with empty object",
+                        toolName, arguments.length(), e.getClass().getSimpleName());
+            } else {
+                log.warn("Tool '{}' arguments are not valid JSON after stream aggregation "
+                                + "(len={}, head={}); replacing with empty object so the "
+                                + "follow-up chat-completions request stays well-formed. "
+                                + "Parse error: {}",
+                        toolName,
+                        arguments.length(),
+                        arguments.substring(0, Math.min(80, arguments.length())),
+                        e.getMessage());
+            }
             return "{}";
         }
     }

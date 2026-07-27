@@ -5,6 +5,13 @@
       <header class="qhead">
         <b>值班队列</b>
         <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
+        <el-button
+          v-if="canManageSops"
+          class="sop-link"
+          size="small"
+          text
+          @click="router.push('/troubleshooting/sops')"
+        >SOP 管理</el-button>
       </header>
       <div class="qfilter">
         <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="loadList">
@@ -106,7 +113,12 @@
               </article>
             </div>
             <p v-else class="noact">
-              弃权时 <code>recommendedActions</code> 为空数组 —— 契约保证不输出任何恢复建议。
+              <template v-if="current.diagnosis.routeMode === 'LLM_FALLBACK'">
+                只读 Agent 路径的 <code>recommendedActions</code> 始终为空数组——只能给出待人工确认的假设。
+              </template>
+              <template v-else>
+                弃权时 <code>recommendedActions</code> 为空数组——契约保证不输出任何恢复建议。
+              </template>
             </p>
           </div>
 
@@ -268,9 +280,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DerivationChain from './DerivationChain.vue'
+import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import {
   troubleshootingApi,
   type ActionOutcomeStatus,
@@ -284,6 +298,10 @@ import {
 const STATUSES: DiagnosisStatus[] = [
   'READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED',
 ]
+
+const router = useRouter()
+const workspaceStore = useWorkspaceStore()
+const canManageSops = computed(() => workspaceStore.can('manage:troubleshooting'))
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
   READY_FOR_HUMAN: '待确认',
   NEEDS_INVESTIGATION: '转人工深查',
@@ -465,6 +483,7 @@ onMounted(loadList)
 .qhead { padding: 12px 14px; display: flex; align-items: center; gap: 8px;
   border-bottom: 1px solid var(--el-border-color-lighter); }
 .qhead b { font-size: 14px; color: var(--el-text-color-primary); }
+.sop-link { margin-left: auto; }
 .qfilter { padding: 9px 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .qlist { flex: 1; overflow-y: auto; }
 .qitem {

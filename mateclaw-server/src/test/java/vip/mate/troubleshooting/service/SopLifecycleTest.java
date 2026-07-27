@@ -70,6 +70,21 @@ class SopLifecycleTest {
     }
 
     @Test
+    void refusesRegistrationThatBypassesTheReviewLifecycle() {
+        assertThatThrownBy(() -> service.register(WORKSPACE_ID, sop("approved", false)))
+                .as("registration must not put unreviewed knowledge directly on the hit path")
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("candidate")
+                .hasMessageContaining("verified=false");
+        assertThatThrownBy(() -> service.register(WORKSPACE_ID, sop("candidate", true)))
+                .as("verified is set only by the explicit candidate -> approved transition")
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("candidate")
+                .hasMessageContaining("verified=false");
+        assertThat(rows).isEmpty();
+    }
+
+    @Test
     void refusesASecondSopOnTheSameRoute() {
         service.register(WORKSPACE_ID, sop("candidate", false));
 
@@ -102,8 +117,8 @@ class SopLifecycleTest {
 
         assertThatThrownBy(() ->
                 service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "candidate"))
-                .as("a mistaken approval is corrected by deprecating and replacing, "
-                        + "which leaves a trail")
+                .as("a mistaken approval can only move forward to deprecated, "
+                        + "which preserves its review trail")
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("illegal SOP transition");
     }

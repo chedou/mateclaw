@@ -4,12 +4,17 @@
 当前的**活跃工作**：在 MateClaw 之上落地 **IT 智能排障系统**（首个域 CSDP 工单/客服链路），
 形态为 mateclaw-server 内的确定性领域模块 `vip.mate.troubleshooting`。
 
-当前实施状态：**P0 内核 + P1 接入与身份 + P2 交付闭环已完成**（出站卡片推送与 903001 端到端
-联跑待收尾）。P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
+当前实施状态：**P0 内核 + P1 接入与身份 + P2 交付闭环 + P3 命中路证据适配底座 +
+P4 未命中路只读 Agent 工程链路已完成**。
+P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
-与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（`views/Troubleshooting/`）与
-`ts.` 飞书 card kind。另含推导投影（`GET /diagnoses/{id}/derivation`）与 SOP 管理 API（注册/浏览/promote + 候选队列只读）。
-排障域定向测试 73 项通过（含 903001 端到端竖切 `Vertical903001Test`）。
+与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
+`ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
+`GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
+`TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验、`Diagnosis` 1.4
+兼容契约和未命中路 Vue 展示；相关定向回归与应用上下文启动测试通过。
+**注意：P4 开关默认关闭，专用 Agent 尚未按运行手册配置和实机演练；观测云 measurement/字段/阈值仍未完成
+内网 T2 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。**
 
 ## 接续这项工作，先读
 
@@ -19,12 +24,21 @@
    四条红线、当前阶段矛盾分析、指针与安全口径。
 3. **`rfcs/intelligent-troubleshooting-design.md`** —— 现行架构设计（逐条 mateclaw 源码核对通过；
    含源码位置索引 §12、实施清单 §13、实施战略 §14）。
+4. **`docs/intelligent-troubleshooting/agent-miss-path-runbook.md`** —— P4 专用 Agent 配置、启用、验收与回滚。
 
 ## 关键约束（细节见 HANDOFF §3）
 
 - 命中路零 LLM（Workflow 每步调 LLM，故命中路必须是领域模块，不能是 native Workflow）。
 - 生产写工具永不注册；ToolGuard 批准=回放执行，与"批准但不执行"语义相反，人工确认只推进领域状态机。
-- 写操作永远外部人工 + 结果登记；未命中路 agent 锁死只读。
+- 写操作永远外部人工 + 结果登记；未命中路 Agent 必须同时满足专用直接绑定校验、调用级硬白名单和
+  服务端取证会话约束；受限图不注入会话/memory/wiki/runtime 上下文、不使用 provider fallback，
+  必须显式绑定唯一 enabled 模型并跳过默认模型/capability routing；provider 禁用/未配置时直接 409，
+  运行时失败则保守弃权，并禁用通用 `ToolResultStorage` 原始结果 spill。已有/新采集的
+  canonical EvidenceResult 全字符串字段/递归 key 必须先脱敏、危险 queryId 安全重映射，再进入模型并随 Diagnosis
+  持久化；初始未受信上下文必须受独立预算约束，模型原生搜索必须关闭；
+  硬作用域必须清空并恢复请求级 ThinkingLevel，不得放大迭代/reasoning；原始工具参数仅可进入 Guard 与 callback，
+  不得进入 event/SSE/log/audit/approval，`NEEDS_APPROVAL` 在硬作用域直接拦截；
+  ToolGuard BLOCK 作为纵深防御，不能替代硬白名单。
 - `l0/sop_kb.json` 已脱敏；源表 xlsx 含真实 token/IP/人名，未入库、不得入库。
 
 ## 方法论 skills
@@ -33,7 +47,7 @@
 
 ## 纪律
 
-- 排障工作当前本地分支 `intelligent-troubleshooting-design`（原 PR 分支已合并并从远端删除）；
+- 排障工作当前本地分支 `claude/intelligent-troubleshooting-design`；
   以用户当前明确选择的分支为准。
 - 不擅自开 PR；改 RFC 保持 § 编号连续。
 - 旧仓库 **webonne/MetaClaw** 已归档为只读参考（Python MVP 参考实现在其 `zhinengpaizhang-dev` 分支），

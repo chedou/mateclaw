@@ -261,12 +261,23 @@ public class ToolExecutionExecutor {
     /** Optional MCP progress context for long-running tool progress relay. */
     private McpProgressContext progressContext;
 
+    /**
+     * Hard-scoped graphs still pass raw arguments to the guard and callback,
+     * but must never copy them into graph events, SSE, logs, approvals, or the
+     * ToolGuard audit table.
+     */
+    private boolean sensitiveArgumentSideChannelsSuppressed;
+
     public void setUsageRecencyTracker(ToolUsageRecencyTracker tracker) {
         this.usageRecencyTracker = tracker;
     }
 
     public void setProgressContext(McpProgressContext ctx) {
         this.progressContext = ctx;
+    }
+
+    public void setSensitiveArgumentSideChannelsSuppressed(boolean suppressed) {
+        this.sensitiveArgumentSideChannelsSuppressed = suppressed;
     }
 
     public void setSkillRuntimeService(vip.mate.skill.runtime.SkillRuntimeService s) {
@@ -499,8 +510,10 @@ public class ToolExecutionExecutor {
             // bypass guard rules keyed on the canonical name.
             String toolName = resolveToolName(toolCall.name());
             String arguments = toolCall.arguments();
+            String visibleArguments = visibleArguments(arguments);
 
-            events.add(GraphEventPublisher.toolStart(toolCall.id(), toolName, arguments));
+            events.add(GraphEventPublisher.toolStart(
+                    toolCall.id(), toolName, visibleArguments));
 
             // 0. 子会话工具拦截：委派上下文中的子 Agent 禁止调用特定工具
             if (vip.mate.tool.builtin.DelegationContext.currentDepth() > 0) {
@@ -536,9 +549,17 @@ public class ToolExecutionExecutor {
                 try {
                     OBJECT_MAPPER.readTree(arguments);
                 } catch (Exception jsonEx) {
-                    log.warn("[ToolExecutor] Tool {} arguments invalid/truncated JSON (len={}): {}",
-                            toolName, arguments.length(), jsonEx.getMessage());
-                    String truncationError = normalizeToolExecutionError(jsonEx);
+                    if (sensitiveArgumentSideChannelsSuppressed) {
+                        log.warn("[ToolExecutor] Hard-scoped tool {} arguments rejected "
+                                + "as invalid JSON (len={}; details withheld)",
+                                toolName, arguments.length());
+                    } else {
+                        log.warn("[ToolExecutor] Tool {} arguments invalid/truncated JSON (len={}): {}",
+                                toolName, arguments.length(), jsonEx.getMessage());
+                    }
+                    String truncationError = sensitiveArgumentSideChannelsSuppressed
+                            ? "Tool arguments rejected (details withheld by hard-scope policy)"
+                            : normalizeToolExecutionError(jsonEx);
                     events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, truncationError, false));
                     allResponses.add(new ToolResponseMessage.ToolResponse(
                             toolCall.id(), toolName, truncationError));
@@ -862,10 +883,21 @@ public class ToolExecutionExecutor {
                         .findFirst().orElse(null);
                 String toolName = pc != null ? pc.toolCall.name() : "unknown";
                 String toolId = pc != null ? pc.toolCall.id() : "";
-                log.error("[ToolExecutor] Parallel tool {} failed: {}", toolName, e.getMessage());
+                if (sensitiveArgumentSideChannelsSuppressed) {
+                    log.error("[ToolExecutor] Parallel hard-scoped tool {} failed "
+                            + "({}; details withheld)", toolName, e.getClass().getSimpleName());
+                } else {
+                    log.error("[ToolExecutor] Parallel tool {} failed: {}", toolName, e.getMessage());
+                }
+                Exception normalized = e instanceof ExecutionException
+                        && e.getCause() instanceof Exception cause
+                        ? cause
+                        : e;
+                String reportedError = sensitiveArgumentSideChannelsSuppressed
+                        ? "Tool execution failed (details withheld by hard-scope policy)"
+                        : normalizeToolExecutionError(normalized);
                 allResponses.set(entry.getKey(), new ToolResponseMessage.ToolResponse(
-                        toolId, toolName, normalizeToolExecutionError(
-                        e instanceof ExecutionException ? (Exception) e.getCause() : (Exception) e)));
+                        toolId, toolName, reportedError));
             }
         }
         log.info("[ToolExecutor] Parallel batch completed: {} tools in {}ms",
@@ -880,11 +912,17 @@ public class ToolExecutionExecutor {
             if (streamTracker != null) {
                 streamTracker.updateRunningTool(pc.conversationId, toolName);
                 streamTracker.broadcastObject(pc.conversationId, GraphEventPublisher.EVENT_TOOL_START,
-                        GraphEventPublisher.toolStart(pc.toolCall.id(), toolName, pc.arguments).data());
+                        GraphEventPublisher.toolStart(
+                                pc.toolCall.id(), toolName, visibleArguments(pc.arguments)).data());
             }
-            log.info("[ToolExecutor] Executing tool: {} with args: {}",
-                    toolName, pc.arguments != null && pc.arguments.length() > 200
-                            ? pc.arguments.substring(0, 200) + "..." : pc.arguments);
+            if (sensitiveArgumentSideChannelsSuppressed) {
+                log.info("[ToolExecutor] Executing hard-scoped tool: {} "
+                        + "(arguments withheld)", toolName);
+            } else {
+                log.info("[ToolExecutor] Executing tool: {} with args: {}",
+                        toolName, pc.arguments != null && pc.arguments.length() > 200
+                                ? pc.arguments.substring(0, 200) + "..." : pc.arguments);
+            }
 
             // RFC-063r §2.5 / PR-1 transition window: populate BOTH the explicit
             // Spring AI ToolContext (preferred — read via ChatOrigin.from(ctx))
@@ -991,13 +1029,20 @@ public class ToolExecutionExecutor {
             return new ToolResponseMessage.ToolResponse(
                     pc.toolCall.id(), toolName, withProductCardDirective(toolName, result != null ? result : ""));
         } catch (Exception e) {
-            log.error("[ToolExecutor] Tool {} execution failed: {}", toolName, e.getMessage(), e);
+            if (sensitiveArgumentSideChannelsSuppressed) {
+                log.error("[ToolExecutor] Hard-scoped tool {} execution failed "
+                        + "({}; details withheld)", toolName, e.getClass().getSimpleName());
+            } else {
+                log.error("[ToolExecutor] Tool {} execution failed: {}", toolName, e.getMessage(), e);
+            }
             // RFC-052: for returnDirect tools, even the error message is
             // suspect — exception text may carry stack traces, SQL fragments,
             // or other sensitive substrings that should not enter LLM context.
             // Emit a generic placeholder instead. Full error still goes to logs
             // for operator diagnosis.
-            String reportedError = isReturnDirect(pc.callback)
+            String reportedError = sensitiveArgumentSideChannelsSuppressed
+                    ? "Tool execution failed (details withheld by hard-scope policy)"
+                    : isReturnDirect(pc.callback)
                     ? "Tool execution failed (details withheld per returnDirect policy)"
                     : normalizeToolExecutionError(e);
             events.add(GraphEventPublisher.toolComplete(pc.toolCall.id(), toolName, reportedError, false));
@@ -1038,16 +1083,28 @@ public class ToolExecutionExecutor {
             // Defer the NEEDS_APPROVAL audit row: it is written below, once, after
             // the auto-grant decision, so it carries the resolution outcome
             // (AUTO_GRANT / SEVERITY_CEILING / NO_GRANT / …) and the pendingId.
-            GuardEvaluation evaluation = toolGuardService.evaluate(guardCtx, true);
+            GuardEvaluation evaluation = toolGuardService.evaluate(
+                    guardCtx, true, sensitiveArgumentSideChannelsSuppressed);
 
             if (evaluation.shouldBlock()) {
-                log.warn("[ToolExecutor] Tool call BLOCKED: tool={}, summary={}", toolName, evaluation.summary());
-                events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, evaluation.summary(), false));
+                String summary = sensitiveArgumentSideChannelsSuppressed
+                        ? "hard-scoped tool call blocked by policy"
+                        : evaluation.summary();
+                log.warn("[ToolExecutor] Tool call BLOCKED: tool={}, summary={}", toolName, summary);
+                events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, summary, false));
                 return GuardDecision.blocked(
-                        "[安全拦截] " + evaluation.summary() + "。请使用更安全的替代方案。");
+                        "[安全拦截] " + summary + "。请使用更安全的替代方案。");
             }
 
             if (evaluation.shouldRequireApproval()) {
+                if (sensitiveArgumentSideChannelsSuppressed) {
+                    String msg = "[安全拦截] hard-scoped tool calls cannot enter an approval flow";
+                    log.warn("[ToolExecutor] Hard-scoped tool {} required approval; blocked",
+                            toolName);
+                    events.add(GraphEventPublisher.toolComplete(
+                            toolCall.id(), toolName, msg, false));
+                    return GuardDecision.blocked(msg);
+                }
                 // Auto-grant decision layer: only engages when both deps are wired.
                 // HARD_BLOCK short-circuits to a blocked decision (no approval banner).
                 // APPROVED skips createPending() and lets the tool run as normal.
@@ -1094,13 +1151,24 @@ public class ToolExecutionExecutor {
             ToolGuardResult guardResult = toolGuard.check(toolName, arguments);
 
             if (guardResult.isBlocked()) {
-                log.warn("[ToolExecutor] Tool call BLOCKED by ToolGuard: tool={}, reason={}", toolName, guardResult.reason());
-                events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, guardResult.reason(), false));
+                String reason = sensitiveArgumentSideChannelsSuppressed
+                        ? "hard-scoped tool call blocked by policy"
+                        : guardResult.reason();
+                log.warn("[ToolExecutor] Tool call BLOCKED by ToolGuard: tool={}, reason={}", toolName, reason);
+                events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, reason, false));
                 return GuardDecision.blocked(
-                        "[安全拦截] " + guardResult.reason() + "。请使用更安全的替代方案。");
+                        "[安全拦截] " + reason + "。请使用更安全的替代方案。");
             }
 
             if (guardResult.needsApproval()) {
+                if (sensitiveArgumentSideChannelsSuppressed) {
+                    String msg = "[安全拦截] hard-scoped tool calls cannot enter an approval flow";
+                    log.warn("[ToolExecutor] Hard-scoped tool {} required legacy approval; blocked",
+                            toolName);
+                    events.add(GraphEventPublisher.toolComplete(
+                            toolCall.id(), toolName, msg, false));
+                    return GuardDecision.blocked(msg);
+                }
                 if (origin != null && origin.cronOrigin()) {
                     return denyNonInteractiveApproval(toolCall, toolName, events);
                 }
@@ -1132,6 +1200,10 @@ public class ToolExecutionExecutor {
                 + "denying to avoid an unresolvable pending", toolName);
         events.add(GraphEventPublisher.toolComplete(toolCall.id(), toolName, msg, false));
         return GuardDecision.blocked(msg);
+    }
+
+    private String visibleArguments(String arguments) {
+        return sensitiveArgumentSideChannelsSuppressed ? "{}" : arguments;
     }
 
     // ==================== 辅助方法 ====================

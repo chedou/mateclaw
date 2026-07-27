@@ -35,6 +35,12 @@ public class TroubleshootingSopPersistenceService {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
+        if (!"candidate".equals(sop.status()) || sop.verified()) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_initial_state", 409,
+                    "a new SOP must start as candidate with verified=false; "
+                            + "promotion is a separate reviewed transition");
+        }
         TroubleshootingSopEntity existing = findEntity(workspaceId, sop.routingKey());
         if (existing != null) {
             throw collision(sop.routingKey());
@@ -98,9 +104,9 @@ public class TroubleshootingSopPersistenceService {
      * <p>Only {@code candidate → approved} and {@code approved → deprecated},
      * and only forwards. The deterministic path acts on an approved SOP without
      * a human in the loop, so promotion has to be a deliberate review decision
-     * rather than a flag anyone can flip back and forth; a mistaken approval is
-     * corrected by deprecating it and publishing a replacement, which leaves a
-     * trail instead of quietly rewriting history.</p>
+     * rather than a flag anyone can flip back and forth. Deprecation leaves the
+     * review trail intact; publishing a replacement for the same route requires
+     * a separate version model because the current registry keeps route keys unique.</p>
      *
      * <p>Approving also sets {@code verified}, because {@link SopEntry#operational()}
      * requires both — a half-promoted SOP would keep abstaining while looking

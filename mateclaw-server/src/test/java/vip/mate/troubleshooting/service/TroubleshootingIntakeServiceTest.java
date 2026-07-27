@@ -7,7 +7,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.engine.Criterion;
+import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -55,6 +57,12 @@ class TroubleshootingIntakeServiceTest {
     @Mock
     private DeterministicDiagnosisService diagnosisService;
 
+    @Mock
+    private EvidenceSourceRouter evidenceRouter;
+
+    @Mock
+    private TroubleshootingAgentTriageService agentTriageService;
+
     private TroubleshootingIntakeService intake;
 
     @BeforeEach
@@ -81,6 +89,101 @@ class TroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void deterministicHitNeverCallsTheAgentMissPath() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        wired.report(WORKSPACE_ID, incident, List.of(evidence()), false);
+
+        verifyNoInteractions(agentTriageService);
+    }
+
+    @Test
+    void delegatesAnUnknownRouteToTheReadOnlyAgentPath() {
+        IncidentContext incident = incident("999999", IncidentCompleteness.STRUCTURED);
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "999999")).thenReturn(null);
+        when(agentTriageService.triage(
+                WORKSPACE_ID,
+                incident,
+                List.of(evidence()),
+                true,
+                "no SOP registered for CSDP:999999"))
+                .thenReturn(stored);
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        StoredDiagnosis result = wired.report(
+                WORKSPACE_ID, incident, List.of(evidence()), true);
+
+        assertThat(result).isSameAs(stored);
+        verifyNoInteractions(diagnosisService, evidenceRouter);
+    }
+
+    @Test
+    void delegatesAMissingErrorCodeToTheReadOnlyAgentPath() {
+        IncidentContext incident = incident(null, IncidentCompleteness.LOG);
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
+        when(agentTriageService.triage(
+                WORKSPACE_ID,
+                incident,
+                List.of(),
+                false,
+                "incident carries no errorCode; deterministic routing needs one"))
+                .thenReturn(stored);
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        StoredDiagnosis result = wired.report(WORKSPACE_ID, incident, List.of(), false);
+
+        assertThat(result).isSameAs(stored);
+        verifyNoInteractions(sopPersistence, diagnosisService, evidenceRouter);
+    }
+
+    @Test
+    void delegatesASymptomOnlyReportToTheReadOnlyAgentPath() {
+        IncidentContext incident = incident("903001", IncidentCompleteness.SYMPTOM);
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
+        when(agentTriageService.triage(
+                WORKSPACE_ID,
+                incident,
+                List.of(evidence()),
+                true,
+                "incident completeness is SYMPTOM; deterministic routing needs a structured report"))
+                .thenReturn(stored);
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        StoredDiagnosis result = wired.report(
+                WORKSPACE_ID, incident, List.of(evidence()), true);
+
+        assertThat(result).isSameAs(stored);
+        verifyNoInteractions(sopPersistence, diagnosisService, evidenceRouter);
+    }
+
+    @Test
     void marksEveryDiagnosisAsFixtureBackedWhileSourceAdaptersAreMissing() {
         when(sopPersistence.find(anyLong(), any(), any())).thenReturn(sop());
         when(diagnosisService.diagnoseAndPersist(
@@ -95,6 +198,46 @@ class TroubleshootingIntakeServiceTest {
         assertThat(fixtureMode.getValue())
                 .as("no read-only source adapter exists yet, so evidence cannot be presented as verified")
                 .isTrue();
+    }
+
+    @Test
+    void fillsAMissingSopRequestThroughTheReadOnlyEvidenceRouter() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(evidenceRouter.collect(sop.evidenceRequests().getFirst(), incident))
+                .thenReturn(evidence());
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
+
+        verify(evidenceRouter).collect(sop.evidenceRequests().getFirst(), incident);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW));
+    }
+
+    @Test
+    void keepsCallerEvidenceAndDoesNotCollectItAgain() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(evidence()), false);
+
+        verifyNoInteractions(evidenceRouter);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW));
     }
 
     @Test

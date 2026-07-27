@@ -154,13 +154,14 @@ public class WorkspaceBoundaryGuardian implements ToolGuardGuardian {
                         List<Path> candidateRoots = chatUploadLocationResolver
                                 .resolveCandidateUploadRoots(conversationId);
                         if (isInsideUploadDir(path, conversationId, candidateRoots)) {
-                            log.debug("[WorkspaceBoundaryGuardian] Path {} is inside a chat-upload dir "
-                                    + "of conversation {}", path, conversationId);
+                            log.debug("[WorkspaceBoundaryGuardian] Path is inside a chat-upload dir "
+                                    + "of conversation {} (path withheld)", conversationId);
                             return List.of();
                         }
                     } catch (Exception e) {
-                        log.debug("[WorkspaceBoundaryGuardian] Chat-upload fallback failed for {}: {}",
-                                path, e.getMessage());
+                        log.debug("[WorkspaceBoundaryGuardian] Chat-upload fallback failed for "
+                                        + "conversation {} ({}; path and details withheld)",
+                                conversationId, e.getClass().getSimpleName());
                     }
                 }
                 return List.of(boundaryFinding(tool, "path", path, violation));

@@ -26,7 +26,9 @@ import vip.mate.workspace.conversation.repository.ConversationMapper;
 
 import java.util.List;
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -259,6 +261,45 @@ public class AgentService {
                     (msg, convId) -> agent.chat(msg, convId));
         } finally {
             ChatOriginHolder.clear();
+        }
+    }
+
+    /**
+     * Security-sensitive synchronous chat with an invocation-level hard tool
+     * allowlist. The scoped graph has an isolated cache key and therefore can
+     * never reuse (or be reused by) the Agent's normal, broader graph.
+     *
+     * <p>This entry deliberately bypasses the normal memory recall/lifecycle
+     * hooks. A caller choosing a hard tool scope is defining a side-effect
+     * boundary; implicit memory reads or writes would violate that boundary
+     * even though they are not advertised as model-callable tools.</p>
+     */
+    public String chatWithToolAllowlist(
+            Long agentId,
+            String message,
+            String conversationId,
+            ChatOrigin origin,
+            Set<String> hardAllowedTools) {
+        String previousThinkingLevel = ThinkingLevelHolder.get();
+        ThinkingLevelHolder.clear();
+        try {
+            Set<String> normalizedScope = normalizeHardToolScope(hardAllowedTools);
+            BaseAgent agent = getOrBuildAgentForConversation(
+                    agentId, conversationId, normalizedScope);
+            ChatOriginHolder.set(origin != null ? origin : ChatOrigin.EMPTY);
+            safeRegister(conversationId, agentId);
+            try {
+                return agent.chat(message, conversationId);
+            } finally {
+                safeUnregister(conversationId);
+            }
+        } finally {
+            ChatOriginHolder.clear();
+            if (previousThinkingLevel == null) {
+                ThinkingLevelHolder.clear();
+            } else {
+                ThinkingLevelHolder.set(previousThinkingLevel);
+            }
         }
     }
 
@@ -663,9 +704,20 @@ public class AgentService {
      * build, only to fail at provider-resolution time on every turn.
      */
     private BaseAgent getOrBuildAgentForConversation(Long agentId, String conversationId) {
+        return getOrBuildAgentForConversation(agentId, conversationId, null);
+    }
+
+    private BaseAgent getOrBuildAgentForConversation(
+            Long agentId,
+            String conversationId,
+            Set<String> hardAllowedTools) {
         String provider = null;
         String modelName = null;
-        if (conversationId != null && !conversationId.isBlank()) {
+        // A hard-scoped invocation must not inherit an ambient conversation
+        // model pin (or query its row). Its graph is built solely from the
+        // explicitly configured Agent plus the invocation policy.
+        if (hardAllowedTools == null
+                && conversationId != null && !conversationId.isBlank()) {
             ConversationEntity conv = conversationMapper.selectOne(
                     new LambdaQueryWrapper<ConversationEntity>()
                             .eq(ConversationEntity::getConversationId, conversationId));
@@ -682,7 +734,7 @@ public class AgentService {
                 }
             }
         }
-        return getOrBuildAgent(agentId, provider, modelName);
+        return getOrBuildAgent(agentId, provider, modelName, hardAllowedTools);
     }
 
     /** Map empty / whitespace strings to null so the pinned-check is one branch. */
@@ -691,13 +743,24 @@ public class AgentService {
     }
 
     private BaseAgent getOrBuildAgent(Long agentId) {
-        return getOrBuildAgent(agentId, null, null);
+        return getOrBuildAgent(agentId, null, null, null);
     }
 
     private BaseAgent getOrBuildAgent(Long agentId, String modelProvider, String modelName) {
+        return getOrBuildAgent(agentId, modelProvider, modelName, null);
+    }
+
+    private BaseAgent getOrBuildAgent(
+            Long agentId,
+            String modelProvider,
+            String modelName,
+            Set<String> hardAllowedTools) {
         boolean pinned = modelProvider != null && !modelProvider.isBlank()
                 && modelName != null && !modelName.isBlank();
         String modelKey = pinned ? modelProvider + "::" + modelName : "";
+        if (hardAllowedTools != null) {
+            modelKey += "\u0000hard-tools:" + String.join(",", hardAllowedTools);
+        }
         return agentInstances
                 .computeIfAbsent(agentId, id -> new ConcurrentHashMap<>())
                 .computeIfAbsent(modelKey, key -> {
@@ -705,8 +768,25 @@ public class AgentService {
                     if (!Boolean.TRUE.equals(entity.getEnabled())) {
                         throw new MateClawException("err.agent.disabled", "Agent 已禁用: " + entity.getName());
                     }
-                    return agentGraphBuilder.build(entity, modelProvider, modelName);
+                    return hardAllowedTools == null
+                            ? agentGraphBuilder.build(entity, modelProvider, modelName)
+                            : agentGraphBuilder.build(
+                                    entity, modelProvider, modelName, hardAllowedTools);
                 });
+    }
+
+    private static Set<String> normalizeHardToolScope(Set<String> hardAllowedTools) {
+        if (hardAllowedTools == null || hardAllowedTools.isEmpty()) {
+            throw new IllegalArgumentException("hard tool allowlist must not be empty");
+        }
+        java.util.List<String> normalized = hardAllowedTools.stream()
+                .map(name -> name == null ? "" : name.trim())
+                .sorted()
+                .toList();
+        if (normalized.stream().anyMatch(String::isBlank)) {
+            throw new IllegalArgumentException("hard tool allowlist contains a blank name");
+        }
+        return java.util.Collections.unmodifiableSet(new LinkedHashSet<>(normalized));
     }
 
     // ==================== StreamDelta ====================

@@ -1,8 +1,12 @@
 package vip.mate.agent.graph;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
@@ -14,7 +18,9 @@ import reactor.core.publisher.Flux;
 import vip.mate.channel.web.ChatStreamTracker;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -97,6 +103,41 @@ class NodeStreamingChatHelperToolCallArgsTest {
         assertEquals("{}", result.toolCalls().get(0).arguments(),
                 "invalid JSON arguments must be replaced with '{}' so the follow-up "
                         + "request stays well-formed");
+    }
+
+    @Test
+    @DisplayName("Hard-scoped invalid arguments are normalized without logging raw content")
+    void hardScopedInvalidArguments_doNotLeakIntoLogs() {
+        String secret = "REAL_SECRET_MUST_NOT_LEAK";
+        AssistantMessage.ToolCall tc = new AssistantMessage.ToolCall(
+                "id-sensitive", "function", "collect_troubleshooting_evidence",
+                "{\"targetJson\":\"token=" + secret);
+        AssistantMessage msg = AssistantMessage.builder()
+                .content("")
+                .toolCalls(List.of(tc))
+                .build();
+        var helper = new NodeStreamingChatHelper(streamTracker);
+        helper.setSensitiveArgumentSideChannelsSuppressed(true);
+        Logger logger = (Logger) LoggerFactory.getLogger(NodeStreamingChatHelper.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            var result = helper.streamCall(singleChunkModel(msg), smallPrompt(),
+                    "conv-sensitive-args", "reasoning");
+            String logs = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .collect(Collectors.joining("\n"));
+
+            assertEquals("{}", result.toolCalls().get(0).arguments());
+            assertThat(logs)
+                    .contains("details withheld")
+                    .doesNotContain(secret, "token=" + secret);
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test

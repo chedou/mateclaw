@@ -536,6 +536,7 @@ export default {
   },
   nav: {
     dashboard: '仪表盘',
+    troubleshooting: '智能排障',
     chat: '对话',
     control: '控制台',
     channels: '渠道',

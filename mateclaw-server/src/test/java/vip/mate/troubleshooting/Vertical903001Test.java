@@ -76,9 +76,10 @@ import static org.mockito.Mockito.when;
  * <p><b>What it does not cover.</b> Mappers are backed by in-memory maps rather
  * than a database, so this proves the domain composes — not that the SQL runs.
  * Schema and column mapping are covered by {@code TroubleshootingMigrationTest}
- * and the persistence unit tests. Evidence is still authored by hand, because
- * read-only source adapters do not exist yet; that is exactly why the pipeline
- * marks these diagnoses {@code fixtureMode}.</p>
+ * and the persistence unit tests. Evidence is authored by hand in this test so
+ * the domain slice stays deterministic; P3 adapters have their own contract
+ * tests, while the unverified 903001 bindings keep the pipeline in
+ * {@code fixtureMode}.</p>
  */
 class Vertical903001Test {
 
@@ -126,7 +127,7 @@ class Vertical903001Test {
     @Test
     @DisplayName("903001: report through to a queued knowledge candidate")
     void walksTheWholeSlice() {
-        sopPersistence.register(WORKSPACE_ID, sop903001());
+        registerApprovedSop();
 
         // --- report ------------------------------------------------------
         StoredDiagnosis reported = intake.report(
@@ -229,7 +230,7 @@ class Vertical903001Test {
     @Test
     @DisplayName("903001: a degraded collection abstains instead of guessing")
     void abstainsWhenRequiredEvidenceIsMissing() {
-        sopPersistence.register(WORKSPACE_ID, sop903001());
+        registerApprovedSop();
 
         List<EvidenceResult> degraded = List.of(
                 new EvidenceResult("EV-2", "M", "", EvidenceStatus.MISSING,
@@ -262,12 +263,17 @@ class Vertical903001Test {
 
     // ================= the 903001 knowledge entry =================
 
+    private void registerApprovedSop() {
+        sopPersistence.register(WORKSPACE_ID, sop903001());
+        sopPersistence.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+    }
+
     private SopEntry sop903001() {
         return new SopEntry(
                 "sop-csdp-903001", SopEntry.CURRENT_CONTRACT_VERSION,
                 "CSDP", "903001", "order-svc",
                 "订单服务 Mongo 连接池耗尽", "连接池打满导致 DB 调用排队超时",
-                "database", "DBA 组", "approved", true,
+                "database", "DBA 组", "candidate", false,
                 List.of(
                         new EvidenceRequest("EV-1", "log_count", "确认故障正在发生",
                                 Map.of("service", "order-svc", "error_code", "903001"), "-15m", true),
@@ -359,8 +365,8 @@ class Vertical903001Test {
     }
 
     // ================= in-memory mappers =================
-    // Real serialization, real dedup keys, real optimistic versions; only the
-    // SQL is stubbed. Schema fidelity is TroubleshootingMigrationTest's job.
+    // Real serialization, real dedup keys, and real diagnosis optimistic versions;
+    // only the SQL is stubbed. Schema fidelity is TroubleshootingMigrationTest's job.
 
     private TroubleshootingSopMapper sopMapper() {
         TroubleshootingSopMapper mapper = mock(TroubleshootingSopMapper.class);
@@ -376,6 +382,22 @@ class Vertical903001Test {
                         .filter(row -> matchesTarget(call.getArgument(0), row.getRouteKey()))
                         .findFirst()
                         .orElse(null));
+        when(mapper.update(any(TroubleshootingSopEntity.class), any()))
+                .thenAnswer((Answer<Integer>) call -> {
+                    TroubleshootingSopEntity patch = call.getArgument(0);
+                    TroubleshootingSopEntity row = sopRows.values().stream()
+                            .filter(candidate -> matchesTarget(
+                                    call.getArgument(1), candidate.getRouteKey()))
+                            .findFirst()
+                            .orElse(null);
+                    if (row == null) {
+                        return 0;
+                    }
+                    row.setStatus(patch.getStatus());
+                    row.setVerified(patch.getVerified());
+                    row.setAggregateJson(patch.getAggregateJson());
+                    return 1;
+                });
         return mapper;
     }
 

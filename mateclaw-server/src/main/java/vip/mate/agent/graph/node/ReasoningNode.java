@@ -359,8 +359,15 @@ public class ReasoningNode implements NodeAction {
      */
     private PrefixBudgetPlan prefixBudgetPlan;
 
+    /** False for invocation-scoped graphs that may see no ambient runtime context. */
+    private boolean ambientContextEnabled = true;
+
     public void setPrefixBudgetPlan(PrefixBudgetPlan prefixBudgetPlan) {
         this.prefixBudgetPlan = prefixBudgetPlan;
+    }
+
+    public void setAmbientContextEnabled(boolean ambientContextEnabled) {
+        this.ambientContextEnabled = ambientContextEnabled;
     }
 
     /**
@@ -810,7 +817,7 @@ public class ReasoningNode implements NodeAction {
         // 请求级思考深度覆盖（ThinkingLevelHolder 由 AgentService 设置）
         String effectiveReasoning = resolveEffectiveReasoningEffort();
         log.info("[ReasoningNode] thinkingLevel={}, effectiveReasoningEffort={}, nodeDefault={}",
-                ThinkingLevelHolder.get(), effectiveReasoning, this.reasoningEffort);
+                ambientThinkingLevel(), effectiveReasoning, this.reasoningEffort);
 
         // Progressive disclosure: advertise only core tools plus the extensions
         // enabled this run, computed fresh each turn from ENABLED_EXTENSION_TOOLS
@@ -1293,6 +1300,9 @@ public class ReasoningNode implements NodeAction {
                                         String runtimeProviderId) {
         List<Message> prefix = new ArrayList<>();
         prefix.add(new SystemMessage(systemPrompt));
+        if (!ambientContextEnabled) {
+            return prefix;
+        }
         prefix.add(new UserMessage(RuntimeContextInjector.buildContextMessage(
                 workspaceBasePath, null, chatOrigin, runtimeModelName, runtimeProviderId)));
         // When this turn already recalled the user's own current project from
@@ -1343,7 +1353,7 @@ public class ReasoningNode implements NodeAction {
                     .internalToolExecutionEnabled(false);
 
             // 仅对真正的 Claude 模型启用 extended thinking（MiniMax 等走 Anthropic 协议但不支持）
-            String thinkingLevel = ThinkingLevelHolder.get();
+            String thinkingLevel = ambientThinkingLevel();
             boolean thinkingOn = thinkingLevel != null && !"off".equalsIgnoreCase(thinkingLevel);
             String currentModel = getAnthropicModelName(anthropicModel);
             boolean isClaudeModel = currentModel != null && currentModel.toLowerCase().contains("claude");
@@ -1408,7 +1418,7 @@ public class ReasoningNode implements NodeAction {
      * contract, not a runtime option.
      */
     private String resolveEffectiveReasoningEffort() {
-        String requestLevel = ThinkingLevelHolder.get();
+        String requestLevel = ambientThinkingLevel();
         if (requestLevel != null) {
             if ("off".equalsIgnoreCase(requestLevel)) {
                 return null;
@@ -1429,6 +1439,10 @@ public class ReasoningNode implements NodeAction {
         }
         // 无请求级覆盖，使用构造时的默认值
         return this.reasoningEffort;
+    }
+
+    private String ambientThinkingLevel() {
+        return ambientContextEnabled ? ThinkingLevelHolder.get() : null;
     }
 
     /**

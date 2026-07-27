@@ -44,6 +44,19 @@ public class ToolGuardService {
      * 补记一行，行内带上决策结果码与 pendingId。ALLOW / BLOCK 行为不变。
      */
     public GuardEvaluation evaluate(ToolInvocationContext context, boolean deferApprovalAudit) {
+        return evaluate(context, deferApprovalAudit, false);
+    }
+
+    /**
+     * Evaluates the original invocation while optionally suppressing all
+     * persistence of its arguments and finding snippets. Security-sensitive
+     * isolated graphs use this mode because the guard must inspect the raw
+     * call, but raw model arguments must not be copied into the audit table.
+     */
+    public GuardEvaluation evaluate(
+            ToolInvocationContext context,
+            boolean deferApprovalAudit,
+            boolean suppressSensitiveDetails) {
         // 全局开关：guard 禁用时直接放行
         if (!configService.isEnabled()) {
             return GuardEvaluation.allow(context.toolName());
@@ -57,10 +70,11 @@ public class ToolGuardService {
                     GuardDecision.BLOCK, "工具 " + context.toolName() + " 已被安全策略禁用");
         }
 
-        GuardEvaluation evaluation = engine.evaluate(context);
+        GuardEvaluation evaluation = engine.evaluate(context, suppressSensitiveDetails);
 
         // 异步审计记录（NEEDS_APPROVAL 且调用方要求延迟时跳过，由调用方补记）
-        if (!(deferApprovalAudit && evaluation.shouldRequireApproval())) {
+        if (!suppressSensitiveDetails
+                && !(deferApprovalAudit && evaluation.shouldRequireApproval())) {
             try {
                 auditService.record(context, evaluation, null);
             } catch (Exception e) {

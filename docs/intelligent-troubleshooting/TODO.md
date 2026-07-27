@@ -6,8 +6,9 @@
 > 开工前必读：`CLAUDE.md` → `HANDOFF.md`（决策 D1–D8、四条红线、矛盾分析）→
 > `rfcs/intelligent-troubleshooting-design.md`（架构 + 源码索引）。
 >
-> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + 推导投影 + SOP 管理均已完成，
-> 排障域定向测试 **73 项**通过（连同飞书卡片域 88 项）。分支 `claude/intelligent-troubleshooting-design`。
+> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + P4 未命中路只读 Agent
+> 工程链路 + 推导投影 + SOP 管理 API/Vue 均已完成；P4 默认关闭、待专用 Agent 配置与实机演练。
+> 定向回归与应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
 
 ---
 
@@ -24,7 +25,8 @@
    `APPROVED_NOT_EXECUTED` 就结束了，真正的变更由有权限的人在 MateClaw 之外执行，
    回来调 `record-outcome` 登记。`Diagnosis` 构造器里 `writeExecutionEnabled=true` 直接抛异常——
    这条红线在类型系统层面不可表达，别试图绕。
-4. **未命中路 agent 锁死只读**（`AgentToolBinding` 白名单 + ToolGuard BLOCK 写/shell/file）。
+4. **未命中路 Agent 锁死只读**（专用直接绑定校验 + 调用级硬工具白名单 + 服务端取证会话；
+   ToolGuard BLOCK 写/shell/file 做纵深防御）。
 
 **还有一条贯穿全项目的纪律：宁可承认做不到，也不要假装做到了。**
 `fixtureMode` 恒 true、未命中路返回 409、推导 `faithful=false`、卡片未绑定身份即拒绝——
@@ -65,38 +67,69 @@
   GET  /api/v1/troubleshooting/sops/{sys}/{code} 读取完整 SOP
   POST /api/v1/troubleshooting/sops/{sys}/{code}/status  promote/retire
   ```
+  管理员也可从 Vue 路由 `/troubleshooting/sops` 浏览、注册 candidate，并显式推进到
+  `approved/deprecated`；页面无诊断执行入口。
   从 `l0/sop_kb.json`（146 码）导入时**必须以 `candidate` 注册**，逐条审核后再
-  `→approved`。状态流转是单向的（`candidate→approved→deprecated`），不能回退——
-  approve 错了就 deprecate 后发新版，留下痕迹。
-- **放开 `fixtureMode`**：现在 `TroubleshootingIntakeService.EVIDENCE_IS_FIXTURE` 硬编码为 `true`。
-  **只有 T4（真实取证适配器）落地后才能改**，否则等于让调用方自称证据可信。
+  `→approved`。状态流转是单向的（`candidate→approved→deprecated`），不能回退。
+- **当前版本边界（不能假装已解决）**：V172 对 `(workspace_id, route_key)` 做唯一约束，
+  deprecated 记录仍占用 routeKey；因此 approve 错了可以 deprecate 留痕，但**当前还不能为同一路由
+  注册替代版本**。上线前需设计“历史版本 + 唯一当前版本”的数据模型与按 sopId 查看历史的 API，
+  不能靠覆盖旧行或逻辑删除抹掉审计轨迹。
+- **放开 `fixtureMode`**：现在命中/未命中两路共用
+  `TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE=true`。
+  T4 工程链路已经落地，但**只有 T2 的真实字段/阈值核实与 T3 审核入库完成后才能改**；
+  “API 可达”不等于“证据语义可信”。
 
 ---
 
 ## 二、后端功能梯队
 
-### T4 · P3：D8 证据源适配器（观测云首个）
-- **为什么**：现在证据由调用方传入，平台自己不会取证。这是 `fixtureMode` 恒 true 的原因。
+### T4 · P3：D8 证据源适配器（观测云首个） 🟡 命中路底座完成，内网验证待 T2
+- **为什么**：此前证据只能由调用方传入；现在调用方证据仍优先，缺失的 SOP 请求会由平台只读补齐。
 - **架构已定**（RFC §6）：`EvidenceSourceAdapter` 接口 → 每平台一个实现 → `EvidenceSourceRouter`
   按 `(system, signal_kind)` 选源 → 归一到 canonical `observed` 字段。
-- **关键设计（别做错）**：**一份 adapter 两个调用方**——命中路由领域 service 直接 Java 调用（零 LLM），
-  未命中路把同一个方法加 `@Tool` 注解暴露成只读 ToolCallback 给 agent 用。
+- **关键设计（别做错）**：**一套路由能力两个调用方**——命中路由领域 service 直接 Java 调用（零 LLM），
+  未命中路由 `TroubleshootingEvidenceTool` 这一层薄包装调用同一个 `EvidenceSourceRouter`，并暴露成
+  唯一只读 ToolCallback 给 Agent 用。
   **不要写两套取证代码**，那会导致两条路看到不同的世界。
 - **fail-closed**：任何异常/超时 → `EvidenceResult(status=MISSING)`，不抛 500。
   上游会正确地把它当成"判据无法求值"（≠ 已排除）。
-- **完成标准**：`GuanceAdapter` 能取真实数据；`RecordedReplayAdapter` 能回放录制样本供离线回归；
-  `evidence/package-info.java` 的占位注释可以删掉了。
+- **已完成（2026-07-27）**：`EvidenceSourceAdapter` + `EvidenceSourceRouter`；
+  `GuanceEvidenceAdapter` 按官方 query-data API 发请求并归一 `series.columns/values`；
+  `RecordedReplayAdapter` + 脱敏 903001 三信号样本；主备降级、模板注入防护、配置装配、入口补证与
+  `GET /api/v1/troubleshooting/evidence/sources` 均有测试。默认两个数据源都关闭，源状态不暴露凭据。
+- **第二调用方已完成（P4）**：`TroubleshootingEvidenceTool` 复用同一 Router，并通过服务端会话固定
+  Incident/Workspace 上下文、限制每次取证数量；无活动会话的调用返回 canonical `MISSING`，不能越界取证。
+- **尚未完成的验收**：没有内网窗口，故尚未证明 `GuanceEvidenceAdapter` 对 903001
+  measurement/字段/阈值能取到真实数据；per-binding verification 与全局 `/readyz` 汇总也留待 T2。
+  运行说明见 `evidence-adapter-runbook.md`。
 
-### T5 · P4：未命中路 ReAct agent（补旧缺口 G1）
-- **现状**：`RouteMode.LLM_FALLBACK` 枚举在，但没接线。未命中时 `TroubleshootingIntakeService`
-  直接抛 409（诚实地说"未命中路没接"）。
-- **怎么做**：领域 service 同进程调 `vip.mate.agent.AgentService.chat()`（ReAct，不是 `execute()`
-  的预先规划——排障分诊是"看一眼证据再决定下一步查什么"的探索型任务）。
-- **笼子（红线 4）**：给这个 agent 建专用 `AgentToolBinding`，**只绑 `collect_*` 只读工具**；
-  ToolGuard 对 shell/file/写类配 **BLOCK**；**绝不给它 NEEDS_APPROVAL**——那个语义是批准后会执行。
-- **产出必须回落领域状态机**：agent 的结论只是"建议 + 证据引用"，仍需人工确认，
-  且低置信必须 abstain。
-- **完成标准**：未命中时 agent 能做只读探索并给出半程结论，工具绑定被测试锁死为只读。
+### T5 · P4：未命中路 ReAct Agent（补旧缺口 G1） 🟡 工程完成，启用与实机演练待办
+- **已完成（2026-07-27）**：无 error code、`SYMPTOM`、无 SOP 三种 miss 均接入
+  `TroubleshootingAgentTriageService`；领域服务调用新增的
+  `AgentService.chatWithToolAllowlist()`，输出经结构化解析、证据引用核验后回落领域状态机。
+  `LLM_FALLBACK` 永远没有 `recommendedActions`/`pendingWrites`，低置信、空摘要/假设、缺证据、
+  伪造引用、解析失败或 Agent 异常都会强制 `LOW + abstain`；可验证建议也最高校准为 `MEDIUM`。
+- **为什么不能只靠 `AgentToolBinding`**：平台的普通有效绑定会为兼容性自动扩入 system-level tools，
+  某些配置还会扩入 MCP 工具。因此 P4 在正常绑定展开**之后**再做调用级最终交集，且受限图使用独立缓存键；
+  任何自动扩展都不能把 shell/file/写工具重新暴露给本次模型调用。
+- **笼子已固化**：启动前校验 Agent 为当前 workspace 的 enabled ReAct、显式绑定唯一 enabled 模型、
+  skills/wiki 关闭、迭代有上限，
+  直接绑定必须且只能是 `TroubleshootingEvidenceTool`；运行时硬白名单只允许
+  `collect_troubleshooting_evidence`；受限图不读会话历史/memory/wiki/runtime/skill/goal 上下文、不启用模型故障转移，
+  禁用通用 `ToolResultStorage` 原始结果 spill，跳过全局默认模型与 capability primary routing；模型歧义、
+  provider 禁用/未配置或原生搜索开启均 409。运行时调用失败保守弃权，不自动选择备用 provider。
+  已有/新采集的 canonical EvidenceResult 全部字符串字段与递归 key 在进入模型和 Diagnosis 前统一脱敏，
+  危险 queryId 安全重映射，脱敏结果仍随 Diagnosis 持久化。初始未受信上下文经脱敏、转义并按独立字符预算
+  确定性截断；硬作用域清空/恢复请求级 ThinkingLevel 且受限图忽略环境覆盖；原始工具参数不进入
+  event/SSE/log/audit/approval，硬作用域不允许进入 `NEEDS_APPROVAL` 流程；
+  工具按 conversationId + workspaceId 校验服务端活动会话，并受取证次数上限约束；queryId 必须安全且会话内唯一，
+  重复调用不能覆盖已引用证据。
+- **仍未完成的上线动作**：默认 `MATECLAW_TROUBLESHOOTING_AGENT_ENABLED=false`。需要 operator 按
+  `agent-miss-path-runbook.md` 创建专用 Agent、配置 ToolGuard BLOCK 纵深规则、设置 Agent ID，最后才打开开关并做
+  真实 miss-path 演练。在此之前生产行为仍是 fail-closed 409，不能宣称“未命中智能分诊已上线”。
+- **完成标准（代码已满足）**：命中路零 Agent；miss-path 只有一个只读工具；有效证据引用才能形成待人工确认结论；
+  各类失败均持久化或返回可解释的保守结果且不产生动作。**运行验收**仍以 runbook 的配置与实机演练为准。
 
 ### T6 · 知识候选审核工作流（D2 闭环最后一环）
 - **现状**：候选在关闭时入 Outbox，**可以看但不能审**——
@@ -133,13 +166,15 @@
 ## 三、前端待办
 
 ### T9 · Vue 工作台补齐
-- **已落地**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain}.vue`
-  （队列 + 判定链 + 处置弹窗），判定链已接 `GET /diagnoses/{id}/derivation`，
-  三态（成立/已排除/无法求值）与代入运算都是真实数据。
+- **已落地**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain,SopManagement}.vue`
+  （队列 + 判定链 + 处置弹窗 + SOP 注册表），判定链已接 `GET /diagnoses/{id}/derivation`，
+  三态（成立/已排除/无法求值）与代入运算都是真实数据；SOP 管理只允许 candidate 注册，
+  生命周期单向推进且受 `manage:troubleshooting` 门控。`LLM_FALLBACK` 展示独立的“只读 Agent 建议”分支，
+  只高亮服务端核验过的证据引用，并且不请求只适用于确定性 SOP 的 derivation API。
 - **待补**：
-  - [ ] SOP 管理界面（注册/浏览/promote，接 T3 那组 API）——**导入 146 码需要它**。
+  - [x] SOP 管理界面（注册/浏览/promote，接 T3 那组 API）——**导入 146 码的人工入口已具备**。
   - [ ] 知识候选审核界面（依赖 T6 定下审核工作流）。
-  - [ ] 证据的"重放查询"按钮（依赖 T4 真实适配器，现在按了也没真数据）。
+  - [ ] 证据的"重放查询"按钮（适配器已具备；仍依赖 T2 真实绑定核实与专用重查 API）。
 - **视觉基线**（照此，别另起炉灶）：冷调中性 + 单一信号蓝 `#2f5cf5`；
   语义色只在有意义处；**机器吐出的数据用等宽字体，人读叙述用无衬线**；
   统一描边 SVG 图标（不用 emoji）；支持浅/深双主题。
@@ -160,9 +195,10 @@
 
 | 现象 | 为什么是对的 |
 |---|---|
-| `fixtureMode` 恒 `true` | P3 取证适配器不存在，调用方无权声称证据已被平台核实 |
-| 未注册错误码 → 409 | 这是**知识缺口**，不是诊断失败；编造诊断比报错危险 |
-| 无 error_code / SYMPTOM → 409 | 未命中路未接线，不假装能处理 |
+| `fixtureMode` 恒 `true` | P3 工程链路已在，但 903001 绑定与阈值未完成 T2 内网核实，仍无权声称证据可信 |
+| 未注册错误码 / 无 error_code / SYMPTOM 默认 → 409 | P4 开关默认关闭或专用 Agent 配置不合规时 fail-closed；只有通过全部安全校验并显式启用后才进入只读 fallback |
+| fallback 无可验证引用时弃权 | 模型文本不是证据；只有本次服务端取证会话实际返回且非 `MISSING` 的 queryId 才能支撑结论 |
+| fallback 置信度最高 `MEDIUM` | `READY_FOR_HUMAN` 仍是待人工确认建议，不允许模型自行声称 `HIGH` |
 | 弃权时 `recommendedActions` 恒空 | 契约保证：不确定就不给恢复建议 |
 | `/execute` 恒 409 | 让"平台不执行生产写"在 HTTP 边界可见可测 |
 | 推导可能 `faithful=false` | SOP 会演进；宁可承认还原不了，也不给看似合理的假推导 |
@@ -184,11 +220,12 @@
   也必须带，否则兄弟模块没有匹配测试会报错。）
 - **前端类型检查**：`cd mateclaw-ui && npx vue-tsc --noEmit`。
   注意 `npm ci` 会失败（锁文件是 pnpm 的），用 `npm install`。
-  另有 5 项既存失败的 vitest（product-cards / streaming-render），**与排障无关**，改动前就存在。
+  2026-07-27 基线：`npm test` 共 13 个测试文件、110 项测试全绿。
 - **迁移**：新增表要在 `db/migration/{mysql,h2,kingbase}/` **三个方言目录各写一份**。
 - **两个 MyBatis-Plus 坑**（踩过）：
   - `getParamNameValuePairs()` 惰性填充，**先调 `getSqlSegment()`** 才有值；
-  - 聚合更新走 **wrapper-only（entity 传 null）**，写 fake 时要照此并保留版本闸门。
+  - 诊断聚合更新走 **wrapper-only（entity 传 null）**，写 fake 时要照此并保留版本闸门；
+    SOP 生命周期更新当前是独立的 entity patch，不要把两种 mapper 合同混为一谈。
 - **纪律**：不擅自开 PR；改 RFC 保持 § 编号连续；
   源表 xlsx 含真实 token/IP/人名，**未入库、不得入库**。
 
@@ -198,7 +235,7 @@
 
 1. **如果你能拿到内网/owner 决策** → 走 T1 → T2 → T3，这是主要矛盾所在，
    其余都是在未验证的地基上加层。
-2. **如果只能做纯工程** → T4（取证适配器）最有价值，它直接解开 `fixtureMode` 这个死结；
-   其次 T9 的 SOP 管理界面（导入 146 码需要它）。
+2. **如果只能做纯工程** → T4/T5 代码与 T9 的 SOP 管理、fallback 展示已完成；可进入 T6 审核工作流设计。
+   若具备运行环境，则优先按 runbook 完成 P4 专用 Agent 配置与 miss-path 实机演练，但不要提前解除默认开关。
 3. **不建议现在做**：T7 出站卡片（等产品定"哪个群收什么"）、
    T8 放权阶梯（等 T1–T3 有真实数据才有意义）。

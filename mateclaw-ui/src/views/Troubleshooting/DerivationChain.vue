@@ -5,7 +5,7 @@
       <div class="tg">
         <span class="tn">{{ diagnosis.evidence.length }}</span><span class="tl">项证据</span>
       </div>
-      <div class="tg">
+      <div v-if="isDeterministic" class="tg">
         <span class="tn">{{ counts.total }}</span><span class="tl">条判据</span>
         <span class="tsplit">
           <span v-if="counts.satisfied" class="tchip sat">{{ counts.satisfied }} 成立</span>
@@ -13,11 +13,19 @@
           <span v-if="counts.unevaluated" class="tchip unk">{{ counts.unevaluated }} 无法求值</span>
         </span>
       </div>
+      <div v-else class="tg">
+        <span class="tn">{{ diagnosis.evidenceCitations.length }}</span>
+        <span class="tl">条有效引用</span>
+      </div>
       <div class="tg">
         <span class="tn" :class="diagnosis.abstained ? 'abst' : 'win'">
-          {{ firedRule ? firedRule.ruleId : (diagnosis.abstained ? '弃权' : '—') }}
+          {{ isDeterministic
+            ? (firedRule ? firedRule.ruleId : (diagnosis.abstained ? '弃权' : '—'))
+            : (diagnosis.abstained ? 'Agent 弃权' : 'Agent 建议') }}
         </span>
-        <span class="tl">{{ diagnosis.abstained ? '未产出根因' : '采纳结论' }}</span>
+        <span class="tl">
+          {{ diagnosis.abstained ? '未产出根因' : (isDeterministic ? '采纳结论' : '待人工确认') }}
+        </span>
       </div>
     </div>
 
@@ -32,7 +40,11 @@
       <div class="lbody">
         <header class="lhd">
           <span class="lt">证据采集</span>
-          <span class="lf">EvidenceResult · 高亮字段被成立判据读取</span>
+          <span class="lf">
+            {{ isDeterministic
+              ? 'EvidenceResult · 高亮字段被成立判据读取'
+              : 'EvidenceResult · 高亮项被只读 Agent 明确引用' }}
+          </span>
         </header>
 
         <article
@@ -40,7 +52,7 @@
           :key="ev.queryId"
           :id="`ev-${ev.queryId}`"
           class="ev"
-          :class="[ev.status.toLowerCase(), { dim: !feedsASatisfiedCriterion(ev.queryId) }]"
+          :class="[ev.status.toLowerCase(), { dim: !feedsConclusion(ev.queryId) }]"
         >
           <div class="evh">
             <span class="qid">{{ ev.queryId }}</span>
@@ -55,7 +67,7 @@
                 v-for="[field, value] in observedEntries(ev)"
                 :key="field"
                 class="ob"
-                :class="{ used: readByFiringCriterion(ev.queryId, field) }"
+                :class="{ used: readByConclusion(ev.queryId, field) }"
               >{{ field }} <b>{{ value }}</b></span>
             </template>
             <span v-else class="ob empty">observed 为空 · 取证失败</span>
@@ -76,8 +88,38 @@
       </div>
     </section>
 
+    <!-- miss-path Agent boundary (there is intentionally no deterministic derivation API call) -->
+    <section v-if="!isDeterministic" class="link">
+      <div class="lrail"><span class="lnode">2</span><span class="lconn" /></div>
+      <div class="lbody">
+        <header class="lhd">
+          <span class="lt">只读 Agent 建议</span>
+          <span class="lf">hard allowlist · collect_troubleshooting_evidence only</span>
+        </header>
+        <div class="agent-boundary">
+          <p>
+            该路径没有命中确定性 SOP。Agent 只能补充只读证据并形成假设，不能生成恢复动作，
+            更不能调用生产写工具。
+          </p>
+          <div class="citation-row">
+            <span class="citation-label">evidenceCitations</span>
+            <button
+              v-for="queryId in diagnosis.evidenceCitations"
+              :key="queryId"
+              type="button"
+              class="citation"
+              @click="jump(`ev-${queryId}`, queryId)"
+            >{{ queryId }}</button>
+            <span v-if="!diagnosis.evidenceCitations.length" class="citation-empty">
+              无有效引用 · 契约已强制弃权
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 2. criteria -->
-    <section class="link">
+    <section v-if="isDeterministic" class="link">
       <div class="lrail"><span class="lnode">2</span><span class="lconn" /></div>
       <div class="lbody">
         <header class="lhd">
@@ -126,7 +168,7 @@
     </section>
 
     <!-- 3. rules -->
-    <section class="link">
+    <section v-if="isDeterministic" class="link">
       <div class="lrail"><span class="lnode">3</span><span class="lconn" /></div>
       <div class="lbody">
         <header class="lhd">
@@ -186,8 +228,14 @@
       </div>
       <div class="lbody">
         <header class="lhd">
-          <span class="lt">{{ diagnosis.abstained ? '弃权结论' : '根因结论' }}</span>
-          <span class="lf">rootCause + confidence</span>
+          <span class="lt">
+            {{ diagnosis.abstained
+              ? '弃权结论'
+              : (isDeterministic ? '根因结论' : '待人工确认的 Agent 假设') }}
+          </span>
+          <span class="lf">
+            {{ isDeterministic ? 'rootCause + confidence' : 'read-only suggestion + confidence' }}
+          </span>
         </header>
         <div class="concl" :class="{ abst: diagnosis.abstained }">
           <p class="rc">{{ diagnosis.rootCause }}</p>
@@ -234,6 +282,8 @@ const OUTCOME_ORDER: Record<CriterionOutcome, number> = {
 const derivation = ref<DiagnosisDerivation | null>(null)
 const loading = ref(false)
 const expanded = ref(new Set<string>())
+const isDeterministic = computed(() => props.diagnosis.routeMode === 'DETERMINISTIC')
+let loadRevision = 0
 
 const orderedCriteria = computed(() =>
   [...(derivation.value?.criteria ?? [])].sort(
@@ -289,7 +339,8 @@ function observedEntries(ev: EvidenceResult): [string, unknown][] {
 }
 
 /** Which evidence rows carried the conclusion, per the server's own evaluation. */
-function feedsASatisfiedCriterion(queryId: string): boolean {
+function feedsConclusion(queryId: string): boolean {
+  if (!isDeterministic.value) return props.diagnosis.evidenceCitations.includes(queryId)
   return (derivation.value?.criteria ?? []).some(
     (c) => c.sourceRequestId === queryId && c.outcome === 'SATISFIED',
   )
@@ -301,7 +352,8 @@ function feedsASatisfiedCriterion(queryId: string): boolean {
  * this matches on the expression text — good enough to draw attention, and it
  * cannot disagree with the verdict, which the server owns.
  */
-function readByFiringCriterion(queryId: string, field: string): boolean {
+function readByConclusion(queryId: string, field: string): boolean {
+  if (!isDeterministic.value) return props.diagnosis.evidenceCitations.includes(queryId)
   return (derivation.value?.criteria ?? []).some(
     (c) =>
       c.sourceRequestId === queryId &&
@@ -332,17 +384,30 @@ function jump(elementId: string, evidenceId?: string) {
 }
 
 async function load(diagnosisId: string) {
+  const revision = ++loadRevision
   loading.value = true
   derivation.value = null
   try {
     const { data } = await troubleshootingApi.derivation(diagnosisId)
-    derivation.value = data
+    if (revision === loadRevision) derivation.value = data
   } finally {
-    loading.value = false
+    if (revision === loadRevision) loading.value = false
   }
 }
 
-watch(() => props.diagnosis.diagnosisId, (id) => id && load(id), { immediate: true })
+watch(
+  () => [props.diagnosis.diagnosisId, props.diagnosis.routeMode] as const,
+  ([id, routeMode]) => {
+    if (routeMode === 'DETERMINISTIC') {
+      void load(id)
+    } else {
+      loadRevision += 1
+      derivation.value = null
+      loading.value = false
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
@@ -428,6 +493,19 @@ watch(() => props.diagnosis.diagnosisId, (id) => id && load(id), { immediate: tr
 .qmeta { padding: 6px 11px; background: var(--el-fill-color-lighter);
   font-family: var(--mc-mono, monospace); font-size: 10px;
   color: var(--el-text-color-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
+
+.agent-boundary { border: 1px solid var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9); border-radius: 8px; padding: 10px 12px; }
+.agent-boundary p { margin: 0; color: var(--el-text-color-regular); font-size: 11.5px;
+  line-height: 1.6; }
+.citation-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.citation-label { font-family: var(--mc-mono, monospace); font-size: 10px;
+  color: var(--el-text-color-placeholder); }
+.citation { border: 1px solid var(--el-color-primary-light-5); color: var(--el-color-primary);
+  background: var(--el-bg-color); border-radius: 5px; padding: 2px 7px; cursor: pointer;
+  font-family: var(--mc-mono, monospace); font-size: 10px; }
+.citation:hover { border-color: var(--el-color-primary); }
+.citation-empty { color: var(--el-color-warning); font-size: 10.5px; }
 
 /* criteria */
 .cr { border: 1px solid var(--el-border-color-lighter); border-radius: 8px;

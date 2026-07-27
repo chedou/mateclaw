@@ -192,33 +192,33 @@
 
   <!-- 当前开发进度 -->
   <section id="development-status">
-    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-25</span><span class="sd">以 903001 可用竖切为验收口径</span></div>
+    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-27</span><span class="sd">以 903001 真实数据验收为当前口径</span></div>
     <div class="devstatus">
       <div class="devtop">
         <div class="devlead">
           <div class="eyebrow">Current implementation baseline</div>
-          <h3>P0 领域内核已完成，产品入口尚未接通</h3>
-          <p>确定性规则、诊断编排、人工控制状态机、三方言持久化、事务 Outbox 与幂等已经进入 Java 代码；Webhook、身份门控、领域 REST 与 Vue 工作台仍待 P1/P2 接入。</p>
-          <div class="devmeta"><span>branch intelligent-troubleshooting-design</span><span>commit 2a5d66bb</span><span>33 targeted tests passed</span></div>
+          <h3>P0–P2 闭环已完成，P3 命中路证据底座已接通</h3>
+          <p>确定性诊断、身份门控、领域 REST、Vue 诊断/SOP 管理台与人工处置闭环已进入 Java/Vue 代码；Guance 与脱敏回放已接到命中路，但真实 measurement、字段和阈值仍待 T2 内网核实。</p>
+          <div class="devmeta"><span>branch claude/intelligent-troubleshooting-design</span><span>fixtureMode=true</span><span>93 targeted tests passed</span></div>
         </div>
         <div class="devverdict">
           <div class="vlabel">当前判断</div>
-          <strong>内核可运行，但用户还不能在 MateClaw 中发起并完成一次智能排障。</strong>
+          <strong>工程闭环可运行；当前主要矛盾已转为真实数据与知识质量验证，不能用 fixture 冒充生产可信。</strong>
           <a href="HANDOFF.md">查看完整交接清单 <span aria-hidden="true">→</span></a>
         </div>
       </div>
       <div class="phase-track" aria-label="P0 到 P5 开发阶段">
         <div class="phase done"><span class="phase-dot"></span><div class="pid">P0</div><div class="pt">领域内核</div><div class="pd">规则、状态、持久化、Outbox</div><span class="ps">已完成</span></div>
-        <div class="phase next"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">接入与身份</div><div class="pd">Webhook、PAT、Capability</div><span class="ps">下一步</span></div>
-        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">产品交付</div><div class="pd">领域 REST、Vue、飞书卡片</div><span class="ps">待开始</span></div>
-        <div class="phase"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">真实取证</div><div class="pd">Guance 与录制回放适配器</div><span class="ps">待开始</span></div>
+        <div class="phase done"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">接入与身份</div><div class="pd">REST、PAT、Capability</div><span class="ps">已完成</span></div>
+        <div class="phase done"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">产品交付</div><div class="pd">领域 REST、Vue、人工闭环</div><span class="ps">已完成</span></div>
+        <div class="phase next"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">真实取证</div><div class="pd">Guance 与录制回放适配器</div><span class="ps">底座完成·待验证</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P4</div><div class="pt">未命中 Agent</div><div class="pd">只读 ReAct 与低置信弃权</div><span class="ps">待开始</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P5</div><div class="pt">放权与运营</div><div class="pd">影子回归、升档、知识审核</div><span class="ps">待开始</span></div>
       </div>
       <div class="next-focus">
         <span class="nfkey">NEXT</span>
-        <div class="nfcopy"><b>903001 端到端竖切</b><span>接入 → 鉴权 → 确定性诊断 → 人工确认 → 外部结果登记</span></div>
-        <span class="nfstage">P1 → P2</span>
+        <div class="nfcopy"><b>T1–T3 真实数据验收</b><span>清路由歧义 → 核实 Guance 绑定与阈值 → 审核真实 SOP 入库</span></div>
+        <span class="nfstage">T1 → T2 → T3</span>
       </div>
     </div>
   </section>

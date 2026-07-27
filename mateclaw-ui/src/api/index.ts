@@ -1598,6 +1598,40 @@ export type ExecutionStatus = 'COMPLETED' | 'PENDING' | 'BLOCKED' | 'NOT_APPLICA
 export type ActionOutcomeStatus = 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
 export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' | 'UNRESOLVED'
 export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
+export type SopStatus = 'candidate' | 'approved' | 'deprecated'
+
+/** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
+export interface SopEntry {
+  sopId: string
+  contractVersion: string
+  system: string
+  errorCode: string
+  service: string
+  title: string
+  cause: string
+  category: string
+  ownerTeam: string | null
+  status: SopStatus
+  verified: boolean
+  evidenceRequests: Record<string, unknown>[]
+  anomalyCriteria: Record<string, unknown>[]
+  diagnosisRules: Record<string, unknown>[]
+  actions: Record<string, unknown>[]
+}
+
+/** Indexed registry row; full nested contracts are fetched only for the selected route. */
+export interface SopSummary {
+  sopId: string
+  routeKey: string
+  system: string
+  errorCode: string
+  service: string
+  status: SopStatus
+  verified: boolean
+  operational: boolean
+  createTime: string
+  updateTime: string
+}
 
 export interface IncidentContext {
   incidentId: string
@@ -1659,6 +1693,8 @@ export interface Diagnosis {
   sopKey: string | null
   sopTitle: string | null
   evidence: EvidenceResult[]
+  /** Query ids that actually support a miss-path Agent suggestion. */
+  evidenceCitations: string[]
   triggeredSignals: string[]
   recommendedActions: RecommendedAction[]
   pendingWrites: RecommendedAction[]
@@ -1669,7 +1705,7 @@ export interface Diagnosis {
   knowledgeCandidates: unknown[]
   timeline: TimelineEvent[]
   rehearsal: boolean
-  /** True until read-only source adapters land — evidence is not MateClaw-verified. */
+  /** True until real evidence bindings and thresholds are live-verified. */
   fixtureMode: boolean
   /** Always false; the contract rejects an enabled write executor outright. */
   writeExecutionEnabled: boolean
@@ -1750,6 +1786,25 @@ export const troubleshootingApi = {
   /** How the conclusion was reached: criteria with substituted arithmetic, and losing rules. */
   derivation: (diagnosisId: string) =>
     http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
+
+  listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
+    http.get<SopSummary[]>('/troubleshooting/sops', { params }),
+
+  getSop: (system: string, errorCode: string) =>
+    http.get<SopEntry>(
+      `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}`,
+    ),
+
+  /** Create-only: the server accepts only candidate + verified=false. */
+  registerSop: (data: SopEntry) =>
+    http.post<SopEntry>('/troubleshooting/sops', data),
+
+  /** Forward-only review transition: candidate -> approved -> deprecated. */
+  updateSopStatus: (system: string, errorCode: string, status: Exclude<SopStatus, 'candidate'>) =>
+    http.post<SopEntry>(
+      `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}/status`,
+      { status },
+    ),
 
   confirm: (diagnosisId: string) =>
     http.post<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}/confirm`),

@@ -5,8 +5,10 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import vip.mate.agent.AgentToolSet;
+import vip.mate.llm.chatmodel.ThinkingLevelHolder;
 import vip.mate.wiki.service.WikiContextService;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -136,6 +138,42 @@ class ReasoningNodePtlPromptTest {
                 vip.mate.agent.context.ChatOrigin.EMPTY, "", "");
 
         assertThat(prefix).hasSize(2);
+    }
+
+    @Test
+    void isolatedInvocationExposesOnlyTheCallerSuppliedSystemPrompt() {
+        WikiContextService wikiContextService = mock(WikiContextService.class);
+        ReasoningNode node = newNode(wikiContextService);
+        node.setAmbientContextEnabled(false);
+
+        List<Message> prefix = node.buildNonHistoryPrefix(
+                "scoped identity", "/workspace/secret", "42", "investigate",
+                vip.mate.agent.context.ChatOrigin.web(
+                        "triage-1", "operator", 7L, "/workspace/secret"),
+                "model", "provider");
+
+        assertThat(prefix).hasSize(1);
+        assertThat(prefix.getFirst()).isInstanceOf(SystemMessage.class);
+        assertThat(prefix.getFirst().getText()).isEqualTo("scoped identity");
+        verify(wikiContextService, org.mockito.Mockito.never())
+                .buildRelevantContext(org.mockito.ArgumentMatchers.anyLong(), anyString(), isNull());
+    }
+
+    @Test
+    void isolatedInvocationIgnoresAmbientReasoningOverride() throws Exception {
+        AgentToolSet emptyTools = AgentToolSet.fromCallbacks(List.of(), List.of());
+        ReasoningNode node = new ReasoningNode(
+                null, emptyTools, "low", true, null, null, null, 1024, null);
+        node.setAmbientContextEnabled(false);
+        Method resolver = ReasoningNode.class.getDeclaredMethod("resolveEffectiveReasoningEffort");
+        resolver.setAccessible(true);
+
+        ThinkingLevelHolder.set("high");
+        try {
+            assertThat(resolver.invoke(node)).isEqualTo("low");
+        } finally {
+            ThinkingLevelHolder.clear();
+        }
     }
 
     private static ReasoningNode newNode(WikiContextService wikiContextService) {

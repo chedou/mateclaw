@@ -132,6 +132,13 @@ public abstract class BaseAgent {
      */
     protected vip.mate.goal.service.GoalService goalService;
 
+    /**
+     * Invocation-level isolation used by hard-scoped graphs. When true, graph
+     * implementations must not load conversation history, media sidecars,
+     * workspace paths, goals, or other ambient context into the model call.
+     */
+    protected boolean isolatedInvocation;
+
     /** Locale used when prompting the vision sidecar. Defaults to zh-CN when unset. */
     protected java.util.Locale userLocale = java.util.Locale.SIMPLIFIED_CHINESE;
 

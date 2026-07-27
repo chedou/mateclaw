@@ -27,7 +27,8 @@ import java.util.UUID;
 
 /**
  * Zero-LLM orchestration for a known {@code (system,error_code)} route.
- * Evidence is already normalized at this boundary; P3 adapters remain external.
+ * Evidence is already normalized at this boundary; the P3 router and adapters
+ * stay upstream so this engine remains platform-independent and easy to test.
  */
 @Service
 public class DeterministicDiagnosisService {
