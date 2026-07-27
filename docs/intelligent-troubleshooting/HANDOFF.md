@@ -2,8 +2,8 @@
 
 > 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
 > 状态：架构已逐条源码核对通过并落 RFC；**P0 内核 + P1 接入身份 + P2 交付闭环 +
-> P3 命中路证据适配底座已完成**（2026-07-25—27）。903001 观测云字段/阈值仍待内网 T2 核实，
-> 出站卡片推送未接。
+> P3 命中路证据适配底座 + P4 未命中路只读 Agent 工程链路已完成**（2026-07-25—27）。
+> P4 默认关闭、待专用 Agent 配置和实机演练；903001 观测云字段/阈值仍待内网 T2 核实，出站卡片推送未接。
 > 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
 > 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
@@ -21,11 +21,11 @@
 | D1 | 确定性/AI 边界 =「(system,error_code) 命中？」 | 命中路=领域引擎零 LLM；Workflow 每步调 LLM 故不可承载（RFC §1/§3） |
 | D2 | 知识库可演进（candidate→approved→deprecated） | 领域表自建审核生命周期；Wiki 是 LLM 管道、永不做权威（RFC §8） |
 | D3 | API-first 故障上下文 Web 台 | Web 台与生命周期 REST 已落；`ts.` 卡片处理器已注册，IM 出站路由待 T7（RFC §5） |
-| D4 | 自建 orchestrator + 工具走 MCP/ToolCallback | 命中路领域 service 已落；adapter 复用为只读 ToolCallback 的第二调用方待 P4（RFC §3/§6） |
+| D4 | 自建 orchestrator + 工具走 MCP/ToolCallback | 命中路领域 service 与未命中路只读 ToolCallback 均已落；P4 运行启用待验收（RFC §3/§6） |
 | D5 | 影子 + 回归集 + 放权阶梯（写永不自动） | 复用 FeatureFlag 的设计已锁定；per-system 档位与影子毕业待 P5（RFC §10） |
 | D6 | 知识运营（沉淀嵌入流程、专家才评审） | `manage:troubleshooting` capability 门控审核（RFC §9） |
 | D7 | 与平台产品一体、运行时隔离 | 单 JAR 内兄弟包、逻辑不寄生 Workflow（RFC §2） |
-| D8 | 证据源开放适配（OAL，观测云首适配器） | Router、归一与命中路调用方已落；同一 adapter 的未命中调用方待 P4（RFC §6） |
+| D8 | 证据源开放适配（OAL，观测云首适配器） | Router、归一及命中/未命中两个调用方均已落；真实源验证仍待 T2（RFC §6） |
 
 **信任工程五约束**（沿用）：①确定性优先（LLM 不生成恢复动作）②强制引用证据 ③结构化输出+校验闸门
 ④置信度校准+abstain ⑤上下文预算。
@@ -35,12 +35,13 @@
 1. **生产写工具一个都不注册**（ToolGuard 批准=回放执行，语义与我们相反）。
 2. **人工确认只推进领域状态机、执行 0 个工具**（≠ ToolGuard 批准）。
 3. **写操作永远外部人工 + `record-outcome` 登记**；平台不连生产写执行器。
-4. **未命中路 agent 锁死只读**（`AgentToolBinding` 白名单 + ToolGuard BLOCK）＋命中路零 LLM。
+4. **未命中路 Agent 锁死只读**（专用直接绑定校验 + 调用级硬白名单 + 服务端取证会话；
+   ToolGuard BLOCK 作纵深防御）＋命中路零 LLM。
 
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
 **矛盾清单**（P2 完成后已再次转化，2026-07-26 三次刷新）：
-- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（排障域 93 项测试全绿，但 SOP 库是 fixture、
+- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（排障域定向回归全绿，但 SOP 库是 fixture、
   观测云未联调、无人真正用工作台处置过一次真故障）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
@@ -50,7 +51,7 @@
 **⭐ 主要矛盾**：[代码闭环已通] vs [从未在真实数据上验证]。报障→诊断→确认→转派→批准→登记→
 关闭→知识候选这条链已全部落地且有测试，工程能力不再是瓶颈；当前系统性质由「**它还没被现实检验过**」
 规定——SOP 库仍是 fixture、`fixtureMode` 恒 true、观测云 DQL 未内网核实、L0 三个路由键冲突未裁决。
-再往下堆功能（出站卡片、agent 兜底、放权阶梯）都是在未验证的地基上加层。
+再往下堆功能（出站卡片、启用 Agent 兜底、放权阶梯）都是在未验证的地基上加层。
 **性质**：非对抗性，但已由「工程矛盾」转为「实践检验矛盾」——**主战场从写代码转到接真实数据**。
 **矛盾的主要方面**：在「知识与数据未就位」一侧（这正是前几轮预判会上位的天花板，现在如期上位）。
 **应对**：主攻转向 ①903001 fixture 端到端联跑（先证明链路自洽）→ ②清 L0 三个路由键冲突 →
@@ -81,8 +82,9 @@
   `GET /diagnoses/{id}` 读取、`POST .../actions/{id}/execute` 恒 409）+
   三个 capability 挂进 `RoleCapabilities`（viewer→view / member→operate / admin→manage）。
   排障域测试增至 **40 项**，连同 workspace 域回归共 153 项通过。
-  三条诚实性约束已固化为测试：**未注册 SOP → 409 知识缺口**（不编造诊断）、
-  **无 error_code / SYMPTOM → 409**（未命中路未接线，不假装能处理）、
+  P1 当时的三条诚实性约束已固化为测试：**未注册 SOP → 409 知识缺口**（不编造诊断）、
+  **无 error_code / SYMPTOM → 409**（P1 当时未命中路未接线；P4 已改为“显式启用且安全配置通过才进入只读 Agent，
+  否则仍 409”）、
   **`fixtureMode` 恒 true**（P1 当时 P3 尚未到位；现在虽有 P3 工程链路，但 T2 未核实，仍不得声称证据可信）。
   webhook 鉴权**不需要新过滤器**：`JwtAuthFilter` 已按 `mc_` 前缀识别 PAT，告警源用受限 PAT 即成为正常主体。
 
@@ -129,9 +131,28 @@
   per-binding verification 均不能宣称已验证，`fixtureMode` 继续恒 true。**详见
   `evidence-adapter-runbook.md`。
 
+- **P4 未命中路只读 Agent 工程链路已就绪**（2026-07-27）：无 error code、`SYMPTOM`、无 SOP 三类
+  route miss 进入 `TroubleshootingAgentTriageService`；`TroubleshootingEvidenceTool` 复用同一
+  `EvidenceSourceRouter`，服务端会话固定 Incident 上下文并限制取证次数。普通 Agent 绑定会兼容性扩入
+  system-level/MCP 工具，故新增 `AgentService.chatWithToolAllowlist()` 与 `AgentGraphBuilder` 最终交集，
+  受限图使用独立缓存键，模型实际只能看到 `collect_troubleshooting_evidence`；它不读会话历史/
+  memory/wiki/runtime/skill/goal 上下文，禁用通用 `ToolResultStorage` 原始结果 spill 和 provider fallback，
+  要求 Agent 显式绑定唯一 enabled 模型并跳过全局默认/capability 路由；模型歧义、provider 禁用/未配置或
+  原生搜索开启均 fail-closed 409。运行时调用失败保守弃权，不自动选择备用 provider。已有/新采集的
+  canonical EvidenceResult 的全部字符串字段与递归 key 在进入模型和 Diagnosis 前统一脱敏，危险 queryId
+  安全重映射；脱敏结果仍随 Diagnosis 持久化以供审计。初始未受信上下文经脱敏、转义和独立字符预算
+  确定性截断；工具会话同时校验 conversationId + workspaceId，queryId 必须安全且会话内唯一，重复调用不能覆盖
+  已引用证据。硬作用域在构图/执行前清空请求级 ThinkingLevel 并在结束后恢复，受限图内再次忽略环境覆盖；
+  工具原始参数只进入 Guard 与 callback，不进入 event/SSE/log/audit/approval，`NEEDS_APPROVAL` 在此路径直接拦截。
+  输出必须是结构化 JSON，引用必须来自本次会话且证据非 `MISSING`；
+  空结论或无效引用强制 `LOW + abstain`，有效 fallback 最高 `MEDIUM`。`Diagnosis` 升至 1.4 并兼容读取 1.3，
+  fallback 永远不生成动作；Vue 展示只读建议与已核验证据，不调用确定性 derivation API。
+  **运行仍未启用**：默认开关关闭，专用 workspace-local ReAct Agent、ToolGuard BLOCK 纵深规则与实机演练
+  均待 operator 完成；`fixtureMode` 不变。详见 `agent-miss-path-runbook.md`。
+
 **主攻与全部待办已独立成册**：见 **`docs/intelligent-troubleshooting/TODO.md`**
 （T1–T10，每条含「为什么/完成标准」、四条红线、诚实缺口清单、工程约定与建议接手顺序）。
-一句话概括：**主要矛盾仍是「接真实数据」**——T4 工程底座已拆掉代码阻塞，下一关键路径仍是
+一句话概括：**主要矛盾仍是「接真实数据」**——T4/T5 工程底座已拆掉代码阻塞，下一关键路径仍是
 T1 清路由键冲突、T2 内网核实观测云、T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入。
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
@@ -141,7 +162,7 @@ T1 清路由键冲突、T2 内网核实观测云、T3 真实 SOP 入库并放开
   `«待核实»` 字段；
 - 903001 模式复制到其他高频码（901002/2000001/801008…backlog 见 `l0/inventory_report.md`）。
 
-**后续梯队**：P3 D8 命中路底座已完成 → T2 内网验证 → P4 未命中 ReAct agent（只读笼，补旧 G1）
+**后续梯队**：P3/P4 工程链路已完成 → T2 内网验证 + P4 专用 Agent 配置/实机演练
 → P5 放权阶梯 + 知识运营（覆盖率/可自动化率纳入考核）。
 
 ## 5.5 前端/页面设计（HTML 原型已收敛方向，Vue 工作台已落地）
@@ -166,7 +187,8 @@ T1 清路由键冲突、T2 内网核实观测云、T3 真实 SOP 入库并放开
 
 **已落地的 Vue 实现**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain,SopManagement}.vue`
 （队列 + 判定链 + 处置弹窗 + SOP 管理；诊断路由需 `view:troubleshooting`，SOP 管理路由需
-`manage:troubleshooting`）。
+`manage:troubleshooting`）。确定性诊断展示 SOP 判定链；`LLM_FALLBACK` 展示独立的只读 Agent 建议、
+只高亮服务端核验过的引用，并跳过只适用于确定性路由的 derivation 请求。
 HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `console-diagnosis-detail.html` 是契约对齐版，
 其判定链（代入运算、已排除 vs 无法求值）比当前 Vue 组件更细，是 Vue 侧后续要补齐的目标形态。
 
@@ -187,8 +209,10 @@ HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `c
 - **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
   每条结论有源码位置索引）。
 - **实现入口**：后端 `mateclaw-server/src/main/java/vip/mate/troubleshooting/`（`controller/` 接入+生命周期、
-  `card/` 飞书入站卡片、`service/` 编排与闭环）；前端 `mateclaw-ui/src/views/Troubleshooting/`；迁移为三方言
-  `V172__troubleshooting_domain.sql`；测试入口 `mateclaw-server/src/test/java/vip/mate/troubleshooting/`。
+  `card/` 飞书入站卡片、`service/` 编排与闭环、`agent/` 未命中只读分诊）；前端
+  `mateclaw-ui/src/views/Troubleshooting/`；迁移为三方言 `V172__troubleshooting_domain.sql` 与
+  `V173__register_troubleshooting_evidence_tool.sql`；测试入口
+  `mateclaw-server/src/test/java/vip/mate/troubleshooting/` 及 `vip/mate/agent/AgentServiceToolScopeTest.java`。
 - **前端设计门户**：`docs/intelligent-troubleshooting/index.html`（汇报入口，串起现行原型 + 演进；详见 §5.5）。
   现行原型 `console-rca.html`（主推·根因定位）、`console-overview.html`（总览看板）；
   迭代过程 `console-disposition{,-v2,-v3}.html`。

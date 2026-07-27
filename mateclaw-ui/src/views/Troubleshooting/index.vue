@@ -113,7 +113,12 @@
               </article>
             </div>
             <p v-else class="noact">
-              弃权时 <code>recommendedActions</code> 为空数组 —— 契约保证不输出任何恢复建议。
+              <template v-if="current.diagnosis.routeMode === 'LLM_FALLBACK'">
+                只读 Agent 路径的 <code>recommendedActions</code> 始终为空数组——只能给出待人工确认的假设。
+              </template>
+              <template v-else>
+                弃权时 <code>recommendedActions</code> 为空数组——契约保证不输出任何恢复建议。
+              </template>
             </p>
           </div>
 

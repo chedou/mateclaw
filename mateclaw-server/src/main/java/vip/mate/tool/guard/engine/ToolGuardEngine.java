@@ -44,6 +44,17 @@ public class ToolGuardEngine {
      * @return 聚合评估结果
      */
     public GuardEvaluation evaluate(ToolInvocationContext context) {
+        return evaluate(context, false);
+    }
+
+    /**
+     * Evaluates a tool call while optionally withholding exception details
+     * that can contain raw model-supplied arguments. The guardian still sees
+     * the original context; only this engine's failure log is sanitized.
+     */
+    public GuardEvaluation evaluate(
+            ToolInvocationContext context,
+            boolean suppressSensitiveDetails) {
         if (context.toolName() == null || context.toolName().isEmpty()) {
             return GuardEvaluation.allow(context.toolName());
         }
@@ -61,8 +72,15 @@ public class ToolGuardEngine {
                     }
                 }
             } catch (Exception e) {
-                log.warn("[ToolGuardEngine] Guardian {} failed for tool={}: {}",
-                        guardian.name(), context.toolName(), e.getMessage());
+                if (suppressSensitiveDetails) {
+                    log.warn("[ToolGuardEngine] Guardian {} failed for tool={} "
+                                    + "({}; details withheld)",
+                            guardian.name(), context.toolName(),
+                            e.getClass().getSimpleName());
+                } else {
+                    log.warn("[ToolGuardEngine] Guardian {} failed for tool={}: {}",
+                            guardian.name(), context.toolName(), e.getMessage());
+                }
                 // 单个 guardian 异常不中断其他
             }
         }

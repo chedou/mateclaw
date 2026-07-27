@@ -5,6 +5,8 @@
 
 ## 1. 已落地的链路
 
+命中路保持确定性、零 LLM：
+
 ```text
 SopEntry.evidenceRequests（平台无关意图）
   → TroubleshootingIntakeService（仅补齐缺失请求）
@@ -14,12 +16,27 @@ SopEntry.evidenceRequests（平台无关意图）
   → CriterionEvaluator（零 LLM）
 ```
 
+P4 未命中路复用同一 Router，但只能从服务端受限会话进入：
+
+```text
+route miss
+  → TroubleshootingAgentTriageService（开关/专用 Agent/直接绑定校验）
+  → AgentService.chatWithToolAllowlist（最终只保留 collect_troubleshooting_evidence）
+  → TroubleshootingEvidenceTool（活动会话 + 次数上限）
+  → EvidenceSourceRouter → EvidenceSourceAdapter
+  → 证据引用核验 → Diagnosis(LLM_FALLBACK)
+```
+
+专用 Agent 的配置、启用和回滚见 `agent-miss-path-runbook.md`。该路径默认关闭；它不会改变命中路的
+零 LLM 合同。
+
 - 调用方已提供且状态不是 `MISSING` 的证据会保留，不重复查询。
 - 主源抛异常、超时、返回畸形响应或 `MISSING` 时，路由器尝试下一个显式后备源。
 - 全部失败时返回 `EvidenceStatus.MISSING`；必需证据缺失会触发现有 abstain 逻辑，不输出恢复动作。
 - 取证默认强制 `https`；仅可信隔离测试网可显式允许 `http`。模板值使用保守字符白名单，阻止告警载荷拼成任意 DQL。
 - Guance 与 replay 共用代码内的 canonical schema；缺列、错类型、多 series 或无法判定最新时间点均按畸形响应降级。
 - 没有注册任何生产写工具，命中路径仍然是确定性 Java，LLM 调用数为 0。
+- P4 只注册一个只读取证工具；即使直接调用该工具，没有活动 triage 会话也只会返回 `MISSING`。
 
 ## 2. 数据源与配置
 

@@ -130,6 +130,17 @@ springdoc:
 # MateClaw 自定义配置
 mateclaw:
   troubleshooting:
+    agent:
+      # Miss-path LLM triage is an explicit rollout. Keep disabled until a
+      # dedicated workspace-local ReAct Agent is created with skills/wiki off,
+      # bounded iterations, and exactly TroubleshootingEvidenceTool bound.
+      enabled: ${MATECLAW_TROUBLESHOOTING_AGENT_ENABLED:false}
+      agent-id: ${MATECLAW_TROUBLESHOOTING_AGENT_ID:0}
+      max-iterations: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_ITERATIONS:6}
+      max-evidence-requests: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_EVIDENCE_REQUESTS:6}
+      # Separate from the normal conversation window because this invocation
+      # deliberately bypasses ambient conversation context.
+      max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}
     evidence:
       # Evidence collection is fail-closed. Routes are explicit, while both
       # concrete sources remain disabled until an operator opts in.

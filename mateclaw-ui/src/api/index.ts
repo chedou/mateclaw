@@ -1693,6 +1693,8 @@ export interface Diagnosis {
   sopKey: string | null
   sopTitle: string | null
   evidence: EvidenceResult[]
+  /** Query ids that actually support a miss-path Agent suggestion. */
+  evidenceCitations: string[]
   triggeredSignals: string[]
   recommendedActions: RecommendedAction[]
   pendingWrites: RecommendedAction[]

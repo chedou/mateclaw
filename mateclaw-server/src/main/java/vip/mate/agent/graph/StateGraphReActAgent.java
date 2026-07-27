@@ -512,11 +512,14 @@ public class StateGraphReActAgent extends BaseAgent implements StructuredStreamC
     }
 
     private Map<String, Object> buildInitialState(String userMessage, String conversationId) {
-        // 加载会话历史
-        List<Message> historyMessages = buildConversationHistory(conversationId, userMessage);
+        // A hard-scoped invocation is a single isolated capability session:
+        // never replay persisted chat history into it.
+        List<Message> historyMessages = isolatedInvocation
+                ? List.of()
+                : buildConversationHistory(conversationId, userMessage);
 
         // 上下文窗口管理：裁剪超出模型 context window 的历史（含当前消息预算）
-        if (conversationWindowManager != null) {
+        if (!isolatedInvocation && conversationWindowManager != null) {
             Long parsedAgentId = null;
             try { parsedAgentId = Long.valueOf(agentId); } catch (Exception ignored) {}
             historyMessages = conversationWindowManager.fitToWindow(
@@ -534,7 +537,9 @@ public class StateGraphReActAgent extends BaseAgent implements StructuredStreamC
         List<Message> messages = new ArrayList<>(historyMessages);
         // 构建当前用户消息：支持 multimodal（如果有图片附件，直接注入 Media）
         // 同步获取 routing decision，写入 state 供后续节点 / accumulator 读取。
-        BaseAgent.CurrentTurnUserMessage currentTurn = buildCurrentUserMessageWithRouting(conversationId, userMessage);
+        BaseAgent.CurrentTurnUserMessage currentTurn = isolatedInvocation
+                ? new BaseAgent.CurrentTurnUserMessage(new UserMessage(userMessage), null)
+                : buildCurrentUserMessageWithRouting(conversationId, userMessage);
         messages.add(currentTurn.userMessage());
 
         Map<String, Object> inputs = new HashMap<>();
@@ -542,13 +547,16 @@ public class StateGraphReActAgent extends BaseAgent implements StructuredStreamC
         inputs.put(USER_MESSAGE, userMessage);
         inputs.put(CONVERSATION_ID, conversationId);
         inputs.put(AGENT_ID, agentId != null ? agentId : "");
-        inputs.put(WORKSPACE_BASE_PATH, workspaceBasePath != null ? workspaceBasePath : "");
+        inputs.put(WORKSPACE_BASE_PATH,
+                !isolatedInvocation && workspaceBasePath != null ? workspaceBasePath : "");
         inputs.put(SYSTEM_PROMPT, systemPrompt != null ? systemPrompt : "你是一个有帮助的AI助手。");
         inputs.put(MESSAGES, messages);
         // 迭代控制：深度思考模式允许更多迭代（思考需要更多轮工具调用）
         // maxIterations<=0 表示软上限解除（由 LLM 自己决定何时收尾），加分要短路，
         // 否则 thinking-on 会把"无限"误算成 5（变成"5 步就停"）。
-        String thinkingLevel = vip.mate.llm.chatmodel.ThinkingLevelHolder.get();
+        String thinkingLevel = isolatedInvocation
+                ? null
+                : vip.mate.llm.chatmodel.ThinkingLevelHolder.get();
         boolean thinkingOn = thinkingLevel != null && !"off".equalsIgnoreCase(thinkingLevel);
         int effectiveMaxIterations = (maxIterations <= 0)
                 ? 0

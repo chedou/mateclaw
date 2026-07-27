@@ -4,6 +4,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.ActionOutcomeRecord;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.AgentTriageDraft;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.ClosureRecord;
@@ -86,6 +87,33 @@ public final class DiagnosisStateMachine {
                 draft.fixtureMode(),
                 draft.warnings(),
                 timeline);
+    }
+
+    /** Creates the only legal initial state for the caged read-only Agent path. */
+    public Diagnosis initializeAgentFallback(AgentTriageDraft draft) {
+        Objects.requireNonNull(draft, "draft");
+        DiagnosisStatus initialStatus = draft.abstained()
+                ? DiagnosisStatus.NEEDS_INVESTIGATION
+                : DiagnosisStatus.READY_FOR_HUMAN;
+        List<TimelineEvent> timeline = List.of(
+                new TimelineEvent(
+                        clock.instant(),
+                        "故障上下文已接收",
+                        draft.incident().intakeSource(),
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        "确定性路由未命中，进入只读 Agent 取证",
+                        "orchestrator",
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        draft.abstained()
+                                ? "只读 Agent 已弃权，转人工深查"
+                                : "只读 Agent 建议待人工确认",
+                        "orchestrator",
+                        "current"));
+        return Diagnosis.initialAgentFallback(draft, initialStatus, timeline);
     }
 
     public Diagnosis confirm(Diagnosis diagnosis, String actor) {

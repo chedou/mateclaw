@@ -33,7 +33,6 @@ import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.model.AgentEntity;
 import vip.mate.config.GraphObservationProperties;
 import vip.mate.exception.MateClawException;
-import vip.mate.llm.chatmodel.OpenAiCompatibleChatModelBuilder;
 import vip.mate.llm.chatmodel.ReasoningEffortResolver;
 import vip.mate.llm.model.ModelConfigEntity;
 import vip.mate.llm.model.ModelFamily;
@@ -222,6 +221,30 @@ public class AgentGraphBuilder {
         return modelConfigService.resolveModel(agentModelName);
     }
 
+    /** Strict model resolution for hard-scoped invocations; never substitutes a provider. */
+    private ModelConfigEntity resolveHardScopedRuntimeModel(AgentEntity entity) {
+        String configuredModelName = entity == null ? null : entity.getModelName();
+        try {
+            List<ModelConfigEntity> matches = modelConfigService.listEnabledModels().stream()
+                    .filter(model -> configuredModelName != null
+                            && configuredModelName.equals(model.getModelName()))
+                    .toList();
+            HardScopedAgentPolicy.requireSinglePrimaryModel(
+                    configuredModelName, matches.size());
+            return matches.get(0);
+        } catch (MateClawException expected) {
+            if (expected.getMsgKey() != null
+                    && expected.getMsgKey().startsWith("err.agent.hard_scope_")) {
+                throw expected;
+            }
+            throw HardScopedAgentPolicy.providerUnavailable(
+                    "configured model could not be resolved");
+        } catch (RuntimeException unavailable) {
+            throw HardScopedAgentPolicy.providerUnavailable(
+                    "configured model could not be resolved");
+        }
+    }
+
     /**
      * True iff the caller passed a complete (provider, model) pin AND that
      * pair resolves to an enabled model row. Used by {@link #build} to decide
@@ -258,6 +281,28 @@ public class AgentGraphBuilder {
      * the Agent's model override, then the global default.</p>
      */
     public BaseAgent build(AgentEntity entity, String modelProvider, String modelName) {
+        return build(entity, modelProvider, modelName, null);
+    }
+
+    /**
+     * Builds an Agent with an optional invocation-level hard tool scope.
+     *
+     * <p>The hard scope is deliberately applied <em>after</em> the normal
+     * Agent binding expansion. Normal bindings may add system-level tools or
+     * administrator-provided MCP tools for backwards compatibility; a
+     * security-sensitive caller such as troubleshooting triage needs an
+     * independent final intersection that those conveniences cannot widen.</p>
+     *
+     * @param hardAllowedTools final allowlist accepted by
+     *                         {@link AgentToolSet#withAllowedToolsOnly};
+     *                         {@code null} preserves the normal Agent surface
+     */
+    public BaseAgent build(
+            AgentEntity entity,
+            String modelProvider,
+            String modelName,
+            Set<String> hardAllowedTools) {
+        boolean hardScoped = hardAllowedTools != null;
         AgentToolSet toolSet = toolRegistry.getEnabledToolSet();
 
         // Move 6 — Permission flattening at build time.
@@ -293,64 +338,91 @@ public class AgentGraphBuilder {
         Set<String> boundTools = agentBindingService.getEffectiveToolNames(entity.getId());
         toolSet = toolSet.withAllowedToolsOnly(boundTools); // null = 全局默认
 
-        // Resolve the base model with the precedence: per-conversation pin >
-        // per-Agent model override > global default. resolveRuntimeBaseModel
-        // looks up enabled-only models and silently degrades an unmatched pin /
-        // override to the global default, preserving the legacy behaviour for
-        // Agents and conversations without an explicit choice.
-        ModelConfigEntity globalDefault;
-        boolean explicitPinHonoured;
-        boolean agentOverrideHonoured;
-        try {
-            explicitPinHonoured = pinResolvesToEnabledModel(modelProvider, modelName);
-            globalDefault = resolveRuntimeBaseModel(modelProvider, modelName, entity.getModelName());
-            agentOverrideHonoured = !explicitPinHonoured
-                    && agentModelOverrideResolved(entity, globalDefault);
-        } catch (Exception e) {
-            throw new MateClawException("err.agent.no_default_model", "无法构建 Agent：请先在「设置 → 模型」中配置并启用默认模型");
+        // Invocation-level security boundary. This is a second intersection,
+        // not another binding source: neither SYSTEM_LEVEL_TOOLS nor automatic
+        // MCP expansion can reappear after this line.
+        toolSet = toolSet.withAllowedToolsOnly(hardAllowedTools);
+        if (hardScoped) {
+            HardScopedAgentPolicy.requireExactToolSet(toolSet, hardAllowedTools);
         }
+
         ModelConfigEntity runtimeModel;
-        if (explicitPinHonoured || agentOverrideHonoured) {
-            // The caller (admin UI / chat console) handed us a concrete
-            // (provider, model) pin and it points to an enabled row. Honour
-            // it verbatim — running providerRouter.selectPrimary here would
-            // silently swap to a different model whenever a bound skill
-            // advertised a capability gap, which is exactly the "I switched
-            // model but the agent kept using the old one" surface. The
-            // diagnostic below still surfaces capability gaps in the logs
-            // so operators can see if the pinned model misses a need.
-            runtimeModel = globalDefault;
+        if (hardScoped) {
+            // Security-sensitive invocations must never enter resolveModel(),
+            // getDefaultModel(), or capability routing: all three normal paths
+            // may silently substitute another provider. Require one explicit,
+            // unambiguous enabled model row instead.
+            runtimeModel = resolveHardScopedRuntimeModel(entity);
         } else {
+            // Resolve the base model with the precedence: per-conversation pin >
+            // per-Agent model override > global default. Normal Agents preserve
+            // the legacy graceful fallback behaviour.
+            ModelConfigEntity globalDefault;
+            boolean explicitPinHonoured;
+            boolean agentOverrideHonoured;
             try {
-                runtimeModel = providerRouter.selectPrimary(entity.getId(), globalDefault);
-                if (runtimeModel == null) runtimeModel = globalDefault;
+                explicitPinHonoured = pinResolvesToEnabledModel(modelProvider, modelName);
+                globalDefault = resolveRuntimeBaseModel(
+                        modelProvider, modelName, entity.getModelName());
+                agentOverrideHonoured = !explicitPinHonoured
+                        && agentModelOverrideResolved(entity, globalDefault);
             } catch (Exception e) {
-                log.debug("[ProviderRouter] primary selection failed, falling back to global default: {}",
-                        e.getMessage());
-                runtimeModel = globalDefault;
+                throw new MateClawException(
+                        "err.agent.no_default_model",
+                        "无法构建 Agent：请先在「设置 → 模型」中配置并启用默认模型");
             }
-        }
-        // Even after the upgrade, log a WARN when the chosen primary
-        // still doesn't satisfy needs (e.g. no preferred provider was
-        // capable). The diagnostic is observability-only.
-        try {
-            providerRouter.diagnosePrimary(entity.getId(), runtimeModel);
-        } catch (Exception e) {
-            log.debug("[ProviderRouter] diagnostic failed: {}", e.getMessage());
+            if (explicitPinHonoured || agentOverrideHonoured) {
+                runtimeModel = globalDefault;
+            } else {
+                try {
+                    runtimeModel = providerRouter.selectPrimary(entity.getId(), globalDefault);
+                    if (runtimeModel == null) runtimeModel = globalDefault;
+                } catch (Exception e) {
+                    log.debug("[ProviderRouter] primary selection failed, falling back to global default: {}",
+                            e.getMessage());
+                    runtimeModel = globalDefault;
+                }
+            }
+            // Diagnostic is deliberately normal-path only. A hard-scoped
+            // graph must not consult capability routing at all.
+            try {
+                providerRouter.diagnosePrimary(entity.getId(), runtimeModel);
+            } catch (Exception e) {
+                log.debug("[ProviderRouter] diagnostic failed: {}", e.getMessage());
+            }
         }
 
         ModelProviderEntity provider;
         try {
             provider = modelProviderService.getProviderConfig(runtimeModel.getProvider());
         } catch (Exception e) {
+            if (hardScoped) {
+                throw HardScopedAgentPolicy.providerUnavailable(
+                        "provider row is missing for " + runtimeModel.getProvider());
+            }
             throw new MateClawException("err.agent.model_not_configured", "模型 " + runtimeModel.getModelName()
                     + " 的 Provider（" + runtimeModel.getProvider() + "）未配置，请检查模型设置");
         }
 
         // Safety net: getDefaultModel() already skips unconfigured providers, but guard here
         // too so a stale cached model doesn't silently proceed to a broken API call.
-        if (!modelProviderService.isProviderConfigured(provider.getProviderId())) {
+        boolean providerReady;
+        try {
+            providerReady = hardScoped
+                    ? modelProviderService.isProviderEnabledAndConfigured(provider.getProviderId())
+                    : modelProviderService.isProviderConfigured(provider.getProviderId());
+        } catch (RuntimeException unavailable) {
+            if (hardScoped) {
+                throw HardScopedAgentPolicy.providerUnavailable(
+                        "provider status could not be verified");
+            }
+            throw unavailable;
+        }
+        if (!providerReady) {
             String reason = modelProviderService.getProviderUnavailableReason(provider.getProviderId());
+            if (hardScoped) {
+                HardScopedAgentPolicy.requireConfiguredProvider(false, reason);
+            }
             log.warn("Runtime model {}/{} provider not configured ({}); trying fallback",
                     runtimeModel.getProvider(), runtimeModel.getModelName(), reason);
             ModelConfigEntity fallback = findFirstAvailableChatModel();
@@ -381,9 +453,13 @@ public class AgentGraphBuilder {
         Map<String, Object> providerKwargs = modelProviderService.readProviderGenerateKwargs(provider);
         if (protocol == ModelProtocol.DASHSCOPE_NATIVE) {
             builtinSearchEnabled = dashScopeBuilder.isBuiltinSearchEnabled(runtimeModel, provider);
-        } else if (OpenAiCompatibleChatModelBuilder.isKimiProvider(provider)
-                && Boolean.TRUE.equals(providerKwargs.get("enableSearch"))) {
-            builtinSearchEnabled = true;
+        } else {
+            // OpenAI-compatible providers can enable web_search_options at
+            // either model or provider level. Kimi additionally rewrites the
+            // request with $web_search, but both are outside ToolCallback and
+            // therefore must be treated as native capabilities here.
+            builtinSearchEnabled = Boolean.TRUE.equals(runtimeModel.getEnableSearch())
+                    || Boolean.TRUE.equals(providerKwargs.get("enableSearch"));
         }
         if (builtinSearchEnabled) {
             // Phase 2: 不再移除 search 工具，改为在 prompt 中设定优先级引导
@@ -425,14 +501,22 @@ public class AgentGraphBuilder {
                     entity.getId(), basePromptTokens, prefixBudgetPlan.effectiveMaxTokens());
         }
 
-        String enhancedPrompt = buildEnhancedPrompt(entity, builtinSearchEnabled, prefixBudgetPlan.memoryTokens());
+        boolean isPlanExecute = "plan_execute".equals(entity.getAgentType());
+        if (hardScoped) {
+            HardScopedAgentPolicy.validate(builtinSearchEnabled, isPlanExecute);
+        }
+
+        String enhancedPrompt = hardScoped
+                ? HardScopedAgentPolicy.systemPrompt(entity)
+                : buildEnhancedPrompt(entity, builtinSearchEnabled, prefixBudgetPlan.memoryTokens());
 
         // Runtime skill-catalog renderer — captures this agent's bound skills,
         // effective tool allowlist, model window and workspace; invoked each
         // turn by the reasoning / step-execution nodes with the skills loaded
         // so far this run so load_skill pins float to the top of the catalog.
-        SkillCatalogRenderer skillCatalogRenderer = buildSkillCatalogRenderer(
-                entity, boundTools, effectiveMaxInputTokens);
+        SkillCatalogRenderer skillCatalogRenderer = hardScoped
+                ? null
+                : buildSkillCatalogRenderer(entity, boundTools, effectiveMaxInputTokens);
 
         // Extension-tool catalog — only for ReAct. The dynamic tool split runs
         // in ReasoningNode; Plan-Execute keeps advertising every tool (it has no
@@ -440,9 +524,8 @@ public class AgentGraphBuilder {
         // describe an enable_tool flow that can never take effect.
         // Auto-demotion is likewise ReAct-only: hiding a tool from Plan-Execute
         // would remove it with no enable_tool path to recover it.
-        boolean isPlanExecute = "plan_execute".equals(entity.getAgentType());
         Set<String> autoDemotedTools = Set.of();
-        if (!isPlanExecute) {
+        if (!hardScoped && !isPlanExecute) {
             if (prefixBudgetPlan.enabled()) {
                 autoDemotedTools = toolDisclosureService.computeAutoDemotions(
                         toolSet, prefixBudgetPlan.toolSchemaBudgetTokens());
@@ -469,7 +552,7 @@ public class AgentGraphBuilder {
                     entity.getName(), maxIter, toolSet.size(), protocol.getId());
         } else {
             agent = buildReActAgent(toolSet, runtimeModel, maxIter, entity.getId(), skillCatalogRenderer,
-                    prefixBudgetPlan, autoDemotedTools);
+                    prefixBudgetPlan, autoDemotedTools, hardScoped);
             // StateGraph 路径下工具调用由 ActionNode 控制，始终启用
             toolCallingEnabled = true;
             log.info("Built StateGraph ReAct agent: {} (maxIterations={}, tools={}, protocol={})",
@@ -491,9 +574,10 @@ public class AgentGraphBuilder {
         // ACTIVE_GOAL. The node itself stays inert until goalProperties.enabled
         // flips true, but tests need findActiveByConversation to work even
         // when the runtime path is disabled.
-        agent.goalService = goalService;
-        agent.multimodalRouter = multimodalRouter;
-        agent.mediaCaptionService = mediaCaptionService;
+        agent.goalService = hardScoped ? null : goalService;
+        agent.multimodalRouter = hardScoped ? null : multimodalRouter;
+        agent.mediaCaptionService = hardScoped ? null : mediaCaptionService;
+        agent.isolatedInvocation = hardScoped;
         agent.userLocale = resolveLocale();
         agent.temperature = runtimeModel.getTemperature();
         agent.maxTokens = runtimeModel.getMaxTokens();
@@ -505,7 +589,7 @@ public class AgentGraphBuilder {
         // under the workspace basePath so admins can express agent directories
         // relative to the workspace root (matching the UI hint).
         String workspaceBase = null;
-        if (entity.getWorkspaceId() != null) {
+        if (!hardScoped && entity.getWorkspaceId() != null) {
             try {
                 var workspace = workspaceService.getById(entity.getWorkspaceId());
                 if (workspace != null) {
@@ -516,9 +600,11 @@ public class AgentGraphBuilder {
                         entity.getName(), e.getMessage());
             }
         }
-        String resolvedBase;
+        String resolvedBase = null;
         try {
-            resolvedBase = resolveAgentBasePath(entity.getWorkspaceBasePath(), workspaceBase);
+            if (!hardScoped) {
+                resolvedBase = resolveAgentBasePath(entity.getWorkspaceBasePath(), workspaceBase);
+            }
         } catch (IllegalArgumentException e) {
             // Override violates the workspace-scoping rule (e.g. admin tried to
             // set an absolute path outside the workspace root). Fall back to
@@ -562,13 +648,22 @@ public class AgentGraphBuilder {
     StateGraphReActAgent buildReActAgent(AgentToolSet toolSet, ModelConfigEntity runtimeModel,
                                          int maxIter, Long agentId, SkillCatalogRenderer skillCatalogRenderer,
                                          PrefixBudgetPlan prefixBudgetPlan, Set<String> autoDemotedTools) {
+        return buildReActAgent(toolSet, runtimeModel, maxIter, agentId, skillCatalogRenderer,
+                prefixBudgetPlan, autoDemotedTools, false);
+    }
+
+    StateGraphReActAgent buildReActAgent(AgentToolSet toolSet, ModelConfigEntity runtimeModel,
+                                         int maxIter, Long agentId, SkillCatalogRenderer skillCatalogRenderer,
+                                         PrefixBudgetPlan prefixBudgetPlan, Set<String> autoDemotedTools,
+                                         boolean hardScoped) {
         ChatModel chatModel = buildRuntimeChatModel(runtimeModel);
         ChatClient chatClient = ChatClient.create(chatModel);
         String reasoningEffort = resolveReasoningEffortForModel(runtimeModel);
         CompiledGraph compiledGraph = buildReActGraph(toolSet, chatModel, maxIter, reasoningEffort,
-                runtimeModel, agentId, skillCatalogRenderer, prefixBudgetPlan, autoDemotedTools);
+                runtimeModel, agentId, skillCatalogRenderer, prefixBudgetPlan, autoDemotedTools,
+                hardScoped);
         return new StateGraphReActAgent(chatClient, conversationService, compiledGraph,
-                chatModel, conversationWindowManager, toolSet);
+                chatModel, hardScoped ? null : conversationWindowManager, toolSet);
     }
 
     StateGraphPlanExecuteAgent buildPlanExecuteAgent(AgentToolSet toolSet, ModelConfigEntity runtimeModel, int maxIter) {
@@ -908,12 +1003,25 @@ public class AgentGraphBuilder {
                                    String reasoningEffort, ModelConfigEntity primaryModelConfig,
                                    Long agentId, SkillCatalogRenderer skillCatalogRenderer,
                                    PrefixBudgetPlan prefixBudgetPlan, Set<String> autoDemotedTools) {
+        return buildReActGraph(toolSet, chatModel, maxIterations, reasoningEffort,
+                primaryModelConfig, agentId, skillCatalogRenderer, prefixBudgetPlan,
+                autoDemotedTools, false);
+    }
+
+    CompiledGraph buildReActGraph(AgentToolSet toolSet, ChatModel chatModel, int maxIterations,
+                                   String reasoningEffort, ModelConfigEntity primaryModelConfig,
+                                   Long agentId, SkillCatalogRenderer skillCatalogRenderer,
+                                   PrefixBudgetPlan prefixBudgetPlan, Set<String> autoDemotedTools,
+                                   boolean hardScoped) {
         try {
-            List<vip.mate.llm.failover.FallbackEntry> fallbackChain = buildFallbackChain(primaryModelConfig, agentId);
+            List<vip.mate.llm.failover.FallbackEntry> fallbackChain =
+                    HardScopedAgentPolicy.fallbackChain(hardScoped,
+                            () -> buildFallbackChain(primaryModelConfig, agentId));
             NodeStreamingChatHelper streamingHelper = new NodeStreamingChatHelper(
                     streamTracker, fallbackChain, llmCacheMetricsAggregator, providerHealthTracker,
                     primaryModelConfig != null ? primaryModelConfig.getProvider() : null,
                     providerPool);
+            streamingHelper.setSensitiveArgumentSideChannelsSuppressed(hardScoped);
             if (primaryModelConfig != null) {
                 // Feed "prompt too long" rejections back into the window resolver
                 // so the next turn budgets against the server-reported limit.
@@ -924,14 +1032,18 @@ public class AgentGraphBuilder {
             }
             ToolExecutionExecutor executor = new ToolExecutionExecutor(
                     toolSet, toolGuardService, approvalService, streamTracker,
-                    toolTimeoutProperties, toolResultStorage, toolConcurrencyRegistry,
+                    toolTimeoutProperties, hardScoped ? null : toolResultStorage,
+                    toolConcurrencyRegistry,
                     workspaceLookupCache, approvalGrantResolver);
+            executor.setSensitiveArgumentSideChannelsSuppressed(hardScoped);
             // Issue #46: enable skill-aware "Tool not found" hint so when the
             // LLM mis-calls a skill name as a tool, the response tells it
             // the right invocation pattern instead of a dead-end error.
-            executor.setSkillRuntimeService(skillRuntimeService);
-            executor.setUsageRecencyTracker(toolUsageRecencyTracker);
-            executor.setProgressContext(progressContext);
+            if (!hardScoped) {
+                executor.setSkillRuntimeService(skillRuntimeService);
+                executor.setUsageRecencyTracker(toolUsageRecencyTracker);
+                executor.setProgressContext(progressContext);
+            }
             // Optional: route child-agent denied-tool audit events through
             // the audit pipeline. Null when audit is not wired (legacy / test).
             if (auditEventService != null) {
@@ -952,26 +1064,33 @@ public class AgentGraphBuilder {
                     ? primaryModelConfig.getMaxTokens() : 0;
             ReasoningNode reasoningNode = new ReasoningNode(chatModel, toolSet, reasoningEffort,
                     supportsReasoningEffort,
-                    streamingHelper, conversationWindowManager, streamTracker,
-                    configuredMaxOutputTokens, wikiContextService,
-                    skillCatalogRenderer, toolDisclosureService, progressLedgerService);
+                    streamingHelper, hardScoped ? null : conversationWindowManager, streamTracker,
+                    configuredMaxOutputTokens, hardScoped ? null : wikiContextService,
+                    skillCatalogRenderer, hardScoped ? null : toolDisclosureService,
+                    hardScoped ? null : progressLedgerService);
             reasoningNode.setPrefixBudgetPlan(prefixBudgetPlan);
             reasoningNode.setAutoDemotedTools(autoDemotedTools);
+            reasoningNode.setAmbientContextEnabled(!hardScoped);
             // C4: wire the environment-notification registry so ReasoningNode
             // can drain pending MCP/skill events and inject them as a SystemMessage.
-            reasoningNode.setRunningConversationRegistry(runningConversationRegistry);
+            if (!hardScoped) {
+                reasoningNode.setRunningConversationRegistry(runningConversationRegistry);
+            }
             ActionNode actionNode = new ActionNode(executor, streamTracker);
             // B2/B5: wire optional collaborators so ActionNode can pin skill
             // constraints and auto-record tool completions into ProgressLedger.
             // Setter injection keeps the existing constructor signature stable
             // for tests that build ActionNode directly.
-            actionNode.setSkillRuntimeService(skillRuntimeService);
-            actionNode.setProgressLedgerService(progressLedgerService);
+            if (!hardScoped) {
+                actionNode.setSkillRuntimeService(skillRuntimeService);
+                actionNode.setProgressLedgerService(progressLedgerService);
+            }
             ObservationProcessor observationProcessor = new ObservationProcessor(graphObservationProperties);
             ObservationNode observationNode = new ObservationNode(observationProcessor, streamTracker);
             SummarizingNode summarizingNode = new SummarizingNode(chatModel, streamingHelper, streamTracker);
             LimitExceededNode limitExceededNode = new LimitExceededNode(
-                    chatModel, observationProcessor, streamingHelper, i18nService, progressLedgerService);
+                    chatModel, observationProcessor, streamingHelper, i18nService,
+                    hardScoped ? null : progressLedgerService);
             FinalAnswerNode finalAnswerNode = new FinalAnswerNode(generatedFileCache, markdownNormalizeEnabled);
 
             KeyStrategyFactory keyStrategyFactory = KeyStrategy.builder()
@@ -1128,7 +1247,7 @@ public class AgentGraphBuilder {
                                 // Same-turn activation: fall back to a DB lookup (gated on the
                                 // feature flag) so a goal the agent set THIS turn is evaluated now,
                                 // not only from the next message. See GoalEvaluationNode.resolveActiveGoal.
-                                boolean hasGoal = goalProperties.isEnabled()
+                                boolean hasGoal = !hardScoped && goalProperties.isEnabled()
                                         && GoalEvaluationNode.resolveActiveGoal(state, goalService).isPresent();
                                 boolean already = a.goalEvaluatedThisRun();
                                 return (hasGoal && !already)

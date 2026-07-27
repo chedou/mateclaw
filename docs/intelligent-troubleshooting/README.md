@@ -24,6 +24,8 @@
 - [证据源开放适配设计](./observability-abstraction-design.md) — D8：多平台 Observability Abstraction Layer。
   SOP 存平台无关意图，绑定放注册表、按 system+signal 路由、各适配器归一到 canonical 字段；观测云是首个适配器，
   Zabbix/Prometheus/日志平台可零改 SOP 插入。
+- [P3 证据源适配器运行说明](./evidence-adapter-runbook.md) — 当前 Java 实现的配置、状态语义与 T2 内网验收。
+- [P4 未命中路只读 Agent 运行手册](./agent-miss-path-runbook.md) — 专用 Agent、安全闸、默认关闭的启用顺序、验收与回滚。
 
 ### 交互原型与 MVP 工作台
 
@@ -125,7 +127,8 @@ P2 已让这条闭环具备工程恢复能力：包内静态页与 SQL migration
 状态可精确恢复，知识候选进入具备租约、确认与失败重试的事务 Outbox。`/readyz`、capabilities、503 错误 ID
 和日志关联已可用于本地运维定位；专项验证为 38 项测试通过（另含 7 个 subtests）。
 
-该竖切仍是开发态：观测云字段与阈值尚未联调核实，真实 Evidence/MCP 适配器与受控 LLM fallback 尚未接入，
+该竖切仍是开发态：观测云字段与阈值尚未联调核实，P3 开放适配器与 P4 只读 LLM miss-path
+工程链路已实现，但 `fixtureMode` 仍为 true、P4 默认关闭，尚待专用 Agent/ToolGuard 配置和真实演练。
 生产写执行器明确保持断开。
 
 清洗/质量闸门已落地，当前发现 3 个路由键对应多个业务上下文，且旧解析器已造成 103 处疑似
