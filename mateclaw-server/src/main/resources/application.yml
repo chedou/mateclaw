@@ -129,6 +129,47 @@ springdoc:
 
 # MateClaw 自定义配置
 mateclaw:
+  troubleshooting:
+    evidence:
+      # Evidence collection is fail-closed. Routes are explicit, while both
+      # concrete sources remain disabled until an operator opts in.
+      routes:
+        CSDP:
+          log_count: [guance, recorded-replay]
+          metric: [guance, recorded-replay]
+          trace: [guance, recorded-replay]
+      default-sources: []
+      guance:
+        enabled: ${MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED:false}
+        base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:}
+        api-key: ${MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY:}
+        allow-insecure-http: ${MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP:false}
+        query-path: /api/v1/df/query_data_v1
+        timeout: 5s
+        # Draft bindings only. Measurement names and canonical aliases remain
+        # unverified until T2 is completed against the CSDP intranet workspace.
+        bindings:
+          log_count:
+            namespace: L
+            summary: 错误码日志计数
+            query-template: "L::csdp_wechat_log:(count,trace_id) {service='{{service}}',error_code='{{error_code}}'} [{{window}}]"
+            field-aliases: {}
+          metric:
+            namespace: M
+            summary: Mongo 连接与慢查询水位
+            query-template: "M::mongodb:(reachable,connections_current,connections_available,slow_query_count,baseline_slow) {host='{{host}}'} [{{window}}]"
+            field-aliases:
+              op_slow_count: slow_query_count
+          trace:
+            namespace: T
+            summary: 失败调用链定位
+            query-template: "T::tracing:(failed_hop,status,duration_ms) {trace_id='{{trace_id}}'} [{{window}}]"
+            field-aliases:
+              resource: failed_hop
+              duration: duration_ms
+      recorded-replay:
+        enabled: ${MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED:false}
+        resource: classpath:/troubleshooting/evidence/recorded-replay-903001.json
   server:
     # Public base URL used to build absolute download links for tool-generated
     # files (e.g. https://mateclaw.example.com). Leave empty to fall back to the

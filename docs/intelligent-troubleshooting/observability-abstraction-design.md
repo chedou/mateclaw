@@ -90,7 +90,7 @@ class EvidenceSourceRouter:
 | signal_kind | canonical `observed` 字段 | 用于的判据（现 903001 fixture） |
 |---|---|---|
 | `log_count` | `count`, `trace_id` | `numeric_gte(count, 1)` → 确认发生 |
-| `metric`（mongo 可用性/连接） | `reachable`(bool), `connections_current`, `connections_available`, `slow_query_count` | `missing_or_lte` 可用性 / `ratio_of_sum_gt(current,available)` 连接打满 / `multiple_gt(slow,baseline)` 慢查询 |
+| `metric`（mongo 可用性/连接） | `reachable`(bool), `connections_current`, `connections_available`, `slow_query_count`, `baseline_slow` | `missing_or_lte` 可用性 / `ratio_of_sum_gt(current,available)` 连接打满 / `multiple_gt(slow,baseline)` 慢查询 |
 | `trace` | `failed_hop`(str), `status`, `duration_ms` | `contains_and_in(status,...)` 定位 DB 失败跳 |
 
 > `target` 的规范化字段（跨 signal 复用）：`service`、`error_code`、`host`、`metric`、`trace_id`、`window`。
@@ -107,8 +107,8 @@ bindings:
     query: "L::{{source}}:(error_code,trace_id) {service='{{service}}',error_code='{{error_code}}'} [{{window}}]"
     normalize: { count: "$.result.length", trace_id: "$.result[0].trace_id" }
   metric:
-    query: "M::mongodb:(connections_current,connections_available,slow_query_count) {host='{{host}}'} [{{window}}]"
-    normalize: { connections_current: "$.series.connections_current", ... , reachable: "$.series != null" }
+    query: "M::mongodb:(connections_current,connections_available,slow_query_count,baseline_slow) {host='{{host}}'} [{{window}}]"
+    normalize: { connections_current: "$.series.connections_current", baseline_slow: "$.series.baseline_slow", ... , reachable: "$.series != null" }
 ```
 ```yaml
 # bindings/zabbix.yaml —— 同样的 signal_kind，换平台绑定；SOP 完全不动
@@ -153,10 +153,14 @@ default:
 - 回归集跑在**归一化证据**上、**与来源无关**；一次真实 Guance 或 Zabbix 响应录制下来，既核实了该平台绑定、
   又成了跨平台可复用的回归资产。多平台不是额外负担，而是让"证明一次、到处复用"成立。
 
-## 九、待办（供接续）
+## 九、实施状态（2026-07-27）
 
-- [ ] 落 `EvidenceRequest` / `EvidenceSourceAdapter` / `EvidenceSourceRouter` 契约（models/ports）。
-- [ ] 把 903001 fixture 从 DQL 串迁到 意图 + guance 绑定。
-- [ ] 写 `RecordedReplayAdapter` + 一份 903001 录制样本 + 回归打分骨架。
-- [ ] 首个真实平台落地时补 GuanceAdapter；Zabbix 作为"第二平台"验证抽象是否真的零改 SOP。
-- [ ] `/readyz`、capabilities 汇总各源 `health` 与 per-binding `verification_status`。
+- [x] 落 `EvidenceRequest` / `EvidenceSourceAdapter` / `EvidenceSourceRouter` 契约（Java）。
+- [x] 903001 SOP 运行态使用平台无关 `EvidenceRequest`；Guance 草案绑定移入应用配置。
+- [x] 写 `RecordedReplayAdapter` + 一份脱敏 903001 样本，并锁定精确键匹配与失败降级测试。
+- [x] 写 `GuanceEvidenceAdapter`，按官方 query-data API 请求并归一响应；**内网字段/阈值仍待 T2 核实**。
+- [x] `GET /api/v1/troubleshooting/evidence/sources` 汇总源级 `health`，不暴露凭据和查询。
+- [ ] 用真实观测云完成 per-binding `verification_status`，并按需汇入全局 `/readyz`。
+- [ ] 增加 Zabbix 或其他第二平台，验证新增适配器确实不改 SOP 与判据。
+
+运行和验收步骤见 `evidence-adapter-runbook.md`。

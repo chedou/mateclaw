@@ -1,15 +1,21 @@
 package vip.mate.troubleshooting.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
+import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Intake seam for the deterministic hit path.
@@ -26,33 +32,52 @@ import java.util.List;
  *       fabricated diagnosis.</li>
  * </ul>
  *
- * <p>Evidence arrives from the caller for now. Read-only source adapters land
- * later, so nothing here may claim the evidence was collected and verified by
- * MateClaw — every diagnosis produced through this seam is marked
- * {@code fixtureMode}.</p>
+ * <p>Caller-provided evidence wins. Any SOP request that is absent or explicitly
+ * missing is offered to the read-only evidence router. Source failures become
+ * canonical {@code MISSING} evidence, preserving the existing abstention
+ * boundary. Until the 903001 bindings are live-verified, every diagnosis remains
+ * marked {@code fixtureMode}.</p>
  */
 @Service
 public class TroubleshootingIntakeService {
 
-    /** Until read-only source adapters exist, no evidence is MateClaw-verified. */
+    /** Remains true until the read-only bindings and thresholds are live-verified. */
     private static final boolean EVIDENCE_IS_FIXTURE = true;
 
     private final TroubleshootingSopPersistenceService sopPersistence;
     private final DeterministicDiagnosisService diagnosisService;
+    private final EvidenceSourceRouter evidenceRouter;
     private final Clock clock;
 
     public TroubleshootingIntakeService(
             TroubleshootingSopPersistenceService sopPersistence,
             DeterministicDiagnosisService diagnosisService) {
-        this(sopPersistence, diagnosisService, Clock.systemUTC());
+        this(sopPersistence, diagnosisService, null, Clock.systemUTC());
+    }
+
+    @Autowired
+    public TroubleshootingIntakeService(
+            TroubleshootingSopPersistenceService sopPersistence,
+            DeterministicDiagnosisService diagnosisService,
+            EvidenceSourceRouter evidenceRouter) {
+        this(sopPersistence, diagnosisService, evidenceRouter, Clock.systemUTC());
     }
 
     TroubleshootingIntakeService(
             TroubleshootingSopPersistenceService sopPersistence,
             DeterministicDiagnosisService diagnosisService,
             Clock clock) {
+        this(sopPersistence, diagnosisService, null, clock);
+    }
+
+    TroubleshootingIntakeService(
+            TroubleshootingSopPersistenceService sopPersistence,
+            DeterministicDiagnosisService diagnosisService,
+            EvidenceSourceRouter evidenceRouter,
+            Clock clock) {
         this.sopPersistence = sopPersistence;
         this.diagnosisService = diagnosisService;
+        this.evidenceRouter = evidenceRouter;
         this.clock = clock;
     }
 
@@ -81,14 +106,44 @@ public class TroubleshootingIntakeService {
                             + "; the miss path (read-only agent triage) is not wired yet");
         }
 
+        List<EvidenceResult> collectedEvidence = collectMissingEvidence(
+                sop, incident, evidence == null ? List.of() : evidence);
         return diagnosisService.diagnoseAndPersist(
                 workspaceId,
                 incident,
                 sop,
-                evidence == null ? List.of() : evidence,
+                collectedEvidence,
                 rehearsal,
                 EVIDENCE_IS_FIXTURE,
                 Instant.now(clock));
+    }
+
+    private List<EvidenceResult> collectMissingEvidence(
+            SopEntry sop,
+            IncidentContext incident,
+            List<EvidenceResult> supplied) {
+        if (evidenceRouter == null) {
+            return supplied;
+        }
+
+        Map<String, EvidenceResult> merged = new LinkedHashMap<>();
+        for (EvidenceResult result : supplied) {
+            if (merged.putIfAbsent(result.queryId(), result) != null) {
+                throw new IllegalArgumentException(
+                        "duplicate evidence queryId: " + result.queryId());
+            }
+        }
+        for (EvidenceRequest request : sop.evidenceRequests()) {
+            EvidenceResult current = merged.get(request.requestId());
+            if (current != null && current.status() != EvidenceStatus.MISSING) {
+                continue;
+            }
+            EvidenceResult collected = evidenceRouter.collect(request, incident);
+            if (current == null || collected.status() != EvidenceStatus.MISSING) {
+                merged.put(request.requestId(), collected);
+            }
+        }
+        return List.copyOf(merged.values());
     }
 
     private void requireDeterministicRouting(IncidentContext incident) {

@@ -6,8 +6,8 @@
 > 开工前必读：`CLAUDE.md` → `HANDOFF.md`（决策 D1–D8、四条红线、矛盾分析）→
 > `rfcs/intelligent-troubleshooting-design.md`（架构 + 源码索引）。
 >
-> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + 推导投影 + SOP 管理均已完成，
-> 排障域定向测试 **73 项**通过（连同飞书卡片域 88 项）。分支 `claude/intelligent-troubleshooting-design`。
+> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + 推导投影 + SOP 管理均已完成，
+> 排障域定向测试 **92 项**通过；应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
 
 ---
 
@@ -69,14 +69,15 @@
   `→approved`。状态流转是单向的（`candidate→approved→deprecated`），不能回退——
   approve 错了就 deprecate 后发新版，留下痕迹。
 - **放开 `fixtureMode`**：现在 `TroubleshootingIntakeService.EVIDENCE_IS_FIXTURE` 硬编码为 `true`。
-  **只有 T4（真实取证适配器）落地后才能改**，否则等于让调用方自称证据可信。
+  T4 工程链路已经落地，但**只有 T2 的真实字段/阈值核实与 T3 审核入库完成后才能改**；
+  “API 可达”不等于“证据语义可信”。
 
 ---
 
 ## 二、后端功能梯队
 
-### T4 · P3：D8 证据源适配器（观测云首个）
-- **为什么**：现在证据由调用方传入，平台自己不会取证。这是 `fixtureMode` 恒 true 的原因。
+### T4 · P3：D8 证据源适配器（观测云首个） 🟡 命中路底座完成，内网验证待 T2
+- **为什么**：此前证据只能由调用方传入；现在调用方证据仍优先，缺失的 SOP 请求会由平台只读补齐。
 - **架构已定**（RFC §6）：`EvidenceSourceAdapter` 接口 → 每平台一个实现 → `EvidenceSourceRouter`
   按 `(system, signal_kind)` 选源 → 归一到 canonical `observed` 字段。
 - **关键设计（别做错）**：**一份 adapter 两个调用方**——命中路由领域 service 直接 Java 调用（零 LLM），
@@ -84,8 +85,13 @@
   **不要写两套取证代码**，那会导致两条路看到不同的世界。
 - **fail-closed**：任何异常/超时 → `EvidenceResult(status=MISSING)`，不抛 500。
   上游会正确地把它当成"判据无法求值"（≠ 已排除）。
-- **完成标准**：`GuanceAdapter` 能取真实数据；`RecordedReplayAdapter` 能回放录制样本供离线回归；
-  `evidence/package-info.java` 的占位注释可以删掉了。
+- **已完成（2026-07-27）**：`EvidenceSourceAdapter` + `EvidenceSourceRouter`；
+  `GuanceEvidenceAdapter` 按官方 query-data API 发请求并归一 `series.columns/values`；
+  `RecordedReplayAdapter` + 脱敏 903001 三信号样本；主备降级、模板注入防护、配置装配、入口补证与
+  `GET /api/v1/troubleshooting/evidence/sources` 均有测试。默认两个数据源都关闭，源状态不暴露凭据。
+- **尚未完成的验收**：没有内网窗口，故尚未证明 `GuanceEvidenceAdapter` 对 903001
+  measurement/字段/阈值能取到真实数据；per-binding verification 与全局 `/readyz` 汇总也留待 T2。
+  运行说明见 `evidence-adapter-runbook.md`。
 
 ### T5 · P4：未命中路 ReAct agent（补旧缺口 G1）
 - **现状**：`RouteMode.LLM_FALLBACK` 枚举在，但没接线。未命中时 `TroubleshootingIntakeService`
@@ -139,7 +145,7 @@
 - **待补**：
   - [ ] SOP 管理界面（注册/浏览/promote，接 T3 那组 API）——**导入 146 码需要它**。
   - [ ] 知识候选审核界面（依赖 T6 定下审核工作流）。
-  - [ ] 证据的"重放查询"按钮（依赖 T4 真实适配器，现在按了也没真数据）。
+  - [ ] 证据的"重放查询"按钮（适配器已具备；仍依赖 T2 真实绑定核实与专用重查 API）。
 - **视觉基线**（照此，别另起炉灶）：冷调中性 + 单一信号蓝 `#2f5cf5`；
   语义色只在有意义处；**机器吐出的数据用等宽字体，人读叙述用无衬线**；
   统一描边 SVG 图标（不用 emoji）；支持浅/深双主题。
@@ -160,7 +166,7 @@
 
 | 现象 | 为什么是对的 |
 |---|---|
-| `fixtureMode` 恒 `true` | P3 取证适配器不存在，调用方无权声称证据已被平台核实 |
+| `fixtureMode` 恒 `true` | P3 工程链路已在，但 903001 绑定与阈值未完成 T2 内网核实，仍无权声称证据可信 |
 | 未注册错误码 → 409 | 这是**知识缺口**，不是诊断失败；编造诊断比报错危险 |
 | 无 error_code / SYMPTOM → 409 | 未命中路未接线，不假装能处理 |
 | 弃权时 `recommendedActions` 恒空 | 契约保证：不确定就不给恢复建议 |
@@ -198,7 +204,7 @@
 
 1. **如果你能拿到内网/owner 决策** → 走 T1 → T2 → T3，这是主要矛盾所在，
    其余都是在未验证的地基上加层。
-2. **如果只能做纯工程** → T4（取证适配器）最有价值，它直接解开 `fixtureMode` 这个死结；
-   其次 T9 的 SOP 管理界面（导入 146 码需要它）。
+2. **如果只能做纯工程** → T4 已完成；下一项优先 T9 的 SOP 管理界面（导入 146 码需要它），
+   或在进入 T5 前先把只读 agent 的工具白名单与安全测试设计清楚。
 3. **不建议现在做**：T7 出站卡片（等产品定"哪个群收什么"）、
    T8 放权阶梯（等 T1–T3 有真实数据才有意义）。

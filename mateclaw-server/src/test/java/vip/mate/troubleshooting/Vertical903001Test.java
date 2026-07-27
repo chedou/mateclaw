@@ -76,9 +76,10 @@ import static org.mockito.Mockito.when;
  * <p><b>What it does not cover.</b> Mappers are backed by in-memory maps rather
  * than a database, so this proves the domain composes — not that the SQL runs.
  * Schema and column mapping are covered by {@code TroubleshootingMigrationTest}
- * and the persistence unit tests. Evidence is still authored by hand, because
- * read-only source adapters do not exist yet; that is exactly why the pipeline
- * marks these diagnoses {@code fixtureMode}.</p>
+ * and the persistence unit tests. Evidence is authored by hand in this test so
+ * the domain slice stays deterministic; P3 adapters have their own contract
+ * tests, while the unverified 903001 bindings keep the pipeline in
+ * {@code fixtureMode}.</p>
  */
 class Vertical903001Test {
 

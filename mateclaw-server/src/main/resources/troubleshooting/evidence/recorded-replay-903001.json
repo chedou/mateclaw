@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "system": "CSDP",
+      "errorCode": "903001",
+      "service": "order-svc",
+      "requestId": "EV-1",
+      "signalKind": "log_count",
+      "namespace": "L",
+      "query": "recorded:903001/log-count",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：错误码日志计数",
+      "observed": {
+        "count": 148,
+        "trace_id": "synthetic-trace-903001"
+      },
+      "source": "recorded-replay:903001",
+      "collectedAt": "2026-07-20T09:12:03Z"
+    },
+    {
+      "system": "CSDP",
+      "errorCode": "903001",
+      "service": "order-svc",
+      "requestId": "EV-2",
+      "signalKind": "metric",
+      "namespace": "M",
+      "query": "recorded:903001/mongo-metrics",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：Mongo 连接与慢查询水位",
+      "observed": {
+        "reachable": true,
+        "connections_current": 3998,
+        "connections_available": 2,
+        "slow_query_count": 37,
+        "baseline_slow": 8
+      },
+      "source": "recorded-replay:903001",
+      "collectedAt": "2026-07-20T09:12:04Z"
+    },
+    {
+      "system": "CSDP",
+      "errorCode": "903001",
+      "service": "order-svc",
+      "requestId": "EV-3",
+      "signalKind": "trace",
+      "namespace": "T",
+      "query": "recorded:903001/trace",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：失败调用链定位",
+      "observed": {
+        "failed_hop": "mongo.find",
+        "status": "timeout",
+        "duration_ms": 3001
+      },
+      "source": "recorded-replay:903001",
+      "collectedAt": "2026-07-20T09:12:05Z"
+    }
+  ]
+}

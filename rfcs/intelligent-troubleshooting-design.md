@@ -1,6 +1,6 @@
 # IT 智能排障系统设计文档（on MateClaw）
 
-> 状态：草案 v1 · 逐条源码核对已合入
+> 状态：实施中 v1 · P0—P2 与 P3 命中路底座已落地，真实数据验证待 T1—T3
 > 作者：MateClaw Team
 > 首个落地域：CSDP 工单/客服链路
 > 关联 ISSUE：待创建（动工前在上游开 issue）
@@ -228,7 +228,11 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ## 11. 决策与待坐实点核对结论
 
-**D1–D8 全部兑现**：D1 命中路零 LLM 领域引擎（§1/§3）· D2 领域自建审核生命周期（§8）· D3 领域 Web 台 + IM/Web 双确认（§5）· D4 领域 service 自跑 + adapter 兼 ToolCallback（§2/§6）· D5 FeatureFlag×档位 + 影子回归（§10）· D6 capability 门控评审（§9）· D7 同 JAR 内领域包、逻辑不寄生 Workflow（§2）· D8 一份 adapter 两调用方 + Router + 归一（§6）。
+**D1–D8 均已锁定并完成源码可行性核对，但不是全部实现**：D1 命中路零 LLM 领域引擎已落（§1/§3）·
+D2 领域自建审核生命周期已落（§8）· D3 Web 台与生命周期 REST 已落，IM 出站仍待产品路由（§5）·
+D4 命中路领域 service 已落，adapter 复用为 ToolCallback 的未命中调用方待 P4（§2/§6）·
+D5 FeatureFlag×档位 + 影子回归待 P5（§10）· D6 capability 门控设计已映射（§9）·
+D7 同 JAR 内领域包、逻辑不寄生 Workflow 已落（§2）· D8 Router、归一与命中路调用方已落，第二调用方待 P4（§6）。
 
 **T1–T4 全部坐实**：T1 Trigger 无确定性分发路→接入自建 · T2 `FeishuCardDispatcher` 可插拔→注册 `ts.` card kind · T3 Wiki 结构化是 LLM 管道→只做知识面 · T4 单模块内新增 `vip.mate.troubleshooting` 兄弟包。
 
@@ -275,24 +279,26 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ### P1 · 接入与身份（打通安全入口）
 
-- [ ] 接入 controller：webhook + REST，自有幂等；**不走 Trigger**（可借用 `TriggerRateLimiter`/`BotSelfFilter` 作库）。
-- [ ] webhook 用 `auth/pat` 发受限 PAT 鉴权，堵伪造告警。
-- [ ] 新增 3 个 capability（`view/operate/manage:troubleshooting`）挂进 `RoleCapabilities`；领域端点逐个门控。
+- [x] 接入 controller：REST 报障入口 + 自有幂等；**不走 Trigger**。
+- [x] 告警源复用 `auth/pat` 的受限 PAT 鉴权，不新增旁路身份。
+- [x] 新增 3 个 capability（`view/operate/manage:troubleshooting`）挂进 `RoleCapabilities`；领域端点逐个门控。
 
 ### P2 · 交付与人工确认（红线落地）
 
-- [ ] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`，
+- [x] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`，
   以及始终返回 409 的 `/execute`）。
-- [ ] 注册领域 `FeishuCardKind`（前缀 `ts.`）+ `FeishuCardHandler`，按钮回调只打领域端点、推进状态机（**验证：执行 0 个工具**）。
-- [ ] R1/R2/R3 回归测试：写动作恒 `PENDING→APPROVED_NOT_EXECUTED`、`record-outcome` 登记外部处置、生产写执行器不在工具表。
+- [x] 注册领域 `FeishuCardKind`（前缀 `ts.`）+ `FeishuCardHandler`，按钮回调只打领域端点、推进状态机（**验证：执行 0 个工具**）；出站渲染仍待产品路由决策。
+- [x] R1/R2/R3 回归测试：写动作恒 `PENDING→APPROVED_NOT_EXECUTED`、`record-outcome` 登记外部处置、生产写执行器不在工具表。
 
 ### P3 · 证据源开放适配（D8）
 
-- [ ] `EvidenceSourceAdapter` 接口 + `EvidenceSourceRouter`（按 system+signal 选源，fail-closed 降级）。
-- [ ] 归一词汇表（先只定 903001 用到的 `log_count`/`metric`/`trace`）+ 绑定注册表（yaml/configJson）。
-- [ ] `GuanceAdapter`（首实现）；同一 adapter 方法加 `@Tool` 暴露为只读 ToolCallback。
-- [ ] `RecordedReplayAdapter` + 903001 录制样本 + 回归打分骨架。
-- [ ] `/readyz`、capabilities 汇总各源 `health` + per-binding `verification_status`。
+- [x] `EvidenceSourceAdapter` 接口 + `EvidenceSourceRouter`（按 system+signal 选源，fail-closed 降级）。
+- [x] 归一词汇表（先只定 903001 用到的 `log_count`/`metric`/`trace`）+ 应用配置绑定注册表。
+- [x] `GuanceEvidenceAdapter` 首实现（官方 query-data API 形状 + canonical 归一）；内网字段/阈值待 T2。
+- [ ] P4 接线时把同一个 adapter 能力暴露成只读 ToolCallback，不另写一套取证代码。
+- [x] `RecordedReplayAdapter` + 脱敏 903001 三信号样本 + 合同回归测试。
+- [x] `GET /api/v1/troubleshooting/evidence/sources` 汇总源级 `health`。
+- [ ] 真实联调后补 per-binding `verification_status`，并按需汇入全局 `/readyz`。
 
 ### P4 · 未命中路数字员工（补 G1）
 
@@ -325,21 +331,20 @@ Python MVP 的 `actor` 是请求体标签、不可信（缺口 G3，只能 loopb
 
 ### 14.1 当前阶段主要矛盾
 
-- **⭐ 主要矛盾**：[已验证的 P0 领域内核] vs [P1/P2 尚未接成可用竖切]。规则、状态机、持久化、Outbox
-  与幂等已落 Java；当前系统性质由「安全接入、身份门控、REST/工作台未连接」规定。解决 P1/P2 后，
-  知识质量与信任矛盾才会得到真实运行数据。
-- **性质**：非对抗性（工程演进矛盾）→ 分阶段实施、集中兵力，不搞两线作战。
-- **⚠️ 矛盾转化监控**：P0–P2 竖切跑通后，[知识质量 vs 自动化范围] 上升为主要矛盾——它是全过程的根本
-  天花板（只读可自动化 30/146≈21%），因此本设计从不承诺「上线即全自动」。若内网联调窗口先到，
-  临时优先核实 903001 真实取证。
+- **⭐ 主要矛盾**：[P0—P2 与 P3 命中路底座已通且可测] vs [尚未在真实数据上跑过一次]。规则、状态机、
+  持久化、工作台与只读证据适配底座均已落 Java；当前系统性质由「知识与数据尚未经过实践检验」规定。
+- **性质**：非对抗性，但已从工程演进转为实践检验；主战场是 T1 路由歧义裁决、T2 内网观测云核实、
+  T3 审核入库，不再靠继续堆功能解决。
+- **⚠️ 矛盾转化监控**：T1—T3 完成后，[知识质量 vs 自动化范围] 上升为主要矛盾——它是全过程的根本
+  天花板（只读可自动化 30/146≈21%），因此本设计从不承诺「上线即全自动」。
 
 ### 14.2 兵力部署
 
 | 方向 | 内容 | 原则 |
 |---|---|---|
-| **主攻** | P0 已完成；继续 P1→P2 顺序单点突破。验收 = 903001 fixture 竖切端到端 + 补齐 Python MVP 合同测试 | 集中兵力打歼灭战，竖切是根据地 |
-| **钳制/并行** | L0 数据 blocker（owner 裁决 + 回源表恢复）、内网联调窗口准备 | 依赖人力/环境，不占工程主力 |
-| **后续梯队** | P3 D8 适配器 → P4 未命中 agent → P5 放权阶梯 | 梯次投入，前一梯队验收后进场 |
+| **主攻** | T1 清路由歧义 → T2 核实 903001 真实证据 → T3 审核入库；P3 代码只作为承载底座 | 以真实数据验收，不用 fixture 冒充完成 |
+| **钳制/并行** | SOP 管理界面、内网联调运行手册与脱敏回归资产 | 不越过真实验证主线 |
+| **后续梯队** | P4 未命中只读 agent → P5 放权阶梯 | 梯次投入，前一梯队验收后进场 |
 | **底线（贯穿）** | §13 四条红线每 PR 自检 | 不随阶段转移 |
 
 ### 14.3 长期战线映射（持久战，与 §10 阶梯咬合）

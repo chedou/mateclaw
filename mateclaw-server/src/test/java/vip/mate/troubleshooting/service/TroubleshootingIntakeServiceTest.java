@@ -8,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
+import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -55,6 +56,9 @@ class TroubleshootingIntakeServiceTest {
     @Mock
     private DeterministicDiagnosisService diagnosisService;
 
+    @Mock
+    private EvidenceSourceRouter evidenceRouter;
+
     private TroubleshootingIntakeService intake;
 
     @BeforeEach
@@ -95,6 +99,46 @@ class TroubleshootingIntakeServiceTest {
         assertThat(fixtureMode.getValue())
                 .as("no read-only source adapter exists yet, so evidence cannot be presented as verified")
                 .isTrue();
+    }
+
+    @Test
+    void fillsAMissingSopRequestThroughTheReadOnlyEvidenceRouter() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(evidenceRouter.collect(sop.evidenceRequests().getFirst(), incident))
+                .thenReturn(evidence());
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
+
+        verify(evidenceRouter).collect(sop.evidenceRequests().getFirst(), incident);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW));
+    }
+
+    @Test
+    void keepsCallerEvidenceAndDoesNotCollectItAgain() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(evidence()), false);
+
+        verifyNoInteractions(evidenceRouter);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW));
     }
 
     @Test

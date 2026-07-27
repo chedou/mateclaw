@@ -1,8 +1,9 @@
 # HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
 > 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
-> 状态：架构已逐条源码核对通过并落 RFC；**P0 内核 + P1 接入身份 + P2 交付闭环已完成**
-> （2026-07-25/26），出站卡片推送与 903001 端到端联跑待收尾。
+> 状态：架构已逐条源码核对通过并落 RFC；**P0 内核 + P1 接入身份 + P2 交付闭环 +
+> P3 命中路证据适配底座已完成**（2026-07-25—27）。903001 观测云字段/阈值仍待内网 T2 核实，
+> 出站卡片推送未接。
 > 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
 > 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
@@ -13,18 +14,18 @@
 把故障处理从「人工翻系统 + 经验判断」升级为「告警/工单驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环」。
 首个域：CSDP 工单/客服链路。落法：**MateClaw-server 内的确定性领域模块 `vip.mate.troubleshooting`**。
 
-## 2. 八个已锁定决策（D1–D8，全部在 mateclaw 源码上核对兑现）
+## 2. 八个已锁定决策（D1–D8，已完成源码可行性核对；不等于全部实现）
 
 | # | 决策 | mateclaw 兑现（详见 RFC 对应节） |
 |---|---|---|
 | D1 | 确定性/AI 边界 =「(system,error_code) 命中？」 | 命中路=领域引擎零 LLM；Workflow 每步调 LLM 故不可承载（RFC §1/§3） |
 | D2 | 知识库可演进（candidate→approved→deprecated） | 领域表自建审核生命周期；Wiki 是 LLM 管道、永不做权威（RFC §8） |
-| D3 | API-first 故障上下文 Web 台 | 领域 Web 台 + IM/Web 双确认（RFC §5） |
-| D4 | 自建 orchestrator + 工具走 MCP/ToolCallback | 领域 service 自跑循环；adapter 兼 `@Tool`（RFC §3/§6） |
-| D5 | 影子 + 回归集 + 放权阶梯（写永不自动） | FeatureFlag(fail-closed)×per-system 档位 + 影子回归毕业（RFC §10） |
+| D3 | API-first 故障上下文 Web 台 | Web 台与生命周期 REST 已落；`ts.` 卡片处理器已注册，IM 出站路由待 T7（RFC §5） |
+| D4 | 自建 orchestrator + 工具走 MCP/ToolCallback | 命中路领域 service 已落；adapter 复用为只读 ToolCallback 的第二调用方待 P4（RFC §3/§6） |
+| D5 | 影子 + 回归集 + 放权阶梯（写永不自动） | 复用 FeatureFlag 的设计已锁定；per-system 档位与影子毕业待 P5（RFC §10） |
 | D6 | 知识运营（沉淀嵌入流程、专家才评审） | `manage:troubleshooting` capability 门控审核（RFC §9） |
 | D7 | 与平台产品一体、运行时隔离 | 单 JAR 内兄弟包、逻辑不寄生 Workflow（RFC §2） |
-| D8 | 证据源开放适配（OAL，观测云首适配器） | 一份 `EvidenceSourceAdapter` 两个调用方 + Router + 归一（RFC §6） |
+| D8 | 证据源开放适配（OAL，观测云首适配器） | Router、归一与命中路调用方已落；同一 adapter 的未命中调用方待 P4（RFC §6） |
 
 **信任工程五约束**（沿用）：①确定性优先（LLM 不生成恢复动作）②强制引用证据 ③结构化输出+校验闸门
 ④置信度校准+abstain ⑤上下文预算。
@@ -39,7 +40,7 @@
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
 **矛盾清单**（P2 完成后已再次转化，2026-07-26 三次刷新）：
-- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（56 项测试全绿，但 SOP 库是 fixture、
+- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（排障域 92 项测试全绿，但 SOP 库是 fixture、
   观测云未联调、无人真正用工作台处置过一次真故障）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
@@ -82,7 +83,7 @@
   排障域测试增至 **40 项**，连同 workspace 域回归共 153 项通过。
   三条诚实性约束已固化为测试：**未注册 SOP → 409 知识缺口**（不编造诊断）、
   **无 error_code / SYMPTOM → 409**（未命中路未接线，不假装能处理）、
-  **`fixtureMode` 恒 true**（P3 取证适配器未到位前，调用方不得声称证据已核实）。
+  **`fixtureMode` 恒 true**（P1 当时 P3 尚未到位；现在虽有 P3 工程链路，但 T2 未核实，仍不得声称证据可信）。
   webhook 鉴权**不需要新过滤器**：`JwtAuthFilter` 已按 `mc_` 前缀识别 PAT，告警源用受限 PAT 即成为正常主体。
 
 - **P2 交付与闭环**：`DiagnosisLifecycleService`（加载→状态机→乐观版本写回）+ 生命周期 REST
@@ -112,10 +113,20 @@
   候选队列只读，**因为 Outbox 的 status 是"发布"语义而非"审核"语义，混用会让投递重试伪装成审核通过**——
   候选审核工作流是尚未设计的增量，见 `TODO.md` T6。
 
+- **P3 D8 证据源适配工程链路已就绪**（2026-07-27）：`EvidenceSourceAdapter` +
+  `(system,signalKind)` 主备 `EvidenceSourceRouter` + `GuanceEvidenceAdapter` +
+  `RecordedReplayAdapter`。排障入口只为缺失请求取证，已有调用方证据不重复查；任何源异常、HTTP 错误、
+  畸形响应或模板不安全都 fail-closed 成 `MISSING`，继续沿用弃权且无恢复动作的红线。
+  Guance 使用官方 `POST /api/v1/df/query_data_v1` 和 `DF-API-KEY` 请求头；凭据不进日志/回放。
+  两个源默认关闭，随仓只有脱敏 903001 三信号样本；`GET /api/v1/troubleshooting/evidence/sources`
+  只报告源级 readiness。**未完成的部分仍是 T2：没有内网真实响应，因此 measurement、字段别名、阈值与
+  per-binding verification 均不能宣称已验证，`fixtureMode` 继续恒 true。**详见
+  `evidence-adapter-runbook.md`。
+
 **主攻与全部待办已独立成册**：见 **`docs/intelligent-troubleshooting/TODO.md`**
 （T1–T10，每条含「为什么/完成标准」、四条红线、诚实缺口清单、工程约定与建议接手顺序）。
-一句话概括：**主要矛盾仍是「接真实数据」**——T1 清路由键冲突、T2 内网核实观测云、
-T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入；纯工程可做的最高价值项是 T4（D8 取证适配器）。
+一句话概括：**主要矛盾仍是「接真实数据」**——T4 工程底座已拆掉代码阻塞，下一关键路径仍是
+T1 清路由键冲突、T2 内网核实观测云、T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入。
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
 - L0 数据 blocker：3 个路由键一码多义（101014/101034/101040）owner 裁决 + 103 处字符丢失回源表恢复
@@ -124,7 +135,7 @@ T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入；纯工�
   `«待核实»` 字段；
 - 903001 模式复制到其他高频码（901002/2000001/801008…backlog 见 `l0/inventory_report.md`）。
 
-**后续梯队**：P3 D8 适配器（Guance 首个 + RecordedReplay 回归）→ P4 未命中 ReAct agent（只读笼，补旧 G1）
+**后续梯队**：P3 D8 命中路底座已完成 → T2 内网验证 → P4 未命中 ReAct agent（只读笼，补旧 G1）
 → P5 放权阶梯 + 知识运营（覆盖率/可自动化率纳入考核）。
 
 ## 5.5 前端/页面设计（HTML 原型已收敛方向，Vue 工作台已落地）
@@ -161,7 +172,7 @@ HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `c
 
 **下一步（UI 线）**：
 - [ ] 定位链的**阶段划分**（现象/范围定位/取证/判定/根因）需与一线实际排障心智核对，可能微调。
-- [ ] 证据的"▷重放 DQL"要接 D8 真实适配器（P3）后才有真数据；当前是 fixture 演示。
+- [ ] 证据的"▷重放 DQL"已有 D8 适配器底座，但仍要完成 T2 真实绑定核实和专用重查 API；当前是 fixture 演示。
 - [ ] 原型里的"影响面/活体状态/在场签收"等维度是否全部进 MVP，按放权阶段裁剪。
 
 ## 6. 指针与安全口径
@@ -184,7 +195,7 @@ HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `c
   `l0/sop_kb.json` 已脱敏（Bearer/JWT→`<BEARER_TOKEN>`，查询/JSON token→`<TOKEN>`，IP/人名保留）。
   若把源表纳入版本管理，务必先脱敏 token；webonne/MetaClaw 的旧 Git 历史快照可能保留修复前 token，
   如确认属有效凭证应立即轮换；未经明确授权不擅自改写 Git 历史。
-- **纪律**：当前本地分支 `intelligent-troubleshooting-design`（原 PR 分支已合并并删除）；以用户当前明确选择的分支为准；
+- **纪律**：当前本地分支 `claude/intelligent-troubleshooting-design`；以用户当前明确选择的分支为准；
   不擅自开 PR；改 RFC 保持 § 编号连续；沿用仓库现有提交说明约定；不冒用未参与本轮工作的
   Co-Authored-By 身份。
 - **方法论 skills**：已迁至本仓库 `.claude/skills/`（矛盾分析/集中兵力/持久战/群众路线/批评与自我批评等，
