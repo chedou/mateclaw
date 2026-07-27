@@ -16,8 +16,10 @@
 > **「从观测云日志自动生成 SOP」**（T11/T12），因为那才是我们相对研发团队的差异化。
 > 详见 `meeting-change-plan.md`；新增战线见下面第三·五节 T11–T18。
 >
-> **P6 前置进度（2026-07-27）**：T12 的 `log_search` / `log_trace_bundle` 已完成
-> canonical schema、Guance 有界多行归一、显式路由与无错误码脱敏回放；真实 DQL/PS ID 贯通仍受 T2 阻塞。
+> **P6 进度（2026-07-27）**：T12 的 `log_search` / `log_trace_bundle` 已完成 canonical
+> schema、Guance 有界多行归一、显式路由与无错误码脱敏回放；T11 已完成前三步的只读预演
+> `log_search → PS ID → log_trace_bundle → 确定性调用链骨架`。模型归纳、candidate 入库、影子回放和
+> 真实 DQL/PS ID 贯通仍未完成；最后一项仍受 T2 内网窗口阻塞。
 
 ---
 
@@ -217,9 +219,16 @@
 - **做什么**：`SopSynthesisService`，五步——
   `log_search` 取样 → 抽 PS ID → `log_trace_bundle` 拉全链路 →
   **确定性压缩成调用链骨架** → 模型归纳出 `SopDraft` → **强制以 `candidate` 入库**。
+- **当前进度**：前三步已落地。`SopSynthesisService.preview()` 复用唯一 `EvidenceSourceRouter`，
+  `DeterministicLogTraceCompressor` 在任何模型之前生成有界骨架（服务跳序、相对时序、异常点、分服务耗时分布）；
+  `POST /api/v1/troubleshooting/sops/synthesis/preview` 只返回脱敏骨架与 evidence reference，
+  **不调模型、不创建 candidate、不返回原始日志包或 DQL**。随仓 P6 回放已证明无错误码案例可到
+  `READY_FOR_MODEL`；当前还会在查询前校验登记过的 fixture workspace/system/service，并把 Router 限制为
+  `recorded-replay`。模型归纳、SopDraft 确定性验证、candidate 入库、影子比对与 workspace→真实观测资产授权仍待完成。
 - **四条不可协商**：① 压缩必须在模型之前（否则 token 爆炸且模型会去干检索）；
   ② 只能落 `candidate`，D2 审核流程不允许被自动生成绕过；
-  ③ 入模型前整包过 `TroubleshootingSecretRedactor`；
+  ③ 原始日志包不得入模型；先做原始字符硬上限，再对全部模型可见字段过
+  `TroubleshootingSecretRedactor`，最后才截断和压缩；
   ④ 生成的 `RecommendedAction` 不得带执行语义。
 - **完成标准（会议指定，别换案例）**：**「会话消息发送失败」（无错误码）**跑通，
   生成的排查步骤与人工当时的解法一致；再补一条工程门槛——影子回放对历史 incident

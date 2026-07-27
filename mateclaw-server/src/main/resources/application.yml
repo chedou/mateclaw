@@ -152,6 +152,13 @@ mateclaw:
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
       default-sources: []
+      # The synthesis preview is fixture-only until a real workspace ->
+      # observability asset mapping exists. The service also hard-confines this
+      # path to recorded-replay before any adapter invocation.
+      synthesis-preview:
+        fixture-workspace-id: ${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}
+        fixture-services:
+          CSDP: [csdp-session-service]
       guance:
         enabled: ${MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED:false}
         base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:}

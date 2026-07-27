@@ -163,6 +163,10 @@ default:
 - [x] 写 `GuanceEvidenceAdapter`，按官方 query-data API 请求并归一响应；**内网字段/阈值仍待 T2 核实**。
 - [x] P6 前置：增加 `log_search` / `log_trace_bundle`，日志包校验请求/返回 PS ID、按时间排序、
   以溢出哨兵限行，DQL 留在适配器内；增加「会话消息发送失败」无错误码脱敏回放。
+- [x] T11 前三步：从回放/Guance 统一 Router 执行 `log_search → log_trace_bundle`，模型之前用
+  `DeterministicLogTraceCompressor` 压成有界调用链骨架；原始字符与 24h 时间窗均有硬上限，回放键精确绑定
+  search term / PS ID；只读 preview 不暴露原始日志/DQL，不调模型、不入库。该路径当前只允许显式登记的
+  fixture workspace/service，并在 Router 调用前硬限 `recorded-replay`；真实 Guance 放行依赖尚未实现的 workspace 资产映射。
 - [x] `GET /api/v1/troubleshooting/evidence/sources` 汇总源级 `health`，不暴露凭据和查询。
 - [ ] 用真实观测云完成 per-binding `verification_status`，并按需汇入全局 `/readyz`。
 - [ ] 增加 Zabbix 或其他第二平台，验证新增适配器确实不改 SOP 与判据。

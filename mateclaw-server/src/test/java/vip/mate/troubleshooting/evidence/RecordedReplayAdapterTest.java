@@ -194,9 +194,34 @@ class RecordedReplayAdapterTest {
         assertThat(adapter.collect(request("EV-1"), incident("903001")).observed())
                 .containsEntry("count", 148);
         assertThat(adapter.collect(
-                request("EV-P6-1", "log_search"),
+                request("SYNTH-LOG-SEARCH", "log_search"),
                 incident("csdp-session-service", null)).observed())
                 .containsEntry("ps_id", "synthetic-ps-message-send-001");
+    }
+
+    @Test
+    void bundledP6SearchReplayRequiresTheRecordedSearchTerm() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                CLOCK);
+        EvidenceRequest wrongKeyword = new EvidenceRequest(
+                "SYNTH-LOG-SEARCH",
+                "log_search",
+                "sample another scenario",
+                Map.of("search_term", "unrelated_safe_keyword"),
+                "-15m",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                wrongKeyword,
+                incident("csdp-session-service", null));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
     }
 
     private RecordedReplayAdapter adapter(String json) {

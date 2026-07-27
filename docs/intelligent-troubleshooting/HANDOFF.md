@@ -12,8 +12,10 @@
 > **2026-07 会议后方向已变**：主攻从"补 SOP 知识库"转为"**从观测云日志自动生成 SOP**"。
 > 先读 §2 的 **D1′** 与 §4.1 的矛盾再刷新，再读
 > `docs/intelligent-troubleshooting/meeting-change-plan.md`（变更方案 C1–C8）。
-> P6 前置切片已补 `log_search` / `log_trace_bundle` 的有界 canonical 契约、Guance 草案绑定和
-> 无错误码脱敏回放；PS ID 真实贯通与 DQL 字段仍必须在内网 T2 首先验证。
+> P6 已补 `log_search` / `log_trace_bundle` 的有界 canonical 契约、Guance 草案绑定和无错误码脱敏回放；
+> T11 前三步也已落 `SopSynthesisService.preview()` + 确定性调用链压缩。当前预演明确停在
+> `READY_FOR_MODEL`，不调模型、不入库 candidate；在 workspace→观测资产映射落地前，只允许登记过的
+> fixture workspace/service 且 Router 硬限 `recorded-replay`，不会调 Guance。PS ID 真实贯通与 DQL 字段仍必须在内网 T2 验证。
 
 ---
 

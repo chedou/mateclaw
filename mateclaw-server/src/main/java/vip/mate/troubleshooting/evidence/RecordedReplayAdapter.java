@@ -108,6 +108,12 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
                     required(item, "signalKind"));
             EvidenceStatus status = EvidenceStatus.valueOf(
                     requiredRaw(item, "status").toUpperCase(Locale.ROOT));
+            Map<String, String> expectedTarget = target(item.path("target"));
+            if ("log_search".equals(key.signalKind())
+                    && !expectedTarget.keySet().equals(java.util.Set.of("search_term"))) {
+                throw new IllegalArgumentException(
+                        "log_search replay record must bind search_term");
+            }
             Map<String, Object> canonicalObserved = observed(
                     item.path("observed"), objectMapper);
             if (status == EvidenceStatus.MISSING
@@ -120,6 +126,7 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
                     status,
                     item.path("summary").asText(""),
                     canonicalObserved,
+                    expectedTarget,
                     item.path("source").asText("recorded-replay"),
                     instant(item.path("collectedAt").asText(null)));
             if (loaded.putIfAbsent(key, value) != null) {
@@ -130,6 +137,13 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
     }
 
     private boolean matchesRequestTarget(EvidenceRequest request, ReplayRecord replay) {
+        for (Map.Entry<String, String> expected : replay.expectedTarget().entrySet()) {
+            Object actual = request.target().get(expected.getKey());
+            if (actual == null
+                    || !expected.getValue().equals(String.valueOf(actual).trim())) {
+                return false;
+            }
+        }
         if (!"log_trace_bundle".equals(normalize(request.signalKind()))) {
             return true;
         }
@@ -146,6 +160,27 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
             return Map.of();
         }
         return objectMapper.convertValue(node, LinkedHashMap.class);
+    }
+
+    private Map<String, String> target(JsonNode node) {
+        if (node.isMissingNode() || node.isNull()) {
+            return Map.of();
+        }
+        if (!node.isObject()) {
+            throw new IllegalArgumentException("replay target must be an object");
+        }
+        Map<String, String> target = new LinkedHashMap<>();
+        node.fields().forEachRemaining(field -> {
+            String key = field.getKey() == null ? "" : field.getKey().trim();
+            JsonNode valueNode = field.getValue();
+            String value = valueNode == null || !valueNode.isValueNode()
+                    ? ""
+                    : valueNode.asText("").trim();
+            if (key.isEmpty() || value.isEmpty() || target.putIfAbsent(key, value) != null) {
+                throw new IllegalArgumentException("replay target contains an invalid field");
+            }
+        });
+        return Map.copyOf(target);
     }
 
     private String required(JsonNode item, String field) {
@@ -193,6 +228,7 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
             EvidenceStatus status,
             String summary,
             Map<String, Object> observed,
+            Map<String, String> expectedTarget,
             String source,
             Instant collectedAt) {
     }

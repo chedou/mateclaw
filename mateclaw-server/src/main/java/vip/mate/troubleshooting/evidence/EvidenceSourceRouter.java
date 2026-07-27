@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Routes semantic evidence requests to explicitly configured read-only adapters. */
 public final class EvidenceSourceRouter {
@@ -34,15 +36,33 @@ public final class EvidenceSourceRouter {
 
     /** Collects one request, trying sources in configured order and never surfacing source failure. */
     public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
+        return collect(request, incident, null);
+    }
+
+    /**
+     * Collects from a caller-constrained subset of the configured route.
+     *
+     * <p>The allowlist is evaluated before adapter invocation. This is a
+     * security boundary for flows that are intentionally fixture-only and must
+     * never fall through to a live observability source.</p>
+     */
+    public EvidenceResult collect(
+            EvidenceRequest request,
+            IncidentContext incident,
+            Set<String> permittedPlatforms) {
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }
+        Set<String> permitted = normalizePermitted(permittedPlatforms);
         List<String> route = routeFor(incident.system(), request.signalKind());
         if (route.isEmpty()) {
             return missing(request, "router:unconfigured", "no evidence source route configured");
         }
 
         for (String sourceName : route) {
+            if (permitted != null && !permitted.contains(normalize(sourceName))) {
+                continue;
+            }
             EvidenceSourceAdapter adapter = adapters.get(normalize(sourceName));
             if (adapter == null || !supports(adapter, request.signalKind())) {
                 continue;
@@ -59,6 +79,16 @@ public final class EvidenceSourceRouter {
             }
         }
         return missing(request, "router:unavailable", "all configured evidence sources unavailable");
+    }
+
+    private Set<String> normalizePermitted(Set<String> permittedPlatforms) {
+        if (permittedPlatforms == null) {
+            return null;
+        }
+        return permittedPlatforms.stream()
+                .map(this::normalize)
+                .filter(value -> !value.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /** Snapshot used by health/capability endpoints without exposing credentials or query text. */

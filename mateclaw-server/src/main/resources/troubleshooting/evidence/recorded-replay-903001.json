@@ -59,8 +59,11 @@
     {
       "system": "CSDP",
       "service": "csdp-session-service",
-      "requestId": "EV-P6-1",
+      "requestId": "SYNTH-LOG-SEARCH",
       "signalKind": "log_search",
+      "target": {
+        "search_term": "message_send_failed"
+      },
       "namespace": "L",
       "query": "recorded:message-send-failed/log-search",
       "status": "ANOMALY",
@@ -76,8 +79,11 @@
     {
       "system": "CSDP",
       "service": "csdp-session-service",
-      "requestId": "EV-P6-2",
+      "requestId": "SYNTH-TRACE-BUNDLE",
       "signalKind": "log_trace_bundle",
+      "target": {
+        "ps_id": "synthetic-ps-message-send-001"
+      },
       "namespace": "L",
       "query": "recorded:message-send-failed/trace-bundle",
       "status": "ANOMALY",

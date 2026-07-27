@@ -95,7 +95,46 @@ MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 是所有适配器使用证据前的失败闭合闸门。不要改 SOP 判据来迁就平台。
 日志字符串在确定性诊断持久化前统一经过 `TroubleshootingSecretRedactor`，递归结构也不例外。
 
-## 4. 状态检查
+## 4. T11 只读合成预演
+
+以 workspace admin 调用。当前默认只登记 workspace `1` 的 `CSDP / csdp-session-service`：
+
+```http
+POST /api/v1/troubleshooting/sops/synthesis/preview
+X-Workspace-Id: 1
+Content-Type: application/json
+
+{
+  "system": "CSDP",
+  "service": "csdp-session-service",
+  "searchTerm": "message_send_failed",
+  "window": "-15m",
+  "occurredAt": "2026-07-20T09:13:00Z"
+}
+```
+
+该接口串起 `log_search → PS ID → log_trace_bundle`，然后在 Java 内确定性压缩为：
+
+- 去除连续重复后的服务跳序；
+- 以首条日志为 0 的相对时序；
+- 由 level 与失败词汇确定性标记的异常点；
+- 按服务聚合的耗时样本数 / min / max / average。
+
+压缩器最多接受 200 条 canonical 日志，模型可见 timeline 最多 64 条、单条 message 最多
+240 字符、服务跳转最多 64 次；所有异常点必须被保留，放不下时直接 409 失败关闭。
+为避免脱敏/压缩前的内存放大，原始单条 message 上限为 8192 字符，所有必需字符字段合计上限为
+128 Ki 字符；预检通过后，先在完整脱敏 message 上识别异常，最后才截成 240 字符。
+请求时间窗只允许 1 秒到 24 小时，超界、溢出或无法表示为 epoch millisecond 的时间均在访问数据源前返回 400。
+所有用户可见标识符必须同时通过白名单语法与 `TroubleshootingSecretRedactor` 不变性检查；疑似 token/密钥的值直接 400。
+返回仅含脱敏后的 skeleton 与 evidence reference，不含原始日志包、DQL 或凭据。
+
+当前 `stage=READY_FOR_MODEL` 的精确含义是「已完成模型输入前的确定性准备」，**不代表已调模型，
+也不代表已生成/入库 SOP candidate**。随仓「会话消息发送失败」回放可用于验证这一阶段；
+回放记录同时精确绑定 `log_search.search_term` 和 `log_trace_bundle.ps_id`，其他安全关键词不会误命中该样本。
+预览路径还会在调用适配器前把允许源硬限为 `recorded-replay`；即使 Guance 开关被打开，该接口也不会跨 workspace 查真实日志。
+真实观测云结果仍必须通过 T2，且只能在 workspace→system/service→观测资产映射已建立后才能放开。
+
+## 5. 状态检查
 
 登录后以 workspace viewer 身份调用：
 
@@ -112,7 +151,7 @@ GET /api/v1/troubleshooting/evidence/sources
 
 该接口不主动探测，不返回 Base URL、API Key 或 DQL 内容。
 
-## 5. T2 内网验收清单
+## 6. T2 内网验收清单
 
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。
 2. 用「会话消息发送失败」历史时间窗执行 `log_search → log_trace_bundle`，保存脱敏后的原始响应结构，
@@ -122,9 +161,10 @@ GET /api/v1/troubleshooting/evidence/sources
 5. 验证无数据、401/403、超时、5xx、超限、混合 PS ID 和响应结构变化都只生成 `MISSING`，
    HTTP 报障入口不返回 500。
 6. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。
-7. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T2/T3 完成后才讨论关闭 `fixtureMode`。
+7. 建立 workspace→system/service→观测资产映射并在 adapter 调用前强制校验，不允许只依赖前端传值。
+8. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T2/T3 完成后才讨论关闭 `fixtureMode`。
 
-## 6. 回归命令
+## 7. 回归命令
 
 ```bash
 JAVA_HOME=<JDK21> mvn -pl mateclaw-server -am \
