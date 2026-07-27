@@ -44,6 +44,9 @@ public class EvidenceProperties {
         private String summary = "";
         private String queryTemplate;
 
+        /** Maximum accepted rows; Guance receives one extra overflow sentinel row. */
+        private int maxRows = 200;
+
         /** Maps a source column name to the canonical field consumed by criteria. */
         private Map<String, String> fieldAliases = new LinkedHashMap<>();
     }

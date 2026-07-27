@@ -1,6 +1,8 @@
 # HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
-> 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
+> 供后续 AI / 工程师直接接续。先读仓库根 `CLAUDE.md`，再读本文件、
+> `meeting-change-plan.md` 与现行 `rfcs/intelligent-troubleshooting-architecture-v2.md`；
+> `rfcs/intelligent-troubleshooting-design.md` 仅作 v1 证据附录。
 > 状态：架构已逐条源码核对通过并落 RFC；**P0 内核 + P1 接入身份 + P2 交付闭环 +
 > P3 命中路证据适配底座 + P4 未命中路只读 Agent 工程链路已完成**（2026-07-25—27）。
 > P4 默认关闭、待专用 Agent 配置和实机演练；903001 观测云字段/阈值仍待内网 T2 核实，出站卡片推送未接。
@@ -10,6 +12,8 @@
 > **2026-07 会议后方向已变**：主攻从"补 SOP 知识库"转为"**从观测云日志自动生成 SOP**"。
 > 先读 §2 的 **D1′** 与 §4.1 的矛盾再刷新，再读
 > `docs/intelligent-troubleshooting/meeting-change-plan.md`（变更方案 C1–C8）。
+> P6 前置切片已补 `log_search` / `log_trace_bundle` 的有界 canonical 契约、Guance 草案绑定和
+> 无错误码脱敏回放；PS ID 真实贯通与 DQL 字段仍必须在内网 T2 首先验证。
 
 ---
 

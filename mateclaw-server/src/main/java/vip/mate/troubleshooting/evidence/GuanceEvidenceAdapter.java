@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +34,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private static final Pattern SAFE_VALUE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
     private static final Pattern WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
+    private static final int MAX_BOUND_ROWS = 500;
 
     private final EvidenceProperties.Guance config;
     private final ObjectMapper objectMapper;
@@ -75,7 +77,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         try {
             WindowRange window = window(request.window(), incident.occurredAt());
             String query = render(binding.getQueryTemplate(), request, incident, window.expression());
-            String body = requestBody(query, window);
+            String body = requestBody(query, window, binding);
             EvidenceHttpTransport.Response response = transport.postJson(
                     queryUri(),
                     Map.of(
@@ -88,13 +90,13 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             }
 
             Map<String, Object> observed = normalize(
-                    response.body(), binding, request.signalKind());
+                    response.body(), binding, request);
             if (observed.isEmpty()) {
                 return missing(request, "Guance returned no canonical evidence rows");
             }
             reachable.set(true);
             return new EvidenceResult(
-                    request.requestId(), namespace(binding), query, EvidenceStatus.NORMAL,
+                    request.requestId(), namespace(binding), "", EvidenceStatus.NORMAL,
                     summary(binding, request), observed,
                     "guance:" + normalizeKey(request.signalKind()), Instant.now(clock));
         } catch (InterruptedException interrupted) {
@@ -154,7 +156,9 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private boolean validBinding(String signalKind, EvidenceProperties.Binding binding) {
         if (!CanonicalEvidenceSchema.supports(signalKind)
                 || binding == null
-                || !present(binding.getQueryTemplate())) {
+                || !present(binding.getQueryTemplate())
+                || binding.getMaxRows() < 1
+                || binding.getMaxRows() > MAX_BOUND_ROWS) {
             return false;
         }
         Set<String> canonicalFields = CanonicalEvidenceSchema.fields(signalKind);
@@ -165,10 +169,14 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                         && canonicalFields.contains(entry.getValue()));
     }
 
-    private String requestBody(String query, WindowRange window) throws Exception {
+    private String requestBody(
+            String query,
+            WindowRange window,
+            EvidenceProperties.Binding binding) throws Exception {
         Map<String, Object> querySpec = new LinkedHashMap<>();
         querySpec.put("q", query);
         querySpec.put("timeRange", List.of(window.start().toEpochMilli(), window.end().toEpochMilli()));
+        querySpec.put("limit", binding.getMaxRows() + 1);
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("qtype", "dql");
         item.put("query", querySpec);
@@ -235,13 +243,14 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private Map<String, Object> normalize(
             String responseBody,
             EvidenceProperties.Binding binding,
-            String signalKind) throws Exception {
+            EvidenceRequest request) throws Exception {
+        String signalKind = request.signalKind();
         JsonNode root = objectMapper.readTree(responseBody);
         if (root.path("code").asInt(-1) != 200 || !root.path("success").asBoolean(false)) {
             return Map.of();
         }
 
-        List<Map<String, Object>> rows = new ArrayList<>();
+        List<JsonNode> populatedSeries = new ArrayList<>();
         JsonNode data = root.path("content").path("data");
         if (!data.isArray()) {
             return Map.of();
@@ -252,21 +261,24 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 continue;
             }
             for (JsonNode item : series) {
-                if (!hasRows(item)) {
-                    continue;
+                if (hasRows(item)) {
+                    populatedSeries.add(item);
                 }
-                Map<String, Object> row = latestCanonicalRow(item, binding, signalKind);
-                if (row.isEmpty()) {
-                    return Map.of();
-                }
-                rows.add(row);
             }
         }
-        if (rows.size() != 1
-                || !CanonicalEvidenceSchema.isValid(signalKind, rows.getFirst())) {
+        if (populatedSeries.size() != 1) {
             return Map.of();
         }
-        return rows.getFirst();
+        JsonNode series = populatedSeries.getFirst();
+        if (CanonicalEvidenceSchema.isRowSet(signalKind)) {
+            return normalizeRowSet(
+                    series, binding, signalKind, targetValue(request, "ps_id"));
+        }
+        if (series.path("values").size() > binding.getMaxRows()) {
+            return Map.of();
+        }
+        Map<String, Object> row = latestCanonicalRow(series, binding, signalKind);
+        return CanonicalEvidenceSchema.isValid(signalKind, row) ? row : Map.of();
     }
 
     private boolean hasRows(JsonNode series) {
@@ -288,6 +300,62 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             return Map.of();
         }
 
+        return canonicalRow(columns, row, binding, signalKind);
+    }
+
+    private Map<String, Object> normalizeRowSet(
+            JsonNode series,
+            EvidenceProperties.Binding binding,
+            String signalKind,
+            String expectedPsId) {
+        JsonNode columns = series.path("columns");
+        JsonNode values = series.path("values");
+        if (!columns.isArray()
+                || !values.isArray()
+                || values.isEmpty()
+                || values.size() > binding.getMaxRows()) {
+            return Map.of();
+        }
+
+        String psId = null;
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (JsonNode row : values) {
+            if (!row.isArray()) {
+                return Map.of();
+            }
+            Map<String, Object> canonical = canonicalRow(columns, row, binding, signalKind);
+            if (!CanonicalEvidenceSchema.isValidRow(signalKind, canonical)) {
+                return Map.of();
+            }
+            String rowPsId = String.valueOf(canonical.get("ps_id"));
+            if (psId != null && !psId.equals(rowPsId)) {
+                return Map.of();
+            }
+            psId = rowPsId;
+            Map<String, Object> entry = new LinkedHashMap<>(canonical);
+            entry.remove("ps_id");
+            entries.add(entry);
+        }
+        if (!present(expectedPsId) || !expectedPsId.equals(psId)) {
+            return Map.of();
+        }
+        entries.sort(Comparator
+                .comparing((Map<String, Object> entry) -> number(entry.get("timestamp")))
+                .thenComparing(entry -> String.valueOf(entry.get("service")))
+                .thenComparing(entry -> String.valueOf(entry.get("message"))));
+
+        Map<String, Object> observed = new LinkedHashMap<>();
+        observed.put("ps_id", psId);
+        observed.put("entries", List.copyOf(entries));
+        return CanonicalEvidenceSchema.isValid(signalKind, observed) ? observed : Map.of();
+    }
+
+    private Map<String, Object> canonicalRow(
+            JsonNode columns,
+            JsonNode row,
+            EvidenceProperties.Binding binding,
+            String signalKind) {
+
         Map<String, Object> observed = new LinkedHashMap<>();
         Map<String, String> aliases = binding.getFieldAliases() == null
                 ? Map.of()
@@ -295,9 +363,6 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         Set<String> canonicalFields = CanonicalEvidenceSchema.fields(signalKind);
         for (int index = 0; index < columns.size() && index < row.size(); index++) {
             String sourceField = columns.get(index).asText();
-            if ("time".equalsIgnoreCase(sourceField)) {
-                continue;
-            }
             String canonicalField = aliases.getOrDefault(sourceField, sourceField);
             if (!present(canonicalField)
                     || !canonicalFields.contains(canonicalField)
@@ -310,6 +375,15 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             }
         }
         return observed;
+    }
+
+    private BigDecimal number(Object value) {
+        return new BigDecimal(String.valueOf(value));
+    }
+
+    private String targetValue(EvidenceRequest request, String key) {
+        Object value = request.target().get(key);
+        return value == null ? null : String.valueOf(value).trim();
     }
 
     private JsonNode latestRow(JsonNode columns, JsonNode values) {

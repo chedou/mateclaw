@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.agent;
 
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.EvidenceRequest;
@@ -14,7 +15,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
 
 /**
  * Server-side capability session for the troubleshooting evidence tool.
@@ -25,9 +25,6 @@ import java.util.regex.Pattern;
  */
 @Component
 public final class TroubleshootingEvidenceSessionRegistry {
-
-    private static final Pattern SAFE_EVIDENCE_ID =
-            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
 
     private final EvidenceSourceRouter router;
     private final TroubleshootingAgentProperties properties;
@@ -99,12 +96,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
     }
 
     static boolean isSafeEvidenceId(String value) {
-        if (value == null) {
-            return false;
-        }
-        String candidate = value.trim();
-        return SAFE_EVIDENCE_ID.matcher(candidate).matches()
-                && candidate.equals(TroubleshootingSecretRedactor.redact(candidate));
+        return TroubleshootingEvidenceSanitizer.isSafeEvidenceId(value);
     }
 
     private static EvidenceResult withQueryId(EvidenceResult result, String queryId) {
@@ -139,20 +131,9 @@ public final class TroubleshootingEvidenceSessionRegistry {
                 List<EvidenceResult> suppliedEvidence) {
             this.workspaceId = workspaceId;
             this.incident = incident;
-            int redactedIndex = 1;
-            for (EvidenceResult result : suppliedEvidence == null
-                    ? List.<EvidenceResult>of() : suppliedEvidence) {
-                if (result == null) {
-                    throw new IllegalArgumentException("supplied evidence must not contain null");
-                }
-                EvidenceResult sanitized = TroubleshootingSecretRedactor.redact(result);
+            for (EvidenceResult sanitized
+                    : TroubleshootingEvidenceSanitizer.sanitize(suppliedEvidence)) {
                 String queryId = sanitized.queryId();
-                if (!isSafeEvidenceId(queryId)) {
-                    do {
-                        queryId = "supplied-redacted-" + redactedIndex++;
-                    } while (evidence.containsKey(queryId));
-                    sanitized = withQueryId(sanitized, queryId);
-                }
                 if (evidence.putIfAbsent(queryId, sanitized) != null) {
                     throw new IllegalArgumentException(
                             "duplicate evidence queryId: " + queryId);

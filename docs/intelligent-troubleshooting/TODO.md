@@ -15,6 +15,9 @@
 > **2026-07 会议后的方向调整**：主攻方向从"接真实数据补 SOP"前移到
 > **「从观测云日志自动生成 SOP」**（T11/T12），因为那才是我们相对研发团队的差异化。
 > 详见 `meeting-change-plan.md`；新增战线见下面第三·五节 T11–T18。
+>
+> **P6 前置进度（2026-07-27）**：T12 的 `log_search` / `log_trace_bundle` 已完成
+> canonical schema、Guance 有界多行归一、显式路由与无错误码脱敏回放；真实 DQL/PS ID 贯通仍受 T2 阻塞。
 
 ---
 
@@ -223,14 +226,17 @@
   能复现人工结论，不一致的样本逐条解释，**不允许调 prompt 调到看起来对为止**。
 
 ### T12 · 工具层扩 signalKind（**C2**，T11 的前置）
+- **当前进度**：`log_search` / `log_trace_bundle` 工程闭环已完成；日志包同一 PS ID 校验、
+  请求/返回 PS ID 一致性、时间排序、溢出哨兵限行、持久化前递归脱敏和无错误码回放均有测试；
+  DQL 不上泄 canonical 结果。其余四类未实现，两个 Guance 绑定也仍待 T2。
 - **落点**：全部在既有 `EvidenceSourceAdapter` / `EvidenceSourceRouter` 后面。
 - **新增**：`log_search`、`log_trace_bundle`、`interface_latency_rank`、
   `blast_radius_probe`（以上 `GuanceEvidenceAdapter`）、`k8s_workload_health`（新 `K8sEvidenceAdapter`）、
   `code_lookup`（新 `CodeSearchAdapter`）。
 - **红线**：**绝不给未命中路 Agent 挂第二个工具**。命中路直调 router、未命中路经
   `TroubleshootingEvidenceTool` 调同一个 router，新能力两边自动同时生效，R4 不被稀释。
-- **静默失败陷阱**：`CanonicalEvidenceSchema` 目前只声明了 `log_count`/`metric`/`trace`。
-  新 signalKind **必须同步声明字段与类型**，否则返回值被判 `MISSING` → 判据 `UNEVALUATED`，
+- **静默失败陷阱**：`CanonicalEvidenceSchema` 已补 `log_search` / `log_trace_bundle`；后续新增的
+  四类 signalKind **仍必须同步声明字段与类型**，否则返回值被判 `MISSING` → 判据 `UNEVALUATED`，
   表现为"什么都查不出来"却不报任何错。
 - **`code_lookup` 边界**：只读、仓库白名单、返回片段过 `TroubleshootingSecretRedactor`。
 

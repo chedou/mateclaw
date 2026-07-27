@@ -73,6 +73,189 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void normalizesALogSearchSampleWithoutRequiringAnErrorCode() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {
+                    "data": [{
+                      "series": [{
+                        "columns": ["time", "total", "trace", "sample"],
+                        "values": [[1753434723000, 4, "synthetic-ps-001", "message send failed"]]
+                      }]
+                    }]
+                  }
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "场景关键词日志取样",
+                "L::session-log:(count,ps_id,message) {service='{{service}}' AND "
+                        + "(error_code='{{search_term}}' OR message=~'{{search_term}}')} [{{window}}]",
+                Map.of(
+                        "total", "match_count",
+                        "trace", "ps_id",
+                        "sample", "sample_message"),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_search", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-P6-1", "log_search", "sample logs",
+                Map.of("search_term", "message_send_failed"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.source()).isEqualTo("guance:log_search");
+        assertThat(result.query()).isEmpty();
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "match_count", 4,
+                "ps_id", "synthetic-ps-001",
+                "sample_message", "message send failed"));
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("limit").asInt()).isEqualTo(2);
+        assertThat(query.path("q").asText())
+                .contains("error_code='message_send_failed'")
+                .contains("message=~'message_send_failed'");
+    }
+
+    @Test
+    void normalizesAndChronologicallyOrdersABoundedLogTraceBundle() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {
+                    "data": [{
+                      "series": [{
+                        "columns": ["time", "trace", "svc", "severity", "content", "elapsed"],
+                        "values": [
+                          [1753434723042, "synthetic-ps-001", "session-state", "ERROR", "concurrent write rejected", 42],
+                          [1753434723000, "synthetic-ps-001", "session-api", "INFO", "message accepted", null]
+                        ]
+                      }]
+                    }]
+                  }
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "PS ID 全链路日志包",
+                "L::session-log:(ps_id,service,status,message,duration_ms) {ps_id='{{ps_id}}'} [{{window}}]",
+                Map.of(
+                        "time", "timestamp",
+                        "trace", "ps_id",
+                        "svc", "service",
+                        "severity", "level",
+                        "content", "message",
+                        "elapsed", "duration_ms"),
+                2);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-P6-2", "log_trace_bundle", "collect trace logs",
+                Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.source()).isEqualTo("guance:log_trace_bundle");
+        assertThat(result.query()).isEmpty();
+        assertThat(result.observed()).containsEntry("ps_id", "synthetic-ps-001");
+        assertThat(result.observed().get("entries")).isEqualTo(List.of(
+                Map.of(
+                        "timestamp", 1753434723000L,
+                        "service", "session-api",
+                        "level", "INFO",
+                        "message", "message accepted"),
+                Map.of(
+                        "timestamp", 1753434723042L,
+                        "service", "session-state",
+                        "level", "ERROR",
+                        "message", "concurrent write rejected",
+                        "duration_ms", 42)));
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("limit").asInt()).isEqualTo(3);
+    }
+
+    @Test
+    void rejectsALogTraceBundleForADifferentPsId() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "trace", "svc", "severity", "content"],
+                    "values": [[1, "different-ps", "session-api", "ERROR", "wrong request"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "PS ID 全链路日志包",
+                "L::session-log:(ps_id,service,status,message) {ps_id='{{ps_id}}'} [{{window}}]",
+                Map.of(
+                        "time", "timestamp",
+                        "trace", "ps_id",
+                        "svc", "service",
+                        "severity", "level",
+                        "content", "message"),
+                2);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-P6-2", "log_trace_bundle", "collect trace logs",
+                Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void failsClosedWhenALogTraceBundleExceedsItsConfiguredBound() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "trace", "svc", "severity", "content"],
+                    "values": [
+                      [1, "synthetic-ps-001", "one", "INFO", "one"],
+                      [2, "synthetic-ps-001", "two", "INFO", "two"],
+                      [3, "synthetic-ps-001", "three", "ERROR", "three"]
+                    ]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "PS ID 全链路日志包",
+                "L::session-log:(ps_id,service,status,message) {ps_id='{{ps_id}}'} [{{window}}]",
+                Map.of(
+                        "time", "timestamp",
+                        "trace", "ps_id",
+                        "svc", "service",
+                        "severity", "level",
+                        "content", "message"),
+                2);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-P6-2", "log_trace_bundle", "collect trace logs",
+                Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
     void failsClosedOnAnHttpError() {
         CapturingTransport transport = new CapturingTransport(503, "upstream unavailable");
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
@@ -182,6 +365,34 @@ class GuanceEvidenceAdapterTest {
         return config;
     }
 
+    private EvidenceProperties.Guance guanceConfig(
+            String signalKind,
+            EvidenceProperties.Binding binding) {
+        EvidenceProperties.Guance config = new EvidenceProperties.Guance();
+        config.setEnabled(true);
+        config.setBaseUrl("https://guance.example");
+        config.setApiKey("secret-key");
+        config.setQueryPath("/api/v1/df/query_data_v1");
+        config.setTimeout(Duration.ofSeconds(3));
+        config.setBindings(Map.of(signalKind, binding));
+        return config;
+    }
+
+    private EvidenceProperties.Binding binding(
+            String namespace,
+            String summary,
+            String queryTemplate,
+            Map<String, String> aliases,
+            int maxRows) {
+        EvidenceProperties.Binding binding = new EvidenceProperties.Binding();
+        binding.setNamespace(namespace);
+        binding.setSummary(summary);
+        binding.setQueryTemplate(queryTemplate);
+        binding.setFieldAliases(aliases);
+        binding.setMaxRows(maxRows);
+        return binding;
+    }
+
     private EvidenceRequest request(String window) {
         return new EvidenceRequest(
                 "EV-1", "log_count", "confirm",
@@ -197,6 +408,13 @@ class GuanceEvidenceAdapterTest {
                 "inc-1", "CSDP", service, "903001", "订单创建超时",
                 "P0", "订单创建成功率下降", "7f3a91c", NOW, "21:18",
                 "alert_webhook", IncidentCompleteness.STRUCTURED, "code=903001");
+    }
+
+    private IncidentContext incidentWithoutErrorCode() {
+        return new IncidentContext(
+                "inc-p6", "CSDP", "csdp-session-service", null, "会话消息发送失败",
+                "P1", "会话消息发送受阻", null, NOW, "18:00",
+                "manual", IncidentCompleteness.SYMPTOM, "客户发送消息失败");
     }
 
     private static final class CapturingTransport implements EvidenceHttpTransport {

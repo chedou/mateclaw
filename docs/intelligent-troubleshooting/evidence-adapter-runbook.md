@@ -1,6 +1,7 @@
 # P3 证据源适配器运行说明
 
-> 状态（2026-07-27）：**工程链路已实现，903001 观测云绑定尚未在内网核实。**
+> 状态（2026-07-27）：**工程链路已实现；P6 前置的 `log_search` / `log_trace_bundle`
+> 已具备 schema、路由、Guance 草案绑定与脱敏回放。所有观测云绑定仍未在内网核实。**
 > 因此 `fixtureMode` 仍为 `true`，默认数据源均关闭，不能把当前结果表述为“真实取证已验证”。
 
 ## 1. 已落地的链路
@@ -35,6 +36,12 @@ route miss
 - 全部失败时返回 `EvidenceStatus.MISSING`；必需证据缺失会触发现有 abstain 逻辑，不输出恢复动作。
 - 取证默认强制 `https`；仅可信隔离测试网可显式允许 `http`。模板值使用保守字符白名单，阻止告警载荷拼成任意 DQL。
 - Guance 与 replay 共用代码内的 canonical schema；缺列、错类型、多 series 或无法判定最新时间点均按畸形响应降级。
+- `log_search.target.search_term` 接受经场景映射后的安全错误码或关键词，同时匹配结构化
+  `error_code` 和日志 `message`；不直接插入任意原始报障文本。
+- `log_trace_bundle` 只接受同一 PS ID 的单个 series，且返回 PS ID 必须与请求目标相等，再按时间升序归一。
+  Guance `query.limit` 取 `max-rows + 1` 作为溢出哨兵，本地只接受不超过 `max-rows` 的结果；
+  因此被截断的日志包不会被误当成完整链路。
+- 渲染后的 DQL 只留在适配器内发给 Guance，不写入 canonical `EvidenceResult.query`，避免平台方言上泄。
 - 没有注册任何生产写工具，命中路径仍然是确定性 Java，LLM 调用数为 0。
 - P4 只注册一个只读取证工具；即使直接调用该工具，没有活动 triage 会话也只会返回 `MISSING`。
 
@@ -42,10 +49,11 @@ route miss
 
 默认配置在 `mateclaw-server/src/main/resources/application.yml`：
 
-- `routes.CSDP.{log_count,metric,trace}`：顺序为 `guance → recorded-replay`；
+- `routes.CSDP.{log_count,log_search,log_trace_bundle,metric,trace}`：顺序为
+  `guance → recorded-replay`；
 - `default-sources: []`：其他系统没有显式路由时不会猜数据源；
 - Guance 与 replay 都默认 `enabled=false`；
-- Guance 的三个查询模板是**未核实草案**，measurement、返回列和阈值都要经过 T2。
+- Guance 的五个查询模板是**未核实草案**，measurement、返回列和阈值都要经过 T2。
 
 启用观测云前，在部署环境设置：
 
@@ -69,18 +77,23 @@ MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统注入>
 MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 ```
 
-随仓样本只含合成的 `order-svc / 903001 / synthetic-trace-903001`，用于回归合同，不代表生产事实。
+随仓样本包含合成的 `order-svc / 903001 / synthetic-trace-903001`，以及无错误码的
+`csdp-session-service / 会话消息发送失败 / synthetic-ps-message-send-001`。回放键允许
+`errorCode` 缺省，二者都只用于回归合同，不代表生产事实。
 
 ## 3. canonical 字段
 
 | `signalKind` | `EvidenceResult.observed` 字段 |
 |---|---|
 | `log_count` | `count`, `trace_id` |
+| `log_search` | `match_count`, `ps_id`, `sample_message` |
+| `log_trace_bundle` | `ps_id`, `entries[]`；条目必含 `timestamp`, `service`, `level`, `message`，可含 `duration_ms` |
 | `metric` | `reachable`, `connections_current`, `connections_available`, `slow_query_count`, `baseline_slow` |
 | `trace` | `failed_hop`, `status`, `duration_ms` |
 
 平台返回列与上述字段不同，在 `field-aliases` 中维护“源字段 → canonical 字段”；代码内共享 schema
 是所有适配器使用证据前的失败闭合闸门。不要改 SOP 判据来迁就平台。
+日志字符串在确定性诊断持久化前统一经过 `TroubleshootingSecretRedactor`，递归结构也不例外。
 
 ## 4. 状态检查
 
@@ -101,11 +114,15 @@ GET /api/v1/troubleshooting/evidence/sources
 
 ## 5. T2 内网验收清单
 
-1. 用 903001 历史时间窗逐条执行 `log_count / metric / trace`，保存脱敏后的原始响应结构。
-2. 核对 measurement、过滤 tag、返回列与 `field-aliases`，保证 canonical 字段都有值且类型正确。
-3. 验证无数据、401/403、超时、5xx、响应结构变化都只生成 `MISSING`，HTTP 报障入口不返回 500。
-4. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。
-5. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T2/T3 完成后才讨论关闭 `fixtureMode`。
+1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。
+2. 用「会话消息发送失败」历史时间窗执行 `log_search → log_trace_bundle`，保存脱敏后的原始响应结构，
+   核对 `max-rows`、排序和多服务覆盖是否符合预期。
+3. 用 903001 历史时间窗逐条执行 `log_count / metric / trace`，保存脱敏后的原始响应结构。
+4. 核对 measurement、过滤 tag、返回列与 `field-aliases`，保证 canonical 字段都有值且类型正确。
+5. 验证无数据、401/403、超时、5xx、超限、混合 PS ID 和响应结构变化都只生成 `MISSING`，
+   HTTP 报障入口不返回 500。
+6. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。
+7. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T2/T3 完成后才讨论关闭 `fixtureMode`。
 
 ## 6. 回归命令
 
@@ -116,4 +133,4 @@ JAVA_HOME=<JDK21> mvn -pl mateclaw-server -am \
 ```
 
 适配层重点测试：`EvidenceSourceRouterTest`、`GuanceEvidenceAdapterTest`、
-`RecordedReplayAdapterTest`、`TroubleshootingIntakeServiceTest`。
+`RecordedReplayAdapterTest`、`CanonicalEvidenceSchemaTest`、`TroubleshootingIntakeServiceTest`。

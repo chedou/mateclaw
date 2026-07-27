@@ -100,7 +100,83 @@ class RecordedReplayAdapterTest {
     }
 
     @Test
-    void bundled903001CatalogContainsAllThreeCanonicalSignalKinds() {
+    void replaysABoundedLogBundleForAnIncidentWithoutAnErrorCode() {
+        RecordedReplayAdapter adapter = adapter("""
+                {
+                  "version": 1,
+                  "records": [{
+                    "system": "CSDP",
+                    "service": "csdp-session-service",
+                    "requestId": "EV-P6-2",
+                    "signalKind": "log_trace_bundle",
+                    "namespace": "L",
+                    "query": "recorded:message-send-failed/trace-bundle",
+                    "status": "ANOMALY",
+                    "summary": "脱敏回放：PS ID 全链路日志包",
+                    "observed": {
+                      "ps_id": "synthetic-ps-message-send-001",
+                      "entries": [{
+                        "timestamp": 1753434723000,
+                        "service": "session-api",
+                        "level": "ERROR",
+                        "message": "message send failed"
+                      }]
+                    },
+                    "source": "recorded-replay:message-send-failed",
+                    "collectedAt": "2026-07-20T09:12:03Z"
+                  }]
+                }
+                """);
+
+        EvidenceResult result = adapter.collect(
+                request("EV-P6-2", "log_trace_bundle"),
+                incident("csdp-session-service", null));
+
+        assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.READY);
+        assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(result.observed())
+                .containsEntry("ps_id", "synthetic-ps-message-send-001")
+                .containsKey("entries");
+    }
+
+    @Test
+    void refusesToReplayALogBundleForADifferentRequestedPsId() {
+        RecordedReplayAdapter adapter = adapter("""
+                {
+                  "version": 1,
+                  "records": [{
+                    "system": "CSDP",
+                    "service": "csdp-session-service",
+                    "requestId": "EV-P6-2",
+                    "signalKind": "log_trace_bundle",
+                    "namespace": "L",
+                    "status": "ANOMALY",
+                    "observed": {
+                      "ps_id": "recorded-ps",
+                      "entries": [{
+                        "timestamp": 1753434723000,
+                        "service": "session-api",
+                        "level": "ERROR",
+                        "message": "message send failed"
+                      }]
+                    }
+                  }]
+                }
+                """);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-P6-2", "log_trace_bundle", "confirm",
+                Map.of("ps_id", "requested-ps"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(
+                request,
+                incident("csdp-session-service", null));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.source()).isEqualTo("recorded-replay:missing");
+    }
+
+    @Test
+    void bundledCatalogContainsThe903001AndP6CanonicalSignalKinds() {
         EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
         config.setEnabled(true);
         RecordedReplayAdapter adapter = new RecordedReplayAdapter(
@@ -113,8 +189,14 @@ class RecordedReplayAdapterTest {
         assertThat(adapter.supports("log_count")).isTrue();
         assertThat(adapter.supports("metric")).isTrue();
         assertThat(adapter.supports("trace")).isTrue();
+        assertThat(adapter.supports("log_search")).isTrue();
+        assertThat(adapter.supports("log_trace_bundle")).isTrue();
         assertThat(adapter.collect(request("EV-1"), incident("903001")).observed())
                 .containsEntry("count", 148);
+        assertThat(adapter.collect(
+                request("EV-P6-1", "log_search"),
+                incident("csdp-session-service", null)).observed())
+                .containsEntry("ps_id", "synthetic-ps-message-send-001");
     }
 
     private RecordedReplayAdapter adapter(String json) {
@@ -128,14 +210,27 @@ class RecordedReplayAdapterTest {
     }
 
     private EvidenceRequest request(String requestId) {
+        return request(requestId, "log_count");
+    }
+
+    private EvidenceRequest request(String requestId, String signalKind) {
+        Map<String, Object> target = switch (signalKind) {
+            case "log_search" -> Map.of("search_term", "message_send_failed");
+            case "log_trace_bundle" -> Map.of("ps_id", "synthetic-ps-message-send-001");
+            default -> Map.of("service", "order-svc", "error_code", "903001");
+        };
         return new EvidenceRequest(
-                requestId, "log_count", "confirm",
-                Map.of("service", "order-svc", "error_code", "903001"), "-15m", true);
+                requestId, signalKind, "confirm",
+                target, "-15m", true);
     }
 
     private IncidentContext incident(String errorCode) {
+        return incident("order-svc", errorCode);
+    }
+
+    private IncidentContext incident(String service, String errorCode) {
         return new IncidentContext(
-                "inc-1", "CSDP", "order-svc", errorCode, "订单创建超时",
+                "inc-1", "CSDP", service, errorCode, "订单创建超时",
                 "P0", "订单创建成功率下降", "7f3a91c", NOW, "21:18",
                 "alert_webhook", IncidentCompleteness.STRUCTURED, "code=" + errorCode);
     }
