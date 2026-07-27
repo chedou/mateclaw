@@ -225,13 +225,13 @@
 
   <!-- 现行主推 -->
   <section>
-    <div class="sechd"><h2>现行主推</h2><span class="sc" id="sc1"></span><span class="sd">最新设计 · 建议汇报重点看这两屏</span></div>
+    <div class="sechd"><h2>现行主推</h2><span class="sc" id="sc1"></span><span class="sd">唯一现行详情页 + 值班总览，汇报看这两屏</span></div>
     <div class="grid two" id="g-now"></div>
   </section>
 
   <!-- 处置页设计演进 -->
   <section>
-    <div class="sechd"><h2>处置页 · 设计演进</h2><span class="sc" id="sc2"></span><span class="sd">保留迭代过程，展示设计思路的收敛</span></div>
+    <div class="sechd"><h2>处置页 · 设计演进</h2><span class="sc" id="sc2"></span><span class="sd">保留迭代过程；均已归档，不再作为实现依据</span></div>
     <div class="grid" id="g-iter"></div>
   </section>
 
@@ -251,7 +251,7 @@
 
   <footer><div class="fin">
     <span>设计原型 · 均为单文件、浏览器直接打开</span><span class="mono">·</span>
-    <span>现行架构见 <span class="mono">rfcs/intelligent-troubleshooting-design.md</span></span><span class="mono">·</span>
+    <span>现行架构见 <span class="mono">rfcs/intelligent-troubleshooting-architecture-v2.md</span></span><span class="mono">·</span>
     <span>会话记忆见 <span class="mono">docs/intelligent-troubleshooting/HANDOFF.md</span></span>
   </div></footer>
 </div>
@@ -285,10 +285,12 @@ function card(c){
     </div></a>`;
 }
 const NOW=[
-  {t:"根因定位视图",d:"详情页看单事件从现象到根因的阶段：答案先行 + 收敛漏斗 + 五阶段定位链（证据与 DQL 可展开重放）。命中路 2 秒定位，未命中路半程移交开发。",f:"console-rca.html",icon:"target",thumb:"t-rca",tag:"now",tagT:"最新 · 主推"},
-  {t:"值班总览看板",d:"所有活跃故障按处置阶段铺开：系统自动的列褪到背景、等人的列高亮，卡片显示阶段滞留时长，顶部主动喊出瓶颈。点卡片下钻到定位视图。",f:"console-overview.html",icon:"board",thumb:"t-over",tag:"now",tagT:"最新 · 主推"},
+  {t:"诊断详情 · 唯一现行设计",d:"三层深度、默认只展开第一层：① 结论（问题描述 · 影响面 · 怎么办，给服务经理和业务）；② 判定链（为什么是这个结论，给开发，折叠）；③ 运行细节（给审计，折叠）。含命中 / 无错误码场景 / 单客户排除三种形态。",f:"console-detail.html",icon:"target",thumb:"t-rca",tag:"now",tagT:"唯一现行"},
+  {t:"值班总览看板",d:"所有活跃故障按处置阶段铺开：系统自动的列褪到背景、等人的列高亮，卡片显示阶段滞留时长，顶部主动喊出瓶颈。点卡片下钻到详情页。",f:"console-overview.html",icon:"board",thumb:"t-over",tag:"now",tagT:"现行"},
 ];
 const ITER=[
+  {t:"根因定位视图（已归档）",d:"收敛漏斗 + 五阶段定位链 + 证据抽屉。方向被采纳，但结构过重，已由「唯一现行设计」简化取代。",f:"console-rca.html",icon:"target",thumb:"t-iter",tag:"iter",tagT:"迭代 v4"},
+  {t:"诊断详情 v5 · 契约对齐（已归档）",d:"第一次按真实契约重做：判据代入算式、三态区分。信息层级仍按契约字段排序，已被三层结构取代。",f:"console-diagnosis-detail.html",icon:"layers",thumb:"t-iter",tag:"iter",tagT:"迭代 v5"},
   {t:"处置页 v1 · 信息陈列",d:"三栏布局：左上下文 / 中状态机流水线 / 右证据面板。命中与未命中同页按状态切换。设计起点。",f:"console-disposition.html",icon:"grid",thumb:"t-iter",tag:"iter",tagT:"迭代 v1"},
   {t:"处置页 v2 · 决策中心",d:"把 Diagnosis 提为常驻英雄区，流水线降为进度带；加 SLA 时钟、置信阈值参照、证据按杠杆排序、批准前强制复核。",f:"console-disposition-v2.html",icon:"spark",thumb:"t-iter",tag:"iter",tagT:"迭代 v2"},
   {t:"处置页 v3 · 注意力自适应",d:"同一控制台三种姿态：高影响确认 / 自动驾驶 / 调查工作台。补影响面、活体状态、拆解式置信、时间线、异议一等公民。",f:"console-disposition-v3.html",icon:"layers",thumb:"t-iter",tag:"iter",tagT:"迭代 v3"},
@@ -306,10 +308,10 @@ document.getElementById('g-now').innerHTML=NOW.map(card).join('');
 document.getElementById('g-iter').innerHTML=ITER.map(card).join('');
 document.getElementById('g-doc').innerHTML=DOC.map(card).join('');
 document.getElementById('g-arch').innerHTML=ARCH.map(card).join('');
-document.getElementById('sc1').textContent='02';document.getElementById('sc2').textContent='03';
+document.getElementById('sc1').textContent='02';document.getElementById('sc2').textContent='05';
 document.getElementById('sc3').textContent='02';document.getElementById('sc4').textContent='03';
 document.getElementById('thread-h').innerHTML=ic('route',16)+' 设计主线 · 四次迭代如何收敛到「根因定位」';
-document.getElementById('redline').innerHTML=ic('shield')+'<div class="rt"><b>贯穿全程的安全底线（汇报可强调）：</b>命中路零 LLM；生产写工具永不注册；人工确认只推进状态机、系统不执行任何写操作；未命中路 agent 工具绑定锁死只读。设计与源码逐条核对，见 <span class="mono">rfcs/intelligent-troubleshooting-design.md §5 / §12</span>。</div>';
+document.getElementById('redline').innerHTML=ic('shield')+'<div class="rt"><b>贯穿全程的安全底线（汇报可强调）：</b>命中路零 LLM；生产写工具永不注册；人工确认只推进状态机、系统不执行任何写操作；未命中路 agent 工具绑定锁死只读。设计与源码逐条核对，见 <span class="mono">rfcs/intelligent-troubleshooting-architecture-v2.md §10</span>。</div>';
 
 // theme toggle
 const tb=document.getElementById('tb');

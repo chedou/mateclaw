@@ -4,11 +4,17 @@
 > 因为这个项目里大部分坑不是不会写代码，而是不知道某个看似合理的做法会破坏哪条red line。
 >
 > 开工前必读：`CLAUDE.md` → `HANDOFF.md`（决策 D1–D8、四条红线、矛盾分析）→
-> `rfcs/intelligent-troubleshooting-design.md`（架构 + 源码索引）。
+> **`meeting-change-plan.md`（会议驱动的变更方案 C1–C8，决定了下一阶段做什么）** →
+> **`rfcs/intelligent-troubleshooting-architecture-v2.md`（现行架构，第一性原理重做）** →
+> `rfcs/intelligent-troubleshooting-design.md`（v1，仅作证据附录：红线论证 §5 + 源码索引 §12）。
 >
 > 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + P4 未命中路只读 Agent
 > 工程链路 + 推导投影 + SOP 管理 API/Vue 均已完成；P4 默认关闭、待专用 Agent 配置与实机演练。
 > 定向回归与应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
+>
+> **2026-07 会议后的方向调整**：主攻方向从"接真实数据补 SOP"前移到
+> **「从观测云日志自动生成 SOP」**（T11/T12），因为那才是我们相对研发团队的差异化。
+> 详见 `meeting-change-plan.md`；新增战线见下面第三·五节 T11–T18。
 
 ---
 
@@ -39,7 +45,7 @@
 代码闭环已通且可测，但**从未在真实数据上跑过一次**。SOP 库是 fixture、观测云未联调。
 再往下堆功能都是在未验证的地基上加层。这三件事都需要**人的介入**，AI 单独做不了：
 
-### T1 · 清理 L0 三个路由键冲突 🔴 阻塞项
+### T1 · 清理 L0 三个路由键冲突 🟡 **降级**：只阻塞错误码类 SOP
 - **问题**：`101014` / `101034` / `101040` 在源表里一码对应多个业务上下文，
   与 D1「`(system,error_code)` 唯一路由」的前提冲突。
 - **为什么必须先解决**：路由键冲突时 `register` 会 fail-closed 抛 409。这是**故意的**——
@@ -48,6 +54,8 @@
 - **怎么做**：需 owner 裁决拆分口径（拆成不同 service？还是加二级判别字段？），
   详见 `l0/quality_report.md`。**这是人的决策，不是技术问题。**
 - **完成标准**：三个冲突码各自有明确唯一的路由键，清洗器不再报 blocker。
+- **会议后的降级说明**：场景类 SOP（慢接口 / 系统挂）根本不带错误码，走 `scenario:` 路由键，
+  不受这三个冲突影响。所以 T1 **不再阻塞 T11/T12 的主攻方向**，只阻塞错误码类 SOP 的批量入库。
 
 ### T2 · 内网核实观测云字段与阈值 🔴 阻塞项
 - **问题**：`l0/activated/903001.md` 里的 `evidence_dql` / `anomaly_criteria` 标着 `«待核实»`。
@@ -57,6 +65,10 @@
 - **怎么做**：需内网窗口（`*.prd.sangfor.com`，DF-API-KEY 鉴权）。
 - **完成标准**：903001 的每个 `EvidenceRequest` 都能在真实观测云取到数，
   字段名与 `AnomalyCriterion` 引用的一致，阈值经过真实数据验证。
+- **会议后扩大范围（优先级最高的一条）**：拿到内网窗口时，**第一件事是验证 PS ID 是否全链路贯通**
+  ——同一次请求跨服务的日志能否靠 PS ID 串起来。T11 整条流水线以此为前提，不通就得换方案。
+  其次再验 C2 新增的 signalKind（`log_search` / `log_trace_bundle` / `interface_latency_rank` /
+  `blast_radius_probe`）各自的 DQL 与字段。
 
 ### T3 · 真实 SOP 入库并放开 fixtureMode
 - **前置**：T1、T2 完成。
@@ -147,9 +159,10 @@
 - **两个障碍**：
   1. 平台的 `FeishuCardRenderer` 接口签名是 `render(ApprovalNotice)`——是 tool-guard 的形状，
      渲染不了诊断。当前注册的 renderer 是**故意会抛异常**的，防止有人误接后送出误导性卡片。
-  2. **"哪个群收哪个系统的故障"这个绑定尚未设计**——这是产品决策，不是技术问题。
-- **建议做法**：per-system 配置表（与 T9 的 `delegation_stage` 同一张表），
-  避免再造一套配置机制。
+  2. ~~**"哪个群收哪个系统的故障"这个绑定尚未设计**~~ —— **会议已给答案**：
+     接收方就是**报障那条会话所在的群**，闭环时**自动 @ 原报障人**。不需要 per-system 映射表，
+     只需要在报障入站时记下会话来源（群 id + 报障人 externalId），闭环时原路回。
+- **随之变化**：出站的第一目标从飞书改为**企业微信**（见 T15），飞书出站沿用同一投影。
 - **红线**：卡片上**只放"确认"**。批准生产写和关闭归档要留在工作台——
   卡片摘要不足以支撑这两个决定。
 
@@ -186,6 +199,90 @@
 - 原型里的"影响面/活体状态/在场签收"等维度是否全进 MVP，按放权阶段裁剪。
 - **注意**：`IncidentContext.impact` 目前只是**一个字符串**，原型里那些
   "148 工单/12 大客户/扩散中"的结构化影响面**并不存在**，要做得先扩契约。
+  → 会议已把这件事变成硬需求（业务视图要"功能影响 + 影响人数"），见 **T13**。
+
+---
+
+## 三·五、会议新增战线（T11–T18）
+
+来源：`meeting-change-plan.md`（会议纪要 → 变更方案 C1–C8）。**动手前先读那份文档的 §二**——
+它写清了为什么友商的"执行 SOP 自愈"我们不做。
+
+### T11 · 日志 → SOP 自动生成流水线（**C3；本轮最高优先**）
+- **为什么最优先**：这是我们相对研发团队的**唯一差异化**（我们有观测云全量日志）。
+  只做错误码匹配，会议原话是"傻瓜似的、算人工的"，拿不出去。
+- **做什么**：`SopSynthesisService`，五步——
+  `log_search` 取样 → 抽 PS ID → `log_trace_bundle` 拉全链路 →
+  **确定性压缩成调用链骨架** → 模型归纳出 `SopDraft` → **强制以 `candidate` 入库**。
+- **四条不可协商**：① 压缩必须在模型之前（否则 token 爆炸且模型会去干检索）；
+  ② 只能落 `candidate`，D2 审核流程不允许被自动生成绕过；
+  ③ 入模型前整包过 `TroubleshootingSecretRedactor`；
+  ④ 生成的 `RecommendedAction` 不得带执行语义。
+- **完成标准（会议指定，别换案例）**：**「会话消息发送失败」（无错误码）**跑通，
+  生成的排查步骤与人工当时的解法一致；再补一条工程门槛——影子回放对历史 incident
+  能复现人工结论，不一致的样本逐条解释，**不允许调 prompt 调到看起来对为止**。
+
+### T12 · 工具层扩 signalKind（**C2**，T11 的前置）
+- **落点**：全部在既有 `EvidenceSourceAdapter` / `EvidenceSourceRouter` 后面。
+- **新增**：`log_search`、`log_trace_bundle`、`interface_latency_rank`、
+  `blast_radius_probe`（以上 `GuanceEvidenceAdapter`）、`k8s_workload_health`（新 `K8sEvidenceAdapter`）、
+  `code_lookup`（新 `CodeSearchAdapter`）。
+- **红线**：**绝不给未命中路 Agent 挂第二个工具**。命中路直调 router、未命中路经
+  `TroubleshootingEvidenceTool` 调同一个 router，新能力两边自动同时生效，R4 不被稀释。
+- **静默失败陷阱**：`CanonicalEvidenceSchema` 目前只声明了 `log_count`/`metric`/`trace`。
+  新 signalKind **必须同步声明字段与类型**，否则返回值被判 `MISSING` → 判据 `UNEVALUATED`，
+  表现为"什么都查不出来"却不报任何错。
+- **`code_lookup` 边界**：只读、仓库白名单、返回片段过 `TroubleshootingSecretRedactor`。
+
+### T13 · 爆炸半径成为一等公民 + 兜底路由（**C4**，契约 v1.4）
+- `IncidentContext.impact: String` → `IncidentImpact(functionScope, affectedCustomers,
+  affectedUsers, BlastRadius, note)`；`BlastRadius { SINGLE_CUSTOMER, MULTI_CUSTOMER, SYSTEM_WIDE, UNKNOWN }`。
+- **路由顺序照会议原话：先批量、后单客户。** 先跑 `blast_radius_probe`；
+  批量 → 进 `scenario:system_down`；单客户且他人正常 → 输出**排除法**结论。
+- **诚实约束**：排除法结论 confidence **不得高于 MEDIUM**，且必须标明是"排除"不是"定位"；
+  对应判据是 `CriterionOutcome.EXCLUDED`，**绝不能**和 `UNEVALUATED` 混显。
+- **明确不做**：浏览器兼容性定位（会议自己承认分析不出来），只做到"系统侧无异常"。
+
+### T14 · 故障分类标签，按类兑现不同承诺（**C5**，契约 v1.4，与 T13 合并一次迁移 V174）
+- `FaultClass { CODE_BUG, DATA_FIX, BUSINESS_OPERATION, EXTERNAL_CLIENT, INFRASTRUCTURE }`，
+  加到 `Diagnosis`，并**改变输出形态而不只是加个标签**：
+  `CODE_BUG` **只给定位**（类/方法 + 代码片段 + 证据链），不给解决方案、不给恢复动作；
+  `DATA_FIX`/`BUSINESS_OPERATION` 才给建议动作（仍是建议，执行在 MateClaw 之外）。
+- 自动生成的 candidate 必须带 `faultClass`，审核时人要核这一栏。
+
+### T15 · 企微接入 + 服务经理闭环（**C6**）
+- 群机器人「数字化服务平台智能小助手」，@ 触发 → **领域 webhook（PAT 鉴权）**。
+  **不能走 Trigger 引擎**：`targetType` 只有 agent|workflow，而 workflow 每步调 LLM。
+- 新增状态 `AWAITING_INPUT`：信息不足（缺客户 ID / 截图 / 视频）→ 回帖索要 → 补齐后继续；
+  复用已有的 `IncidentCompleteness`。附件只存引用与元数据，**视频不做内容解析**。
+- 闭环复用 `close` + `record-outcome`；出站原路回群并 @ 原报障人。
+- **身份 fail-closed**：企微 userid → `ExternalIdentityEntity{provider="wecom"}`，
+  未绑定即拒绝，与飞书 `CardOperatorResolver` 同一规则。
+
+### T16 · 三类 SOP + 路由键泛化（**C1**，含 D1′ 修订）
+- `SopKind { ERROR_CODE, SCENARIO, GENERIC }`；sealed `RouteKey`：
+  `code:{system}:{errorCode}` / `scenario:{system}:{scenarioKey}` / `generic:{system}`。
+  `SopEntry.errorCode` 从必填改为"ERROR_CODE 类必填"。V174 加 `kind` / `scenario_key` 两列并回填。
+- **分诊两段式**：先确定性场景匹配器（症状关键词 + service + 指标特征），
+  匹配不到再用受限分诊模型，**输出被强制约束在 `scenarioKey` 枚举内**，选不中就落未命中路。
+- **D1′（必须同步写进 `HANDOFF.md`）**：零 LLM 的边界从"整条命中路径"收敛到"**判定链**"。
+  分诊可以用模型，但模型**只能选路、不能下结论**；命中之后取证→判据→规则→结论仍全程零 LLM。
+  这是会议带来的**唯一一次安全边界让步**，不要顺手扩大解释。
+- 先交付两个 playbook：`slow_interface`、`system_down`。
+
+### T17 · 双受众渲染 + 展示层冻结（**C7**，小改）
+- 业务视图（默认）：问题描述 / 影响面（功能影响 + 影响人数）/ 解决方案或定位结论。
+  开发视图：判定链**默认折叠**、一键展开。
+- 改动量小：`DiagnosisDerivation` 与 `DerivationChain.vue` 已经把难的部分做完了，
+  只需加 `BusinessSummary` 投影 + 前端折叠。
+- **同时执行会议的减法**：会议原话"我感觉现在做这个东西太花哨了"。
+  `console-*.html` 原型**不再加新版本**，只留作汇报。"再做一版页面"在本轮排期外。
+
+### T18 · 错误码注册表只读查询 + 缺码提示（**C8 的域内部分**）
+- 只做两件事：① 错误码注册表只读查询（分配时去重）；
+  ② 从诊断闭环反推 `missing_error_code_hint`，作为知识候选产出，由人带去代码仓改。
+- **明确不做：不在本仓自动改代码、不自动提 PR。** 代码变更是最强的生产变更，
+  同 R1/R3 的精神。
 
 ---
 
@@ -233,9 +330,16 @@
 
 ## 六、建议的接手顺序
 
-1. **如果你能拿到内网/owner 决策** → 走 T1 → T2 → T3，这是主要矛盾所在，
-   其余都是在未验证的地基上加层。
-2. **如果只能做纯工程** → T4/T5 代码与 T9 的 SOP 管理、fallback 展示已完成；可进入 T6 审核工作流设计。
-   若具备运行环境，则优先按 runbook 完成 P4 专用 Agent 配置与 miss-path 实机演练，但不要提前解除默认开关。
-3. **不建议现在做**：T7 出站卡片（等产品定"哪个群收什么"）、
-   T8 放权阶梯（等 T1–T3 有真实数据才有意义）。
+**会议后的顺序（覆盖旧顺序）：**
+
+1. **拿到内网窗口时，第一件事是 T2 里那条新增的**：验证 **PS ID 是否全链路贯通**。
+   T11 整条流水线以此为前提，不通就得先换方案，别先写代码。
+2. **主攻**：T12（工具层扩 signalKind）→ T11（日志→SOP 自动生成）→
+   跑通「会话消息发送失败」这一个案例。**这是本轮唯一要证明的事。**
+3. **接着**：T16（三类 SOP + D1′）→ T13 + T14（契约 v1.4，一次迁移）→ T15 + T17。
+4. **只做错误码类 SOP 批量入库时才需要**：T1 → T3。
+5. **不建议现在做**：T8 放权阶梯（等真实数据）、T18（价值密度低）、
+   任何新的展示层原型（会议明确叫停）。
+
+（旧顺序里"T1→T2→T3 是主要矛盾"的判断已被会议修正：T1 只阻塞错误码类，
+主要矛盾转移到"能不能从日志自动生成 SOP"。）
