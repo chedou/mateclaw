@@ -1578,3 +1578,207 @@ export const docsApi = {
   content: (lang: string, slug: string) =>
     http.get<DocContent>('/docs/content', { params: { lang, slug } }),
 }
+
+// ==================== Troubleshooting ====================
+
+/** Mirrors vip.mate.troubleshooting.model.* — keep in step with the Java contract. */
+export type DiagnosisStatus =
+  | 'READY_FOR_HUMAN'
+  | 'NEEDS_INVESTIGATION'
+  | 'CONFIRMED'
+  | 'TRANSFERRED'
+  | 'CLOSED'
+export type RouteMode = 'DETERMINISTIC' | 'LLM_FALLBACK'
+/** Three levels, not a score: a deterministic rule engine cannot calibrate a probability. */
+export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW'
+export type EvidenceStatus = 'NORMAL' | 'ANOMALY' | 'MISSING'
+export type ActionType = 'AUTO_READONLY' | 'HUMAN_CONTACT' | 'MANUAL_UNKNOWN' | 'MANUAL_WRITE'
+export type ApprovalStatus = 'NOT_REQUIRED' | 'PENDING' | 'APPROVED_NOT_EXECUTED'
+export type ExecutionStatus = 'COMPLETED' | 'PENDING' | 'BLOCKED' | 'NOT_APPLICABLE'
+export type ActionOutcomeStatus = 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
+export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' | 'UNRESOLVED'
+export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
+
+export interface IncidentContext {
+  incidentId: string
+  system: string
+  service: string
+  errorCode: string | null
+  title: string
+  severity: string
+  impact: string
+  traceId: string | null
+  occurredAt: string
+  slaRemaining: string | null
+  intakeSource: string
+  completeness: IncidentCompleteness
+  rawInput: string | null
+}
+
+export interface EvidenceResult {
+  queryId: string
+  namespace: string
+  query: string
+  status: EvidenceStatus
+  summary: string
+  observed: Record<string, unknown>
+  source: string
+  collectedAt: string
+}
+
+export interface RecommendedAction {
+  actionId: string
+  actionType: ActionType
+  title: string
+  description: string
+  requiresApproval: boolean
+  approvalStatus: ApprovalStatus
+  executionStatus: ExecutionStatus
+}
+
+export interface TimelineEvent {
+  timestamp: string
+  event: string
+  actor: string
+  /** `current` marks the step awaiting someone; everything before it is `done`. */
+  status: string
+}
+
+export interface Diagnosis {
+  diagnosisId: string
+  contractVersion: string
+  caseId: string
+  runId: string
+  incident: IncidentContext
+  routeMode: RouteMode
+  status: DiagnosisStatus
+  summary: string
+  rootCause: string
+  confidence: Confidence
+  abstained: boolean
+  sopKey: string | null
+  sopTitle: string | null
+  evidence: EvidenceResult[]
+  triggeredSignals: string[]
+  recommendedActions: RecommendedAction[]
+  pendingWrites: RecommendedAction[]
+  routeToTeam: string | null
+  transfers: unknown[]
+  actionOutcomes: unknown[]
+  closure: unknown | null
+  knowledgeCandidates: unknown[]
+  timeline: TimelineEvent[]
+  rehearsal: boolean
+  /** True until read-only source adapters land — evidence is not MateClaw-verified. */
+  fixtureMode: boolean
+  /** Always false; the contract rejects an enabled write executor outright. */
+  writeExecutionEnabled: boolean
+  warnings: string[]
+}
+
+export interface StoredDiagnosis {
+  diagnosis: Diagnosis
+  version: number
+  /** False when a retry hit the five-minute deduplication bucket. */
+  created: boolean
+}
+
+export interface DiagnosisSummary {
+  diagnosisId: string
+  caseId: string
+  system: string
+  errorCode: string | null
+  service: string
+  status: DiagnosisStatus
+  rehearsal: boolean
+  version: number
+  createTime: string
+  updateTime: string
+}
+
+/** Why a signal did or did not contribute — see CriterionOutcome on the server. */
+export type CriterionOutcome = 'SATISFIED' | 'EXCLUDED' | 'UNEVALUATED'
+
+export interface CriterionEvaluation {
+  signal: string
+  sourceRequestId: string
+  description: string
+  kind: string
+  /** The rule as authored, e.g. `count ≥ 1`. */
+  expression: string
+  /** The same rule with observed values filled in, rendered server-side. */
+  substitution: string
+  outcome: CriterionOutcome
+  evidenceStatus: EvidenceStatus
+}
+
+export interface RuleEvaluation {
+  ruleId: string
+  requiredSignals: string[]
+  rootCause: string
+  confidence: Confidence
+  fired: boolean
+  /** Required signals whose criteria evaluated false — genuinely ruled out. */
+  unsatisfiedByExclusion: string[]
+  /** Required signals whose evidence never arrived — still untested. */
+  unsatisfiedByGap: string[]
+  /** Required signals no criterion produces at all — a gap in the SOP. */
+  undefinedSignals: string[]
+}
+
+export interface DiagnosisDerivation {
+  diagnosisId: string
+  sopKey: string
+  /** False when the SOP changed since, so the chain no longer describes what happened. */
+  faithful: boolean
+  note: string | null
+  criteria: CriterionEvaluation[]
+  rules: RuleEvaluation[]
+}
+
+export const troubleshootingApi = {
+  /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
+  report: (data: Record<string, unknown>) =>
+    http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
+
+  list: (params?: { status?: string; system?: string; limit?: number }) =>
+    http.get<DiagnosisSummary[]>('/troubleshooting/diagnoses', { params }),
+
+  get: (diagnosisId: string) =>
+    http.get<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}`),
+
+  /** How the conclusion was reached: criteria with substituted arithmetic, and losing rules. */
+  derivation: (diagnosisId: string) =>
+    http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
+
+  confirm: (diagnosisId: string) =>
+    http.post<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}/confirm`),
+
+  transfer: (diagnosisId: string, data: { targetTeam: string; note: string }) =>
+    http.post<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}/transfer`, data),
+
+  /** Authorizes a manual write without executing it: PENDING -> APPROVED_NOT_EXECUTED. */
+  approveAction: (diagnosisId: string, actionId: string, data: { reason: string }) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/diagnoses/${diagnosisId}/actions/${actionId}/approve`, data),
+
+  /** Records what happened when a human ran the approved write outside MateClaw. */
+  recordOutcome: (
+    diagnosisId: string,
+    actionId: string,
+    data: { outcome: ActionOutcomeStatus; notes: string; recoveryVerified: boolean },
+  ) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/diagnoses/${diagnosisId}/actions/${actionId}/record-outcome`, data),
+
+  close: (
+    diagnosisId: string,
+    data: {
+      outcome: ClosureOutcome
+      summary: string
+      recoveryVerified: boolean
+      sopFeedback?: string | null
+      createKnowledgeCandidate: boolean
+    },
+  ) => http.post<StoredDiagnosis>(`/troubleshooting/diagnoses/${diagnosisId}/close`, data),
+}

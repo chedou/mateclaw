@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
@@ -60,6 +61,93 @@ public class TroubleshootingSopPersistenceService {
             throw collision(sop.routingKey());
         }
         return sop;
+    }
+
+    /**
+     * Lists the route registry, newest first.
+     *
+     * <p>Returns indexed columns rather than parsed aggregates: curating 146
+     * error codes means paging through them constantly, and deserializing every
+     * SOP to render a list would make browsing the knowledge base the slowest
+     * screen in the console.</p>
+     */
+    public java.util.List<SopSummary> list(
+            long workspaceId, String status, String system, int limit) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
+        int capped = Math.min(Math.max(limit, 1), 500);
+        LambdaQueryWrapper<TroubleshootingSopEntity> query =
+                new LambdaQueryWrapper<TroubleshootingSopEntity>()
+                        .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getDeleted, 0)
+                        .orderByDesc(TroubleshootingSopEntity::getId)
+                        .last("LIMIT " + capped);
+        if (status != null && !status.isBlank()) {
+            query.eq(TroubleshootingSopEntity::getStatus, status.trim());
+        }
+        if (system != null && !system.isBlank()) {
+            query.eq(TroubleshootingSopEntity::getSystem, system.trim());
+        }
+        return mapper.selectList(query).stream().map(SopSummary::from).toList();
+    }
+
+    /**
+     * Moves a SOP along its review lifecycle.
+     *
+     * <p>Only {@code candidate → approved} and {@code approved → deprecated},
+     * and only forwards. The deterministic path acts on an approved SOP without
+     * a human in the loop, so promotion has to be a deliberate review decision
+     * rather than a flag anyone can flip back and forth; a mistaken approval is
+     * corrected by deprecating it and publishing a replacement, which leaves a
+     * trail instead of quietly rewriting history.</p>
+     *
+     * <p>Approving also sets {@code verified}, because {@link SopEntry#operational()}
+     * requires both — a half-promoted SOP would keep abstaining while looking
+     * approved, which is the most confusing failure available here.</p>
+     */
+    @Transactional
+    public SopEntry updateStatus(
+            long workspaceId, String system, String errorCode, String targetStatus) {
+        SopEntry current = find(workspaceId, system, errorCode);
+        if (current == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_not_found", 404,
+                    "no SOP registered for " + system + ":" + errorCode);
+        }
+        String target = targetStatus == null ? "" : targetStatus.trim().toLowerCase(Locale.ROOT);
+        boolean legal = ("approved".equals(target) && "candidate".equals(current.status()))
+                || ("deprecated".equals(target) && "approved".equals(current.status()));
+        if (!legal) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_status_transition", 409,
+                    "illegal SOP transition " + current.status() + " -> " + target
+                            + "; only candidate->approved and approved->deprecated are allowed");
+        }
+
+        SopEntry updated = new SopEntry(
+                current.sopId(), current.contractVersion(), current.system(), current.errorCode(),
+                current.service(), current.title(), current.cause(), current.category(),
+                current.ownerTeam(), target, "approved".equals(target),
+                current.evidenceRequests(), current.anomalyCriteria(),
+                current.diagnosisRules(), current.actions());
+
+        TroubleshootingSopEntity patch = new TroubleshootingSopEntity();
+        patch.setStatus(updated.status());
+        patch.setVerified(updated.verified());
+        patch.setAggregateJson(json(updated));
+        patch.setUpdateTime(LocalDateTime.now(ZoneOffset.UTC));
+        int changed = mapper.update(patch,
+                new LambdaUpdateWrapper<TroubleshootingSopEntity>()
+                        .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getRouteKey, current.routingKey())
+                        .eq(TroubleshootingSopEntity::getDeleted, 0));
+        if (changed != 1) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_status_transition", 409,
+                    "SOP changed concurrently; reload before promoting it");
+        }
+        return updated;
     }
 
     public SopEntry find(long workspaceId, String system, String errorCode) {

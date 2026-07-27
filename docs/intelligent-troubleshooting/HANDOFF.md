@@ -1,7 +1,8 @@
 # HANDOFF —— IT 智能排障系统 on MateClaw（会话记忆）
 
 > 供后续 AI / 工程师直接接续。**本文件 + `rfcs/intelligent-troubleshooting-design.md` 两份读完即可上手。**
-> 状态：架构已逐条源码核对通过并落 RFC；**P0 领域内核已于 2026-07-25 完成，P1 尚未开始**。
+> 状态：架构已逐条源码核对通过并落 RFC；**P0 内核 + P1 接入身份 + P2 交付闭环已完成**
+> （2026-07-25/26），出站卡片推送与 903001 端到端联跑待收尾。
 > 工作仓库：**webonne/mateclaw**（旧仓库 webonne/MetaClaw 已归档为只读参考，见 §6 指针；
 > 本文件的 MetaClaw 时期原版保留在本仓库 git 历史与 webonne/MetaClaw 远端）。
 
@@ -37,20 +38,23 @@
 
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
-**矛盾清单**：
-- [P0 可运行领域内核] vs [P1/P2 尚未接成 903001 竖切]（规则/状态/持久化已在，安全入口与交付未接）
+**矛盾清单**（P2 完成后已再次转化，2026-07-26 三次刷新）：
+- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（56 项测试全绿，但 SOP 库是 fixture、
+  观测云未联调、无人真正用工作台处置过一次真故障）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
 - [单点竖切验证]（903001 需内网联调）vs [面上铺开]（146 码、多系统）
 - [信任建立]（影子期慢积累）vs [见效压力]
 
-**⭐ 主要矛盾**：[已验证的 P0 内核] vs [尚未接通的 P1/P2 产品竖切]。P0 已把规则、状态、持久化、
-Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份、REST/工作台尚未接入”规定。只有 P1/P2 跑通，
-知识质量与信任问题才会有真实运行数据。
-**性质**：非对抗性（工程演进矛盾）→ 分阶段实施 + 集中兵力解决。
-**矛盾的主要方面**：在「安全入口与交付缺位」一侧——领域内核可测，但用户还不能在 MateClaw 发起和完成一次诊断。
-**应对**：集中兵力主攻 P1→P2（903001 fixture 竖切在 mateclaw 复活，继续补齐 Python MVP 合同测试）；
-数据侧 blocker 走 owner 裁决流程并行推进（不占工程主力）。
+**⭐ 主要矛盾**：[代码闭环已通] vs [从未在真实数据上验证]。报障→诊断→确认→转派→批准→登记→
+关闭→知识候选这条链已全部落地且有测试，工程能力不再是瓶颈；当前系统性质由「**它还没被现实检验过**」
+规定——SOP 库仍是 fixture、`fixtureMode` 恒 true、观测云 DQL 未内网核实、L0 三个路由键冲突未裁决。
+再往下堆功能（出站卡片、agent 兜底、放权阶梯）都是在未验证的地基上加层。
+**性质**：非对抗性，但已由「工程矛盾」转为「实践检验矛盾」——**主战场从写代码转到接真实数据**。
+**矛盾的主要方面**：在「知识与数据未就位」一侧（这正是前几轮预判会上位的天花板，现在如期上位）。
+**应对**：主攻转向 ①903001 fixture 端到端联跑（先证明链路自洽）→ ②清 L0 三个路由键冲突 →
+③争取内网窗口核实观测云字段阈值 → ④真实 SOP 入库、放开 `fixtureMode`。
+出站卡片推送等功能项降为次要，不与实践检验争主力。
 **⚠️ 需监控（矛盾转化）**：P0–P2 跑通后，[知识质量 vs 自动化范围] 将上升为主要矛盾——它是全过程的
 根本天花板（前一阶段已确立：**系统天花板 = 知识质量，不是技术**，故不承诺"上线即全自动"）；若内网
 联调窗口先到，临时优先核实 903001 真实取证。
@@ -71,11 +75,47 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 - **P0** 领域骨架 + record 契约 + 6 类 sealed 规则引擎 + `DeterministicDiagnosisService`
   命中路端到端编排 + 人工控制状态机 + MyBatis-Plus/Flyway `V172` 三方言 +
   携带 `workspace_id` 的事务 Outbox/poller + 五分钟幂等；`vip.mate.troubleshooting.**.*Test` 共 33 项通过。
+- **P1 接入与身份**：`TroubleshootingIntakeService`（路由→确定性诊断→持久化）+
+  `TroubleshootingController`（`POST /api/v1/troubleshooting/incidents` 接入、
+  `GET /diagnoses/{id}` 读取、`POST .../actions/{id}/execute` 恒 409）+
+  三个 capability 挂进 `RoleCapabilities`（viewer→view / member→operate / admin→manage）。
+  排障域测试增至 **40 项**，连同 workspace 域回归共 153 项通过。
+  三条诚实性约束已固化为测试：**未注册 SOP → 409 知识缺口**（不编造诊断）、
+  **无 error_code / SYMPTOM → 409**（未命中路未接线，不假装能处理）、
+  **`fixtureMode` 恒 true**（P3 取证适配器未到位前，调用方不得声称证据已核实）。
+  webhook 鉴权**不需要新过滤器**：`JwtAuthFilter` 已按 `mc_` 前缀识别 PAT，告警源用受限 PAT 即成为正常主体。
 
-**主攻（顺序执行，单点突破）**：
-1. **P1** 接入 controller（不走 Trigger）+ PAT webhook 鉴权 + 3 个 capability；
-2. **P2** Web 工作台 + 领域 REST + `ts.` 飞书 card kind + R1/R2/R3 回归测试。
-   **验收 = 903001 fixture 竖切在 mateclaw 端到端跑通，测试对齐 Python MVP 38 项。**
+- **P2 交付与闭环**：`DiagnosisLifecycleService`（加载→状态机→乐观版本写回）+ 生命周期 REST
+  （confirm / transfer / actions/{id}/approve / actions/{id}/record-outcome / close）+ 队列列表
+  （只读索引列、不解析聚合）+ **Vue 工作台** `mateclaw-ui/src/views/Troubleshooting/`
+  （队列 + 判定链组件 + 处置弹窗，路由挂 `view:troubleshooting`）+ **`ts.` 飞书 card kind**。
+  排障域测试增至 **56 项**，连同飞书卡片域共 71 项通过；`vue-tsc` 无错。
+  关键设计判断：①操作人取自认证主体、不信请求体，审计不可伪造；②关闭与知识候选入 Outbox
+  同事务，崩溃不会丢教训；③卡片点击必须能映射到 MateClaw 用户（走 `ExternalIdentityEntity`
+  SSO 绑定），**未绑定即拒绝**——卡片不是绕过身份与权限的旁路；④卡片只放"确认"，
+  批准生产写与关闭归档留在工作台（卡片摘要不足以支撑这两个决定）。
+
+- **903001 端到端联跑已通过**（`Vertical903001Test`，3 项）：注册 SOP → 报障 → 判据求值 →
+  规则命中 → 确认 → 转派 → 批准 → 登记外部结果 → RECOVERED 关闭 → 知识候选入 Outbox，
+  用**真引擎 + 真状态机 + 真持久化服务**（含真 JSON 往返、真幂等键、真乐观版本），只把 mapper 换成内存存储。
+  已坐实：①按知识库写法编排的 SOP 确实能驱动 6 类判据在真实观测值上正确点火，
+  且**相邻的"实例不可达"规则不会误胜**（`reachable=true` 把宕机假设排除）；②重复报障命中五分钟桶、
+  不开第二个案子；③**已批准但无已验证外部结果时，RECOVERED 关闭被拒**；④关闭沉淀的候选只进 Outbox，
+  已审核 SOP 不被改写；⑤必需证据 MISSING 时弃权且**不产出任何恢复动作**。
+  **未覆盖**：mapper 是内存的，不验证 SQL（SQL 由 `TroubleshootingMigrationTest` + 持久化单测覆盖）。
+
+- **SOP 管理 API 已就绪**（2026-07-26）：`POST/GET /sops`、`GET /sops/{sys}/{code}`、
+  `POST /sops/{sys}/{code}/status`（均需 `manage:troubleshooting`），
+  外加 `GET /sops/candidates` 只读候选队列。**这拆掉了"真实 SOP 无法入库"这个阻塞**。
+  状态流转单向 fail-closed（`candidate→approved→deprecated`，不可回退；approve 同时置 `verified`，
+  因为 `operational()` 需二者皆真，半升级的 SOP 会一边看着已审核一边持续弃权）。
+  候选队列只读，**因为 Outbox 的 status 是"发布"语义而非"审核"语义，混用会让投递重试伪装成审核通过**——
+  候选审核工作流是尚未设计的增量，见 `TODO.md` T6。
+
+**主攻与全部待办已独立成册**：见 **`docs/intelligent-troubleshooting/TODO.md`**
+（T1–T10，每条含「为什么/完成标准」、四条红线、诚实缺口清单、工程约定与建议接手顺序）。
+一句话概括：**主要矛盾仍是「接真实数据」**——T1 清路由键冲突、T2 内网核实观测云、
+T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入；纯工程可做的最高价值项是 T4（D8 取证适配器）。
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
 - L0 数据 blocker：3 个路由键一码多义（101014/101034/101040）owner 裁决 + 103 处字符丢失回源表恢复
@@ -87,7 +127,7 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 **后续梯队**：P3 D8 适配器（Guance 首个 + RecordedReplay 回归）→ P4 未命中 ReAct agent（只读笼，补旧 G1）
 → P5 放权阶梯 + 知识运营（覆盖率/可自动化率纳入考核）。
 
-## 5.5 前端/页面设计（本轮已收敛方向 · 尚是 HTML 原型，未落 Vue）
+## 5.5 前端/页面设计（HTML 原型已收敛方向，Vue 工作台已落地）
 
 **产物入口**：`docs/intelligent-troubleshooting/index.html`（设计门户，汇报用；串起下列所有原型 + 设计主线叙事）。
 
@@ -107,8 +147,19 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 
 **页面上必须守的红线（对齐 §3）**：无"执行"按钮；批准=推进状态机、不执行；写恢复动作显示为"转派+外部登记结果"；agent 步骤标只读；结论强制挂证据引用。
 
-**下一步（UI 线，与后端 P0 并行、非阻塞）**：
-- [ ] 现行两屏（`console-rca` 根因定位 + `console-overview` 总览）经用户/一线值班验证信息架构后，落成 **Vue 3 + Element Plus** 组件，进 `mateclaw-ui/src/views/Troubleshooting/`，路由 `meta.requiredCapability='view:troubleshooting'`（对齐 §9 capability）。
+**已落地的 Vue 实现**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain}.vue`
+（队列 + 判定链 + 处置弹窗，路由 `meta.requiredCapability='view:troubleshooting'`）。
+HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `console-diagnosis-detail.html` 是契约对齐版，
+其判定链（代入运算、已排除 vs 无法求值）比当前 Vue 组件更细，是 Vue 侧后续要补齐的目标形态。
+
+**已补齐（2026-07-26）**：`GET /diagnoses/{id}/derivation` + Vue 判定链接通——三态
+（成立 / 已排除 / 无法求值）与**代入运算**（如 `2000 ÷ (2000 + 0) = 1 > 0.95`）已是真实数据。
+两个关键设计判断：①**代入算式由服务端 `CriterionRenderer` 渲染**，前端不重实现求值，杜绝控制台与
+引擎判读漂移；②推导是 `诊断 × SOP` 的投影而非新状态，而 SOP 会演进，故服务端**重算后与当时记录的
+`triggeredSignals` 交叉核对**，不一致即置 `faithful=false` 并说明"SOP 已变更、以下反映当前知识"——
+宁可承认还原不了，也不给一个看似合理的假推导。
+
+**下一步（UI 线）**：
 - [ ] 定位链的**阶段划分**（现象/范围定位/取证/判定/根因）需与一线实际排障心智核对，可能微调。
 - [ ] 证据的"▷重放 DQL"要接 D8 真实适配器（P3）后才有真数据；当前是 fixture 演示。
 - [ ] 原型里的"影响面/活体状态/在场签收"等维度是否全部进 MVP，按放权阶段裁剪。
@@ -117,7 +168,8 @@ Outbox 和幂等从纸面变成代码；当前系统性质由“入口、身份�
 
 - **新架构（唯一现行设计）**：`rfcs/intelligent-troubleshooting-design.md`（§1–§13 + §14 实施战略；
   每条结论有源码位置索引）。
-- **P0 实现入口**：`mateclaw-server/src/main/java/vip/mate/troubleshooting/`；迁移为三方言
+- **实现入口**：后端 `mateclaw-server/src/main/java/vip/mate/troubleshooting/`（`controller/` 接入+生命周期、
+  `card/` 飞书入站卡片、`service/` 编排与闭环）；前端 `mateclaw-ui/src/views/Troubleshooting/`；迁移为三方言
   `V172__troubleshooting_domain.sql`；测试入口 `mateclaw-server/src/test/java/vip/mate/troubleshooting/`。
 - **前端设计门户**：`docs/intelligent-troubleshooting/index.html`（汇报入口，串起现行原型 + 演进；详见 §5.5）。
   现行原型 `console-rca.html`（主推·根因定位）、`console-overview.html`（总览看板）；

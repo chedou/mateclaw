@@ -7,6 +7,9 @@ import vip.mate.approval.ApprovalService;
 import vip.mate.approval.ApprovalWorkflowService;
 import vip.mate.channel.feishu.cards.tool_guard.ToolGuardButtonValue;
 import vip.mate.channel.feishu.cards.tool_guard.ToolGuardCardKindFactory;
+import vip.mate.channel.feishu.cards.troubleshooting.TroubleshootingCardKindFactory;
+import vip.mate.troubleshooting.card.CardOperatorResolver;
+import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 
 import java.util.Optional;
 
@@ -26,7 +29,10 @@ class FeishuCardDispatcherTest {
                 mock(ApprovalService.class),
                 mock(ApprovalWorkflowService.class),
                 new ObjectMapper());
-        return new FeishuCardDispatcher(factory);
+        TroubleshootingCardKindFactory troubleshootingFactory = new TroubleshootingCardKindFactory(
+                mock(DiagnosisLifecycleService.class),
+                mock(CardOperatorResolver.class));
+        return new FeishuCardDispatcher(factory, troubleshootingFactory);
     }
 
     @Test
@@ -34,7 +40,21 @@ class FeishuCardDispatcherTest {
     void toolGuardRegistered() {
         FeishuCardDispatcher d = newDispatcher();
         assertTrue(d.registeredKindNames().contains(ToolGuardCardKindFactory.KIND_NAME));
-        assertEquals(1, d.registeredKindNames().size());
+    }
+
+    @Test
+    @DisplayName("both card kinds register and a click routes to exactly one")
+    void bothKindsRegistered() {
+        FeishuCardDispatcher d = newDispatcher();
+        assertEquals(2, d.registeredKindNames().size());
+        assertTrue(d.registeredKindNames().contains(TroubleshootingCardKindFactory.KIND_NAME));
+
+        // The disjoint-prefix invariant is what lets the domain own cards
+        // without touching tool-guard's approve-then-replay flow.
+        assertEquals(ToolGuardCardKindFactory.KIND_NAME,
+                d.lookupByAction("tg_approval.approve").orElseThrow().name());
+        assertEquals(TroubleshootingCardKindFactory.KIND_NAME,
+                d.lookupByAction("ts.confirm").orElseThrow().name());
     }
 
     @Test

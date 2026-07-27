@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能排障 · 诊断详情（契约对齐版）</title>
+<style>
+  :root{
+    --bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;
+    --ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;
+    --line:#e3e7ee;--line-2:#eef1f6;
+    --accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;
+    --good:#0e9f6e;--good-weak:#e6f6ef;--good-line:#b7e0cc;
+    --warn:#d98207;--warn-weak:#fbf1e0;--warn-line:#f0d5a8;
+    --crit:#e14b4b;--crit-weak:#fceceb;--crit-line:#f3c4c2;
+    --console:#0e1420;--console-ink:#c9d6ef;--console-dim:#5f6f8f;
+    --shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);
+    --shadow-md:0 2px 4px rgba(15,22,34,.05),0 6px 18px rgba(15,22,34,.06);
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;
+    --ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;
+    --accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;
+    --good:#2fbb85;--good-weak:#12271f;--good-line:#1e4435;
+    --warn:#e6a13c;--warn-weak:#2a2113;--warn-line:#4a3a1c;
+    --crit:#ef6b6b;--crit-weak:#2c1717;--crit-line:#50292a;
+    --console:#0a0e16;--console-ink:#c3d2ef;--console-dim:#556584;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 4px 14px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="dark"]{--bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;--ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;--accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;--good:#2fbb85;--good-weak:#12271f;--good-line:#1e4435;--warn:#e6a13c;--warn-weak:#2a2113;--warn-line:#4a3a1c;--crit:#ef6b6b;--crit-weak:#2c1717;--crit-line:#50292a;--console:#0a0e16;--console-ink:#c3d2ef;--console-dim:#556584;--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 4px 14px rgba(0,0,0,.35)}
+  :root[data-theme="light"]{--bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;--ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;--line:#e3e7ee;--line-2:#eef1f6;--accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;--good:#0e9f6e;--good-weak:#e6f6ef;--good-line:#b7e0cc;--warn:#d98207;--warn-weak:#fbf1e0;--warn-line:#f0d5a8;--crit:#e14b4b;--crit-weak:#fceceb;--crit-line:#f3c4c2;--console:#0e1420;--console-ink:#c9d6ef;--console-dim:#5f6f8f;--shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);--shadow-md:0 2px 4px rgba(15,22,34,.05),0 6px 18px rgba(15,22,34,.06)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--ink-2);background:var(--bg);font-size:13px;line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .m{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  svg{display:block;flex-shrink:0}
+  .app{display:flex;height:100vh;overflow:hidden}
+  .rail{width:50px;background:var(--ink-1);flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:11px;gap:3px}
+  @media (prefers-color-scheme:dark){.rail{background:#05070b}}
+  :root[data-theme="dark"] .rail{background:#05070b}
+  .rail .logo{width:31px;height:31px;border-radius:9px;background:linear-gradient(140deg,var(--accent),#12a3c9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;margin-bottom:7px}
+  .rail a{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#6b7686;text-decoration:none}
+  .rail a.active{background:rgba(255,255,255,.08);color:#fff}
+
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .top{height:50px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;gap:11px;flex-shrink:0}
+  .crumb{color:var(--ink-3);font-size:12.5px}
+  .crumb .id{font-family:var(--mono);color:var(--ink-1);font-weight:600}
+  .flag{font-size:10.5px;color:var(--ink-4);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+  .seg{margin-left:auto;display:flex;background:var(--surface-3);border-radius:8px;padding:3px;gap:2px}
+  .seg button{border:none;background:transparent;padding:6px 12px;border-radius:6px;font-size:11.5px;color:var(--ink-3);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--surface);color:var(--ink-1);font-weight:600;box-shadow:var(--shadow-sm)}
+
+  .content{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;overflow:hidden}
+  .col-main{overflow-y:auto;padding:18px 22px 44px}
+  .col-side{border-left:1px solid var(--line);background:var(--surface);overflow-y:auto;padding:16px 16px 34px;display:flex;flex-direction:column;gap:13px}
+  .col-main::-webkit-scrollbar,.col-side::-webkit-scrollbar{width:8px}
+  .col-main::-webkit-scrollbar-thumb,.col-side::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;border:2px solid var(--bg)}
+
+  .idrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+  .idmain{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--ink-1)}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;font-family:var(--mono)}
+  .pill .sh{width:7px;height:7px}
+  .pill.ready{background:var(--accent-weak);color:var(--accent)}.pill.ready .sh{border-radius:50%;background:currentColor}
+  .pill.invest{background:var(--warn-weak);color:var(--warn)}.pill.invest .sh{background:currentColor;transform:rotate(45deg)}
+  .pill.det{background:var(--good-weak);color:var(--good)}.pill.det .sh{border-radius:50%;background:currentColor}
+  .pill.llm{background:var(--warn-weak);color:var(--warn)}.pill.llm .sh{background:currentColor;transform:rotate(45deg)}
+  .pill.mode{background:var(--surface-3);color:var(--ink-3)}.pill.mode .sh{display:none}
+
+  .warns{border:1px solid var(--warn-line);background:var(--warn-weak);border-radius:9px;padding:12px 14px;margin-bottom:14px}
+  .warns .wt{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:var(--warn);font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+  .warns .wt svg{width:14px;height:14px}
+  .warns ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+  .warns li{font-size:12px;color:var(--ink-2);padding-left:15px;position:relative;line-height:1.5}
+  .warns li::before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:1px;background:var(--warn);transform:rotate(45deg)}
+
+  .verdict{background:var(--surface);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-md);padding:17px 20px;margin-bottom:14px;position:relative;overflow:hidden}
+  .verdict::before{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:linear-gradient(90deg,var(--good),transparent 60%)}
+  .verdict.abst::before{background:linear-gradient(90deg,var(--warn),transparent 60%)}
+  .eyebrow{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:7px}
+  .eyebrow svg{width:14px;height:14px;color:var(--good)}
+  .verdict.abst .eyebrow svg{color:var(--warn)}
+  .eyebrow .cv{margin-left:auto;color:var(--ink-4);letter-spacing:.02em;text-transform:none}
+  .rc{font-size:19px;line-height:1.4;font-weight:700;letter-spacing:-.012em;color:var(--ink-1);margin-top:10px;text-wrap:balance}
+  .rc.abst{color:var(--warn)}
+  .sum{font-size:12.5px;color:var(--ink-3);margin-top:6px;line-height:1.6}
+  .vmeta{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:14px;padding-top:13px;border-top:1px solid var(--line-2)}
+  .conf{display:flex;align-items:center;gap:9px}
+  .conf .lab{font-size:10.5px;color:var(--ink-3);font-family:var(--mono);letter-spacing:.05em}
+  .steps{display:flex;gap:3px}
+  .steps i{width:26px;height:6px;border-radius:2px;background:var(--surface-3);border:1px solid var(--line)}
+  .steps.high i:nth-child(-n+3){background:var(--good);border-color:var(--good)}
+  .steps.medium i:nth-child(-n+2){background:var(--warn);border-color:var(--warn)}
+  .steps.low i:nth-child(1){background:var(--crit);border-color:var(--crit)}
+  .conf b{font-family:var(--mono);font-size:12px;font-weight:700}
+  .conf b.high{color:var(--good)}.conf b.medium{color:var(--warn)}.conf b.low{color:var(--crit)}
+  .prov{font-size:11.5px;color:var(--ink-3);font-family:var(--mono);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .prov .k{color:var(--ink-1);font-weight:600}
+  .sopstate{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;font-family:var(--mono)}
+  .sopstate.ok{background:var(--good-weak);color:var(--good)}
+  .sopstate.draft{background:var(--warn-weak);color:var(--warn)}
+
+  .secthd{display:flex;align-items:center;gap:9px;margin:20px 0 11px}
+  .secthd .st{font-size:14px;font-weight:650;color:var(--ink-1);letter-spacing:-.01em}
+  .secthd svg{width:16px;height:16px;color:var(--accent)}
+  .secthd .hint{margin-left:auto;font-size:11px;color:var(--ink-4);font-family:var(--mono)}
+
+  /* ===== chain summary strip ===== */
+  .tally{display:flex;align-items:center;gap:0;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:11px 15px;margin-bottom:12px;box-shadow:var(--shadow-sm)}
+  .tg{display:flex;align-items:baseline;gap:7px;padding-right:18px;margin-right:18px;border-right:1px solid var(--line)}
+  .tg:last-child{border-right:none;margin-right:0;padding-right:0}
+  .tg .tn{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink-1)}
+  .tg .tl{font-size:11px;color:var(--ink-3)}
+  .tsplit{display:flex;gap:6px;align-items:center}
+  .tchip{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:5px}
+  .tchip.pass{background:var(--good-weak);color:var(--good)}
+  .tchip.excl{background:var(--surface-3);color:var(--ink-3)}
+  .tchip.unk{background:var(--warn-weak);color:var(--warn)}
+  .tg.win .tn{color:var(--good);font-size:13px}
+  .tg.win.abst .tn{color:var(--warn)}
+
+  /* ===== chain ===== */
+  .chain{display:flex;flex-direction:column}
+  .link{display:flex;gap:13px;position:relative;padding-bottom:11px}
+  .link:last-child{padding-bottom:0}
+  .lrail{display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:30px}
+  .lnode{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;background:var(--accent-weak);color:var(--accent);z-index:1}
+  .lnode.final{background:var(--good);color:#fff}
+  .lnode.final.abst{background:var(--warn)}
+  .lconn{flex:1;width:2px;background:var(--line);margin:3px 0;border-radius:2px}
+  .link:last-child .lconn{display:none}
+  .lbody{flex:1;min-width:0}
+  .lhd{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+  .lhd .lt{font-size:12.5px;font-weight:650;color:var(--ink-1)}
+  .lhd .lf{font-family:var(--mono);font-size:10px;color:var(--ink-4)}
+
+  /* evidence — compact, DQL collapsible */
+  .ev{border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;box-shadow:var(--shadow-sm)}
+  .ev+.ev{margin-top:7px}
+  .ev.anom{border-color:var(--crit-line)}
+  .ev.miss{border-color:var(--warn-line)}
+  .ev.dim{opacity:.62}
+  .evh{padding:8px 11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .qid{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-weak);border-radius:4px;padding:2px 6px}
+  .ns{font-family:var(--mono);font-size:10px;color:var(--ink-3);background:var(--surface-3);border-radius:4px;padding:2px 6px}
+  .evsum{font-size:12px;font-weight:600;color:var(--ink-1)}
+  .evst{font-size:9.5px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+  .evst.ANOMALY{background:var(--crit-weak);color:var(--crit)}
+  .evst.NORMAL{background:var(--good-weak);color:var(--good)}
+  .evst.MISSING{background:var(--warn-weak);color:var(--warn)}
+  .feeds{font-family:var(--mono);font-size:10px;color:var(--ink-4);margin-left:auto}
+  .obsline{padding:0 11px 9px;display:flex;gap:6px;flex-wrap:wrap}
+  .ob{font-family:var(--mono);font-size:10.5px;border:1px solid var(--line);border-radius:5px;padding:2px 7px;background:var(--surface-2);color:var(--ink-2)}
+  .ob b{color:var(--ink-1)}
+  .ob.used{border-color:var(--accent-line);background:var(--accent-weak);color:var(--accent)}
+  .ob.used b{color:var(--accent)}
+  .ob.empty{border-style:dashed;color:var(--warn);border-color:var(--warn-line)}
+  .qtoggle{border:none;background:transparent;color:var(--ink-3);font-family:var(--mono);font-size:10px;cursor:pointer;padding:5px 11px;display:flex;align-items:center;gap:5px;border-top:1px solid var(--line-2);width:100%}
+  .qtoggle:hover{color:var(--accent);background:var(--surface-2)}
+  .qtoggle svg{width:11px;height:11px;transition:transform .2s}
+  .ev.open .qtoggle svg{transform:rotate(90deg)}
+  .qwrap{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease}
+  .ev.open .qwrap{grid-template-rows:1fr}
+  .qinner{overflow:hidden}
+  .q{background:var(--console);color:var(--console-ink);font-family:var(--mono);font-size:10.5px;line-height:1.7;padding:9px 11px;overflow-x:auto;white-space:pre}
+  .q .k{color:#6aa3ff}.q .s{color:#4bbf9a}.q .d{color:var(--console-dim)}
+  .qmeta{padding:6px 11px;background:var(--surface-2);font-family:var(--mono);font-size:10px;color:var(--ink-3);display:flex;gap:12px;flex-wrap:wrap}
+
+  /* criterion — the heart: substituted arithmetic + 3 states */
+  .cr{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:10px 12px;scroll-margin-top:20px;transition:box-shadow .18s,border-color .18s}
+  .cr+.cr{margin-top:7px}
+  .cr.pass{border-color:var(--good-line)}
+  .cr.excl{opacity:.82}
+  .cr.unk{border-color:var(--warn-line);background:var(--warn-weak)}
+  .cr.flash{box-shadow:0 0 0 3px var(--accent-weak);border-color:var(--accent)}
+  .crtop{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .crm{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--mono);font-size:12px;font-weight:700}
+  .crm svg{width:12px;height:12px}
+  .cr.pass .crm{background:var(--good);color:#fff}
+  .cr.excl .crm{background:var(--surface-3);color:var(--ink-3)}
+  .cr.unk .crm{background:var(--warn);color:#fff}
+  .crsig{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-1)}
+  .cr.pass .crsig{color:var(--good)}
+  .cr.unk .crsig{color:var(--warn)}
+  .crstate{font-size:9.5px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+  .crstate.pass{background:var(--good-weak);color:var(--good)}
+  .crstate.excl{background:var(--surface-3);color:var(--ink-3)}
+  .crstate.unk{background:var(--warn);color:#fff}
+  .crsrc{font-family:var(--mono);font-size:10px;color:var(--ink-4);margin-left:auto}
+  .crsrc a{color:var(--accent);text-decoration:none;cursor:pointer}
+  .crsrc a:hover{text-decoration:underline}
+  .calc{margin-top:9px;border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+  .cline{display:grid;grid-template-columns:52px 1fr;gap:0;font-family:var(--mono);font-size:11px;align-items:baseline}
+  .cline+.cline{border-top:1px solid var(--line-2)}
+  .cline .cl{background:var(--surface-2);color:var(--ink-4);padding:5px 8px;font-size:9.5px;letter-spacing:.04em;text-align:right}
+  .cline .cval{padding:5px 10px;color:var(--ink-2);overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+  .cline.subst .cval{color:var(--ink-1);font-weight:600;background:var(--surface)}
+  .cline.subst.ok .cval{color:var(--good)}
+  .cline.subst.no .cval{color:var(--ink-3)}
+  .cline.subst.unk .cval{color:var(--warn)}
+  .crd{font-size:11.5px;color:var(--ink-3);margin-top:8px;line-height:1.5}
+  .crnote{margin-top:8px;font-size:11.5px;border-radius:6px;padding:7px 10px;display:flex;gap:7px;line-height:1.5}
+  .crnote svg{width:13px;height:13px;flex-shrink:0;margin-top:2px}
+  .crnote.excl{background:var(--surface-2);color:var(--ink-3)}
+  .crnote.unk{background:var(--surface);border:1px solid var(--warn-line);color:var(--warn)}
+  .crnote b{color:var(--ink-1)}
+  .cr.unk .crnote.unk b{color:var(--warn)}
+
+  /* rules */
+  .rule{border:1px solid var(--line);border-radius:8px;padding:11px 13px;background:var(--surface)}
+  .rule+.rule{margin-top:7px}
+  .rule.fired{border-color:var(--good-line);background:var(--good-weak)}
+  .rule.dim{opacity:.9}
+  .rh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rid{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--ink-2)}
+  .rbadge{font-size:9.5px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+  .rbadge.fired{background:var(--good);color:#fff}
+  .rbadge.excl{background:var(--surface-3);color:var(--ink-3)}
+  .rbadge.unk{background:var(--warn-weak);color:var(--warn)}
+  .rreq{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:10px;color:var(--ink-4)}
+  .rsig{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:5px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid transparent}
+  .rsig:hover{border-color:var(--accent)}
+  .rsig.ok{background:var(--good-weak);color:var(--good)}
+  .rsig.no{background:var(--surface-3);color:var(--ink-3)}
+  .rsig.unk{background:var(--warn-weak);color:var(--warn)}
+  .rout{margin-top:9px;font-size:12px;color:var(--ink-2);line-height:1.5}
+  .rout b{color:var(--ink-1)}
+  .why{margin-top:9px;border-radius:6px;padding:8px 11px;font-size:11.5px;line-height:1.55;display:flex;gap:8px}
+  .why svg{width:14px;height:14px;flex-shrink:0;margin-top:2px}
+  .why.excl{background:var(--surface-2);border:1px solid var(--line);color:var(--ink-3)}
+  .why.unk{background:var(--warn-weak);border:1px solid var(--warn-line);color:var(--warn)}
+  .why b{color:var(--ink-1)}
+  .why.unk b{color:var(--warn)}
+  .why .tag{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--surface);border:1px solid currentColor;margin-right:6px;white-space:nowrap}
+
+  /* actions */
+  .act{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:11px 13px}
+  .act+.act{margin-top:8px}
+  .act.write{border-color:var(--crit-line)}
+  .ath{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .atype{font-size:9.5px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+  .atype.AUTO_READONLY{background:var(--good-weak);color:var(--good)}
+  .atype.HUMAN_CONTACT{background:var(--accent-weak);color:var(--accent)}
+  .atype.MANUAL_WRITE{background:var(--crit-weak);color:var(--crit)}
+  .atype.MANUAL_UNKNOWN{background:var(--surface-3);color:var(--ink-3)}
+  .att{font-size:12.5px;font-weight:650;color:var(--ink-1)}
+  .aid{font-family:var(--mono);font-size:10px;color:var(--ink-4);margin-left:auto}
+  .adesc{font-size:11.5px;color:var(--ink-3);margin-top:5px;line-height:1.5}
+  .astate{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+  .kv{font-family:var(--mono);font-size:10px;color:var(--ink-3);background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:2px 7px}
+  .kv b{color:var(--ink-1)}
+  .kv.block b{color:var(--crit)}
+  .noact{padding:14px;text-align:center;font-size:12px;color:var(--ink-3);border:1px dashed var(--line);border-radius:8px;background:var(--surface-2)}
+
+  /* side */
+  .card{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+  .clab{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px;display:flex;align-items:center;gap:6px}
+  .clab svg{width:13px;height:13px;color:var(--ink-4)}
+  .row{display:flex;gap:8px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed var(--line-2)}
+  .row:last-child{border-bottom:none}
+  .row .rk{color:var(--ink-3);width:74px;flex-shrink:0}
+  .row .rv{color:var(--ink-1);font-weight:500;word-break:break-word}
+  .row .rv.m{font-family:var(--mono)}
+  .raw{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-family:var(--mono);font-size:10.5px;color:var(--ink-2);white-space:pre-wrap;max-height:96px;overflow:auto;margin-top:7px;line-height:1.55}
+  .tl{display:flex;flex-direction:column}
+  .tli{display:flex;gap:9px;padding-bottom:10px;position:relative}
+  .tli:last-child{padding-bottom:0}
+  .td{width:8px;height:8px;border-radius:50%;background:var(--good);flex-shrink:0;margin-top:4px;z-index:1}
+  .td.current{background:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+  .tll{position:absolute;left:3.5px;top:12px;bottom:0;width:1.5px;background:var(--line)}
+  .tli:last-child .tll{display:none}
+  .tev{font-size:11.5px;color:var(--ink-1);line-height:1.45}
+  .tmeta{font-family:var(--mono);font-size:9.5px;color:var(--ink-4);margin-top:2px;display:flex;gap:7px}
+  .notwired{border:1px dashed var(--line);border-radius:9px;padding:11px 13px}
+  .notwired .nt{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);margin-bottom:7px}
+  .notwired ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+  .notwired li{font-size:11px;color:var(--ink-3);padding-left:14px;position:relative;line-height:1.5}
+  .notwired li::before{content:"";position:absolute;left:2px;top:6px;width:5px;height:5px;border-radius:50%;border:1.5px solid var(--ink-4)}
+  .redline{border:1px solid var(--crit-line);background:var(--crit-weak);border-radius:9px;padding:11px 13px}
+  .redline .rt{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--crit);letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .redline .rt svg{width:13px;height:13px}
+  .redline p{font-size:11px;color:var(--ink-2);line-height:1.55}
+  .redline code{font-family:var(--mono);font-size:10px;background:var(--surface);border-radius:3px;padding:1px 4px}
+  button.act-btn{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);padding:9px;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px}
+  button.act-btn:hover{color:var(--accent);border-color:var(--accent-line);background:var(--accent-weak)}
+  button.act-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.act-btn.primary:hover{filter:brightness(1.06)}
+  button.act-btn svg{width:14px;height:14px}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:960px){.content{grid-template-columns:1fr}.col-side{border-left:none;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail"><div class="logo">太</div><a href="#">▦</a><a href="#" class="active" id="nv"></a><a href="#">▧</a></nav>
+  <div class="main">
+    <div class="top">
+      <div class="crumb">智能排障 / <span class="id" id="crumb"></span> / 诊断详情</div>
+      <span class="flag">契约对齐 v1.3 · 判定链复刻 CriterionEvaluator 求值逻辑</span>
+      <div class="seg">
+        <button class="on" onclick="load('hit')">命中 · 可确认</button>
+        <button onclick="load('abst')">弃权 · 转深查</button>
+      </div>
+    </div>
+    <div class="content">
+      <div class="col-main" id="main"></div>
+      <div class="col-side" id="side"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const P={
+ check:'<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/>',
+ x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ alert:'<path d="M12 4 3.5 19.5h17z"/><path d="M12 10v4"/><path d="M12 16.6h.01"/>',
+ help:'<circle cx="12" cy="12" r="8.6"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.4"/><path d="M12 17.2h.01"/>',
+ deduce:'<path d="M4 5h5M4 12h9M4 19h5"/><path d="M13 5.5 18.5 12 13 18.5"/>',
+ db:'<ellipse cx="12" cy="5.8" rx="7" ry="2.7"/><path d="M5 5.8v12.4c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7V5.8"/><path d="M5 12c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7"/>',
+ target:'<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22"/>',
+ shield:'<path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+ clock:'<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 2"/>',
+ file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+ route:'<circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 6h6a4 4 0 0 1 4 4v6"/>',
+ arrow:'<path d="M5 12h13M13 6.5 18.5 12 13 17.5"/>',
+ chevron:'<path d="M9 5.5 15.5 12 9 18.5"/>'
+};
+const ic=(n,w)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"${w?` style="width:${w}px;height:${w}px"`:''}>${P[n]||''}</svg>`;
+
+/* ============================================================
+   JS mirror of engine/CriterionEvaluator.java
+   Produces: state (pass|excl|unk) + symbolic expr + SUBSTITUTED arithmetic
+   Faithful rule: unevaluable  <=>  source evidence is null or status===MISSING
+   (matchingSignals filters on result != null && status != MISSING)
+   ============================================================ */
+const has=(o,f)=>o&&Object.prototype.hasOwnProperty.call(o,f);
+const num=(o,f)=>{const v=o?o[f]:undefined;const n=typeof v==='number'?v:(typeof v==='string'&&v.trim()!==''?Number(v):NaN);return Number.isFinite(n)?n:null;};
+const fmt=n=>Number.isInteger(n)?String(n):n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+const truthy=v=>v===true||v==='true'||(typeof v==='number'&&v!==0);
+
+function fieldsOf(c){
+  return [c.field,c.presenceField,c.numeratorField,c.addendField,c.baselineField,c.containsField,c.membershipField].filter(Boolean);
+}
+function symbolic(c){
+  switch(c.kind){
+    case 'numeric_gte':     return `${c.field} ≥ ${c.threshold}`;
+    case 'missing_or_lte':  return `¬truthy(${c.presenceField})  ∨  ${c.field} ≤ ${c.threshold}`;
+    case 'ratio_of_sum_gt': return `${c.numeratorField} ÷ (${c.numeratorField} + ${c.addendField}) > ${c.threshold}`;
+    case 'multiple_gt':     return `${c.field} > ${c.multiplier} × ${c.baselineField}`;
+    case 'contains_and_in': return `${c.containsField} ∋ "${c.substring}"  ∧  ${c.membershipField} ∈ {${c.acceptedValues.join(', ')}}`;
+    case 'boolean_equals':  return `${c.field} == ${c.expected}`;
+  }
+  return c.kind;
+}
+/* returns {ok:boolean|null, sub:string, absent:string[]} — null = cannot evaluate on values */
+function substitute(c,o){
+  const absent=fieldsOf(c).filter(f=>!has(o,f));
+  switch(c.kind){
+    case 'numeric_gte':{
+      const v=num(o,c.field);
+      if(v===null) return {ok:false,sub:`${c.field} 不在 observed 中 → 判据不成立`,absent};
+      return {ok:v>=c.threshold,sub:`${c.field}=${fmt(v)} ${v>=c.threshold?'≥':'<'} ${c.threshold}`,absent};
+    }
+    case 'missing_or_lte':{
+      const p=o?o[c.presenceField]:undefined;
+      if(!truthy(p)) return {ok:true,sub:`${c.presenceField}=${p===undefined?'（缺失）':String(p)} → 非真，左支成立`,absent};
+      const v=num(o,c.field);
+      if(v===null) return {ok:false,sub:`${c.presenceField} 为真，且 ${c.field} 不可读 → 不成立`,absent};
+      return {ok:v<=c.threshold,sub:`${c.presenceField}=真，${c.field}=${fmt(v)} ${v<=c.threshold?'≤':'>'} ${c.threshold}`,absent};
+    }
+    case 'ratio_of_sum_gt':{
+      const n=num(o,c.numeratorField),a=num(o,c.addendField);
+      if(n===null||a===null) return {ok:false,sub:`${n===null?c.numeratorField:c.addendField} 不可读 → 不成立`,absent};
+      const d=n+a;
+      if(!(d>0)) return {ok:false,sub:`${fmt(n)} ÷ (${fmt(n)} + ${fmt(a)}) → 分母为 0，不成立`,absent};
+      const r=n/d;
+      return {ok:r>c.threshold,sub:`${fmt(n)} ÷ (${fmt(n)} + ${fmt(a)}) = ${fmt(r)} ${r>c.threshold?'>':'≤'} ${c.threshold}`,absent};
+    }
+    case 'multiple_gt':{
+      const v=num(o,c.field),b=num(o,c.baselineField);
+      if(v===null||b===null) return {ok:false,sub:`${v===null?c.field:c.baselineField} 不可读 → 不成立`,absent};
+      if(!(b>0)) return {ok:false,sub:`基线 ${c.baselineField}=${fmt(b)} ≤ 0 → 不成立`,absent};
+      const t=b*c.multiplier;
+      return {ok:v>t,sub:`${fmt(v)} ${v>t?'>':'≤'} ${c.multiplier} × ${fmt(b)} = ${fmt(t)}`,absent};
+    }
+    case 'contains_and_in':{
+      const cv=o?o[c.containsField]:undefined, mv=o?o[c.membershipField]:undefined;
+      const c1=typeof cv==='string'&&cv.includes(c.substring);
+      const c2=c.acceptedValues.includes(String(mv));
+      return {ok:c1&&c2,
+        sub:`${c.containsField}="${cv===undefined?'（缺失）':cv}" ${c1?'∋':'∌'} "${c.substring}"   ∧   ${c.membershipField}="${mv===undefined?'（缺失）':mv}" ${c2?'∈':'∉'} {${c.acceptedValues.join(', ')}}`,
+        absent};
+    }
+    case 'boolean_equals':{
+      const v=o?o[c.field]:undefined;
+      const isBool=typeof v==='boolean';
+      if(!isBool) return {ok:false,sub:`${c.field}=${v===undefined?'（缺失）':String(v)} 非布尔 → 不成立`,absent};
+      return {ok:v===c.expected,sub:`${c.field}=${String(v)} ${v===c.expected?'==':'≠'} ${c.expected}`,absent};
+    }
+  }
+  return {ok:false,sub:'',absent};
+}
+/* full evaluation with the MISSING-evidence gate */
+function evaluate(criterion,evidenceById){
+  const ev=evidenceById[criterion.sourceRequestId];
+  if(!ev||ev.status==='MISSING'){
+    return {state:'unk',ev,sub:null,
+      reason:ev?`源证据 ${ev.queryId} 取证失败（status=MISSING），判据无法求值`
+                :`SOP 声明的源 ${criterion.sourceRequestId} 无对应证据，判据无法求值`};
+  }
+  const r=substitute(criterion.rule,ev.observed);
+  return {state:r.ok?'pass':'excl',ev,sub:r.sub,absent:r.absent};
+}
+
+/* ================= fixtures shaped exactly like the Java contract ================= */
+const D={
+ hit:{
+  diagnosisId:"diag-7f3a91c84e02", caseId:"case-7f3a91c84e02", runId:"run-7f3a91c84e02",
+  contractVersion:"1.3", routeMode:"DETERMINISTIC", status:"READY_FOR_HUMAN",
+  rootCause:"Mongo 连接池打满，order-svc 数据库调用排队超时",
+  summary:"连接可用数归零且慢查询显著抬升，失败跳定位在 mongo.find。",
+  confidence:"HIGH", abstained:false,
+  sopKey:"CSDP:903001", sopTitle:"订单服务 Mongo 连接池耗尽", sopStatus:"approved", sopVerified:true,
+  rehearsal:false, fixtureMode:true,
+  warnings:["当前仅使用 fixture 证据；DQL 指标名与阈值尚未联调核实。"],
+  incident:{incidentId:"inc-903001-0912",system:"CSDP",service:"order-svc",errorCode:"903001",
+    title:"订单创建大面积超时",severity:"P0",impact:"订单创建成功率下降，客服工单激增",
+    traceId:"7f3a91c",occurredAt:"2026-07-25 09:12:03",slaRemaining:"21:18",
+    intakeSource:"alert_webhook",completeness:"STRUCTURED",
+    rawInput:'[ALERT] code=903001 svc=order-svc\nmsg="Mongo connection pool exhausted"\nhost=csdp-mongo-03 trace=7f3a91c'},
+  evidence:[
+   {queryId:"EV-2",namespace:"M",summary:"Mongo 连接与慢查询",status:"ANOMALY",source:"guance:metric",collectedAt:"09:12:04",
+    query:[["k","M::"],["n","mongodb"],["d",":(connections_current,connections_available,slow_query_count,baseline_slow,reachable) "],["s","{host='csdp-mongo-03'}"],["d"," [-15m]"]],
+    observed:{connections_current:2000,connections_available:0,slow_query_count:37,baseline_slow:6,reachable:true}},
+   {queryId:"EV-1",namespace:"L",summary:"错误码日志计数",status:"ANOMALY",source:"guance:log",collectedAt:"09:12:04",
+    query:[["k","L::"],["n","order-svc"],["d",":(count,trace_id) "],["s","{error_code='903001'}"],["d"," [-15m]"]],
+    observed:{count:148,trace_id:"7f3a91c"}},
+   {queryId:"EV-3",namespace:"T",summary:"失败调用链定位",status:"ANOMALY",source:"guance:trace",collectedAt:"09:12:05",
+    query:[["k","T::"],["n","order-svc"],["d",":(failed_hop,status,duration_ms) "],["s","{trace_id='7f3a91c'}"]],
+    observed:{failed_hop:"mongo.find",status:"timeout",duration_ms:30012}},
+  ],
+  criteria:[
+   {signal:"pool_exhausted",sourceRequestId:"EV-2",description:"连接可用数占比归零，判定连接池打满",
+    rule:{kind:"ratio_of_sum_gt",numeratorField:"connections_current",addendField:"connections_available",threshold:0.95}},
+   {signal:"db_hop_failure",sourceRequestId:"EV-3",description:"失败跳落在 DB 层且状态为超时/错误",
+    rule:{kind:"contains_and_in",containsField:"failed_hop",substring:"mongo",membershipField:"status",acceptedValues:["timeout","error"]}},
+   {signal:"slow_query_spike",sourceRequestId:"EV-2",description:"慢查询超基线 3 倍",
+    rule:{kind:"multiple_gt",field:"slow_query_count",baselineField:"baseline_slow",multiplier:3}},
+   {signal:"error_present",sourceRequestId:"EV-1",description:"错误码日志出现即确认故障发生",
+    rule:{kind:"numeric_gte",field:"count",threshold:1}},
+   {signal:"node_unreachable",sourceRequestId:"EV-2",description:"实例探活失败，用于区分宕机场景",
+    rule:{kind:"boolean_equals",field:"reachable",expected:false}},
+  ],
+  rules:[
+   {ruleId:"R-903001-a",requiredSignals:["pool_exhausted","db_hop_failure"],
+    rootCause:"Mongo 连接池打满，order-svc 数据库调用排队超时",
+    summary:"连接可用数归零且慢查询显著抬升，失败跳定位在 mongo.find。",confidence:"HIGH"},
+   {ruleId:"R-903001-b",requiredSignals:["node_unreachable","error_present"],
+    rootCause:"Mongo 实例不可达（宕机或网络分区）",summary:"实例探活失败且错误持续。",confidence:"HIGH"},
+   {ruleId:"R-903001-c",requiredSignals:["slow_query_spike","index_missing"],
+    rootCause:"缺失索引导致慢查询堆积",summary:"慢查询升高但连接未打满。",confidence:"MEDIUM"},
+  ],
+  actions:[
+   {actionId:"act-1",actionType:"AUTO_READONLY",title:"复核连接池当前占用与慢查询 Top-N",
+    description:"只读取证，可自动执行。",requiresApproval:false,approvalStatus:"NOT_REQUIRED",executionStatus:"COMPLETED"},
+   {actionId:"act-2",actionType:"HUMAN_CONTACT",title:"转派 DBA 组评估扩容窗口",
+    description:"携带完整上下文快照转派。",requiresApproval:false,approvalStatus:"NOT_REQUIRED",executionStatus:"PENDING"},
+   {actionId:"act-3",actionType:"MANUAL_WRITE",title:"扩容 mongos 连接池上限至 4000",
+    description:"生产写操作。MateClaw 不执行，由有权限的人在平台外执行后登记结果。",
+    requiresApproval:true,approvalStatus:"PENDING",executionStatus:"BLOCKED"},
+  ],
+  routeToTeam:"DBA 组",
+  timeline:[
+   {timestamp:"09:12:03",event:"故障上下文已接收",actor:"intake",status:"done"},
+   {timestamp:"09:12:03",event:"确定性路由命中 CSDP:903001",actor:"orchestrator",status:"done"},
+   {timestamp:"09:12:05",event:"诊断结论待人工确认",actor:"orchestrator",status:"current"},
+  ],
+ },
+ abst:{
+  diagnosisId:"diag-2c8b40f91a77", caseId:"case-2c8b40f91a77", runId:"run-2c8b40f91a77",
+  contractVersion:"1.3", routeMode:"DETERMINISTIC", status:"NEEDS_INVESTIGATION",
+  rootCause:"SOP 尚未审核，当前仅完成影子取证，不输出正式根因。",
+  summary:"命中草案 SOP；结果仅用于离线比对，不能作为处置建议。",
+  confidence:"LOW", abstained:true,
+  sopKey:"CSDP:901002", sopTitle:"微信模板消息发送失败", sopStatus:"candidate", sopVerified:false,
+  rehearsal:false, fixtureMode:true,
+  warnings:[
+   "当前仅使用 fixture 证据；DQL 指标名与阈值尚未联调核实。",
+   "自动取证失败（EV-M2）；请按 SOP 进行人工取证。",
+   "SOP 仍为草案，禁止越过影子模式或输出恢复动作。"],
+  incident:{incidentId:"inc-901002-1140",system:"CSDP",service:"notify-svc",errorCode:"901002",
+    title:"微信模板消息批量发送失败",severity:"P1",impact:"待确认",
+    traceId:null,occurredAt:"2026-07-25 11:40:11",slaRemaining:"48:02",
+    intakeSource:"alert_webhook",completeness:"STRUCTURED",
+    rawInput:'[ALERT] code=901002 svc=notify-svc\nmsg="template message send failed"'},
+  evidence:[
+   {queryId:"EV-M1",namespace:"L",summary:"错误码日志计数",status:"ANOMALY",source:"guance:log",collectedAt:"11:40:12",
+    query:[["k","L::"],["n","notify-svc"],["d",":(count) "],["s","{error_code='901002'}"],["d"," [-15m]"]],
+    observed:{count:26}},
+   {queryId:"EV-M2",namespace:"M",summary:"微信网关 token 有效性",status:"MISSING",source:"guance:unavailable",collectedAt:"11:40:13",
+    query:[["k","M::"],["n","wechat_gateway"],["d",":(token_valid,retry_count) "],["s","{service='notify-svc'}"],["d"," [-15m]"]],
+    observed:{}},
+  ],
+  criteria:[
+   {signal:"error_present",sourceRequestId:"EV-M1",description:"错误码日志出现即确认故障发生",
+    rule:{kind:"numeric_gte",field:"count",threshold:1}},
+   {signal:"token_invalid",sourceRequestId:"EV-M2",description:"网关 access_token 失效",
+    rule:{kind:"boolean_equals",field:"token_valid",expected:false}},
+   {signal:"retry_storm",sourceRequestId:"EV-M2",description:"重试次数异常放大",
+    rule:{kind:"numeric_gte",field:"retry_count",threshold:50}},
+  ],
+  rules:[
+   {ruleId:"R-901002-a",requiredSignals:["error_present","token_invalid"],
+    rootCause:"微信网关 access_token 失效导致模板消息发送被拒",
+    summary:"token 校验失败且错误日志同步上升。",confidence:"HIGH"},
+   {ruleId:"R-901002-b",requiredSignals:["error_present","retry_storm"],
+    rootCause:"下游限流触发重试风暴",summary:"重试放大导致批量失败。",confidence:"MEDIUM"},
+  ],
+  actions:[],
+  routeToTeam:null,
+  timeline:[
+   {timestamp:"11:40:11",event:"故障上下文已接收",actor:"intake",status:"done"},
+   {timestamp:"11:40:11",event:"确定性路由命中 CSDP:901002",actor:"orchestrator",status:"done"},
+   {timestamp:"11:40:13",event:"证据或审核条件不足，转人工深查",actor:"orchestrator",status:"current"},
+  ],
+ }
+};
+
+let cur, EVAL, EVBY;
+const STATUS_LABEL={READY_FOR_HUMAN:["ready","待人工确认"],NEEDS_INVESTIGATION:["invest","转人工深查"],
+  CONFIRMED:["ready","已确认"],TRANSFERRED:["ready","已转派"],CLOSED:["mode","已关闭"]};
+const STATE_LABEL={pass:"成立",excl:"已排除",unk:"无法求值"};
+
+function load(which){
+  cur=D[which];
+  EVBY={}; cur.evidence.forEach(e=>EVBY[e.queryId]=e);
+  EVAL={}; cur.criteria.forEach(c=>EVAL[c.signal]={c,...evaluate(c,EVBY)});
+  document.querySelectorAll('.seg button').forEach((b,i)=>b.classList.toggle('on',i===(which==='hit'?0:1)));
+  document.getElementById('crumb').textContent=cur.diagnosisId;
+  renderMain(); renderSide();
+}
+
+function renderMain(){
+  const signals=cur.criteria.map(c=>c.signal).filter(s=>EVAL[s].state==='pass');
+  const sigSet=new Set(signals);
+  const firedRule=cur.rules.find(r=>r.requiredSignals.every(s=>sigSet.has(s)));
+  const [scls,slab]=STATUS_LABEL[cur.status];
+  const nPass=signals.length;
+  const nExcl=cur.criteria.filter(c=>EVAL[c.signal].state==='excl').length;
+  const nUnk =cur.criteria.filter(c=>EVAL[c.signal].state==='unk').length;
+
+  /* evidence: which criteria each feeds, and which fields those criteria read */
+  const evHtml=cur.evidence.map((e,i)=>{
+    const feeders=cur.criteria.filter(c=>c.sourceRequestId===e.queryId);
+    const usedFields=new Set(feeders.filter(c=>EVAL[c.signal].state==='pass').flatMap(c=>fieldsOf(c.rule)));
+    const obs=Object.entries(e.observed);
+    const feedsPass=feeders.some(c=>EVAL[c.signal].state==='pass');
+    return `<div class="ev ${e.status==='ANOMALY'?'anom':e.status==='MISSING'?'miss':''} ${feedsPass?'':'dim'}" id="ev-${e.queryId}">
+      <div class="evh"><span class="qid">${e.queryId}</span><span class="ns">${e.namespace}::</span>
+        <span class="evsum">${e.summary}</span><span class="evst ${e.status}">${e.status}</span>
+        <span class="feeds">供给 ${feeders.length} 条判据</span></div>
+      <div class="obsline">${obs.length?obs.map(([k,v])=>`<span class="ob ${usedFields.has(k)?'used':''}">${k} <b>${v}</b></span>`).join('')
+        :'<span class="ob empty">observed 为空 · 取证失败</span>'}</div>
+      <button class="qtoggle" onclick="this.closest('.ev').classList.toggle('open')">${ic('chevron')}查看 DQL 与采集元信息</button>
+      <div class="qwrap"><div class="qinner">
+        <div class="q">${e.query.map(([c,t])=>`<span class="${c==='k'?'k':c==='s'?'s':c==='d'?'d':''}">${t}</span>`).join('')}</div>
+        <div class="qmeta"><span>source ${e.source}</span><span>collectedAt ${e.collectedAt}</span>
+          <span>供给判据 ${feeders.map(f=>f.signal).join(', ')||'—'}</span></div>
+      </div></div></div>`;
+  }).join('');
+
+  /* criteria: substituted arithmetic + 3 states */
+  const order={pass:0,unk:1,excl:2};
+  const crHtml=[...cur.criteria].sort((a,b)=>order[EVAL[a.signal].state]-order[EVAL[b.signal].state]).map(c=>{
+    const r=EVAL[c.signal];
+    const mark=r.state==='pass'?ic('check'):r.state==='unk'?'?':ic('x');
+    return `<div class="cr ${r.state}" id="cr-${c.signal}">
+      <div class="crtop"><span class="crm">${mark}</span>
+        <span class="crsig">${c.signal}</span>
+        <span class="crstate ${r.state}">${STATE_LABEL[r.state]}</span>
+        <span class="crsrc">${c.rule.kind} · 源 <a onclick="jump('ev-${c.sourceRequestId}')">${c.sourceRequestId}</a></span></div>
+      <div class="calc">
+        <div class="cline"><span class="cl">判据</span><span class="cval">${symbolic(c.rule)}</span></div>
+        ${r.sub!==null
+          ? `<div class="cline subst ${r.state==='pass'?'ok':'no'}"><span class="cl">代入</span><span class="cval">${r.sub}</span></div>`
+          : `<div class="cline subst unk"><span class="cl">代入</span><span class="cval">${r.reason}</span></div>`}
+      </div>
+      <div class="crd">${c.description}</div>
+      ${r.state==='excl'?`<div class="crnote excl">${ic('x')}<span>该判据<b>已求值为假</b>：依赖它的候选结论是<b>被证据排除的</b>，可以放心不再怀疑。</span></div>`:''}
+      ${r.state==='unk'?`<div class="crnote unk">${ic('help')}<span><b>未验证 ≠ 已排除。</b>依赖该信号的候选结论既没被证实、也没被排除；补齐 <span class="m">${c.sourceRequestId}</span> 后结论可能改变。</span></div>`:''}
+    </div>`;
+  }).join('');
+
+  /* rules with precise counterfactual */
+  const ruleHtml=cur.rules.map(r=>{
+    const fired=r===firedRule;
+    const missing=r.requiredSignals.filter(s=>!sigSet.has(s));
+    const unkMissing=missing.filter(s=>EVAL[s]&&EVAL[s].state==='unk');
+    const exclMissing=missing.filter(s=>EVAL[s]&&EVAL[s].state==='excl');
+    const undef=missing.filter(s=>!EVAL[s]);
+    const badge=fired?'fired':(unkMissing.length||undef.length?'unk':'excl');
+    const badgeT=fired?'命中 · 采纳此结论':(unkMissing.length||undef.length?'未命中 · 未验证':'未命中 · 已排除');
+    let why='';
+    if(!fired){
+      const parts=[];
+      if(exclMissing.length) parts.push(`<div class="why excl">${ic('x')}<span><span class="tag">已排除</span>缺少 <b>${exclMissing.join(' / ')}</b> —— 判据已求值为假，此结论<b>确已被证据排除</b>。</span></div>`);
+      if(unkMissing.length) parts.push(`<div class="why unk">${ic('help')}<span><span class="tag">未验证</span>缺少 <b>${unkMissing.join(' / ')}</b> —— 源证据取证失败，判据<b>无法求值</b>。此结论<b>没有被排除</b>，补齐证据后可能成立。</span></div>`);
+      if(undef.length) parts.push(`<div class="why unk">${ic('alert')}<span><span class="tag">无采集</span>信号 <b>${undef.join(' / ')}</b> 在本 SOP 的 anomalyCriteria 中<b>没有对应判据</b>，因此永远不会成立 —— 知识缺口，建议补 SOP。</span></div>`);
+      why=parts.join('');
+    }
+    return `<div class="rule ${fired?'fired':'dim'}">
+      <div class="rh"><span class="rid">${r.ruleId}</span>
+        <span class="rbadge ${badge}">${badgeT}</span>
+        <span class="rid" style="margin-left:auto">confidence ${r.confidence}</span></div>
+      <div class="rreq">requiredSignals
+        ${r.requiredSignals.map(s=>{const st=EVAL[s]?EVAL[s].state:'undef';
+          const cls=st==='pass'?'ok':st==='unk'?'unk':'no';
+          const gl=st==='pass'?'✓':st==='unk'?'?':st==='undef'?'∅':'✗';
+          return `<span class="rsig ${cls}" onclick="jump('cr-${s}')" title="点击定位到该判据">${gl} ${s}</span>`;}).join('')}</div>
+      <div class="rout"><b>${r.rootCause}</b><br><span style="color:var(--ink-3)">${r.summary}</span></div>
+      ${why}</div>`;
+  }).join('');
+
+  const actHtml=cur.actions.length? cur.actions.map(a=>`
+    <div class="act ${a.actionType==='MANUAL_WRITE'?'write':''}">
+      <div class="ath"><span class="atype ${a.actionType}">${a.actionType}</span>
+        <span class="att">${a.title}</span><span class="aid">${a.actionId}</span></div>
+      <div class="adesc">${a.description}</div>
+      <div class="astate">
+        <span class="kv">requiresApproval <b>${a.requiresApproval}</b></span>
+        <span class="kv">approvalStatus <b>${a.approvalStatus}</b></span>
+        <span class="kv ${a.executionStatus==='BLOCKED'?'block':''}">executionStatus <b>${a.executionStatus}</b></span>
+      </div></div>`).join('')
+    : `<div class="noact">弃权（<span class="m">abstained=true</span>）时 <span class="m">recommendedActions</span> 恒为空数组 —— 契约保证不输出任何恢复建议。</div>`;
+
+  document.getElementById('main').innerHTML=`
+    <div class="idrow">
+      <span class="idmain">${cur.diagnosisId}</span>
+      <span class="pill ${scls}"><span class="sh"></span>${cur.status} · ${slab}</span>
+      <span class="pill ${cur.routeMode==='DETERMINISTIC'?'det':'llm'}"><span class="sh"></span>${cur.routeMode}</span>
+      ${cur.fixtureMode?'<span class="pill mode">fixtureMode</span>':''}
+      ${cur.rehearsal?'<span class="pill mode">rehearsal</span>':''}
+      <span class="pill mode">writeExecutionEnabled=false</span>
+    </div>
+
+    ${cur.warnings.length?`<div class="warns"><div class="wt">${ic('alert')}warnings · 契约自曝的能力边界</div>
+      <ul>${cur.warnings.map(w=>`<li>${w}</li>`).join('')}</ul></div>`:''}
+
+    <div class="verdict ${cur.abstained?'abst':''}">
+      <div class="eyebrow">${ic(cur.abstained?'alert':'check')}${cur.abstained?'rootCause · 已弃权':'rootCause · 根因'}
+        <span class="cv">contractVersion ${cur.contractVersion}</span></div>
+      <div class="rc ${cur.abstained?'abst':''}">${cur.rootCause}</div>
+      <div class="sum">${cur.summary}</div>
+      <div class="vmeta">
+        <div class="conf"><span class="lab">confidence</span>
+          <span class="steps ${cur.confidence.toLowerCase()}"><i></i><i></i><i></i></span>
+          <b class="${cur.confidence.toLowerCase()}">${cur.confidence}</b></div>
+        <div class="prov">sopKey <span class="k">${cur.sopKey}</span> · ${cur.sopTitle}
+          <span class="sopstate ${cur.sopStatus==='approved'&&cur.sopVerified?'ok':'draft'}">${cur.sopStatus} / verified=${cur.sopVerified}</span></div>
+      </div>
+    </div>
+
+    <div class="secthd">${ic('deduce')}<span class="st">判定链</span>
+      <span class="hint">复刻 CriterionEvaluator.matchingSignals 求值顺序</span></div>
+
+    <div class="tally">
+      <div class="tg"><span class="tn">${cur.evidence.length}</span><span class="tl">项证据</span></div>
+      <div class="tg"><span class="tn">${cur.criteria.length}</span><span class="tl">条判据</span>
+        <span class="tsplit"><span class="tchip pass">${nPass} 成立</span>
+        ${nExcl?`<span class="tchip excl">${nExcl} 已排除</span>`:''}
+        ${nUnk?`<span class="tchip unk">${nUnk} 无法求值</span>`:''}</span></div>
+      <div class="tg"><span class="tn">${cur.rules.length}</span><span class="tl">条候选规则</span></div>
+      <div class="tg win ${firedRule?'':'abst'}"><span class="tn">${firedRule?firedRule.ruleId:'无规则命中'}</span>
+        <span class="tl">${firedRule?'采纳':'→ 弃权'}</span></div>
+    </div>
+
+    <div class="chain">
+      <div class="link"><div class="lrail"><div class="lnode">1</div><div class="lconn"></div></div>
+        <div class="lbody"><div class="lhd"><span class="lt">证据采集</span>
+          <span class="lf">List&lt;EvidenceResult&gt; · 高亮字段 = 被成立判据读取</span></div>${evHtml}</div></div>
+
+      <div class="link"><div class="lrail"><div class="lnode">2</div><div class="lconn"></div></div>
+        <div class="lbody"><div class="lhd"><span class="lt">判据求值 → 信号</span>
+          <span class="lf">纯 Java pattern-matching · 零 LLM · 每条给出代入运算</span></div>${crHtml}</div></div>
+
+      <div class="link"><div class="lrail"><div class="lnode">3</div><div class="lconn"></div></div>
+        <div class="lbody"><div class="lhd"><span class="lt">规则匹配 · 含反事实</span>
+          <span class="lf">首条 requiredSignals ⊆ 成立信号 的规则胜出 · 点信号可定位判据</span></div>${ruleHtml}</div></div>
+
+      <div class="link"><div class="lrail"><div class="lnode final ${cur.abstained?'abst':''}">${cur.abstained?'!':'✓'}</div></div>
+        <div class="lbody"><div class="lhd"><span class="lt">${cur.abstained?'弃权结论':'根因结论'}</span>
+          <span class="lf">rootCause + confidence</span></div>
+          <div class="rule ${cur.abstained?'dim':'fired'}"><div class="rout"><b>${cur.rootCause}</b><br>
+            <span style="color:var(--ink-3)">${cur.summary}</span></div>
+            ${cur.abstained?`<div class="why unk">${ic('alert')}<span><span class="tag">弃权成因</span>${
+              (cur.sopStatus!=='approved'||!cur.sopVerified)
+                ? 'SOP 非 operational（<span class="m">verified && status==approved</span> 不成立）→ 强制影子模式，覆盖一切规则结论'
+                : (cur.evidence.some(e=>e.status==='MISSING') ? '必需证据 MISSING → 降级人工取证'
+                : '无 DiagnosisRule 的 requiredSignals 被完全满足')}</span></div>`:''}
+          </div></div></div>
+    </div>
+
+    <div class="secthd">${ic('shield')}<span class="st">建议动作</span>
+      <span class="hint">recommendedActions · MANUAL_WRITE 恒 BLOCKED</span></div>
+    ${actHtml}`;
+}
+
+function jump(id){
+  const el=document.getElementById(id); if(!el)return;
+  if(el.classList.contains('ev')) el.classList.add('open');
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+  el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),1300);
+}
+
+function renderSide(){
+  const i=cur.incident;
+  const rows=[["system",i.system,1],["service",i.service,1],["errorCode",i.errorCode||"null",1],
+    ["severity",i.severity,1],["completeness",i.completeness,1],["intakeSource",i.intakeSource,1],
+    ["traceId",i.traceId||"null",1],["occurredAt",i.occurredAt,1],["slaRemaining",i.slaRemaining,1],
+    ["impact",i.impact,0]];
+  document.getElementById('side').innerHTML=`
+    <div class="card"><div class="clab">${ic('file')}IncidentContext</div>
+      ${rows.map(([k,v,m])=>`<div class="row"><span class="rk">${k}</span><span class="rv ${m?'m':''}">${v}</span></div>`).join('')}
+      <div class="raw">${i.rawInput}</div></div>
+
+    <div class="card"><div class="clab">${ic('clock')}timeline · 生命周期</div>
+      <div class="tl">${cur.timeline.map(t=>`<div class="tli"><span class="td ${t.status==='current'?'current':''}"></span>
+        <span class="tll"></span><div><div class="tev">${t.event}</div>
+        <div class="tmeta"><span>${t.timestamp}</span><span>${t.actor}</span><span>${t.status}</span></div></div></div>`).join('')}</div>
+      <div style="font-size:10.5px;color:var(--ink-4);margin-top:9px;line-height:1.5">契约强制 append-only：历史事件必须全为 <span class="m">done</span>。</div></div>
+
+    <div class="card"><div class="clab">${ic('route')}标识与路由</div>
+      <div class="row"><span class="rk">caseId</span><span class="rv m">${cur.caseId}</span></div>
+      <div class="row"><span class="rk">runId</span><span class="rv m">${cur.runId}</span></div>
+      <div class="row"><span class="rk">routeToTeam</span><span class="rv m">${cur.routeToTeam||"null"}</span></div></div>
+
+    ${cur.status==='READY_FOR_HUMAN'?`<div>
+      <button class="act-btn primary" onclick="alert('POST .../confirm → stateMachine.confirm()：READY_FOR_HUMAN → CONFIRMED，追加 timeline「人工确认诊断结论」。不执行任何工具。')">${ic('check')}确认诊断结论</button>
+      <button class="act-btn" onclick="alert('POST .../transfer → 需 targetTeam + note，追加 TransferRecord 并置 TRANSFERRED。')">${ic('arrow')}结构化转派</button>
+    </div>`:`<div>
+      <button class="act-btn" onclick="alert('弃权诊断需要新证据才能确认：stateMachine.confirm() 对 abstained 诊断抛 conflict。')">${ic('alert')}补充证据后再确认</button>
+    </div>`}
+
+    <div class="redline"><div class="rt">${ic('shield')}红线 · 在代码里强制</div>
+      <p><code>Diagnosis</code> 构造器：<code>writeExecutionEnabled=true</code> 直接抛异常；<code>MANUAL_WRITE</code> 必须 <code>BLOCKED</code>；<code>executeAction()</code> 恒抛 <code>production_write_disabled</code>。批准只把 <code>PENDING → APPROVED_NOT_EXECUTED</code>。</p></div>
+
+    <div class="notwired"><div class="nt">尚未接线（页面不假装有）</div>
+      <ul><li><span class="m">controller/</span> 空 → REST/webhook 待 P1</li>
+        <li><span class="m">evidence/</span> 空 → 取证适配器待 P3，当前 <span class="m">fixtureMode</span></li>
+        <li><span class="m">card/</span> 空 → IM 卡片待 P2</li>
+        <li><span class="m">LLM_FALLBACK</span> 枚举在，agent 未接线（P4）</li></ul></div>`;
+}
+
+document.getElementById('nv').innerHTML=ic('target');
+load('hit');
+</script>
+</body>
+</html>
