@@ -40,7 +40,7 @@
 ## 4. 当前阶段矛盾分析（毛选方法论 · 2026-07 刷新）
 
 **矛盾清单**（P2 完成后已再次转化，2026-07-26 三次刷新）：
-- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（排障域 92 项测试全绿，但 SOP 库是 fixture、
+- [闭环代码已通且可测] vs [尚未在真实数据上跑过一次]（排障域 93 项测试全绿，但 SOP 库是 fixture、
   观测云未联调、无人真正用工作台处置过一次真故障）
 - [知识质量天花板]（只读可自动化 30/146≈21%、3 路由键冲突、103 处字符丢失）vs [自动化雄心]
 - [Java 重实现工作量] vs [Python MVP 已验证资产]（38 测试 + 7 subtests，可同构直译）
@@ -110,8 +110,14 @@
   外加 `GET /sops/candidates` 只读候选队列。**这拆掉了"真实 SOP 无法入库"这个阻塞**。
   状态流转单向 fail-closed（`candidate→approved→deprecated`，不可回退；approve 同时置 `verified`，
   因为 `operational()` 需二者皆真，半升级的 SOP 会一边看着已审核一边持续弃权）。
+  **版本替换尚未完成**：deprecated 行仍占用唯一 routeKey，同一路由的新 sopId 会冲突；当前只能退役留痕，
+  不能声称已经具备“退役后发新版”能力，后续需补历史版本 + 唯一当前版本模型。
   候选队列只读，**因为 Outbox 的 status 是"发布"语义而非"审核"语义，混用会让投递重试伪装成审核通过**——
   候选审核工作流是尚未设计的增量，见 `TODO.md` T6。
+
+- **SOP 管理 Vue 已就绪**（2026-07-27）：管理员入口 `/troubleshooting/sops` 支持注册表筛选、
+  完整合同检查、candidate JSON 即时校验和 `candidate→approved→deprecated` 显式确认。
+  前后端都拒绝以 approved/verified 状态绕过审核；页面没有执行诊断或生产写的按钮。
 
 - **P3 D8 证据源适配工程链路已就绪**（2026-07-27）：`EvidenceSourceAdapter` +
   `(system,signalKind)` 主备 `EvidenceSourceRouter` + `GuanceEvidenceAdapter` +
@@ -158,8 +164,9 @@ T1 清路由键冲突、T2 内网核实观测云、T3 真实 SOP 入库并放开
 
 **页面上必须守的红线（对齐 §3）**：无"执行"按钮；批准=推进状态机、不执行；写恢复动作显示为"转派+外部登记结果"；agent 步骤标只读；结论强制挂证据引用。
 
-**已落地的 Vue 实现**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain}.vue`
-（队列 + 判定链 + 处置弹窗，路由 `meta.requiredCapability='view:troubleshooting'`）。
+**已落地的 Vue 实现**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain,SopManagement}.vue`
+（队列 + 判定链 + 处置弹窗 + SOP 管理；诊断路由需 `view:troubleshooting`，SOP 管理路由需
+`manage:troubleshooting`）。
 HTML 原型仍是设计与汇报载体，**实现以 Vue 为准**；原型里 `console-diagnosis-detail.html` 是契约对齐版，
 其判定链（代入运算、已排除 vs 无法求值）比当前 Vue 组件更细，是 Vue 侧后续要补齐的目标形态。
 

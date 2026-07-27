@@ -443,6 +443,7 @@ type NavItem = {
     | 'manage:models'
     | 'manage:security'
     | 'manage:settings'
+    | 'view:troubleshooting'
   globalAdmin?: boolean
 }
 
@@ -467,6 +468,12 @@ const navGroups = computed(() => [
         label: t('nav.dashboard', 'Dashboard'),
         icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`,
         requiredCapability: 'view:dashboard',
+      },
+      {
+        path: '/troubleshooting',
+        label: t('nav.troubleshooting', 'Troubleshooting'),
+        icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/><path d="M4 4h16v16H4z"/></svg>`,
+        requiredCapability: 'view:troubleshooting',
       },
       {
         path: '/chat',
@@ -572,6 +579,9 @@ function toggleSidebar() {
 }
 
 function isNavItemActive(item: { path: string; label: string }) {
+  if (item.path === '/troubleshooting') {
+    return route.path.startsWith('/troubleshooting')
+  }
   if (item.path.startsWith('/settings')) {
     return route.path.startsWith('/settings')
   }

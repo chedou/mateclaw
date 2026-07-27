@@ -7,10 +7,10 @@
 当前实施状态：**P0 内核 + P1 接入与身份 + P2 交付闭环 + P3 命中路证据适配底座已完成**。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
-与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（`views/Troubleshooting/`）与
+与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
 `ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。
-排障域定向测试 92 项通过（含 `Vertical903001Test`）；应用上下文启动测试通过。
+排障域定向测试 93 项通过（含 `Vertical903001Test`）；应用上下文启动测试通过。
 **注意：观测云 measurement/字段/阈值仍未完成内网 T2 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。**
 
 ## 接续这项工作，先读

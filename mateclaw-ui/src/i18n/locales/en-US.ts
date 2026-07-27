@@ -536,6 +536,7 @@ export default {
   },
   nav: {
     dashboard: 'Dashboard',
+    troubleshooting: 'Troubleshooting',
     chat: 'Chat',
     control: 'Control',
     channels: 'Channels',

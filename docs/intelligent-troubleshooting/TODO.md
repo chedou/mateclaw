@@ -6,8 +6,8 @@
 > 开工前必读：`CLAUDE.md` → `HANDOFF.md`（决策 D1–D8、四条红线、矛盾分析）→
 > `rfcs/intelligent-troubleshooting-design.md`（架构 + 源码索引）。
 >
-> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + 推导投影 + SOP 管理均已完成，
-> 排障域定向测试 **92 项**通过；应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
+> 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + 推导投影 + SOP 管理 API/Vue 均已完成，
+> 排障域定向测试 **93 项**通过；应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
 
 ---
 
@@ -65,9 +65,14 @@
   GET  /api/v1/troubleshooting/sops/{sys}/{code} 读取完整 SOP
   POST /api/v1/troubleshooting/sops/{sys}/{code}/status  promote/retire
   ```
+  管理员也可从 Vue 路由 `/troubleshooting/sops` 浏览、注册 candidate，并显式推进到
+  `approved/deprecated`；页面无诊断执行入口。
   从 `l0/sop_kb.json`（146 码）导入时**必须以 `candidate` 注册**，逐条审核后再
-  `→approved`。状态流转是单向的（`candidate→approved→deprecated`），不能回退——
-  approve 错了就 deprecate 后发新版，留下痕迹。
+  `→approved`。状态流转是单向的（`candidate→approved→deprecated`），不能回退。
+- **当前版本边界（不能假装已解决）**：V172 对 `(workspace_id, route_key)` 做唯一约束，
+  deprecated 记录仍占用 routeKey；因此 approve 错了可以 deprecate 留痕，但**当前还不能为同一路由
+  注册替代版本**。上线前需设计“历史版本 + 唯一当前版本”的数据模型与按 sopId 查看历史的 API，
+  不能靠覆盖旧行或逻辑删除抹掉审计轨迹。
 - **放开 `fixtureMode`**：现在 `TroubleshootingIntakeService.EVIDENCE_IS_FIXTURE` 硬编码为 `true`。
   T4 工程链路已经落地，但**只有 T2 的真实字段/阈值核实与 T3 审核入库完成后才能改**；
   “API 可达”不等于“证据语义可信”。
@@ -139,11 +144,12 @@
 ## 三、前端待办
 
 ### T9 · Vue 工作台补齐
-- **已落地**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain}.vue`
-  （队列 + 判定链 + 处置弹窗），判定链已接 `GET /diagnoses/{id}/derivation`，
-  三态（成立/已排除/无法求值）与代入运算都是真实数据。
+- **已落地**：`mateclaw-ui/src/views/Troubleshooting/{index,DerivationChain,SopManagement}.vue`
+  （队列 + 判定链 + 处置弹窗 + SOP 注册表），判定链已接 `GET /diagnoses/{id}/derivation`，
+  三态（成立/已排除/无法求值）与代入运算都是真实数据；SOP 管理只允许 candidate 注册，
+  生命周期单向推进且受 `manage:troubleshooting` 门控。
 - **待补**：
-  - [ ] SOP 管理界面（注册/浏览/promote，接 T3 那组 API）——**导入 146 码需要它**。
+  - [x] SOP 管理界面（注册/浏览/promote，接 T3 那组 API）——**导入 146 码的人工入口已具备**。
   - [ ] 知识候选审核界面（依赖 T6 定下审核工作流）。
   - [ ] 证据的"重放查询"按钮（适配器已具备；仍依赖 T2 真实绑定核实与专用重查 API）。
 - **视觉基线**（照此，别另起炉灶）：冷调中性 + 单一信号蓝 `#2f5cf5`；
@@ -190,11 +196,12 @@
   也必须带，否则兄弟模块没有匹配测试会报错。）
 - **前端类型检查**：`cd mateclaw-ui && npx vue-tsc --noEmit`。
   注意 `npm ci` 会失败（锁文件是 pnpm 的），用 `npm install`。
-  另有 5 项既存失败的 vitest（product-cards / streaming-render），**与排障无关**，改动前就存在。
+  2026-07-27 基线：`npm test` 共 13 个测试文件、110 项测试全绿。
 - **迁移**：新增表要在 `db/migration/{mysql,h2,kingbase}/` **三个方言目录各写一份**。
 - **两个 MyBatis-Plus 坑**（踩过）：
   - `getParamNameValuePairs()` 惰性填充，**先调 `getSqlSegment()`** 才有值；
-  - 聚合更新走 **wrapper-only（entity 传 null）**，写 fake 时要照此并保留版本闸门。
+  - 诊断聚合更新走 **wrapper-only（entity 传 null）**，写 fake 时要照此并保留版本闸门；
+    SOP 生命周期更新当前是独立的 entity patch，不要把两种 mapper 合同混为一谈。
 - **纪律**：不擅自开 PR；改 RFC 保持 § 编号连续；
   源表 xlsx 含真实 token/IP/人名，**未入库、不得入库**。
 
@@ -204,7 +211,7 @@
 
 1. **如果你能拿到内网/owner 决策** → 走 T1 → T2 → T3，这是主要矛盾所在，
    其余都是在未验证的地基上加层。
-2. **如果只能做纯工程** → T4 已完成；下一项优先 T9 的 SOP 管理界面（导入 146 码需要它），
-   或在进入 T5 前先把只读 agent 的工具白名单与安全测试设计清楚。
+2. **如果只能做纯工程** → T4 与 T9 的 SOP 管理界面已完成；进入 T5 前先把只读 agent 的
+   工具白名单与安全测试设计清楚，再接 ReAct 未命中路。
 3. **不建议现在做**：T7 出站卡片（等产品定"哪个群收什么"）、
    T8 放权阶梯（等 T1–T3 有真实数据才有意义）。

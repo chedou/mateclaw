@@ -287,6 +287,8 @@ D7 同 JAR 内领域包、逻辑不寄生 Workflow 已落（§2）· D8 Router�
 
 - [x] 领域故障工作台（Web）+ 领域 REST（`confirm`/`transfer`/`approve`/`record-outcome`/`close`，
   以及始终返回 409 的 `/execute`）。
+- [x] SOP 管理台 `/troubleshooting/sops`：只接受 candidate 注册、按需加载完整合同，生命周期仅允许
+  `candidate→approved→deprecated`，由 `manage:troubleshooting` 门控且不提供执行入口。
 - [x] 注册领域 `FeishuCardKind`（前缀 `ts.`）+ `FeishuCardHandler`，按钮回调只打领域端点、推进状态机（**验证：执行 0 个工具**）；出站渲染仍待产品路由决策。
 - [x] R1/R2/R3 回归测试：写动作恒 `PENDING→APPROVED_NOT_EXECUTED`、`record-outcome` 登记外部处置、生产写执行器不在工具表。
 
@@ -343,7 +345,7 @@ D7 同 JAR 内领域包、逻辑不寄生 Workflow 已落（§2）· D8 Router�
 | 方向 | 内容 | 原则 |
 |---|---|---|
 | **主攻** | T1 清路由歧义 → T2 核实 903001 真实证据 → T3 审核入库；P3 代码只作为承载底座 | 以真实数据验收，不用 fixture 冒充完成 |
-| **钳制/并行** | SOP 管理界面、内网联调运行手册与脱敏回归资产 | 不越过真实验证主线 |
+| **钳制/并行** | SOP 管理界面已完成；继续维护内网联调运行手册与脱敏回归资产 | 不越过真实验证主线 |
 | **后续梯队** | P4 未命中只读 agent → P5 放权阶梯 | 梯次投入，前一梯队验收后进场 |
 | **底线（贯穿）** | §13 四条红线每 PR 自检 | 不随阶段转移 |
 
