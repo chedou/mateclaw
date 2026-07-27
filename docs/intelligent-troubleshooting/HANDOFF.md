@@ -104,11 +104,18 @@
   已审核 SOP 不被改写；⑤必需证据 MISSING 时弃权且**不产出任何恢复动作**。
   **未覆盖**：mapper 是内存的，不验证 SQL（SQL 由 `TroubleshootingMigrationTest` + 持久化单测覆盖）。
 
-**主攻（顺序执行，单点突破）**：
-1. **接真实数据**（当前主要矛盾所在）：清 L0 三个路由键冲突 → 内网核实观测云字段阈值 →
-   真实 SOP 入库、放开 `fixtureMode`。
-2. **P2 收尾**：出站卡片推送（平台 `FeishuCardRenderer` 接口是 `ApprovalNotice` 形状、不适配诊断，
-   且"哪个群收哪个系统的故障"这一绑定尚未设计——**当前只接通了入站点击**）。
+- **SOP 管理 API 已就绪**（2026-07-26）：`POST/GET /sops`、`GET /sops/{sys}/{code}`、
+  `POST /sops/{sys}/{code}/status`（均需 `manage:troubleshooting`），
+  外加 `GET /sops/candidates` 只读候选队列。**这拆掉了"真实 SOP 无法入库"这个阻塞**。
+  状态流转单向 fail-closed（`candidate→approved→deprecated`，不可回退；approve 同时置 `verified`，
+  因为 `operational()` 需二者皆真，半升级的 SOP 会一边看着已审核一边持续弃权）。
+  候选队列只读，**因为 Outbox 的 status 是"发布"语义而非"审核"语义，混用会让投递重试伪装成审核通过**——
+  候选审核工作流是尚未设计的增量，见 `TODO.md` T6。
+
+**主攻与全部待办已独立成册**：见 **`docs/intelligent-troubleshooting/TODO.md`**
+（T1–T10，每条含「为什么/完成标准」、四条红线、诚实缺口清单、工程约定与建议接手顺序）。
+一句话概括：**主要矛盾仍是「接真实数据」**——T1 清路由键冲突、T2 内网核实观测云、
+T3 真实 SOP 入库并放开 `fixtureMode`，三者都需人的介入；纯工程可做的最高价值项是 T4（D8 取证适配器）。
 
 **钳制/并行（不占主力，多为需内网/人力项）**：
 - L0 数据 blocker：3 个路由键一码多义（101014/101034/101040）owner 裁决 + 103 处字符丢失回源表恢复

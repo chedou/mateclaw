@@ -145,6 +145,40 @@ public class TroubleshootingPersistenceService {
         return new StoredDiagnosis(diagnosis, expectedVersion + 1, false);
     }
 
+    /**
+     * Lists knowledge candidates awaiting review, newest first.
+     *
+     * <p>Read-only for now, and deliberately so. The outbox column these rows
+     * carry is a <em>publication</em> state (has the candidate been handed to a
+     * sink), not a <em>review</em> state (has an expert judged it worth folding
+     * into a SOP) — the two happen to look alike and conflating them would let a
+     * delivery retry masquerade as an approval. Giving reviewers sight of the
+     * queue is useful today; the review workflow itself needs its own state and
+     * is tracked as follow-up work.</p>
+     */
+    public java.util.List<KnowledgeCandidate> listKnowledgeCandidates(long workspaceId, int limit) {
+        validateWorkspace(workspaceId);
+        int capped = Math.min(Math.max(limit, 1), 200);
+        java.util.List<TroubleshootingKnowledgeOutboxEntity> rows = outboxMapper.selectList(
+                new LambdaQueryWrapper<TroubleshootingKnowledgeOutboxEntity>()
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getDeleted, 0)
+                        .orderByDesc(TroubleshootingKnowledgeOutboxEntity::getId)
+                        .last("LIMIT " + capped));
+        java.util.List<KnowledgeCandidate> candidates = new java.util.ArrayList<>(rows.size());
+        for (TroubleshootingKnowledgeOutboxEntity row : rows) {
+            try {
+                candidates.add(objectMapper.readValue(
+                        row.getPayloadJson(), KnowledgeCandidate.class));
+            } catch (JsonProcessingException error) {
+                // One unreadable row must not hide the rest of the queue; the
+                // poller reports its own failures separately.
+                continue;
+            }
+        }
+        return candidates;
+    }
+
     private void updateAggregate(long workspaceId, Diagnosis diagnosis, int expectedVersion) {
         validateWorkspace(workspaceId);
         if (expectedVersion < 0) {

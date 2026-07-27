@@ -8,13 +8,16 @@
 联跑待收尾）。P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（`views/Troubleshooting/`）与
-`ts.` 飞书 card kind。排障域定向测试 65 项通过（含 903001 端到端竖切 `Vertical903001Test` 与推导投影 `DiagnosisDerivationService`）。
+`ts.` 飞书 card kind。另含推导投影（`GET /diagnoses/{id}/derivation`）与 SOP 管理 API（注册/浏览/promote + 候选队列只读）。
+排障域定向测试 73 项通过（含 903001 端到端竖切 `Vertical903001Test`）。
 
-## 接续这项工作，先读（两份即可上手）
+## 接续这项工作，先读
 
-1. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 会话记忆：8 个已锁定决策（D1–D8）、
-   四条红线、当前阶段矛盾分析与刷新后的代办、指针与安全口径。
-2. **`rfcs/intelligent-troubleshooting-design.md`** —— 现行架构设计（逐条 mateclaw 源码核对通过；
+1. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：每条待办都写了
+   「为什么这么做 / 做到什么算完」，含四条红线、诚实缺口清单、工程约定与建议接手顺序。
+2. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 会话记忆：8 个已锁定决策（D1–D8）、
+   四条红线、当前阶段矛盾分析、指针与安全口径。
+3. **`rfcs/intelligent-troubleshooting-design.md`** —— 现行架构设计（逐条 mateclaw 源码核对通过；
    含源码位置索引 §12、实施清单 §13、实施战略 §14）。
 
 ## 关键约束（细节见 HANDOFF §3）
