@@ -5,11 +5,12 @@
 >
 > 开工前必读：`CLAUDE.md` → `HANDOFF.md`（决策 D1–D8、四条红线、矛盾分析）→
 > **`meeting-change-plan.md`（会议驱动的变更方案 C1–C8，决定了下一阶段做什么）** →
-> `rfcs/intelligent-troubleshooting-design.md`（架构 + 源码索引）。
+> **`rfcs/intelligent-troubleshooting-architecture-v2.md`（现行架构，第一性原理重做）** →
+> `rfcs/intelligent-troubleshooting-design.md`（v1，仅作证据附录：红线论证 §5 + 源码索引 §12）。
 >
 > 当前状态：P0 内核 + P1 接入身份 + P2 交付闭环 + P3 命中路证据适配底座 + P4 未命中路只读 Agent
 > 工程链路 + 推导投影 + SOP 管理 API/Vue 均已完成；P4 默认关闭、待专用 Agent 配置与实机演练。
-> 定向回归与应用上下文启动测试通过。分支 `claude/session-moz2pc`。
+> 定向回归与应用上下文启动测试通过。分支 `claude/intelligent-troubleshooting-design`。
 >
 > **2026-07 会议后的方向调整**：主攻方向从"接真实数据补 SOP"前移到
 > **「从观测云日志自动生成 SOP」**（T11/T12），因为那才是我们相对研发团队的差异化。

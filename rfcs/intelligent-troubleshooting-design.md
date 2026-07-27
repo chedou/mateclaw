@@ -1,5 +1,10 @@
 # IT 智能排障系统设计文档（on MateClaw）
 
+> ⚠️ **已被 `rfcs/intelligent-troubleshooting-architecture-v2.md` 取代为现行架构。**
+> 本文不作废：§5 红线论证与 §12 源码位置索引是逐条核对过 MateClaw 源码的**证据附录**，仍然有效，
+> v2 也继续引用。但**知识模型（SOP = `(system, error_code)`）、"零 LLM = 整条命中路径"的表述、
+> 以及缺失学习环这三处已被 v2 推翻**，不要再照本文实现。
+>
 > 状态：实施中 v1 · P0—P3 与 P4 未命中路只读 Agent 工程链路已落地；P4 默认关闭，真实数据验证待 T1—T3
 > 作者：MateClaw Team
 > 首个落地域：CSDP 工单/客服链路

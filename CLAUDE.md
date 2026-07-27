@@ -26,9 +26,12 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
    （会议新增战线 T11–T18 见第三·五节）。
 2. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 会话记忆：8 个已锁定决策（D1–D8）、
    四条红线、当前阶段矛盾分析、指针与安全口径。
-3. **`rfcs/intelligent-troubleshooting-design.md`** —— 现行架构设计（逐条 mateclaw 源码核对通过；
-   含源码位置索引 §12、实施清单 §13、实施战略 §14）。
-4. **`docs/intelligent-troubleshooting/agent-miss-path-runbook.md`** —— P4 专用 Agent 配置、启用、验收与回滚。
+3. **`rfcs/intelligent-troubleshooting-architecture-v2.md`** —— **现行架构**（第一性原理重做：
+   公理 A1–A6 → 定律 L1–L6 → 执行/学习/信任三环 → SOP 四维分解 → 分层与不变量）。
+   `rfcs/intelligent-troubleshooting-design.md` 降为 v1 证据附录（红线论证 §5、源码索引 §12 仍有效）。
+4. **`docs/intelligent-troubleshooting/detail-page-design.md`** —— 详情页唯一现行设计（三层深度）；
+   原型 `console-detail.html`，其余 `console-*.html` 均为历史存档。
+5. **`docs/intelligent-troubleshooting/agent-miss-path-runbook.md`** —— P4 专用 Agent 配置、启用、验收与回滚。
 
 ## 关键约束（细节见 HANDOFF §3）
 

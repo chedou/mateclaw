@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>诊断详情 · 唯一现行设计</title>
+<style>
+:root{
+  --bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;
+  --ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;
+  --line:#e3e7ee;--line-2:#eef1f6;
+  --accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;
+  --good:#0e9f6e;--good-weak:#e6f6ef;--good-line:#b7e0cc;
+  --warn:#d98207;--warn-weak:#fbf1e0;--warn-line:#f0d5a8;
+  --crit:#e14b4b;--crit-weak:#fceceb;--crit-line:#f3c4c2;
+  --shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05);
+  --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;
+  --ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;
+  --accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;
+  --good:#2fbb85;--good-weak:#12271f;--good-line:#1e4435;
+  --warn:#e6a13c;--warn-weak:#2a2113;--warn-line:#4a3a1c;
+  --crit:#ef6b6b;--crit-weak:#2c1717;--crit-line:#50292a;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{--bg:#0b0e14;--surface:#141922;--surface-2:#1a2029;--surface-3:#202834;--ink-1:#eef1f6;--ink-2:#c0c8d4;--ink-3:#8591a1;--ink-4:#5b6675;--line:#26303d;--line-2:#1e2632;--accent:#6a8bff;--accent-weak:#1a2540;--accent-line:#2f3f6b;--good:#2fbb85;--good-weak:#12271f;--good-line:#1e4435;--warn:#e6a13c;--warn-weak:#2a2113;--warn-line:#4a3a1c;--crit:#ef6b6b;--crit-weak:#2c1717;--crit-line:#50292a;--shadow-sm:0 1px 2px rgba(0,0,0,.3)}
+:root[data-theme="light"]{--bg:#eef1f6;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eef2f7;--ink-1:#0f1622;--ink-2:#3b4453;--ink-3:#727e91;--ink-4:#a3adbd;--line:#e3e7ee;--line-2:#eef1f6;--accent:#2f5cf5;--accent-weak:#eaeffe;--accent-line:#c7d4fb;--good:#0e9f6e;--good-weak:#e6f6ef;--good-line:#b7e0cc;--warn:#d98207;--warn-weak:#fbf1e0;--warn-line:#f0d5a8;--crit:#e14b4b;--crit-weak:#fceceb;--crit-line:#f3c4c2;--shadow-sm:0 1px 2px rgba(15,22,34,.04),0 1px 3px rgba(15,22,34,.05)}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink-1);font-family:var(--sans);font-size:14px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:22px 20px 72px}
+
+/* ── header ─────────────────────────────────── */
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.back{color:var(--ink-3);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:5px}
+.back:hover{color:var(--accent)}
+.spacer{flex:1}
+.seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--ink-3);padding:4px 11px;border-radius:6px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--ink-1);box-shadow:var(--shadow-sm);font-weight:600}
+.ghost{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font:inherit;font-size:12.5px;padding:5px 11px;border-radius:8px;cursor:pointer}
+.ghost:hover{border-color:var(--accent-line);color:var(--accent)}
+
+/* ── layer 1: 结论 ──────────────────────────── */
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 24px;box-shadow:var(--shadow-sm)}
+.vhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font-size:11.5px;padding:2.5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink-3);background:var(--surface-2);white-space:nowrap}
+.chip.cls{border-color:var(--accent-line);background:var(--accent-weak);color:var(--accent);font-weight:600}
+.chip.conf-HIGH{border-color:var(--good-line);background:var(--good-weak);color:var(--good)}
+.chip.conf-MEDIUM{border-color:var(--warn-line);background:var(--warn-weak);color:var(--warn)}
+.chip.conf-LOW{border-color:var(--crit-line);background:var(--crit-weak);color:var(--crit)}
+.chip.mono{font-family:var(--mono);font-size:11px}
+h1{font-size:21px;line-height:1.45;margin:0 0 6px;letter-spacing:-.2px}
+.vsub{color:var(--ink-3);font-size:13px;margin:0}
+
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:20px}
+.cell{background:var(--surface);padding:15px 16px;min-height:112px}
+.clab{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4);margin-bottom:8px}
+.cell p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.big{font-size:22px;font-weight:600;font-family:var(--mono);color:var(--ink-1);letter-spacing:-.4px}
+.metric{display:flex;align-items:baseline;gap:6px;margin-bottom:3px}
+.metric span{font-size:12.5px;color:var(--ink-3)}
+.radius{display:inline-block;margin-top:6px;font-size:11.5px;padding:2px 8px;border-radius:6px}
+.radius.SYSTEM_WIDE,.radius.MULTI_CUSTOMER{background:var(--crit-weak);color:var(--crit);border:1px solid var(--crit-line)}
+.radius.SINGLE_CUSTOMER{background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
+
+.locate{margin-top:9px;font-family:var(--mono);font-size:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink-2);overflow-x:auto}
+.bound{margin-top:10px;font-size:12px;color:var(--warn);display:flex;gap:6px;align-items:flex-start}
+
+.ops{display:flex;gap:9px;margin-top:20px;flex-wrap:wrap}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-size:13px;font-weight:600;padding:8px 17px;border-radius:9px;cursor:pointer}
+.btn.sec{background:var(--surface);color:var(--ink-2);border-color:var(--line);font-weight:500}
+.btn.sec:hover{border-color:var(--accent-line);color:var(--accent)}
+
+/* ── 折叠层 ─────────────────────────────────── */
+details{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-sm);overflow:hidden}
+summary{list-style:none;cursor:pointer;padding:14px 20px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--ink-2);user-select:none}
+summary::-webkit-details-marker{display:none}
+.caret{width:14px;height:14px;flex:none;color:var(--ink-4);transition:transform .16s}
+details[open] .caret{transform:rotate(90deg)}
+summary b{font-weight:600;color:var(--ink-1)}
+summary .hint{margin-left:auto;font-size:12px;color:var(--ink-4);font-family:var(--mono)}
+.body{padding:4px 20px 20px;border-top:1px solid var(--line-2)}
+
+/* ── 判定链 ─────────────────────────────────── */
+.step{padding:15px 0;border-bottom:1px dashed var(--line)}
+.step:last-child{border-bottom:0;padding-bottom:2px}
+.snum{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4);margin-bottom:9px}
+.ev{display:flex;gap:10px;align-items:flex-start;padding:7px 0}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;margin-top:7px}
+.dot.NORMAL{background:var(--good)}.dot.ANOMALY{background:var(--crit)}.dot.MISSING{background:var(--ink-4)}
+.evk{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.evv{font-family:var(--mono);font-size:12px;color:var(--ink-1);font-weight:600}
+.evq{font-size:11.5px;color:var(--ink-4);font-family:var(--mono)}
+
+.cr{padding:9px 12px;border-radius:9px;border:1px solid var(--line);margin-bottom:8px;background:var(--surface-2)}
+.cr.SATISFIED{border-color:var(--crit-line);background:var(--crit-weak)}
+.cr.EXCLUDED{border-color:var(--good-line);background:var(--good-weak)}
+.cr.UNEVALUATED{border-style:dashed}
+.crtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.crst{font-size:11px;font-weight:700;letter-spacing:.04em}
+.cr.SATISFIED .crst{color:var(--crit)}.cr.EXCLUDED .crst{color:var(--good)}.cr.UNEVALUATED .crst{color:var(--ink-4)}
+.crname{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.calc{margin-top:5px;font-family:var(--mono);font-size:12.5px;color:var(--ink-1)}
+.crwhy{margin-top:4px;font-size:12px;color:var(--ink-3)}
+
+.rule{padding:11px 13px;border-radius:9px;border:1px solid var(--line);margin-bottom:8px}
+.rule.hit{border-color:var(--accent-line);background:var(--accent-weak)}
+.rtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rid{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.rname{font-size:13px;color:var(--ink-1);font-weight:600}
+.rtag{font-size:11px;padding:1.5px 7px;border-radius:5px;border:1px solid var(--line);color:var(--ink-3);background:var(--surface)}
+.rule.hit .rtag{border-color:var(--accent-line);color:var(--accent);background:var(--surface)}
+.rwhy{margin-top:5px;font-size:12.5px;color:var(--ink-2)}
+.rwhy code{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:.5px 4px}
+
+/* ── 运行细节 ───────────────────────────────── */
+.kv{display:grid;grid-template-columns:150px 1fr;gap:2px 14px;font-size:12.5px}
+.kv dt{color:var(--ink-4)}
+.kv dd{margin:0;font-family:var(--mono);color:var(--ink-2);word-break:break-all}
+.tl{margin-top:14px;border-left:1.5px solid var(--line);padding-left:14px}
+.tli{position:relative;padding:5px 0;font-size:12.5px;color:var(--ink-2)}
+.tli::before{content:"";position:absolute;left:-19px;top:12px;width:7px;height:7px;border-radius:50%;background:var(--ink-4);border:2px solid var(--surface)}
+.tli.cur::before{background:var(--accent)}
+.tli .tm{color:var(--ink-4);font-family:var(--mono);font-size:11.5px;margin-left:8px}
+.warn{margin-top:14px;background:var(--warn-weak);border:1px solid var(--warn-line);border-radius:9px;padding:10px 13px;font-size:12.5px;color:var(--ink-2)}
+.warn b{color:var(--warn)}
+.warn ul{margin:6px 0 0;padding-left:17px}
+
+.note{margin-top:26px;font-size:12px;color:var(--ink-4);line-height:1.7;border-top:1px solid var(--line);padding-top:14px}
+.note b{color:var(--ink-3)}
+@media(max-width:720px){.trio{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="index.html">
+      <svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
+      返回设计目录
+    </a>
+    <div class="spacer"></div>
+    <div class="seg" id="cases"></div>
+    <button class="ghost" id="theme">切换主题</button>
+  </div>
+  <div id="view"></div>
+
+  <p class="note">
+    <b>这是详情页的唯一现行设计。</b>三层深度、默认只展开第一层：
+    ① <b>结论</b>（服务经理/业务：问题是什么 · 影响谁 · 怎么办）；
+    ② <b>判定链</b>（开发：为什么是这个结论，默认折叠）；
+    ③ <b>运行细节</b>（审计：timeline / 契约标记 / warnings，默认折叠）。
+    页面上没有任何执行生产变更的入口——批准只推进状态机，真正的变更在平台之外由人执行后回来登记。
+  </p>
+</div>
+
+<script>
+const CASES = [
+{
+  key:'db', tab:'903001 · 命中',
+  faultClass:'INFRASTRUCTURE', classLabel:'基础设施类 · 可定位到组件',
+  confidence:'HIGH', status:'READY_FOR_HUMAN',
+  headline:'CSDP 工单库连接池被慢查询占满，新请求全部拿不到连接',
+  sub:'error_code 903001 · csdp-order-service · 触发器 code:csdp:903001',
+  desc:'工单提交接口从 09:12 起集中返回 903001，用户表现为「提交无响应」。',
+  impact:{fn:'工单提交 / 工单流转',customers:12,users:148,radius:'MULTI_CUSTOMER',radiusText:'12 个客户同时报错，非单点'},
+  next:{title:'解决方案',text:'扩容连接池至 200 或先终止慢查询会话释放连接。',
+        boundary:null,
+        code:null},
+  chain:{
+    evidence:[
+      {k:'connections_current',v:'2000',st:'ANOMALY',q:'q-conn-01'},
+      {k:'connections_available',v:'0',st:'ANOMALY',q:'q-conn-01'},
+      {k:'slow_query_count',v:'37',st:'ANOMALY',q:'q-slow-02'},
+      {k:'baseline_slow',v:'3',st:'NORMAL',q:'q-slow-02'},
+      {k:'reachable',v:'true',st:'NORMAL',q:'q-ping-03'}
+    ],
+    criteria:[
+      {name:'pool_exhausted',st:'SATISFIED',calc:'2000 ÷ (2000 + 0) = 1 > 0.95',why:'连接池占用率 100%，判据成立'},
+      {name:'slow_query_burst',st:'SATISFIED',calc:'37 > 3 × 5 = 15',why:'慢查询数超基线 5 倍'},
+      {name:'instance_unreachable',st:'EXCLUDED',calc:'reachable = true ≠ false',why:'实例可达，该假设被证据排除'}
+    ],
+    rules:[
+      {id:'R1',name:'实例不可达导致连接失败',hit:false,tag:'已排除',
+       why:'依赖 <code>instance_unreachable</code>，该判据求值为假——不是缺证据，是真的排除了。'},
+      {id:'R2',name:'慢查询占满连接池',hit:true,tag:'命中',
+       why:'需要 <code>pool_exhausted</code> 且 <code>slow_query_burst</code>，两条均成立。反事实：若慢查询数 ≤ 15，本规则不命中，结论会退回 R3。'},
+      {id:'R3',name:'连接泄漏（应用侧未归还）',hit:false,tag:'未求值',
+       why:'依赖 <code>leaked_connection_age</code>，本次未取到该证据，<b>假设未被检验</b>，不等于已排除。'}
+    ]
+  },
+  audit:{route:'DETERMINISTIC',sop:'csdp:903001 · sop.v1 · approved',fixture:true,
+    timeline:[['接入报障','09:12:41','wecom-bot'],['确定性命中 SOP','09:12:41','system'],['取证完成 3/4','09:12:43','system'],['产出结论，待人工确认','09:12:43','system']],
+    warnings:['fixtureMode=true：证据来自回放样本，未经真实观测云验证','q-leak-04 未返回数据，R3 未被检验']}
+},
+{
+  key:'nolog', tab:'无错误码 · 场景',
+  faultClass:'CODE_BUG', classLabel:'代码缺陷类 · 只定位不给方案',
+  confidence:'MEDIUM', status:'READY_FOR_HUMAN',
+  headline:'会话消息发送失败：附件上传回调与会话状态更新并发写冲突',
+  sub:'无 error_code · csdp-session-service · 触发器 scenario:csdp:message_send_failed',
+  desc:'服务经理反馈「客户发送会话消息一直转圈最后提示失败」，工单无错误码，附截图一张。',
+  impact:{fn:'会话消息发送（含附件）',customers:3,users:9,radius:'MULTI_CUSTOMER',radiusText:'3 个客户出现，未扩散'},
+  next:{title:'定位结果',
+    text:'系统只能定位到代码位置，不给解决方案，也无法自动恢复——这类问题必须改代码。',
+    boundary:'代码缺陷类的能力边界：AI 定位到可疑代码区域，修复方案由开发判断。',
+    code:'csdp-session-service\n  SessionMessageService#appendAttachment  (L142-L167)\n  ↑ 与 SessionStateUpdater#markDelivered 并发写 session_state'},
+  chain:{
+    evidence:[
+      {k:'ps_id',v:'a7f3…9c21',st:'NORMAL',q:'q-log-01'},
+      {k:'trace_hops',v:'7',st:'NORMAL',q:'q-trace-02'},
+      {k:'failed_hop',v:'session-state-update',st:'ANOMALY',q:'q-trace-02'},
+      {k:'concurrent_write_log',v:'4 次 / 30s',st:'ANOMALY',q:'q-log-03'}
+    ],
+    criteria:[
+      {name:'failed_hop_in_session',st:'SATISFIED',calc:'failed_hop = "session-state-update" ∈ {session-*}',why:'失败跳点落在会话服务内'},
+      {name:'concurrent_write_burst',st:'SATISFIED',calc:'4 > 1',why:'同一 session 在 30 秒内被多次并发写'},
+      {name:'downstream_timeout',st:'EXCLUDED',calc:'duration_ms = 210 < 3000',why:'下游耗时正常，超时假设被排除'}
+    ],
+    rules:[
+      {id:'R1',name:'下游超时导致发送失败',hit:false,tag:'已排除',why:'<code>downstream_timeout</code> 求值为假。'},
+      {id:'R2',name:'会话状态并发写冲突',hit:true,tag:'命中',
+       why:'需要 <code>failed_hop_in_session</code> 且 <code>concurrent_write_burst</code>。反事实：若并发写次数为 1，则退回 R3「未知会话异常」。'}
+    ]
+  },
+  audit:{route:'DETERMINISTIC',sop:'csdp:message_send_failed · sop.v1 · candidate（日志合成，待审核）',fixture:true,
+    timeline:[['企微 @ 机器人接入','14:30:02','wecom-bot'],['信息不足，索要客户 ID','14:30:03','system'],['补充完成','14:33:19','服务经理·李'],['场景匹配命中','14:33:20','system'],['产出结论，待人工确认','14:33:26','system']],
+    warnings:['本 SOP 由日志合成，状态为 candidate，尚未经专家审核——结论仅供参考','fixtureMode=true']}
+},
+{
+  key:'single', tab:'单客户 · 排除',
+  faultClass:'EXTERNAL_CLIENT', classLabel:'外部客户端类 · 只排除不定位',
+  confidence:'MEDIUM', status:'READY_FOR_HUMAN',
+  headline:'系统侧未见异常：同一时间窗内仅该客户报错，其余客户全部正常',
+  sub:'无 error_code · csdp-portal · 触发器 generic:csdp（爆炸半径前置分流）',
+  desc:'客户「XX 集团」反馈页面打不开，同时段其他客户访问正常。',
+  impact:{fn:'门户页面访问',customers:1,users:1,radius:'SINGLE_CUSTOMER',radiusText:'仅 1 个客户，其余 214 个客户无报错'},
+  next:{title:'排除结论',
+    text:'系统侧功能未见异常，疑似客户本地网络或浏览器环境问题，建议先请客户换网络/浏览器复现。',
+    boundary:'这是「排除」不是「定位」。我们能证明系统侧没问题，但无法定位客户端根因——浏览器兼容性问题本系统明确不做。',
+    code:null},
+  chain:{
+    evidence:[
+      {k:'error_count_this_customer',v:'23',st:'ANOMALY',q:'q-blast-01'},
+      {k:'error_count_other_customers',v:'0',st:'NORMAL',q:'q-blast-01'},
+      {k:'total_customers_active',v:'214',st:'NORMAL',q:'q-blast-01'},
+      {k:'portal_health',v:'true',st:'NORMAL',q:'q-health-02'},
+      {k:'client_ua_detail',v:'—',st:'MISSING',q:'q-ua-03'}
+    ],
+    criteria:[
+      {name:'system_wide_impact',st:'EXCLUDED',calc:'0 ÷ 214 = 0 ≤ 0.01',why:'其他客户零报错，系统级故障被排除'},
+      {name:'service_healthy',st:'SATISFIED',calc:'portal_health = true',why:'服务健康检查通过'},
+      {name:'client_env_anomaly',st:'UNEVALUATED',calc:'client_ua_detail 缺失',why:'未采集到客户端环境信息，<b>该假设从未被检验</b>'}
+    ],
+    rules:[
+      {id:'R1',name:'系统级故障',hit:false,tag:'已排除',why:'<code>system_wide_impact</code> 求值为假。'},
+      {id:'R2',name:'系统侧未见异常（排除法）',hit:true,tag:'命中',
+       why:'需要 <code>system_wide_impact</code> 为假且 <code>service_healthy</code> 成立。<b>注意：命中它只说明"不是我们的问题"，不构成对客户端根因的定位。</b>'}
+    ]
+  },
+  audit:{route:'DETERMINISTIC',sop:'generic:csdp · sop.v1 · approved',fixture:true,
+    timeline:[['企微 @ 机器人接入','10:04:11','wecom-bot'],['爆炸半径探测：单客户','10:04:12','system'],['分流至排除法路径','10:04:12','system'],['产出结论，待人工确认','10:04:14','system']],
+    warnings:['排除法结论的 confidence 被契约限制为不高于 MEDIUM','q-ua-03 未取到数据，client_ua_detail 判据为 UNEVALUATED']}
+}
+];
+
+const CARET='<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let cur=0;
+
+function render(){
+  const c=CASES[cur];
+  document.getElementById('cases').innerHTML=CASES.map((x,i)=>
+    `<button class="${i===cur?'on':''}" onclick="pick(${i})">${x.tab}</button>`).join('');
+
+  const anomalies=c.chain.criteria.filter(x=>x.st==='SATISFIED').length;
+  const hit=c.chain.rules.find(r=>r.hit);
+
+  document.getElementById('view').innerHTML=`
+  <section class="verdict">
+    <div class="vhead">
+      <span class="chip cls">${esc(c.classLabel)}</span>
+      <span class="chip conf-${c.confidence}">置信度 ${c.confidence}</span>
+      <span class="chip mono">${esc(c.status)}</span>
+    </div>
+    <h1>${esc(c.headline)}</h1>
+    <p class="vsub">${esc(c.sub)}</p>
+
+    <div class="trio">
+      <div class="cell">
+        <div class="clab">问题描述</div>
+        <p>${esc(c.desc)}</p>
+      </div>
+      <div class="cell">
+        <div class="clab">影响面</div>
+        <p>${esc(c.impact.fn)}</p>
+        <div class="metric" style="margin-top:8px"><span class="big">${c.impact.customers}</span><span>个客户</span>
+          <span class="big" style="margin-left:10px">${c.impact.users}</span><span>名用户</span></div>
+        <span class="radius ${c.impact.radius}">${esc(c.impact.radiusText)}</span>
+      </div>
+      <div class="cell">
+        <div class="clab">${esc(c.next.title)}</div>
+        <p>${esc(c.next.text)}</p>
+        ${c.next.code?`<div class="locate">${esc(c.next.code).replace(/\n/g,'<br>')}</div>`:''}
+        ${c.next.boundary?`<div class="bound">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="flex:none;margin-top:3px"><circle cx="8" cy="8" r="6.4"/><path d="M8 5v3.6M8 10.9v.1"/></svg>
+          <span>${esc(c.next.boundary)}</span></div>`:''}
+      </div>
+    </div>
+
+    <div class="ops">
+      <button class="btn">确认结论</button>
+      <button class="btn sec">转派</button>
+      <button class="btn sec">关闭并沉淀知识</button>
+    </div>
+  </section>
+
+  <details>
+    <summary>${CARET}<b>为什么是这个结论</b><span>判定链 · 面向开发</span>
+      <span class="hint">${c.chain.evidence.length} 证据 / ${anomalies} 判据成立 / 命中 ${hit?hit.id:'—'}</span></summary>
+    <div class="body">
+      <div class="step">
+        <div class="snum">第一步 · 取到了什么证据</div>
+        ${c.chain.evidence.map(e=>`<div class="ev"><span class="dot ${e.st}"></span>
+          <div><span class="evk">${esc(e.k)}</span> = <span class="evv">${esc(e.v)}</span>
+          <span class="evq"> · ${esc(e.q)} · ${e.st}</span></div></div>`).join('')}
+      </div>
+      <div class="step">
+        <div class="snum">第二步 · 判据怎么算的</div>
+        ${c.chain.criteria.map(x=>`<div class="cr ${x.st}">
+          <div class="crtop"><span class="crst">${x.st==='SATISFIED'?'成立':x.st==='EXCLUDED'?'已排除':'无法求值'}</span>
+            <span class="crname">${esc(x.name)}</span></div>
+          <div class="calc">${esc(x.calc)}</div>
+          <div class="crwhy">${x.why}</div></div>`).join('')}
+      </div>
+      <div class="step">
+        <div class="snum">第三步 · 规则怎么裁决的</div>
+        ${c.chain.rules.map(r=>`<div class="rule ${r.hit?'hit':''}">
+          <div class="rtop"><span class="rid">${esc(r.id)}</span><span class="rname">${esc(r.name)}</span>
+            <span class="rtag">${esc(r.tag)}</span></div>
+          <div class="rwhy">${r.why}</div></div>`).join('')}
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>${CARET}<b>运行细节</b><span>面向审计</span>
+      <span class="hint">${esc(c.audit.route)}${c.audit.fixture?' · fixtureMode':''}</span></summary>
+    <div class="body">
+      <dl class="kv" style="margin-top:12px">
+        <dt>routeMode</dt><dd>${esc(c.audit.route)}</dd>
+        <dt>命中 SOP</dt><dd>${esc(c.audit.sop)}</dd>
+        <dt>writeExecutionEnabled</dt><dd>false（平台没有生产写执行器）</dd>
+        <dt>contractVersion</dt><dd>diagnosis.v1.4</dd>
+      </dl>
+      <div class="tl">
+        ${c.audit.timeline.map((t,i)=>`<div class="tli ${i===c.audit.timeline.length-1?'cur':''}">
+          ${esc(t[0])}<span class="tm">${esc(t[1])} · ${esc(t[2])}</span></div>`).join('')}
+      </div>
+      <div class="warn"><b>契约自曝的能力边界</b>
+        <ul>${c.audit.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>
+    </div>
+  </details>`;
+}
+function pick(i){cur=i;render();window.scrollTo({top:0,behavior:'smooth'});}
+document.getElementById('theme').onclick=()=>{
+  const r=document.documentElement;
+  const now=r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  r.setAttribute('data-theme',now==='dark'?'light':'dark');
+};
+render();
+</script>
+</body></html>

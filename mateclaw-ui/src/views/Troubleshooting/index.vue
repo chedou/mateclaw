@@ -51,38 +51,79 @@
       </div>
 
       <template v-else>
-        <header class="dhead">
-          <div class="dh-left">
-            <span class="dcode">{{ current.diagnosis.diagnosisId }}</span>
-            <span class="pill" :class="statusClass(current.diagnosis.status)">
-              {{ current.diagnosis.status }} · {{ STATUS_LABEL[current.diagnosis.status] }}
+        <!-- 第一层 · 结论：给服务经理和业务看的，默认且唯一展开的一层 -->
+        <section class="verdict">
+          <div class="vhead">
+            <span class="chip cls">{{ classLabel }}</span>
+            <span class="chip" :class="'conf-' + current.diagnosis.confidence">
+              置信度 {{ current.diagnosis.confidence }}
             </span>
-            <span class="pill route">{{ current.diagnosis.routeMode }}</span>
-            <span v-if="current.diagnosis.fixtureMode" class="pill mode">fixtureMode</span>
-            <span v-if="current.diagnosis.rehearsal" class="pill mode">rehearsal</span>
-            <span class="pill mode">writeExecutionEnabled=false</span>
+            <span class="chip st" :class="statusClass(current.diagnosis.status)">
+              {{ STATUS_LABEL[current.diagnosis.status] }}
+            </span>
+            <span class="spacer" />
+            <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
           </div>
-          <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
-        </header>
 
-        <el-alert
-          v-if="current.diagnosis.warnings.length"
-          type="warning"
-          :closable="false"
-          class="warns"
-        >
-          <template #title>能力边界 · 契约自曝的 warnings</template>
-          <ul class="wlist">
-            <li v-for="(w, i) in current.diagnosis.warnings" :key="i">{{ w }}</li>
-          </ul>
-        </el-alert>
+          <h1 class="vtitle">
+            {{ current.diagnosis.rootCause || current.diagnosis.summary || '未产出根因' }}
+          </h1>
+          <p class="vsub">{{ subline }}</p>
 
-        <section class="grid">
-          <div class="col-chain">
+          <div class="trio">
+            <div class="cell">
+              <div class="clab">问题描述</div>
+              <p>{{ current.diagnosis.summary || current.diagnosis.incident.title || '—' }}</p>
+            </div>
+
+            <div class="cell">
+              <div class="clab">影响面</div>
+              <p>{{ impactView.functionScope }}</p>
+              <div v-if="impactView.hasCounts" class="metric">
+                <span class="big">{{ impactView.customers }}</span><span>个客户</span>
+                <span class="big gap">{{ impactView.users }}</span><span>名用户</span>
+              </div>
+              <span v-if="impactView.radius" class="radius" :class="impactView.radius">
+                {{ RADIUS_LABEL[impactView.radius] }}
+              </span>
+            </div>
+
+            <div class="cell">
+              <div class="clab">{{ nextStep.title }}</div>
+              <p>{{ nextStep.text }}</p>
+              <div v-if="nextStep.locate" class="locate">{{ nextStep.locate }}</div>
+              <p v-if="nextStep.boundary" class="bound">{{ nextStep.boundary }}</p>
+            </div>
+          </div>
+
+          <div class="ops">
+            <el-button
+              v-if="current.diagnosis.status === 'READY_FOR_HUMAN'"
+              type="primary"
+              @click="confirm"
+            >确认结论</el-button>
+            <el-button v-if="canTransfer" @click="transferOpen = true">转派</el-button>
+            <el-button v-if="canClose" @click="closeOpen = true">关闭并沉淀知识</el-button>
+            <span v-if="current.diagnosis.status === 'NEEDS_INVESTIGATION'" class="hint">
+              弃权的诊断需要补充证据后重新诊断才能确认。
+            </span>
+            <span v-else-if="current.diagnosis.status === 'CLOSED'" class="hint">已关闭。</span>
+          </div>
+        </section>
+
+        <!-- 第二层 · 判定链：给开发看的，默认折叠 -->
+        <details class="fold">
+          <summary>
+            <span class="caret" />
+            <b>为什么是这个结论</b>
+            <span class="srole">判定链 · 面向开发</span>
+            <span class="shint">{{ chainHint }}</span>
+          </summary>
+          <div class="fbody">
             <DerivationChain :diagnosis="current.diagnosis" />
 
-            <h3 class="sec">建议动作</h3>
-            <div v-if="current.diagnosis.recommendedActions.length" class="acts">
+            <template v-if="current.diagnosis.recommendedActions.length">
+              <div class="snum">第四步 · 可执行的动作（平台不执行）</div>
               <article
                 v-for="act in current.diagnosis.recommendedActions"
                 :key="act.actionId"
@@ -92,93 +133,64 @@
                 <div class="a-top">
                   <span class="atype" :class="act.actionType">{{ act.actionType }}</span>
                   <span class="atitle">{{ act.title }}</span>
+                  <span class="astate">{{ act.approvalStatus }} · {{ act.executionStatus }}</span>
                 </div>
                 <p v-if="act.description" class="adesc">{{ act.description }}</p>
-                <div class="astate">
-                  <span class="kv">approvalStatus <b>{{ act.approvalStatus }}</b></span>
-                  <span class="kv" :class="{ block: act.executionStatus === 'BLOCKED' }">
-                    executionStatus <b>{{ act.executionStatus }}</b>
-                  </span>
-                </div>
-                <div v-if="canApprove(act)" class="arow">
-                  <el-button size="small" type="warning" plain @click="openApprove(act)">
-                    批准（推进状态，系统不执行）
+                <div v-if="canApprove(act) || canRecordOutcome(act)" class="arow">
+                  <el-button v-if="canApprove(act)" size="small" type="warning" plain @click="openApprove(act)">
+                    批准（只推进状态，系统不执行）
                   </el-button>
-                </div>
-                <div v-if="canRecordOutcome(act)" class="arow">
-                  <el-button size="small" plain @click="openOutcome(act)">
+                  <el-button v-if="canRecordOutcome(act)" size="small" plain @click="openOutcome(act)">
                     登记外部处置结果
                   </el-button>
                 </div>
               </article>
+            </template>
+          </div>
+        </details>
+
+        <!-- 第三层 · 运行细节：给审计和排障系统自己看的，默认折叠 -->
+        <details class="fold">
+          <summary>
+            <span class="caret" />
+            <b>运行细节</b>
+            <span class="srole">面向审计</span>
+            <span class="shint">
+              {{ current.diagnosis.routeMode }}{{ current.diagnosis.fixtureMode ? ' · fixtureMode' : '' }}
+            </span>
+          </summary>
+          <div class="fbody">
+            <dl class="kv">
+              <template v-for="[k, v] in auditRows" :key="k">
+                <dt>{{ k }}</dt><dd>{{ v }}</dd>
+              </template>
+            </dl>
+
+            <div class="tl">
+              <div
+                v-for="(t, i) in current.diagnosis.timeline"
+                :key="i"
+                class="tli"
+                :class="{ cur: t.status === 'current' }"
+              >
+                {{ t.event }}
+                <span class="tm">{{ shortTime(t.timestamp) }} · {{ t.actor }}</span>
+              </div>
             </div>
-            <p v-else class="noact">
-              <template v-if="current.diagnosis.routeMode === 'LLM_FALLBACK'">
-                只读 Agent 路径的 <code>recommendedActions</code> 始终为空数组——只能给出待人工确认的假设。
-              </template>
-              <template v-else>
-                弃权时 <code>recommendedActions</code> 为空数组——契约保证不输出任何恢复建议。
-              </template>
+
+            <div v-if="current.diagnosis.warnings.length" class="warns">
+              <b>契约自曝的能力边界</b>
+              <ul>
+                <li v-for="(w, i) in current.diagnosis.warnings" :key="i">{{ w }}</li>
+              </ul>
+            </div>
+
+            <p class="redline">
+              平台没有生产写执行器：批准只把动作推进到 <code>APPROVED_NOT_EXECUTED</code>，
+              真正的变更由有权限的人在 MateClaw 之外执行，回来登记结果。
             </p>
           </div>
-
-          <div class="col-side">
-            <div class="card">
-              <div class="clab">故障上下文</div>
-              <div v-for="[k, v] in incidentRows" :key="k" class="row">
-                <span class="rk">{{ k }}</span><span class="rv">{{ v }}</span>
-              </div>
-            </div>
-
-            <div class="card">
-              <div class="clab">生命周期 timeline</div>
-              <div class="tl">
-                <div v-for="(t, i) in current.diagnosis.timeline" :key="i" class="tli">
-                  <span class="td" :class="{ current: t.status === 'current' }" />
-                  <div>
-                    <div class="tev">{{ t.event }}</div>
-                    <div class="tmeta">{{ shortTime(t.timestamp) }} · {{ t.actor }} · {{ t.status }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="card actions-card">
-              <div class="clab">处置</div>
-              <el-button
-                v-if="current.diagnosis.status === 'READY_FOR_HUMAN'"
-                type="primary"
-                size="small"
-                class="wide"
-                @click="confirm"
-              >确认诊断结论</el-button>
-              <el-button
-                v-if="canTransfer"
-                size="small"
-                class="wide"
-                @click="transferOpen = true"
-              >结构化转派</el-button>
-              <el-button
-                v-if="canClose"
-                size="small"
-                class="wide"
-                @click="closeOpen = true"
-              >关闭归档</el-button>
-              <p v-if="current.diagnosis.status === 'NEEDS_INVESTIGATION'" class="hint">
-                弃权的诊断需要补充证据后重新诊断才能确认。
-              </p>
-              <p v-if="current.diagnosis.status === 'CLOSED'" class="hint">已关闭。</p>
-            </div>
-
-            <div class="card redline">
-              <div class="clab">红线</div>
-              <p>
-                平台没有生产写执行器：批准只把动作推进到 <code>APPROVED_NOT_EXECUTED</code>，
-                真正的变更由有权限的人在 MateClaw 之外执行，回来登记结果。
-              </p>
-            </div>
-          </div>
-        </section>
+        </details>
       </template>
     </main>
 
@@ -337,19 +349,134 @@ const canTransfer = computed(() =>
   current.value?.diagnosis.status === 'CONFIRMED' || current.value?.diagnosis.status === 'TRANSFERRED')
 const canClose = computed(() => canTransfer.value)
 
-const incidentRows = computed<[string, string][]>(() => {
+/**
+ * `faultClass` and the structured `IncidentImpact` land with contract v1.4 (TODO T13/T14).
+ * The page renders them when present and degrades to today's fields when absent, so the
+ * three-layer rework does not have to wait on the contract change.
+ */
+type FaultClass =
+  | 'CODE_BUG' | 'DATA_FIX' | 'BUSINESS_OPERATION' | 'EXTERNAL_CLIENT' | 'INFRASTRUCTURE'
+type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
+
+const CLASS_LABEL: Record<FaultClass, string> = {
+  CODE_BUG: '代码缺陷类 · 只定位不给方案',
+  DATA_FIX: '数据类 · 可给方案',
+  BUSINESS_OPERATION: '业务操作类 · 可给方案',
+  EXTERNAL_CLIENT: '外部客户端类 · 只排除不定位',
+  INFRASTRUCTURE: '基础设施类 · 可定位到组件',
+}
+const RADIUS_LABEL: Record<BlastRadius, string> = {
+  SINGLE_CUSTOMER: '仅单个客户',
+  MULTI_CUSTOMER: '多客户同时报错',
+  SYSTEM_WIDE: '系统级影响',
+  UNKNOWN: '影响面未知',
+}
+
+const faultClass = computed<FaultClass | null>(() => {
+  const value = (current.value?.diagnosis as { faultClass?: FaultClass } | undefined)?.faultClass
+  return value && value in CLASS_LABEL ? value : null
+})
+
+const classLabel = computed(() =>
+  faultClass.value ? CLASS_LABEL[faultClass.value] : '故障类别待补充（契约 v1.4）')
+
+const subline = computed(() => {
   const i = current.value?.diagnosis.incident
-  if (!i) return []
+  if (!i) return ''
+  const code = i.errorCode ? `error_code ${i.errorCode}` : '无 error_code'
+  const sop = current.value?.diagnosis.sopKey
+  return [code, i.service, sop ? `SOP ${sop}` : '未命中已注册 SOP'].join(' · ')
+})
+
+const impactView = computed(() => {
+  const incident = current.value?.diagnosis.incident
+  const raw: unknown = incident?.impact
+  if (raw && typeof raw === 'object') {
+    const s = raw as {
+      functionScope?: string; affectedCustomers?: number
+      affectedUsers?: number; radius?: BlastRadius
+    }
+    return {
+      functionScope: s.functionScope || '待确认',
+      customers: s.affectedCustomers ?? 0,
+      users: s.affectedUsers ?? 0,
+      hasCounts: s.affectedCustomers != null || s.affectedUsers != null,
+      radius: s.radius && s.radius in RADIUS_LABEL ? s.radius : null,
+    }
+  }
+  return {
+    functionScope: (raw as string) || '待确认',
+    customers: 0, users: 0, hasCounts: false, radius: null as BlastRadius | null,
+  }
+})
+
+/**
+ * The third cell changes shape with the fault class, because the system's promise
+ * changes with it: a code bug can only be located, a client-side issue can only be
+ * ruled out. Saying "solution" for either would overstate what we can deliver.
+ */
+const nextStep = computed(() => {
+  const d = current.value?.diagnosis
+  if (!d) return { title: '下一步', text: '—', locate: '', boundary: '' }
+  const first = d.recommendedActions[0]
+  if (faultClass.value === 'CODE_BUG') {
+    return {
+      title: '定位结果',
+      text: first?.description || first?.title
+        || '系统只能定位到代码位置，不给解决方案，也无法自动恢复——这类问题必须改代码。',
+      locate: d.routeToTeam ? `建议交由 ${d.routeToTeam}` : '',
+      boundary: '代码缺陷类的能力边界：AI 定位到可疑代码区域，修复方案由开发判断。',
+    }
+  }
+  if (faultClass.value === 'EXTERNAL_CLIENT') {
+    return {
+      title: '排除结论',
+      text: first?.description || first?.title || '系统侧功能未见异常。',
+      locate: '',
+      boundary: '这是「排除」不是「定位」：我们能证明系统侧没问题，但无法定位客户端根因。',
+    }
+  }
+  if (d.abstained || !first) {
+    return {
+      title: '下一步',
+      text: d.routeMode === 'LLM_FALLBACK'
+        ? '只读 Agent 路径不产出恢复建议，只能给出待人工确认的假设。'
+        : '本次弃权，契约保证不输出任何恢复建议——需要补充证据后重新诊断。',
+      locate: '', boundary: '',
+    }
+  }
+  return {
+    title: '解决方案',
+    text: first.description || first.title,
+    locate: '',
+    boundary: '平台不执行任何生产变更；批准只推进状态，变更由有权限的人在平台外完成。',
+  }
+})
+
+const chainHint = computed(() => {
+  const d = current.value?.diagnosis
+  if (!d) return ''
+  return `${d.evidence.length} 条证据 · ${d.triggeredSignals.length} 条判据成立`
+})
+
+const auditRows = computed<[string, string][]>(() => {
+  const d = current.value?.diagnosis
+  if (!d) return []
+  const i = d.incident
   return [
-    ['system', i.system],
-    ['service', i.service],
+    ['diagnosisId', d.diagnosisId],
+    ['routeMode', d.routeMode],
+    ['sopKey', d.sopKey ?? 'null'],
+    ['contractVersion', d.contractVersion],
+    ['fixtureMode', String(d.fixtureMode)],
+    ['rehearsal', String(d.rehearsal)],
+    ['writeExecutionEnabled', String(d.writeExecutionEnabled)],
+    ['system / service', `${i.system} / ${i.service}`],
     ['errorCode', i.errorCode ?? 'null'],
-    ['severity', i.severity],
-    ['completeness', i.completeness],
+    ['severity / completeness', `${i.severity} / ${i.completeness}`],
     ['intakeSource', i.intakeSource],
     ['traceId', i.traceId ?? 'null'],
     ['slaRemaining', i.slaRemaining ?? 'null'],
-    ['impact', i.impact],
   ]
 })
 
@@ -510,27 +637,96 @@ onMounted(loadList)
 .placeholder { display: flex; align-items: center; justify-content: center; height: 60vh;
   color: var(--el-text-color-secondary); font-size: 13px; }
 
-.dhead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-.dh-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dcode { font-family: var(--mc-mono, monospace); font-size: 15px; font-weight: 600;
-  color: var(--el-text-color-primary); }
-.pill {
-  display: inline-flex; align-items: center; font-family: var(--mc-mono, monospace);
-  font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
-  background: var(--el-fill-color-light); color: var(--el-text-color-secondary);
+/* ── 第一层 · 结论（唯一默认展开的一层） ───────────────────── */
+.verdict {
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px; padding: 18px 20px;
 }
-.pill.ready { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
-.pill.warn { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
-.pill.route { background: var(--el-color-success-light-9); color: var(--el-color-success); }
+.vhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.vhead .spacer { flex: 1; }
+.chip {
+  font-size: 11.5px; padding: 2.5px 9px; border-radius: 20px;
+  border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-secondary); white-space: nowrap;
+}
+.chip.cls {
+  border-color: var(--el-color-primary-light-7); background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary); font-weight: 600;
+}
+.chip.conf-HIGH {
+  border-color: var(--el-color-success-light-7); background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.chip.conf-MEDIUM {
+  border-color: var(--el-color-warning-light-7); background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+}
+.chip.conf-LOW {
+  border-color: var(--el-color-danger-light-7); background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.chip.st.ready { color: var(--el-color-primary); }
+.chip.st.warn { color: var(--el-color-warning); }
+.chip.st.muted { color: var(--el-text-color-placeholder); }
 
-.warns { margin-bottom: 12px; }
-.wlist { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+.vtitle {
+  font-size: 19px; line-height: 1.45; margin: 0 0 5px; letter-spacing: -0.2px;
+  color: var(--el-text-color-primary); font-weight: 650;
+}
+.vsub { margin: 0; font-size: 12.5px; color: var(--el-text-color-secondary); }
 
-.grid { display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 14px; }
-.col-chain { min-width: 0; }
-.col-side { display: flex; flex-direction: column; gap: 12px; }
+.trio {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 16px;
+  background: var(--el-border-color-lighter); border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px; overflow: hidden;
+}
+.cell { background: var(--el-bg-color); padding: 13px 14px; min-height: 104px; }
+.cell p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--el-text-color-regular); }
+.metric { display: flex; align-items: baseline; gap: 5px; margin-top: 7px;
+  font-size: 12px; color: var(--el-text-color-secondary); }
+.big { font-family: var(--mc-mono, monospace); font-size: 20px; font-weight: 600;
+  color: var(--el-text-color-primary); letter-spacing: -0.4px; }
+.big.gap { margin-left: 8px; }
+.radius { display: inline-block; margin-top: 7px; font-size: 11.5px; padding: 2px 8px;
+  border-radius: 6px; border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter); color: var(--el-text-color-secondary); }
+.radius.MULTI_CUSTOMER, .radius.SYSTEM_WIDE {
+  border-color: var(--el-color-danger-light-7); background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+.locate { margin-top: 8px; font-family: var(--mc-mono, monospace); font-size: 11.5px;
+  background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter);
+  border-radius: 7px; padding: 7px 9px; color: var(--el-text-color-regular);
+  white-space: pre-wrap; overflow-x: auto; }
+/* The capability boundary sits next to the conclusion, not buried in warnings. */
+.bound { margin: 9px 0 0 !important; font-size: 11.5px !important;
+  color: var(--el-color-warning) !important; line-height: 1.55 !important; }
 
-.sec { font-size: 13px; font-weight: 650; color: var(--el-text-color-primary); margin: 20px 0 10px; }
+.ops { display: flex; align-items: center; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
+
+/* ── 第二 / 三层 · 折叠 ─────────────────────────────────── */
+.fold {
+  margin-top: 12px; background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter); border-radius: 12px; overflow: hidden;
+}
+.fold > summary {
+  list-style: none; cursor: pointer; padding: 12px 18px; display: flex;
+  align-items: center; gap: 10px; font-size: 13px; color: var(--el-text-color-regular);
+  user-select: none;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary b { font-weight: 650; color: var(--el-text-color-primary); }
+.caret { width: 0; height: 0; flex: none; transition: transform 0.16s;
+  border-left: 5px solid var(--el-text-color-placeholder);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.fold[open] > summary .caret { transform: rotate(90deg); }
+.srole { font-size: 12px; color: var(--el-text-color-secondary); }
+.shint { margin-left: auto; font-family: var(--mc-mono, monospace); font-size: 11.5px;
+  color: var(--el-text-color-placeholder); }
+.fbody { padding: 2px 18px 18px; border-top: 1px solid var(--el-border-color-lighter); }
+
+.snum { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--el-text-color-placeholder); margin: 16px 0 10px; }
 .act { border: 1px solid var(--el-border-color-lighter); border-radius: 8px;
   background: var(--el-bg-color); padding: 11px 13px; }
 .act + .act { margin-top: 8px; }
@@ -544,51 +740,44 @@ onMounted(loadList)
 .atype.MANUAL_WRITE { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .atitle { font-size: 12.5px; font-weight: 650; color: var(--el-text-color-primary); }
 .adesc { margin: 5px 0 0; font-size: 11.5px; color: var(--el-text-color-secondary); line-height: 1.55; }
-.astate { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; padding-top: 8px;
-  border-top: 1px dashed var(--el-border-color-lighter); }
-.kv { font-family: var(--mc-mono, monospace); font-size: 10px; color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-lighter); border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px; padding: 2px 7px; }
-.kv b { color: var(--el-text-color-primary); }
-.kv.block b { color: var(--el-color-danger); }
-.arow { margin-top: 9px; }
-.noact { font-size: 12px; color: var(--el-text-color-secondary); border: 1px dashed
-  var(--el-border-color); border-radius: 8px; padding: 13px; text-align: center; }
+.astate { margin-left: auto; font-family: var(--mc-mono, monospace); font-size: 10.5px;
+  color: var(--el-text-color-placeholder); }
+.arow { display: flex; gap: 8px; margin-top: 9px; }
 
-.card { background: var(--el-fill-color-lighter); border: 1px solid var(--el-border-color-lighter);
-  border-radius: 9px; padding: 12px 13px; }
-.clab { font-family: var(--mc-mono, monospace); font-size: 10px; font-weight: 700;
-  letter-spacing: 0.07em; text-transform: uppercase; color: var(--el-text-color-secondary);
-  margin-bottom: 9px; }
-.row { display: flex; gap: 8px; font-size: 11.5px; padding: 3px 0;
-  border-bottom: 1px dashed var(--el-border-color-lighter); }
-.row:last-child { border-bottom: none; }
-.rk { color: var(--el-text-color-secondary); width: 84px; flex-shrink: 0;
-  font-family: var(--mc-mono, monospace); }
-.rv { color: var(--el-text-color-primary); word-break: break-word; }
+/* ── 第三层 · 运行细节 ─────────────────────────────────── */
+.kv { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 2px 14px;
+  font-size: 12px; margin: 14px 0 0; }
+.kv dt { color: var(--el-text-color-placeholder); }
+.kv dd { margin: 0; font-family: var(--mc-mono, monospace);
+  color: var(--el-text-color-regular); word-break: break-all; }
 
-.tl { display: flex; flex-direction: column; }
-.tli { display: flex; gap: 9px; padding-bottom: 10px; }
-.tli:last-child { padding-bottom: 0; }
-.td { width: 8px; height: 8px; border-radius: 50%; background: var(--el-color-success);
-  flex-shrink: 0; margin-top: 5px; }
-.td.current { background: var(--el-color-primary); box-shadow: 0 0 0 3px var(--el-color-primary-light-9); }
-.tev { font-size: 11.5px; color: var(--el-text-color-primary); line-height: 1.45; }
-.tmeta { font-family: var(--mc-mono, monospace); font-size: 9.5px;
-  color: var(--el-text-color-placeholder); margin-top: 2px; }
+.tl { margin-top: 16px; border-left: 1.5px solid var(--el-border-color-lighter); padding-left: 14px; }
+.tli { position: relative; padding: 4px 0; font-size: 12.5px; color: var(--el-text-color-regular); }
+.tli::before { content: ''; position: absolute; left: -19.5px; top: 10px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--el-text-color-placeholder);
+  border: 2px solid var(--el-bg-color); }
+.tli.cur::before { background: var(--el-color-primary); }
+.tm { font-family: var(--mc-mono, monospace); font-size: 11px;
+  color: var(--el-text-color-placeholder); margin-left: 8px; }
 
-.actions-card .wide { width: 100%; margin: 0 0 8px; }
-.hint { font-size: 11px; color: var(--el-text-color-secondary); line-height: 1.55; margin: 4px 0 0; }
-.redline { border-color: var(--el-color-danger-light-5); background: var(--el-color-danger-light-9); }
-.redline p { font-size: 11px; color: var(--el-text-color-regular); line-height: 1.6; margin: 0; }
-.redline code, .noact code, .qempty code {
-  font-family: var(--mc-mono, monospace); font-size: 10px;
-  background: var(--el-bg-color); border-radius: 3px; padding: 1px 4px;
+.warns { margin-top: 14px; padding: 10px 13px; border-radius: 8px; font-size: 12.5px;
+  line-height: 1.6; color: var(--el-text-color-regular);
+  background: var(--el-color-warning-light-9); border: 1px solid var(--el-color-warning-light-7); }
+.warns b { color: var(--el-color-warning); }
+.warns ul { margin: 6px 0 0; padding-left: 17px; }
+
+.hint { font-size: 11.5px; color: var(--el-text-color-secondary); line-height: 1.55; }
+.redline { margin: 14px 0 0; font-size: 11.5px; line-height: 1.65;
+  color: var(--el-text-color-secondary); }
+.redline code, .qempty code {
+  font-family: var(--mc-mono, monospace); font-size: 10.5px;
+  background: var(--el-fill-color-light); border-radius: 3px; padding: 1px 4px;
 }
 .dlg-alert { margin-bottom: 12px; }
 .sub-hint { font-size: 11px; color: var(--el-text-color-secondary); line-height: 1.5; margin-top: 4px; }
 
 @media (max-width: 1100px) {
-  .grid { grid-template-columns: 1fr; }
+  .trio { grid-template-columns: 1fr; }
+  .kv { grid-template-columns: 1fr; }
 }
 </style>
