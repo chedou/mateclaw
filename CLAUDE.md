@@ -18,8 +18,12 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 
 ## 接续这项工作，先读
 
+0. **`docs/intelligent-troubleshooting/meeting-change-plan.md`** —— **2026-07 会议驱动的变更方案
+   （C1–C8）**：方向已调整为「**从观测云日志自动生成 SOP**」，并写明了哪条会议诉求撞红线、不采纳。
+   下一阶段做什么以它为准。
 1. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：每条待办都写了
-   「为什么这么做 / 做到什么算完」，含四条红线、诚实缺口清单、工程约定与建议接手顺序。
+   「为什么这么做 / 做到什么算完」，含四条红线、诚实缺口清单、工程约定与建议接手顺序
+   （会议新增战线 T11–T18 见第三·五节）。
 2. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 会话记忆：8 个已锁定决策（D1–D8）、
    四条红线、当前阶段矛盾分析、指针与安全口径。
 3. **`rfcs/intelligent-troubleshooting-design.md`** —— 现行架构设计（逐条 mateclaw 源码核对通过；
