@@ -31,7 +31,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -75,6 +77,41 @@ import java.util.concurrent.atomic.AtomicReference;
 public class WeComChannelAdapter extends AbstractChannelAdapter implements StreamingChannelAdapter {
 
     public static final String CHANNEL_TYPE = "wecom";
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final Instant MIN_PROVIDER_EVENT_TIME =
+            Instant.parse("2000-01-01T00:00:00Z");
+    private static final Duration MAX_PROVIDER_FUTURE_SKEW = Duration.ofMinutes(5);
+
+    /**
+     * Normalize WeCom's provider-owned send_time into the business timezone.
+     * Both epoch milliseconds (current callbacks) and epoch seconds are
+     * accepted. Missing, malformed, pre-2000, or implausibly future values
+     * fail closed to the callback receipt instant without logging the raw
+     * provider value.
+     */
+    static LocalDateTime providerEventTime(Object rawSendTime, Instant fallback) {
+        Objects.requireNonNull(fallback, "fallback receipt time must not be null");
+        Instant parsed = null;
+        try {
+            long epoch = rawSendTime instanceof Number number
+                    ? number.longValue()
+                    : Long.parseLong(Objects.toString(rawSendTime, "").trim());
+            parsed = Math.abs(epoch) < 100_000_000_000L
+                    ? Instant.ofEpochSecond(epoch)
+                    : Instant.ofEpochMilli(epoch);
+        } catch (RuntimeException invalid) {
+            log.warn("[wecom] invalid send_time; using callback receipt time");
+        }
+        if (parsed == null
+                || parsed.isBefore(MIN_PROVIDER_EVENT_TIME)
+                || parsed.isAfter(fallback.plus(MAX_PROVIDER_FUTURE_SKEW))) {
+            if (parsed != null) {
+                log.warn("[wecom] implausible send_time; using callback receipt time");
+            }
+            parsed = fallback;
+        }
+        return LocalDateTime.ofInstant(parsed, BUSINESS_ZONE);
+    }
 
     /** 企业微信智能机器人 WebSocket 地址 */
     private static final String DEFAULT_WS_URL = "wss://openws.work.weixin.qq.com";
@@ -952,6 +989,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
     @SuppressWarnings("unchecked")
     private void handleMessageCallback(Map<String, Object> frame) {
         try {
+            Instant callbackReceivedAt = Instant.now();
             Map<String, Object> body = (Map<String, Object>) frame.getOrDefault("body", Map.of());
             Map<String, Object> headers = (Map<String, Object>) frame.getOrDefault("headers", Map.of());
             String frameReqId = (String) headers.getOrDefault("req_id", "");
@@ -1182,7 +1220,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
                     .contentType(msgType)
                     .contentParts(contentParts)
                     .inputMode(hasVoice ? "voice" : "text")
-                    .timestamp(LocalDateTime.now())
+                    .timestamp(providerEventTime(body.get("send_time"), callbackReceivedAt))
                     .replyToken(isGroup ? chatId : senderId)
                     .rawPayload(Map.of(
                             "wecom_frame_req_id", frameReqId,

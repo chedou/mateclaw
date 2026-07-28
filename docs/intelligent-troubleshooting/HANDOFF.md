@@ -10,7 +10,7 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.2 / 蓝图 v0.13**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.3 / 蓝图 v0.14**
 
 ## 1. 一句话
 
@@ -50,7 +50,7 @@ MateClaw 智能排障的中心是一条“报障上下文 → 只读取证 → �
 | **D14** | 北极星用四个时间戳度量，三段差值分开统计 |
 | **D15** | 证据合成必须取成功样本对照；缺失只降级不失败，且锁定校准期档 |
 | **D16** | 未被真实失败检验过的设计分支标 `PENDING-EVIDENCE`，不得据以新增实现、接口或表结构 |
-| **D17** | 通道一律复用平台现有 `ChannelAdapter` / `CardKind`，不新建入站；诊断卡片不得复用 tool-guard 的 `ApprovalNotice` 形状（v4 §7.4） |
+| **D17** | 通道一律复用平台现有 `ChannelAdapter` / `ChannelMessageRouter`，不新建入站；`CardKind` 只路由模板卡片事件，不能冒充普通 @ 消息 Intake；诊断卡片不得复用 tool-guard 的 `ApprovalNotice` 形状（v4 §7.4） |
 
 修改 D4、D5/D5′、D9 必须单独 RFC 并由用户明确确认。
 D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之前，不得据其新增实现。
@@ -58,8 +58,9 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.13：v0.12 锁定通道复用，v0.13 校准正式工作台、双投影与 canonical evidence
-事实吸收的实现状态。两版均不扩大 P1：P2 才在历史样本上影子运行 Evidence Challenger /
+蓝图已升级到 v0.14：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
+v0.14 校正企微普通消息入站接缝、身份边界并记录 P3 T9 首段实现状态。这些版本均不扩大
+P1：P2 才在历史样本上影子运行 Evidence Challenger /
 Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ## 4. 当前代码真实状态
@@ -81,7 +82,18 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `AgentGraphBuilder` 的调用级硬交集、`WikiRawMaterialEntity`）。单 JAR 兄弟包，D10 成立。
 - **已发现并修正的融合缺口**：设计此前把企微当成需新建的入站通道，而平台自带
   `vip.mate.channel.wecom`（Adapter + 多 kind Dispatcher + `ChannelSessionStore`）。
-  已改为复用（v4 §7.4 / D17），P3 因此从"新建入站"变成"注册一个 card kind"。
+  2026-07-29 进一步源码核对确认：`CardKind` 只处理模板卡片点击，普通 @ 消息实际走
+  `WeComChannelAdapter → ChannelMessageRouter`。已在 Router 加通用 pre-route 接缝，不新建 webhook/签名校验。
+- **P3 T9 IntakeSession 首段（2026-07-29）**：企微渠道只有显式设置
+  `troubleshooting_intake_enabled=true` 才会被排障域接管；已实现
+  `RECEIVED → AWAITING_INPUT → READY`、显式 `reportedAt/readyAt`、确定性补问、
+  sourceMessageId receipt 幂等、稳定哈希 routing key、不可变 reportedAt 事件时间边界与乱序保护、
+  聚合版本检查、覆盖事务提交的同节点锁、唯一键冲突回滚后单次重试、附件安全引用和
+  H2/MySQL/Kingbase V175–V177（V177 从聚合真实首条时间修复历史回填并收紧非空）。企微 Adapter 解析并校验 `send_time`，Router 在 pre-route
+  接管前写入带 channelId/targetId 的 `ChannelSessionStore`。READY 时原子释放 active key；
+  迟到事件按 reportedAt 边界归入上一 Session，只登记回执且不覆盖聚合，时间更晚的新报障才创建新 Session。
+  `reporterRef` 只是不可信通道身份：可报障/补充，不得审核或推进受审计状态。接管后不进
+  Trigger/通用 Agent；入库失败与“已入库但回复失败”分类处理，不会误报为资料丢失。
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
@@ -122,7 +134,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
   `fixtureMode` 仍应为 true。
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
-- 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
+- 企微 IntakeSession 已完成消息接管、补问和 READY 持久化；尚未完成 `READY → 异步只读调查
+  → Diagnosis → Web 深链` 以及关闭后原路纯文本通知（继续扩平台现有 `channel/wecom`，见 v4 §7.4 / D17）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
 - 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
   `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
@@ -137,13 +150,14 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 - 合并页（开发证据原地展开）：`.../prototype/troubleshooting?view=INLINE`
 - 分屏（业务/开发切换）：`.../prototype/troubleshooting?view=SPLIT`
-- 企微协同流（**P3 暂缓**）：`.../prototype/troubleshooting?view=WECOM`
+- 企微独立 UI 投影（**原型暂缓**）：`.../prototype/troubleshooting?view=WECOM`
 
 **不启服务也能演示**：`docs/intelligent-troubleshooting/experience-prototype-demo.html`
 （Vue 组件的静态镜像，双击即开；Vue 仍是实现权威，两者一并删除）。
 
 **已选定（2026-07-28）**：集中兵力做**服务经理摘要 + 开发证据台**，业务摘要默认展开、
-开发证据默认折叠；企微协同流随 P3 暂缓，原型里保留结构但不再投入。
+开发证据默认折叠；企微独立 UI 投影原型保留结构但不再投入。这不表示通道 P3 暂缓：
+P3 T9 的 Router pre-route 与 IntakeSession 首段已落地。
 两个投影的类型化合同见 `projection-contracts.md`。
 
 **正式入口已吸收（2026-07-29）**：
@@ -182,7 +196,8 @@ SopSynthesisService.preview()              已完成
 ```
 
 P1 本身只深化了 synthesis/evidence seam；P1 收口后已单独启动 T15 正式页面吸收并实现双投影。
-仍未创建 Planning、WeCom、新状态机、消息队列、Loop Controller、Challenger 或第二运行时。
+仍未创建独立 Planning 实现、第二条 WeCom 入站、`READY → Diagnosis` 异步编排/消息队列、
+Loop Controller、Challenger 或第二运行时。已实现的 Router pre-route 与 IntakeSession 状态机不得再写成“未创建”。
 
 验收案例必须是“会话消息发送失败（无 error_code）”。比较采用 requiredStepIntents、forbiddenStepIntents、
 orderingConstraints、requiredEvidenceKinds，不做逐字相似度。
@@ -241,6 +256,16 @@ Diagnosis 1.6 结构化影响纵切（2026-07-29）已通过：
 - 双轴 code review 最终无剩余 P0/P1/P2；后端以最终工作树重启并监听 `18088`，编译态合同版本为 `1.6`，
   `http://127.0.0.1:5173/troubleshooting` 返回 200 且 Vite 已提供本轮最新模块。
 
+P3 T9 IntakeSession 首段（2026-07-29）已通过：
+
+- 排障域 + Skill Manifest + Channel pre-route/provider-time 共 `279` 个后端测试，
+  0 failure / 0 error / 0 skipped；覆盖 source-message 幂等、相等时间戳拒绝覆盖、
+  A 已 READY/B 已打开时 A 的迟到事件仍归 A、企微秒/毫秒 `send_time` 与异常回退、原通道路由写入；
+- H2 真实启动先由 v175 迁移至 v176，再应用 v177 的真实首条时间回填与非空约束；最终进程 PID `95174`
+  监听 `18088`；正式页、旧版页均返回 200，后端 health 返回预期的未登录 401；
+- v0.14 `MANIFEST.sha256` 全量校验通过，三张 Draw.io/SVG XML 通过，当前 RFC/蓝图/投影合同与
+  v0.14 快照逐字一致；三张图继续与 v0.13 二进制一致（本轮只修实现语义，没有伪造新图形版本）。
+
 后端定向测试命令：
 
 ```bash
@@ -252,7 +277,7 @@ mvn -pl mateclaw-server -am \
 ## 9. 接手顺序
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
-2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见
+2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影；企微独立 UI 原型暂缓，P3 T9 真实通道已启动），合同见
    `projection-contracts.md`；D14 已进 Diagnosis 1.5，投影也已能消费既有 canonical hop/对照；
    下一步是让真实在线取证稳定产出这些事实，而不是再造一套展示数据。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。

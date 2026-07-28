@@ -286,7 +286,7 @@ details.fold summary:focus-visible{outline:2px solid var(--blue);outline-offset:
 </div>
 
 <script>
-const VIEWS=[{k:'INLINE',n:'原地展开'},{k:'SPLIT',n:'独立视图'},{k:'WECOM',n:'企微协同（P3 暂缓）',parked:1}];
+const VIEWS=[{k:'INLINE',n:'原地展开'},{k:'SPLIT',n:'独立视图'},{k:'WECOM',n:'企微独立投影（原型暂缓）',parked:1}];
 const OUTCOMES=[{k:'HYPOTHESIS',n:'根因假设'},{k:'EXCLUDED',n:'排除（非定位）'},{k:'INSUFFICIENT',n:'证据不足弃权'},{k:'SOURCE_DOWN',n:'证据源故障'}];
 const AUTHORITIES=[{k:'EXPLICIT',n:'错误码命中'},{k:'RULE_MATCHED',n:'规则命中场景'},{k:'MODEL_PROPOSED',n:'模型提议场景'}];
 const CLABEL={LOCATED:'已定位',EXCLUDED:'已排除',HYPOTHESIS:'根因假设',INSUFFICIENT_EVIDENCE:'证据不足'};
@@ -502,7 +502,7 @@ function viewB(s){return `<section class="vb">
     <p class="anote">点击只推进领域状态，系统不执行任何生产变更。</p>
     <p class="aecho" id="actEcho" hidden></p></aside></section>`;}
 
-function viewC(s,a){return `<div class="parked"><b>P3 暂缓</b><span>企微入口是录音里的真实一线入口（F6），但当前集中兵力做服务经理与开发两个投影；本页只保留结构，不再投入。</span></div>
+function viewC(s,a){return `<div class="parked"><b>独立 UI 投影原型暂缓</b><span>企微仍是真实一线入口（F6），P3 T9 已实现 Router pre-route 与 IntakeSession 首段；本页仅保留旧投影结构，不再作为实现权威。</span></div>
   <section class="vc">
   <aside class="chat">
     <div class="chathead"><span class="dot"></span><div><b>数字化服务平台智能小助手</b><small>企业微信群 · 演示会话</small></div></div>

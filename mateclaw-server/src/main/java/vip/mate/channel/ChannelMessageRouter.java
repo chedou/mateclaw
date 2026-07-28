@@ -99,6 +99,14 @@ public class ChannelMessageRouter {
     @Autowired(required = false)
     private vip.mate.tool.document.GeneratedFileCache generatedFileCache;
 
+    /**
+     * Domain-owned intake handlers that claim explicitly configured channel
+     * messages before the generic Trigger/Agent fan-out. Field injection keeps
+     * the long-standing constructor stable for narrow router unit tests.
+     */
+    @Autowired(required = false)
+    private List<ChannelMessagePreRouteHandler> preRouteHandlers = List.of();
+
     /** 队列条目：封装消息及其路由上下文 */
     private record QueueEntry(ChannelMessage message, ChannelAdapter adapter, ChannelEntity channelEntity) {}
 
@@ -273,6 +281,10 @@ public class ChannelMessageRouter {
             return;
         }
 
+        if (dispatchPreRouteHandler(message, adapter, channelEntity)) {
+            return;
+        }
+
         // Fan out to the trigger pipeline FIRST — channel_message and
         // content_match triggers fire on every received message regardless
         // of whether the channel has an agent attached. If we returned
@@ -356,6 +368,91 @@ public class ChannelMessageRouter {
                 log.info("[{}] Long-text merger armed on first message: conversationId={}, len={}, debounce={}ms",
                         channelType, conversationId, firstLen, debounceMs);
             }
+        }
+    }
+
+    /**
+     * Gives an explicitly enabled domain intake first refusal.
+     *
+     * <p>Once {@code supports} returns true, this path is fail-closed. Falling
+     * through to a generic Agent after the domain intake partially persisted a
+     * report would create two competing conversations and could violate the
+     * troubleshooting zero-LLM hit-path guarantee.</p>
+     */
+    boolean dispatchPreRouteHandler(
+            ChannelMessage message,
+            ChannelAdapter adapter,
+            ChannelEntity channelEntity) {
+        List<ChannelMessagePreRouteHandler> handlers = preRouteHandlers == null
+                ? List.of()
+                : preRouteHandlers.stream()
+                        .sorted(java.util.Comparator.comparingInt(
+                                ChannelMessagePreRouteHandler::order))
+                        .toList();
+        for (ChannelMessagePreRouteHandler handler : handlers) {
+            boolean supported;
+            try {
+                supported = handler.supports(message, adapter, channelEntity);
+            } catch (RuntimeException error) {
+                log.warn("[{}] pre-route supports check failed in {}: {}",
+                        adapter.getChannelType(), handler.getClass().getSimpleName(),
+                        error.getMessage());
+                continue;
+            }
+            if (!supported) {
+                continue;
+            }
+            try {
+                rememberChannelSession(message, adapter, channelEntity);
+                handler.handle(message, adapter, channelEntity);
+            } catch (ChannelMessagePreRouteDeliveryException error) {
+                log.error("[{}] claimed pre-route intake persisted but acknowledgement failed in {}: {}",
+                        adapter.getChannelType(), handler.getClass().getSimpleName(),
+                        error.getMessage(), error);
+            } catch (RuntimeException error) {
+                log.error("[{}] claimed pre-route intake failed closed in {}: {}",
+                        adapter.getChannelType(), handler.getClass().getSimpleName(),
+                        error.getMessage(), error);
+                safeIntakeFailureReply(message, adapter);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void rememberChannelSession(
+            ChannelMessage message,
+            ChannelAdapter adapter,
+            ChannelEntity channelEntity) {
+        String replyTarget = resolveReplyTarget(message);
+        if (replyTarget == null || replyTarget.isBlank()) {
+            throw new IllegalArgumentException("claimed channel message has no reply target");
+        }
+        channelSessionStore.saveOrUpdate(
+                buildConversationId(message, channelEntity.getId()),
+                adapter.getChannelType(),
+                replyTarget,
+                message.getSenderId(),
+                message.getSenderName(),
+                channelEntity.getId());
+    }
+
+    private void safeIntakeFailureReply(ChannelMessage message, ChannelAdapter adapter) {
+        String target = message.getReplyToken() != null && !message.getReplyToken().isBlank()
+                ? message.getReplyToken()
+                : message.getChatId() != null && !message.getChatId().isBlank()
+                        ? message.getChatId()
+                        : message.getSenderId();
+        if (target == null || target.isBlank()) {
+            return;
+        }
+        try {
+            adapter.renderAndSend(
+                    target,
+                    "报障资料未能安全入库，本次未启动 Agent 调查。请稍后重试或联系值班人员。");
+        } catch (RuntimeException replyError) {
+            log.warn("[{}] failed to send intake failure acknowledgement: {}",
+                    adapter.getChannelType(), replyError.getMessage());
         }
     }
 

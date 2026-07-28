@@ -7,7 +7,8 @@
 当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）和
 P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
 并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳；P2 T6 已完成
-workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制。**
+workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制；
+P3 T9 已完成企微普通消息 pre-route 与独立 IntakeSession 首段，异步调查/深链/关闭通知尚未完成。**
 下一主攻是配置真实 Guance 资产映射、完成字段核实与 20–30 条影子样本；同时让真源稳定产出
 结构化影响、完整 hop 和成功样本对照。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
@@ -29,7 +30,7 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
 
 0. **`docs/intelligent-troubleshooting/recording-product-baseline.md`** —— **现行产品事实**：
    2026-07-27 录音 F1–F11，明确核心差异化、首个案例、企微入口和能力边界。
-1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.2）**：
+1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.3）**：
    证据脊柱、在线诊断/知识生产双闭环、ERROR_CODE/SCENARIO/OPEN_DISCOVERY 三种调查路径和分阶段实施。
    **§9 是红线的唯一权威清单**，其余文档只引用不复述；**§7.4 是通道复用（D17）**。
 2. **`docs/intelligent-troubleshooting/architecture-review-v4.md`** —— **架构师评审**：
@@ -38,10 +39,10 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
    （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
 2.6 **`docs/intelligent-troubleshooting/projection-contracts.md`** —— **已选定的两个投影合同**：
    BusinessSummary / DeveloperEvidenceView / NorthStarTimings，含服务端不变量与通道消费方式。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.13**：
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.14**：
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
-   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.13 图形不变，
-   v0.13 校准正式工作台、双投影与证据事实吸收的实现状态，RFC 仍为 v4.2。
+   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.14 图形不变，
+   v0.14 校正企微普通消息入站接缝、身份边界并记录 P3 T9 首段实现状态，RFC 为 v4.3。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。
@@ -81,7 +82,8 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
   **P1 离线知识合成**可让模型在 `PlaybookDraft` 中提议只读 `evidencePlan`，但它不可路由/执行，
   必须通过确定性 Validator 并且只能保存为 `CANDIDATE / NOT_ELIGIBLE`。
   OPEN_DISCOVERY 使用独立 DiscoveryPolicy，不能伪装成 approved Playbook。
-- **通道一律复用平台现有 `ChannelAdapter` / `CardKind`，不新建入站**（D17）。企微已有
+- **通道一律复用平台现有 `ChannelAdapter`；普通消息走 `ChannelMessageRouter`
+  pre-route，模板卡片事件才走 `CardKind`，不新建入站**（D17）。企微已有
   `vip.mate.channel.wecom`；诊断卡片**不得**复用 tool-guard 的 `ApprovalNotice` 形状——
   "批准=回放执行"与排障"确认=只推进状态"语义相反。出站交互卡片需先泛化平台 renderer 接缝。
 

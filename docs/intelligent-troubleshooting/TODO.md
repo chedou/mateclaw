@@ -8,11 +8,12 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.2** / 蓝图 v0.13）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.14）
 >
-> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微 P3 暂缓）
+> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 已启动）
 >
-> **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter` / `CardKind`，不新建入站——
+> **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter`；普通消息走
+> `ChannelMessageRouter` pre-route，模板卡片事件才走 `CardKind`，不新建入站——
 > 平台自带 `vip.mate.channel.wecom`，详见 v4 §7.4。
 
 ## 0. 当前判断
@@ -71,7 +72,7 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
       conclusionType 标记、可点的处置按钮、重复 `:key` 修复；另出不依赖 dev server 的
       静态镜像 `experience-prototype-demo.html`。
 - [x] **信息结构已选定**：集中兵力做**服务经理摘要 + 开发证据台**两个投影，业务摘要默认展开、
-      开发证据默认折叠；企微协同流随 P3 暂缓。开发证据的入口做成 `view=INLINE|SPLIT` 可切，
+      开发证据默认折叠；企微独立 UI 投影原型暂缓，不阻塞 P3 T9 真实通道实现。开发证据的入口做成 `view=INLINE|SPLIT` 可切，
       两者渲染同一份投影，入口选择不影响后端合同。
 - [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
       / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
@@ -188,18 +189,29 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 ### T9 · IntakeSession（**扩平台现有企微通道，不新建入站**）
 
 平台已自带 `vip.mate.channel.wecom.WeComChannelAdapter`（支持 proactiveSend 与交互卡片）
-和 `WeComCardDispatcher` 多 kind 注册表。排障域在飞书上已经示范过正确做法，企微照做。
+和 `WeComCardDispatcher` 多 kind 注册表。飞书排障 kind 只示范了卡片点击的前缀隔离；企微普通 @
+消息不走 Dispatcher，而是在现有 Router 上接 pre-route handler。
 详见架构 v4 §7.4 / D17。
 
-- [ ] 注册 `WeComCardKind`（`ts.` 前缀，与 tool-guard 卡片前缀不相交）到 `WeComCardDispatcher`。
-      **不自建 webhook、不自建签名校验**——那是 Adapter 的职责。
-- [ ] `conversationRef` / `reporterRef` / `sourceMessageId` / 附件引用取自 `ChannelMessage`
-      （`chatId` / `senderId` / `messageId` / `contentParts`）与 `ChannelSessionStore`，不新建会话表。
-- [ ] `RECEIVED → AWAITING_INPUT → READY` 记在 `IntakeSession`；补问往返靠通道会话，
+- [x] 普通 @ 消息经平台现有 `WeComChannelAdapter → ChannelMessageRouter` 入站；Router 已增加
+      显式开关的 `ChannelMessagePreRouteHandler`，已接管报障不再进 Trigger/通用 Agent，失败保守关闭。
+      **不自建 webhook、不自建签名校验**——那是 Adapter 的职责。`WeComCardKind`
+      只路由模板卡片点击，不再被当作普通消息 Intake 入口。
+- [x] `conversationRef` / `reporterRef` / `sourceMessageId` / 附件引用取自 `ChannelMessage`
+      （`chatId` / `senderId` / `messageId` / `contentParts`）与 `ChannelSessionStore`；Router 在 pre-route
+      接管前保存带 channelId/targetId 的原通道路由，不新建会话表。
+- [x] `RECEIVED → AWAITING_INPUT → READY` 独立记在 `IntakeSession`；显式记录
+      `reportedAt/readyAt`；补问往返沿用通道会话，
       **不塞进 `DiagnosisStateMachine`**。
-- [ ] 视频只保存引用与元数据，当前不做内容理解。
-- [ ] sourceMessageId 幂等和版本检查，覆盖重复、乱序和并发补充消息。
-- [ ] 身份映射复用 `auth.sso.ExternalIdentityEntity`，未绑定即拒绝（同飞书 `CardOperatorResolver`）。
+- [x] 附件只保存受控 `storedName` 或消息级引用与元数据；不持久化本地路径/签名 URL，视频不做内容理解。
+- [x] sourceMessageId 独立 receipt 表保证幂等；企微 `send_time` 经校验后作为事件时间，
+      不可变 `reportedAt` 划分跨 Session 归属，`receivedAt <= lastMessageAt` 拒绝乱序覆盖；聚合版本检查 +
+      active-key 唯一约束覆盖并发更新/创建冲突；锁覆盖完整事务边界，唯一键冲突回滚后只重试一次；
+      READY 时原子释放 active key，稳定哈希 routing key 保留事件时间定位；迟到旧消息归入上一 Session，
+      只有时间更晚的消息才创建新报障。
+- [x] Intake 只将 `reporterRef` 当作不可信通道身份，未绑定仍可报障/补充，但不得用它
+      审核或推进受审计状态。将来增加此类操作时，必须复用 `ExternalIdentityEntity`
+      映射 workspace 主体，未绑定即拒绝该操作。
 
 ### T10 · 原路回复与关闭通知
 
@@ -321,7 +333,7 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ## 11. 推荐接手顺序
 
-1. 先读现行录音基线、v4.2、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
+1. 先读现行录音基线、v4.3、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
 2. 主攻 P2 真实 Guance 授权、measurement/字段/阈值核实和 20–30 条影子样本。
 3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。
 4. P3 企微可独立推进，但只扩现有 `channel/wecom`，不新建入站。
