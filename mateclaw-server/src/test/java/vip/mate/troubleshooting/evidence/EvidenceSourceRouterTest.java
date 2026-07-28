@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +52,26 @@ class EvidenceSourceRouterTest {
         assertThat(collected.source()).isEqualTo("fallback");
         assertThat(primary.calls()).isEqualTo(1);
         assertThat(fallback.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void restrictedCollectionNeverCallsAnUnpermittedConfiguredSource() {
+        StubAdapter guance = StubAdapter.returning("guance", result("EV-1", "guance"));
+        StubAdapter replay = StubAdapter.returning(
+                "recorded-replay", result("EV-1", "recorded-replay"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of(
+                        "log_count", List.of("guance", "recorded-replay"))),
+                guance, replay);
+
+        EvidenceResult collected = router.collect(
+                request("EV-1", "log_count"),
+                incident("CSDP"),
+                Set.of("recorded-replay"));
+
+        assertThat(collected.source()).isEqualTo("recorded-replay");
+        assertThat(guance.calls()).isZero();
+        assertThat(replay.calls()).isEqualTo(1);
     }
 
     @Test

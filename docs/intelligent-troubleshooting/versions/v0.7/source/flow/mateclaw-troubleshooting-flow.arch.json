@@ -1,0 +1,303 @@
+{
+  "version": 1,
+  "title": "MateClaw 智能排障端到端流程",
+  "type": "engineering-diagram",
+  "source": "generated",
+  "profile": "engineering-review",
+  "theme": "tech-blue",
+  "layout": "vertical",
+  "counts": {
+    "nodes": 20,
+    "edges": 25,
+    "modules": 0
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "label": "企微 @ / Web / 告警",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "intake",
+      "label": "接收并脱敏报障上下文",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "complete",
+      "label": "关键字段完整？",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "ask",
+      "label": "补问客户 / 时间 / 截图",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "route",
+      "label": "选择调查路径与权威",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "errorCode",
+      "label": "错误码 Playbook\n确定性 · 零 LLM",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "scenario",
+      "label": "场景 Playbook\n模型仅提议注册键",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "discovery",
+      "label": "开放探索\n受限只读 Agent",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "collect",
+      "label": "有界取证 + 脱敏 + 压缩",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "evidenceOk",
+      "label": "必需证据完整且引用有效？",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "abstain",
+      "label": "证据不足：abstain / 转人工",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "diagnosis",
+      "label": "形成可引用 Diagnosis\n定位 / 排除 / 假设",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "close",
+      "label": "人工处置 → outcome\n恢复验证 → 关闭",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "draft",
+      "label": "生成 PlaybookDraft",
+      "type": "document",
+      "size": "large"
+    },
+    {
+      "id": "validate",
+      "label": "确定性校验\n引用 / selector / 动作",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "candidate",
+      "label": "保存 Candidate\n幂等 · 不可路由",
+      "type": "database",
+      "size": "large"
+    },
+    {
+      "id": "review",
+      "label": "专家审核 + 历史回放",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "approvedDecision",
+      "label": "满足晋升资格？",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "approved",
+      "label": "Approved Playbook\n创建新版本",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "rejected",
+      "label": "Rejected / 保留审计",
+      "type": "terminal",
+      "size": "large"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "from": "start",
+      "to": "intake",
+      "type": "primary"
+    },
+    {
+      "id": "edge-2",
+      "from": "intake",
+      "to": "complete",
+      "type": "primary"
+    },
+    {
+      "id": "edge-3",
+      "from": "complete",
+      "to": "ask",
+      "type": "optional",
+      "label": "否"
+    },
+    {
+      "id": "edge-4",
+      "from": "ask",
+      "to": "intake",
+      "type": "optional",
+      "label": "补齐后重试"
+    },
+    {
+      "id": "edge-5",
+      "from": "complete",
+      "to": "route",
+      "type": "primary",
+      "label": "是"
+    },
+    {
+      "id": "edge-6",
+      "from": "route",
+      "to": "errorCode",
+      "type": "primary",
+      "label": "显式错误码命中"
+    },
+    {
+      "id": "edge-7",
+      "from": "route",
+      "to": "scenario",
+      "type": "primary",
+      "label": "注册场景"
+    },
+    {
+      "id": "edge-8",
+      "from": "route",
+      "to": "discovery",
+      "type": "optional",
+      "label": "无匹配"
+    },
+    {
+      "id": "edge-9",
+      "from": "errorCode",
+      "to": "collect",
+      "type": "primary"
+    },
+    {
+      "id": "edge-10",
+      "from": "scenario",
+      "to": "collect",
+      "type": "primary"
+    },
+    {
+      "id": "edge-11",
+      "from": "discovery",
+      "to": "collect",
+      "type": "primary"
+    },
+    {
+      "id": "edge-12",
+      "from": "collect",
+      "to": "evidenceOk",
+      "type": "primary"
+    },
+    {
+      "id": "edge-13",
+      "from": "evidenceOk",
+      "to": "abstain",
+      "type": "optional",
+      "label": "否"
+    },
+    {
+      "id": "edge-14",
+      "from": "evidenceOk",
+      "to": "diagnosis",
+      "type": "primary",
+      "label": "是"
+    },
+    {
+      "id": "edge-15",
+      "from": "abstain",
+      "to": "close",
+      "type": "optional",
+      "label": "人工接管"
+    },
+    {
+      "id": "edge-16",
+      "from": "diagnosis",
+      "to": "close",
+      "type": "primary"
+    },
+    {
+      "id": "edge-17",
+      "from": "diagnosis",
+      "to": "draft",
+      "type": "data",
+      "label": "可在关闭前产生"
+    },
+    {
+      "id": "edge-18",
+      "from": "draft",
+      "to": "validate",
+      "type": "primary"
+    },
+    {
+      "id": "edge-19",
+      "from": "validate",
+      "to": "candidate",
+      "type": "primary"
+    },
+    {
+      "id": "edge-20",
+      "from": "candidate",
+      "to": "review",
+      "type": "primary"
+    },
+    {
+      "id": "edge-21",
+      "from": "close",
+      "to": "review",
+      "type": "data",
+      "label": "人工解法 / outcome"
+    },
+    {
+      "id": "edge-22",
+      "from": "review",
+      "to": "approvedDecision",
+      "type": "primary"
+    },
+    {
+      "id": "edge-23",
+      "from": "approvedDecision",
+      "to": "approved",
+      "type": "primary",
+      "label": "是"
+    },
+    {
+      "id": "edge-24",
+      "from": "approvedDecision",
+      "to": "rejected",
+      "type": "optional",
+      "label": "否"
+    },
+    {
+      "id": "edge-25",
+      "from": "approved",
+      "to": "route",
+      "type": "data",
+      "label": "版本化知识反馈"
+    }
+  ],
+  "modules": []
+}

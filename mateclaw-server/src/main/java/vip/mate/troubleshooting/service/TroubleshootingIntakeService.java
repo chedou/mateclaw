@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
@@ -133,8 +134,9 @@ public class TroubleshootingIntakeService {
                     "no SOP registered for " + incident.system() + ":" + incident.errorCode());
         }
 
-        List<EvidenceResult> collectedEvidence = collectMissingEvidence(
-                sop, incident, evidence == null ? List.of() : evidence);
+        List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
+                collectMissingEvidence(
+                        sop, incident, evidence == null ? List.of() : evidence));
         return diagnosisService.diagnoseAndPersist(
                 workspaceId,
                 incident,

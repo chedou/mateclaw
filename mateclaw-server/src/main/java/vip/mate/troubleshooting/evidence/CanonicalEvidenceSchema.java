@@ -1,26 +1,49 @@
 package vip.mate.troubleshooting.evidence;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Canonical 903001 evidence vocabulary shared by every source adapter. */
+/** Canonical evidence vocabulary shared by every source adapter. */
 final class CanonicalEvidenceSchema {
 
-    private static final Map<String, Map<String, FieldType>> SCHEMAS = Map.of(
-            "log_count", Map.of(
+    private static final int MAX_LOG_TRACE_ENTRIES = 500;
+    private static final Set<String> OPTIONAL_LOG_ENTRY_FIELDS = Set.of("duration_ms");
+    private static final Map<String, FieldType> LOG_ENTRY_FIELDS = Map.of(
+            "timestamp", FieldType.NUMBER,
+            "service", FieldType.STRING,
+            "level", FieldType.STRING,
+            "message", FieldType.STRING,
+            "duration_ms", FieldType.NUMBER);
+    private static final Map<String, FieldType> LOG_TRACE_ROW_FIELDS =
+            withPsId(LOG_ENTRY_FIELDS);
+
+    private static final Map<String, SignalSchema> SCHEMAS = Map.of(
+            "log_count", scalar(Map.of(
                     "count", FieldType.NUMBER,
-                    "trace_id", FieldType.STRING),
-            "metric", Map.of(
+                    "trace_id", FieldType.STRING)),
+            "metric", scalar(Map.of(
                     "reachable", FieldType.BOOLEAN,
                     "connections_current", FieldType.NUMBER,
                     "connections_available", FieldType.NUMBER,
                     "slow_query_count", FieldType.NUMBER,
-                    "baseline_slow", FieldType.NUMBER),
-            "trace", Map.of(
+                    "baseline_slow", FieldType.NUMBER)),
+            "trace", scalar(Map.of(
                     "failed_hop", FieldType.STRING,
                     "status", FieldType.STRING,
-                    "duration_ms", FieldType.NUMBER));
+                    "duration_ms", FieldType.NUMBER)),
+            "log_search", scalar(Map.of(
+                    "match_count", FieldType.NUMBER,
+                    "ps_id", FieldType.STRING,
+                    "sample_message", FieldType.STRING)),
+            "log_trace_bundle", rows(
+                    Map.of(
+                            "ps_id", FieldType.STRING,
+                            "entries", FieldType.LOG_ENTRIES),
+                    LOG_TRACE_ROW_FIELDS,
+                    OPTIONAL_LOG_ENTRY_FIELDS));
 
     private CanonicalEvidenceSchema() {
     }
@@ -30,21 +53,76 @@ final class CanonicalEvidenceSchema {
     }
 
     static Set<String> fields(String signalKind) {
-        Map<String, FieldType> schema = schema(signalKind);
-        return schema == null ? Set.of() : schema.keySet();
+        SignalSchema schema = schema(signalKind);
+        if (schema == null) {
+            return Set.of();
+        }
+        return schema.rowFields().isEmpty()
+                ? schema.resultFields().keySet()
+                : schema.rowFields().keySet();
     }
 
     static boolean isValid(String signalKind, Map<String, Object> observed) {
-        Map<String, FieldType> schema = schema(signalKind);
-        if (schema == null || observed == null || !observed.keySet().equals(schema.keySet())) {
+        SignalSchema schema = schema(signalKind);
+        if (schema == null
+                || observed == null
+                || !observed.keySet().equals(schema.resultFields().keySet())) {
             return false;
+        }
+        return observed.entrySet().stream()
+                .allMatch(entry -> matches(schema.resultFields().get(entry.getKey()), entry.getValue()));
+    }
+
+    static boolean isRowSet(String signalKind) {
+        SignalSchema schema = schema(signalKind);
+        return schema != null && !schema.rowFields().isEmpty();
+    }
+
+    static boolean isValidRow(String signalKind, Map<String, Object> observed) {
+        SignalSchema schema = schema(signalKind);
+        if (schema == null || schema.rowFields().isEmpty() || observed == null) {
+            return false;
+        }
+        return validFields(schema.rowFields(), schema.optionalRowFields(), observed);
+    }
+
+    private static boolean validFields(
+            Map<String, FieldType> schema,
+            Set<String> optionalFields,
+            Map<String, Object> observed) {
+        Set<String> fields = observed.keySet();
+        if (!schema.keySet().containsAll(fields)) {
+            return false;
+        }
+        for (String required : schema.keySet()) {
+            if (!optionalFields.contains(required) && !fields.contains(required)) {
+                return false;
+            }
         }
         return observed.entrySet().stream()
                 .allMatch(entry -> matches(schema.get(entry.getKey()), entry.getValue()));
     }
 
-    private static Map<String, FieldType> schema(String signalKind) {
+    private static SignalSchema schema(String signalKind) {
         return SCHEMAS.get(normalize(signalKind));
+    }
+
+    private static SignalSchema scalar(Map<String, FieldType> resultFields) {
+        return new SignalSchema(resultFields, Map.of(), Set.of());
+    }
+
+    private static SignalSchema rows(
+            Map<String, FieldType> resultFields,
+            Map<String, FieldType> rowFields,
+            Set<String> optionalRowFields) {
+        return new SignalSchema(resultFields, rowFields, optionalRowFields);
+    }
+
+    private static Map<String, FieldType> withPsId(Map<String, FieldType> fields) {
+        Map<String, FieldType> combined = new LinkedHashMap<>();
+        combined.put("ps_id", FieldType.STRING);
+        combined.putAll(fields);
+        return Map.copyOf(combined);
     }
 
     private static boolean matches(FieldType type, Object value) {
@@ -55,7 +133,32 @@ final class CanonicalEvidenceSchema {
             case NUMBER -> value instanceof Number;
             case BOOLEAN -> value instanceof Boolean;
             case STRING -> value instanceof String text && !text.isBlank();
+            case LOG_ENTRIES -> validLogEntries(value);
         };
+    }
+
+    private static boolean validLogEntries(Object value) {
+        if (!(value instanceof List<?> entries)
+                || entries.isEmpty()
+                || entries.size() > MAX_LOG_TRACE_ENTRIES) {
+            return false;
+        }
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> rawEntry)) {
+                return false;
+            }
+            Map<String, Object> canonicalEntry = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> field : rawEntry.entrySet()) {
+                if (!(field.getKey() instanceof String key)) {
+                    return false;
+                }
+                canonicalEntry.put(key, field.getValue());
+            }
+            if (!validFields(LOG_ENTRY_FIELDS, OPTIONAL_LOG_ENTRY_FIELDS, canonicalEntry)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String normalize(String value) {
@@ -65,6 +168,13 @@ final class CanonicalEvidenceSchema {
     private enum FieldType {
         NUMBER,
         BOOLEAN,
-        STRING
+        STRING,
+        LOG_ENTRIES
+    }
+
+    private record SignalSchema(
+            Map<String, FieldType> resultFields,
+            Map<String, FieldType> rowFields,
+            Set<String> optionalRowFields) {
     }
 }

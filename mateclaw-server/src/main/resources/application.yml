@@ -147,9 +147,18 @@ mateclaw:
       routes:
         CSDP:
           log_count: [guance, recorded-replay]
+          log_search: [guance, recorded-replay]
+          log_trace_bundle: [guance, recorded-replay]
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
       default-sources: []
+      # The synthesis preview is fixture-only until a real workspace ->
+      # observability asset mapping exists. The service also hard-confines this
+      # path to recorded-replay before any adapter invocation.
+      synthesis-preview:
+        fixture-workspace-id: ${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}
+        fixture-services:
+          CSDP: [csdp-session-service]
       guance:
         enabled: ${MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED:false}
         base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:}
@@ -165,6 +174,22 @@ mateclaw:
             summary: 错误码日志计数
             query-template: "L::csdp_wechat_log:(count,trace_id) {service='{{service}}',error_code='{{error_code}}'} [{{window}}]"
             field-aliases: {}
+          log_search:
+            namespace: L
+            summary: 错误码或场景关键词日志取样
+            max-rows: 1
+            query-template: "L::csdp_wechat_log:(count,ps_id,message) {service='{{service}}' AND (error_code='{{search_term}}' OR message=~'{{search_term}}')} [{{window}}]"
+            field-aliases:
+              count: match_count
+              message: sample_message
+          log_trace_bundle:
+            namespace: L
+            summary: PS ID 全链路日志包
+            max-rows: 200
+            query-template: "L::csdp_wechat_log:(ps_id,service,status,message,duration_ms) {ps_id='{{ps_id}}'} [{{window}}]"
+            field-aliases:
+              time: timestamp
+              status: level
           metric:
             namespace: M
             summary: Mongo 连接与慢查询水位

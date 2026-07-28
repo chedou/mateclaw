@@ -25,6 +25,8 @@ public class EvidenceProperties {
 
     private RecordedReplay recordedReplay = new RecordedReplay();
 
+    private SynthesisPreview synthesisPreview = new SynthesisPreview();
+
     @Getter
     @Setter
     public static class Guance {
@@ -44,6 +46,9 @@ public class EvidenceProperties {
         private String summary = "";
         private String queryTemplate;
 
+        /** Maximum accepted rows; Guance receives one extra overflow sentinel row. */
+        private int maxRows = 200;
+
         /** Maps a source column name to the canonical field consumed by criteria. */
         private Map<String, String> fieldAliases = new LinkedHashMap<>();
     }
@@ -54,5 +59,14 @@ public class EvidenceProperties {
         private boolean enabled;
         private String resource =
                 "classpath:/troubleshooting/evidence/recorded-replay-903001.json";
+    }
+
+    /** Explicit fixture-only scope for the read-only synthesis preview. */
+    @Getter
+    @Setter
+    public static class SynthesisPreview {
+        private long fixtureWorkspaceId = 1L;
+        private Map<String, List<String>> fixtureServices = new LinkedHashMap<>(
+                Map.of("CSDP", List.of("csdp-session-service")));
     }
 }

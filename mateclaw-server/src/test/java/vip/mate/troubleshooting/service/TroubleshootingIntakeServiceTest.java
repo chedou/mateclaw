@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
@@ -241,6 +242,74 @@ class TroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void redactsNestedEvidenceBeforeDeterministicDiagnosisPersistence() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        EvidenceResult unsafe = new EvidenceResult(
+                "EV-1", "L", "query", EvidenceStatus.ANOMALY, "log bundle",
+                Map.of("entries", List.of(Map.of(
+                        "message", "Authorization: Bearer production-token"))),
+                "guance:log", NOW);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
+
+        ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
+                eq(false), eq(true), eq(NOW));
+        assertThat(evidenceCaptor.getValue().getFirst().observed().toString())
+                .contains(TroubleshootingSecretRedactor.REDACTED)
+                .doesNotContain("production-token");
+    }
+
+    @Test
+    void remapsDangerousCollidingQueryIdsBeforeDeterministicDiagnosisPersistence() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        EvidenceResult first = evidenceWithQueryId("token:first-secret");
+        EvidenceResult second = evidenceWithQueryId("token:second-secret");
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, incident, List.of(first, second), false);
+
+        ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
+                eq(false), eq(true), eq(NOW));
+        assertThat(evidenceCaptor.getValue())
+                .extracting(EvidenceResult::queryId)
+                .containsExactly("supplied-redacted-1", "supplied-redacted-2");
+    }
+
+    @Test
+    void remapsAQueryIdThatIsNotASecretButIsNotASafeIdentifier() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        EvidenceResult unsafe = evidenceWithQueryId("unsafe id with spaces");
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
+
+        ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
+                eq(false), eq(true), eq(NOW));
+        assertThat(evidenceCaptor.getValue())
+                .extracting(EvidenceResult::queryId)
+                .containsExactly("supplied-redacted-1");
+    }
+
+    @Test
     void passesRehearsalThroughSoDrillsStayOutOfDeduplication() {
         when(sopPersistence.find(anyLong(), any(), any())).thenReturn(sop());
         when(diagnosisService.diagnoseAndPersist(
@@ -322,6 +391,19 @@ class TroubleshootingIntakeServiceTest {
                 "EV-1", "L", "L::order-svc:(count) {error_code='903001'} [-15m]",
                 EvidenceStatus.ANOMALY, "错误码日志计数", Map.of("count", 148),
                 "guance:log", NOW);
+    }
+
+    private EvidenceResult evidenceWithQueryId(String queryId) {
+        EvidenceResult evidence = evidence();
+        return new EvidenceResult(
+                queryId,
+                evidence.namespace(),
+                evidence.query(),
+                evidence.status(),
+                evidence.summary(),
+                evidence.observed(),
+                evidence.source(),
+                evidence.collectedAt());
     }
 
     private Diagnosis diagnosis() {

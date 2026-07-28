@@ -1,137 +1,90 @@
-# IT 智能排障系统 · 设计文档
+# IT 智能排障系统 · 文档入口
 
-> **⚠️ 归档说明（2026-07-24）**：本目录自 webonne/MetaClaw 仓库原样迁入。其中的架构结论已被
-> **`rfcs/intelligent-troubleshooting-design.md`**（现行唯一设计，基于 MateClaw 逐条源码核对）吸收/取代；
-> 会话记忆与最新代办见 **`HANDOFF.md`**（已刷新为 MateClaw 纪元版）。**`l0/` 知识资产仍现行有效。**
-> 下文提到的 Python 包 `metaclaw_troubleshooting`（竖切 MVP 及其运行/测试命令）不在本仓库——
-> 参考实现保留在 webonne/MetaClaw 的 `zhinengpaizhang-dev` 分支。
+本系统只基于当前 Java **MateClaw** 实现，作为 `mateclaw-server` 内的领域深模块
+`vip.mate.troubleshooting` 运行。后续不引入第二套排障平台、独立 Python orchestrator
+或 loopback 运行时。
 
-基于 MetaClaw 元学习平台构建的 IT 智能排障能力，目标是把故障处理从
-「人工翻系统 + 经验判断」升级为「告警驱动 · 智能路由 · 自动取证 · 人机协同诊断 · 知识闭环」。
+## 现行基线
 
-## 文档
+按下面顺序阅读：
 
-- [执行摘要（一页纸）](./executive-summary.html) — 给团队/领导的两分钟版：做什么、怎么安全、
-  承诺什么、第一步与所需支持。
-- [架构与演进蓝图 v0.3](./architecture-blueprint.html) — 完整设计（16 节）：分层架构、双路脊柱
-  （确定性 / LLM 兜底）、全过程运转图、三契约、观测云 DQL 取证、L0→L5 演进、部门级平台化、
-  编排层与信任工程（自建 orchestrator + MCP、workflow vs ReAct）、上线取信与放权阶梯、
-  知识运营机制、决策记录（D1–D7）、风险与修正，以及 15 个能力域 × 6 个落地阶段的热力矩阵。
-- [架构走读复核](./architecture-review.md) — 对 `metaclaw_troubleshooting` MVP 的第一性原理复核：
-  逐条基线对齐（无架构性偏差，38 测试通过）+ G1–G7 待推进缺口清单。
-- [MetaClaw 集成设计](./metaclaw-integration-design.md) — D7 的实施合同：产品入口一体、领域 Module 与运行时
-  隔离，通过 Adapter 复用 reasoning / knowledge，并明确统一启动、配置、鉴权、持久化与分阶段准入。
-- [证据源开放适配设计](./observability-abstraction-design.md) — D8：多平台 Observability Abstraction Layer。
-  SOP 存平台无关意图，绑定放注册表、按 system+signal 路由、各适配器归一到 canonical 字段；观测云是首个适配器，
-  Zabbix/Prometheus/日志平台可零改 SOP 插入。
-- [P3 证据源适配器运行说明](./evidence-adapter-runbook.md) — 当前 Java 实现的配置、状态语义与 T2 内网验收。
-- [P4 未命中路只读 Agent 运行手册](./agent-miss-path-runbook.md) — 专用 Agent、安全闸、默认关闭的启用顺序、验收与回滚。
+1. [录音产品基线](./recording-product-baseline.md)
+   唯一产品事实来源：F1–F11、首个无错误码案例、企微入口与能力边界。
+2. [现行概要设计 v4](../../rfcs/intelligent-troubleshooting-architecture-v4.md)
+   一条证据脊柱、在线诊断/知识生产两个闭环、三类调查路径与实施顺序。
+3. [架构师评审 v4](./architecture-review-v4.md)
+   评审结论、范围收敛、测试覆盖图、失败模式和资源预算。
+4. [架构蓝图 v0.10](./architecture-blueprint.html)
+   面向讨论和汇报的精简可视化版本，已嵌入架构图、流程图和泳道图。
+   [历史版本](./versions/index.html)按版本完整保留，不再覆盖。
+5. [HANDOFF](./HANDOFF.md)
+   当前实施状态、红线、真实缺口与接手指针。
+6. [TODO](./TODO.md)
+   当前优先级：无错误码证据→PlaybookDraft→参考解法比较→candidate。
+7. [源码核对与安全论证附录](../../rfcs/intelligent-troubleshooting-design.md)
+   native Workflow、ToolGuard、身份与通道等源码证据；不作为独立现行概要设计。
 
-### 交互原型与 MVP 工作台
+设计门户：[index.html](./index.html)。
 
-- [版式 A · 单故障详情页](./console-prototype.html) — IM 卡片 + 故障上下文 Web 台。
-- [版式 B · 值班驾驶舱](./console-prototype-b.html) — 三栏应用式（左队列/中处置/右证据）。
-- [故障工作台（列表→详情）](./console-workbench.html) — 正式页面位于 Python 包内的
-  `metaclaw_troubleshooting/static/console-workbench.html`，文档链接仅负责跳转；通过 `/workbench` 访问时使用排障 API。
-  支持隔离演练、确认结论、结构化转派、生产写操作人工批准、
-  外部处置结果登记、恢复验证和关闭沉淀。MetaClaw 只记录批准与外部结果，不连接生产写执行器。
+## 配套可编辑图件
 
-## 运行首条竖切 MVP
+- [总体架构图](./diagrams/mateclaw-troubleshooting-architecture.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-architecture.svg)
+- [端到端流程图](./diagrams/mateclaw-troubleshooting-flow.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-flow.svg)
+- [跨角色泳道图](./diagrams/mateclaw-troubleshooting-swimlane.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-swimlane.svg)
+- [架构蓝图版本库](./versions/index.html) · v0.7–v0.10 完整快照
 
-当前竖切固定使用 `903001` fixture，目的是先验证端到端合同与安全边界，不代表观测云 DQL 已在内网核实。
-在仓库根目录运行：
-
-```bash
-uv run --no-project --with fastapi --with uvicorn python -m metaclaw_troubleshooting
-```
-
-默认使用可恢复的 SQLite 数据库 `~/.metaclaw/troubleshooting.db`；可用 `--database /path/to/file.db`
-指定其他路径。服务在 RBAC/SSO 完成前只允许监听 loopback 地址。
-
-然后访问：
-
-- 工作台：`http://127.0.0.1:18080/workbench`
-- API 文档：`http://127.0.0.1:18080/docs`
-- 健康检查：`http://127.0.0.1:18080/healthz`
-- 就绪检查：`http://127.0.0.1:18080/readyz`
-- 运行能力：`http://127.0.0.1:18080/v1/troubleshooting/capabilities`
-
-点击工作台顶部的「一键创建 903001 主流程演练」，可走完以下隔离闭环：
+## 一句话架构
 
 ```text
-故障接入 → 自动取证 → 诊断确认 → 结构化转派 → 人工批准
-→ 外部处置结果登记 → 恢复验证 → 关闭归档 → 知识候选审核
+企微/Web 报障 → Intake 补齐上下文 → 只读 EvidencePlan → EvidenceBundle
+  ├─ 调查内循环 → 取证 / 提议 / 确定性校验 → 完成 / 弃权 / 转人工
+  └─ 知识外循环 → PlaybookDraft → 结构化反证 / 回放 → 人工审核 → approved Playbook
+
+调查模式：ERROR_CODE_PLAYBOOK | SCENARIO_PLAYBOOK | OPEN_DISCOVERY
+路由权威：EXPLICIT | RULE_MATCHED | MODEL_PROPOSED
+
+Agent 暴露面：唯一 TroubleshootingEvidenceTool
+内部扩展面：ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI
+
+Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
+反证评测面：Evidence Challenger + Safety Challenger → AdversarialEvalReport
 ```
 
-演练使用独立的 `CSDP-REHEARSAL` 路由和唯一 case/run，不会把 canonical `CSDP:903001` 草案 SOP
-改成已审核状态。核心接口包括：
+## 七条不可突破的红线
 
-- `POST /v1/troubleshooting/rehearsals/903001`：创建合成演练；
-- `POST .../confirm`、`POST .../transfer`：人工确认与携带上下文的结构化转派；
-- `POST .../actions/{action_id}/approve`：仅记录人工批准；
-- `POST .../actions/{action_id}/record-outcome`：登记 MetaClaw 外部的人工处置结果和恢复验证；
-- `POST .../close`：关闭归档，可生成 `candidate` 状态的知识候选；
-- `POST .../execute`：固定返回 `409`，证明页面和 API 都不能误执行生产写操作。
+1. 错误码 approved Playbook 命中路零 LLM。
+2. 生产写工具不注册。
+3. 人工批准只推进领域状态，不执行工具；写操作始终在系统外由人完成。
+4. 未命中路 Agent 只有一个只读证据工具，且必须经过服务端会话、脱敏预算和引用校验。
+5. AI 生成的 PlaybookDraft 永远先进入 candidate；模型不能批准知识或生成生产写。
+6. Loop 预算、检查点和停止原因由服务端控制；Agent 不能自行续期或递归创建 Agent。
+7. 多 Agent 只做结构化反证；共识、票数或 Judge 文本不能成为诊断/知识权威。
 
-状态机拒绝跳过诊断确认、动作审批、外部结果或恢复验证；转派快照携带 case/run、trace、根因、置信度和
-证据 ID。知识候选预填证据、推荐动作、实际处置结果、根因与关闭摘要，只进入审核队列，不直接覆盖 SOP。
+## 代码入口
 
-D7 P1 + P2 已完成：HTTP 入口只负责协议转换，诊断创建、查询与状态命令统一进入
-`TroubleshootingModule`；`DiagnosisRepository` 负责副本隔离、复合幂等和并发命令原子更新，领域错误同时
-返回稳定机器码与可读说明。SQLite schema migration v2 已持久化完整 Diagnosis 聚合与知识发布 Outbox；
-候选和聚合同事务提交，消费端具备租约 claim、ack、失败重试与幂等约束。`KnowledgePublisher` 只会在 P3
-出现真实 MetaClaw Adapter 时抽取，避免用空接口制造“已集成”的假象。当前 `actor` 尚未接可信身份，
-启动命令会拒绝非 loopback 地址。
+- 后端：`mateclaw-server/src/main/java/vip/mate/troubleshooting/`
+- 后端测试：`mateclaw-server/src/test/java/vip/mate/troubleshooting/`
+- 前端：`mateclaw-ui/src/views/Troubleshooting/`
+- 路由：`/troubleshooting`、`/troubleshooting/sops`
+- Agent 启用与回滚：[agent-miss-path-runbook.md](./agent-miss-path-runbook.md)
+- 证据适配设计：[observability-abstraction-design.md](./observability-abstraction-design.md)
 
-默认 `903001` SOP 保持 `draft/verified=false`：工作台只展示影子取证，隐藏正式根因与恢复动作；只有测试中显式构造
-或隔离演练中构造 `approved/verified=true` 的合成 SOP，才会验证“人工批准但不执行”的合同。取证工具超时会降级为
-人工取证，不返回 500。
+## 当前真实状态
 
-运行竖切测试：
+- 旧 P0–P4 领域底座已经落地；v4 P0 产品/架构/体验校准已完成并通过架构师评审。
+- 当前 P1 复用已有 `SopSynthesisService.preview()`：日志取样、PS ID、全链路与确定性压缩已完成；
+  结构化 PlaybookDraft、校验、参考解法比较和 candidate 幂等仍待实现。
+- Loop Engineering 与多 Agent 反证已进入现行目标设计，但 P1 不实现；P2 先做固定角色影子评测，
+  P4 才为 SCENARIO / OPEN_DISCOVERY 引入领域 Loop Control。
+- P4 默认关闭，尚未完成专用 Agent 与唯一模型的实机演练。
+- Guance Adapter 与 Recorded Replay Adapter 已接到统一 Router，但真实 measurement、字段与阈值
+  尚未在内网验证，`fixtureMode` 仍应保持开启。
+- 生产写执行能力不存在；`execute` 端点继续恒拒绝。
+- “从日志生成 SOP”是当前产品主线之一，但产物只可成为 candidate，不得自动晋升或改写权威 Playbook。
 
-```bash
-uv run --no-project --python 3.12 --with fastapi --with httpx --with pytest \
-  python -m pytest -q tests/test_troubleshooting_mvp.py tests/test_troubleshooting_persistence.py
-```
+## 历史材料
 
-## L0 知识底座（已启动）
+`intelligent-troubleshooting-architecture-v2.md`、`v3.md` 与 `meeting-change-plan.md` 只用于追溯讨论，
+不再决定当前产品主线。早期原型可在设计门户的“历史原型 · 归档”区域查看。
 
-- [`l0/inventory_report.md`](./l0/inventory_report.md) — 清洗后家底盘点：146 个 D1 路由键、62% 有恢复方案、
-  30/146（约 21%）只读自动化候选、18 个 P0/P1 首批审核对象。
-- [`l0/sop_kb.json`](./l0/sop_kb.json) — 从《故障与措施》解析出的结构化 SOP 库（`status=candidate`，
-  恢复步骤按 action_type 分类；Bearer/JWT 已脱敏）。
-- [`l0/build_sop_kb.py`](./l0/build_sop_kb.py) — 解析脚本。
-- [`l0/clean_sop_kb.py`](./l0/clean_sop_kb.py) — 保守清洗与质量闸门：合并被换行切碎的步骤、重算
-  completeness、补充 token 脱敏，并在 `(system,error_code)` 冲突时拒绝静默落盘。
-- [`l0/quality_report.md`](./l0/quality_report.md) — 当前数据的阻断项与人工复核队列。
-
-在仓库根目录复查当前 KB：
-
-```bash
-python3 docs/intelligent-troubleshooting/l0/clean_sop_kb.py \
-  --report docs/intelligent-troubleshooting/l0/quality_report.md
-```
-
-清洗器默认只报告；只要存在路由冲突或疑似丢字符，传 `--output` 也会拒绝写结构化结果。源表恢复后可用
-`python3 docs/intelligent-troubleshooting/l0/build_sop_kb.py /path/to/f.xlsx --quality-report /tmp/sop-quality.md`
-重新生成并通过同一质量闸门。
-
-## 当前状态
-
-架构已收敛（v0.3，D1–D7 已锁定）。L0 知识底座已启动；`903001` 的本地 fixture 竖切已打通：
-确定性路由、4 项只读取证、数据驱动判据、统一 `Diagnosis` 合同、服务端复合幂等、工作台/API 联动，
-以及从诊断确认、结构化转派、人工批准、外部处置登记、恢复验证到关闭归档和知识候选的完整演练闭环。
-
-P2 已让这条闭环具备工程恢复能力：包内静态页与 SQL migrations 可随 wheel 安装，SQLite schema v2
-保存 Case/Run、Evidence、Approval、Transfer、Outcome、Closure、AuditEvent 与 KnowledgeCandidate；进程重启后
-状态可精确恢复，知识候选进入具备租约、确认与失败重试的事务 Outbox。`/readyz`、capabilities、503 错误 ID
-和日志关联已可用于本地运维定位；专项验证为 38 项测试通过（另含 7 个 subtests）。
-
-该竖切仍是开发态：观测云字段与阈值尚未联调核实，P3 开放适配器与 P4 只读 LLM miss-path
-工程链路已实现，但 `fixtureMode` 仍为 true、P4 默认关闭，尚待专用 Agent/ToolGuard 配置和真实演练。
-生产写执行器明确保持断开。
-
-清洗/质量闸门已落地，当前发现 3 个路由键对应多个业务上下文，且旧解析器已造成 103 处疑似
-字符丢失（IP / 组件版本 / 联系人手机号 / `limit`、`skip` 调用），需 owner 裁决并回源表恢复；工具默认拒绝把
-带阻断项的结构化结果覆盖 canonical KB。下一步：处理质量报告阻断项 → 审核候选条目 → 内网核实
-`903001` 的 `evidence_dql`/`anomaly_criteria` → 接观测云真实取证 → 建历史回归集接影子模式。
+蓝图从 v0.7 起执行“只新增、不覆盖”，发布规则见 [versions/README.md](./versions/README.md)。

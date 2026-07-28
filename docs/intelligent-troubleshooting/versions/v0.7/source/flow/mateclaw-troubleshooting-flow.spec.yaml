@@ -1,0 +1,334 @@
+meta:
+  profile: engineering-review
+  theme: tech-blue
+  source: generated
+  layout: vertical
+  routing: orthogonal
+  canvas: 1440x1680
+  title: MateClaw 智能排障端到端流程
+  description: 从不完整报障到可引用诊断、人工闭环和经审核 Playbook 的完整流程。
+nodes:
+  - id: start
+    label: 企微 @ / Web / 告警
+    type: terminal
+    size: large
+    position:
+      x: 720
+      'y': 64
+  - id: intake
+    label: 接收并脱敏报障上下文
+    type: process
+    size: large
+    position:
+      x: 720
+      'y': 192
+  - id: complete
+    label: 关键字段完整？
+    type: decision
+    size: large
+    position:
+      x: 720
+      'y': 320
+  - id: ask
+    label: 补问客户 / 时间 / 截图
+    type: process
+    size: large
+    position:
+      x: 1056
+      'y': 320
+  - id: route
+    label: 选择调查路径与权威
+    type: decision
+    size: large
+    position:
+      x: 720
+      'y': 448
+  - id: errorCode
+    label: |-
+      错误码 Playbook
+      确定性 · 零 LLM
+    type: process
+    size: large
+    position:
+      x: 352
+      'y': 576
+    style:
+      fillColor: '#ECFDF5'
+      strokeColor: '#059669'
+  - id: scenario
+    label: |-
+      场景 Playbook
+      模型仅提议注册键
+    type: process
+    size: large
+    position:
+      x: 720
+      'y': 576
+    style:
+      fillColor: '#FFF7ED'
+      strokeColor: '#D97706'
+  - id: discovery
+    label: |-
+      开放探索
+      受限只读 Agent
+    type: process
+    size: large
+    position:
+      x: 1088
+      'y': 576
+    style:
+      fillColor: '#EFF6FF'
+      strokeColor: '#2563EB'
+  - id: collect
+    label: 有界取证 + 脱敏 + 压缩
+    type: process
+    size: large
+    position:
+      x: 720
+      'y': 704
+  - id: evidenceOk
+    label: 必需证据完整且引用有效？
+    type: decision
+    size: large
+    position:
+      x: 720
+      'y': 832
+  - id: abstain
+    label: 证据不足：abstain / 转人工
+    type: terminal
+    size: large
+    position:
+      x: 1056
+      'y': 832
+    style:
+      fillColor: '#FEF2F2'
+      strokeColor: '#DC2626'
+  - id: diagnosis
+    label: |-
+      形成可引用 Diagnosis
+      定位 / 排除 / 假设
+    type: process
+    size: large
+    position:
+      x: 720
+      'y': 960
+  - id: close
+    label: |-
+      人工处置 → outcome
+      恢复验证 → 关闭
+    type: terminal
+    size: large
+    position:
+      x: 720
+      'y': 1088
+  - id: draft
+    label: 生成 PlaybookDraft
+    type: document
+    size: large
+    position:
+      x: 352
+      'y': 960
+  - id: validate
+    label: |-
+      确定性校验
+      引用 / selector / 动作
+    type: process
+    size: large
+    position:
+      x: 352
+      'y': 1088
+  - id: candidate
+    label: |-
+      保存 Candidate
+      幂等 · 不可路由
+    type: database
+    size: large
+    position:
+      x: 352
+      'y': 1216
+  - id: review
+    label: 专家审核 + 历史回放
+    type: process
+    size: large
+    position:
+      x: 352
+      'y': 1344
+  - id: approvedDecision
+    label: 满足晋升资格？
+    type: decision
+    size: large
+    position:
+      x: 352
+      'y': 1472
+  - id: approved
+    label: |-
+      Approved Playbook
+      创建新版本
+    type: terminal
+    size: large
+    position:
+      x: 144
+      'y': 1600
+    style:
+      fillColor: '#ECFDF5'
+      strokeColor: '#059669'
+  - id: rejected
+    label: Rejected / 保留审计
+    type: terminal
+    size: large
+    position:
+      x: 560
+      'y': 1600
+    style:
+      fillColor: '#FEF2F2'
+      strokeColor: '#DC2626'
+edges:
+  - from: start
+    to: intake
+    type: primary
+  - from: intake
+    to: complete
+    type: primary
+  - from: complete
+    to: ask
+    type: optional
+    label: 否
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: ask
+    to: intake
+    type: optional
+    label: 补齐后重试
+    labelOffset:
+      x: 16
+      'y': 0
+    waypoints:
+      - x: 1056
+        'y': 192
+      - x: 816
+        'y': 192
+  - from: complete
+    to: route
+    type: primary
+    label: 是
+    labelOffset:
+      x: 16
+      'y': 0
+  - from: route
+    to: errorCode
+    type: primary
+    label: 显式错误码命中
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: route
+    to: scenario
+    type: primary
+    label: 注册场景
+    labelOffset:
+      x: 16
+      'y': 0
+  - from: route
+    to: discovery
+    type: optional
+    label: 无匹配
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: errorCode
+    to: collect
+    type: primary
+  - from: scenario
+    to: collect
+    type: primary
+  - from: discovery
+    to: collect
+    type: primary
+  - from: collect
+    to: evidenceOk
+    type: primary
+  - from: evidenceOk
+    to: abstain
+    type: optional
+    label: 否
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: evidenceOk
+    to: diagnosis
+    type: primary
+    label: 是
+    labelOffset:
+      x: 16
+      'y': 0
+  - from: abstain
+    to: close
+    type: optional
+    label: 人工接管
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: diagnosis
+    to: close
+    type: primary
+  - from: diagnosis
+    to: draft
+    type: data
+    label: 可在关闭前产生
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: draft
+    to: validate
+    type: primary
+  - from: validate
+    to: candidate
+    type: primary
+  - from: candidate
+    to: review
+    type: primary
+  - from: close
+    to: review
+    type: data
+    label: 人工解法 / outcome
+    labelOffset:
+      x: 0
+      'y': -16
+    waypoints:
+      - x: 720
+        'y': 1344
+      - x: 448
+        'y': 1344
+  - from: review
+    to: approvedDecision
+    type: primary
+  - from: approvedDecision
+    to: approved
+    type: primary
+    label: 是
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: approvedDecision
+    to: rejected
+    type: optional
+    label: 否
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: approved
+    to: route
+    type: data
+    label: 版本化知识反馈
+    labelOffset:
+      x: 16
+      'y': 0
+    waypoints:
+      - x: 64
+        'y': 1600
+      - x: 64
+        'y': 448
+      - x: 624
+        'y': 448
+modules: []

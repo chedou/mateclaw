@@ -83,13 +83,15 @@ class EvidenceSourceRouter:
 
 ---
 
-## 四、归一化词汇表（D-C：先只定 903001 用到的）
+## 四、归一化词汇表（D-C：903001 + P6 日志学习前置）
 
 > 原则：小而精，别一次定全。各适配器 `collect` 后必须把响应归一到下列 `observed` 字段名。
 
 | signal_kind | canonical `observed` 字段 | 用于的判据（现 903001 fixture） |
 |---|---|---|
 | `log_count` | `count`, `trace_id` | `numeric_gte(count, 1)` → 确认发生 |
+| `log_search` | `match_count`, `ps_id`, `sample_message` | 场景关键词取样并抽取 PS ID；真实字段待 T2 |
+| `log_trace_bundle` | `ps_id`, `entries[]`（时间/服务/级别/消息，耗时可选） | 同一 PS ID 的有界全链路日志包；供后续确定性压缩 |
 | `metric`（mongo 可用性/连接） | `reachable`(bool), `connections_current`, `connections_available`, `slow_query_count`, `baseline_slow` | `missing_or_lte` 可用性 / `ratio_of_sum_gt(current,available)` 连接打满 / `multiple_gt(slow,baseline)` 慢查询 |
 | `trace` | `failed_hop`(str), `status`, `duration_ms` | `contains_and_in(status,...)` 定位 DB 失败跳 |
 
@@ -159,6 +161,12 @@ default:
 - [x] 903001 SOP 运行态使用平台无关 `EvidenceRequest`；Guance 草案绑定移入应用配置。
 - [x] 写 `RecordedReplayAdapter` + 一份脱敏 903001 样本，并锁定精确键匹配与失败降级测试。
 - [x] 写 `GuanceEvidenceAdapter`，按官方 query-data API 请求并归一响应；**内网字段/阈值仍待 T2 核实**。
+- [x] P6 前置：增加 `log_search` / `log_trace_bundle`，日志包校验请求/返回 PS ID、按时间排序、
+  以溢出哨兵限行，DQL 留在适配器内；增加「会话消息发送失败」无错误码脱敏回放。
+- [x] T11 前三步：从回放/Guance 统一 Router 执行 `log_search → log_trace_bundle`，模型之前用
+  `DeterministicLogTraceCompressor` 压成有界调用链骨架；原始字符与 24h 时间窗均有硬上限，回放键精确绑定
+  search term / PS ID；只读 preview 不暴露原始日志/DQL，不调模型、不入库。该路径当前只允许显式登记的
+  fixture workspace/service，并在 Router 调用前硬限 `recorded-replay`；真实 Guance 放行依赖尚未实现的 workspace 资产映射。
 - [x] `GET /api/v1/troubleshooting/evidence/sources` 汇总源级 `health`，不暴露凭据和查询。
 - [ ] 用真实观测云完成 per-binding `verification_status`，并按需汇入全局 `/readyz`。
 - [ ] 增加 Zabbix 或其他第二平台，验证新增适配器确实不改 SOP 与判据。

@@ -55,6 +55,66 @@
       },
       "source": "recorded-replay:903001",
       "collectedAt": "2026-07-20T09:12:05Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-session-service",
+      "requestId": "SYNTH-LOG-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "message_send_failed"
+      },
+      "namespace": "L",
+      "query": "recorded:message-send-failed/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：会话消息发送失败日志取样",
+      "observed": {
+        "match_count": 4,
+        "ps_id": "synthetic-ps-message-send-001",
+        "sample_message": "message send failed after session state conflict"
+      },
+      "source": "recorded-replay:message-send-failed",
+      "collectedAt": "2026-07-20T09:13:01Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-session-service",
+      "requestId": "SYNTH-TRACE-BUNDLE",
+      "signalKind": "log_trace_bundle",
+      "target": {
+        "ps_id": "synthetic-ps-message-send-001"
+      },
+      "namespace": "L",
+      "query": "recorded:message-send-failed/trace-bundle",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：PS ID 全链路日志包",
+      "observed": {
+        "ps_id": "synthetic-ps-message-send-001",
+        "entries": [
+          {
+            "timestamp": 1753002781000,
+            "service": "session-api",
+            "level": "INFO",
+            "message": "message accepted"
+          },
+          {
+            "timestamp": 1753002781042,
+            "service": "session-state",
+            "level": "ERROR",
+            "message": "concurrent state write rejected",
+            "duration_ms": 42
+          },
+          {
+            "timestamp": 1753002781087,
+            "service": "session-api",
+            "level": "ERROR",
+            "message": "message send failed",
+            "duration_ms": 87
+          }
+        ]
+      },
+      "source": "recorded-replay:message-send-failed",
+      "collectedAt": "2026-07-20T09:13:02Z"
     }
   ]
 }

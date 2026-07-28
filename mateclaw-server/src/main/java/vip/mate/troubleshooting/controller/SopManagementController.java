@@ -18,6 +18,8 @@ import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
+import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
+import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.util.List;
@@ -46,6 +48,25 @@ public class SopManagementController {
 
     private final TroubleshootingSopPersistenceService sopPersistence;
     private final TroubleshootingPersistenceService persistence;
+    private final SopSynthesisService synthesisService;
+
+    /**
+     * Previews the first three learning-loop stages without invoking a model or
+     * creating a SOP candidate.
+     *
+     * <p>The response contains only bounded, redacted canonical evidence
+     * references and the deterministic call-chain skeleton. It never exposes
+     * the full raw log bundle or a rendered platform query. The current preview
+     * is fixture-only and cannot invoke a live observability adapter.</p>
+     */
+    @PostMapping("/synthesis/preview")
+    @RequireWorkspaceRole("admin")
+    public R<SopSynthesisPreview> previewSynthesis(
+            @Valid @RequestBody SopSynthesisPreviewRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(synthesisService.preview(
+                resolveWorkspace(workspaceId), request.toDomainRequest()));
+    }
 
     /**
      * Registers a SOP. Fails with 409 when the route is already taken.
