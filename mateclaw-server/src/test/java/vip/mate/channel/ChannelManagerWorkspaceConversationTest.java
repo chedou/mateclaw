@@ -17,7 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,6 +74,80 @@ class ChannelManagerWorkspaceConversationTest {
 
         verify(adapter).proactiveSend(
                 eq("group-1"), eq("investigation complete"), any(DeliveryOptions.class));
+    }
+
+    @Test
+    void forwardsDeliveryOptionsToTheResolvedWorkspaceRoute() {
+        ChannelSessionEntity session = session("wecom:99:user-1", 99L, "user-1");
+        when(sessionStore.getSession("wecom:99:user-1")).thenReturn(session);
+        when(channelService.getChannel(99L)).thenReturn(channel(99L, 7L));
+        ChannelAdapter adapter = activeAdapter(99L);
+        DeliveryOptions options = DeliveryOptions.mentioningUsers(List.of("user-1"));
+
+        manager.sendToWorkspaceConversation(
+                7L,
+                "wecom",
+                "wecom:99:user-1",
+                "incident closed",
+                options);
+
+        verify(adapter).proactiveSend(
+                eq("user-1"), eq("incident closed"), same(options));
+    }
+
+    @Test
+    void groupConversationRequiresTheAdaptersCurrentReplyContext() {
+        ChannelSessionEntity session = session("wecom:99:group-1", 99L, "group-1");
+        when(sessionStore.getSession("wecom:99:group-1")).thenReturn(session);
+        when(channelService.getChannel(99L)).thenReturn(channel(99L, 7L));
+        ChannelAdapter adapter = activeAdapter(99L);
+        when(adapter.isProactiveDeliveryReady(anyString(), any(DeliveryOptions.class)))
+                .thenReturn(false);
+
+        assertFalse(manager.canSendToWorkspaceConversation(
+                7L, "wecom", "wecom:99:group-1"));
+        assertThrows(
+                IllegalStateException.class,
+                () -> manager.sendToWorkspaceConversation(
+                        7L, "wecom", "wecom:99:group-1", "must stay durable"));
+
+        verify(adapter, org.mockito.Mockito.never()).proactiveSend(
+                anyString(), anyString(), any(DeliveryOptions.class));
+    }
+
+    @Test
+    void groupConversationAddsReplyContextRequirementBeforeSending() {
+        ChannelSessionEntity session = session("wecom:99:group-1", 99L, "group-1");
+        when(sessionStore.getSession("wecom:99:group-1")).thenReturn(session);
+        when(channelService.getChannel(99L)).thenReturn(channel(99L, 7L));
+        ChannelAdapter adapter = activeAdapter(99L);
+
+        manager.sendToWorkspaceConversation(
+                7L, "wecom", "wecom:99:group-1", "incident closed");
+
+        org.mockito.ArgumentCaptor<DeliveryOptions> options =
+                org.mockito.ArgumentCaptor.forClass(DeliveryOptions.class);
+        verify(adapter).proactiveSend(
+                eq("group-1"), eq("incident closed"), options.capture());
+        assertTrue(options.getValue().requiresReplyContext());
+    }
+
+    @Test
+    void singleConversationDoesNotRequireAGroupReplyContext() {
+        ChannelSessionEntity session = session("wecom:99:user-1", 99L, "user-1");
+        session.setSenderId("user-1");
+        when(sessionStore.getSession("wecom:99:user-1")).thenReturn(session);
+        when(channelService.getChannel(99L)).thenReturn(channel(99L, 7L));
+        ChannelAdapter adapter = activeAdapter(99L);
+
+        manager.sendToWorkspaceConversation(
+                7L, "wecom", "wecom:99:user-1", "incident closed");
+
+        org.mockito.ArgumentCaptor<DeliveryOptions> options =
+                org.mockito.ArgumentCaptor.forClass(DeliveryOptions.class);
+        verify(adapter).proactiveSend(
+                eq("user-1"), eq("incident closed"), options.capture());
+        assertFalse(options.getValue().requiresReplyContext());
     }
 
     @Test
@@ -145,6 +221,8 @@ class ChannelManagerWorkspaceConversationTest {
         when(adapter.getDisplayName()).thenReturn("test-wecom");
         when(adapter.isRunning()).thenReturn(true);
         when(adapter.supportsProactiveSend()).thenReturn(true);
+        when(adapter.isProactiveDeliveryReady(anyString(), any(DeliveryOptions.class)))
+                .thenReturn(true);
         Map<Long, ChannelAdapter> active =
                 (Map<Long, ChannelAdapter>) ReflectionTestUtils.getField(manager, "activeAdapters");
         active.put(channelId, adapter);
@@ -166,6 +244,7 @@ class ChannelManagerWorkspaceConversationTest {
         session.setChannelType("wecom");
         session.setChannelId(channelId);
         session.setTargetId(targetId);
+        session.setSenderId("user-1");
         return session;
     }
 }

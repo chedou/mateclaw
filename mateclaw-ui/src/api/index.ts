@@ -1689,6 +1689,16 @@ export interface TimelineEvent {
   status: string
 }
 
+export interface ClosureRecord {
+  outcome: ClosureOutcome
+  summary: string
+  recoveryVerified: boolean
+  sopFeedback: string | null
+  knowledgeCandidateId: string | null
+  actor: string
+  closedAt: string
+}
+
 export interface Diagnosis {
   diagnosisId: string
   contractVersion: string
@@ -1716,7 +1726,7 @@ export interface Diagnosis {
   routeToTeam: string | null
   transfers: unknown[]
   actionOutcomes: unknown[]
-  closure: unknown | null
+  closure: ClosureRecord | null
   knowledgeCandidates: unknown[]
   timeline: TimelineEvent[]
   /** D14 timing snapshot; legacy 1.3/1.4 rows carry all-null values. */

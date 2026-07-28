@@ -247,6 +247,31 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V180AddsDurableClosureNotificationDeliveryState() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v180;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(connection, "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(connection, "db/migration/h2/V178__troubleshooting_intake_investigation.sql");
+            executeMigration(connection, "db/migration/h2/V180__troubleshooting_closure_notification.sql");
+
+            Set<String> diagnosisColumns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_diagnosis");
+            assertTrue(diagnosisColumns.contains("closure_notification_status"));
+            assertTrue(diagnosisColumns.contains("closure_notification_attempts"));
+            assertTrue(diagnosisColumns.contains("closure_notification_lease_expires_at"));
+            assertTrue(diagnosisColumns.contains("closure_notification_next_attempt_at"));
+            assertTrue(diagnosisColumns.contains("closure_notification_completed_at"));
+            assertFalse(isNullable(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_diagnosis",
+                    "closure_notification_attempts"));
+            assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_closure_notify"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

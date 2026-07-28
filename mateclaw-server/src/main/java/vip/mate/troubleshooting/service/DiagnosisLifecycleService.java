@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.service;
 
 import org.springframework.stereotype.Service;
+import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -99,6 +100,7 @@ public class DiagnosisLifecycleService {
             String sopFeedback,
             boolean createKnowledgeCandidate,
             String actor) {
+        summary = TroubleshootingBusinessTextPolicy.requireSafeClosureSummary(summary);
         StoredDiagnosis current = persistence.get(workspaceId, diagnosisId);
         Diagnosis next = stateMachine.close(
                 current.diagnosis(), outcome, summary, recoveryVerified,

@@ -36,6 +36,10 @@
   同事务提交，租约 worker 复用既有只读调查链并以 Intake ID 幂等归属 Diagnosis；同一 Diagnosis 的
   纯文本 BusinessSummary 与正式工作台深链经 workspace-aware local leader 返回，平台 ACK 后完成；
   路由缓存可回源 DB，预算耗尽后持久恢复 Diagnosis/投递结果。关闭后通知和出站交互卡片继续标记未完成。
+- **v0.16**：图形与 RFC 架构语义不变；校准 P3 T10 纯文本闭环的最后一段。Intake 来源 Diagnosis
+  关闭时在同一事务排入 V180 通知状态，租约 worker 复用精确 workspace-aware local leader 路由，
+  将 `BusinessSummary + ClosureRecord` 组合为最终结果，安全 @ 原报障人，平台 ACK 后完成；失败无硬重试上限。
+  正式工作台同步展示类型化最终处置结果，旧版入口不变；出站交互卡片仍留待单独平台评审。
 
 v0.2–v0.6 中存在用户已经否定的其他项目材料，因此不作为当前 MateClaw-only 架构版本导入。
 原始下载文件仍留在用户 Downloads 中，不得把其中结论重新并入现行设计。

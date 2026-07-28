@@ -160,6 +160,53 @@ class DiagnosisLifecycleServiceTest {
     }
 
     @Test
+    void rejectsDeveloperEvidenceAndCredentialsFromTheClosureSummary() {
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "DQL L::service:(*) token=top-secret",
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("business-safe");
+
+        verify(persistence, never()).update(anyLong(), any(), anyInt());
+        verify(persistence, never()).updateAndEnqueue(anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
+    void rejectsForgedMentionsAndOversizedClosureSummaries() {
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "误报 <@all>",
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("business-safe");
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "超长".repeat(300),
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("500");
+
+        verify(persistence, never()).update(anyLong(), any(), anyInt());
+        verify(persistence, never()).updateAndEnqueue(anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
     void refusesToConfirmAnAbstainedDiagnosisBecauseThereIsNoConclusionYet() {
         stored(abstainedDiagnosis(), 1);
 

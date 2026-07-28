@@ -106,6 +106,18 @@
             </article>
           </div>
 
+          <section v-if="closure" class="closure-result">
+            <div>
+              <span class="section-label">最终处置结果</span>
+              <b>{{ closureOutcomeLabel(closure.outcome) }}</b>
+            </div>
+            <strong>{{ closure.summary }}</strong>
+            <small>
+              {{ closure.recoveryVerified ? '恢复已经人工验证' : '未声明恢复已经验证' }}
+              · {{ shortTime(closure.closedAt) }}
+            </small>
+          </section>
+
           <div class="timing-strip">
             <article>
               <span>补问 / Intake</span>
@@ -306,7 +318,13 @@ import {
   type RecommendedAction,
   type StoredDiagnosis,
 } from '@/api'
-import { conclusionLabel, impactMetrics, investigationLabel, timingState } from './formalProjection'
+import {
+  closureOutcomeLabel,
+  conclusionLabel,
+  impactMetrics,
+  investigationLabel,
+  timingState,
+} from './formalProjection'
 
 const STATUSES: DiagnosisStatus[] = ['READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED']
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
@@ -335,6 +353,7 @@ let selectionVersion = 0
 
 const business = computed(() => projection.value?.businessSummary ?? null)
 const developer = computed(() => projection.value?.developerEvidence ?? null)
+const closure = computed(() => current.value?.diagnosis.closure ?? null)
 const impactMetricList = computed(() => {
   const impact = business.value?.impact
   return impact ? impactMetrics(impact.affectedCustomers, impact.affectedUsers) : []
@@ -517,6 +536,8 @@ onMounted(() => loadList(true))
 .summary-grid article { min-height:130px; padding:17px 18px; } .summary-grid article+article { border-left:1px solid var(--line); }
 .summary-grid strong { display:block; margin:10px 0 8px; font-size:13.5px; line-height:1.55; } .summary-grid small { display:block; color:var(--muted); font-size:10.5px; line-height:1.55; }
 .impact-metrics { display:flex; gap:7px; margin:8px 0; } .impact-metrics span { padding:2px 7px; border-radius:5px; color:#175cd3; background:#eff4ff; font-size:10px; } .capability-boundary { color:var(--amber)!important; }
+.closure-result { display:grid; grid-template-columns:180px minmax(0,1fr) auto; align-items:center; gap:18px; margin-top:14px; padding:14px 16px; border:1px solid #a9e7c8; border-radius:10px; background:#f2fcf7; }
+.closure-result div b { display:block; margin-top:5px; color:var(--green); font-size:13px; } .closure-result>strong { font-size:12.5px; line-height:1.55; } .closure-result>small { color:var(--muted); font-size:10px; text-align:right; }
 .timing-strip { display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:center; margin-top:14px; padding:13px 16px; border:1px solid var(--line); border-radius:10px; background:#fbfcfe; }
 .timing-strip article { display:grid; grid-template-columns:1fr auto; gap:3px 12px; } .timing-strip span { color:var(--muted); font-size:10.5px; } .timing-strip b { color:#344054; font-size:13px; }
 .timing-strip small { grid-column:1/-1; color:#98a2b3; font-size:9.5px; } .timing-strip i { width:5px; height:5px; justify-self:center; border-radius:50%; background:#c7cfdb; }

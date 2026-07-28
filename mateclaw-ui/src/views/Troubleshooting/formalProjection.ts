@@ -1,4 +1,5 @@
 import type {
+  ClosureOutcome,
   ConclusionType,
   InvestigationMode,
   RouteAuthority,
@@ -9,6 +10,13 @@ const CONCLUSION_LABEL: Record<ConclusionType, string> = {
   EXCLUDED: '已排除（非定位）',
   HYPOTHESIS: '根因假设',
   INSUFFICIENT_EVIDENCE: '证据不足',
+}
+
+const CLOSURE_OUTCOME_LABEL: Record<ClosureOutcome, string> = {
+  RECOVERED: '已恢复',
+  FALSE_POSITIVE: '误报',
+  TRANSFERRED_OUT: '已转出处置',
+  UNRESOLVED: '未解决',
 }
 
 const INVESTIGATION_LABEL: Record<InvestigationMode, string> = {
@@ -25,6 +33,10 @@ const AUTHORITY_LABEL: Record<RouteAuthority, string> = {
 
 export function conclusionLabel(value: ConclusionType) {
   return CONCLUSION_LABEL[value]
+}
+
+export function closureOutcomeLabel(value: ClosureOutcome) {
+  return CLOSURE_OUTCOME_LABEL[value]
 }
 
 export function investigationLabel(mode: InvestigationMode, authority: RouteAuthority) {

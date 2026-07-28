@@ -41,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -214,6 +216,26 @@ class TroubleshootingPersistenceServiceTest {
 
         assertEquals(409, error.getCode());
         verify(outboxMapper, never()).insert(any(TroubleshootingKnowledgeOutboxEntity.class));
+    }
+
+    @Test
+    void closingAnIntakeDiagnosisSchedulesItsNotificationInTheAggregateTransaction() {
+        when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+        when(diagnosisMapper.scheduleClosureNotification(anyLong(), any(), any())).thenReturn(1);
+        Diagnosis closed = diagnosisWithCandidate(candidate());
+
+        service.update(7L, closed, 2);
+
+        verify(diagnosisMapper).scheduleClosureNotification(eq(7L), eq("diag-1"), any());
+    }
+
+    @Test
+    void aNonClosedDiagnosisNeverSchedulesAClosureNotification() {
+        when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        service.update(7L, diagnosis(false), 2);
+
+        verify(diagnosisMapper, never()).scheduleClosureNotification(anyLong(), any(), any());
     }
 
     private TroubleshootingDiagnosisEntity persisted(Diagnosis diagnosis, int version) throws Exception {

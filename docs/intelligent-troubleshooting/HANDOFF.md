@@ -10,7 +10,7 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.3 / 蓝图 v0.15**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.3 / 蓝图 v0.16**
 
 ## 1. 一句话
 
@@ -58,9 +58,10 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.15：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
+蓝图已升级到 v0.16：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
 v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 T10 前半段的持久化异步调查、
-幂等 Diagnosis、纯文本 BusinessSummary 与正式工作台深链。这些版本均不扩大
+幂等 Diagnosis、纯文本 BusinessSummary 与正式工作台深链，v0.16 记录 Diagnosis 关闭 outcome 的
+持久化原路 @ 通知与正式工作台最终处置卡。这些版本均不扩大
 P1：P2 才在历史样本上影子运行 Evidence Challenger /
 Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
@@ -109,6 +110,17 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   原路返回纯文本与 `/troubleshooting?diagnosisId=...` 深链；企微必须收到平台 ACK 后才完成任务，
   不发送 DeveloperEvidenceView、原始日志或 DQL。三方言 V178 + V179 已加入；未启用任何生产通道配置，
   也未增加生产写能力。
+- **P3 T10 关闭结果原路通知（2026-07-29）**：Intake 来源 Diagnosis 进入 `CLOSED` 且
+  `ClosureRecord` 已登记时，聚合更新与 V180 通知状态在同一事务边界提交。独立 120 秒
+  租约 worker 只在 workspace/type/enabled 匹配且本节点持有精确 local leader 路由时认领，
+  重读同一 Diagnosis 的 `BusinessSummary + ClosureRecord`，投递 outcome、原诊断、问题、处置摘要、
+  恢复验证、能力边界、fixture 标记和正式页深链。`DeliveryOptions` 只将安全 reporter ID
+  渲染为企微 `<@userid>`，非法 ID 被丢弃且不打印原值；平台 ACK 后才完成，失败持久退避、
+  无硬重试上限。群聊由持久化 `ChannelSession.targetId != senderId` 判定，只有当前 Adapter 仍持有
+  入站 reply context 才算可投递；服务重启后任务保持未认领，等群内新消息恢复 `req_id`，不回落
+  `aibot_send_msg`。结案摘要入库前限制 500 字并拒绝凭据、DQL、原始日志与伪造 mention；旧记录出站
+  另受脱敏、mention 转义和 1800 字硬预算。直接 Web/API Diagnosis 没有原路，保持 `NOT_APPLICABLE`。正式页已从
+  `Diagnosis.closure` 展示“最终处置结果”；旧版路由不变。
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
@@ -149,9 +161,9 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
   `fixtureMode` 仍应为 true。
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
-- 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链；
-  尚未完成“关闭且 outcome 已登记”后的原路 @ 通知和出站交互卡片（继续扩平台现有
-  `channel/wecom`，见 v4 §7.4 / D17）。
+- 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
+  以及“关闭且 outcome 已登记”后持久化原路 @ 通知；尚未完成的只是需单独平台评审的
+  出站交互卡片（继续扩平台现有 `channel/wecom`，见 v4 §7.4 / D17）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
 - 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
   `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
@@ -173,7 +185,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 **已选定（2026-07-28）**：集中兵力做**服务经理摘要 + 开发证据台**，业务摘要默认展开、
 开发证据默认折叠；企微独立 UI 投影原型保留结构但不再投入。这不表示通道 P3 暂缓：
-P3 T9 与 T10 前半段已落地，含 leader 切换后的 DB 路由回源与平台 ACK 交付；关闭后通知仍待接入生命周期事件。
+P3 T9 与 T10 纯文本闭环已落地，含 leader 切换后的 DB 路由回源、平台 ACK 交付、
+关闭 outcome 持久化原路 @ 通知与正式页最终处置卡；交互卡片仍单独暂缓。
 两个投影的类型化合同见 `projection-contracts.md`。
 
 **正式入口已吸收（2026-07-29）**：
@@ -298,6 +311,21 @@ P3 T10 前半段与可靠投递收口（2026-07-29）已通过：
 - v0.15 `MANIFEST.sha256` 全量校验通过，三张 Draw.io/SVG XML 通过，当前
   RFC/蓝图/投影合同/评价与快照逐字一致；三张图继续与 v0.14 二进制一致。
 
+P3 T10 关闭结果通知与正式页闭环（2026-07-29）已通过：
+
+- H2/MySQL/Kingbase V180 新增 Diagnosis 关闭通知状态、租约、退避与完成时间；本地 H2 已真实
+  由 v179 迁移到 v180，当前 Java PID `28131` 监听 `18088`；
+- 排障域 + Skill Manifest + Channel pre-route/provider-time/leader-route 共 `340` 个后端测试，
+  0 failure / 0 error / 0 skipped；覆盖关闭事务排队、直接 Web/API 不适用、租约 CAS、平台 ACK、
+  无硬重试上限、leader 不可用时不烧任务、纯文本类型化结果、fixture/能力边界/深链保留，
+  恶意 reporter/正文不伪造 @ 或泄露、结案业务文本安全与硬预算，以及重启/重连后 reply context
+  失效时不误发；调度条件、重试时间、租约抢占和 worker 所有权另由真实 H2 mapper SQL/CAS 覆盖；
+- 前端 `14` 个测试文件 / `115` 个测试全通过，`vue-tsc --noEmit` 通过，直接 Vite 生产构建
+  完成 `6266` 个模块转换；
+- 正式 `/troubleshooting`、已关闭 Diagnosis 深链、`/troubleshooting/legacy` 与后端 health 均返回 200；
+  应用内浏览器实测“最终处置结果 / 已恢复 / 人工验证时间”可见，控制台 0 error；
+- v0.16 继续冻结 v0.15 的三张图与生成源，本版只校准已验证的实现状态，不伪造新架构语义。
+
 后端定向测试命令：
 
 ```bash
@@ -310,12 +338,12 @@ mvn -pl mateclaw-server -am \
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
 2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影；企微独立 UI 原型暂缓，
-   P3 T9 与 T10 前半段已进入真实通道接缝），合同见
+   P3 T9 与 T10 纯文本闭环已进入真实通道接缝），合同见
    `projection-contracts.md`；D14 已进 Diagnosis 1.5，投影也已能消费既有 canonical hop/对照；
    下一步是让真实在线取证稳定产出这些事实，而不是再造一套展示数据。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
-4. P3 下一段只补“关闭且 outcome 已登记后的原路通知”；不新建入站，不把 BusinessSummary
-   伪装成 tool-guard ApprovalNotice。
+4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
+   不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
 5. P2 T6 授权机制已完成；下一主攻是由 owner 配置真实资产映射、完成 T7 字段核实，并建立
    20–30 条 T8 影子样本。
 6. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

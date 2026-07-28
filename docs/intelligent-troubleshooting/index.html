@@ -197,8 +197,8 @@
       <div class="devtop">
         <div class="devlead">
           <div class="eyebrow">Current implementation baseline</div>
-          <h3>正式工作台已承接双投影，企微 READY 可异步生成 Diagnosis</h3>
-          <p>现有 Java/Vue 领域底座不推倒。P1 证据→草稿已完成；P3 已打通普通消息 Intake、补问、持久化异步调查、leader 路由恢复、平台 ACK、纯文本业务摘要和正式页深链。下一段补关闭且 outcome 已登记后的原路通知。</p>
+          <h3>正式工作台已承接双投影和最终处置结果</h3>
+          <p>现有 Java/Vue 领域底座不推倒。P1 证据→草稿已完成；P3 已打通普通消息 Intake、补问、持久化异步调查、leader 路由恢复、平台 ACK、纯文本业务摘要、正式页深链，以及关闭 outcome 的持久化原路 @ 通知。</p>
           <div class="devmeta"><span>branch claude/intelligent-troubleshooting-design</span><span>fixtureMode=true</span><span>architecture review: approved</span></div>
         </div>
         <div class="devverdict">
@@ -287,7 +287,7 @@ function card(c){
 const NOW=[
   {t:"正式排障工作台",d:"服务经理摘要默认展开，开发证据按需下钻；读取真实 Diagnosis 与双投影 API，是当前开发和验收权威。",f:"http://127.0.0.1:5173/troubleshooting",icon:"target",thumb:"t-rca",tag:"now",tagT:"正式"},
   {t:"旧版兼容处置台",d:"保留原有智能排障交互；可携同一个 diagnosisId 回退对照，不再作为新架构实现依据。",f:"http://127.0.0.1:5173/troubleshooting/legacy",icon:"layers",thumb:"t-iter",tag:"iter",tagT:"兼容"},
-  {t:"企微协同流 · 对照",d:"静态展示资料补问、调查回执和关闭后通知目标；真实通道已完成到业务摘要和正式页深链，关闭通知仍待实现。",f:"experience-prototype-demo.html?view=WECOM",icon:"route",thumb:"t-over",tag:"arch",tagT:"对照"},
+  {t:"企微协同流 · 对照",d:"静态展示资料补问、调查回执和关闭后通知目标；真实通道接缝已完成纯文本业务摘要、正式页深链和持久化关闭结果通知。",f:"experience-prototype-demo.html?view=WECOM",icon:"route",thumb:"t-over",tag:"arch",tagT:"对照"},
 ];
 const ITER=[
   {t:"根因定位视图（已归档）",d:"收敛漏斗 + 五阶段定位链 + 证据抽屉。方向被采纳，但结构过重，已由当前三层详情参考简化取代。",f:"console-rca.html",icon:"target",thumb:"t-iter",tag:"iter",tagT:"迭代 v4"},
@@ -298,7 +298,7 @@ const ITER=[
 ];
 const DOC=[
   {t:"录音产品基线",d:"F1–F11：差异化、首个案例、企微入口、双受众与能力边界；区分会议事实和设计脑暴。",f:"recording-product-baseline.md",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"事实源"},
-  {t:"MateClaw 架构蓝图 v0.15",d:"一页看懂证据脊柱、两个闭环、三类路径、正式双投影和 P3 企微实现边界。",f:"architecture-blueprint.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"现行"},
+  {t:"MateClaw 架构蓝图 v0.16",d:"一页看懂证据脊柱、两个闭环、三类路径、正式双投影和 P3 企微纯文本闭环。",f:"architecture-blueprint.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"现行"},
   {t:"现行概要设计 v4",d:"完整工程合同：接口、信任边界、资源预算、状态机、知识资格、迁移与实施顺序。",f:"../../rfcs/intelligent-troubleshooting-architecture-v4.md",icon:"layers",thumb:"t-doc",tag:"doc",tagT:"现行 RFC"},
   {t:"架构师评审 v4",d:"8 个架构问题、测试覆盖图、性能预算、失败模式、NOT in scope 与 P1 实施门。",f:"architecture-review-v4.md",icon:"shield",thumb:"t-doc",tag:"doc",tagT:"已通过"},
   {t:"执行摘要 · 一页纸",d:"给团队 / 领导的两分钟版：做什么、怎么安全、承诺什么、第一步与所需支持。",f:"executive-summary.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"文档"},

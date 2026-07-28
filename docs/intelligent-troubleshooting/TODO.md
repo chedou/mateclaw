@@ -8,9 +8,9 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.15）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.16）
 >
-> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 与 T10 前半段已落地）
+> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 与 T10 纯文本闭环已落地）
 >
 > **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter`；普通消息走
 > `ChannelMessageRouter` pre-route，模板卡片事件才走 `CardKind`，不新建入站——
@@ -227,8 +227,14 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 调查完成后经 `ChannelSessionStore → ChannelManager.sendToWorkspaceConversation → proactiveSend`
       原路返回，附 `/troubleshooting?diagnosisId=...` 正式工作台深链。只有 workspace/type/enabled 匹配且本节点
       持有 active leader Adapter 时才认领；精确路由缓存 miss 回源 DB，follower 不烧任务，平台 ACK 后才完成。
-- [ ] 关闭且 outcome 已登记后原路 @ 原报障人：用现成的
-      `ChannelAdapter.proactiveSend(targetId, content, DeliveryOptions)`，出站不需要新机制。
+- [x] 关闭且 outcome 已登记后原路 @ 原报障人：Diagnosis 关闭更新与 V180 通知状态在同一事务边界提交；
+      120 秒租约 worker 只在本节点持有精确 workspace 路由时认领，用
+      `ChannelAdapter.proactiveSend(targetId, content, DeliveryOptions)` 发送纯文本最终结果与正式页深链。
+      企微仅对安全 reporter ID 生成 `<@userid>`，平台 ACK 后才完成；失败持久退避且无硬重试上限。
+      群聊还必须持有当前入站 reply context；重启后没有 `req_id` 时不认领、不回落
+      `aibot_send_msg`。结案摘要入库前限制 500 字并拒绝凭据/DQL/原始日志/伪造 mention，出站文本
+      继续做脱敏、mention 转义与 1800 字硬预算。
+      非 Intake 来源的 Web/API Diagnosis 明确为 `NOT_APPLICABLE`，不伪造原路。
 - [x] 未映射为可信 workspace 主体时，只允许报障/补充与接收只读摘要；本轮未增加任何通道审核、
       确认、关闭或其他受审计状态推进入口。
 - [ ] **出站交互卡片先不做**：`WeComCardRenderer` / `FeishuCardRenderer` 的签名都是
@@ -347,7 +353,7 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 1. 先读现行录音基线、v4.3、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
 2. 主攻 P2 真实 Guance 授权、measurement/字段/阈值核实和 20–30 条影子样本。
 3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。
-4. P3 下一段只补“关闭且 outcome 已登记后的原路通知”；继续扩现有 `channel/wecom`，不新建入站，
-   不把 `BusinessSummary` 伪装成 tool-guard `ApprovalNotice`。
+4. P3 纯文本闭环已收口；交互卡片仍是需单独平台评审的后续项，不阻塞 P2 真实数据验证。
+   不新建入站，不把 `BusinessSummary` 伪装成 tool-guard `ApprovalNotice`。
 5. 有真实样本和时延数据后再做 P4 场景路由；不要先搭空的通用 Planning 框架。
 6. P2 影子评测证明收益后，再把固定 Challenger 报告接入 P5；知识审核状态和版本替换须在 candidate 真实积累前完成。

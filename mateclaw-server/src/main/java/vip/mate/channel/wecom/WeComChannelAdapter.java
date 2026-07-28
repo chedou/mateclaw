@@ -7,6 +7,7 @@ import vip.mate.agent.AgentService.StreamDelta;
 import vip.mate.channel.AbstractChannelAdapter;
 import vip.mate.channel.ChannelMessage;
 import vip.mate.channel.ChannelMessageRouter;
+import vip.mate.channel.DeliveryOptions;
 import vip.mate.channel.StreamingChannelAdapter;
 import vip.mate.workspace.core.service.ChatUploadLocationResolver;
 import vip.mate.channel.ExponentialBackoff;
@@ -547,6 +548,10 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
         // ---- 其他 per-connection 状态 ----
         pendingFrames.clear();
         replyContexts.clear();
+        // req_id belongs to one authenticated WebSocket session. Keeping it
+        // across reconnect would advertise a stale group reply slot and could
+        // make durable dispatch race a platform rejection.
+        lastChatReqIds.clear();
         streamLastContent.clear();
         // 断线时可能残留半截帧碎片，清空以免污染下一个连接的首帧
         wsBuffer.setLength(0);
@@ -1719,13 +1724,20 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
      *
      * <p>Most legacy callers remain fire-and-forget through
      * {@link #sendOutboundFrame(String, Map)}. Durable domain dispatchers call
-     * {@link #awaitOutboundAck(String, Map)} so a disconnected transport,
+     * {@link #awaitOutboundAck(String, Map, boolean)} so a disconnected transport,
      * rejected ACK or timeout is returned to their lease/retry state machine
      * instead of being mistaken for a delivered notification.</p>
      */
     private CompletableFuture<Map<String, Object>> enqueueOutboundFrame(
             String chatId,
             Map<String, Object> bodyWithMsgtype) {
+        return enqueueOutboundFrame(chatId, bodyWithMsgtype, false);
+    }
+
+    private CompletableFuture<Map<String, Object>> enqueueOutboundFrame(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype,
+            boolean requireReplyContext) {
         if (webSocket == null) {
             return CompletableFuture.failedFuture(
                     new IllegalStateException("WeCom channel not connected"));
@@ -1752,6 +1764,11 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
                     chatId, groupReplyReqId);
             return sendFrameWithAck(groupReplyReqId, frame);
         }
+        if (requireReplyContext) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException(
+                            "WeCom group reply context is unavailable; refusing aibot_send_msg fallback"));
+        }
 
         // Single chat — aibot_send_msg accepts a chatid field.
         Map<String, Object> withChatId = new LinkedHashMap<>(bodyWithMsgtype);
@@ -1765,9 +1782,12 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
         return sendFrameWithAck(reqId, frame);
     }
 
-    private void awaitOutboundAck(String chatId, Map<String, Object> bodyWithMsgtype) {
+    private void awaitOutboundAck(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype,
+            boolean requireReplyContext) {
         try {
-            enqueueOutboundFrame(chatId, bodyWithMsgtype)
+            enqueueOutboundFrame(chatId, bodyWithMsgtype, requireReplyContext)
                     .get(REPLY_ACK_TIMEOUT_MS + 1_000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -3480,15 +3500,72 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
     }
 
     @Override
+    public boolean isProactiveDeliveryReady(
+            String targetId,
+            DeliveryOptions options) {
+        return options == null
+                || !options.requiresReplyContext()
+                || pickGroupReplyReqId(targetId) != null;
+    }
+
+    @Override
     public void proactiveSend(String targetId, String content) {
+        proactiveSend(targetId, content, DeliveryOptions.DEFAULTS);
+    }
+
+    @Override
+    public void proactiveSend(String targetId, String content, DeliveryOptions options) {
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("WeCom proactive content is required");
         }
+        DeliveryOptions effective = options == null ? DeliveryOptions.DEFAULTS : options;
+        String deliveredContent = prependMentions(
+                neutralizeUntrustedMentions(content), effective);
         Map<String, Object> textBody = Map.of(
                 "msgtype", "markdown",
-                "markdown", Map.of("content", content)
+                "markdown", Map.of("content", deliveredContent)
         );
-        awaitOutboundAck(targetId, textBody);
+        awaitOutboundAck(targetId, textBody, effective.requiresReplyContext());
+    }
+
+    /** Raw body text cannot mint identities; trusted mentions come only from DeliveryOptions. */
+    private String neutralizeUntrustedMentions(String content) {
+        return content.replace("<@", "＜@");
+    }
+
+    /** WeCom text/markdown supports the official {@code <@userid>} mention form. */
+    private String prependMentions(String content, DeliveryOptions options) {
+        List<String> requested = options == null
+                ? List.of()
+                : options.mentionUserIds();
+        if (requested.isEmpty()) {
+            return content;
+        }
+        StringBuilder prefix = new StringBuilder();
+        int rejected = 0;
+        for (String userId : requested) {
+            if (!safeMentionUserId(userId)) {
+                rejected++;
+                continue;
+            }
+            if (!prefix.isEmpty()) {
+                prefix.append(' ');
+            }
+            prefix.append("<@").append(userId).append('>');
+        }
+        if (rejected > 0) {
+            log.warn("[wecom] ignored {} unsafe mention recipient(s)", rejected);
+        }
+        return prefix.isEmpty() ? content : prefix.append('\n').append(content).toString();
+    }
+
+    private boolean safeMentionUserId(String userId) {
+        return userId != null
+                && !userId.isBlank()
+                && userId.length() <= 128
+                && !"all".equalsIgnoreCase(userId)
+                && !"@all".equalsIgnoreCase(userId)
+                && userId.matches("[A-Za-z0-9_@.\\-]+");
     }
 
     @Override

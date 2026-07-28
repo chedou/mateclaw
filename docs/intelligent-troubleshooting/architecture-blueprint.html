@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
-  <title>IT 智能排障系统 · MateClaw 架构蓝图 v0.15</title>
+  <title>IT 智能排障系统 · MateClaw 架构蓝图 v0.16</title>
   <style>
     :root {
       --paper: #f4f6f8;
@@ -135,18 +135,18 @@
 <body>
   <header>
     <div class="wrap">
-      <div class="eyebrow">MateClaw-only · Architecture Blueprint v0.15</div>
+      <div class="eyebrow">MateClaw-only · Architecture Blueprint v0.16</div>
       <h1>观测证据驱动的<br>智能排障系统</h1>
       <p class="lead">从一条不完整报障，到一个带证据、可交接、可复用的定位结论。中心不是错误码查表，也不是自由 Agent，而是一条证据脊柱。</p>
       <div class="meta">
-        <span class="pill good">架构师评审通过 · P1 已完成 · P3 异步调查/深链已落地</span>
+        <span class="pill good">架构师评审通过 · P1 已完成 · P3 纯文本原路闭环已落地</span>
         <span class="pill">唯一运行底座 · Java MateClaw</span>
         <span class="pill">首个案例 · 会话消息发送失败</span>
         <span class="pill">真实入口 · 企业微信 @</span>
         <span class="pill">自动化边界 · 只读</span>
         <span class="pill">Loop Engineering · 有界可回放</span>
         <span class="pill">Multi-Agent · 结构化反证</span>
-        <span class="pill"><a href="./versions/index.html">版本历史 · v0.7–v0.15</a></span>
+        <span class="pill"><a href="./versions/index.html">版本历史 · v0.7–v0.16</a></span>
       </div>
     </div>
   </header>
@@ -245,7 +245,7 @@
             <tr><td>Case Lifecycle</td><td>Diagnosis + DiagnosisStateMachine</td><td>不改；AWAITING_INPUT 不塞入</td></tr>
             <tr><td>Knowledge Governance</td><td>KnowledgeCandidate + Outbox</td><td>只加 candidate 幂等/不可晋升边界</td></tr>
             <tr><td>Adversarial Evaluation</td><td>现有 Java 模型配置 + 固定 EvalSubject/EvidenceBundle</td><td>否；P2 先影子，证明收益后再进 P5</td></tr>
-            <tr><td>Experience Projection / WeCom</td><td>现有 Vue 工作台 + Channel 能力</td><td>Web 双投影已进入正式路由；WeCom READY 经持久化租约任务异步产出幂等 Diagnosis，由 workspace-aware local leader 在平台 ACK 后完成纯文本 BusinessSummary + 正式页深链投递；关闭后通知待接入</td></tr>
+            <tr><td>Experience Projection / WeCom</td><td>现有 Vue 工作台 + Channel 能力</td><td>Web 双投影与 `ClosureRecord` 已进入正式路由；WeCom READY 经持久化租约任务异步产出幂等 Diagnosis，由 workspace-aware local leader 在平台 ACK 后投递纯文本 BusinessSummary + 正式页深链；V180 持久化投递关闭 outcome。群聊还须持有当前入站 reply context，重启后等待新消息恢复 req_id，不误用 aibot_send_msg；结案摘要和正文受业务安全策略、mention 转义与硬预算保护</td></tr>
           </tbody>
         </table>
       </div>
@@ -308,10 +308,10 @@ PASS / NEEDS_EVIDENCE / REJECT / UNAVAILABLE</p><p>报告是审核输入，不�
     <section>
       <div class="head"><div class="num">11</div><div><h2>实施路线与体验原型</h2><p class="sub">最短 fixture 闭环和正式双投影已落地；当前进入真实数据授权、字段核实与影子样本阶段。</p></div></div>
       <div class="roadmap">
-        <div class="step"><b>P0 · DONE</b><div><h3>产品事实、v4.3/v0.15 架构、架构评审、第一性原理评价、投影合同已选定</h3><p>Loop 与结构化反证位置已锁定；全部已发布版本作为不可覆盖快照保留。</p></div></div>
+        <div class="step"><b>P0 · DONE</b><div><h3>产品事实、v4.3/v0.16 架构、架构评审、第一性原理评价、投影合同已选定</h3><p>Loop 与结构化反证位置已锁定；全部已发布版本作为不可覆盖快照保留。</p></div></div>
         <div class="step"><b>P1 · DONE</b><div><h3>无错误码证据→PlaybookDraft→比较→candidate</h3><p>固定会议案例、一次模型归纳；未引入 Loop Controller 或多 Agent。</p></div></div>
         <div class="step"><b>P2 · NOW</b><div><h3>真实 Guance + 历史样本 + 对抗影子评测</h3><p>同样本比较单 Agent 与固定 Challenger 的质量、延迟和 token；无收益不放权。</p></div></div>
-        <div class="step"><b>P3 · PARTIAL</b><div><h3>企业微信 IntakeSession 与原路闭环</h3><p>普通 @ 消息接管、补问、READY 原子入队、异步只读调查、幂等 Diagnosis、leader 路由恢复、平台 ACK、持久最终投递、纯文本业务摘要和 Web 深链已完成；关闭且 outcome 已登记后的 @ 通知待完成。</p></div></div>
+        <div class="step"><b>P3 · PARTIAL</b><div><h3>企业微信 IntakeSession 与原路闭环</h3><p>普通 @ 消息接管、补问、READY 原子入队、异步只读调查、幂等 Diagnosis、leader 路由恢复、reply-context 就绪闸门、平台 ACK、持久最终投递、纯文本业务摘要、Web 深链与安全受限的关闭 outcome 原路 @ 通知已完成；交互卡片仍需单独平台评审。</p></div></div>
         <div class="step"><b>P4</b><div><h3>Scenario / Discovery 运行时 Loop</h3><p>统一 LoopPolicy、检查点、恢复和 stopReason；错误码路不变。</p></div></div>
         <div class="step"><b>P5</b><div><h3>结构化反证进入知识治理</h3><p>只在影子评测达标后启用；确定性 Gate 与人工继续裁决。</p></div></div>
       </div>
@@ -325,7 +325,7 @@ PASS / NEEDS_EVIDENCE / REJECT / UNAVAILABLE</p><p>报告是审核输入，不�
     </section>
 
     <footer>
-      <span>IT 智能排障 · MateClaw 架构蓝图 v0.15 · 2026-07-29</span>
+      <span>IT 智能排障 · MateClaw 架构蓝图 v0.16 · 2026-07-29</span>
       <span>证据先于推理 · Loop 必须有界 · 反证不是裁决 · 自动化止于只读</span>
     </footer>
   </main>

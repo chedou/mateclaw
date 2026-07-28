@@ -137,6 +137,9 @@ mateclaw:
     intake-dispatch:
       poll-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_POLL_MS:1000}
       initial-delay-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_INITIAL_DELAY_MS:3000}
+    closure-notification:
+      poll-ms: ${MATECLAW_TROUBLESHOOTING_CLOSURE_POLL_MS:1000}
+      initial-delay-ms: ${MATECLAW_TROUBLESHOOTING_CLOSURE_INITIAL_DELAY_MS:3000}
     agent:
       # Miss-path LLM triage is an explicit rollout. Keep disabled until a
       # dedicated workspace-local ReAct Agent is created with skills/wiki off,

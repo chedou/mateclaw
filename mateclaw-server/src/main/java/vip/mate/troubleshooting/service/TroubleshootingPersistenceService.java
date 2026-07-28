@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.Diagnosis;
+import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
@@ -266,6 +267,10 @@ public class TroubleshootingPersistenceService {
                     "err.troubleshooting.optimistic_lock_conflict",
                     409,
                     "diagnosis changed concurrently; reload before applying the transition");
+        }
+        if (diagnosis.status() == DiagnosisStatus.CLOSED) {
+            diagnosisMapper.scheduleClosureNotification(
+                    workspaceId, diagnosis.diagnosisId(), now);
         }
     }
 

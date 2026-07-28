@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  closureOutcomeLabel,
   conclusionLabel,
   formatDuration,
   impactMetrics,
@@ -13,6 +14,13 @@ describe('formal troubleshooting projection formatting', () => {
     expect(conclusionLabel('EXCLUDED')).toBe('已排除（非定位）')
     expect(conclusionLabel('HYPOTHESIS')).toBe('根因假设')
     expect(conclusionLabel('INSUFFICIENT_EVIDENCE')).toBe('证据不足')
+  })
+
+  it('renders final closure outcomes as business language', () => {
+    expect(closureOutcomeLabel('RECOVERED')).toBe('已恢复')
+    expect(closureOutcomeLabel('FALSE_POSITIVE')).toBe('误报')
+    expect(closureOutcomeLabel('TRANSFERRED_OUT')).toBe('已转出处置')
+    expect(closureOutcomeLabel('UNRESOLVED')).toBe('未解决')
   })
 
   it('does not render unknown impact counts as zero', () => {

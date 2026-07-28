@@ -8,9 +8,13 @@
 P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
 并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳；P2 T6 已完成
 workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制；
-P3 T9 已完成企微普通消息 pre-route 与独立 IntakeSession，T10 前半段已完成 READY 持久化异步调查、
+P3 T9 已完成企微普通消息 pre-route 与独立 IntakeSession，T10 已完成 READY 持久化异步调查、
 Intake 归属幂等 Diagnosis、稳定业务身份/精确投递路由分离、leader 回源恢复、平台 ACK 后完成、
-纯文本 BusinessSummary 与正式工作台深链；关闭后原路通知尚未完成。**
+纯文本 BusinessSummary 与正式工作台深链，以及 Diagnosis 关闭后持久化、无硬重试上限的
+原路 @ 报障人最终结果通知；正式工作台已展示类型化 `ClosureRecord`。企微信群出站会根据持久化
+`ChannelSession.targetId/senderId` 判定群聊，并要求当前 Adapter 持有入站 reply context；重启后没有
+`req_id` 时任务保持未认领，绝不回落群聊不支持的 `aibot_send_msg`。结案业务摘要在入库前执行
+500 字、凭据、DQL、伪造 mention 校验，通道渲染另有 1800 字硬预算。出站交互卡片仍未实现。**
 下一主攻是配置真实 Guance 资产映射、完成字段核实与 20–30 条影子样本；同时让真源稳定产出
 结构化影响、完整 hop 和成功样本对照。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
@@ -41,11 +45,12 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
    （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
 2.6 **`docs/intelligent-troubleshooting/projection-contracts.md`** —— **已选定的两个投影合同**：
    BusinessSummary / DeveloperEvidenceView / NorthStarTimings，含服务端不变量与通道消费方式。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.15**：
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.16**：
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
-   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.15 图形不变，
+   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.16 图形不变，
    v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 READY 异步调查、幂等 Diagnosis、
-   workspace-aware leader 投递/平台 ACK、BusinessSummary 与正式工作台深链实现状态；RFC 仍为 v4.3。
+   workspace-aware leader 投递/平台 ACK、BusinessSummary 与正式工作台深链实现状态；v0.16
+   记录 V180 关闭结果持久化原路通知与正式页最终处置卡；RFC 仍为 v4.3。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。
@@ -64,6 +69,9 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
 
 - 错误码 approved Playbook 命中路零 LLM（Workflow 每步调 LLM，故命中路必须是领域模块，不能是 native Workflow）。
 - 生产写工具永不注册；ToolGuard 批准=回放执行，与"批准但不执行"语义相反，人工确认只推进领域状态机。
+- 企微群持久任务只有在本节点 Adapter 持有当前入站 reply context 时才可认领；服务重启或缓存丢失后
+  必须等待该群新入站消息恢复 `req_id`，严禁回落 `aibot_send_msg`。原文 `<@...>` 一律不能生成身份，
+  mention 只能来自经过校验的 `DeliveryOptions`；结案摘要不得携带凭据、DQL、原始日志或伪造 mention。
 - 写操作永远外部人工 + 结果登记；未命中路 Agent 必须同时满足专用直接绑定校验、调用级硬白名单和
   服务端取证会话约束；受限图不注入会话/memory/wiki/runtime 上下文、不使用 provider fallback，
   必须显式绑定唯一 enabled 模型并跳过默认模型/capability routing；provider 禁用/未配置时直接 409，
