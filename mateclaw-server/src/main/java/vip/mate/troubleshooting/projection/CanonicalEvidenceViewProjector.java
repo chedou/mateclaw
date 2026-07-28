@@ -3,10 +3,12 @@ package vip.mate.troubleshooting.projection;
 import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.CanonicalNumberParser;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
+import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
-import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BlastRadius;
+import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.CallChainView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.Hop;
@@ -15,6 +17,7 @@ import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -53,6 +56,31 @@ final class CanonicalEvidenceViewProjector {
     }
 
     private ImpactView impact(Diagnosis diagnosis) {
+        IncidentImpact declared = diagnosis.incident().impact();
+        String functionScope = safeText(declared.functionScope(), "待确认");
+        if (declared.hasMeasuredFacts()) {
+            if (hasUsableImpactEvidence(diagnosis.evidence(), declared)) {
+                return new ImpactView(
+                        functionScope,
+                        declared.affectedCustomers(),
+                        declared.affectedUsers(),
+                        declared.blastRadius(),
+                        declared.evidenceRefs(),
+                        declared.observedAt(),
+                        safeText(
+                                declared.note(),
+                                "影响数字和扩散范围来自本次 Diagnosis 保存的证据引用。"));
+            }
+            return new ImpactView(
+                    functionScope,
+                    null,
+                    null,
+                    BlastRadius.UNKNOWN,
+                    List.of(),
+                    null,
+                    "Intake 提供了结构化影响数字或扩散范围，但其引用未命中本次非缺失证据；"
+                            + "已按未知处理，未展示未证实数字。");
+        }
         EvidenceResult volumeEvidence = firstEvidenceWithFields(
                 diagnosis.evidence(), "count", "trace_id");
         Long observedCount = nonNegativeLong(volumeEvidence == null
@@ -60,7 +88,7 @@ final class CanonicalEvidenceViewProjector {
                 : volumeEvidence.observed().get("count"));
         if (volumeEvidence != null && observedCount != null) {
             return new ImpactView(
-                    functionScope(diagnosis),
+                    functionScope,
                     null,
                     null,
                     BlastRadius.UNKNOWN,
@@ -71,7 +99,7 @@ final class CanonicalEvidenceViewProjector {
             );
         }
         return new ImpactView(
-                functionScope(diagnosis),
+                functionScope,
                 null,
                 null,
                 BlastRadius.UNKNOWN,
@@ -79,6 +107,83 @@ final class CanonicalEvidenceViewProjector {
                 null,
                 "当前 intake 只保存文本影响描述，未保存有证据引用的客户数、用户数或扩散范围。"
         );
+    }
+
+    private boolean hasUsableImpactEvidence(
+            List<EvidenceResult> evidence,
+            IncidentImpact impact) {
+        if (impact.evidenceRefs().isEmpty()) {
+            return false;
+        }
+        List<EvidenceResult> referenced = evidence.stream()
+                .filter(item -> item.status() != EvidenceStatus.MISSING)
+                .filter(item -> impact.evidenceRefs().contains(item.queryId()))
+                .filter(item -> CanonicalEvidenceSchema.isValid(
+                        "incident_impact", item.observed()))
+                .toList();
+        if (referenced.size() != impact.evidenceRefs().size()) {
+            return false;
+        }
+        if (referenced.stream().anyMatch(item -> !fieldEquals(
+                item, "function_scope", impact.functionScope()))) {
+            return false;
+        }
+        if (!allPresentValuesMatch(
+                referenced, "affected_customers", impact.affectedCustomers())) {
+            return false;
+        }
+        if (!allPresentValuesMatch(
+                referenced, "affected_users", impact.affectedUsers())) {
+            return false;
+        }
+        if (referenced.stream().anyMatch(item -> !fieldEquals(
+                item, "blast_radius", impact.blastRadius().name()))) {
+            return false;
+        }
+        return impact.observedAt() == null || referenced.stream().allMatch(item ->
+                instantEquals(item.observed().get("observed_at"), impact.observedAt()));
+    }
+
+    private boolean allPresentValuesMatch(
+            List<EvidenceResult> evidence,
+            String field,
+            Integer expected) {
+        if (expected == null) {
+            return true;
+        }
+        boolean found = false;
+        for (EvidenceResult item : evidence) {
+            if (!item.observed().containsKey(field)) {
+                continue;
+            }
+            found = true;
+            if (!exactInt(item.observed().get(field), expected)) {
+                return false;
+            }
+        }
+        return found;
+    }
+
+    private boolean fieldEquals(EvidenceResult evidence, String field, String expected) {
+        Object value = evidence.observed().get(field);
+        return value instanceof String text && text.equals(expected);
+    }
+
+    private boolean exactInt(Object raw, int expected) {
+        Long value = CanonicalNumberParser.parseExactLong(raw);
+        return value != null && value == expected;
+    }
+
+    private boolean instantEquals(Object raw, Instant expected) {
+        Long epochMillis = CanonicalNumberParser.parseExactLong(raw);
+        if (epochMillis == null) {
+            return false;
+        }
+        try {
+            return Instant.ofEpochMilli(epochMillis).equals(expected);
+        } catch (RuntimeException invalid) {
+            return false;
+        }
     }
 
     private CallChainAndContrast callChainAndContrast(
@@ -262,9 +367,10 @@ final class CanonicalEvidenceViewProjector {
         return null;
     }
 
-    private String functionScope(Diagnosis diagnosis) {
-        String impact = diagnosis.incident().impact();
-        return impact == null || impact.isBlank() ? "待确认" : impact.trim();
+    private String safeText(String value, String fallback) {
+        String sanitized = TroubleshootingSecretRedactor.redact(
+                value == null ? "" : value.trim());
+        return sanitized.isBlank() ? fallback : sanitized;
     }
 
     private String duration(Double durationMs) {

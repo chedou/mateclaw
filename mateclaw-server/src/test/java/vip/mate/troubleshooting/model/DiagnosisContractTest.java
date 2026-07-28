@@ -17,6 +17,11 @@ class DiagnosisContractTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
+    void currentContractIsVersion16ForStructuredIncidentImpact() {
+        assertEquals("1.6", Diagnosis.CURRENT_CONTRACT_VERSION);
+    }
+
+    @Test
     void persistedPayloadRejectsUnknownContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
                 .replace(
@@ -69,6 +74,25 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.EXPLICIT, restored.routeAuthority());
         assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, restored.conclusionType());
         assertEquals(NorthStarTimings.unrecorded(), restored.timings());
+    }
+
+    @Test
+    void persistedVersion15ReadsItsLegacyImpactStringWithoutWeakeningV15Invariants()
+            throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.5");
+        ((ObjectNode) payload.path("incident")).put("impact", "订单创建功能受影响");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.5", restored.contractVersion());
+        assertEquals("订单创建功能受影响", restored.incident().impact().functionScope());
+        assertEquals(BlastRadius.UNKNOWN, restored.incident().impact().blastRadius());
+
+        payload.remove("investigationMode");
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.treeToValue(payload, Diagnosis.class));
     }
 
     @Test

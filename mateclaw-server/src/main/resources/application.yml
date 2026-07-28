@@ -152,6 +152,9 @@ mateclaw:
           # P1 contrast is replay-only. Add a Guance source in P2 only after
           # workspace authorization and the real aggregation fields are verified.
           contrast_sample: [recorded-replay]
+          # No built-in query binding is guessed. A live incident_impact query
+          # requires a T7-verified concrete binding plus exact asset authorization.
+          incident_impact: [guance, recorded-replay]
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
       default-sources: []

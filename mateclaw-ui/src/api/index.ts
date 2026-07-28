@@ -1640,13 +1640,24 @@ export interface IncidentContext {
   errorCode: string | null
   title: string
   severity: string
-  impact: string
+  /** v1.6 writes the object; string remains readable for v1.3-v1.5 rows. */
+  impact: IncidentImpact | string
   traceId: string | null
   occurredAt: string
   slaRemaining: string | null
   intakeSource: string
   completeness: IncidentCompleteness
   rawInput: string | null
+}
+
+export interface IncidentImpact {
+  functionScope: string
+  affectedCustomers: number | null
+  affectedUsers: number | null
+  blastRadius: BlastRadius
+  evidenceRefs: string[]
+  observedAt: string | null
+  note: string
 }
 
 export interface EvidenceResult {

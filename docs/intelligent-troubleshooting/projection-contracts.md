@@ -103,6 +103,8 @@ public record NextStep(
 - `EXCLUDED` 时 `confidence` 不得为 `HIGH`；
 - `INSUFFICIENT_EVIDENCE` 时 `confidence` 恒 `LOW`；
 - `affectedCustomers/affectedUsers` 非空时 `evidenceRefs` 不得为空——**精确人数必须有证据引用**；
+- `affectedCustomers/affectedUsers` 非空时 `observedAt` 也不得为空；每条引用必须通过 canonical
+  `incident_impact` schema，全部公共字段和出现的声明人数都不得互相矛盾；
 - `fixtureMode=true` 时投影必须携带该标记，前端必须显示「Recorded Replay · 非真实观测云」。
 - Diagnosis 聚合使用平台全局 Long→String 精度保护；投影读取 canonical 数值时只兼容其严格十进制
   整数字符串表示，不接受指数、小数、空格、前导零或越界值，也不得借兼容逻辑推断人数。
@@ -187,7 +189,8 @@ public record NorthStarTimings(
 三段**必须分开显示**，禁止只给总时长——否则无法判断该优化补问、调查还是呈现（v4 §5.10 / D14）。
 未发生的阶段保持 `null`，前端显示「未发生」，不得用 `0`。
 
-**实现现状（2026-07-29）**：`Diagnosis` 1.5 已持久化该值对象。Servlet Filter 在 Spring 请求映射与
+**实现现状（2026-07-29）**：`Diagnosis` 1.5 已持久化该值对象；1.6 又把 `IncidentImpact` 纳入同一
+聚合，且兼容 1.3–1.5 的字符串影响。Servlet Filter 在 Spring 请求映射与
 校验前捕获 `reportedAt`，路由与必填信息就绪后捕获 `readyAt`，结论或 abstain 产出时捕获 `conclusionAt`，
 第一次人工确认记录 `handoffAt`。旧 1.3/1.4 记录使用全 null 的 `unrecorded()`，不回填当前时间。
 
@@ -239,7 +242,7 @@ IM 侧给一条深链回 Web 即可。
 | P1（已收口） | 只固定本文合同、不实现 Projection；合成竖线照 v4 §4 推进 |
 | P2 | 真实 Guance 打通后，用真实样本校验 `ImpactView.evidenceRefs` 与 `ContrastView` 是否恒能取到 |
 | P3 | 企微 Adapter 消费 `BusinessSummary` 排版并原路回复；投影本身不变 |
-| P5 / T15（进行中） | 正式 `/troubleshooting` 已读真实投影 API；Diagnosis 1.5 已补 D14。投影可直接消费既有 `log_count` / `trace` / `log_trace_bundle` / `contrast_sample`，但在线真源仍待稳定产出完整 hop、对照与经引用的影响人数 |
+| P5 / T15（进行中） | 正式 `/troubleshooting` 已读真实投影 API；Diagnosis 1.5 已补 D14，1.6 已补结构化 `IncidentImpact`。投影可直接消费既有 `log_count` / `trace` / `log_trace_bundle` / `contrast_sample` / `incident_impact`；但在线真源仍待稳定产出完整 hop、对照与经引用的影响人数 |
 
 **删除清单（正式页覆盖所有降级场景后再删）**：
 `prototype/TroubleshootingExperiencePrototype.vue`、`prototype/DeveloperEvidencePanel.vue`、

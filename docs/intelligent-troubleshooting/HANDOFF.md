@@ -107,6 +107,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `investigationMode` / `routeAuthority` / `conclusionType` / `NorthStarTimings`，保持 1.3/1.4 JSON 兼容；
   规则被已取得证据全部反证时产出可确认的 `EXCLUDED`，缺证据才是 `INSUFFICIENT_EVIDENCE`。
   报障/就绪/结论时间在 intake 和调查边界采集，第一次人工确认记录 handoff/adopt cost。
+- **Diagnosis 1.6 结构化影响合同已落地（2026-07-29）**：`IncidentContext.impact` 从字符串升级为
+  `IncidentImpact(functionScope, affectedCustomers?, affectedUsers?, blastRadius, evidenceRefs,
+  observedAt?, note)`；1.3–1.5 字符串按 `UNKNOWN` 兼容读取。正式投影只在引用的非缺失
+  `incident_impact` canonical evidence 能逐项复算人数、扩散范围和观测时间时展示精确值；精确人数必须
+  同时带 `observedAt`，每条引用都要通过 schema 且公共字段一致，任何引用缺失、混入非影响证据或相互
+  矛盾都一律降级为 null/UNKNOWN。Intake 在路由、取证和持久化前统一脱敏影响文本。当前完成的是合同与
+  信任边界，不代表真源已产出影响数据。
 - KnowledgeCandidate 与 Outbox 发布语义；尚无独立审核语义。
 - 三套只读 Demo 原型，均显式显示 Recorded Replay、MODEL_PROPOSED、MEDIUM、CANDIDATE。
 
@@ -120,7 +127,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
   `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
   不新增表或第二份事实。
-- 在线 Diagnosis 尚未稳定保存完整 `log_trace_bundle`、`contrast_sample` 与真实影响人数/BlastRadius；
+- 在线 Diagnosis 尚未稳定保存完整 `log_trace_bundle`、`contrast_sample`，真 Guance 也尚未稳定产出
+  可复算的 `incident_impact` 人数/BlastRadius；
   缺失时继续返回 null/UNKNOWN。1.3/1.4 旧记录也不回填伪造的 D14 数据。
 
 ## 5. Demo
@@ -224,6 +232,14 @@ Vite 之前失败；直接 `vue-tsc` 和 Vite build 均通过。这是仓库已�
   Long→String 精度保护写成十进制字符串的时间戳/时延/计数仍可严格复算；正式页显示
   `order-api → order-service → mongo-primary`、`未记录 / 42 ms / 3001 ms` 与 92% 对 3% 的对照，
   所有排障接口 200、控制台 0 error。指数、小数、空格、前导零和 long 越界字符串继续 fail closed。
+
+Diagnosis 1.6 结构化影响纵切（2026-07-29）已通过：
+
+- 排障域 + Skill Manifest 后端全量 `249` 个测试，0 failure / 0 error / 0 skipped；覆盖字符串兼容、
+  canonical schema、精确人数观测时间、非影响引用、互相矛盾引用、Intake 脱敏和正式投影降级；
+- 前端全量 `114` 个测试、`vue-tsc --noEmit` 与直接 Vite production build；未知客户数/用户数不再渲染为 0；
+- 双轴 code review 最终无剩余 P0/P1/P2；后端以最终工作树重启并监听 `18088`，编译态合同版本为 `1.6`，
+  `http://127.0.0.1:5173/troubleshooting` 返回 200 且 Vite 已提供本轮最新模块。
 
 后端定向测试命令：
 

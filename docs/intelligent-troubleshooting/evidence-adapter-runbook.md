@@ -52,7 +52,7 @@ route miss
 
 默认配置在 `mateclaw-server/src/main/resources/application.yml`：
 
-- `routes.CSDP.{log_count,log_search,log_trace_bundle,metric,trace}`：顺序为
+- `routes.CSDP.{log_count,log_search,log_trace_bundle,incident_impact,metric,trace}`：顺序为
   `guance → recorded-replay`；
 - `default-sources: []`：其他系统没有显式路由时不会猜数据源；
 - Guance 与 replay 都默认 `enabled=false`；
@@ -108,12 +108,16 @@ MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 | `log_count` | `count`, `trace_id` |
 | `log_search` | `match_count`, `ps_id`, `sample_message` |
 | `log_trace_bundle` | `ps_id`, `entries[]`；条目必含 `timestamp`, `service`, `level`, `message`，可含 `duration_ms` |
+| `incident_impact` | `function_scope`, `blast_radius`, `observed_at`；可含 `affected_customers`, `affected_users`。至少一项人数或非 `UNKNOWN` 范围必须已测量 |
 | `metric` | `reachable`, `connections_current`, `connections_available`, `slow_query_count`, `baseline_slow` |
 | `trace` | `failed_hop`, `status`, `duration_ms` |
 
 平台返回列与上述字段不同，在 `field-aliases` 中维护“源字段 → canonical 字段”；代码内共享 schema
 是所有适配器使用证据前的失败闭合闸门。不要改 SOP 判据来迁就平台。
-日志字符串在确定性诊断持久化前统一经过 `TroubleshootingSecretRedactor`，递归结构也不例外。
+正式影响投影要求每一条 `evidenceRefs` 都通过 `incident_impact` schema；公共字段和引用中出现的声明人数
+必须一致，不能从互相矛盾的多条证据中各取一个字段拼成结论。精确人数还必须带可复算的 `observedAt`。
+日志字符串与 IncidentContext 影响文本在路由、取证和确定性诊断持久化前统一经过
+`TroubleshootingSecretRedactor`，递归结构也不例外。
 
 ## 4. T11 只读合成预演
 
@@ -177,7 +181,8 @@ GET /api/v1/troubleshooting/evidence/sources
 2. 用「会话消息发送失败」历史时间窗执行 `log_search → log_trace_bundle`，保存脱敏后的原始响应结构，
    核对 `max-rows`、排序和多服务覆盖是否符合预期。
 3. 用 903001 历史时间窗逐条执行 `log_count / metric / trace`，保存脱敏后的原始响应结构。
-4. 核对 measurement、过滤 tag、返回列与 `field-aliases`，保证 canonical 字段都有值且类型正确。
+4. 核对 measurement、过滤 tag、返回列与 `field-aliases`，保证 canonical 字段都有值且类型正确；
+   `incident_impact` 的人数、BlastRadius 与毫秒时间戳必须能逐项复算，不得用日志条数代替人数。
 5. 验证无数据、401/403、超时、5xx、超限、混合 PS ID 和响应结构变化都只生成 `MISSING`，
    HTTP 报障入口不返回 500。
 6. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。

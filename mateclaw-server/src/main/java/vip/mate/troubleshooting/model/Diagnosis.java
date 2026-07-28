@@ -43,9 +43,9 @@ public record Diagnosis(
         boolean writeExecutionEnabled,
         List<String> warnings) {
 
-    public static final String CURRENT_CONTRACT_VERSION = "1.5";
+    public static final String CURRENT_CONTRACT_VERSION = "1.6";
     private static final Set<String> SUPPORTED_CONTRACT_VERSIONS =
-            Set.of("1.3", "1.4", CURRENT_CONTRACT_VERSION);
+            Set.of("1.3", "1.4", "1.5", CURRENT_CONTRACT_VERSION);
 
     public Diagnosis {
         diagnosisId = required(diagnosisId, "diagnosisId");
@@ -59,28 +59,28 @@ public record Diagnosis(
         if (incident == null || routeMode == null || status == null || confidence == null) {
             throw new IllegalArgumentException("incident, routeMode, status and confidence are required");
         }
-        boolean legacyContract = !CURRENT_CONTRACT_VERSION.equals(contractVersion);
+        boolean legacyContract = "1.3".equals(contractVersion) || "1.4".equals(contractVersion);
         if (investigationMode == null) {
             if (!legacyContract) {
-                throw new IllegalArgumentException("investigationMode is required for diagnosis 1.5");
+                throw new IllegalArgumentException("investigationMode is required for diagnosis 1.5+");
             }
             investigationMode = defaultInvestigationMode(routeMode);
         }
         if (routeAuthority == null) {
             if (!legacyContract) {
-                throw new IllegalArgumentException("routeAuthority is required for diagnosis 1.5");
+                throw new IllegalArgumentException("routeAuthority is required for diagnosis 1.5+");
             }
             routeAuthority = defaultRouteAuthority(routeMode);
         }
         if (conclusionType == null) {
             if (!legacyContract) {
-                throw new IllegalArgumentException("conclusionType is required for diagnosis 1.5");
+                throw new IllegalArgumentException("conclusionType is required for diagnosis 1.5+");
             }
             conclusionType = defaultConclusionType(routeMode, abstained);
         }
         if (timings == null) {
             if (!legacyContract) {
-                throw new IllegalArgumentException("timings are required for diagnosis 1.5");
+                throw new IllegalArgumentException("timings are required for diagnosis 1.5+");
             }
             timings = NorthStarTimings.unrecorded();
         }

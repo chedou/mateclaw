@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.projection;
 
 import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.InvestigationMode;
@@ -28,13 +29,6 @@ public record DiagnosisExperienceProjection(
         if (!businessSummary.diagnosisId().equals(developerEvidence.diagnosisId())) {
             throw new IllegalArgumentException("both projections must describe the same diagnosis");
         }
-    }
-
-    public enum BlastRadius {
-        SINGLE_CUSTOMER,
-        MULTI_CUSTOMER,
-        SYSTEM_WIDE,
-        UNKNOWN
     }
 
     public enum StepTone {

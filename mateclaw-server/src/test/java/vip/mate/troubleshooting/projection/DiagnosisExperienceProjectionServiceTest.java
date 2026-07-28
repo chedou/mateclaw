@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.CriterionOutcome;
@@ -15,6 +16,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RouteMode;
@@ -74,7 +76,7 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(business.impact().affectedCustomers()).isNull();
         assertThat(business.impact().affectedUsers()).isNull();
         assertThat(business.impact().blastRadius())
-                .isEqualTo(DiagnosisExperienceProjection.BlastRadius.UNKNOWN);
+                .isEqualTo(BlastRadius.UNKNOWN);
         assertThat(business.impact().evidenceRefs()).containsExactly("EV-1");
         assertThat(business.impact().observedAt()).isEqualTo(NOW);
         assertThat(business.impact().note())
@@ -149,6 +151,79 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void projectsStructuredImpactOnlyWhenCanonicalEvidenceReproducesEveryMeasuredFact() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(structuredImpactDiagnosis(2), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.ImpactView impact = service.project(
+                WORKSPACE_ID, DIAGNOSIS_ID).businessSummary().impact();
+
+        assertThat(impact.functionScope()).isEqualTo("消息发送功能");
+        assertThat(impact.affectedCustomers()).isEqualTo(2);
+        assertThat(impact.affectedUsers()).isEqualTo(15);
+        assertThat(impact.blastRadius()).isEqualTo(BlastRadius.MULTI_CUSTOMER);
+        assertThat(impact.evidenceRefs()).containsExactly("EV-IMPACT");
+        assertThat(impact.observedAt()).isEqualTo(NOW);
+        assertThat(impact.note()).isEqualTo("同窗口两个客户出现同类失败");
+    }
+
+    @Test
+    void refusesStructuredImpactWhenReferencedEvidenceDoesNotMatchTheClaim() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(structuredImpactDiagnosis(3), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.ImpactView impact = service.project(
+                WORKSPACE_ID, DIAGNOSIS_ID).businessSummary().impact();
+
+        assertThat(impact.affectedCustomers()).isNull();
+        assertThat(impact.affectedUsers()).isNull();
+        assertThat(impact.blastRadius()).isEqualTo(BlastRadius.UNKNOWN);
+        assertThat(impact.evidenceRefs()).isEmpty();
+        assertThat(impact.observedAt()).isNull();
+        assertThat(impact.note()).contains("引用未命中").contains("未展示未证实数字");
+    }
+
+    @Test
+    void refusesStructuredImpactWhenAnyReferenceIsNotCanonicalImpactEvidence() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        structuredImpactDiagnosis(2, true), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.ImpactView impact = service.project(
+                WORKSPACE_ID, DIAGNOSIS_ID).businessSummary().impact();
+
+        assertThat(impact.affectedCustomers()).isNull();
+        assertThat(impact.affectedUsers()).isNull();
+        assertThat(impact.blastRadius()).isEqualTo(BlastRadius.UNKNOWN);
+        assertThat(impact.evidenceRefs()).isEmpty();
+        assertThat(impact.note()).contains("引用未命中").contains("未展示未证实数字");
+    }
+
+    @Test
+    void refusesStructuredImpactWhenCanonicalReferencesContradictEachOther() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        structuredImpactDiagnosisWithConflict(), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.ImpactView impact = service.project(
+                WORKSPACE_ID, DIAGNOSIS_ID).businessSummary().impact();
+
+        assertThat(impact.affectedCustomers()).isNull();
+        assertThat(impact.affectedUsers()).isNull();
+        assertThat(impact.blastRadius()).isEqualTo(BlastRadius.UNKNOWN);
+        assertThat(impact.evidenceRefs()).isEmpty();
+        assertThat(impact.note()).contains("引用未命中").contains("未展示未证实数字");
+    }
+
+    @Test
     void derivesScalarHopAnomalyFromObservedStatusInsteadOfTheEvidenceEnvelope() {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(
@@ -217,7 +292,7 @@ class DiagnosisExperienceProjectionServiceTest {
     void rejectsPreciseImpactCountsWithoutEvidenceReferences() {
         assertThatThrownBy(() -> new DiagnosisExperienceProjection.ImpactView(
                 "订单创建", 12, null,
-                DiagnosisExperienceProjection.BlastRadius.MULTI_CUSTOMER,
+                BlastRadius.MULTI_CUSTOMER,
                 List.of(), NOW, ""))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("evidenceRefs");
@@ -227,7 +302,7 @@ class DiagnosisExperienceProjectionServiceTest {
     void keepsConclusionConfidenceInvariantsAtTheProjectionBoundary() {
         DiagnosisExperienceProjection.ImpactView impact = new DiagnosisExperienceProjection.ImpactView(
                 "订单创建", null, null,
-                DiagnosisExperienceProjection.BlastRadius.UNKNOWN,
+                BlastRadius.UNKNOWN,
                 List.of(), null, "未测量");
         DiagnosisExperienceProjection.NextStep next = new DiagnosisExperienceProjection.NextStep(
                 "排除结论", "当前假设已排除", "这是排除不是定位");
@@ -336,6 +411,82 @@ class DiagnosisExperienceProjectionServiceTest {
                 "scenario:message-send-failed", "会话消息发送失败",
                 List.of(trace, contrast), List.of("session_state_conflict"),
                 List.of(), "会话研发组",
+                true, true, List.of("Recorded replay fixture"), List.of());
+    }
+
+    private Diagnosis structuredImpactDiagnosis(int evidenceCustomerCount) {
+        return structuredImpactDiagnosis(evidenceCustomerCount, (EvidenceResult) null);
+    }
+
+    private Diagnosis structuredImpactDiagnosis(
+            int evidenceCustomerCount,
+            boolean includeUnrelatedReference) {
+        EvidenceResult extraEvidence = includeUnrelatedReference
+                ? new EvidenceResult(
+                        "EV-LOG", "L", "", EvidenceStatus.NORMAL,
+                        "事件量证据，不是影响面证据",
+                        Map.of("count", 148, "trace_id", "trace-impact"),
+                        "recorded-replay", NOW)
+                : null;
+        return structuredImpactDiagnosis(evidenceCustomerCount, extraEvidence);
+    }
+
+    private Diagnosis structuredImpactDiagnosisWithConflict() {
+        EvidenceResult conflict = new EvidenceResult(
+                "EV-CONFLICT", "L", "", EvidenceStatus.NORMAL,
+                "与主引用矛盾的结构化影响面",
+                Map.of(
+                        "function_scope", "消息发送功能",
+                        "affected_customers", 999,
+                        "blast_radius", "MULTI_CUSTOMER",
+                        "observed_at", NOW.toEpochMilli()),
+                "recorded-replay", NOW);
+        return structuredImpactDiagnosis(2, conflict);
+    }
+
+    private Diagnosis structuredImpactDiagnosis(
+            int evidenceCustomerCount,
+            EvidenceResult extraEvidence) {
+        List<String> evidenceRefs = extraEvidence == null
+                ? List.of("EV-IMPACT")
+                : List.of("EV-IMPACT", extraEvidence.queryId());
+        IncidentContext incident = new IncidentContext(
+                "incident-impact", "CSDP", "csdp-session-service", "903001",
+                "会话消息发送失败", "P2",
+                new IncidentImpact(
+                        "消息发送功能",
+                        2,
+                        15,
+                        BlastRadius.MULTI_CUSTOMER,
+                        evidenceRefs,
+                        NOW,
+                        "同窗口两个客户出现同类失败"),
+                null, NOW, "18m", "manual",
+                IncidentCompleteness.STRUCTURED, "message send failed");
+        EvidenceResult impactEvidence = new EvidenceResult(
+                "EV-IMPACT", "L", "", EvidenceStatus.NORMAL,
+                "结构化影响面",
+                Map.of(
+                        "function_scope", "消息发送功能",
+                        "affected_customers", evidenceCustomerCount,
+                        "affected_users", 15,
+                        "blast_radius", "MULTI_CUSTOMER",
+                        "observed_at", NOW.toEpochMilli()),
+                "recorded-replay", NOW);
+        List<EvidenceResult> evidence = extraEvidence == null
+                ? List.of(impactEvidence)
+                : List.of(impactEvidence, extraEvidence);
+        return Diagnosis.initial(
+                DIAGNOSIS_ID, "case-impact", "run-impact", incident,
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.ERROR_CODE_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.LOCATED,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "消息发送失败", "会话状态冲突", Confidence.MEDIUM, false,
+                "csdp:903001", "会话消息发送失败",
+                evidence, List.of(), List.of(), "会话研发组",
                 true, true, List.of("Recorded replay fixture"), List.of());
     }
 

@@ -234,9 +234,12 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T13 · Impact 与排除结论
 
-- [ ] `IncidentImpact` 增加功能范围、可空人数、BlastRadius、evidenceRefs、observedAt。
-- [ ] 未知人数保持 null/UNKNOWN，不用 0 冒充已测量。
-- [ ] `EXCLUDED` 与 `UNEVALUATED` 分开；“平台侧未见异常”不能写成“已定位客户网络问题”。
+- [x] `IncidentImpact` 增加功能范围、可空人数、BlastRadius、evidenceRefs、observedAt；Diagnosis 1.6
+      兼容 1.3–1.5 字符串影响。正式投影仅接受能由本次非缺失 `incident_impact` canonical evidence
+      逐项复算的精确事实；精确人数强制带观测时间，所有引用必须通过 schema 且彼此无矛盾。Intake 在
+      路由、取证和持久化前统一脱敏影响文本。真 Guance 产出仍属 T7/T15 未完成项。
+- [x] 未知人数保持 null/UNKNOWN，不用 0 冒充已测量；正式前端仅在人数非空时渲染数字。
+- [x] `EXCLUDED` 与 `UNEVALUATED` 分开；“平台侧未见异常”不能写成“已定位客户网络问题”。
 
 ## 8. P5 · 知识治理
 
@@ -270,6 +273,10 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       可确定性压缩为有界调用链和失败/成功样本对照。未新增表、接口或第二套证据结构。
 - [x] 聚合持久化的 Long→String 精度保护已纳入投影边界：只接受 canonical 十进制整数表示，
       完整链路、对照计数和事件量往返后仍可复算；宽松数值强转继续 fail closed。
+- [x] `IncidentImpact` 已进入 Diagnosis 1.6 / Intake / HTTP / 投影合同；精确人数、BlastRadius、
+      observedAt 必须由安全 evidenceRefs 指向的本次 canonical `incident_impact` 证据逐项复算，
+      每条引用都必须通过 schema，任一引用混入非影响证据或彼此不一致都返回 null/UNKNOWN，不把任意
+      日志量或前端输入冒充人数。
 - [ ] 在线 Diagnosis 仍需在真实取证路径保存完整 `log_trace_bundle`、`contrast_sample` 与经核实的
       影响人数/BlastRadius；旧记录缺失时继续返回 null/UNKNOWN。1.3/1.4 的 D14 也不回填伪数据。
 

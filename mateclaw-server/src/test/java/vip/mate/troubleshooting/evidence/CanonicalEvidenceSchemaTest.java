@@ -54,4 +54,33 @@ class CanonicalEvidenceSchemaTest {
                 "entries", List.of())))
                 .isFalse();
     }
+
+    @Test
+    void acceptsMeasuredImpactWithNullableCountsButRejectsUnknownOrFractionalFacts() {
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 2,
+                "blast_radius", "MULTI_CUSTOMER",
+                "observed_at", 1753002785000L)))
+                .isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "blast_radius", "UNKNOWN",
+                "observed_at", 1753002785000L)))
+                .as("an all-unknown observation is not measured impact evidence")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 1.5,
+                "blast_radius", "MULTI_CUSTOMER",
+                "observed_at", 1753002785000L)))
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 2,
+                "blast_radius", "GLOBAL",
+                "observed_at", 1753002785000L)))
+                .isFalse();
+    }
 }

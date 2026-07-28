@@ -8,14 +8,17 @@
 P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
 并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳；P2 T6 已完成
 workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制。**
-下一主攻是配置真实 Guance 资产映射、完成字段核实与 20–30 条影子样本；同时补齐结构化影响、完整 hop 和成功样本对照。
+下一主攻是配置真实 Guance 资产映射、完成字段核实与 20–30 条影子样本；同时让真源稳定产出
+结构化影响、完整 hop 和成功样本对照。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
 `ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
 `TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验和未命中路 Vue 展示；
-`Diagnosis` 1.5 继续兼容 1.3/1.4 存量 JSON，相关定向回归与应用上下文启动测试通过。另有
+`Diagnosis` 1.6 在 1.5 的调查路径/D14 事实之上增加结构化 `IncidentImpact`，继续兼容
+1.3–1.5 的字符串影响与存量 JSON；精确人数必须带观测时间，且只有所有引用均为本次 canonical
+`incident_impact`、彼此无矛盾并逐项复算声明值时，人数和非 UNKNOWN 扩散范围才进入正式投影。另有
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的
 fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。

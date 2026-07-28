@@ -82,8 +82,14 @@
               <div class="clab">影响面</div>
               <p>{{ impactView.functionScope }}</p>
               <div v-if="impactView.hasCounts" class="metric">
-                <span class="big">{{ impactView.customers }}</span><span>个客户</span>
-                <span class="big gap">{{ impactView.users }}</span><span>名用户</span>
+                <template v-if="impactView.customers != null">
+                  <span class="big">{{ impactView.customers }}</span><span>个客户</span>
+                </template>
+                <template v-if="impactView.users != null">
+                  <span class="big" :class="{ gap: impactView.customers != null }">
+                    {{ impactView.users }}
+                  </span><span>名用户</span>
+                </template>
               </div>
               <span v-if="impactView.radius" class="radius" :class="impactView.radius">
                 {{ RADIUS_LABEL[impactView.radius] }}
@@ -400,19 +406,20 @@ const impactView = computed(() => {
   if (raw && typeof raw === 'object') {
     const s = raw as {
       functionScope?: string; affectedCustomers?: number
-      affectedUsers?: number; radius?: BlastRadius
+      affectedUsers?: number; blastRadius?: BlastRadius; radius?: BlastRadius
     }
+    const radius = s.blastRadius || s.radius
     return {
       functionScope: s.functionScope || '待确认',
-      customers: s.affectedCustomers ?? 0,
-      users: s.affectedUsers ?? 0,
+      customers: s.affectedCustomers ?? null,
+      users: s.affectedUsers ?? null,
       hasCounts: s.affectedCustomers != null || s.affectedUsers != null,
-      radius: s.radius && s.radius in RADIUS_LABEL ? s.radius : null,
+      radius: radius && radius in RADIUS_LABEL ? radius : null,
     }
   }
   return {
     functionScope: (raw as string) || '待确认',
-    customers: 0, users: 0, hasCounts: false, radius: null as BlastRadius | null,
+    customers: null, users: null, hasCounts: false, radius: null as BlastRadius | null,
   }
 })
 

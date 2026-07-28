@@ -12,6 +12,7 @@ import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
+import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisRule;
@@ -21,6 +22,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
 
@@ -290,6 +292,43 @@ class TroubleshootingIntakeServiceTest {
         assertThat(evidenceCaptor.getValue().getFirst().observed().toString())
                 .contains(TroubleshootingSecretRedactor.REDACTED)
                 .doesNotContain("production-token");
+    }
+
+    @Test
+    void redactsStructuredImpactBeforeDeterministicDiagnosisPersistence() {
+        SopEntry sop = sop();
+        IncidentContext unsafeIncident = new IncidentContext(
+                "incident-impact", "CSDP", "csdp-session-service", "903001",
+                "会话消息发送失败", "P2",
+                new IncidentImpact(
+                        "消息发送 token=production-secret",
+                        null,
+                        null,
+                        BlastRadius.UNKNOWN,
+                        List.of(),
+                        null,
+                        "Authorization: Bearer another-secret"),
+                null, NOW, null, "manual",
+                IncidentCompleteness.STRUCTURED, null);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, unsafeIncident, List.of(evidence()), false);
+
+        ArgumentCaptor<IncidentContext> incidentCaptor =
+                ArgumentCaptor.forClass(IncidentContext.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), incidentCaptor.capture(), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW), eq(NOW));
+        IncidentImpact persistedImpact = incidentCaptor.getValue().impact();
+        assertThat(persistedImpact.functionScope())
+                .contains(TroubleshootingSecretRedactor.REDACTED)
+                .doesNotContain("production-secret");
+        assertThat(persistedImpact.note())
+                .contains(TroubleshootingSecretRedactor.REDACTED)
+                .doesNotContain("another-secret");
     }
 
     @Test

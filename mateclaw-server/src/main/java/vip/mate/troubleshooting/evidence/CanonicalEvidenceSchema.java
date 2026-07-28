@@ -1,5 +1,8 @@
 package vip.mate.troubleshooting.evidence;
 
+import vip.mate.troubleshooting.CanonicalNumberParser;
+import vip.mate.troubleshooting.model.BlastRadius;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -7,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Canonical evidence vocabulary shared by every source adapter. */
-final class CanonicalEvidenceSchema {
+public final class CanonicalEvidenceSchema {
 
     private static final int MAX_LOG_TRACE_ENTRIES = 500;
     private static final Set<String> OPTIONAL_LOG_ENTRY_FIELDS = Set.of("duration_ms");
@@ -44,6 +47,14 @@ final class CanonicalEvidenceSchema {
                     "failure_match_count", FieldType.NUMBER,
                     "success_sample_count", FieldType.NUMBER,
                     "success_match_count", FieldType.NUMBER)),
+            "incident_impact", scalar(
+                    Map.of(
+                            "function_scope", FieldType.STRING,
+                            "affected_customers", FieldType.NUMBER,
+                            "affected_users", FieldType.NUMBER,
+                            "blast_radius", FieldType.STRING,
+                            "observed_at", FieldType.NUMBER),
+                    Set.of("affected_customers", "affected_users")),
             "log_trace_bundle", rows(
                     Map.of(
                             "ps_id", FieldType.STRING,
@@ -68,15 +79,15 @@ final class CanonicalEvidenceSchema {
                 : schema.rowFields().keySet();
     }
 
-    static boolean isValid(String signalKind, Map<String, Object> observed) {
+    public static boolean isValid(String signalKind, Map<String, Object> observed) {
         SignalSchema schema = schema(signalKind);
-        if (schema == null
-                || observed == null
-                || !observed.keySet().equals(schema.resultFields().keySet())) {
+        if (schema == null || observed == null
+                || !validFields(
+                        schema.resultFields(), schema.optionalResultFields(), observed)) {
             return false;
         }
-        return observed.entrySet().stream()
-                .allMatch(entry -> matches(schema.resultFields().get(entry.getKey()), entry.getValue()));
+        return !"incident_impact".equals(normalize(signalKind))
+                || validIncidentImpact(observed);
     }
 
     static boolean isRowSet(String signalKind) {
@@ -114,14 +125,45 @@ final class CanonicalEvidenceSchema {
     }
 
     private static SignalSchema scalar(Map<String, FieldType> resultFields) {
-        return new SignalSchema(resultFields, Map.of(), Set.of());
+        return scalar(resultFields, Set.of());
+    }
+
+    private static SignalSchema scalar(
+            Map<String, FieldType> resultFields,
+            Set<String> optionalResultFields) {
+        return new SignalSchema(resultFields, optionalResultFields, Map.of(), Set.of());
     }
 
     private static SignalSchema rows(
             Map<String, FieldType> resultFields,
             Map<String, FieldType> rowFields,
             Set<String> optionalRowFields) {
-        return new SignalSchema(resultFields, rowFields, optionalRowFields);
+        return new SignalSchema(resultFields, Set.of(), rowFields, optionalRowFields);
+    }
+
+    private static boolean validIncidentImpact(Map<String, Object> observed) {
+        Long customers = observed.containsKey("affected_customers")
+                ? CanonicalNumberParser.parseExactLong(observed.get("affected_customers"))
+                : null;
+        Long users = observed.containsKey("affected_users")
+                ? CanonicalNumberParser.parseExactLong(observed.get("affected_users"))
+                : null;
+        Long observedAt = CanonicalNumberParser.parseExactLong(observed.get("observed_at"));
+        if ((observed.containsKey("affected_customers")
+                        && (customers == null || customers < 0 || customers > Integer.MAX_VALUE))
+                || (observed.containsKey("affected_users")
+                        && (users == null || users < 0 || users > Integer.MAX_VALUE))
+                || observedAt == null
+                || observedAt < 0) {
+            return false;
+        }
+        BlastRadius radius;
+        try {
+            radius = BlastRadius.valueOf(String.valueOf(observed.get("blast_radius")));
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+        return customers != null || users != null || radius != BlastRadius.UNKNOWN;
     }
 
     private static Map<String, FieldType> withPsId(Map<String, FieldType> fields) {
@@ -180,6 +222,7 @@ final class CanonicalEvidenceSchema {
 
     private record SignalSchema(
             Map<String, FieldType> resultFields,
+            Set<String> optionalResultFields,
             Map<String, FieldType> rowFields,
             Set<String> optionalRowFields) {
     }

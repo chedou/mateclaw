@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
+import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.EvidenceRequest;
@@ -130,11 +131,12 @@ public class TroubleshootingIntakeService {
         if (reportedAt == null) {
             throw badRequest("reportedAt is required");
         }
-        String routeMissReason = deterministicRouteMissReason(incident);
+        IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
         if (routeMissReason != null) {
             return triageRouteMiss(
                     workspaceId,
-                    incident,
+                    sanitizedIncident,
                     evidence,
                     rehearsal,
                     routeMissReason,
@@ -143,14 +145,15 @@ public class TroubleshootingIntakeService {
         }
 
         SopEntry sop = sopPersistence.find(
-                workspaceId, incident.system(), incident.errorCode());
+                workspaceId, sanitizedIncident.system(), sanitizedIncident.errorCode());
         if (sop == null) {
             return triageRouteMiss(
                     workspaceId,
-                    incident,
+                    sanitizedIncident,
                     evidence,
                     rehearsal,
-                    "no SOP registered for " + incident.system() + ":" + incident.errorCode(),
+                    "no SOP registered for " + sanitizedIncident.system()
+                            + ":" + sanitizedIncident.errorCode(),
                     reportedAt,
                     clock.instant());
         }
@@ -158,10 +161,13 @@ public class TroubleshootingIntakeService {
         Instant readyAt = clock.instant();
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
-                        workspaceId, sop, incident, evidence == null ? List.of() : evidence));
+                        workspaceId,
+                        sop,
+                        sanitizedIncident,
+                        evidence == null ? List.of() : evidence));
         return diagnosisService.diagnoseAndPersist(
                 workspaceId,
-                incident,
+                sanitizedIncident,
                 sop,
                 collectedEvidence,
                 rehearsal,

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
@@ -106,11 +107,66 @@ class TroubleshootingControllerProjectionTest {
                 eq(arrivedAt));
     }
 
+    @Test
+    void acceptsStructuredImpactAtTheIncidentHttpBoundary() throws Exception {
+        TroubleshootingIntakeService intakeService = mock(TroubleshootingIntakeService.class);
+        TroubleshootingController controller = new TroubleshootingController(
+                intakeService,
+                mock(DiagnosisLifecycleService.class),
+                mock(DiagnosisDerivationService.class),
+                mock(TroubleshootingPersistenceService.class),
+                mock(DiagnosisExperienceProjectionService.class));
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+        Instant arrivedAt = Instant.parse("2026-07-29T01:02:03Z");
+
+        mvc.perform(post("/api/v1/troubleshooting/incidents")
+                        .requestAttr(
+                                TroubleshootingRequestTimingFilter.REPORTED_AT_ATTRIBUTE,
+                                arrivedAt)
+                        .header("X-Workspace-Id", "7")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "incidentId":"inc-impact",
+                                  "system":"CSDP",
+                                  "service":"csdp-session-service",
+                                  "errorCode":"903001",
+                                  "title":"message send failed",
+                                  "impact":{
+                                    "functionScope":"消息发送功能",
+                                    "affectedCustomers":2,
+                                    "affectedUsers":15,
+                                    "blastRadius":"MULTI_CUSTOMER",
+                                    "evidenceRefs":["EV-IMPACT"],
+                                    "observedAt":"2026-07-29T01:02:03Z",
+                                    "note":"同窗口两个客户出现同类失败"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(intakeService).report(
+                eq(7L),
+                argThat(incident ->
+                        incident.impact().affectedCustomers() == 2
+                                && incident.impact().affectedUsers() == 15
+                                && incident.impact().blastRadius() == BlastRadius.MULTI_CUSTOMER
+                                && incident.impact().evidenceRefs().equals(List.of("EV-IMPACT"))
+                                && arrivedAt.equals(incident.impact().observedAt())),
+                eq(List.of()),
+                eq(false),
+                eq(arrivedAt));
+    }
+
     private DiagnosisExperienceProjection projection() {
         DiagnosisExperienceProjection.ImpactView impact =
                 new DiagnosisExperienceProjection.ImpactView(
                         "订单创建", null, null,
-                        DiagnosisExperienceProjection.BlastRadius.UNKNOWN,
+                        BlastRadius.UNKNOWN,
                         List.of(), null, "影响人数未测量");
         DiagnosisExperienceProjection.BusinessSummary business =
                 new DiagnosisExperienceProjection.BusinessSummary(
