@@ -1,24 +1,25 @@
 <!--
   PROTOTYPE — throwaway after review.
 
-  It is a decision instrument, not a product page: its only job is to let the
-  reviewer pick an information structure. So it varies the two things that
-  actually change the answer —
+  Scope decision (2026-07-28): concentrate on the two audiences that carry the
+  product — 服务经理 (business summary) and 开发 (evidence desk). The WeCom flow
+  is parked with P3, kept only as a reminder of where the real entry point is.
 
+  What still varies is what actually changes the answer:
+    view       how the developer projection is reached (inline fold vs split pane)
     outcome    what the system ends up being able to say (4 endings)
     authority  why this investigation path was chosen (3 trust levels)
 
-  — instead of only rendering the happy path three times. A layout that looks
-  fine when the answer is found still has to survive "I could not find out",
-  which is the ending this system will produce most often.
+  A layout that reads well when the answer is found still has to survive
+  "I could not find out" — the ending this system produces most often.
 
-  Dev-only route: /prototype/troubleshooting?variant=A|B|C&outcome=..&authority=..
+  Dev-only route: /prototype/troubleshooting?view=..&outcome=..&authority=..
 -->
 <template>
   <div class="proto-page">
     <header class="proto-topbar">
       <div>
-        <span class="eyebrow">MATECLAW · 智能排障体验原型</span>
+        <span class="eyebrow">MateClaw · 智能排障体验原型</span>
         <h1>{{ scene.title }}</h1>
       </div>
       <div class="top-meta">
@@ -28,8 +29,17 @@
       </div>
     </header>
 
-    <!-- 两个切换器：结局 × 路由权威。原型的区分度全在这里 -->
     <nav class="axes" aria-label="演示状态切换">
+      <div class="axis">
+        <span class="axis-label">开发证据</span>
+        <button
+          v-for="item in VIEWS"
+          :key="item.key"
+          type="button"
+          :class="{ on: item.key === view, parked: item.parked }"
+          @click="setQuery('view', item.key)"
+        >{{ item.short }}</button>
+      </div>
       <div class="axis">
         <span class="axis-label">结局</span>
         <button
@@ -53,273 +63,207 @@
       <p class="axis-hint">{{ authorityView.hint }}</p>
     </nav>
 
-    <!-- ===================== A · 服务经理简报 ===================== -->
-    <section v-if="variant === 'A'" class="variant variant-a">
-      <div class="a-status">
-        <div>
-          <div class="conclusion-row">
-            <span class="ctype" :class="scene.conclusionType">{{ CONCLUSION_LABEL[scene.conclusionType] }}</span>
-            <span class="section-label">给服务经理的结论</span>
-          </div>
-          <h2>{{ scene.headline }}</h2>
-          <p>{{ scene.narrative }}</p>
-        </div>
-        <div class="confidence-block">
-          <span>可信等级</span>
-          <strong :class="confidence.toLowerCase()">{{ confidence }}</strong>
-          <small>{{ authorityView.ceilingNote }}</small>
-        </div>
-      </div>
+    <!-- SPLIT 才需要显式切页；INLINE 下开发证据就在同一页折叠着 -->
+    <nav v-if="view === 'SPLIT'" class="panes" aria-label="投影切换">
+      <button type="button" :class="{ on: pane === 'BUSINESS' }" @click="pane = 'BUSINESS'">
+        业务摘要 · 服务经理
+      </button>
+      <button type="button" :class="{ on: pane === 'DEV' }" @click="pane = 'DEV'">
+        开发证据台
+      </button>
+    </nav>
 
-      <div class="summary-strip">
-        <article>
-          <span>问题</span>
-          <b>{{ scene.problem }}</b>
-          <small>客户 7F2A · 20:41:06</small>
-        </article>
-        <article>
-          <span>影响</span>
-          <b>{{ scene.impact }}</b>
-          <small>{{ scene.impactNote }}</small>
-        </article>
-        <article>
-          <span>下一步</span>
-          <b>{{ scene.nextStep }}</b>
-          <small>平台只提供证据，不执行修改</small>
-        </article>
-      </div>
-
-      <TimingStrip :timings="scene.timings" />
-
-      <div class="a-body">
-        <section class="trace-card">
-          <div class="section-head">
-            <div><span class="section-label">证据收敛</span><h3>PS ID 全链路</h3></div>
-            <code>{{ scene.psId }}</code>
-          </div>
-
-          <div v-if="scene.traceNodes.length" class="trace-line">
-            <div
-              v-for="(node, index) in scene.traceNodes"
-              :key="node.hop"
-              class="trace-node"
-              :class="{ bad: node.bad }"
-            >
-              <span class="node-index">{{ index + 1 }}</span>
-              <b>{{ node.service }}</b>
-              <small>{{ node.duration }}</small>
-            </div>
-          </div>
-          <p v-else class="no-trace">{{ scene.traceEmpty }}</p>
-
-          <!-- D15 成功样本对照：把「我们有全量日志」变成可复算判据 -->
-          <div class="contrast" :class="{ missing: !scene.contrast.available }">
-            <span class="contrast-label">成功样本对照</span>
-            <template v-if="scene.contrast.available">
-              <b>{{ scene.contrast.failed }}</b>
-              <span class="vs">vs</span>
-              <b class="ok">{{ scene.contrast.baseline }}</b>
-              <small>{{ scene.contrast.note }}</small>
-            </template>
-            <template v-else>
-              <b class="warn">contrastAvailable = false</b>
-              <small>{{ scene.contrast.note }}</small>
-            </template>
-          </div>
-
-          <div class="finding" :class="scene.findingTone">
-            <span class="finding-mark" />
-            <div><b>{{ scene.findingTitle }}</b><p>{{ scene.finding }}</p></div>
-            <code>{{ scene.findingRef }}</code>
-          </div>
-        </section>
-
-        <aside class="draft-card">
-          <span class="section-label">AI 生成的知识草稿</span>
-          <h3>{{ scene.draft.title }}</h3>
-          <ol v-if="scene.draft.steps.length">
-            <li v-for="step in scene.draft.steps" :key="step">{{ step }}</li>
-          </ol>
-          <p v-else class="no-draft">{{ scene.draft.emptyReason }}</p>
-          <div class="draft-state">
-            <span>{{ scene.draft.state }}</span>
-            <p>{{ scene.draft.stateNote }}</p>
-          </div>
-        </aside>
-      </div>
-
-      <details class="evidence-fold">
-        <summary>展开开发证据与能力边界</summary>
-        <div class="evidence-table">
-          <div v-for="row in scene.evidenceRows" :key="row.label">
-            <span>{{ row.label }}</span><code>{{ row.ref }}</code><b>{{ row.value }}</b>
-          </div>
-        </div>
-      </details>
-    </section>
-
-    <!-- ===================== B · 开发证据台 ===================== -->
-    <section v-else-if="variant === 'B'" class="variant variant-b">
-      <aside class="b-rail">
-        <span class="section-label">调用链</span>
-        <h2>{{ scene.railHeadline }}</h2>
-        <div v-if="scene.traceNodes.length" class="rail-flow">
-          <div
-            v-for="(node, index) in scene.traceNodes"
-            :key="node.hop"
-            class="rail-node"
-            :class="{ bad: node.bad }"
-          >
-            <span>{{ String(index + 1).padStart(2, '0') }}</span>
-            <div><b>{{ node.service }}</b><small>{{ node.duration }}</small></div>
-          </div>
-        </div>
-        <p v-else class="rail-empty">{{ scene.traceEmpty }}</p>
-        <div class="rail-scope">
-          <span>影响范围</span><b>{{ scene.blastRadius }}</b><small>{{ scene.impactNote }}</small>
-        </div>
-      </aside>
-
-      <main class="b-main">
-        <div class="b-title">
+    <section v-if="view !== 'WECOM'" class="variant">
+      <!-- ========== 业务摘要投影（服务经理默认看到的全部） ========== -->
+      <template v-if="view === 'INLINE' || pane === 'BUSINESS'">
+        <div class="a-status">
           <div>
-            <span class="section-label">开发调查台</span>
-            <h2>{{ scene.devHeadline }}</h2>
+            <div class="conclusion-row">
+              <span class="ctype" :class="scene.conclusionType">{{ CONCLUSION_LABEL[scene.conclusionType] }}</span>
+              <span class="section-label">给服务经理的结论</span>
+            </div>
+            <h2>{{ scene.headline }}</h2>
+            <p>{{ scene.narrative }}</p>
           </div>
-          <span class="confidence-pill" :class="confidence.toLowerCase()">
-            {{ confidence }} · {{ CONCLUSION_LABEL[scene.conclusionType] }}
-          </span>
+          <div class="confidence-block">
+            <span>可信等级</span>
+            <strong :class="confidence.toLowerCase()">{{ confidence }}</strong>
+            <small>{{ authorityView.ceilingNote }}</small>
+          </div>
         </div>
 
-        <TimingStrip :timings="scene.timings" compact />
-
-        <div class="evidence-timeline">
-          <article v-for="event in scene.evidenceEvents" :key="event.ref" :class="event.tone">
-            <time>{{ event.time }}</time>
-            <div class="timeline-line"><span /></div>
-            <div><b>{{ event.title }}</b><p>{{ event.detail }}</p><code>{{ event.ref }}</code></div>
+        <div class="summary-strip">
+          <article>
+            <span>问题</span><b>{{ scene.problem }}</b><small>客户 7F2A · 20:41:06</small>
           </article>
-        </div>
-
-        <div class="b-bottom">
-          <section>
-            <span class="section-label">排查步骤草稿</span>
-            <ol v-if="scene.draft.steps.length"><li v-for="step in scene.draft.steps" :key="step">{{ step }}</li></ol>
-            <p v-else class="no-draft">{{ scene.draft.emptyReason }}</p>
-          </section>
-          <section class="boundary-panel">
-            <span class="section-label">系统明确做不到</span>
-            <p>{{ scene.boundary }}</p>
-            <b>{{ scene.boundaryRule }}</b>
-          </section>
-        </div>
-      </main>
-
-      <aside class="b-summary">
-        <span class="section-label">业务投影</span>
-        <h3>{{ scene.problem }}</h3>
-        <dl>
-          <dt>影响</dt><dd>{{ scene.impact }}</dd>
-          <dt>进度</dt><dd>{{ scene.progress }}</dd>
-          <dt>结论</dt><dd>{{ scene.headline }}</dd>
-          <dt>下一步</dt><dd>{{ scene.nextStep }}</dd>
-        </dl>
-        <button type="button" @click="explainAction">{{ scene.primaryAction }}</button>
-        <p class="action-note">点击只推进领域状态，系统不执行任何生产变更。</p>
-        <p v-if="actionEcho" class="action-echo">{{ actionEcho }}</p>
-      </aside>
-    </section>
-
-    <!-- ===================== C · 企微协同流 ===================== -->
-    <section v-else class="variant variant-c">
-      <aside class="chat-panel">
-        <div class="chat-head">
-          <span class="status-dot" />
-          <div><b>数字化服务平台智能小助手</b><small>企业微信群 · 演示会话</small></div>
-        </div>
-        <div class="messages">
-          <div class="msg user">
-            <span>服务经理</span><p>@小助手 客户反馈会话消息发送失败</p><time>{{ scene.timings.reportedAt }}</time>
-          </div>
-          <div class="msg bot">
-            <span>MateClaw</span><p>请补充客户 ID 和大致发生时间；截图或视频可直接引用。</p>
-            <time>{{ scene.timings.reportedAt }}</time>
-          </div>
-          <div class="msg user">
-            <span>服务经理</span><p>客户 7F2A，20:40 左右。附截图。</p><time>{{ scene.timings.readyAt }}</time>
-          </div>
-          <div class="attachment">
-            <span>IMG</span><div><b>消息发送失败.png</b><small>仅保存受控引用</small></div>
-          </div>
-          <div class="msg bot result" :class="scene.chatTone">
-            <span>MateClaw · {{ scene.chatStatus }}</span>
-            <p><b>当前判断：</b>{{ scene.chatVerdict }}</p>
-            <p><b>下一步：</b>{{ scene.chatNext }}</p>
-            <time>{{ scene.timings.conclusionAt }}</time>
-          </div>
-        </div>
-      </aside>
-
-      <main class="investigation-panel">
-        <div class="investigation-head">
-          <div><span class="section-label">后台调查状态</span><h2>从一句现象收敛到可交接证据</h2></div>
-          <span class="confidence-pill" :class="confidence.toLowerCase()">
-            {{ authorityView.shortMode }} · {{ authority }}
-          </span>
+          <article>
+            <span>影响</span><b>{{ scene.impact }}</b><small>{{ scene.impactNote }}</small>
+          </article>
+          <article>
+            <span>下一步</span><b>{{ scene.nextStep }}</b><small>平台只提供证据，不执行修改</small>
+          </article>
         </div>
 
         <TimingStrip :timings="scene.timings" />
 
-        <div class="stage-grid">
-          <article v-for="(stage, index) in scene.stages" :key="stage.title" :class="stage.tone">
-            <span>{{ index + 1 }}</span>
-            <div><b>{{ stage.title }}</b><p>{{ stage.detail }}</p></div>
-            <small>{{ stage.state }}</small>
-          </article>
+        <div class="a-body">
+          <section class="trace-card">
+            <div class="section-head">
+              <div><span class="section-label">证据收敛</span><h3>PS ID 全链路</h3></div>
+              <code>{{ scene.psId }}</code>
+            </div>
+
+            <div v-if="scene.traceNodes.length" class="trace-line">
+              <div
+                v-for="(node, index) in scene.traceNodes"
+                :key="node.hop"
+                class="trace-node"
+                :class="{ bad: node.bad }"
+              >
+                <span class="node-index">{{ index + 1 }}</span>
+                <b>{{ node.service }}</b>
+                <small>{{ node.duration }}</small>
+              </div>
+            </div>
+            <p v-else class="no-trace">{{ scene.traceEmpty }}</p>
+
+            <div class="contrast" :class="{ missing: !scene.contrast.available }">
+              <span class="contrast-label">成功样本对照</span>
+              <template v-if="scene.contrast.available">
+                <b>{{ scene.contrast.failed }}</b>
+                <span class="vs">vs</span>
+                <b class="ok">{{ scene.contrast.baseline }}</b>
+                <small>{{ scene.contrast.note }}</small>
+              </template>
+              <template v-else>
+                <b class="warn">contrastAvailable = false</b>
+                <small>{{ scene.contrast.note }}</small>
+              </template>
+            </div>
+
+            <div class="finding" :class="scene.findingTone">
+              <span class="finding-mark" />
+              <div><b>{{ scene.findingTitle }}</b><p>{{ scene.finding }}</p></div>
+              <code>{{ scene.findingRef }}</code>
+            </div>
+          </section>
+
+          <aside class="draft-card">
+            <span class="section-label">AI 生成的知识草稿</span>
+            <h3>{{ scene.draft.title }}</h3>
+            <ol v-if="scene.draft.steps.length">
+              <li v-for="step in scene.draft.steps" :key="step">{{ step }}</li>
+            </ol>
+            <p v-else class="no-draft">{{ scene.draft.emptyReason }}</p>
+            <div class="draft-state">
+              <span>{{ scene.draft.state }}</span>
+              <p>{{ scene.draft.stateNote }}</p>
+            </div>
+          </aside>
         </div>
 
-        <div class="c-result">
-          <section>
-            <span class="section-label">证据支持的结论</span>
-            <h3>{{ scene.headline }}</h3>
-            <p>{{ scene.narrative }}</p>
-            <div class="refs"><code v-for="ref in scene.refs" :key="ref">{{ ref }}</code></div>
-          </section>
-          <section>
-            <span class="section-label">知识生产</span>
-            <h3>{{ scene.draft.title }}</h3>
-            <p>{{ scene.draft.summary }}</p>
-            <span class="candidate-chip">{{ scene.draft.state }}</span>
-          </section>
+        <div class="dispose">
+          <button type="button" @click="explainAction">{{ scene.primaryAction }}</button>
+          <p class="action-note">点击只推进领域状态，系统不执行任何生产变更。</p>
+          <p v-if="actionEcho" class="action-echo">{{ actionEcho }}</p>
         </div>
-      </main>
+      </template>
+
+      <!-- ========== 开发证据投影 ========== -->
+      <details v-if="view === 'INLINE'" class="dev-fold">
+        <summary>
+          展开开发证据台
+          <span class="fold-hint">{{ scene.devHeadline }}</span>
+        </summary>
+        <DeveloperEvidencePanel
+          :scene="scene"
+          :confidence="confidence"
+          :conclusion-label="CONCLUSION_LABEL[scene.conclusionType]"
+        />
+      </details>
+
+      <DeveloperEvidencePanel
+        v-else-if="pane === 'DEV'"
+        :scene="scene"
+        :confidence="confidence"
+        :conclusion-label="CONCLUSION_LABEL[scene.conclusionType]"
+      />
     </section>
 
-    <nav class="prototype-switcher" aria-label="原型方案切换">
-      <button type="button" aria-label="上一版" @click="cycle(-1)">←</button>
-      <span><b>{{ variant }}</b> — {{ currentVariant.name }}</span>
-      <button type="button" aria-label="下一版" @click="cycle(1)">→</button>
-    </nav>
+    <!-- ========== 企微协同流（P3 暂缓，保留以记住真实入口在哪） ========== -->
+    <section v-else class="variant variant-c">
+      <div class="parked-banner">
+        <b>P3 暂缓</b>
+        <span>企微入口是录音里的真实一线入口（F6），但当前集中兵力做服务经理与开发两个投影；
+          本页只保留结构，不再投入。</span>
+      </div>
+      <div class="c-body">
+        <aside class="chat-panel">
+          <div class="chat-head">
+            <span class="status-dot" />
+            <div><b>数字化服务平台智能小助手</b><small>企业微信群 · 演示会话</small></div>
+          </div>
+          <div class="messages">
+            <div class="msg user">
+              <span>服务经理</span><p>@小助手 客户反馈会话消息发送失败</p><time>{{ scene.timings.reportedAt }}</time>
+            </div>
+            <div class="msg bot">
+              <span>MateClaw</span><p>请补充客户 ID 和大致发生时间；截图或视频可直接引用。</p>
+              <time>{{ scene.timings.reportedAt }}</time>
+            </div>
+            <div class="msg user">
+              <span>服务经理</span><p>客户 7F2A，20:40 左右。附截图。</p><time>{{ scene.timings.readyAt }}</time>
+            </div>
+            <div class="attachment">
+              <span>IMG</span><div><b>消息发送失败.png</b><small>仅保存受控引用</small></div>
+            </div>
+            <div class="msg bot result" :class="scene.chatTone">
+              <span>MateClaw · {{ scene.chatStatus }}</span>
+              <p><b>当前判断：</b>{{ scene.chatVerdict }}</p>
+              <p><b>下一步：</b>{{ scene.chatNext }}</p>
+              <time>{{ scene.timings.conclusionAt }}</time>
+            </div>
+          </div>
+        </aside>
+        <main class="investigation-panel">
+          <div class="investigation-head">
+            <div><span class="section-label">后台调查状态</span><h2>从一句现象收敛到可交接证据</h2></div>
+            <span class="confidence-pill" :class="confidence.toLowerCase()">
+              {{ authorityView.shortMode }} · {{ authority }}
+            </span>
+          </div>
+          <TimingStrip :timings="scene.timings" />
+          <div class="stage-grid">
+            <article v-for="(stage, index) in scene.stages" :key="stage.title" :class="stage.tone">
+              <span>{{ index + 1 }}</span>
+              <div><b>{{ stage.title }}</b><p>{{ stage.detail }}</p></div>
+              <small>{{ stage.state }}</small>
+            </article>
+          </div>
+        </main>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
-/* ------------------------------------------------------------------ axes */
-
-const variants = [
-  { key: 'A', name: '服务经理简报' },
-  { key: 'B', name: '开发证据台' },
-  { key: 'C', name: '企微协同流' },
-] as const
-type VariantKey = typeof variants[number]['key']
+import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 
 /**
- * The four endings this system actually produces. A layout only earns its
- * place if it stays readable in all four — "查不出来" is the common case.
+ * How the developer projection is reached. Both show the same evidence — the
+ * open question was only whether it opens in place or replaces the page, so it
+ * is a switch here instead of two rival layouts.
  */
+const VIEWS = [
+  { key: 'INLINE', short: '原地展开', parked: false },
+  { key: 'SPLIT', short: '独立视图', parked: false },
+  { key: 'WECOM', short: '企微协同（P3 暂缓）', parked: true },
+] as const
+type ViewKey = typeof VIEWS[number]['key']
+
+/** The four endings this system actually produces. */
 const OUTCOMES = [
   { key: 'HYPOTHESIS', short: '根因假设' },
   { key: 'EXCLUDED', short: '排除（非定位）' },
@@ -346,18 +290,16 @@ const CONCLUSION_LABEL: Record<ConclusionType, string> = {
 
 const route = useRoute()
 const router = useRouter()
+const pane = ref<'BUSINESS' | 'DEV'>('BUSINESS')
 
 function pick<T extends string>(name: string, allowed: readonly { key: T }[], fallback: T): T {
   const raw = String(route.query[name] || '').toUpperCase()
   return allowed.some((item) => item.key === raw) ? (raw as T) : fallback
 }
 
-const variant = computed<VariantKey>(() => pick('variant', variants, 'A'))
+const view = computed<ViewKey>(() => pick('view', VIEWS, 'INLINE'))
 const outcome = computed<OutcomeKey>(() => pick('outcome', OUTCOMES, 'HYPOTHESIS'))
 const authority = computed<AuthorityKey>(() => pick('authority', AUTHORITIES, 'MODEL_PROPOSED'))
-const currentVariant = computed(() => variants.find((item) => item.key === variant.value) ?? variants[0])
-
-/* ------------------------------------------------- authority projection */
 
 const AUTHORITY_VIEW: Record<AuthorityKey, {
   modeLabel: string; shortMode: string; ceiling: 'HIGH' | 'MEDIUM'; ceilingNote: string; hint: string
@@ -390,12 +332,8 @@ const authorityView = computed(() => AUTHORITY_VIEW[authority.value])
 const confidence = computed<'HIGH' | 'MEDIUM' | 'LOW'>(() => {
   const base = scene.value.baseConfidence
   if (base === 'LOW') return 'LOW'
-  const ceiling = authorityView.value.ceiling
-  if (base === 'HIGH' && ceiling === 'MEDIUM') return 'MEDIUM'
-  return base
+  return base === 'HIGH' && authorityView.value.ceiling === 'MEDIUM' ? 'MEDIUM' : base
 })
-
-/* ------------------------------------------------------------- scenarios */
 
 interface Timings {
   reportedAt: string; readyAt: string; conclusionAt: string; handoffAt: string | null
@@ -700,12 +638,13 @@ const scene = computed(() => SCENES[outcome.value])
 /** D14 north-star: three separate spans, never one total. */
 const TimingStrip = defineComponent({
   name: 'TimingStrip',
-  props: {
-    timings: { type: Object as () => Timings, required: true },
-    compact: { type: Boolean, default: false },
-  },
+  props: { timings: { type: Object as () => Timings, required: true } },
   setup(props) {
-    return () => h('div', { class: ['timing-strip', { compact: props.compact }] }, [
+    const cell = (label: string, value: string, range: string, pending = false) =>
+      h('div', { class: ['timing-cell', { pending }] }, [
+        h('span', label), h('b', value), h('small', range),
+      ])
+    return () => h('div', { class: 'timing-strip' }, [
       h('span', { class: 'section-label' }, '北极星耗时'),
       h('div', { class: 'timing-cells' }, [
         cell('补问成本', props.timings.intake, `${props.timings.reportedAt} → ${props.timings.readyAt}`),
@@ -720,11 +659,6 @@ const TimingStrip = defineComponent({
         ),
       ]),
     ])
-    function cell(label: string, value: string, range: string, pending = false) {
-      return h('div', { class: ['timing-cell', { pending }] }, [
-        h('span', label), h('b', value), h('small', range),
-      ])
-    }
   },
 })
 
@@ -740,17 +674,16 @@ function setQuery(key: string, value: string) {
   router.replace({ query: { ...route.query, demo: '1', [key]: value } })
 }
 
-function cycle(offset: number) {
-  const index = variants.findIndex((item) => item.key === variant.value)
-  const next = variants[(index + offset + variants.length) % variants.length]
-  setQuery('variant', next.key)
+function cycleOutcome(offset: number) {
+  const index = OUTCOMES.findIndex((item) => item.key === outcome.value)
+  setQuery('outcome', OUTCOMES[(index + offset + OUTCOMES.length) % OUTCOMES.length].key)
 }
 
 function onKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null
   if (target?.matches('input, textarea, [contenteditable="true"]')) return
-  if (event.key === 'ArrowLeft') cycle(-1)
-  if (event.key === 'ArrowRight') cycle(1)
+  if (event.key === 'ArrowLeft') cycleOutcome(-1)
+  if (event.key === 'ArrowRight') cycleOutcome(1)
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -763,83 +696,89 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   --blue: #2f5cf5; --blue-soft: #edf2ff; --red: #d92d20; --red-soft: #fff2f0;
   --green: #138a58; --green-soft: #ecfdf3; --amber: #b54708; --amber-soft: #fff8eb;
   --slate: #667085; --slate-soft: #f2f4f7;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
   min-height: 100%; overflow: auto; background: #f2f4f8; color: var(--ink);
-  padding: 24px 28px 88px; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  padding: 24px 28px 60px; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
-.proto-topbar { max-width: 1440px; margin: 0 auto 14px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.proto-topbar { max-width: 1440px; margin: 0 auto 14px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .eyebrow, .section-label { display: block; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
 .proto-topbar h1 { margin: 5px 0 0; font-size: 26px; letter-spacing: -.03em; }
 .top-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; flex-wrap: wrap; }
-.top-meta span { padding: 7px 10px; border-radius: 5px; border: 1px solid var(--line); background: white; }
+.top-meta span { padding: 7px 10px; border-radius: 5px; border: 1px solid var(--line); background: #fff; }
 .top-meta .mode { color: var(--blue); border-color: #bccbff; background: var(--blue-soft); font-weight: 700; }
-.top-meta .authority { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+.top-meta .authority { font-family: var(--mono); font-size: 11px; }
 .top-meta .authority.explicit { color: var(--green); border-color: #a9e0c4; background: var(--green-soft); }
 .top-meta .authority.rule_matched { color: var(--blue); border-color: #bccbff; background: var(--blue-soft); }
 .top-meta .authority.model_proposed { color: var(--amber); border-color: #f6d795; background: var(--amber-soft); }
 .top-meta .fixture { color: var(--amber); background: var(--amber-soft); border-color: #f6d795; }
 
-/* axes — the whole point of the prototype */
-.axes { max-width: 1440px; margin: 0 auto 14px; background: white; border: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
-.axis { display: flex; align-items: center; gap: 8px; }
+.axes { max-width: 1440px; margin: 0 auto 12px; background: #fff; border: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.axis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .axis-label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
-.axis button { border: 1px solid var(--line); background: white; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 11px; border-radius: 4px; cursor: pointer; }
+.axis button { border: 1px solid var(--line); background: #fff; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 11px; border-radius: 4px; cursor: pointer; }
 .axis button:hover { border-color: #b9c6f0; color: var(--blue); }
-.axis button.on { color: white; background: var(--ink); border-color: var(--ink); font-weight: 600; }
-.axis-hint { flex: 1 1 320px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.axis button.on { color: #fff; background: var(--ink); border-color: var(--ink); font-weight: 600; }
+.axis button.parked { border-style: dashed; }
+.axis button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.axis-hint { flex: 1 1 300px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
-.variant { max-width: 1440px; margin: auto; }
+.panes { max-width: 1440px; margin: 0 auto 12px; display: flex; gap: 0; border: 1px solid var(--line); background: #fff; width: fit-content; }
+.panes button { border: 0; border-right: 1px solid var(--line); background: #fff; color: var(--muted); font: inherit; font-size: 13px; padding: 9px 18px; cursor: pointer; }
+.panes button:last-child { border-right: 0; }
+.panes button.on { color: var(--ink); background: var(--soft); font-weight: 650; box-shadow: inset 0 -2px 0 var(--blue); }
+.panes button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+.variant { max-width: 1440px; margin: auto; display: grid; gap: 14px; }
 .variant h2, .variant h3, .variant p { margin-top: 0; }
-code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+code { font-family: var(--mono); font-size: 11px; }
 
-/* north-star timing strip */
-.timing-strip { background: white; border: 1px solid var(--line); padding: 13px 18px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-.timing-strip.compact { margin: 16px 0 4px; padding: 10px 14px; }
+.timing-strip { background: #fff; border: 1px solid var(--line); padding: 13px 18px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .timing-cells { display: flex; gap: 30px; flex-wrap: wrap; }
 .timing-cell { display: grid; gap: 2px; }
 .timing-cell span { color: var(--muted); font-size: 11px; }
-.timing-cell b { font-family: "SFMono-Regular", monospace; font-size: 16px; letter-spacing: -.02em; }
-.timing-cell small { color: #98a2b3; font-family: "SFMono-Regular", monospace; font-size: 10px; }
+.timing-cell b { font-family: var(--mono); font-size: 16px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.timing-cell small { color: #98a2b3; font-family: var(--mono); font-size: 10px; }
 .timing-cell.pending b { color: var(--muted); }
 
-/* A — business-summary first */
-.variant-a { display: grid; gap: 14px; }
-.a-status { display: grid; grid-template-columns: 1fr 230px; gap: 24px; background: white; border: 1px solid var(--line); padding: 24px 28px; }
-.conclusion-row { display: flex; align-items: center; gap: 10px; }
-.ctype { font-family: "SFMono-Regular", monospace; font-size: 11px; font-weight: 700; padding: 3px 9px; border: 1px solid; border-radius: 3px; }
+.a-status { display: grid; grid-template-columns: 1fr 230px; gap: 24px; background: #fff; border: 1px solid var(--line); padding: 24px 28px; }
+.conclusion-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctype { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 3px 9px; border: 1px solid; border-radius: 3px; }
 .ctype.LOCATED { color: var(--red); border-color: #f5c9c4; background: var(--red-soft); }
 .ctype.HYPOTHESIS { color: var(--amber); border-color: #f6d795; background: var(--amber-soft); }
 .ctype.EXCLUDED { color: var(--green); border-color: #a9e0c4; background: var(--green-soft); }
 .ctype.INSUFFICIENT_EVIDENCE { color: var(--slate); border-color: #d3d8e0; background: var(--slate-soft); border-style: dashed; }
-.a-status h2 { margin: 9px 0 8px; font-size: 24px; letter-spacing: -.025em; }
+.a-status h2 { margin: 9px 0 8px; font-size: 24px; letter-spacing: -.025em; line-height: 1.4; }
 .a-status p { margin: 0; color: var(--muted); line-height: 1.65; }
 .confidence-block { border-left: 1px solid var(--line); padding-left: 24px; display: flex; flex-direction: column; justify-content: center; }
 .confidence-block span { color: var(--muted); font-size: 12px; }
-.confidence-block strong { font-family: "SFMono-Regular", monospace; font-size: 23px; margin: 6px 0 4px; }
+.confidence-block strong { font-family: var(--mono); font-size: 23px; margin: 6px 0 4px; }
 .confidence-block strong.high { color: var(--green); }
 .confidence-block strong.medium { color: var(--amber); }
 .confidence-block strong.low { color: var(--slate); }
 .confidence-block small { color: var(--muted); line-height: 1.45; }
-.summary-strip { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); background: white; }
+
+.summary-strip { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); background: #fff; }
 .summary-strip article { padding: 18px 22px; min-height: 92px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px; }
-.summary-strip article:last-child { border: 0; }
+.summary-strip article:last-child { border-right: 0; }
 .summary-strip span, .summary-strip small { color: var(--muted); font-size: 12px; }
 .summary-strip b { font-size: 16px; }
+
 .a-body { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .7fr); gap: 14px; }
-.trace-card, .draft-card { background: white; border: 1px solid var(--line); padding: 22px; }
-.section-head { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+.trace-card, .draft-card { background: #fff; border: 1px solid var(--line); padding: 22px; }
+.section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; }
 .section-head h3, .draft-card h3 { margin: 5px 0 0; font-size: 17px; }
 .section-head code { color: var(--muted); }
 .trace-line { margin: 30px 0 18px; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; position: relative; }
 .trace-line::before { content: ""; position: absolute; height: 1px; background: #aeb8cb; left: 8%; right: 8%; top: 14px; }
-.trace-node { position: relative; display: grid; justify-items: center; gap: 5px; font-family: "SFMono-Regular", monospace; }
-.trace-node .node-index { z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--blue); font-size: 11px; }
+.trace-node { position: relative; display: grid; justify-items: center; gap: 5px; font-family: var(--mono); }
+.trace-node .node-index { z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); font-size: 11px; }
 .trace-node.bad .node-index { background: var(--red); box-shadow: 0 0 0 5px var(--red-soft); }
 .trace-node b { font-size: 12px; } .trace-node small { color: var(--muted); }
 .no-trace { margin: 24px 0 16px; padding: 14px; color: var(--muted); font-size: 13px; line-height: 1.6; background: var(--slate-soft); border: 1px dashed #cfd5df; }
 .contrast { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 11px 14px; margin-bottom: 14px; background: var(--soft); border: 1px solid var(--line); }
 .contrast.missing { border-style: dashed; background: var(--slate-soft); }
 .contrast-label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
-.contrast b { font-family: "SFMono-Regular", monospace; font-size: 13px; }
+.contrast b { font-family: var(--mono); font-size: 13px; }
 .contrast b.ok { color: var(--green); } .contrast b.warn { color: var(--slate); }
 .contrast .vs { color: var(--muted); font-size: 12px; }
 .contrast small { color: var(--muted); font-size: 11px; }
@@ -854,121 +793,76 @@ code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
 .finding p { margin: 3px 0 0; font-size: 13px; line-height: 1.6; }
 .finding.bad p { color: #7a271a; } .finding.good p { color: #05603a; } .finding.unknown p { color: #475467; }
 .finding code { color: var(--muted); }
-.draft-card ol, .b-bottom ol { margin: 18px 0; padding-left: 20px; color: #344054; line-height: 1.65; font-size: 13px; }
-.draft-card li + li, .b-bottom li + li { margin-top: 8px; }
+.draft-card ol { margin: 18px 0; padding-left: 20px; color: #344054; line-height: 1.65; font-size: 13px; }
+.draft-card li + li { margin-top: 8px; }
 .no-draft { margin: 16px 0; padding: 13px; color: var(--muted); font-size: 12.5px; line-height: 1.65; background: var(--slate-soft); border: 1px dashed #cfd5df; }
 .draft-state { border-top: 1px solid var(--line); padding-top: 14px; }
-.draft-state span, .candidate-chip { color: var(--blue); font-family: "SFMono-Regular", monospace; font-size: 11px; font-weight: 700; }
+.draft-state span { color: var(--blue); font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .draft-state p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
-.evidence-fold { background: white; border: 1px solid var(--line); }
-.evidence-fold summary { cursor: pointer; padding: 14px 18px; font-size: 13px; font-weight: 700; }
-.evidence-table { border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, 1fr); }
-.evidence-table > div { padding: 14px 18px; display: grid; gap: 5px; border-right: 1px solid var(--line); }
-.evidence-table span { color: var(--muted); font-size: 11px; } .evidence-table b { font-size: 12px; }
 
-/* B — developer-evidence first */
-.variant-b { display: grid; grid-template-columns: 210px minmax(520px, 1fr) 280px; min-height: 650px; background: white; border: 1px solid var(--line); }
-.b-rail { padding: 24px 20px; color: #e9edfa; background: #172033; }
-.b-rail .section-label { color: #9ea9c2; } .b-rail h2 { margin: 8px 0 24px; line-height: 1.3; font-size: 19px; white-space: pre-line; }
-.rail-flow { display: grid; gap: 0; }
-.rail-node { display: grid; grid-template-columns: 30px 1fr; gap: 10px; min-height: 72px; position: relative; }
-.rail-node::after { content: ""; position: absolute; left: 12px; top: 26px; bottom: -5px; width: 1px; background: #43506e; }
-.rail-node:last-child::after { display: none; }
-.rail-node > span { z-index: 1; width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #6f7c99; background: #172033; font: 10px "SFMono-Regular", monospace; }
-.rail-node.bad > span { color: white; border-color: var(--red); background: var(--red); }
-.rail-node div { display: grid; gap: 4px; align-content: start; } .rail-node b { font: 12px "SFMono-Regular", monospace; } .rail-node small { color: #9ea9c2; }
-.rail-empty { color: #9ea9c2; font-size: 12px; line-height: 1.6; border: 1px dashed #43506e; padding: 12px; }
-.rail-scope { margin-top: 30px; padding-top: 18px; border-top: 1px solid #34405a; display: grid; gap: 6px; }
-.rail-scope span, .rail-scope small { color: #9ea9c2; font-size: 11px; } .rail-scope b { color: #cbd5ff; font: 11px "SFMono-Regular", monospace; }
-.b-main { padding: 26px 28px; border-right: 1px solid var(--line); }
-.b-title { display: flex; justify-content: space-between; gap: 18px; align-items: start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
-.b-title h2 { margin: 6px 0 0; font-size: 21px; }
-.confidence-pill { border: 1px solid var(--line); padding: 7px 9px; font: 10px "SFMono-Regular", monospace; white-space: nowrap; }
-.confidence-pill.high { color: var(--green); border-color: #a9e0c4; background: var(--green-soft); }
-.confidence-pill.medium { color: var(--amber); border-color: #e9c56e; background: var(--amber-soft); }
-.confidence-pill.low { color: var(--slate); border-color: #d3d8e0; background: var(--slate-soft); }
-.evidence-timeline { margin: 20px 0 24px; }
-.evidence-timeline article { display: grid; grid-template-columns: 64px 18px 1fr; gap: 10px; min-height: 88px; }
-.evidence-timeline time { color: var(--muted); font: 11px "SFMono-Regular", monospace; padding-top: 2px; }
-.timeline-line { position: relative; }
-.timeline-line::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: -5px; width: 1px; background: var(--line); }
-.evidence-timeline article:last-child .timeline-line::before { display: none; }
-.timeline-line span { position: relative; display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--blue); margin-top: 3px; }
-.evidence-timeline article.anomaly .timeline-line span { background: var(--red); box-shadow: 0 0 0 4px var(--red-soft); }
-.evidence-timeline article.good .timeline-line span { background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
-.evidence-timeline article.unknown .timeline-line span { background: white; border: 1.5px dashed var(--slate); }
-.evidence-timeline b { font-size: 13px; } .evidence-timeline p { margin: 4px 0 7px; color: var(--muted); font-size: 12px; } .evidence-timeline code { color: var(--blue); }
-.b-bottom { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; padding-top: 20px; border-top: 1px solid var(--line); }
-.b-bottom section { padding: 16px; background: var(--soft); }
-.boundary-panel { border: 1px solid #f2cfca; background: var(--red-soft) !important; }
-.boundary-panel p { margin: 8px 0; color: #7a271a; font-size: 12px; line-height: 1.55; }
-.boundary-panel b { color: var(--red); font-size: 12px; }
-.b-summary { padding: 26px 22px; background: #fafbfc; }
-.b-summary h3 { margin: 7px 0 22px; font-size: 20px; }
-.b-summary dl { margin: 0; display: grid; gap: 0; }
-.b-summary dt { color: var(--muted); font-size: 11px; padding-top: 14px; border-top: 1px solid var(--line); }
-.b-summary dd { margin: 5px 0 14px; font-size: 13px; line-height: 1.5; }
-.b-summary button { width: 100%; margin-top: 20px; border: 1px solid var(--ink); padding: 10px; color: white; background: var(--ink); cursor: pointer; font: inherit; font-size: 13px; }
-.action-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.dispose { background: #fff; border: 1px solid var(--line); padding: 16px 20px; }
+.dispose button { border: 1px solid var(--ink); padding: 9px 22px; color: #fff; background: var(--ink); cursor: pointer; font: inherit; font-size: 13px; }
+.dispose button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.action-note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
 .action-echo { margin: 8px 0 0; padding: 9px 11px; color: #05603a; background: var(--green-soft); border: 1px solid #a9e0c4; font-size: 11.5px; line-height: 1.55; }
 
-/* C — WeCom collaboration first */
-.variant-c { display: grid; grid-template-columns: 390px minmax(0, 1fr); min-height: 680px; background: white; border: 1px solid var(--line); }
+.dev-fold { background: #fff; border: 1px solid var(--line); }
+.dev-fold > summary { cursor: pointer; padding: 14px 18px; font-size: 13px; font-weight: 700; display: flex; align-items: baseline; gap: 12px; }
+.dev-fold > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.fold-hint { color: var(--muted); font-weight: 400; font-size: 12px; }
+
+.parked-banner { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; background: var(--slate-soft); border: 1px dashed #cfd5df; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.parked-banner b { color: var(--slate); font-family: var(--mono); font-size: 11px; }
+.c-body { display: grid; grid-template-columns: 390px minmax(0, 1fr); min-height: 560px; background: #fff; border: 1px solid var(--line); }
 .chat-panel { background: #eef1f5; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
-.chat-head { padding: 18px 20px; background: white; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 11px; }
+.chat-head { padding: 18px 20px; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 11px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
 .chat-head div { display: grid; gap: 3px; } .chat-head small { color: var(--muted); }
 .messages { padding: 22px 18px; display: grid; gap: 14px; overflow: auto; align-content: start; }
 .msg { max-width: 84%; display: grid; gap: 4px; }
 .msg span { color: var(--muted); font-size: 10px; }
-.msg p { margin: 0; padding: 11px 13px; background: white; border: 1px solid #dfe3ea; font-size: 13px; line-height: 1.55; }
-.msg time { color: #98a2b3; font-size: 9px; font-family: "SFMono-Regular", monospace; }
+.msg p { margin: 0; padding: 11px 13px; background: #fff; border: 1px solid #dfe3ea; font-size: 13px; line-height: 1.55; }
+.msg time { color: #98a2b3; font-size: 9px; font-family: var(--mono); }
 .msg.user { justify-self: end; } .msg.user span, .msg.user time { text-align: right; }
 .msg.user p { background: #dce7ff; border-color: #c2d3ff; }
-.msg.result { max-width: 94%; } .msg.result p { background: white; border-left: 3px solid var(--blue); } .msg.result p + p { border-top: 0; }
+.msg.result { max-width: 94%; } .msg.result p { border-left: 3px solid var(--blue); }
 .msg.result.good p { border-left-color: var(--green); }
 .msg.result.warn p { border-left-color: var(--amber); }
-.attachment { justify-self: end; display: flex; gap: 9px; align-items: center; background: white; border: 1px solid var(--line); padding: 9px 11px; width: 210px; }
-.attachment > span { width: 34px; height: 34px; display: grid; place-items: center; color: var(--blue); background: var(--blue-soft); font: 10px "SFMono-Regular", monospace; }
+.attachment { justify-self: end; display: flex; gap: 9px; align-items: center; background: #fff; border: 1px solid var(--line); padding: 9px 11px; width: 210px; }
+.attachment > span { width: 34px; height: 34px; display: grid; place-items: center; color: var(--blue); background: var(--blue-soft); font: 10px var(--mono); }
 .attachment div { display: grid; gap: 3px; } .attachment b { font-size: 11px; } .attachment small { color: var(--muted); font-size: 9px; }
-.investigation-panel { padding: 28px 30px; }
-.investigation-head { display: flex; justify-content: space-between; gap: 20px; align-items: start; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.investigation-panel { padding: 26px 28px; min-width: 0; display: grid; gap: 18px; align-content: start; }
+.investigation-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .investigation-head h2 { margin: 7px 0 0; font-size: 22px; }
-.stage-grid { margin: 20px 0 24px; display: grid; gap: 9px; }
+.confidence-pill { border: 1px solid var(--line); padding: 7px 9px; font: 10px var(--mono); white-space: nowrap; }
+.confidence-pill.high { color: var(--green); border-color: #a9e0c4; background: var(--green-soft); }
+.confidence-pill.medium { color: var(--amber); border-color: #e9c56e; background: var(--amber-soft); }
+.confidence-pill.low { color: var(--slate); border-color: #d3d8e0; background: var(--slate-soft); }
+.stage-grid { display: grid; gap: 9px; }
 .stage-grid article { display: grid; grid-template-columns: 28px 1fr auto; gap: 13px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); }
-.stage-grid article > span { width: 25px; height: 25px; display: grid; place-items: center; color: white; background: var(--blue); font: 10px "SFMono-Regular", monospace; }
+.stage-grid article > span { width: 25px; height: 25px; display: grid; place-items: center; color: #fff; background: var(--blue); font: 10px var(--mono); }
 .stage-grid article.active { border-color: #e6c36b; background: #fffbf0; }
 .stage-grid article.active > span { background: var(--amber); }
 .stage-grid article.gap { border-style: dashed; background: var(--slate-soft); }
 .stage-grid article.gap > span { background: var(--slate); }
 .stage-grid b { font-size: 13px; } .stage-grid p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-.stage-grid small { color: var(--green); font: 10px "SFMono-Regular", monospace; }
+.stage-grid small { color: var(--green); font: 10px var(--mono); }
 .stage-grid article.active small { color: var(--amber); }
 .stage-grid article.gap small { color: var(--slate); }
-.c-result { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.c-result section { padding: 20px; border: 1px solid var(--line); background: var(--soft); }
-.c-result h3 { margin: 7px 0 8px; font-size: 17px; }
-.c-result p { color: var(--muted); font-size: 12px; line-height: 1.6; }
-.refs { display: flex; flex-wrap: wrap; gap: 6px; }
-.refs code { color: var(--blue); background: white; border: 1px solid #cbd6ff; padding: 5px 7px; }
-
-.prototype-switcher { position: fixed; z-index: 20; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; color: white; background: #111827; border: 1px solid #344054; border-radius: 999px; padding: 7px 9px; box-shadow: 0 12px 30px rgba(16, 24, 40, .28); }
-.prototype-switcher button { width: 30px; height: 30px; border: 0; border-radius: 50%; color: white; background: #273247; cursor: pointer; }
-.prototype-switcher span { min-width: 170px; text-align: center; font-size: 12px; }
-.prototype-switcher b { color: #a9baff; }
 
 @media (max-width: 1050px) {
-  .variant-b { grid-template-columns: 180px 1fr; } .b-summary { grid-column: 1 / -1; }
-  .variant-c { grid-template-columns: 340px 1fr; } .a-body { grid-template-columns: 1fr; }
+  .a-body { grid-template-columns: 1fr; }
+  .c-body { grid-template-columns: 340px 1fr; }
 }
 @media (max-width: 760px) {
-  .proto-page { padding: 16px 14px 82px; }
-  .proto-topbar, .a-status, .investigation-head { align-items: start; flex-direction: column; display: flex; }
-  .top-meta { flex-wrap: wrap; }
-  .summary-strip, .evidence-table, .c-result { grid-template-columns: 1fr; }
+  .proto-page { padding: 16px 14px 40px; }
+  .proto-topbar, .a-status, .investigation-head { align-items: flex-start; flex-direction: column; display: flex; }
+  .a-status { display: grid; grid-template-columns: 1fr; }
+  .confidence-block { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
+  .summary-strip { grid-template-columns: 1fr; }
   .summary-strip article { border-right: 0; border-bottom: 1px solid var(--line); }
-  .variant-b, .variant-c { display: block; } .b-rail { display: none; } .b-main { border: 0; }
-  .chat-panel { min-height: 560px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .c-body { display: block; }
+  .chat-panel { border-right: 0; border-bottom: 1px solid var(--line); min-height: 480px; }
   .timing-cells { gap: 18px; }
 }
 </style>

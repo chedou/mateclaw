@@ -9,6 +9,8 @@
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
 > 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 已改为 v4.1 / 蓝图 v0.11）
+>
+> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微 P3 暂缓）
 
 ## 0. 当前判断
 
@@ -63,8 +65,11 @@
 - [x] 原型补齐区分度：4 种结局 × 3 档路由可信、北极星三段耗时、成功样本对照、
       conclusionType 标记、可点的处置按钮、重复 `:key` 修复；另出不依赖 dev server 的
       静态镜像 `experience-prototype-demo.html`。
-- [ ] 用户选择最终信息结构：A 服务经理摘要 / B 开发证据台 / C 企微协同，或明确组合方式。
-      **选之前请在 4 种结局下各看一遍**——版式的成败在降级结局上，不在 happy path 上。
+- [x] **信息结构已选定**：集中兵力做**服务经理摘要 + 开发证据台**两个投影，业务摘要默认展开、
+      开发证据默认折叠；企微协同流随 P3 暂缓。开发证据的入口做成 `view=INLINE|SPLIT` 可切，
+      两者渲染同一份投影，入口选择不影响后端合同。
+- [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
+      / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
 
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（当前主攻）
 

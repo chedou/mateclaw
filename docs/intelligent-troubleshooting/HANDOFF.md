@@ -90,15 +90,20 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 
 开发环境路由只在 Vite dev 模式存在，不影响生产构建和真实 `/troubleshooting` 权限：
 
-- A 服务经理摘要：`http://127.0.0.1:5173/prototype/troubleshooting?variant=A`
-- B 开发证据台：`http://127.0.0.1:5173/prototype/troubleshooting?variant=B`
-- C 企微协同流：`http://127.0.0.1:5173/prototype/troubleshooting?variant=C`
+- 合并页（开发证据原地展开）：`.../prototype/troubleshooting?view=INLINE`
+- 分屏（业务/开发切换）：`.../prototype/troubleshooting?view=SPLIT`
+- 企微协同流（**P3 暂缓**）：`.../prototype/troubleshooting?view=WECOM`
 
 **不启服务也能演示**：`docs/intelligent-troubleshooting/experience-prototype-demo.html`
 （Vue 组件的静态镜像，双击即开；Vue 仍是实现权威，两者一并删除）。
 
-**原型现在变两个轴，这才是它的区分度所在**：
+**已选定（2026-07-28）**：集中兵力做**服务经理摘要 + 开发证据台**，业务摘要默认展开、
+开发证据默认折叠；企微协同流随 P3 暂缓，原型里保留结构但不再投入。
+两个投影的类型化合同见 `projection-contracts.md`。
 
+**原型的三个轴**：
+
+- `view` = 开发证据怎么进：`INLINE`（原地折叠展开）/ `SPLIT`（独立视图切换）——两者渲染同一份投影
 - `outcome` = 系统最终能说什么：`HYPOTHESIS` / `EXCLUDED` / `INSUFFICIENT` / `SOURCE_DOWN`
 - `authority` = 这条路径凭什么被选中：`EXPLICIT` / `RULE_MATCHED` / `MODEL_PROPOSED`（置信上限随之变化）
 
@@ -161,7 +166,8 @@ mvn -pl mateclaw-server -am \
 ## 9. 接手顺序
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
-2. 确认用户对 A/B/C 的选择；**先在 4 种结局下各看一遍**再定，未选择前不吸收正式页面。
+2. 信息结构**已选定**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见 `projection-contracts.md`；
+   P1 只固定合同不实现 Projection，正式页面吸收留到 P5。
 3. 顺序做 P1 T1→T5（含 T4.5 对照与时间戳）；合成模块共享文件，不建议并行 worktree。
 4. P1 eval 通过后，P2 真实 Guance 与 P3 企微可并行。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

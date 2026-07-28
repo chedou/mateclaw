@@ -130,6 +130,19 @@ details.fold summary:focus-visible{outline:2px solid var(--blue);outline-offset:
 .etable>div:last-child{border-right:0}
 .etable span{color:var(--muted);font-size:11px}.etable b{font-size:12px}
 
+/* panes + inline fold + parked banner */
+.panes{display:flex;border:1px solid var(--line);background:var(--surface);width:fit-content;margin-bottom:14px}
+.panes button{border:0;border-right:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:9px 18px;cursor:pointer}
+.panes button:last-child{border-right:0}
+.panes button.on{color:var(--ink);background:var(--raised);font-weight:650;box-shadow:inset 0 -2px 0 var(--blue)}
+.panes button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.axis button.parked{border-style:dashed}
+.devfold{margin-top:14px}
+.devfold>summary{display:flex;align-items:baseline;gap:12px}
+.foldhint{color:var(--muted);font-weight:400;font-size:12px}
+.parked{display:flex;align-items:baseline;gap:12px;padding:12px 16px;margin-bottom:14px;background:var(--slate-soft);border:1px dashed var(--slate-line);font-size:12.5px;line-height:1.6;color:var(--muted)}
+.parked b{color:var(--slate);font-family:var(--mono);font-size:11px}
+
 /* B */
 .vb{display:grid;grid-template-columns:210px minmax(480px,1fr) 280px;min-height:650px;background:var(--surface);border:1px solid var(--line)}
 .rail{padding:24px 20px;color:var(--rail-ink);background:var(--rail)}
@@ -254,7 +267,7 @@ details.fold summary:focus-visible{outline:2px solid var(--blue);outline-offset:
   </header>
 
   <nav class="axes" aria-label="演示状态切换">
-    <div class="axis"><span>版式</span><span id="axVariant"></span></div>
+    <div class="axis"><span>开发证据</span><span id="axView"></span></div>
     <div class="axis"><span>结局</span><span id="axOutcome"></span></div>
     <div class="axis"><span>路由可信</span><span id="axAuthority"></span></div>
     <p class="hint" id="hint"></p>
@@ -273,7 +286,7 @@ details.fold summary:focus-visible{outline:2px solid var(--blue);outline-offset:
 </div>
 
 <script>
-const VARIANTS=[{k:'A',n:'服务经理简报'},{k:'B',n:'开发证据台'},{k:'C',n:'企微协同流'}];
+const VIEWS=[{k:'INLINE',n:'原地展开'},{k:'SPLIT',n:'独立视图'},{k:'WECOM',n:'企微协同（P3 暂缓）',parked:1}];
 const OUTCOMES=[{k:'HYPOTHESIS',n:'根因假设'},{k:'EXCLUDED',n:'排除（非定位）'},{k:'INSUFFICIENT',n:'证据不足弃权'},{k:'SOURCE_DOWN',n:'证据源故障'}];
 const AUTHORITIES=[{k:'EXPLICIT',n:'错误码命中'},{k:'RULE_MATCHED',n:'规则命中场景'},{k:'MODEL_PROPOSED',n:'模型提议场景'}];
 const CLABEL={LOCATED:'已定位',EXCLUDED:'已排除',HYPOTHESIS:'根因假设',INSUFFICIENT_EVIDENCE:'证据不足'};
@@ -407,14 +420,14 @@ SOURCE_DOWN:{
    ['模型调用','NOT_CALLED','0 次'],['能力边界','FAIL_CLOSED','不静默降级为正常']]}
 };
 
-const state={variant:'A',outcome:'HYPOTHESIS',authority:'MODEL_PROPOSED'};
+const state={view:'INLINE',pane:'BUSINESS',outcome:'HYPOTHESIS',authority:'MODEL_PROPOSED'};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const conf=()=>{const b=S[state.outcome].base;if(b==='LOW')return'LOW';
   return (b==='HIGH'&&AUTH[state.authority].ceiling==='MEDIUM')?'MEDIUM':b;};
 
 function axis(id,items,key){
   document.getElementById(id).innerHTML=items.map(i=>
-    `<button type="button" data-k="${key}" data-v="${i.k}" class="${state[key]===i.k?'on':''}">${esc(i.n)}</button>`).join('');
+    `<button type="button" data-k="${key}" data-v="${i.k}" class="${state[key]===i.k?'on':''}${i.parked?' parked':''}">${esc(i.n)}</button>`).join('');
 }
 function timing(t){
   const cell=(l,v,r,p)=>`<div class="tcell${p?' pending':''}"><span>${l}</span><b>${v}</b><small>${r}</small></div>`;
@@ -489,7 +502,8 @@ function viewB(s){return `<section class="vb">
     <p class="anote">点击只推进领域状态，系统不执行任何生产变更。</p>
     <p class="aecho" id="actEcho" hidden></p></aside></section>`;}
 
-function viewC(s,a){return `<section class="vc">
+function viewC(s,a){return `<div class="parked"><b>P3 暂缓</b><span>企微入口是录音里的真实一线入口（F6），但当前集中兵力做服务经理与开发两个投影；本页只保留结构，不再投入。</span></div>
+  <section class="vc">
   <aside class="chat">
     <div class="chathead"><span class="dot"></span><div><b>数字化服务平台智能小助手</b><small>企业微信群 · 演示会话</small></div></div>
     <div class="msgs">
@@ -514,15 +528,22 @@ function viewC(s,a){return `<section class="vc">
         <span class="chip">${esc(s.draft.state)}</span></section>
     </div></main></section>`;}
 
+function panes(){
+  const b=(k,t)=>`<button type="button" data-k="pane" data-v="${k}" class="${state.pane===k?'on':''}">${t}</button>`;
+  return `<nav class="panes" aria-label="投影切换">${b('BUSINESS','业务摘要 · 服务经理')}${b('DEV','开发证据台')}</nav>`;
+}
 function render(){
   const s=S[state.outcome],a=AUTH[state.authority];
   document.getElementById('modeLabel').textContent=a.mode;
   const chip=document.getElementById('authChip');
   chip.textContent=state.authority; chip.className='auth '+state.authority;
   document.getElementById('hint').textContent=a.hint;
-  axis('axVariant',VARIANTS,'variant');axis('axOutcome',OUTCOMES,'outcome');axis('axAuthority',AUTHORITIES,'authority');
+  axis('axView',VIEWS,'view');axis('axOutcome',OUTCOMES,'outcome');axis('axAuthority',AUTHORITIES,'authority');
   document.getElementById('stage').innerHTML =
-    state.variant==='A'?viewA(s,a):state.variant==='B'?viewB(s):viewC(s,a);
+    state.view==='WECOM' ? viewC(s,a)
+    : state.view==='SPLIT'
+      ? panes() + (state.pane==='BUSINESS'?viewA(s,a):viewB(s))
+      : viewA(s,a) + `<details class="fold devfold"><summary>展开开发证据台 <span class="foldhint">${esc(s.dev)}</span></summary>${viewB(s)}</details>`;
   const btn=document.getElementById('actBtn');
   if(btn) btn.addEventListener('click',()=>{
     const echo=document.getElementById('actEcho');
