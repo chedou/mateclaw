@@ -1,6 +1,6 @@
 # IT 智能排障系统 · 架构 v4（MateClaw-only）
 
-> 状态：**现行设计，架构师评审通过（P1 实施门）· 当前修订 v4.2 / 蓝图 v0.12**
+> 状态：**现行设计，架构师评审通过（P1 实施门）· 当前修订 v4.1 / 蓝图 v0.11**
 >
 > 产品事实来源：`docs/intelligent-troubleshooting/recording-product-baseline.md`
 >
@@ -15,12 +15,6 @@
 > 3. §6 增加第 2.5 步**成功样本对照（negative control）**，§9.1 预算相应由 2 次取证改为 3 次；
 > 4. §4.2 / §5.8 / §5.9 标记 `PENDING-EVIDENCE`——未被真实失败检验过的设计分支也应标 fixtureMode；
 > 5. §9 声明为**红线的唯一权威清单**，其余文档只引用不复述。
->
-> **2026-07-28 v4.2 修订（源码复核后补）**：本设计此前把企微当成需要新建的入站通道，
-> 但 MateClaw **已经自带完整企微通道**（`vip.mate.channel.wecom`）。修正见新增 §7.4 与 **D17**：
-> 通道一律复用现有 `ChannelAdapter` / `CardKind` 接缝，**不新建第二条入站路径**。
-> 同时记录一个真实约束：`WeComCardRenderer` / `FeishuCardRenderer` 的签名都是
-> `render(ApprovalNotice)`——tool-guard 的形状，渲染不了诊断，出站需要先泛化该接缝。
 >
 > 2026-07-28 v0.8 增量：把 Loop Engineering 建模为有界调查内循环与知识改进外循环；
 > 多 Agent 只用于结构化反证和影子评测，不进入默认在线主链，也不取得裁决权。
@@ -593,8 +587,7 @@ P1 起就必须记录，fixture 样本同样记——否则真实数据到位时
 
 ### 7.1 入口优先级
 
-1. **企微群 @ 智能小助手**：实际一线入口，收集现象和受控附件，补问缺失信息。
-   **复用平台已有的 `vip.mate.channel.wecom.WeComChannelAdapter`，不新建入站通道**（§7.4、D17）；
+1. **企微群 @ 智能小助手**：实际一线入口，收集现象和受控附件，补问缺失信息；
 2. **Web 工作台**：查看开发证据、完成转派/结果登记/知识审核；
 3. **告警 / 工单接口**：结构化自动接入，复用同一个 Intake；
 4. 飞书等其他 Channel：复用同一投影，不另建业务逻辑。
@@ -612,58 +605,6 @@ P1 起就必须记录，fixture 样本同样记——否则真实数据到位时
 
 Intake 保存 `conversationRef + reporterRef`。关闭且 outcome 已登记后，Projection 生成业务摘要，由 Channel
 Adapter 原路回群并 @ 原报障人。身份无法映射到 workspace 主体时拒绝需要审计权力的操作。
-
-### 7.4 通道复用（v4.2 新增，源码复核后补）
-
-**事实**：MateClaw 已经自带完整的企微通道，本设计此前当它不存在。
-
-```
-vip.mate.channel.wecom.WeComChannelAdapter        supportsProactiveSend() = true
-                                                  usesInteractiveApprovalCards() = true
-vip.mate.channel.wecom.cards.WeComCardDispatcher  多 kind 注册表，不相交前缀
-vip.mate.channel.wecom.cards.WeComCardKind        record(name, messageType, taskIdPrefix,
-                                                         renderer, handler)
-vip.mate.channel.ChannelMessage                   chatId / senderId / senderName /
-                                                  replyToken / contentParts(附件)
-vip.mate.channel.ChannelSessionStore              conversationId ↔ (channelType, targetId)
-```
-
-排障域**已经在飞书上示范过正确做法**：注册一个 `ts.` 前缀的 card kind 进 `FeishuCardDispatcher`，
-与 tool-guard 的卡片靠不相交前缀隔离。企微照做即可。
-
-**因此定为 D17：通道一律复用现有 `ChannelAdapter` / `CardKind` 接缝，不新建第二条入站路径。**
-
-| 排障需要 | 平台现成的东西 | 落法 |
-|---|---|---|
-| 企微群 @ 入站 | `WeComChannelAdapter` + `ChannelMessageRouter` | 注册 `WeComCardKind`（`ts.` 前缀），**不自建 webhook/签名校验** |
-| `conversationRef` / `reporterRef` | `ChannelMessage.chatId / senderId`、`ChannelSessionStore` | 直接取，不新建会话表 |
-| 截图/视频受控引用 | `ChannelMessage.contentParts`、`channel/media` | 只存引用与元数据，视频不做内容理解 |
-| 补问（`AWAITING_INPUT`） | 通道会话本身 | `IntakeSession` 只记状态，往返靠通道；不塞进 `DiagnosisStateMachine` |
-| 闭环原路 @ 原报障人 | `proactiveSend(targetId, content, DeliveryOptions)` | 出站不需要新机制 |
-| 身份映射 | `auth.sso.ExternalIdentityEntity` | 与飞书 `CardOperatorResolver` 同一条 fail-closed 规则：未绑定即拒绝 |
-
-**一个必须先解决的真实约束——renderer 的形状。** 两个通道的渲染接缝签名都是：
-
-```java
-Map<String, Object> render(ApprovalNotice notice) throws CardOversizedException;  // WeComCardRenderer
-                     render(ApprovalNotice notice)                                // FeishuCardRenderer
-```
-
-这是 **tool-guard 的形状**，渲染不了诊断。而且语义相反：`ApprovalNotice` 的"批准"意味着**回放执行**
-被扣住的工具调用，排障的"确认"只推进状态机、执行 0 个工具（§9 红线 1–3）。
-**因此严禁把 `BusinessSummary` 硬塞进 `ApprovalNotice` 去复用现成 renderer**——那会让一次排障确认
-在通道层看起来像一次工具批准。
-
-正确顺序：
-
-1. **先泛化平台接缝**：把 card kind 的 renderer 参数化到 payload 类型
-   （`WeComCardKind<T>` / `FeishuCardKind<T>`，或为诊断新增一个并列的 renderer 接口），
-   保持 tool-guard 现有实现不变；这是一次**平台改动**，要单独评审，不能塞进排障域偷偷做。
-2. 再由排障域提供 `BusinessSummary → 卡片 payload` 的 renderer 实现。
-3. 在此之前，飞书侧那个**故意抛异常的 renderer 保持原样**——宁可让误接失败，也不送出误导性卡片。
-
-**入站可以先行**：入站只用到 handler，不受 renderer 形状影响，所以 P3 可以先打通
-「群里 @ → 补问 → 产出诊断 → Web 深链查看」，把出站卡片留到接缝泛化之后。
 
 ## 8. 状态机
 
@@ -755,8 +696,6 @@ Diagnosis，避免未成形的报障污染已有处置不变量。
 | `KnowledgeCandidate` + Outbox | 保留发布语义；另建审核状态，禁止复用 outbox status |
 | 新 Challenger 角色 | 通过当前 Java MateClaw 模型配置实现为 Adversarial Evaluation 内部 Adapter；不引入第二 Agent runtime，不向外暴露角色接口 |
 | 当前 Vue 工作台 | 正式功能不回退；先用只读 Prototype 验证新信息结构，再吸收胜出方案 |
-| `channel/wecom` + `channel/feishu` | **复用**：注册 `ts.` card kind，入站走现有 Adapter/Router；出站等 renderer 接缝泛化（§7.4） |
-| `ChannelSessionStore` / `ChannelMessage` | **复用**：conversationRef、reporterRef、附件引用都从这里取，不新建会话表 |
 
 迁移采用扩展再替换，不在一次变更中同时改路由、数据库、模型和前端。
 
@@ -835,15 +774,12 @@ Demo 不是证明后端已上线，只回答：
 6. **（v4.1）** 在这批样本上确定 §5.7 的**退出校准期阈值**（必需意图覆盖率、危险动作拦截率、
    高置信错误数为 0），并统计 §5.10 三段时间差；退出条件是数据达标，不是排期到点。
 
-### P3 · 接一线协同（**扩现有通道，不新建**）
+### P3 · 接一线协同
 
-1. 注册企微 `ts.` card kind 到 `WeComCardDispatcher`；入站走 `WeComChannelAdapter` +
-   `ChannelMessageRouter`，`conversationRef`/`reporterRef`/附件引用取自 `ChannelMessage`
-   与 `ChannelSessionStore`（§7.4）；
-2. `AWAITING_INPUT` 补问：状态记在 `IntakeSession`，往返靠通道会话，不进 `DiagnosisStateMachine`；
+1. 企微 @ 入站、`AWAITING_INPUT` 补问和附件引用；
+2. BusinessSummary 原路回复；
 3. Web 深链查看开发证据、结果登记和知识审核；
-4. **出站卡片（含关闭后原路 @ 报障人）前置依赖：先泛化 card renderer 接缝**（§7.4）。
-   在此之前出站走 `proactiveSend` 的纯文本业务摘要，不发交互卡片。
+4. 关闭后原路 @ 报障人。
 
 ### P4 · 扩场景 Playbook
 
@@ -884,12 +820,9 @@ Demo 不是证明后端已上线，只回答：
 | **D14** | 北极星以四个时间戳度量，三段差值分开统计（§5.10） |
 | **D15** | 证据合成必须取成功样本对照；对照缺失只降级不失败，且不得进入运行期晋升档（§6 第 2.5 步） |
 | **D16** | 未被真实失败检验过的设计分支标 `PENDING-EVIDENCE`，不得据以新增实现、接口或表结构（A13） |
-| **D17** | 通道一律复用平台现有 `ChannelAdapter` / `CardKind` 接缝，**不新建第二条入站路径**；诊断卡片不得复用 tool-guard 的 `ApprovalNotice` 形状，出站需先泛化 renderer 接缝（§7.4） |
 
 修改 D4、D5/D5′ 或 D9 必须单独 RFC 并由用户明确确认；不得通过实现细节悄悄扩大。
-D5′、D14、D15、D16 于 2026-07-28 经第一性原理评价提出并由用户认可；
-D17 于同日源码复核中补充（此前设计把企微当作需新建的通道，与平台现状不符），
-D5′、D14、D15、D16 的
+D5′、D14、D15、D16 于 2026-07-28 经第一性原理评价提出并由用户认可，
 论证见 `docs/intelligent-troubleshooting/architecture-critique-v4.md`。
 
 ## 14. 评审门

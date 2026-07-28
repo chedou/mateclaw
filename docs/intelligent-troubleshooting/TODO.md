@@ -7,6 +7,13 @@
 > 唯一现行架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
+>
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.2** / 蓝图 v0.12）
+>
+> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微 P3 暂缓）
+>
+> **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter` / `CardKind`，不新建入站——
+> 平台自带 `vip.mate.channel.wecom`，详见 v4 §7.4。
 
 ## 0. 当前判断
 
@@ -28,15 +35,10 @@
 
 ## 1. 每个变更都要守的红线
 
-1. 错误码 approved Playbook 命中路保持零 LLM。
-2. 所有自动化止于只读；生产写工具不注册，人工批准不触发执行。
-3. 原始日志、DQL、凭据不进入模型或 Diagnosis；先限量、脱敏、确定性压缩。
-4. 模型文本不是证据；引用必须来自本次服务端 EvidenceBundle。
-5. AI 产物只能是 candidate；没有资格校验、回放和人工审核不得 approved。
-6. Recorded Replay 必须持续显式标记，不能冒充真实 Guance 已验证。
-7. 只使用当前 Java MateClaw；不新增第二运行时或独立 Python orchestrator。
-8. Loop 的迭代、证据、模型、时长和上下文预算由服务端强制；到限必须 abstain / 转人工。
-9. 多 Agent 只提交结构化反证；共识、票数和 Judge 文本不是证据，也不能批准知识。
+**红线的唯一权威清单是 `rfcs/intelligent-troubleshooting-architecture-v4.md` §9。**
+本文不再复述条目——此前同一批约束在 v4 §1.2、v4 §9、HANDOFF 和本文各写了一遍，
+条数与措辞互不相同，"哪一份是权威"事实上已经不唯一（见 `architecture-critique-v4.md` §2.5）。
+动手前直接读 v4 §9；发现分歧以 v4 §9 为准，并在那里修改。
 
 ## 2. 已有底座，不要重复建设
 
@@ -61,7 +63,16 @@
 - [x] 完成架构师评审并关闭 8 个高优先级问题。
 - [x] 蓝图 v0.8 增加 Loop Engineering 与多 Agent 结构化反证；保持 P1 范围不变。
 - [x] A/B/C 三套 Demo 浏览器冒烟通过。
-- [ ] 用户选择最终信息结构：A 服务经理摘要 / B 开发证据台 / C 企微协同，或明确组合方式。
+- [x] 第一性原理评价 v4 并落修订：D5′ 晋升分档、北极星时间戳、成功样本对照、
+      PENDING-EVIDENCE 标记、红线收敛到 v4 §9（`architecture-critique-v4.md`）。
+- [x] 原型补齐区分度：4 种结局 × 3 档路由可信、北极星三段耗时、成功样本对照、
+      conclusionType 标记、可点的处置按钮、重复 `:key` 修复；另出不依赖 dev server 的
+      静态镜像 `experience-prototype-demo.html`。
+- [x] **信息结构已选定**：集中兵力做**服务经理摘要 + 开发证据台**两个投影，业务摘要默认展开、
+      开发证据默认折叠；企微协同流随 P3 暂缓。开发证据的入口做成 `view=INLINE|SPLIT` 可切，
+      两者渲染同一份投影，入口选择不影响后端合同。
+- [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
+      / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
 
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（当前主攻）
 
@@ -107,6 +118,26 @@
 
 完成标准：重复请求幂等；API/持久化往返不丢 fixture、引用和验证结果；任何接口都不能直升 approved。
 
+### T4.5 · 成功样本对照与北极星时间戳（v4.1 新增）
+
+来自第一性原理评价，用户已认可；论证见 `architecture-critique-v4.md` §2.3 / §2.4。
+
+- [ ] 合成流水线增加第 2.5 步 `contrast_sample`：同窗口同接口的**成功样本**对照。
+- [ ] `DeterministicLogTraceCompressor` 产出里带失败↔成功差异；模型看到的是差异，不是单条链路。
+- [ ] 对照取不到时**降级不失败**：草稿仍生成，标 `contrastAvailable=false`，
+      并按 v4 §5.7 一律走校准期档，不得进入运行期晋升。
+- [ ] 记录四个北极星时间戳：`reportedAt` / `readyAt`（IntakeSession）、
+      `conclusionAt` / `handoffAt`（Diagnosis）；abstain 也要写 `conclusionAt`。
+- [ ] 未发生的阶段保持 `null`，不得用 `0` 或当前时间填充。
+- [ ] 三段差值（补问成本 / 系统调查成本 / 人的采纳成本）分开统计，禁止只报总时长。
+
+完成标准：对照命中与缺失两条路径都有测试；fixture 样本也能算出三段差值，
+P2 拿到真实数据时有可比基线。
+
+**为什么值得在 P1 就做**：对照是把"我们有全量日志"这个差异化兑现成**确定性判据**的最短路径
+（"失败请求里 92% 有该特征、成功里 3% 有"不需要模型背书）；时间戳不在 P1 埋，
+P2 就无法回答"到底省了多少人的时间"——而那是北极星本身。
+
 ### T5 · P1 测试清单
 
 - [ ] `PlaybookDraftInducerTest`：成功、空响应、坏 JSON、provider 失败、prompt injection。
@@ -115,6 +146,8 @@
 - [ ] 扩展 `SopSynthesisServiceTest`：任一步失败不调用模型；成功只产 candidate。
 - [ ] 扩展 `SopSynthesisReplayTest`：正例 + 负例 + 固定 eval baseline。
 - [ ] Candidate 集成测试：generationKey 幂等、不可直升 approved、fixture 标记保留。
+- [ ] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
+      四个时间戳往返不丢，未发生阶段保持 `null`。
 
 ## 5. P2 · 接真实 Guance 和影子评估
 
@@ -140,23 +173,38 @@
 - [ ] 在同一批样本上影子运行 Evidence Challenger + Safety Challenger，各一次调用、固定一轮。
 - [ ] 与单 Agent/单次归纳基线比较引用完整率、弃权质量、危险动作拦截、p50/p95、token 和失败率。
 - [ ] 无可复现质量收益或成本不可接受时，停止在影子模式，不进入在线或晋升 Gate。
+- [ ] 在这批样本上确定 v4 §5.7 的**退出校准期阈值**（必需意图覆盖率、危险动作拦截率、
+      高置信错误数为 0），并统计 §5.10 三段时间差；退出条件是数据达标，不是排期到点。
 
 ## 6. P3 · 企业微信一线闭环
 
-### T9 · IntakeSession
+### T9 · IntakeSession（**扩平台现有企微通道，不新建入站**）
 
-- [ ] 企微群 @ 智能小助手入站，PAT/签名校验和 workspace 身份映射。
-- [ ] 保存 conversationRef、reporterRef、sourceMessageId、受控附件引用。
-- [ ] `RECEIVED → AWAITING_INPUT → READY`；缺客户 ID/系统/时间窗时原路补问。
+平台已自带 `vip.mate.channel.wecom.WeComChannelAdapter`（支持 proactiveSend 与交互卡片）
+和 `WeComCardDispatcher` 多 kind 注册表。排障域在飞书上已经示范过正确做法，企微照做。
+详见架构 v4 §7.4 / D17。
+
+- [ ] 注册 `WeComCardKind`（`ts.` 前缀，与 tool-guard 卡片前缀不相交）到 `WeComCardDispatcher`。
+      **不自建 webhook、不自建签名校验**——那是 Adapter 的职责。
+- [ ] `conversationRef` / `reporterRef` / `sourceMessageId` / 附件引用取自 `ChannelMessage`
+      （`chatId` / `senderId` / `messageId` / `contentParts`）与 `ChannelSessionStore`，不新建会话表。
+- [ ] `RECEIVED → AWAITING_INPUT → READY` 记在 `IntakeSession`；补问往返靠通道会话，
+      **不塞进 `DiagnosisStateMachine`**。
 - [ ] 视频只保存引用与元数据，当前不做内容理解。
 - [ ] sourceMessageId 幂等和版本检查，覆盖重复、乱序和并发补充消息。
+- [ ] 身份映射复用 `auth.sso.ExternalIdentityEntity`，未绑定即拒绝（同飞书 `CardOperatorResolver`）。
 
 ### T10 · 原路回复与关闭通知
 
 - [ ] 2 秒内回复“已收到/还缺什么”，完整调查异步返回。
 - [ ] 业务摘要来自 `BusinessSummary` 类型化投影，通道 Adapter 负责企微排版。
-- [ ] 关闭且 outcome 已登记后原路 @ 原报障人。
+- [ ] 关闭且 outcome 已登记后原路 @ 原报障人：用现成的
+      `ChannelAdapter.proactiveSend(targetId, content, DeliveryOptions)`，出站不需要新机制。
 - [ ] 未映射为可信 workspace 主体时，只允许报障/补充，不允许审核或推进受审计状态。
+- [ ] **出站交互卡片先不做**：`WeComCardRenderer` / `FeishuCardRenderer` 的签名都是
+      `render(ApprovalNotice)`（tool-guard 形状），且"批准=回放执行"与排障"确认=只推进状态"
+      语义相反。**严禁把 `BusinessSummary` 适配成 `ApprovalNotice`**——先泛化平台接缝（单独评审），
+      在此之前 IM 出站只发纯文本摘要。
 
 ## 7. P4 · 场景 Playbook 与开放探索
 
