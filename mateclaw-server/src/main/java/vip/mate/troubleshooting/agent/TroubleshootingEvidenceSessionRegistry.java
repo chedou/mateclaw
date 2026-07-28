@@ -83,7 +83,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
                 throw new IllegalStateException("troubleshooting evidence request limit reached");
             }
             state.requestCount++;
-            EvidenceResult collected = router.collect(request, state.incident);
+            EvidenceResult collected = router.collect(workspaceId, request, state.incident);
             if (collected == null) {
                 throw new IllegalStateException("evidence source returned no result");
             }

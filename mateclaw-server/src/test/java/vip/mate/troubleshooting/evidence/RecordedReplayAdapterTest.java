@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RecordedReplayAdapterTest {
 
+    private static final long WORKSPACE_ID = 1L;
     private static final Instant NOW = Instant.parse("2026-07-25T09:12:03Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
@@ -46,7 +47,8 @@ class RecordedReplayAdapterTest {
                 }
                 """);
 
-        EvidenceResult result = adapter.collect(request("EV-1"), incident("903001"));
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("903001"));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
         assertThat(result.observed())
@@ -63,7 +65,8 @@ class RecordedReplayAdapterTest {
                 {"version":1,"records":[]}
                 """);
 
-        EvidenceResult result = adapter.collect(request("EV-1"), incident("999999"));
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("999999"));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.source()).isEqualTo("recorded-replay:missing");
@@ -91,7 +94,8 @@ class RecordedReplayAdapterTest {
 
         for (String catalog : malformedCatalogs) {
             RecordedReplayAdapter adapter = adapter(catalog);
-            EvidenceResult result = adapter.collect(request("EV-1"), incident("903001"));
+            EvidenceResult result = adapter.collect(
+                    WORKSPACE_ID, request("EV-1"), incident("903001"));
 
             assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.DEGRADED);
             assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
@@ -129,6 +133,7 @@ class RecordedReplayAdapterTest {
                 """);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 request("EV-P6-2", "log_trace_bundle"),
                 incident("csdp-session-service", null));
 
@@ -168,6 +173,7 @@ class RecordedReplayAdapterTest {
                 Map.of("ps_id", "requested-ps"), "-15m", true);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 request,
                 incident("csdp-session-service", null));
 
@@ -192,13 +198,16 @@ class RecordedReplayAdapterTest {
         assertThat(adapter.supports("log_search")).isTrue();
         assertThat(adapter.supports("log_trace_bundle")).isTrue();
         assertThat(adapter.supports("contrast_sample")).isTrue();
-        assertThat(adapter.collect(request("EV-1"), incident("903001")).observed())
+        assertThat(adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("903001")).observed())
                 .containsEntry("count", 148);
         assertThat(adapter.collect(
+                WORKSPACE_ID,
                 request("SYNTH-LOG-SEARCH", "log_search"),
                 incident("csdp-session-service", null)).observed())
                 .containsEntry("ps_id", "synthetic-ps-message-send-001");
         assertThat(adapter.collect(
+                WORKSPACE_ID,
                 request("SYNTH-CONTRAST-SAMPLE", "contrast_sample"),
                 incident("csdp-session-service", null)).observed())
                 .containsEntry("failure_match_count", 92)
@@ -223,6 +232,7 @@ class RecordedReplayAdapterTest {
                 true);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 wrongKeyword,
                 incident("csdp-session-service", null));
 

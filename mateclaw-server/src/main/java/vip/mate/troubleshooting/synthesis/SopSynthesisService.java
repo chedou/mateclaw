@@ -136,6 +136,7 @@ public final class SopSynthesisService {
 
         IncidentContext incident = incident(request, occurredAt);
         EvidenceResult search = collect(
+                workspaceId,
                 new EvidenceRequest(
                         SEARCH_REQUEST_ID,
                         "log_search",
@@ -149,6 +150,7 @@ public final class SopSynthesisService {
         String psId = safePsId(search.observed().get("ps_id"));
 
         EvidenceResult trace = collect(
+                workspaceId,
                 new EvidenceRequest(
                         TRACE_REQUEST_ID,
                         "log_trace_bundle",
@@ -160,6 +162,7 @@ public final class SopSynthesisService {
                 "log_trace_bundle");
 
         EvidenceResult contrast = collectOptional(
+                workspaceId,
                 new EvidenceRequest(
                         CONTRAST_REQUEST_ID,
                         "contrast_sample",
@@ -334,11 +337,12 @@ public final class SopSynthesisService {
     }
 
     private EvidenceResult collect(
+            long workspaceId,
             EvidenceRequest request,
             IncidentContext incident,
             String stage) {
         EvidenceResult raw = evidenceRouter.collect(
-                request, incident, FIXTURE_ONLY_SOURCES);
+                workspaceId, request, incident, FIXTURE_ONLY_SOURCES);
         if (raw == null) {
             throw unavailable(stage + " returned no evidence");
         }
@@ -352,11 +356,12 @@ public final class SopSynthesisService {
     }
 
     private EvidenceResult collectOptional(
+            long workspaceId,
             EvidenceRequest request,
             IncidentContext incident) {
         try {
             EvidenceResult raw = evidenceRouter.collect(
-                    request, incident, FIXTURE_ONLY_SOURCES);
+                    workspaceId, request, incident, FIXTURE_ONLY_SOURCES);
             if (raw == null
                     || !request.requestId().equals(raw.queryId())
                     || raw.status() == EvidenceStatus.MISSING) {

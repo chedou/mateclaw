@@ -155,9 +155,14 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T6 · Workspace→观测资产授权
 
-- [ ] 设计 workspace/system/service 到 Guance 资产与 binding 的显式授权关系。
-- [ ] 未授权必须 fail closed，不能回退默认全局 API key/measurement。
-- [ ] 密钥只来自运行时配置，不进领域表、日志、prompt 或页面。
+- [x] 设计 workspace/system/service 到 Guance 资产与 binding 的显式授权关系。
+- [x] 未授权必须 fail closed，不能回退默认全局 API key/measurement。
+- [x] 密钥只来自运行时配置，不进领域表、日志、prompt 或页面。
+
+2026-07-29：`workspaceId` 已贯穿唯一 Evidence Router/Adapter 脊柱；Guance 只有命中唯一、精确的
+`asset-bindings[workspaceId,system,service].signal-bindings[signalKind]` 后才会读取运行时 API Key 并发请求。
+默认授权表为空，重复/缺失/大小写归一后歧义均在 transport 前返回 `MISSING`。这只完成授权机制，**不代表**
+任何真实资产、measurement、字段或阈值已经通过 T7。
 
 ### T7 · 内网核实
 

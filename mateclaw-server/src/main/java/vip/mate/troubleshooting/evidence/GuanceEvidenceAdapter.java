@@ -60,18 +60,27 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
 
     @Override
     public boolean supports(String signalKind) {
-        return configured()
-                && binding(signalKind) != null;
+        return hasAuthorizedBinding(signalKind);
     }
 
     @Override
-    public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }
-        EvidenceProperties.Binding binding = binding(request.signalKind());
-        if (!configured() || binding == null) {
-            return missing(request, "adapter disabled or binding missing");
+        EvidenceProperties.Binding binding = authorizedBinding(
+                workspaceId, incident.system(), incident.service(), request.signalKind());
+        if (binding == null) {
+            return missing(request, "workspace asset or signal binding is not authorized");
+        }
+        if (!baseConfigured()) {
+            return missing(request, "adapter disabled or base configuration missing");
         }
 
         try {
@@ -116,7 +125,12 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             return new EvidenceSourceHealth(
                     PLATFORM, EvidenceSourceHealth.Status.DISABLED, false, "adapter disabled");
         }
-        if (!configured()) {
+        if (!hasAnyAuthorizedBinding()) {
+            return new EvidenceSourceHealth(
+                    PLATFORM, EvidenceSourceHealth.Status.DEGRADED, false,
+                    "explicit workspace asset authorization missing or invalid");
+        }
+        if (!baseConfigured()) {
             return new EvidenceSourceHealth(
                     PLATFORM, EvidenceSourceHealth.Status.DEGRADED, false,
                     "base URL, API key, or bindings missing");
@@ -128,29 +142,97 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         }
         return new EvidenceSourceHealth(
                 PLATFORM, EvidenceSourceHealth.Status.DEGRADED, false,
-                "configured but not live-verified");
+                "authorized but not live-verified");
     }
 
-    private boolean configured() {
+    private boolean baseConfigured() {
         return config.isEnabled()
                 && present(config.getBaseUrl())
                 && present(config.getApiKey())
                 && config.getBindings() != null
-                && config.getBindings().entrySet().stream()
-                        .anyMatch(entry -> validBinding(entry.getKey(), entry.getValue()));
+                && !config.getBindings().isEmpty();
     }
 
-    private EvidenceProperties.Binding binding(String signalKind) {
-        if (signalKind == null || config.getBindings() == null) {
+    private boolean hasAnyAuthorizedBinding() {
+        return assetBindings().stream()
+                .filter(this::hasUniqueAssetScope)
+                .anyMatch(asset -> asset.getSignalBindings() != null
+                        && asset.getSignalBindings().keySet().stream()
+                                .anyMatch(signal -> bindingFor(asset, signal) != null));
+    }
+
+    private boolean hasAuthorizedBinding(String signalKind) {
+        if (!present(signalKind)) {
+            return false;
+        }
+        return assetBindings().stream()
+                .filter(this::hasUniqueAssetScope)
+                .anyMatch(asset -> bindingFor(asset, signalKind) != null);
+    }
+
+    private EvidenceProperties.Binding authorizedBinding(
+            long workspaceId,
+            String system,
+            String service,
+            String signalKind) {
+        List<EvidenceProperties.AssetBinding> matches = assetBindings().stream()
+                .filter(asset -> asset != null
+                        && asset.getWorkspaceId() == workspaceId
+                        && normalizeKey(asset.getSystem()).equals(normalizeKey(system))
+                        && normalizeKey(asset.getService()).equals(normalizeKey(service)))
+                .toList();
+        if (matches.size() != 1) {
             return null;
         }
-        String wanted = normalizeKey(signalKind);
-        return config.getBindings().entrySet().stream()
-                .filter(entry -> normalizeKey(entry.getKey()).equals(wanted))
-                .filter(entry -> validBinding(entry.getKey(), entry.getValue()))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElse(null);
+        return bindingFor(matches.getFirst(), signalKind);
+    }
+
+    private EvidenceProperties.Binding bindingFor(
+            EvidenceProperties.AssetBinding asset,
+            String signalKind) {
+        if (asset == null || !present(signalKind) || asset.getSignalBindings() == null) {
+            return null;
+        }
+        String wantedSignal = normalizeKey(signalKind);
+        List<Map.Entry<String, String>> signalEntries = asset.getSignalBindings().entrySet().stream()
+                .filter(entry -> normalizeKey(entry.getKey()).equals(wantedSignal))
+                .toList();
+        if (signalEntries.size() != 1
+                || !present(signalEntries.getFirst().getValue())
+                || config.getBindings() == null) {
+            return null;
+        }
+        String wantedBinding = normalizeKey(signalEntries.getFirst().getValue());
+        List<Map.Entry<String, EvidenceProperties.Binding>> bindingEntries =
+                config.getBindings().entrySet().stream()
+                .filter(entry -> normalizeKey(entry.getKey()).equals(wantedBinding))
+                .toList();
+        if (bindingEntries.size() != 1) {
+            return null;
+        }
+        EvidenceProperties.Binding binding = bindingEntries.getFirst().getValue();
+        return validBinding(signalKind, binding) ? binding : null;
+    }
+
+    private boolean hasUniqueAssetScope(EvidenceProperties.AssetBinding candidate) {
+        if (candidate == null
+                || candidate.getWorkspaceId() <= 0
+                || !present(candidate.getSystem())
+                || !present(candidate.getService())) {
+            return false;
+        }
+        long matches = assetBindings().stream()
+                .filter(asset -> asset != null
+                        && asset.getWorkspaceId() == candidate.getWorkspaceId()
+                        && normalizeKey(asset.getSystem()).equals(normalizeKey(candidate.getSystem()))
+                        && normalizeKey(asset.getService()).equals(normalizeKey(candidate.getService())))
+                .count();
+        return matches == 1;
+    }
+
+    private List<EvidenceProperties.AssetBinding> assetBindings() {
+        List<EvidenceProperties.AssetBinding> configured = config.getAssetBindings();
+        return configured == null ? List.of() : configured;
     }
 
     private boolean validBinding(String signalKind, EvidenceProperties.Binding binding) {

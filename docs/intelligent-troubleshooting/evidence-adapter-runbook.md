@@ -1,7 +1,8 @@
 # P3 证据源适配器运行说明
 
-> 状态（2026-07-27）：**工程链路已实现；P6 前置的 `log_search` / `log_trace_bundle`
-> 已具备 schema、路由、Guance 草案绑定与脱敏回放。所有观测云绑定仍未在内网核实。**
+> 状态（2026-07-29）：**工程链路与 T6 显式租户授权门已实现；P6 前置的
+> `log_search` / `log_trace_bundle` 已具备 schema、路由、Guance 草案绑定与脱敏回放。
+> 真实资产授权值及所有观测云绑定仍未由 owner 配置、内网核实。**
 > 因此 `fixtureMode` 仍为 `true`，默认数据源均关闭，不能把当前结果表述为“真实取证已验证”。
 
 ## 1. 已落地的链路
@@ -11,7 +12,7 @@
 ```text
 SopEntry.evidenceRequests（平台无关意图）
   → TroubleshootingIntakeService（仅补齐缺失请求）
-  → EvidenceSourceRouter（system + signalKind，主源/后备源）
+  → EvidenceSourceRouter（workspaceId + system + signalKind，主源/后备源）
   → GuanceEvidenceAdapter | RecordedReplayAdapter
   → EvidenceResult.observed（canonical 字段）
   → CriterionEvaluator（零 LLM）
@@ -36,6 +37,8 @@ route miss
 - 全部失败时返回 `EvidenceStatus.MISSING`；必需证据缺失会触发现有 abstain 逻辑，不输出恢复动作。
 - 取证默认强制 `https`；仅可信隔离测试网可显式允许 `http`。模板值使用保守字符白名单，阻止告警载荷拼成任意 DQL。
 - Guance 与 replay 共用代码内的 canonical schema；缺列、错类型、多 series 或无法判定最新时间点均按畸形响应降级。
+- Guance 在任何凭据读取或 HTTP 调用前，必须唯一命中
+  `workspaceId + system + service + signalKind → concrete binding`；缺失、重复或归一后歧义均返回 `MISSING`。
 - `log_search.target.search_term` 接受经场景映射后的安全错误码或关键词，同时匹配结构化
   `error_code` 和日志 `message`；不直接插入任意原始报障文本。
 - `log_trace_bundle` 只接受同一 PS ID 的单个 series，且返回 PS ID 必须与请求目标相等，再按时间升序归一。
@@ -53,7 +56,8 @@ route miss
   `guance → recorded-replay`；
 - `default-sources: []`：其他系统没有显式路由时不会猜数据源；
 - Guance 与 replay 都默认 `enabled=false`；
-- Guance 的五个查询模板是**未核实草案**，measurement、返回列和阈值都要经过 T2。
+- `guance.asset-bindings: []` 默认空；只配置开关、Base URL、API Key 和查询模板仍不能发起 Guance 请求；
+- Guance 的五个查询模板是**未核实草案**，measurement、返回列和阈值都要经过 T7。
 
 启用观测云前，在部署环境设置：
 
@@ -62,6 +66,22 @@ MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED=true
 MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL=https://<实际观测云地址>
 MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统注入>
 ```
+
+同时必须在部署侧的外部配置中登记精确授权（以下仅示意，binding 名仍需 T7 核实）：
+
+```yaml
+mateclaw.troubleshooting.evidence.guance:
+  asset-bindings:
+    - workspace-id: <MateClaw workspace id>
+      system: CSDP
+      service: <已登记服务名>
+      signal-bindings:
+        log_search: <已核实 concrete binding name>
+        log_trace_bundle: <已核实 concrete binding name>
+```
+
+不支持 wildcard、默认 workspace、默认 service 或默认 measurement。相同 scope/信号/binding 名在忽略大小写和
+首尾空格后出现歧义，也会 fail closed。授权关系可进外部运行配置；API Key 仍只能由密钥系统注入。
 
 默认拒绝通过明文 HTTP 发送 API Key。只有可信且隔离、确实没有 TLS 的测试网才可临时设置
 `MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`，生产环境不得开启。
@@ -132,7 +152,7 @@ Content-Type: application/json
 也不代表已生成/入库 SOP candidate**。随仓「会话消息发送失败」回放可用于验证这一阶段；
 回放记录同时精确绑定 `log_search.search_term` 和 `log_trace_bundle.ps_id`，其他安全关键词不会误命中该样本。
 预览路径还会在调用适配器前把允许源硬限为 `recorded-replay`；即使 Guance 开关被打开，该接口也不会跨 workspace 查真实日志。
-真实观测云结果仍必须通过 T2，且只能在 workspace→system/service→观测资产映射已建立后才能放开。
+真实观测云结果仍必须通过 T7，且只能在 workspace→system/service→观测资产映射已建立后才能放开。
 
 ## 5. 状态检查
 
@@ -145,13 +165,13 @@ GET /api/v1/troubleshooting/evidence/sources
 状态语义：
 
 - `DISABLED`：开关关闭；
-- `DEGRADED`：配置不完整、回放文件不可读，或观测云尚无一次合法响应；
+- `DEGRADED`：配置不完整、缺少有效资产授权、回放文件不可读，或观测云尚无一次合法响应；
 - `READY`：适配器可用或观测云至少返回过一次可归一响应；
 - `verified=false`：当前始终诚实保留。`READY` 只表示技术可达，不表示 measurement、字段和阈值已经业务核实。
 
 该接口不主动探测，不返回 Base URL、API Key 或 DQL 内容。
 
-## 6. T2 内网验收清单
+## 6. T7 内网验收清单
 
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。
 2. 用「会话消息发送失败」历史时间窗执行 `log_search → log_trace_bundle`，保存脱敏后的原始响应结构，
@@ -161,8 +181,9 @@ GET /api/v1/troubleshooting/evidence/sources
 5. 验证无数据、401/403、超时、5xx、超限、混合 PS ID 和响应结构变化都只生成 `MISSING`，
    HTTP 报障入口不返回 500。
 6. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。
-7. 建立 workspace→system/service→观测资产映射并在 adapter 调用前强制校验，不允许只依赖前端传值。
-8. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T2/T3 完成后才讨论关闭 `fixtureMode`。
+7. T6 强制校验机制已实现；为目标环境配置并由 owner 复核真实
+   workspace→system/service→观测资产/binding 值（默认授权表为空，不能只依赖前端传值）。
+8. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T7/T8 完成后才讨论关闭 `fixtureMode`。
 
 ## 7. 回归命令
 

@@ -17,6 +17,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -39,7 +41,7 @@ class TroubleshootingEvidenceToolTest {
         EvidenceResult collected = new EvidenceResult(
                 "agent-log-1", "L", "safe query", EvidenceStatus.ANOMALY,
                 "发现错误日志", Map.of("count", 12), "recorded-replay", Instant.now());
-        when(router.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(collected);
 
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -57,7 +59,7 @@ class TroubleshootingEvidenceToolTest {
             assertThat(session.snapshot().toolCollectedQueryIds()).containsExactly("agent-log-1");
         }
 
-        verify(router).collect(any(EvidenceRequest.class), any(IncidentContext.class));
+        verify(router).collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class));
     }
 
     @Test
@@ -71,7 +73,7 @@ class TroubleshootingEvidenceToolTest {
                 "token=supplied-secret", "supplied-secret");
         EvidenceResult collected = sensitiveEvidence(
                 "token=collected-secret", "collected-secret");
-        when(router.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(collected);
 
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -115,7 +117,7 @@ class TroubleshootingEvidenceToolTest {
             assertThat(refused.source()).isEqualTo("agent-tool:rejected");
         }
 
-        verify(router, never()).collect(any(), any());
+        verify(router, never()).collect(anyLong(), any(), any());
     }
 
     @Test
@@ -138,7 +140,7 @@ class TroubleshootingEvidenceToolTest {
             assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
         }
 
-        verify(router, never()).collect(any(), any());
+        verify(router, never()).collect(anyLong(), any(), any());
     }
 
     @Test
@@ -154,7 +156,7 @@ class TroubleshootingEvidenceToolTest {
         EvidenceResult second = new EvidenceResult(
                 "adapter-second", "L", "second query", EvidenceStatus.NORMAL,
                 "second result", Map.of("count", 0), "source-2", Instant.now());
-        when(router.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(first, second);
 
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -177,7 +179,7 @@ class TroubleshootingEvidenceToolTest {
                     .containsExactly("agent-log-1");
         }
 
-        verify(router, times(1)).collect(any(), any());
+        verify(router, times(1)).collect(eq(7L), any(), any());
     }
 
     @Test
@@ -193,7 +195,7 @@ class TroubleshootingEvidenceToolTest {
         EvidenceResult refused = objectMapper.readValue(json, EvidenceResult.class);
         assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(refused.source()).isEqualTo("agent-tool:rejected");
-        verify(router, never()).collect(any(), any());
+        verify(router, never()).collect(anyLong(), any(), any());
     }
 
     private TroubleshootingAgentProperties properties() {

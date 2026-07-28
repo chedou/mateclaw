@@ -22,9 +22,143 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GuanceEvidenceAdapterTest {
 
+    private static final long WORKSPACE_ID = 1L;
     private static final Instant NOW = Instant.parse("2026-07-25T09:12:03Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void refusesGlobalCredentialsWithoutAnExplicitWorkspaceAssetBinding() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setAssetBindings(List.of());
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+        assertThat(transport.calls.get()).isZero();
+        assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.DEGRADED);
+        assertThat(adapter.health().detail()).contains("authorization");
+    }
+
+    @Test
+    void doesNotReadTheCredentialBeforeExactAssetAuthorization() {
+        EvidenceProperties.Guance template = guanceConfig();
+        CredentialGuardedGuance config = new CredentialGuardedGuance();
+        config.setEnabled(true);
+        config.setBaseUrl("https://guance.example");
+        config.setBindings(template.getBindings());
+        config.setAssetBindings(List.of());
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        assertThat(adapter.supports("log_count")).isFalse();
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+        assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.DEGRADED);
+        assertThat(adapter.health().detail()).contains("authorization");
+    }
+
+    @Test
+    void resolvesAConcreteBindingOnlyForTheExactWorkspaceSystemServiceAndSignal() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "total", "trace"],
+                    "values": [[1753434723000, 148, "7f3a91c"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setBindings(Map.of(
+                "csdp-order-log-count", config.getBindings().get("log_count")));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID,
+                "CSDP",
+                "order-svc",
+                Map.of("log_count", "csdp-order-log-count"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsEntry("count", 148);
+        assertThat(transport.calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    void failsClosedBeforeTransportForEveryUnauthorizedAssetScope() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport, CLOCK);
+
+        List<EvidenceResult> results = List.of(
+                adapter.collect(2L, request("-15m"), incident()),
+                adapter.collect(WORKSPACE_ID, request("-15m"), incident("ERP", "order-svc")),
+                adapter.collect(WORKSPACE_ID, request("-15m"), incident("CSDP", "other-svc")),
+                adapter.collect(WORKSPACE_ID, new EvidenceRequest(
+                                "EV-2", "metric", "confirm", Map.of(), "-15m", true),
+                        incident()));
+
+        assertThat(results).allMatch(result -> result.status() == EvidenceStatus.MISSING);
+        assertThat(results).allMatch(result -> result.observed().isEmpty());
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
+    void failsClosedWhenNormalizedAssetBindingsAreAmbiguous() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setAssetBindings(List.of(
+                assetBinding(WORKSPACE_ID, "CSDP", "order-svc",
+                        Map.of("log_count", "log_count")),
+                assetBinding(WORKSPACE_ID, " csdp ", " ORDER-SVC ",
+                        Map.of("LOG_COUNT", "log_count"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
+    void failsClosedWhenSignalOrConcreteBindingNamesAreAmbiguous() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance ambiguousSignal = guanceConfig();
+        ambiguousSignal.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID,
+                "CSDP",
+                "order-svc",
+                Map.of("log_count", "log_count", " LOG_COUNT ", "log_count"))));
+
+        EvidenceProperties.Guance ambiguousBinding = guanceConfig();
+        EvidenceProperties.Binding binding = ambiguousBinding.getBindings().get("log_count");
+        ambiguousBinding.setBindings(Map.of(
+                "log_count", binding,
+                " LOG_COUNT ", binding));
+
+        EvidenceResult signalResult = new GuanceEvidenceAdapter(
+                ambiguousSignal, objectMapper, transport, CLOCK)
+                .collect(WORKSPACE_ID, request("-15m"), incident());
+        EvidenceResult bindingResult = new GuanceEvidenceAdapter(
+                ambiguousBinding, objectMapper, transport, CLOCK)
+                .collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(signalResult.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(bindingResult.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
 
     @Test
     void postsOfficialDqlShapeAndNormalizesTheLatestSeriesRow() throws Exception {
@@ -45,7 +179,7 @@ class GuanceEvidenceAdapterTest {
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
                 guanceConfig(), objectMapper, transport, CLOCK);
 
-        EvidenceResult result = adapter.collect(request("-15m"), incident());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
         assertThat(result.namespace()).isEqualTo("L");
@@ -104,7 +238,7 @@ class GuanceEvidenceAdapterTest {
                 "EV-P6-1", "log_search", "sample logs",
                 Map.of("search_term", "message_send_failed"), "-15m", true);
 
-        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incidentWithoutErrorCode());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
         assertThat(result.source()).isEqualTo("guance:log_search");
@@ -158,7 +292,7 @@ class GuanceEvidenceAdapterTest {
                 "EV-P6-2", "log_trace_bundle", "collect trace logs",
                 Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
 
-        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incidentWithoutErrorCode());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
         assertThat(result.source()).isEqualTo("guance:log_trace_bundle");
@@ -210,7 +344,7 @@ class GuanceEvidenceAdapterTest {
                 "EV-P6-2", "log_trace_bundle", "collect trace logs",
                 Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
 
-        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incidentWithoutErrorCode());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.observed()).isEmpty();
@@ -249,7 +383,7 @@ class GuanceEvidenceAdapterTest {
                 "EV-P6-2", "log_trace_bundle", "collect trace logs",
                 Map.of("ps_id", "synthetic-ps-001"), "-15m", true);
 
-        EvidenceResult result = adapter.collect(request, incidentWithoutErrorCode());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incidentWithoutErrorCode());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.observed()).isEmpty();
@@ -261,7 +395,7 @@ class GuanceEvidenceAdapterTest {
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
                 guanceConfig(), objectMapper, transport, CLOCK);
 
-        EvidenceResult result = adapter.collect(request("-15m"), incident());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.source()).isEqualTo("guance:unavailable");
@@ -274,7 +408,8 @@ class GuanceEvidenceAdapterTest {
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
                 guanceConfig(), objectMapper, transport, CLOCK);
 
-        EvidenceResult result = adapter.collect(request("-15m"), incident("order-svc' OR true"));
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("-15m"), incident("order-svc' OR true"));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(transport.calls.get()).isZero();
@@ -288,7 +423,7 @@ class GuanceEvidenceAdapterTest {
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
                 config, objectMapper, transport, CLOCK);
 
-        EvidenceResult result = adapter.collect(request("-15m"), incident());
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(transport.calls.get()).isZero();
@@ -296,7 +431,7 @@ class GuanceEvidenceAdapterTest {
         config.setAllowInsecureHttp(true);
         CapturingTransport explicitlyAllowed = new CapturingTransport(200, "{}");
         new GuanceEvidenceAdapter(config, objectMapper, explicitlyAllowed, CLOCK)
-                .collect(request("-15m"), incident());
+                .collect(WORKSPACE_ID, request("-15m"), incident());
         assertThat(explicitlyAllowed.calls.get()).isEqualTo(1);
     }
 
@@ -330,7 +465,7 @@ class GuanceEvidenceAdapterTest {
             GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
                     guanceConfig(), objectMapper, new CapturingTransport(200, response), CLOCK);
 
-            EvidenceResult result = adapter.collect(request("-15m"), incident());
+            EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
 
             assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
             assertThat(result.observed()).isEmpty();
@@ -362,6 +497,11 @@ class GuanceEvidenceAdapterTest {
                 "L::{{service}}:(count,trace) {error_code='{{error_code}}'} [{{window}}]");
         binding.setFieldAliases(Map.of("total", "count", "trace", "trace_id"));
         config.setBindings(Map.of("log_count", binding));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID,
+                "CSDP",
+                "order-svc",
+                Map.of("log_count", "log_count"))));
         return config;
     }
 
@@ -375,6 +515,11 @@ class GuanceEvidenceAdapterTest {
         config.setQueryPath("/api/v1/df/query_data_v1");
         config.setTimeout(Duration.ofSeconds(3));
         config.setBindings(Map.of(signalKind, binding));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID,
+                "CSDP",
+                "csdp-session-service",
+                Map.of(signalKind, signalKind))));
         return config;
     }
 
@@ -393,6 +538,19 @@ class GuanceEvidenceAdapterTest {
         return binding;
     }
 
+    private EvidenceProperties.AssetBinding assetBinding(
+            long workspaceId,
+            String system,
+            String service,
+            Map<String, String> signalBindings) {
+        EvidenceProperties.AssetBinding binding = new EvidenceProperties.AssetBinding();
+        binding.setWorkspaceId(workspaceId);
+        binding.setSystem(system);
+        binding.setService(service);
+        binding.setSignalBindings(signalBindings);
+        return binding;
+    }
+
     private EvidenceRequest request(String window) {
         return new EvidenceRequest(
                 "EV-1", "log_count", "confirm",
@@ -404,8 +562,12 @@ class GuanceEvidenceAdapterTest {
     }
 
     private IncidentContext incident(String service) {
+        return incident("CSDP", service);
+    }
+
+    private IncidentContext incident(String system, String service) {
         return new IncidentContext(
-                "inc-1", "CSDP", service, "903001", "订单创建超时",
+                "inc-1", system, service, "903001", "订单创建超时",
                 "P0", "订单创建成功率下降", "7f3a91c", NOW, "21:18",
                 "alert_webhook", IncidentCompleteness.STRUCTURED, "code=903001");
     }
@@ -443,6 +605,13 @@ class GuanceEvidenceAdapterTest {
             this.body = body;
             this.timeout = timeout;
             return new Response(statusCode, responseBody);
+        }
+    }
+
+    private static final class CredentialGuardedGuance extends EvidenceProperties.Guance {
+        @Override
+        public String getApiKey() {
+            throw new AssertionError("credential must not be read before asset authorization");
         }
     }
 }

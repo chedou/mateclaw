@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EvidenceSourceRouterTest {
 
+    private static final long WORKSPACE_ID = 1L;
     private static final Instant NOW = Instant.parse("2026-07-25T09:12:03Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
@@ -31,7 +32,8 @@ class EvidenceSourceRouterTest {
                 Map.of("CSDP", Map.of("log_count", List.of("primary", "fallback"))),
                 primary, fallback);
 
-        EvidenceResult collected = router.collect(request("EV-1", "log_count"), incident("CSDP"));
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "log_count"), incident("CSDP"));
 
         assertThat(collected.status()).isEqualTo(EvidenceStatus.NORMAL);
         assertThat(collected.source()).isEqualTo("fallback");
@@ -47,7 +49,8 @@ class EvidenceSourceRouterTest {
                 Map.of("csdp", Map.of("LOG_COUNT", List.of("PRIMARY", "fallback"))),
                 primary, fallback);
 
-        EvidenceResult collected = router.collect(request("EV-1", "log_count"), incident("CSDP"));
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "log_count"), incident("CSDP"));
 
         assertThat(collected.source()).isEqualTo("fallback");
         assertThat(primary.calls()).isEqualTo(1);
@@ -65,6 +68,7 @@ class EvidenceSourceRouterTest {
                 guance, replay);
 
         EvidenceResult collected = router.collect(
+                WORKSPACE_ID,
                 request("EV-1", "log_count"),
                 incident("CSDP"),
                 Set.of("recorded-replay"));
@@ -81,7 +85,8 @@ class EvidenceSourceRouterTest {
         EvidenceSourceRouter router = router(
                 Map.of("CSDP", Map.of("log_count", List.of("guance"))), unavailable);
 
-        EvidenceResult collected = router.collect(request("EV-1", "log_count"), incident("CSDP"));
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "log_count"), incident("CSDP"));
 
         assertThat(collected.queryId()).isEqualTo("EV-1");
         assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
@@ -94,7 +99,8 @@ class EvidenceSourceRouterTest {
         StubAdapter adapter = StubAdapter.returning("guance", result("EV-1", "guance"));
         EvidenceSourceRouter router = router(Map.of(), adapter);
 
-        EvidenceResult collected = router.collect(request("EV-1", "log_count"), incident("CSDP"));
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "log_count"), incident("CSDP"));
 
         assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(collected.source()).isEqualTo("router:unconfigured");
@@ -113,6 +119,19 @@ class EvidenceSourceRouterTest {
                 CLOCK))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("duplicate evidence platform");
+    }
+
+    @Test
+    void rejectsAnUnscopedWorkspaceBeforeInvokingAnyAdapter() {
+        StubAdapter adapter = StubAdapter.returning("guance", result("EV-1", "guance"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), adapter);
+
+        assertThatThrownBy(() -> router.collect(
+                0L, request("EV-1", "log_count"), incident("CSDP")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("workspaceId");
+        assertThat(adapter.calls()).isZero();
     }
 
     private EvidenceSourceRouter router(
@@ -183,7 +202,10 @@ class EvidenceSourceRouterTest {
         }
 
         @Override
-        public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
+        public EvidenceResult collect(
+                long workspaceId,
+                EvidenceRequest request,
+                IncidentContext incident) {
             calls.incrementAndGet();
             if (throwsOnCollect) {
                 throw new IllegalStateException("source is down");

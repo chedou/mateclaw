@@ -70,6 +70,9 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 903001 确定性错误码竖线，命中路零 LLM。
 - 受限 Agent miss-path：唯一只读证据工具、服务端会话、硬白名单、引用校验、abstain。
 - `EvidenceSourceRouter`，Guance 与 Recorded Replay 两个 Adapter，canonical schema 和脱敏。
+- **P2 T6 租户授权边界（2026-07-29）**：`workspaceId` 已贯穿 Intake、Agent 会话、SOP 合成、
+  Router 和 Adapter；Guance 必须由唯一的 `workspace/system/service + signalKind → concrete binding`
+  映射显式放行，映射缺失或歧义时在使用 API Key、发 HTTP 前 fail closed。默认 `asset-bindings=[]`。
 - 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
 - **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
   （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
@@ -109,7 +112,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ### 尚未完成
 
-- 真实 Guance measurement/字段/PS ID/阈值内网验证；`fixtureMode` 仍应为 true。
+- 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
+  `fixtureMode` 仍应为 true。
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
 - 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
@@ -236,7 +240,8 @@ mvn -pl mateclaw-server -am \
    `projection-contracts.md`；D14 已进 Diagnosis 1.5，投影也已能消费既有 canonical hop/对照；
    下一步是让真实在线取证稳定产出这些事实，而不是再造一套展示数据。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
-4. 下一主攻 P2 真实 Guance 授权、字段核实和 20–30 条影子样本；P3 企微仍可独立推进。
+4. P2 T6 授权机制已完成；下一主攻是由 owner 配置真实资产映射、完成 T7 字段核实，并建立
+   20–30 条 T8 影子样本。P3 企微仍可独立推进。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 
 ## 10. 不要做

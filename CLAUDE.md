@@ -6,8 +6,9 @@
 
 当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）和
 P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
-并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳。**
-下一主攻是 P2 真实 Guance 授权、字段核实与 20–30 条影子样本；同时补齐结构化影响、完整 hop 和成功样本对照。
+并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳；P2 T6 已完成
+workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制。**
+下一主攻是配置真实 Guance 资产映射、完成字段核实与 20–30 条影子样本；同时补齐结构化影响、完整 hop 和成功样本对照。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
@@ -18,8 +19,8 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的
 fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
-**注意：P4 开关默认关闭，专用 Agent 尚未按运行手册配置和实机演练；观测云 measurement/字段/阈值仍未完成
-内网 T2 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。**
+**注意：P4 开关默认关闭，专用 Agent 尚未按运行手册配置和实机演练；Guance `asset-bindings` 默认空，
+观测云 measurement/字段/阈值仍未完成内网 T7 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。**
 
 ## 接续这项工作，先读
 

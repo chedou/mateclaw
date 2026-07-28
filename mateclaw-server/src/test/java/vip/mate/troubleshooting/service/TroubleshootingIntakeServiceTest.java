@@ -230,7 +230,8 @@ class TroubleshootingIntakeServiceTest {
         SopEntry sop = sop();
         IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
-        when(evidenceRouter.collect(sop.evidenceRequests().getFirst(), incident))
+        when(evidenceRouter.collect(
+                WORKSPACE_ID, sop.evidenceRequests().getFirst(), incident))
                 .thenReturn(evidence());
         when(diagnosisService.diagnoseAndPersist(
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
@@ -240,7 +241,8 @@ class TroubleshootingIntakeServiceTest {
 
         collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
 
-        verify(evidenceRouter).collect(sop.evidenceRequests().getFirst(), incident);
+        verify(evidenceRouter).collect(
+                WORKSPACE_ID, sop.evidenceRequests().getFirst(), incident);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
                 eq(false), eq(true), eq(NOW), eq(NOW));

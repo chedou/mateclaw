@@ -48,8 +48,9 @@ class PlaybookSynthesisFlowTest {
                 inducer,
                 new PlaybookDraftValidator(),
                 store);
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
-                .thenAnswer(call -> evidence(call.<EvidenceRequest>getArgument(0).signalKind(), true));
+        when(router.collect(
+                anyLong(), any(), any(), eq(java.util.Set.of("recorded-replay"))))
+                .thenAnswer(call -> evidence(call.<EvidenceRequest>getArgument(1).signalKind(), true));
         when(store.saveOrGet(anyLong(), any())).thenAnswer(call -> {
             PlaybookKnowledgeRecord candidate = call.getArgument(1);
             PlaybookKnowledgeRecord existing = stored.get();
@@ -84,8 +85,9 @@ class PlaybookSynthesisFlowTest {
 
     @Test
     void contrastFailureDegradesButLocksCalibrationAndStillCreatesCandidate() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
-                .thenAnswer(call -> evidence(call.<EvidenceRequest>getArgument(0).signalKind(), false));
+        when(router.collect(
+                anyLong(), any(), any(), eq(java.util.Set.of("recorded-replay"))))
+                .thenAnswer(call -> evidence(call.<EvidenceRequest>getArgument(1).signalKind(), false));
         when(inducer.induce(any())).thenReturn(accepted(validProposal(false)));
 
         PlaybookSynthesisResult result = service.generate(1L, request());

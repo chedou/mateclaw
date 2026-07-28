@@ -91,7 +91,8 @@ class TroubleshootingAgentTriageServiceTest {
     @Test
     void persistsAnEvidenceCitedSuggestionThroughTheDomainStateMachine() {
         EvidenceResult evidence = evidence();
-        when(evidenceRouter.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(evidence);
         when(agentService.chatWithToolAllowlist(
                 eq(AGENT_ID), any(), any(), any(ChatOrigin.class),
@@ -170,7 +171,8 @@ class TroubleshootingAgentTriageServiceTest {
     @Test
     void forcesAbstentionWhenTheModelLeavesACoreConclusionBlank() {
         EvidenceResult evidence = evidence();
-        when(evidenceRouter.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(evidence);
         when(agentService.chatWithToolAllowlist(
                 eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any()))
@@ -198,7 +200,8 @@ class TroubleshootingAgentTriageServiceTest {
         EvidenceResult normal = new EvidenceResult(
                 "agent-log-1", "L", "safe query", EvidenceStatus.NORMAL,
                 "未发现异常", Map.of("count", 0), "recorded-replay", NOW);
-        when(evidenceRouter.collect(any(EvidenceRequest.class), any(IncidentContext.class)))
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), any(IncidentContext.class)))
                 .thenReturn(normal);
         when(agentService.chatWithToolAllowlist(
                 eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any()))

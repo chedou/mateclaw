@@ -71,7 +71,13 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
     }
 
     @Override
-    public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }

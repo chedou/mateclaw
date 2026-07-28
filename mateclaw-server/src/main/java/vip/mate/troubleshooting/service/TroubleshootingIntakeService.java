@@ -158,7 +158,7 @@ public class TroubleshootingIntakeService {
         Instant readyAt = clock.instant();
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
-                        sop, incident, evidence == null ? List.of() : evidence));
+                        workspaceId, sop, incident, evidence == null ? List.of() : evidence));
         return diagnosisService.diagnoseAndPersist(
                 workspaceId,
                 incident,
@@ -171,6 +171,7 @@ public class TroubleshootingIntakeService {
     }
 
     private List<EvidenceResult> collectMissingEvidence(
+            long workspaceId,
             SopEntry sop,
             IncidentContext incident,
             List<EvidenceResult> supplied) {
@@ -190,7 +191,7 @@ public class TroubleshootingIntakeService {
             if (current != null && current.status() != EvidenceStatus.MISSING) {
                 continue;
             }
-            EvidenceResult collected = evidenceRouter.collect(request, incident);
+            EvidenceResult collected = evidenceRouter.collect(workspaceId, request, incident);
             if (current == null || collected.status() != EvidenceStatus.MISSING) {
                 merged.put(request.requestId(), collected);
             }

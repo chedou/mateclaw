@@ -37,6 +37,26 @@ public class EvidenceProperties {
         private String queryPath = "/api/v1/df/query_data_v1";
         private Duration timeout = Duration.ofSeconds(5);
         private Map<String, Binding> bindings = new LinkedHashMap<>();
+
+        /**
+         * Exact tenant/resource authorizations. An API key and a binding alone
+         * never authorize a query.
+         */
+        private List<AssetBinding> assetBindings = List.of();
+    }
+
+    /**
+     * Maps one MateClaw workspace resource to explicitly named Guance bindings.
+     * System, service, and signal keys are exact after case/whitespace normalization;
+     * wildcards and default bindings are intentionally unsupported.
+     */
+    @Getter
+    @Setter
+    public static class AssetBinding {
+        private long workspaceId;
+        private String system;
+        private String service;
+        private Map<String, String> signalBindings = new LinkedHashMap<>();
     }
 
     @Getter

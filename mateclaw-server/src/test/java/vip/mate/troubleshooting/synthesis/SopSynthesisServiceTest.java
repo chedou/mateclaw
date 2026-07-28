@@ -19,6 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,7 +38,8 @@ class SopSynthesisServiceTest {
 
     @Test
     void preparesTheNoErrorCodeP6CaseForModelSynthesisWithoutCreatingACandidate() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(searchEvidence(), traceEvidence(), contrastEvidence());
 
         SopSynthesisPreview preview = service.preview(
@@ -67,7 +69,8 @@ class SopSynthesisServiceTest {
         ArgumentCaptor<EvidenceRequest> requests = ArgumentCaptor.forClass(EvidenceRequest.class);
         ArgumentCaptor<IncidentContext> incidents = ArgumentCaptor.forClass(IncidentContext.class);
         verify(router, times(3)).collect(
-                requests.capture(), incidents.capture(), eq(java.util.Set.of("recorded-replay")));
+                eq(1L), requests.capture(), incidents.capture(),
+                eq(java.util.Set.of("recorded-replay")));
         assertThat(requests.getAllValues())
                 .extracting(EvidenceRequest::signalKind)
                 .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
@@ -87,7 +90,8 @@ class SopSynthesisServiceTest {
 
     @Test
     void stopsBeforeTraceCollectionWhenLogSearchIsMissing() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(new EvidenceResult(
                 "SYNTH-LOG-SEARCH", "UNKNOWN", "", EvidenceStatus.MISSING,
                 "not found", Map.of(), "recorded-replay:missing", NOW));
@@ -97,7 +101,7 @@ class SopSynthesisServiceTest {
                 .hasMessageContaining("log_search");
 
         verify(router, times(1)).collect(
-                any(), any(), eq(java.util.Set.of("recorded-replay")));
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay")));
     }
 
     @Test
@@ -110,7 +114,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -123,7 +127,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -133,7 +137,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(403);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -146,7 +150,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(403);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -159,7 +163,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -173,7 +177,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -187,13 +191,14 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
     void failsClosedWhenTheTraceBundlePsIdDoesNotMatchTheSearchSample() {
         EvidenceResult mismatched = traceEvidence("other-ps-id");
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(searchEvidence(), mismatched);
 
         assertThatThrownBy(() -> service.preview(1L, request()))
@@ -203,7 +208,8 @@ class SopSynthesisServiceTest {
 
     @Test
     void missingContrastDegradesWithoutFailingThePreview() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(searchEvidence(), traceEvidence(), new EvidenceResult(
                         "SYNTH-CONTRAST-SAMPLE", "UNKNOWN", "", EvidenceStatus.MISSING,
                         "not found", Map.of(), "recorded-replay:missing", NOW));
