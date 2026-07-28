@@ -32,6 +32,10 @@
 - **v0.14**：图形不变，RFC 升级为 v4.3。校正企微普通 @ 消息的真实 Router pre-route
   入站接缝，完成 P3 T9 IntakeSession 首段的补问、幂等、乱序/并发、北极星时间戳、
   附件安全引用与诚实回复边界；异步调查、Web 深链和关闭通知继续标记未完成。
+- **v0.15**：图形与 RFC 架构语义不变；校准 P3 T10 前半段实现状态。READY 与持久化调查任务
+  同事务提交，租约 worker 复用既有只读调查链并以 Intake ID 幂等归属 Diagnosis；同一 Diagnosis 的
+  纯文本 BusinessSummary 与正式工作台深链经 workspace-aware local leader 返回，平台 ACK 后完成；
+  路由缓存可回源 DB，预算耗尽后持久恢复 Diagnosis/投递结果。关闭后通知和出站交互卡片继续标记未完成。
 
 v0.2–v0.6 中存在用户已经否定的其他项目材料，因此不作为当前 MateClaw-only 架构版本导入。
 原始下载文件仍留在用户 Downloads 中，不得把其中结论重新并入现行设计。

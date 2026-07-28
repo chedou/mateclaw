@@ -15,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
+import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
 
 import java.time.Instant;
@@ -37,6 +38,7 @@ class TroubleshootingIntakeSessionServiceTest {
 
     @Mock private TroubleshootingIntakeSessionMapper sessionMapper;
     @Mock private TroubleshootingIntakeMessageReceiptMapper receiptMapper;
+    @Mock private TroubleshootingIntakeInvestigationMapper investigationMapper;
 
     private ObjectMapper objectMapper;
     private TroubleshootingIntakeSessionService service;
@@ -49,13 +51,20 @@ class TroubleshootingIntakeSessionServiceTest {
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new Configuration(), ""),
                 TroubleshootingIntakeMessageReceiptEntity.class);
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new Configuration(), ""),
+                TroubleshootingIntakeInvestigationEntity.class);
     }
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         service = new TroubleshootingIntakeSessionService(
-                sessionMapper, receiptMapper, objectMapper, new IntakeSessionReducer());
+                sessionMapper,
+                receiptMapper,
+                investigationMapper,
+                objectMapper,
+                new IntakeSessionReducer());
     }
 
     @Test
@@ -77,6 +86,7 @@ class TroubleshootingIntakeSessionServiceTest {
         assertEquals(64, session.getValue().getActiveKey().length());
         assertEquals(session.getValue().getActiveKey(), session.getValue().getRoutingKey());
         assertFalse(session.getValue().getActiveKey().contains("group-1"));
+        assertEquals("wecom:99:group-1", session.getValue().getDeliveryConversationId());
         assertFalse(session.getValue().getAggregateJson().contains("super-secret"));
 
         ArgumentCaptor<TroubleshootingIntakeMessageReceiptEntity> receipt =
@@ -257,6 +267,8 @@ class TroubleshootingIntakeSessionServiceTest {
                 .thenReturn(1);
         when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
                 .thenReturn(1);
+        when(investigationMapper.insert(any(TroubleshootingIntakeInvestigationEntity.class)))
+                .thenReturn(1);
 
         IntakeDecision decision = service.accept(envelope(
                 "msg-complete",
@@ -268,6 +280,12 @@ class TroubleshootingIntakeSessionServiceTest {
                 ArgumentCaptor.forClass(TroubleshootingIntakeSessionEntity.class);
         verify(sessionMapper).insert(inserted.capture());
         assertEquals(null, inserted.getValue().getActiveKey());
+        ArgumentCaptor<TroubleshootingIntakeInvestigationEntity> investigation =
+                ArgumentCaptor.forClass(TroubleshootingIntakeInvestigationEntity.class);
+        verify(investigationMapper).insert(investigation.capture());
+        assertEquals(decision.intakeSessionId(), investigation.getValue().getIntakeSessionId());
+        assertEquals(IntakeInvestigationStatus.PENDING, investigation.getValue().getStatus());
+        assertEquals(0, investigation.getValue().getAttempts());
     }
 
     @Test
@@ -279,6 +297,8 @@ class TroubleshootingIntakeSessionServiceTest {
         when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
                 .thenReturn(1);
         when(sessionMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+        when(investigationMapper.insert(any(TroubleshootingIntakeInvestigationEntity.class)))
+                .thenReturn(1);
 
         service.accept(envelope(
                 "msg-2",
@@ -291,6 +311,68 @@ class TroubleshootingIntakeSessionServiceTest {
         verify(sessionMapper).update(isNull(), update.capture());
         assertTrue(update.getValue().getSqlSet().contains("active_key"));
         assertTrue(update.getValue().getParamNameValuePairs().containsValue(null));
+        verify(investigationMapper).insert(any(TroubleshootingIntakeInvestigationEntity.class));
+    }
+
+    @Test
+    void returnsTheTransportRouteSeparatelyFromTheBusinessConversationIdentity()
+            throws Exception {
+        IntakeSession ready = readyAt("intake-1", at(10, 5));
+        TroubleshootingIntakeSessionEntity entity = entity(ready, 3);
+        entity.setDeliveryConversationId("wecom:99:group-1");
+        when(sessionMapper.selectOne(any())).thenReturn(entity);
+
+        ReadyIntakeDispatch dispatch = service.getReadyDispatch(7L, "intake-1");
+
+        assertEquals("group-1", dispatch.session().conversationRef());
+        assertEquals("wecom:99:group-1", dispatch.deliveryConversationId());
+    }
+
+    @Test
+    void reconciliationBackfillsATaskForHistoricalReadySessions() throws Exception {
+        TroubleshootingIntakeSessionEntity ready = entity(
+                readyAt("intake-old", at(10, 5)), 3);
+        ready.setActiveKey(null);
+        when(sessionMapper.selectList(any())).thenReturn(List.of(ready));
+        when(investigationMapper.selectCount(any())).thenReturn(0L);
+        when(investigationMapper.insert(any(TroubleshootingIntakeInvestigationEntity.class)))
+                .thenReturn(1);
+
+        int created = service.reconcileReadyInvestigations();
+
+        assertEquals(1, created);
+        ArgumentCaptor<TroubleshootingIntakeInvestigationEntity> task =
+                ArgumentCaptor.forClass(TroubleshootingIntakeInvestigationEntity.class);
+        verify(investigationMapper).insert(task.capture());
+        assertEquals("intake-old", task.getValue().getIntakeSessionId());
+        assertEquals(0, task.getValue().getTerminalAttempts());
+    }
+
+    @Test
+    void reconciliationDoesNotDuplicateAnExistingTask() throws Exception {
+        TroubleshootingIntakeSessionEntity ready = entity(
+                readyAt("intake-old", at(10, 5)), 3);
+        ready.setActiveKey(null);
+        when(sessionMapper.selectList(any())).thenReturn(List.of(ready));
+        when(investigationMapper.selectCount(any())).thenReturn(1L);
+
+        assertEquals(0, service.reconcileReadyInvestigations());
+
+        verify(investigationMapper, never()).insert(
+                any(TroubleshootingIntakeInvestigationEntity.class));
+    }
+
+    @Test
+    void reconciliationTreatsAConcurrentUniqueWinnerAsSuccess() throws Exception {
+        TroubleshootingIntakeSessionEntity ready = entity(
+                readyAt("intake-old", at(10, 5)), 3);
+        ready.setActiveKey(null);
+        when(sessionMapper.selectList(any())).thenReturn(List.of(ready));
+        when(investigationMapper.selectCount(any())).thenReturn(0L);
+        when(investigationMapper.insert(any(TroubleshootingIntakeInvestigationEntity.class)))
+                .thenThrow(new DuplicateKeyException("another node inserted it"));
+
+        assertEquals(0, service.reconcileReadyInvestigations());
     }
 
     private IntakeSession readyAt(String sessionId, Instant messageAt) {
@@ -320,7 +402,15 @@ class TroubleshootingIntakeSessionServiceTest {
 
     private IntakeMessageEnvelope envelope(String messageId, String text, Instant at) {
         return new IntakeMessageEnvelope(
-                7L, "wecom", messageId, "group-1", "user-1", text, List.of(), at);
+                7L,
+                "wecom",
+                messageId,
+                "group-1",
+                "wecom:99:group-1",
+                "user-1",
+                text,
+                List.of(),
+                at);
     }
 
     private Instant at(int hour, int minute) {

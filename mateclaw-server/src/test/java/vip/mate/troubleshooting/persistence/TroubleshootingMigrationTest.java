@@ -196,6 +196,57 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V178CreatesLeaseBasedInvestigationQueueAndDiagnosisOwnership() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v178;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(connection, "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(connection, "db/migration/h2/V178__troubleshooting_intake_investigation.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains("mate_troubleshooting_intake_investigation"));
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_intake_investigation");
+            assertTrue(columns.contains("intake_session_id"));
+            assertTrue(columns.contains("diagnosis_id"));
+            assertTrue(columns.contains("lease_expires_at"));
+            assertTrue(columns.contains("next_attempt_at"));
+            assertTrue(columns(connection.getMetaData(), "mate_troubleshooting_diagnosis")
+                    .contains("source_intake_session_id"));
+            assertEquals(1, countIndexes(connection, "uk_ts_intake_investigation"));
+            assertEquals(1, countIndexes(connection, "uk_ts_diagnosis_intake"));
+        }
+    }
+
+    @Test
+    void h2V179SeparatesDeliveryRoutingAndPersistsTerminalRetryCount() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v179;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(connection, "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(connection, "db/migration/h2/V175__troubleshooting_intake_session.sql");
+            executeMigration(connection, "db/migration/h2/V176__troubleshooting_intake_reported_at.sql");
+            executeMigration(connection, "db/migration/h2/V177__troubleshooting_intake_reported_at_backfill.sql");
+            executeMigration(connection, "db/migration/h2/V178__troubleshooting_intake_investigation.sql");
+            executeMigration(connection, "db/migration/h2/V179__troubleshooting_intake_dispatch_reliability.sql");
+
+            Set<String> sessionColumns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_intake_session");
+            assertTrue(sessionColumns.contains("delivery_conversation_id"));
+            Set<String> taskColumns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_intake_investigation");
+            assertTrue(taskColumns.contains("terminal_attempts"));
+            assertFalse(isNullable(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_intake_investigation",
+                    "terminal_attempts"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

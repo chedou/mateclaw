@@ -9,10 +9,36 @@ public record IntakeMessageEnvelope(
         String source,
         String sourceMessageId,
         String conversationRef,
+        String deliveryConversationId,
         String reporterRef,
         String text,
         List<IntakeAttachmentRef> attachments,
         Instant receivedAt) {
+
+    /**
+     * Compatibility constructor for non-channel callers and persisted test
+     * fixtures that do not have a transport-specific delivery route.
+     */
+    public IntakeMessageEnvelope(
+            long workspaceId,
+            String source,
+            String sourceMessageId,
+            String conversationRef,
+            String reporterRef,
+            String text,
+            List<IntakeAttachmentRef> attachments,
+            Instant receivedAt) {
+        this(
+                workspaceId,
+                source,
+                sourceMessageId,
+                conversationRef,
+                null,
+                reporterRef,
+                text,
+                attachments,
+                receivedAt);
+    }
 
     public IntakeMessageEnvelope {
         if (workspaceId <= 0) {
@@ -21,6 +47,7 @@ public record IntakeMessageEnvelope(
         source = required(source, "source");
         sourceMessageId = required(sourceMessageId, "sourceMessageId");
         conversationRef = required(conversationRef, "conversationRef");
+        deliveryConversationId = optional(deliveryConversationId);
         reporterRef = required(reporterRef, "reporterRef");
         text = text == null ? "" : text.trim();
         attachments = attachments == null ? List.of() : List.copyOf(attachments);
@@ -37,5 +64,9 @@ public record IntakeMessageEnvelope(
             throw new IllegalArgumentException(field + " must not be blank");
         }
         return value.trim();
+    }
+
+    private static String optional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

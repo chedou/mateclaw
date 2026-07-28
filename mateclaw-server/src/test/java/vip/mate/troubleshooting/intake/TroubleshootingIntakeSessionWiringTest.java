@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
 import vip.mate.MateClawApplication;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
+import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +25,9 @@ class TroubleshootingIntakeSessionWiringTest {
             .withBean(
                     TroubleshootingIntakeMessageReceiptMapper.class,
                     () -> mock(TroubleshootingIntakeMessageReceiptMapper.class))
+            .withBean(
+                    TroubleshootingIntakeInvestigationMapper.class,
+                    () -> mock(TroubleshootingIntakeInvestigationMapper.class))
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
             .withBean(
                     PlatformTransactionManager.class,
@@ -43,6 +47,8 @@ class TroubleshootingIntakeSessionWiringTest {
         assertThat(TroubleshootingIntakeSessionMapper.class.getPackageName())
                 .endsWith(".repository");
         assertThat(TroubleshootingIntakeMessageReceiptMapper.class.getPackageName())
+                .endsWith(".repository");
+        assertThat(TroubleshootingIntakeInvestigationMapper.class.getPackageName())
                 .endsWith(".repository");
     }
 

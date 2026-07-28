@@ -105,6 +105,55 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
+    void intakeOwnershipIsDurableAndDoesNotShareTheFiveMinuteIncidentBucket() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+
+        StoredDiagnosis stored = service.createOrGetForIntake(
+                7L,
+                diagnosis(false),
+                "intake-7");
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertEquals("intake-7", entity.getValue().getSourceIntakeSessionId());
+        assertEquals(null, entity.getValue().getDedupKey());
+        assertTrue(stored.created());
+    }
+
+    @Test
+    void retryingTheSameIntakeReturnsItsExistingDiagnosis() throws Exception {
+        TroubleshootingDiagnosisEntity existing = persisted(diagnosis(false), 4);
+        existing.setSourceIntakeSessionId("intake-7");
+        when(diagnosisMapper.selectOne(any())).thenReturn(existing);
+
+        StoredDiagnosis stored = service.createOrGetForIntake(
+                7L,
+                diagnosis(false),
+                "intake-7");
+
+        assertEquals("diag-1", stored.diagnosis().diagnosisId());
+        assertEquals(4, stored.version());
+        assertFalse(stored.created());
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+    }
+
+    @Test
+    void findsPersistedDiagnosisByItsSourceIntakeWithoutRerunningInvestigation() throws Exception {
+        TroubleshootingDiagnosisEntity existing = persisted(diagnosis(false), 4);
+        existing.setSourceIntakeSessionId("intake-7");
+        when(diagnosisMapper.selectOne(any())).thenReturn(existing);
+
+        StoredDiagnosis stored = service.findByIntakeSessionId(7L, "intake-7").orElseThrow();
+
+        assertEquals("diag-1", stored.diagnosis().diagnosisId());
+        assertEquals(4, stored.version());
+        assertFalse(stored.created());
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+    }
+
+    @Test
     void duplicateReturnsPreviouslyPersistedAggregate() throws Exception {
         Diagnosis existing = diagnosis(
                 false,

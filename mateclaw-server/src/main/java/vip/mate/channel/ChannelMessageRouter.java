@@ -1717,10 +1717,8 @@ public class ChannelMessageRouter {
      */
     private String buildConversationId(ChannelMessage message, Long channelId) {
         String identifier = message.getChatId() != null ? message.getChatId() : message.getSenderId();
-        if (channelId == null) {
-            return message.getChannelType() + ":" + identifier;
-        }
-        return message.getChannelType() + ":" + channelId + ":" + identifier;
+        return ChannelSessionStore.conversationId(
+                message.getChannelType(), channelId, identifier);
     }
 
     /**

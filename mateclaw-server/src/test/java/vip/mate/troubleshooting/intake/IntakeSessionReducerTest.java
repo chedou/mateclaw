@@ -69,8 +69,8 @@ class IntakeSessionReducerTest {
         assertNull(ready.errorCode(), "an omitted error code must remain unknown");
         assertTrue(ready.missingFields().isEmpty());
         String prompt = IntakeDecision.from(ready, false, false).prompt();
-        assertTrue(prompt.contains("Intake 已保存"));
-        assertFalse(prompt.contains("已进入只读调查队列"));
+        assertTrue(prompt.contains("已进入异步只读调查队列"));
+        assertTrue(prompt.contains("不会执行任何生产变更"));
     }
 
     @Test

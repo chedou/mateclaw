@@ -8,6 +8,7 @@ import vip.mate.channel.ChannelAdapter;
 import vip.mate.channel.ChannelMessage;
 import vip.mate.channel.ChannelMessagePreRouteDeliveryException;
 import vip.mate.channel.ChannelMessagePreRouteHandler;
+import vip.mate.channel.ChannelSessionStore;
 import vip.mate.channel.model.ChannelEntity;
 
 import java.time.Instant;
@@ -78,6 +79,8 @@ public class WeComTroubleshootingIntakeHandler
             throw new IllegalArgumentException(
                     "WeCom troubleshooting intake lacks a reply target");
         }
+        String deliveryConversationId = ChannelSessionStore.conversationId(
+                message.getChannelType(), channelEntity.getId(), conversationRef);
         Instant receivedAt = message.getTimestamp() == null
                 ? Instant.now()
                 : message.getTimestamp().atZone(BUSINESS_ZONE).toInstant();
@@ -88,6 +91,7 @@ public class WeComTroubleshootingIntakeHandler
                 "wecom",
                 message.getMessageId(),
                 conversationRef,
+                deliveryConversationId,
                 message.getSenderId(),
                 message.getContent(),
                 attachments,

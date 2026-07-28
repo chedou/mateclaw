@@ -138,6 +138,34 @@ class WeComProcessStreamTest {
     }
 
     @Test
+    @DisplayName("proactive delivery fails fast when the WeCom connection is unavailable")
+    void proactiveDeliveryRejectsDisconnectedChannel() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+        Field ws = WeComChannelAdapter.class.getDeclaredField("webSocket");
+        ws.setAccessible(true);
+        ws.set(adapter, null);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> adapter.proactiveSend("alice", "调查完成"));
+
+        assertTrue(error.getMessage().contains("not connected"));
+    }
+
+    @Test
+    @DisplayName("proactive delivery propagates a rejected platform ACK")
+    void proactiveDeliveryPropagatesAckFailure() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+        adapter.nextAckFailure = new IllegalStateException("platform rejected message");
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> adapter.proactiveSend("alice", "调查完成"));
+
+        assertTrue(error.getMessage().contains("platform ACK"));
+    }
+
+    @Test
     @DisplayName("filter_tool_messages=false emits standalone tool trace messages")
     void toolTraceMessagesWhenUnfiltered() throws Exception {
         TestableAdapter adapter = newAdapter(
@@ -303,6 +331,7 @@ class WeComProcessStreamTest {
     /** Frame-capturing adapter with auto-ACK, mirroring ReplyStreamDedupTest. */
     static class TestableAdapter extends WeComChannelAdapter {
         final LinkedBlockingQueue<Map<String, Object>> sentFrames = new LinkedBlockingQueue<>();
+        volatile RuntimeException nextAckFailure;
         private static final ExecutorService AUTOACK = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "test-autoack-progress");
             t.setDaemon(true);
@@ -344,7 +373,15 @@ class WeComProcessStreamTest {
                 ConcurrentHashMap<String, CompletableFuture<Map<String, Object>>> pending =
                         (ConcurrentHashMap<String, CompletableFuture<Map<String, Object>>>) f.get(this);
                 CompletableFuture<Map<String, Object>> fut = pending.get(reqId);
-                if (fut != null) fut.complete(Map.of("errcode", 0));
+                if (fut != null) {
+                    RuntimeException failure = nextAckFailure;
+                    nextAckFailure = null;
+                    if (failure == null) {
+                        fut.complete(Map.of("errcode", 0));
+                    } else {
+                        fut.completeExceptionally(failure);
+                    }
+                }
             } catch (Exception ignored) {
             }
         }

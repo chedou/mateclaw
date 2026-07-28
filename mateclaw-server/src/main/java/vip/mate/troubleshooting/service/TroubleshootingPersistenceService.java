@@ -46,9 +46,48 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             Instant receivedAt) {
+        return createOrGet(workspaceId, diagnosis, receivedAt, null);
+    }
+
+    /**
+     * Creates exactly one Diagnosis for an IntakeSession.
+     *
+     * <p>The source Intake ID is a stronger idempotency boundary than the
+     * generic five-minute incident bucket. Two independently reported channel
+     * sessions must never collapse merely because their route and event time
+     * happen to match.</p>
+     */
+    @Transactional
+    public StoredDiagnosis createOrGetForIntake(
+            long workspaceId,
+            Diagnosis diagnosis,
+            String intakeSessionId) {
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return createOrGet(workspaceId, diagnosis, null, intakeSessionId.trim());
+    }
+
+    private StoredDiagnosis createOrGet(
+            long workspaceId,
+            Diagnosis diagnosis,
+            Instant receivedAt,
+            String intakeSessionId) {
         validateWorkspace(workspaceId);
-        Optional<String> dedupKey = IncidentDeduplicationKey.create(
-                diagnosis.incident(), diagnosis.rehearsal(), receivedAt);
+        if (diagnosis == null) {
+            throw new IllegalArgumentException("diagnosis must not be null");
+        }
+        if (intakeSessionId != null) {
+            TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
+                    workspaceId, intakeSessionId);
+            if (existing != null) {
+                return stored(existing, false);
+            }
+        }
+        Optional<String> dedupKey = intakeSessionId == null
+                ? IncidentDeduplicationKey.create(
+                        diagnosis.incident(), diagnosis.rehearsal(), receivedAt)
+                : Optional.empty();
         if (dedupKey.isPresent()) {
             TroubleshootingDiagnosisEntity existing = findByDedupKey(workspaceId, dedupKey.get());
             if (existing != null) {
@@ -56,11 +95,20 @@ public class TroubleshootingPersistenceService {
             }
         }
 
-        TroubleshootingDiagnosisEntity entity = entity(workspaceId, diagnosis, dedupKey.orElse(null));
+        TroubleshootingDiagnosisEntity entity = entity(
+                workspaceId, diagnosis, dedupKey.orElse(null), intakeSessionId);
         try {
             diagnosisMapper.insert(entity);
             return new StoredDiagnosis(diagnosis, 0, true);
         } catch (DuplicateKeyException collision) {
+            if (intakeSessionId != null) {
+                TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
+                        workspaceId, intakeSessionId);
+                if (existing != null) {
+                    return stored(existing, false);
+                }
+                throw collision;
+            }
             if (dedupKey.isEmpty()) {
                 throw collision;
             }
@@ -86,6 +134,22 @@ public class TroubleshootingPersistenceService {
                     "troubleshooting diagnosis not found: " + diagnosisId);
         }
         return stored(entity, false);
+    }
+
+    /**
+     * Finds the Diagnosis already owned by an IntakeSession without starting
+     * evidence collection or invoking the miss-path Agent again.
+     */
+    public Optional<StoredDiagnosis> findByIntakeSessionId(
+            long workspaceId,
+            String intakeSessionId) {
+        validateWorkspace(workspaceId);
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return Optional.ofNullable(findEntityByIntakeSessionId(
+                        workspaceId, intakeSessionId.trim()))
+                .map(entity -> stored(entity, false));
     }
 
     @Transactional
@@ -240,10 +304,23 @@ public class TroubleshootingPersistenceService {
                         .eq(TroubleshootingDiagnosisEntity::getDeleted, 0));
     }
 
+    private TroubleshootingDiagnosisEntity findEntityByIntakeSessionId(
+            long workspaceId,
+            String intakeSessionId) {
+        return diagnosisMapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingDiagnosisEntity>()
+                        .eq(TroubleshootingDiagnosisEntity::getWorkspaceId, workspaceId)
+                        .eq(
+                                TroubleshootingDiagnosisEntity::getSourceIntakeSessionId,
+                                intakeSessionId)
+                        .eq(TroubleshootingDiagnosisEntity::getDeleted, 0));
+    }
+
     private TroubleshootingDiagnosisEntity entity(
             long workspaceId,
             Diagnosis diagnosis,
-            String dedupKey) {
+            String dedupKey,
+            String intakeSessionId) {
         LocalDateTime now = utcNow();
         TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
         entity.setWorkspaceId(workspaceId);
@@ -254,6 +331,7 @@ public class TroubleshootingPersistenceService {
         entity.setErrorCode(diagnosis.incident().errorCode());
         entity.setService(diagnosis.incident().service());
         entity.setDedupKey(dedupKey);
+        entity.setSourceIntakeSessionId(intakeSessionId);
         entity.setRehearsal(diagnosis.rehearsal());
         entity.setStatus(diagnosis.status().name());
         entity.setContractVersion(diagnosis.contractVersion());

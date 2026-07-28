@@ -25,6 +25,9 @@ import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.intake.IntakeMessageEnvelope;
+import vip.mate.troubleshooting.intake.IntakeSession;
+import vip.mate.troubleshooting.intake.IntakeSessionReducer;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -107,6 +110,48 @@ class TroubleshootingIntakeServiceTest {
         verify(diagnosisService).diagnoseAndPersist(
                 WORKSPACE_ID, incident, sop, List.of(evidence()), false, true,
                 reportedAt, NOW);
+    }
+
+    @Test
+    void readyChannelIntakePreservesItsIdentityAndNorthStarBoundaries() {
+        Instant reportedAt = NOW.minusSeconds(30);
+        IntakeSession session = new IntakeSessionReducer().start(
+                "intake-7",
+                new IntakeMessageEnvelope(
+                        WORKSPACE_ID,
+                        "wecom",
+                        "msg-7",
+                        "wecom:99:group-1",
+                        "user-1",
+                        "现象: 会话消息发送失败\n系统: CSDP\n服务: csdp-wechat\n"
+                                + "客户ID: tenant-42\n发生时间: 2026-07-25 17:11:00\n"
+                                + "错误码: 903001",
+                        List.of(),
+                        reportedAt));
+        SopEntry sop = sop();
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 0, true);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersistForIntake(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any(), any()))
+                .thenReturn(stored);
+
+        StoredDiagnosis result = intake.report(session);
+
+        assertThat(result).isSameAs(stored);
+        ArgumentCaptor<IncidentContext> incident = ArgumentCaptor.forClass(IncidentContext.class);
+        verify(diagnosisService).diagnoseAndPersistForIntake(
+                eq(WORKSPACE_ID),
+                incident.capture(),
+                eq(sop),
+                eq(List.of()),
+                eq(false),
+                eq(true),
+                eq(reportedAt),
+                eq(reportedAt),
+                eq("intake-7"));
+        assertThat(incident.getValue().incidentId()).isEqualTo("incident-intake-7");
+        assertThat(incident.getValue().title()).isEqualTo("会话消息发送失败");
+        assertThat(incident.getValue().intakeSource()).isEqualTo("channel:wecom");
     }
 
     @Test

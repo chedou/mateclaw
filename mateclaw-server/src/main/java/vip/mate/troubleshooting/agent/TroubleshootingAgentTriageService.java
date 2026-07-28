@@ -122,6 +122,50 @@ public final class TroubleshootingAgentTriageService {
             String routeMissReason,
             Instant reportedAt,
             Instant readyAt) {
+        return triageInternal(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                rehearsal,
+                routeMissReason,
+                reportedAt,
+                readyAt,
+                null);
+    }
+
+    /** Runs the same caged miss path with IntakeSession as the idempotent owner. */
+    public StoredDiagnosis triageForIntake(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            boolean rehearsal,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId) {
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return triageInternal(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                rehearsal,
+                routeMissReason,
+                reportedAt,
+                readyAt,
+                intakeSessionId.trim());
+    }
+
+    private StoredDiagnosis triageInternal(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            boolean rehearsal,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId) {
         if (workspaceId <= 0 || incident == null) {
             throw new IllegalArgumentException("workspaceId and incident are required");
         }
@@ -236,7 +280,10 @@ public final class TroubleshootingAgentTriageService {
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
                 warnings);
         Diagnosis diagnosis = stateMachine.initializeAgentFallback(draft);
-        return persistence.createOrGet(workspaceId, diagnosis, reportedAt);
+        return intakeSessionId == null
+                ? persistence.createOrGet(workspaceId, diagnosis, reportedAt)
+                : persistence.createOrGetForIntake(
+                        workspaceId, diagnosis, intakeSessionId);
     }
 
     private AgentEntity requireSafeConfiguration(long workspaceId) {

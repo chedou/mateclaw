@@ -69,6 +69,7 @@ class WeComTroubleshootingIntakeHandlerTest {
                         && envelope.source().equals("wecom")
                         && envelope.sourceMessageId().equals("msg-1")
                         && envelope.conversationRef().equals("group-1")
+                        && envelope.deliveryConversationId().equals("wecom:99:group-1")
                         && envelope.reporterRef().equals("user-1")));
         verify(adapter).renderAndSend(org.mockito.ArgumentMatchers.eq("group-1"), contains("还需要"));
     }

@@ -29,9 +29,9 @@ public record IntakeDecision(
             boolean outOfOrder) {
         String prompt;
         if (session.status() == IntakeSessionStatus.READY) {
-            prompt = "资料已齐，Intake 已保存，等待接入只读调查。"
+            prompt = "资料已齐，已进入异步只读调查队列。"
                     + "\nIntake ID: " + session.intakeSessionId()
-                    + "\n当前尚未启动调查；MateClaw 不会执行任何生产变更。";
+                    + "\n调查结果或明确失败原因将原路返回；MateClaw 不会执行任何生产变更。";
         } else {
             String labels = session.missingFields().stream()
                     .map(field -> FIELD_LABELS.getOrDefault(field, field))

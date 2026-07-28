@@ -32,6 +32,9 @@ public class TroubleshootingDiagnosisEntity {
     @TableField(value = "dedup_key", updateStrategy = FieldStrategy.ALWAYS)
     private String dedupKey;
 
+    @TableField(value = "source_intake_session_id", updateStrategy = FieldStrategy.ALWAYS)
+    private String sourceIntakeSessionId;
+
     private Boolean rehearsal;
     private String status;
     private String contractVersion;

@@ -14,7 +14,7 @@
    一条证据脊柱、在线诊断/知识生产两个闭环、三类调查路径与实施顺序。
 3. [架构师评审 v4](./architecture-review-v4.md)
    评审结论、范围收敛、测试覆盖图、失败模式和资源预算。
-4. [架构蓝图 v0.12](./architecture-blueprint.html)
+4. [架构蓝图 v0.15](./architecture-blueprint.html)
    面向讨论和汇报的精简可视化版本，已嵌入架构图、流程图和泳道图。
    [历史版本](./versions/index.html)按版本完整保留，不再覆盖。
 5. [HANDOFF](./HANDOFF.md)
@@ -33,7 +33,7 @@
 - [总体架构图](./diagrams/mateclaw-troubleshooting-architecture.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-architecture.svg)
 - [端到端流程图](./diagrams/mateclaw-troubleshooting-flow.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-flow.svg)
 - [跨角色泳道图](./diagrams/mateclaw-troubleshooting-swimlane.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-swimlane.svg)
-- [架构蓝图版本库](./versions/index.html) · v0.7–v0.12 完整快照
+- [架构蓝图版本库](./versions/index.html) · v0.7–v0.15 完整快照
 
 ## 一句话架构
 
@@ -71,6 +71,11 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 - 旧 P0–P4 领域底座已经落地；v4 P0 产品/架构/体验校准已完成并通过架构师评审。
 - P1 无错误码竖线已完成：固定三次取证、成功样本对照、确定性压缩、一次结构化归纳、
   Validator、参考解法比较、幂等 candidate 与北极星时间戳。
+- 正式 `/troubleshooting` 已吸收服务经理摘要 + 开发证据台双投影，原工作台保留在
+  `/troubleshooting/legacy`；两者读取同一 Diagnosis，不维护第二份事实。
+- P3 已完成企微普通消息 pre-route、IntakeSession 补问、READY 持久化异步调查、Intake 归属幂等
+  Diagnosis、workspace-aware leader 路由恢复、平台 ACK、持久最终投递、纯文本 BusinessSummary 与正式
+  工作台深链；关闭且 outcome 已登记后的原路通知仍待完成。
 - Loop Engineering 与多 Agent 反证已进入现行目标设计，但 P1 不实现；P2 先做固定角色影子评测，
   P4 才为 SCENARIO / OPEN_DISCOVERY 引入领域 Loop Control。
 - P4 默认关闭，尚未完成专用 Agent 与唯一模型的实机演练。

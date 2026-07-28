@@ -11,6 +11,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
+import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,7 @@ public class TroubleshootingIntakeSessionService {
 
     private final TroubleshootingIntakeSessionMapper sessionMapper;
     private final TroubleshootingIntakeMessageReceiptMapper receiptMapper;
+    private final TroubleshootingIntakeInvestigationMapper investigationMapper;
     private final ObjectMapper objectMapper;
     private final IntakeSessionReducer reducer;
     private final TransactionTemplate transactionTemplate;
@@ -52,11 +54,13 @@ public class TroubleshootingIntakeSessionService {
     public TroubleshootingIntakeSessionService(
             TroubleshootingIntakeSessionMapper sessionMapper,
             TroubleshootingIntakeMessageReceiptMapper receiptMapper,
+            TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager) {
         this(
                 sessionMapper,
                 receiptMapper,
+                investigationMapper,
                 objectMapper,
                 new IntakeSessionReducer(),
                 new TransactionTemplate(transactionManager));
@@ -65,19 +69,22 @@ public class TroubleshootingIntakeSessionService {
     TroubleshootingIntakeSessionService(
             TroubleshootingIntakeSessionMapper sessionMapper,
             TroubleshootingIntakeMessageReceiptMapper receiptMapper,
+            TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
             IntakeSessionReducer reducer) {
-        this(sessionMapper, receiptMapper, objectMapper, reducer, null);
+        this(sessionMapper, receiptMapper, investigationMapper, objectMapper, reducer, null);
     }
 
     private TroubleshootingIntakeSessionService(
             TroubleshootingIntakeSessionMapper sessionMapper,
             TroubleshootingIntakeMessageReceiptMapper receiptMapper,
+            TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
             IntakeSessionReducer reducer,
             TransactionTemplate transactionTemplate) {
         this.sessionMapper = sessionMapper;
         this.receiptMapper = receiptMapper;
+        this.investigationMapper = investigationMapper;
         this.objectMapper = objectMapper;
         this.reducer = reducer;
         this.transactionTemplate = transactionTemplate;
@@ -105,6 +112,70 @@ public class TroubleshootingIntakeSessionService {
             // striped lock covers the actual database transaction boundary.
             lock.unlock();
         }
+    }
+
+    /** Loads the immutable READY hand-off snapshot for the background worker. */
+    public IntakeSession getReady(long workspaceId, String intakeSessionId) {
+        return getReadyDispatch(workspaceId, intakeSessionId).session();
+    }
+
+    /**
+     * Loads READY business state together with the separately persisted
+     * transport route. Keeping the two fields separate preserves the stable
+     * Intake routing key across upgrades and channel configuration changes.
+     */
+    public ReadyIntakeDispatch getReadyDispatch(
+            long workspaceId,
+            String intakeSessionId) {
+        TroubleshootingIntakeSessionEntity entity =
+                requiredSession(workspaceId, intakeSessionId);
+        IntakeSession session = read(entity);
+        if (session.status() != IntakeSessionStatus.READY) {
+            throw new MateClawException(
+                    "err.troubleshooting.intake_not_ready",
+                    409,
+                    "intake session is not READY: " + intakeSessionId);
+        }
+        return new ReadyIntakeDispatch(session, entity.getDeliveryConversationId());
+    }
+
+    /**
+     * Adds missing durable tasks for READY rows created before the dispatcher
+     * migration. The unique workspace/intake key is the cross-node winner;
+     * concurrent reconcilers therefore converge without duplicating work.
+     */
+    public int reconcileReadyInvestigations() {
+        java.util.List<TroubleshootingIntakeSessionEntity> readySessions =
+                sessionMapper.selectList(
+                        new LambdaQueryWrapper<TroubleshootingIntakeSessionEntity>()
+                                .eq(TroubleshootingIntakeSessionEntity::getStatus,
+                                        IntakeSessionStatus.READY.name())
+                                .eq(TroubleshootingIntakeSessionEntity::getDeleted, 0)
+                                .orderByAsc(TroubleshootingIntakeSessionEntity::getCreateTime));
+        int created = 0;
+        for (TroubleshootingIntakeSessionEntity ready : readySessions) {
+            Long existing = investigationMapper.selectCount(
+                    new LambdaQueryWrapper<TroubleshootingIntakeInvestigationEntity>()
+                            .eq(TroubleshootingIntakeInvestigationEntity::getWorkspaceId,
+                                    ready.getWorkspaceId())
+                            .eq(TroubleshootingIntakeInvestigationEntity::getIntakeSessionId,
+                                    ready.getIntakeSessionId())
+                            .eq(TroubleshootingIntakeInvestigationEntity::getDeleted, 0));
+            if (existing != null && existing > 0) {
+                continue;
+            }
+            IntakeSession session = read(ready);
+            if (session.status() != IntakeSessionStatus.READY) {
+                continue;
+            }
+            try {
+                enqueueInvestigation(session);
+                created++;
+            } catch (DuplicateKeyException concurrentWinner) {
+                // Another node inserted the same unique workspace/intake row.
+            }
+        }
+        return created;
     }
 
     private IntakeDecision acceptOnce(
@@ -177,14 +248,20 @@ public class TroubleshootingIntakeSessionService {
         if (next.equals(current)) {
             return IntakeDecision.from(current, false, false);
         }
-        update(entity, next);
+        update(entity, next, envelope.deliveryConversationId());
+        if (current.status() != IntakeSessionStatus.READY
+                && next.status() == IntakeSessionStatus.READY) {
+            enqueueInvestigation(next);
+        }
         return IntakeDecision.from(next, false, false);
     }
 
     private void insert(
             String routingKey,
-            IntakeSession session) {
-        TroubleshootingIntakeSessionEntity entity = entity(routingKey, session);
+            IntakeSession session,
+            String deliveryConversationId) {
+        TroubleshootingIntakeSessionEntity entity = entity(
+                routingKey, session, deliveryConversationId);
         sessionMapper.insert(entity);
     }
 
@@ -194,8 +271,32 @@ public class TroubleshootingIntakeSessionService {
         String sessionId = newSessionId();
         claimMessage(envelope, sessionId);
         IntakeSession created = reducer.start(sessionId, envelope);
-        insert(routingKey, created);
+        insert(routingKey, created, envelope.deliveryConversationId());
+        if (created.status() == IntakeSessionStatus.READY) {
+            enqueueInvestigation(created);
+        }
         return IntakeDecision.from(created, false, false);
+    }
+
+    private void enqueueInvestigation(IntakeSession session) {
+        LocalDateTime now = utcNow();
+        TroubleshootingIntakeInvestigationEntity task =
+                new TroubleshootingIntakeInvestigationEntity();
+        task.setWorkspaceId(session.workspaceId());
+        task.setIntakeSessionId(session.intakeSessionId());
+        task.setDiagnosisId(null);
+        task.setStatus(IntakeInvestigationStatus.PENDING);
+        task.setAttempts(0);
+        task.setTerminalAttempts(0);
+        task.setNextAttemptAt(now);
+        task.setClaimedBy(null);
+        task.setLeaseExpiresAt(null);
+        task.setLastError(null);
+        task.setCompletedAt(null);
+        task.setDeleted(0);
+        task.setCreateTime(now);
+        task.setUpdateTime(now);
+        investigationMapper.insert(task);
     }
 
     private void claimMessage(IntakeMessageEnvelope envelope, String sessionId) {
@@ -211,7 +312,10 @@ public class TroubleshootingIntakeSessionService {
         receiptMapper.insert(receipt);
     }
 
-    private void update(TroubleshootingIntakeSessionEntity current, IntakeSession next) {
+    private void update(
+            TroubleshootingIntakeSessionEntity current,
+            IntakeSession next,
+            String deliveryConversationId) {
         LocalDateTime now = utcNow();
         int changed = sessionMapper.update(
                 null,
@@ -231,6 +335,10 @@ public class TroubleshootingIntakeSessionService {
                                         : current.getActiveKey())
                         .set(TroubleshootingIntakeSessionEntity::getLastMessageAt,
                                 toLocal(next.lastMessageAt()))
+                        .set(current.getDeliveryConversationId() == null
+                                        && deliveryConversationId != null,
+                                TroubleshootingIntakeSessionEntity::getDeliveryConversationId,
+                                deliveryConversationId)
                         .set(TroubleshootingIntakeSessionEntity::getAggregateJson, json(next))
                         .set(TroubleshootingIntakeSessionEntity::getVersion,
                                 current.getVersion() + 1)
@@ -245,7 +353,8 @@ public class TroubleshootingIntakeSessionService {
 
     private TroubleshootingIntakeSessionEntity entity(
             String routingKey,
-            IntakeSession session) {
+            IntakeSession session,
+            String deliveryConversationId) {
         LocalDateTime now = utcNow();
         TroubleshootingIntakeSessionEntity entity = new TroubleshootingIntakeSessionEntity();
         entity.setWorkspaceId(session.workspaceId());
@@ -256,6 +365,7 @@ public class TroubleshootingIntakeSessionService {
         entity.setRoutingKey(routingKey);
         entity.setSource(session.source());
         entity.setConversationRef(session.conversationRef());
+        entity.setDeliveryConversationId(deliveryConversationId);
         entity.setReporterRef(session.reporterRef());
         entity.setStatus(session.status().name());
         entity.setReportedAt(toLocal(session.reportedAt()));

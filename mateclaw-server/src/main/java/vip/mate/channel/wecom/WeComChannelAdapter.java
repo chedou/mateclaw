@@ -1701,35 +1701,86 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
      * had to remember the group rule, and several didn't.
      */
     private void sendOutboundFrame(String chatId, Map<String, Object> bodyWithMsgtype) {
-        if (webSocket == null || chatId == null || chatId.isBlank()) return;
+        enqueueOutboundFrame(chatId, bodyWithMsgtype)
+                .whenComplete((ack, error) -> {
+                    if (error != null) {
+                        Throwable cause = error instanceof CompletionException
+                                && error.getCause() != null
+                                ? error.getCause()
+                                : error;
+                        log.error("[wecom] Failed to send outbound frame to {}: {}",
+                                chatId, cause.getMessage(), cause);
+                    }
+                });
+    }
+
+    /**
+     * Queues one proactive frame and exposes its real platform ACK.
+     *
+     * <p>Most legacy callers remain fire-and-forget through
+     * {@link #sendOutboundFrame(String, Map)}. Durable domain dispatchers call
+     * {@link #awaitOutboundAck(String, Map)} so a disconnected transport,
+     * rejected ACK or timeout is returned to their lease/retry state machine
+     * instead of being mistaken for a delivered notification.</p>
+     */
+    private CompletableFuture<Map<String, Object>> enqueueOutboundFrame(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype) {
+        if (webSocket == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("WeCom channel not connected"));
+        }
+        if (chatId == null || chatId.isBlank()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("WeCom proactive target is required"));
+        }
+        if (bodyWithMsgtype == null || bodyWithMsgtype.isEmpty()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("WeCom proactive body is required"));
+        }
+        String groupReplyReqId = pickGroupReplyReqId(chatId);
+        if (groupReplyReqId != null) {
+            // Group chat — ride aibot_respond_msg with the cached reqId.
+            // The body for respond_msg does NOT include "chatid" — the
+            // server infers the target from the original frame's reqId.
+            Map<String, Object> frame = Map.of(
+                    "cmd", CMD_RESPONSE,
+                    "headers", Map.of("req_id", groupReplyReqId),
+                    "body", bodyWithMsgtype
+            );
+            log.debug("[wecom] Group send via aibot_respond_msg: chatId={}, reqId={}",
+                    chatId, groupReplyReqId);
+            return sendFrameWithAck(groupReplyReqId, frame);
+        }
+
+        // Single chat — aibot_send_msg accepts a chatid field.
+        Map<String, Object> withChatId = new LinkedHashMap<>(bodyWithMsgtype);
+        withChatId.put("chatid", chatId);
+        String reqId = generateReqId(CMD_SEND_MSG);
+        Map<String, Object> frame = Map.of(
+                "cmd", CMD_SEND_MSG,
+                "headers", Map.of("req_id", reqId),
+                "body", withChatId
+        );
+        return sendFrameWithAck(reqId, frame);
+    }
+
+    private void awaitOutboundAck(String chatId, Map<String, Object> bodyWithMsgtype) {
         try {
-            String groupReplyReqId = pickGroupReplyReqId(chatId);
-            if (groupReplyReqId != null) {
-                // Group chat — ride aibot_respond_msg with the cached reqId.
-                // The body for respond_msg does NOT include "chatid" — the
-                // server infers the target from the original frame's reqId.
-                Map<String, Object> frame = Map.of(
-                        "cmd", CMD_RESPONSE,
-                        "headers", Map.of("req_id", groupReplyReqId),
-                        "body", bodyWithMsgtype
-                );
-                sendFrameWithAck(groupReplyReqId, frame);
-                log.debug("[wecom] Group send via aibot_respond_msg: chatId={}, reqId={}",
-                        chatId, groupReplyReqId);
-            } else {
-                // Single chat — aibot_send_msg accepts a chatid field.
-                Map<String, Object> withChatId = new LinkedHashMap<>(bodyWithMsgtype);
-                withChatId.put("chatid", chatId);
-                String reqId = generateReqId(CMD_SEND_MSG);
-                Map<String, Object> frame = Map.of(
-                        "cmd", CMD_SEND_MSG,
-                        "headers", Map.of("req_id", reqId),
-                        "body", withChatId
-                );
-                sendFrameWithAck(reqId, frame);
-            }
-        } catch (Exception e) {
-            log.error("[wecom] Failed to send outbound frame to {}: {}", chatId, e.getMessage(), e);
+            enqueueOutboundFrame(chatId, bodyWithMsgtype)
+                    .get(REPLY_ACK_TIMEOUT_MS + 1_000, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "WeCom proactive delivery interrupted before platform ACK", error);
+        } catch (ExecutionException | TimeoutException error) {
+            Throwable cause = error instanceof ExecutionException && error.getCause() != null
+                    ? error.getCause()
+                    : error;
+            throw new IllegalStateException(
+                    "WeCom proactive delivery failed before platform ACK: "
+                            + cause.getMessage(),
+                    cause);
         }
     }
 
@@ -3430,7 +3481,14 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
 
     @Override
     public void proactiveSend(String targetId, String content) {
-        sendMessageToChat(targetId, content);
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("WeCom proactive content is required");
+        }
+        Map<String, Object> textBody = Map.of(
+                "msgtype", "markdown",
+                "markdown", Map.of("content", content)
+        );
+        awaitOutboundAck(targetId, textBody);
     }
 
     @Override

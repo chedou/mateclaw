@@ -13,7 +13,10 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.intake.IntakeSession;
+import vip.mate.troubleshooting.intake.IntakeSessionStatus;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -125,6 +128,54 @@ public class TroubleshootingIntakeService {
             List<EvidenceResult> evidence,
             boolean rehearsal,
             Instant reportedAt) {
+        return reportInternal(
+                workspaceId,
+                incident,
+                evidence,
+                rehearsal,
+                reportedAt,
+                null,
+                null);
+    }
+
+    /** Starts investigation from a complete, durably persisted channel intake. */
+    public StoredDiagnosis report(IntakeSession session) {
+        if (session == null || session.status() != IntakeSessionStatus.READY
+                || session.readyAt() == null) {
+            throw badRequest("READY intake session is required");
+        }
+        IncidentContext incident = new IncidentContext(
+                "incident-" + session.intakeSessionId(),
+                session.system(),
+                session.service(),
+                session.errorCode(),
+                session.symptom(),
+                "P2",
+                IncidentImpact.unknown("客户/影响对象: " + session.customerRef()),
+                session.traceId(),
+                session.occurredAt(),
+                null,
+                "channel:" + session.source(),
+                IncidentCompleteness.STRUCTURED,
+                session.symptom());
+        return reportInternal(
+                session.workspaceId(),
+                incident,
+                List.of(),
+                false,
+                session.reportedAt(),
+                session.readyAt(),
+                session.intakeSessionId());
+    }
+
+    private StoredDiagnosis reportInternal(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            Instant reportedAt,
+            Instant intakeReadyAt,
+            String intakeSessionId) {
         if (incident == null) {
             throw badRequest("incident is required");
         }
@@ -141,7 +192,8 @@ public class TroubleshootingIntakeService {
                     rehearsal,
                     routeMissReason,
                     reportedAt,
-                    clock.instant());
+                    intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                    intakeSessionId);
         }
 
         SopEntry sop = sopPersistence.find(
@@ -155,17 +207,29 @@ public class TroubleshootingIntakeService {
                     "no SOP registered for " + sanitizedIncident.system()
                             + ":" + sanitizedIncident.errorCode(),
                     reportedAt,
-                    clock.instant());
+                    intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                    intakeSessionId);
         }
 
-        Instant readyAt = clock.instant();
+        Instant readyAt = intakeReadyAt == null ? clock.instant() : intakeReadyAt;
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
                         workspaceId,
                         sop,
                         sanitizedIncident,
                         evidence == null ? List.of() : evidence));
-        return diagnosisService.diagnoseAndPersist(
+        if (intakeSessionId == null) {
+            return diagnosisService.diagnoseAndPersist(
+                    workspaceId,
+                    sanitizedIncident,
+                    sop,
+                    collectedEvidence,
+                    rehearsal,
+                    TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                    reportedAt,
+                    readyAt);
+        }
+        return diagnosisService.diagnoseAndPersistForIntake(
                 workspaceId,
                 sanitizedIncident,
                 sop,
@@ -173,7 +237,8 @@ public class TroubleshootingIntakeService {
                 rehearsal,
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
                 reportedAt,
-                readyAt);
+                readyAt,
+                intakeSessionId);
     }
 
     private List<EvidenceResult> collectMissingEvidence(
@@ -222,18 +287,30 @@ public class TroubleshootingIntakeService {
             boolean rehearsal,
             String reason,
             Instant reportedAt,
-            Instant readyAt) {
+            Instant readyAt,
+            String intakeSessionId) {
         if (agentTriageService == null) {
             throw routeMiss(reason + "; read-only Agent miss path is disabled or unavailable");
         }
-        return agentTriageService.triage(
+        if (intakeSessionId == null) {
+            return agentTriageService.triage(
+                    workspaceId,
+                    incident,
+                    evidence == null ? List.of() : evidence,
+                    rehearsal,
+                    reason,
+                    reportedAt,
+                    readyAt);
+        }
+        return agentTriageService.triageForIntake(
                 workspaceId,
                 incident,
                 evidence == null ? List.of() : evidence,
                 rehearsal,
                 reason,
                 reportedAt,
-                readyAt);
+                readyAt,
+                intakeSessionId);
     }
 
     private MateClawException routeMiss(String message) {

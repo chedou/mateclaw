@@ -27,6 +27,10 @@ public class TroubleshootingIntakeSessionEntity {
     private String routingKey;
     private String source;
     private String conversationRef;
+
+    @TableField(value = "delivery_conversation_id", updateStrategy = FieldStrategy.ALWAYS)
+    private String deliveryConversationId;
+
     private String reporterRef;
     private String status;
     private LocalDateTime reportedAt;

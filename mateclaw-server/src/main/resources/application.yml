@@ -130,6 +130,13 @@ springdoc:
 # MateClaw 自定义配置
 mateclaw:
   troubleshooting:
+    # Absolute browser origin used in IM deep links. In a reverse-proxy
+    # deployment this normally equals MATECLAW_PUBLIC_BASE_URL; local channel
+    # rehearsals can point it at the Vite origin explicitly.
+    workbench-base-url: ${MATECLAW_TROUBLESHOOTING_WORKBENCH_BASE_URL:${MATECLAW_PUBLIC_BASE_URL:}}
+    intake-dispatch:
+      poll-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_POLL_MS:1000}
+      initial-delay-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_INITIAL_DELAY_MS:3000}
     agent:
       # Miss-path LLM triage is an explicit rollout. Keep disabled until a
       # dedicated workspace-local ReAct Agent is created with skills/wiki off,

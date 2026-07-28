@@ -8,9 +8,9 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.14）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.15）
 >
-> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 已启动）
+> 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 与 T10 前半段已落地）
 >
 > **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter`；普通消息走
 > `ChannelMessageRouter` pre-route，模板卡片事件才走 `CardKind`，不新建入站——
@@ -199,7 +199,8 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       只路由模板卡片点击，不再被当作普通消息 Intake 入口。
 - [x] `conversationRef` / `reporterRef` / `sourceMessageId` / 附件引用取自 `ChannelMessage`
       （`chatId` / `senderId` / `messageId` / `contentParts`）与 `ChannelSessionStore`；Router 在 pre-route
-      接管前保存带 channelId/targetId 的原通道路由，不新建会话表。
+      接管前保存带 channelId/targetId 的原通道路由，不新建会话表。raw `conversationRef` 保持业务身份稳定，
+      单独持久化 `deliveryConversationId` 作为精确 ChannelSessionStore key，不用配置 ID 污染 routingKey。
 - [x] `RECEIVED → AWAITING_INPUT → READY` 独立记在 `IntakeSession`；显式记录
       `reportedAt/readyAt`；补问往返沿用通道会话，
       **不塞进 `DiagnosisStateMachine`**。
@@ -215,11 +216,21 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T10 · 原路回复与关闭通知
 
-- [ ] 2 秒内回复“已收到/还缺什么”，完整调查异步返回。
-- [ ] 业务摘要来自 `BusinessSummary` 类型化投影，通道 Adapter 负责企微排版。
+- [x] 回调线程只提交 Intake + PENDING 调查任务并立即回复“已收到/还缺什么”；完整调查由数据库租约
+      worker 异步执行，不让群消息等待取证或模型。真实企微 2 秒 p95 仍需上线后观测。
+- [x] READY 与调查任务同事务提交；worker 带 120 秒租约、最多 5 次常规处理，启动时补齐历史 READY
+      缺失任务。`source_intake_session_id` 唯一约束保证同一 Intake 只创建/复用一个 Diagnosis；通知失败
+      不重跑调查。常规预算耗尽后进入持久终态投递并持续退避重试；先按 Intake 回查 Diagnosis，存在则继续
+      投递摘要，确实不存在才投递明确 fail-closed 文本。
+- [x] 业务摘要来自同一 Diagnosis 的 `BusinessSummary` 类型化投影，由通道交付 renderer 生成纯文本；
+      首行保留 `conclusionType + confidence`，能力边界和 fixture 标记不截断。
+- [x] 调查完成后经 `ChannelSessionStore → ChannelManager.sendToWorkspaceConversation → proactiveSend`
+      原路返回，附 `/troubleshooting?diagnosisId=...` 正式工作台深链。只有 workspace/type/enabled 匹配且本节点
+      持有 active leader Adapter 时才认领；精确路由缓存 miss 回源 DB，follower 不烧任务，平台 ACK 后才完成。
 - [ ] 关闭且 outcome 已登记后原路 @ 原报障人：用现成的
       `ChannelAdapter.proactiveSend(targetId, content, DeliveryOptions)`，出站不需要新机制。
-- [ ] 未映射为可信 workspace 主体时，只允许报障/补充，不允许审核或推进受审计状态。
+- [x] 未映射为可信 workspace 主体时，只允许报障/补充与接收只读摘要；本轮未增加任何通道审核、
+      确认、关闭或其他受审计状态推进入口。
 - [ ] **出站交互卡片先不做**：`WeComCardRenderer` / `FeishuCardRenderer` 的签名都是
       `render(ApprovalNotice)`（tool-guard 形状），且"批准=回放执行"与排障"确认=只推进状态"
       语义相反。**严禁把 `BusinessSummary` 适配成 `ApprovalNotice`**——先泛化平台接缝（单独评审），
@@ -336,6 +347,7 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 1. 先读现行录音基线、v4.3、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
 2. 主攻 P2 真实 Guance 授权、measurement/字段/阈值核实和 20–30 条影子样本。
 3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。
-4. P3 企微可独立推进，但只扩现有 `channel/wecom`，不新建入站。
+4. P3 下一段只补“关闭且 outcome 已登记后的原路通知”；继续扩现有 `channel/wecom`，不新建入站，
+   不把 `BusinessSummary` 伪装成 tool-guard `ApprovalNotice`。
 5. 有真实样本和时延数据后再做 P4 场景路由；不要先搭空的通用 Planning 框架。
 6. P2 影子评测证明收益后，再把固定 Challenger 报告接入 P5；知识审核状态和版本替换须在 candidate 真实积累前完成。

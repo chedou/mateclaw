@@ -95,6 +95,23 @@ public class DeterministicDiagnosisService {
         return persistence.createOrGet(workspaceId, diagnosis, reportedAt);
     }
 
+    /** Same deterministic engine, with IntakeSession as the durable owner. */
+    public StoredDiagnosis diagnoseAndPersistForIntake(
+            long workspaceId,
+            IncidentContext incident,
+            SopEntry sop,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            boolean fixtureMode,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId) {
+        Diagnosis diagnosis = diagnose(
+                incident, sop, evidence, rehearsal, fixtureMode, reportedAt, readyAt);
+        return persistence.createOrGetForIntake(
+                workspaceId, diagnosis, intakeSessionId);
+    }
+
     public Diagnosis diagnose(
             IncidentContext incident,
             SopEntry sop,
