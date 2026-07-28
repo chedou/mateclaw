@@ -1,5 +1,10 @@
 # 会议驱动的变更方案（据 2026-07 排障方案讨论会）
 
+> ⚠️ **历史讨论，不能作为当前开发入口。** 现行产品事实见
+> `recording-product-baseline.md`，现行概要设计见
+> `../../rfcs/intelligent-troubleshooting-architecture-v4.md`。
+> 本文只保留会议后的推演过程；实现与优先级一律以 v4 和 `TODO.md` 为准。
+>
 > 输入：会议纪要《利用观测云日志 + AI 自动生成 SOP》。
 > 输出：这次会议要求我们**改什么**、改在哪个类上、与已锁决策 D1–D8 和四条红线的关系。
 > 阅读顺序：本文 → `TODO.md`（新增 T11–T18）→ `HANDOFF.md`（决策与红线）→ `rfcs/intelligent-troubleshooting-design.md`。

@@ -11,6 +11,7 @@ declare module 'vue-router' {
     keepAlive?: boolean
     requireAdmin?: boolean
     requiredCapability?: Capability
+    publicPrototype?: boolean
   }
 }
 
@@ -371,6 +372,15 @@ const router = createRouter({
       name: 'Login',
       component: () => import('@/views/Login.vue'),
     },
+    ...(import.meta.env.DEV ? [{
+      // PROTOTYPE — public only in a development build so the recording-led
+      // information architecture can be reviewed without a running backend.
+      // The real /troubleshooting route keeps its normal auth/capability gate.
+      path: '/prototype/troubleshooting',
+      name: 'TroubleshootingExperiencePrototype',
+      component: () => import('@/views/Troubleshooting/prototype/TroubleshootingExperiencePrototype.vue'),
+      meta: { title: 'Troubleshooting Experience Prototype', publicPrototype: true },
+    }] : []),
     {
       path: '/:pathMatch(.*)*',
       redirect: '/chat',
@@ -383,6 +393,7 @@ const router = createRouter({
 // to a protected route (the store enforces default-deny while accessLoaded is
 // false; we await refreshAccess so the decision is made on real data).
 router.beforeEach(async (to) => {
+  if (import.meta.env.DEV && to.meta.publicPrototype === true) return true
   if (import.meta.env.VITE_SKIP_AUTH === 'true') return true
   const token = localStorage.getItem('token')
 

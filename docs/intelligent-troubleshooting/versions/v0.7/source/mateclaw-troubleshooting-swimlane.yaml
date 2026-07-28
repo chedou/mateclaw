@@ -1,0 +1,236 @@
+meta:
+  profile: engineering-review
+  theme: tech-blue
+  source: generated
+  layout: horizontal
+  routing: orthogonal
+  canvas: 1760x1040
+  title: "MateClaw 智能排障跨角色泳道图"
+  description: "明确报障人、企业微信、MateClaw、证据源和人工角色在在线排障与知识沉淀中的责任。"
+
+nodes:
+  - id: laneReporter
+    label: "报障人 / 服务经理"
+    type: service
+    bounds: { x: 40, y: 32, width: 1680, height: 136 }
+    style: { fillColor: "#F8FAFC", strokeColor: "#CBD5E1", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: laneChannel
+    label: "企业微信 Channel Adapter"
+    type: service
+    bounds: { x: 40, y: 192, width: 1680, height: 136 }
+    style: { fillColor: "#FFF7ED", strokeColor: "#D97706", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: laneMateClaw
+    label: "Java MateClaw"
+    type: service
+    bounds: { x: 40, y: 352, width: 1680, height: 136 }
+    style: { fillColor: "#EFF6FF", strokeColor: "#2563EB", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: laneSources
+    label: "观测云 / 只读证据源"
+    type: service
+    bounds: { x: 40, y: 512, width: 1680, height: 136 }
+    style: { fillColor: "#ECFDF5", strokeColor: "#059669", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: laneHumans
+    label: "开发 / 处置人 / 知识审核人"
+    type: service
+    bounds: { x: 40, y: 672, width: 1680, height: 216 }
+    style: { fillColor: "#F5F3FF", strokeColor: "#7C3AED", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+
+  - id: report
+    label: "@ 助手报障"
+    type: terminal
+    position: { x: 160, y: 120 }
+  - id: context
+    label: "补客户 / 时间 / 截图"
+    type: process
+    size: large
+    position: { x: 400, y: 120 }
+  - id: readSummary
+    label: "阅读业务摘要"
+    type: document
+    position: { x: 1200, y: 120 }
+  - id: confirmRecovery
+    label: "确认恢复"
+    type: terminal
+    position: { x: 1456, y: 120 }
+
+  - id: ack
+    label: "确认收到 / 补问"
+    type: process
+    size: large
+    position: { x: 280, y: 280 }
+  - id: progress
+    label: "原路回执进展"
+    type: document
+    position: { x: 1056, y: 280 }
+  - id: closedNotice
+    label: "关闭后 @ 报障人"
+    type: terminal
+    size: large
+    position: { x: 1584, y: 280 }
+
+  - id: intakeSession
+    label: "IntakeSession\n完整性校验"
+    type: service
+    size: large
+    position: { x: 400, y: 440 }
+  - id: plan
+    label: "三类路径规划\n权威与预算"
+    type: service
+    size: large
+    position: { x: 600, y: 440 }
+  - id: orchestrate
+    label: "只读取证编排"
+    type: service
+    size: large
+    position: { x: 800, y: 440 }
+  - id: diagnose
+    label: "诊断 + 双投影"
+    type: service
+    size: large
+    position: { x: 1024, y: 440 }
+  - id: lifecycle
+    label: "登记 outcome\n验证并关闭"
+    type: service
+    size: large
+    position: { x: 1280, y: 440 }
+  - id: makeCandidate
+    label: "生成 Candidate\n不可直接批准"
+    type: database
+    size: large
+    position: { x: 1472, y: 440 }
+
+  - id: logSearch
+    label: "log_search"
+    type: process
+    position: { x: 720, y: 600 }
+  - id: traceBundle
+    label: "PS ID 全链路"
+    type: process
+    size: large
+    position: { x: 912, y: 600 }
+  - id: evidenceBundle
+    label: "返回 EvidenceBundle"
+    type: document
+    size: large
+    position: { x: 1120, y: 600 }
+
+  - id: inspect
+    label: "开发核验证据"
+    type: process
+    position: { x: 1056, y: 760 }
+  - id: execute
+    label: "人工处置\n系统不执行"
+    type: process
+    size: large
+    position: { x: 1280, y: 760 }
+  - id: reviewCandidate
+    label: "知识审核\n满足资格？"
+    type: decision
+    size: large
+    position: { x: 1472, y: 760 }
+  - id: approvedPlaybook
+    label: "批准新版本"
+    type: terminal
+    position: { x: 1632, y: 712 }
+    style: { fillColor: "#ECFDF5", strokeColor: "#059669" }
+  - id: rejectedCandidate
+    label: "驳回并留痕"
+    type: terminal
+    position: { x: 1632, y: 824 }
+    style: { fillColor: "#FEF2F2", strokeColor: "#DC2626" }
+
+edges:
+  - from: report
+    to: ack
+    type: primary
+  - from: ack
+    to: context
+    type: optional
+    label: "缺字段"
+    labelOffset: { x: 0, y: -16 }
+  - from: context
+    to: intakeSession
+    type: primary
+  - from: intakeSession
+    to: ack
+    type: optional
+    label: "AWAITING_INPUT"
+    labelOffset: { x: 16, y: 0 }
+    waypoints:
+      - { x: 400, y: 360 }
+      - { x: 280, y: 360 }
+  - from: intakeSession
+    to: plan
+    type: primary
+    label: "READY"
+    labelOffset: { x: 0, y: -16 }
+  - from: plan
+    to: orchestrate
+    type: primary
+  - from: orchestrate
+    to: logSearch
+    type: data
+  - from: logSearch
+    to: traceBundle
+    type: primary
+  - from: traceBundle
+    to: evidenceBundle
+    type: primary
+  - from: evidenceBundle
+    to: diagnose
+    type: data
+  - from: diagnose
+    to: progress
+    type: data
+  - from: progress
+    to: readSummary
+    type: primary
+  - from: diagnose
+    to: inspect
+    type: primary
+  - from: inspect
+    to: execute
+    type: primary
+  - from: execute
+    to: lifecycle
+    type: data
+    label: "登记结果"
+    labelOffset: { x: 0, y: -16 }
+  - from: lifecycle
+    to: confirmRecovery
+    type: primary
+  - from: confirmRecovery
+    to: closedNotice
+    type: primary
+  - from: diagnose
+    to: makeCandidate
+    type: data
+    label: "证据型"
+    labelOffset: { x: 0, y: -16 }
+  - from: lifecycle
+    to: makeCandidate
+    type: data
+    label: "结果型"
+    labelOffset: { x: 0, y: -16 }
+  - from: makeCandidate
+    to: reviewCandidate
+    type: primary
+  - from: reviewCandidate
+    to: approvedPlaybook
+    type: primary
+    label: "是"
+    labelOffset: { x: 0, y: -16 }
+  - from: reviewCandidate
+    to: rejectedCandidate
+    type: optional
+    label: "否"
+    labelOffset: { x: 0, y: -16 }
+  - from: approvedPlaybook
+    to: plan
+    type: data
+    label: "已审核知识反馈"
+    labelOffset: { x: 0, y: -16 }
+    waypoints:
+      - { x: 1704, y: 712 }
+      - { x: 1704, y: 360 }
+      - { x: 600, y: 360 }

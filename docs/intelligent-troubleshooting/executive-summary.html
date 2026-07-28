@@ -86,59 +86,59 @@
 <div class="wrap">
   <div class="kicker">执行摘要 · 一页纸</div>
   <h1>IT 智能排障系统</h1>
-  <p class="lede">把故障处理从「人工翻系统 + 经验判断」升级为「告警/工单驱动 · 智能路由 · 自动取证 · 人机协同 · 知识闭环」。基于内部 MetaClaw 平台构建，首个落地域为 CSDP 工单/客服链路。</p>
+  <p class="lede">把一条不完整报障，转成带证据、可交接、可复用的定位结论。系统运行在 Java MateClaw 内，以观测云日志、PS ID 全链路和人工审核的知识闭环形成差异化。</p>
   <div class="meta">
-    <span><b>目标</b> 提升响应效率 · 缩短 MTTR · 降低一线门槛</span>
-    <span><b>状态</b> 架构收敛 · L0 已启动</span>
+    <span><b>目标</b> 缩短“报障 → 可核验定位结论”的时间</span>
+    <span><b>状态</b> MateClaw-only v4 · 架构评审通过 · P1 可实施</span>
   </div>
 
   <h2>为什么值得做</h2>
   <div class="card"><div class="rows">
-    <div class="row"><span class="n">痛</span><div><b>入口分散、经验依赖、SOP 难执行、跨团队协同慢、过程难沉淀。</b><p>故障高峰时响应慢、路径散、结论不一致、SLA 达不成，且强依赖少数资深专家。</p></div></div>
-    <div class="row"><span class="n">机</span><div><b>已有一份结构化的《故障与措施》知识库 + 观测云开放 API。</b><p>最难的「专家经验固化」已完成大半——起点接近成熟度 L0.5，比从零做短得多。</p></div></div>
+    <div class="row"><span class="n">痛</span><div><b>服务经理只带来现象、客户或截图，开发要反复补问、翻日志、追链路，再重新写排查步骤。</b><p>同类故障重复消耗开发时间，定位过程不可审计，处理完也没有稳定成为下次可复用的方法。</p></div></div>
+    <div class="row"><span class="n">机</span><div><b>团队拥有观测云日志，能从样本日志提取 PS ID 并还原同一请求的完整链路。</b><p>这使“先取证、再推理、再形成待审核知识”成为可验证的工程路径，而不是泛化聊天机器人。</p></div></div>
   </div></div>
 
   <h2>核心做法（三条）</h2>
   <div class="card"><div class="rows">
-    <div class="row"><span class="n">1</span><div><b>确定性优先、AI 兜底。</b><p>已知错误码走固定流程「查表 + 自动取证」，零幻觉、可审计；只有未知/需判断时才用大模型，且把它能自由发挥的面压到最小。</p></div></div>
-    <div class="row"><span class="n">2</span><div><b>人机协同，写操作永远人工确认。</b><p>系统自动完成只读取证、给出证据与推荐；重启/回滚等任何写操作一律由人点头后执行，全程留痕可审计。</p></div></div>
-    <div class="row"><span class="n">3</span><div><b>越用越全的知识闭环。</b><p>每次处置顺手沉淀（点确认而非写文档），未知故障自动学习为新 SOP——系统随使用持续变强。</p></div></div>
+    <div class="row"><span class="n">1</span><div><b>一条证据脊柱，两个闭环。</b><p>Incident → 只读 EvidencePlan → EvidenceBundle；同一份证据既支撑在线诊断，也支撑 PlaybookDraft，不复制取证逻辑。</p></div></div>
+    <div class="row"><span class="n">2</span><div><b>三类路径，权威不混淆。</b><p>错误码命中保持零 LLM；场景允许模型提议已注册 key，最高 MEDIUM；未知探索受 DiscoveryPolicy 约束，证据不足必须弃权。</p></div></div>
+    <div class="row"><span class="n">3</span><div><b>草稿不是权威，自动化止于只读。</b><p>PlaybookDraft 必须经过引用校验、人工参考比较、历史回放和专家审核；生产写始终在系统外由人执行并登记 outcome。</p></div></div>
   </div></div>
 
-  <h2>家底盘点（真实数据）</h2>
+  <h2>当前工程事实</h2>
   <div class="stats">
-    <div class="stat a"><div class="num">146</div><div class="cap">已结构化的错误码</div></div>
-    <div class="stat g"><div class="num">62%</div><div class="cap">已有恢复方案</div></div>
-    <div class="stat w"><div class="num">21%</div><div class="cap">只读自动化候选</div></div>
-    <div class="stat a"><div class="num">18</div><div class="cap">P0/P1 首批审核对象</div></div>
+    <div class="stat a"><div class="num">1</div><div class="cap">共享证据脊柱</div></div>
+    <div class="stat g"><div class="num">2</div><div class="cap">在线诊断 / 知识生产</div></div>
+    <div class="stat w"><div class="num">3</div><div class="cap">错误码 / 场景 / 探索路径</div></div>
+    <div class="stat a"><div class="num">P1</div><div class="cap">无错误码证据→草稿</div></div>
   </div>
 
   <h2>一句实话（关键判断）</h2>
   <div class="honest">
-    系统的天花板由<b>知识质量</b>决定，不由技术决定。按安全口径，当前仅约 <b>1/5</b> 的路由键含明确只读自动化步骤，且候选仍需先解除质量阻断。因此我们<b>不承诺「上线即全自动」</b>——而是承诺一台<b>「先证明、再逐格放权、越用越强」</b>的机器：只在被数据证明可靠的错误码上自动跑，其余全程人工监督，覆盖面随知识补全逐格扩大。
+    当前只能证明 Recorded Replay 的工程链路能跑到 <b>READY_FOR_MODEL</b>，不能声称真实 Guance 已验证，也不能声称 SOP 已自动生成。P1 仍需完成结构化 PlaybookDraft、领域校验、人工参考解法比较与 candidate 幂等；真实数据在 P2 单独验收。
   </div>
 
   <h2>怎么安全地放权</h2>
   <div class="card"><div class="ladder">
-    <div class="lad"><span class="k">S0 影子</span><span>系统并行跑、输出隐藏，只记录比对准确率 —— 零风险</span></div>
-    <div class="lad"><span class="k">S1 建议</span><span>作为建议展示，人决定一切</span></div>
-    <div class="lad"><span class="k">S2 只读自动取证</span><span>自动取证给证据+结论，人决策执行 —— MTTR 收益开始兑现</span></div>
-    <div class="lad"><span class="k g">S3 半自动</span><span>被证明可靠的错误码：自动只读动作/分派（写操作仍人工）</span></div>
+    <div class="lad"><span class="k">证据先行</span><span>没有本次服务端证据，就不能声称已定位</span></div>
+    <div class="lad"><span class="k">路由可见</span><span>EXPLICIT / RULE_MATCHED / MODEL_PROPOSED 分开展示和统计</span></div>
+    <div class="lad"><span class="k">知识审核</span><span>草稿、候选、审核、批准、废弃单向推进，批准创建新版本</span></div>
+    <div class="lad"><span class="k g">只读边界</span><span>自动取证和通知可以做；改配置、改数据、改代码和恢复动作永远不自动</span></div>
   </div></div>
 
   <h2>第一步 · 需要的支持</h2>
   <div class="ask">
-    <div class="a"><b>已做：</b>&nbsp;架构与演进蓝图定稿（15 节）+ 交互原型 + L0 知识库骨架与家底盘点。</div>
-    <div class="a"><b>下一步：</b>&nbsp;选 903001（数据库异常）打通一条端到端竖线，接观测云做真实取证，走影子模式验证。</div>
-    <div class="a"><b>需支持：</b>&nbsp;① 能访问内网观测云的联调环境；② 知识审核人力（各系统 owner 参与审核候选 SOP）；③ 把「知识覆盖率/可自动化率」纳入团队考核以驱动补全。</div>
+    <div class="a"><b>已做：</b>&nbsp;录音事实基线、MateClaw-only v4、架构师评审、现有证据预演与 A/B/C Demo。</div>
+    <div class="a"><b>下一步：</b>&nbsp;用“会话消息发送失败（无错误码）”完成 PlaybookDraft → Validator → ReferenceSolution → candidate。</div>
+    <div class="a"><b>需支持：</b>&nbsp;① 用户选择 A/B/C 信息结构；② 提供会议案例的人工参考解法；③ P2 时提供可访问真实 Guance 的内网环境与历史样本。</div>
   </div>
 
   <div class="callout" style="margin-top:22px">
-    <b>一句话总结</b>：用已有的专家知识库 + 观测云，做一台确定性优先、人机协同、越用越全的排障机器；先在证明可靠处放权，稳步扩大，最终把一线从「翻系统找人」中解放出来。
+    <b>一句话总结</b>：用 MateClaw 把报障变成有界只读取证，再把同一份证据变成可核验诊断和待审核知识；模型帮助归纳，但证据、批准和生产写权始终掌握在系统规则与人手里。
   </div>
 
   <footer>
-    <span>IT 智能排障系统 · 执行摘要 v1</span>
+    <span>IT 智能排障系统 · 执行摘要 v3 · 2026-07-28</span>
     <span>详见《架构与演进蓝图》</span>
   </footer>
 </div>

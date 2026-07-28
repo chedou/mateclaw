@@ -1,0 +1,326 @@
+meta:
+  profile: engineering-review
+  theme: tech-blue
+  source: generated
+  layout: horizontal
+  routing: orthogonal
+  canvas: 1760x1000
+  title: MateClaw 智能排障总体架构
+  description: 一条证据脊柱、两个闭环，以及外部单门面、内部可插拔的只读证据 Tool 层。
+nodes:
+  - id: areaChannels
+    label: 入口与通道
+    type: service
+    bounds:
+      x: 24
+      'y': 64
+      width: 240
+      height: 448
+    style:
+      fillColor: '#F8FAFC'
+      strokeColor: '#CBD5E1'
+      align: left
+      verticalAlign: top
+      spacingLeft: 12
+      spacingTop: 10
+      fontWeight: 600
+  - id: areaCore
+    label: MateClaw 证据脊柱
+    type: service
+    bounds:
+      x: 296
+      'y': 160
+      width: 960
+      height: 240
+    style:
+      fillColor: '#EFF6FF'
+      strokeColor: '#2563EB'
+      align: left
+      verticalAlign: top
+      spacingLeft: 12
+      spacingTop: 10
+      fontWeight: 600
+  - id: areaEvidence
+    label: 只读证据 Tool 插拔层（受控）
+    type: service
+    bounds:
+      x: 704
+      'y': 424
+      width: 680
+      height: 288
+    style:
+      fillColor: '#ECFDF5'
+      strokeColor: '#059669'
+      align: left
+      verticalAlign: top
+      spacingLeft: 12
+      spacingTop: 10
+      fontWeight: 600
+  - id: areaOutcomes
+    label: 在线排障闭环
+    type: service
+    bounds:
+      x: 1440
+      'y': 64
+      width: 288
+      height: 448
+    style:
+      fillColor: '#FFF7ED'
+      strokeColor: '#D97706'
+      align: left
+      verticalAlign: top
+      spacingLeft: 12
+      spacingTop: 10
+      fontWeight: 600
+  - id: areaKnowledge
+    label: 知识生产闭环
+    type: service
+    bounds:
+      x: 536
+      'y': 760
+      width: 848
+      height: 184
+    style:
+      fillColor: '#F5F3FF'
+      strokeColor: '#7C3AED'
+      align: left
+      verticalAlign: top
+      spacingLeft: 12
+      spacingTop: 10
+      fontWeight: 600
+  - id: wecom
+    label: 企微 @ 报障 / 补问
+    type: user
+    bounds:
+      x: 56
+      'y': 128
+      width: 176
+      height: 80
+  - id: web
+    label: Web 证据 / 处置 / 审核
+    type: service
+    bounds:
+      x: 56
+      'y': 240
+      width: 176
+      height: 80
+  - id: alert
+    label: 告警 / 工单接入
+    type: document
+    bounds:
+      x: 56
+      'y': 352
+      width: 176
+      height: 80
+  - id: intake
+    label: 报障受理 身份·幂等·脱敏
+    type: service
+    bounds:
+      x: 328
+      'y': 232
+      width: 192
+      height: 88
+  - id: planning
+    label: 调查规划 路径·权威·预算
+    type: service
+    bounds:
+      x: 552
+      'y': 232
+      width: 208
+      height: 88
+  - id: orchestration
+    label: 证据编排 只读·有界·降级
+    type: service
+    bounds:
+      x: 792
+      'y': 232
+      width: 208
+      height: 88
+  - id: bundle
+    label: 证据包 引用·来源·fixture
+    type: document
+    bounds:
+      x: 1032
+      'y': 232
+      width: 192
+      height: 88
+  - id: toolRegistry
+    label: 域内 Tool Registry · schema / 权限 / 预算 / 版本
+    type: service
+    bounds:
+      x: 736
+      'y': 464
+      width: 616
+      height: 56
+  - id: toolPlugins
+    label: Tool 插件 SPI · log_search / trace / metric / K8S / code
+    type: process
+    bounds:
+      x: 736
+      'y': 552
+      width: 616
+      height: 56
+    style:
+      fillColor: '#D1FAE5'
+      strokeColor: '#059669'
+  - id: sourceAdapters
+    label: 来源 Adapter SPI · Guance / Replay / K8S / Git
+    type: service
+    bounds:
+      x: 736
+      'y': 640
+      width: 616
+      height: 56
+  - id: diagnosis
+    label: 诊断 定位·排除·假设·弃权
+    type: service
+    bounds:
+      x: 1480
+      'y': 128
+      width: 208
+      height: 88
+  - id: projection
+    label: 双投影 业务摘要·开发证据
+    type: document
+    bounds:
+      x: 1480
+      'y': 248
+      width: 208
+      height: 88
+  - id: lifecycle
+    label: 处置闭环 人工动作·结果·关闭
+    type: service
+    bounds:
+      x: 1480
+      'y': 368
+      width: 208
+      height: 88
+  - id: synthesis
+    label: SOP 合成 压缩→草稿
+    type: process
+    bounds:
+      x: 1104
+      'y': 816
+      width: 248
+      height: 88
+  - id: governance
+    label: 知识治理 校验·回放·审核
+    type: service
+    bounds:
+      x: 824
+      'y': 816
+      width: 232
+      height: 88
+  - id: approved
+    label: 已批准 Playbook 版本权威
+    type: terminal
+    bounds:
+      x: 568
+      'y': 816
+      width: 208
+      height: 88
+  - id: safety
+    label: 安全边界 写工具=0 · 日志不进模型 · 候选≠权威
+    type: document
+    bounds:
+      x: 1440
+      'y': 760
+      width: 288
+      height: 144
+    style:
+      fillColor: '#FEF2F2'
+      strokeColor: '#DC2626'
+      fontColor: '#7F1D1D'
+      fontSize: 11
+edges:
+  - from: wecom
+    to: intake
+    type: primary
+    label: 报障上下文
+    labelOffset:
+      x: 0
+      'y': -16
+  - from: web
+    to: intake
+    type: primary
+  - from: alert
+    to: intake
+    type: data
+  - from: intake
+    to: planning
+    type: primary
+  - from: planning
+    to: orchestration
+    type: primary
+  - from: orchestration
+    to: bundle
+    type: primary
+  - from: orchestration
+    to: toolRegistry
+    type: data
+    label: 唯一只读门面 / 服务端计划
+    labelOffset:
+      x: 16
+      'y': 0
+  - from: toolRegistry
+    to: toolPlugins
+    type: primary
+  - from: toolPlugins
+    to: sourceAdapters
+    type: primary
+  - from: bundle
+    to: diagnosis
+    type: primary
+  - from: diagnosis
+    to: projection
+    type: primary
+  - from: projection
+    to: lifecycle
+    type: primary
+  - from: bundle
+    to: synthesis
+    type: data
+    label: 脱敏骨架 + 引用
+    labelOffset:
+      x: 16
+      'y': 0
+    waypoints:
+      - x: 1408
+        'y': 276
+      - x: 1408
+        'y': 744
+      - x: 1228
+        'y': 744
+  - from: synthesis
+    to: governance
+    type: primary
+  - from: lifecycle
+    to: governance
+    type: data
+    label: 人工解法 / outcome
+    labelOffset:
+      x: 0
+      'y': -16
+    waypoints:
+      - x: 1408
+        'y': 412
+      - x: 1408
+        'y': 744
+      - x: 940
+        'y': 744
+  - from: governance
+    to: approved
+    type: primary
+  - from: approved
+    to: planning
+    type: data
+    label: 已审核知识反馈
+    labelOffset:
+      x: 16
+      'y': 0
+    waypoints:
+      - x: 656
+        'y': 744
+      - x: 656
+        'y': 400
+modules: []

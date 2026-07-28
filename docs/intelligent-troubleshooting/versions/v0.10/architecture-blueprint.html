@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:,">
+  <title>IT 智能排障系统 · MateClaw 架构蓝图 v0.10</title>
+  <style>
+    :root {
+      --paper: #f4f6f8;
+      --surface: #ffffff;
+      --surface-2: #eef2f5;
+      --ink: #14202b;
+      --muted: #5f6d79;
+      --line: #dfe5ea;
+      --blue: #2457d6;
+      --blue-soft: #e8efff;
+      --green: #17724a;
+      --green-soft: #e4f4ec;
+      --amber: #9a5b08;
+      --amber-soft: #fff2d8;
+      --red: #b93838;
+      --red-soft: #fde9e9;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #0b1117;
+        --surface: #121b24;
+        --surface-2: #18232e;
+        --ink: #e7edf3;
+        --muted: #9aa8b5;
+        --line: #283744;
+        --blue: #7ca4ff;
+        --blue-soft: #172851;
+        --green: #69c99a;
+        --green-soft: #123526;
+        --amber: #efb25d;
+        --amber-soft: #3c2a11;
+        --red: #f08080;
+        --red-soft: #3d1e21;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code, .mono { font-family: var(--mono); }
+    code { padding: .08rem .35rem; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); }
+    .wrap { width: min(1080px, calc(100% - 36px)); margin: 0 auto; }
+    header { padding: 56px 0 34px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .eyebrow { color: var(--blue); font: 700 12px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 12px 0 14px; font-size: clamp(32px, 5vw, 54px); line-height: 1.13; letter-spacing: -.04em; }
+    h2 { margin: 0; font-size: clamp(22px, 3vw, 29px); line-height: 1.25; }
+    h3 { margin: 0 0 5px; font-size: 16px; }
+    p { margin: .45rem 0; }
+    .lead { max-width: 780px; color: var(--muted); font-size: 18px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .pill { padding: 5px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font: 650 12px/1.4 var(--mono); }
+    .pill.good { color: var(--green); background: var(--green-soft); }
+    .pill a { color: inherit; text-decoration: none; }
+    main { padding: 20px 0 70px; }
+    section { padding: 38px 0; border-bottom: 1px solid var(--line); }
+    .head { display: grid; grid-template-columns: 44px 1fr; gap: 12px; margin-bottom: 20px; }
+    .num { color: var(--blue); font: 700 13px/1.7 var(--mono); }
+    .sub { max-width: 800px; color: var(--muted); }
+    .grid { display: grid; gap: 14px; }
+    .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .card p { color: var(--muted); }
+    .fact { display: grid; grid-template-columns: 62px 1fr; gap: 12px; }
+    .fact b { color: var(--blue); font-family: var(--mono); }
+    .callout { padding: 16px 18px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 10px; background: var(--surface); }
+    .callout.warn { border-left-color: var(--amber); }
+    .callout.danger { border-left-color: var(--red); }
+    .spine { display: grid; gap: 10px; margin-top: 22px; }
+    .flow-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: stretch; }
+    .node { position: relative; min-height: 90px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .node:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 34px; z-index: 2; color: var(--muted); }
+    .node b { display: block; margin-bottom: 5px; }
+    .node small { color: var(--muted); }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .loop { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .loop.online { border-top: 4px solid var(--blue); }
+    .loop.knowledge { border-top: 4px solid var(--green); }
+    .loop.engineering { border-top: 4px solid var(--blue); }
+    .loop.adversarial { border-top: 4px solid var(--amber); }
+    .loop ol { margin: 10px 0 0; padding-left: 19px; }
+    .mode { display: flex; flex-direction: column; gap: 9px; }
+    .mode .tag { align-self: flex-start; padding: 3px 8px; border-radius: 5px; font: 700 11px/1.4 var(--mono); }
+    .tag.det { color: var(--green); background: var(--green-soft); }
+    .tag.assist { color: var(--amber); background: var(--amber-soft); }
+    .tag.open { color: var(--blue); background: var(--blue-soft); }
+    table { width: 100%; border-collapse: collapse; border: 1px solid var(--line); background: var(--surface); }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: var(--surface-2); font: 700 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .scroll { overflow-x: auto; border-radius: 10px; }
+    .contract { padding: 13px 15px; border-radius: 8px; background: var(--surface-2); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+    .redlines { counter-reset: redline; display: grid; gap: 10px; }
+    .redline { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+    .redline::before { counter-increment: redline; content: counter(redline); display: grid; place-items: center; width: 24px; height: 24px; color: var(--red); background: var(--red-soft); border-radius: 50%; font: 700 12px/1 var(--mono); }
+    .roadmap { display: grid; gap: 10px; }
+    .step { display: grid; grid-template-columns: 66px 1fr; gap: 14px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .step > b { color: var(--blue); font-family: var(--mono); }
+    .demo-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .demo-links a { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-decoration: none; }
+    .diagram-shell { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .diagram-canvas { overflow: auto; padding: 12px; background: #fff; }
+    .diagram-canvas img { display: block; width: 100%; height: auto; }
+    .diagram-shell.portrait .diagram-canvas img { max-width: 900px; margin: 0 auto; }
+    .diagram-caption { display: flex; justify-content: space-between; gap: 18px; padding: 13px 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .diagram-caption p { margin: 0; }
+    .diagram-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+    .diagram-actions a { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); font: 650 11px/1.4 var(--mono); text-decoration: none; }
+    footer { display: flex; justify-content: space-between; gap: 16px; padding-top: 28px; color: var(--muted); font: 12px/1.5 var(--mono); }
+    @media (max-width: 820px) {
+      .g3, .flow-row { grid-template-columns: 1fr; }
+      .g2, .split { grid-template-columns: 1fr; }
+      .node:not(:last-child)::after { content: "↓"; right: auto; top: auto; left: 50%; bottom: -14px; }
+      .diagram-caption { display: block; }
+      .diagram-actions { margin-top: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="eyebrow">MateClaw-only · Architecture Blueprint v0.10</div>
+      <h1>观测证据驱动的<br>智能排障系统</h1>
+      <p class="lead">从一条不完整报障，到一个带证据、可交接、可复用的定位结论。中心不是错误码查表，也不是自由 Agent，而是一条证据脊柱。</p>
+      <div class="meta">
+        <span class="pill good">架构师评审通过 · P1 可实施</span>
+        <span class="pill">唯一运行底座 · Java MateClaw</span>
+        <span class="pill">首个案例 · 会话消息发送失败</span>
+        <span class="pill">真实入口 · 企业微信 @</span>
+        <span class="pill">自动化边界 · 只读</span>
+        <span class="pill">Loop Engineering · 有界可回放</span>
+        <span class="pill">Multi-Agent · 结构化反证</span>
+        <span class="pill"><a href="../index.html">版本历史 · v0.7–v0.10</a></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <div class="head"><div class="num">01</div><div><h2>录音确认了什么</h2><p class="sub">以下是 28:30 录音里多次重复、能交叉确认的产品事实。讨论中的五类 FaultClass、自愈和自动改代码不属于当前承诺。</p></div></div>
+      <div class="grid g2">
+        <div class="card fact"><b>F1–F3</b><div><h3>差异化来自观测证据</h3><p>日志检索 → PS ID → 全链路 → AI 归纳根因和排查步骤。</p></div></div>
+        <div class="card fact"><b>F4</b><div><h3>首例必须无错误码</h3><p>“会话消息发送失败”，生成步骤要和人工解法按意图逐项比较。</p></div></div>
+        <div class="card fact"><b>F5–F6</b><div><h3>入口在企微，页面做减法</h3><p>群里 @ 助手补问客户、时间、截图；Web 用于证据详情和审核。</p></div></div>
+        <div class="card fact"><b>F7–F10</b><div><h3>结论必须诚实分级</h3><p>影响面是一等事实；排除不是定位；代码类只定位，数据/业务类可给人工建议。</p></div></div>
+      </div>
+      <div class="callout warn" style="margin-top:14px"><b>北极星结果：</b>从报障到“带证据、可交接、可复用的定位结论”所需的时间，而不是页面数量、模型调用数或错误码覆盖率。</div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">02</div><div><h2>一条证据脊柱，两个闭环</h2><p class="sub">Incident、EvidenceBundle 和 Provenance 共享；故障状态与知识状态独立。故障关闭不等于知识通过，知识审核失败也不回滚故障处置。</p></div></div>
+      <div class="spine">
+        <div class="flow-row">
+          <div class="node"><b>Incident Intake</b><small>企微 / Web / 告警<br>身份、幂等、补问、脱敏</small></div>
+          <div class="node"><b>Investigation Plan</b><small>调查模式、路由权威、证据预算</small></div>
+          <div class="node"><b>Loop Control</b><small>预算、检查点、停止、恢复</small></div>
+          <div class="node"><b>Evidence Orchestration</b><small>只读、有界、canonical</small></div>
+          <div class="node"><b>EvidenceBundle</b><small>日志、PS ID 链路、指标、代码引用</small></div>
+          <div class="node"><b>Verify &amp; Decide</b><small>继续、完成、弃权、转人工</small></div>
+        </div>
+        <div class="split">
+          <div class="loop online"><h3>调查内循环 · Runtime Loop</h3><ol><li>Plan → Collect → Propose → Verify</li><li>预算内按证据缺口继续，不能由模型自行续期</li><li>最终只允许完成、弃权或转人工</li></ol></div>
+          <div class="loop knowledge"><h3>知识外循环 · Improvement Loop</h3><ol><li>PlaybookDraft 接受证据质疑与安全质疑</li><li>确定性回放和人工裁决，不按 Agent 票数</li><li>approved 新版本结合 outcome 反馈下一轮</li></ol></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">03</div><div><h2>总体架构图</h2><p class="sub">从入口、证据脊柱、受控可插拔的只读 Tool 层，到在线排障与知识生产两个闭环；同时把“系统能扩什么、模型能看什么、平台不能写什么”画在边界上。</p></div></div>
+      <figure class="diagram-shell">
+        <div class="diagram-canvas"><a href="./diagrams/mateclaw-troubleshooting-architecture.svg" target="_blank" rel="noopener"><img src="./diagrams/mateclaw-troubleshooting-architecture.svg" alt="MateClaw 智能排障总体架构图" loading="lazy"></a></div>
+        <figcaption class="diagram-caption"><p>v0.10 将入口汇聚、证据回补和知识生产拆成独立正交走廊；Loop Control 统一预算与停止，确定性 Gate 和人工审核保留裁决权。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-architecture.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-architecture.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">04</div><div><h2>端到端流程图</h2><p class="sub">从报障字段补齐、三类调查路径、EvidenceBundle 完整性判断，到人工关闭与 Playbook candidate 审核，明确每一个分支和回路。</p></div></div>
+      <figure class="diagram-shell portrait">
+        <div class="diagram-canvas"><a href="./diagrams/mateclaw-troubleshooting-flow.svg" target="_blank" rel="noopener"><img src="./diagrams/mateclaw-troubleshooting-flow.svg" alt="MateClaw 智能排障端到端流程图" loading="lazy"></a></div>
+        <figcaption class="diagram-caption"><p>关键回路：校验发现证据缺口且预算尚存才允许继续；到限必须 abstain。v0.10 回归确认补问、调查循环、人工 outcome 和知识反馈均使用独立正交走廊。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-flow.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-flow.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">05</div><div><h2>跨角色泳道图</h2><p class="sub">把报障人、企业微信、Java MateClaw、观测云只读证据源，以及开发/处置/知识审核人的责任拆开，避免把人工动作误画成系统自动执行。</p></div></div>
+      <figure class="diagram-shell">
+        <div class="diagram-canvas"><a href="./diagrams/mateclaw-troubleshooting-swimlane.svg" target="_blank" rel="noopener"><img src="./diagrams/mateclaw-troubleshooting-swimlane.svg" alt="MateClaw 智能排障跨角色泳道图" loading="lazy"></a></div>
+        <figcaption class="diagram-caption"><p>v0.10 将跨泳道消息按时间列和上下行走廊分离；内部 Agent 没有独立权限，生产处置与知识批准仍由人完成。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-swimlane.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-swimlane.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">06</div><div><h2>三类调查路径，权威单独标记</h2><p class="sub"><code>investigationMode</code> 回答“怎么查”，<code>routeAuthority</code> 回答“为什么选中”。两者不能再压成一个 DETERMINISTIC / LLM_FALLBACK。</p></div></div>
+      <div class="grid g3">
+        <div class="card mode"><span class="tag det">ERROR_CODE_PLAYBOOK</span><h3>错误码确定性路径</h3><p>明确 `(system,errorCode)` 命中 approved Playbook。选路、取证、判据零 LLM，可到 HIGH。</p><small class="mono">authority: EXPLICIT / RULE_MATCHED</small></div>
+        <div class="card mode"><span class="tag assist">SCENARIO_PLAYBOOK</span><h3>场景辅助路径</h3><p>慢接口、系统不可用、会话发送失败。模型只能提议已注册 scenarioKey，EvidencePlan 由服务端决定。</p><small class="mono">MODEL_PROPOSED → confidence ≤ MEDIUM</small></div>
+        <div class="card mode"><span class="tag open">OPEN_DISCOVERY</span><h3>未知探索路径</h3><p>无可用 Playbook 时，受限 Agent 使用唯一只读证据工具。它受 DiscoveryPolicy 约束，不是“已批准知识”。</p><small class="mono">insufficient evidence → abstain</small></div>
+      </div>
+      <div class="callout danger" style="margin-top:14px"><b>模型没有画地图的权力。</b>它只能建议使用哪个已审核场景键；DQL、EvidenceRequest、工具名、超时、行数和参数白名单全部来自服务端注册表。</div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">07</div><div><h2>Loop Engineering 与多 Agent 结构化反证</h2><p class="sub">Loop 是服务端控制的运行机制；多 Agent 是固定角色的质疑协议。两者都不能改变“证据与人拥有最终权威”。</p></div></div>
+      <div class="split">
+        <div class="loop engineering"><h3>Investigation Loop Control</h3><ol><li>接收 LoopPolicy：迭代、证据、模型、时长、上下文硬预算</li><li>记录 LoopRun：检查点、预算消耗、验证反馈和 stopReason</li><li>只返回 COMPLETE / ABSTAIN / ESCALATE / FAILED</li></ol></div>
+        <div class="loop adversarial"><h3>Adversarial Evaluation</h3><ol><li>Evidence Challenger：反证、矛盾、引用缺口</li><li>Safety Challenger：危险动作、越权、虚假高置信</li><li>产出报告；确定性 Gate + 人工审核裁决</li></ol></div>
+      </div>
+      <div class="contract" style="margin-top:14px">Proposal + immutable EvidenceBundle
+  ├─ Evidence Challenger → contradictions[] + missingEvidence[]
+  └─ Safety Challenger   → unsafeActions[] + authorityViolations[]
+                         ↓
+               AdversarialEvalReport
+                         ↓
+       deterministic replay gate + human review</div>
+      <div class="callout warn" style="margin-top:14px"><b>阶段边界：</b>P1 仍是一次模型归纳，不实现 Loop Controller 或 Challenger；P2 用 20–30 条历史样本影子评测；P4 才为 SCENARIO / OPEN_DISCOVERY 引入运行时 Loop。ERROR_CODE 路始终固定一轮、零 LLM。</div>
+      <div class="callout danger" style="margin-top:10px"><b>对抗不是群聊投票。</b>Challenger 首期只读冻结 EvidenceBundle，不能直接调用证据源；需要补证时只提交 EvidenceGap。Agent 共识、票数和 Judge 文本永远不能提升置信度或批准知识。</div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">08</div><div><h2>目标边界与 P1 实施边界</h2><p class="sub">长期模块是责任边界，不是本期类清单。P1 只深化现有合成竖线，避免一次性同时动路由、数据库、状态机、通道和前端。</p></div></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>目标责任</th><th>复用现有实现</th><th>P1 是否实现</th></tr></thead>
+          <tbody>
+            <tr><td>Incident Intake / Planning</td><td>Controller、TroubleshootingIntakeService、Agent miss-path</td><td>否，固定会议案例</td></tr>
+            <tr><td>Investigation Loop Control</td><td>Agent Graph + DiscoveryPolicy + 服务端证据会话</td><td>否；P4 再统一 LoopPolicy / LoopRun / stopReason</td></tr>
+            <tr><td>Evidence Orchestration</td><td>唯一 Agent 门面 + 域内 Tool Registry + EvidenceSourceRouter / Adapter SPI</td><td>当前复用；Tool 插拔作为后续扩展，不新建第二套取证</td></tr>
+            <tr><td>SOP Synthesis</td><td>SopSynthesisService.preview + DeterministicLogTraceCompressor</td><td><b>是，当前主攻</b></td></tr>
+            <tr><td>Case Lifecycle</td><td>Diagnosis + DiagnosisStateMachine</td><td>不改；AWAITING_INPUT 不塞入</td></tr>
+            <tr><td>Knowledge Governance</td><td>KnowledgeCandidate + Outbox</td><td>只加 candidate 幂等/不可晋升边界</td></tr>
+            <tr><td>Adversarial Evaluation</td><td>现有 Java 模型配置 + 固定 EvalSubject/EvidenceBundle</td><td>否；P2 先影子，证明收益后再进 P5</td></tr>
+            <tr><td>Experience Projection / WeCom</td><td>现有 Vue 工作台 + Channel 能力</td><td>否，先选 Demo</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="contract" style="margin-top:14px">P1 = existing preview
+  → PlaybookDraftInducer      // 复用 BeanOutputConverter，一次模型调用
+  → PlaybookDraftValidator    // 引用、selector、动作、secret、DQL
+  → ReferenceSolutionComparator
+  → candidate                 // generationKey 幂等，永不直接 approved</div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">09</div><div><h2>稳定合同</h2><p class="sub">合同优先表达事实与权威，不把 UI 排版、平台查询语法或模型私有推理混入领域对象。</p></div></div>
+      <div class="grid g2">
+        <div class="card"><h3>IncidentImpact</h3><p class="contract">functionScope
+affectedCustomers? / affectedUsers?
+blastRadius
+evidenceRefs[] + observedAt?</p><p>未知人数是 null/UNKNOWN，不用 0 伪装已测量。</p></div>
+        <div class="card"><h3>Diagnosis</h3><p class="contract">investigationMode + routeAuthority
+conclusionType + confidence
+evidenceCitations[] + derivation
+impact + recommendedHumanActions[]
+abstained + capabilityBoundary</p></div>
+        <div class="card"><h3>InvestigationPlaybook</h3><p class="contract">type = ERROR_CODE | SCENARIO
+selector + EvidencePlan + criteria
+ParameterBindingSpec
+owner + version + validationSummary</p></div>
+        <div class="card"><h3>PlaybookDraft</h3><p class="contract">generationKey + sourceIncident
+proposedType / selector
+criteria + hypotheses + humanActions
+evidenceCitations + modelProvenance
+validationErrors[]</p></div>
+        <div class="card"><h3>LoopPolicy / LoopRun</h3><p class="contract">maxIterations + maxEvidenceCalls
+maxModelCalls + maxDuration
+contextBudget + stopRules
+checkpoints[] + budgetUsage
+stopReason</p><p>预算只能由服务端配置，模型不能续期。</p></div>
+        <div class="card"><h3>AdversarialEvalReport</h3><p class="contract">contradictedClaims[]
+missingEvidence[] + unsafeActions[]
+authorityViolations[]
+unresolvedDisagreements[]
+PASS / NEEDS_EVIDENCE / REJECT / UNAVAILABLE</p><p>报告是审核输入，不直接更新状态。</p></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">10</div><div><h2>安全红线与验收</h2><p class="sub">这些不是“建议”，而是代码、数据库、测试和页面都要能证明的边界。</p></div></div>
+      <div class="redlines">
+        <div class="redline"><div><b>生产写工具一个都不注册。</b>人工确认/批准只推进状态，系统不执行修改。</div></div>
+        <div class="redline"><div><b>错误码命中路零 LLM。</b>模型猜出的 error code 不能回流确定性路由。</div></div>
+        <div class="redline"><div><b>原始日志、DQL、凭据不进模型。</b>先限量、脱敏、压缩，只给 LogTraceSkeleton。</div></div>
+        <div class="redline"><div><b>模型输出不是证据。</b>所有引用必须属于本次 EvidenceBundle。</div></div>
+        <div class="redline"><div><b>candidate 不是 approved。</b>人工审核也必须满足来源资格、回放、幂等和版本唯一性。</div></div>
+        <div class="redline"><div><b>fixture 永远可见。</b>Recorded Replay 只证明工程链路，不代表真实 Guance 已验证。</div></div>
+        <div class="redline"><div><b>Loop 永远有界。</b>预算由服务端强制，到限必须 abstain / escalate，Agent 不得递归委派或自行续期。</div></div>
+        <div class="redline"><div><b>反证不等于裁决。</b>Challenger 不写状态、不直接调用证据源；共识、票数和 Judge 文本不是权威。</div></div>
+      </div>
+      <div class="callout" style="margin-top:14px"><b>首个验收不是文字相似度。</b>人工参考解法拆成必需步骤意图、禁止动作、顺序约束和必需证据类型；完成要求是必需意图全覆盖、引用有效、禁止动作 0，且至少一条负例能 abstain 或审查失败。</div>
+    </section>
+
+    <section>
+      <div class="head"><div class="num">11</div><div><h2>实施路线与体验原型</h2><p class="sub">先证明最短闭环，再接真实数据和一线入口。架构评审已通过 P1；正式 UI 仍需用户从三套信息结构中选择。</p></div></div>
+      <div class="roadmap">
+        <div class="step"><b>P0 · DONE</b><div><h3>产品事实、v4/v0.10 架构、架构评审、A/B/C Demo</h3><p>Loop 与结构化反证位置已锁定；v0.7–v0.9 已作为不可覆盖快照保留。</p></div></div>
+        <div class="step"><b>P1 · NOW</b><div><h3>无错误码证据→PlaybookDraft→比较→candidate</h3><p>固定会议案例、一次模型归纳；不实现 Loop Controller 或多 Agent。</p></div></div>
+        <div class="step"><b>P2</b><div><h3>真实 Guance + 历史样本 + 对抗影子评测</h3><p>同样本比较单 Agent 与固定 Challenger 的质量、延迟和 token；无收益不放权。</p></div></div>
+        <div class="step"><b>P3</b><div><h3>企业微信 IntakeSession 与原路闭环</h3><p>补问、异步调查、业务摘要、关闭后 @ 原报障人。</p></div></div>
+        <div class="step"><b>P4</b><div><h3>Scenario / Discovery 运行时 Loop</h3><p>统一 LoopPolicy、检查点、恢复和 stopReason；错误码路不变。</p></div></div>
+        <div class="step"><b>P5</b><div><h3>结构化反证进入知识治理</h3><p>只在影子评测达标后启用；确定性 Gate 与人工继续裁决。</p></div></div>
+      </div>
+      <div class="demo-links">
+        <a href="http://127.0.0.1:5173/prototype/troubleshooting?variant=A">A · 服务经理摘要</a>
+        <a href="http://127.0.0.1:5173/prototype/troubleshooting?variant=B">B · 开发证据台</a>
+        <a href="http://127.0.0.1:5173/prototype/troubleshooting?variant=C">C · 企微协同流</a>
+        <a href="../../../../rfcs/intelligent-troubleshooting-architecture-v4.md">完整 RFC v4</a>
+        <a href="./architecture-review-v4.md">架构师评审</a>
+      </div>
+    </section>
+
+    <footer>
+      <span>IT 智能排障 · MateClaw 架构蓝图 v0.10 · 2026-07-28</span>
+      <span>证据先于推理 · Loop 必须有界 · 反证不是裁决 · 自动化止于只读</span>
+    </footer>
+  </main>
+</body>
+</html>

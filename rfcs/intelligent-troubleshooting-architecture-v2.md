@@ -1,6 +1,11 @@
 # IT 智能排障系统 · 架构 v2（第一性原理重做）
 
-> 取代 `rfcs/intelligent-troubleshooting-design.md`（下称 v1）作为**现行架构**。
+> ⚠️ **历史讨论，已被 `intelligent-troubleshooting-architecture-v4.md` 取代。**
+>
+> v2 曾把“日志→SOP”抬为产品中心，并提出模型参与场景选路；这与已重新确认的蓝图主线和
+> `(system,error_code)` 确定性边界不一致。保留本文只为追溯讨论过程，不再据此开发。
+>
+> 本文曾取代 `rfcs/intelligent-troubleshooting-design.md`（下称 v1）作为现行架构。
 > v1 不作废：它逐条核对过 MateClaw 源码，§12 源码索引与 §5 红线论证仍然有效，作为**证据附录**保留。
 > 本文只做一件事：**把这套系统从公理重新推一遍**，看 v1 哪些结论是从公理来的（保留），
 > 哪些是从当时的偶然条件来的（推翻）。

@@ -1,5 +1,7 @@
 <template>
-  <div class="ts-page">
+  <TroubleshootingExperiencePrototype v-if="prototypeEnabled" />
+
+  <div v-else class="ts-page">
     <!-- duty queue -->
     <aside class="queue">
       <header class="qhead">
@@ -292,10 +294,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DerivationChain from './DerivationChain.vue'
+import TroubleshootingExperiencePrototype from './prototype/TroubleshootingExperiencePrototype.vue'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import {
   troubleshootingApi,
@@ -312,6 +315,8 @@ const STATUSES: DiagnosisStatus[] = [
 ]
 
 const router = useRouter()
+const route = useRoute()
+const prototypeEnabled = computed(() => import.meta.env.DEV && route.query.demo === '1')
 const workspaceStore = useWorkspaceStore()
 const canManageSops = computed(() => workspaceStore.can('manage:troubleshooting'))
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {

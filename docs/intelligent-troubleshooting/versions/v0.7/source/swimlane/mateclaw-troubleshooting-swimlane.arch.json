@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "title": "MateClaw 智能排障跨角色泳道图",
+  "type": "engineering-diagram",
+  "source": "generated",
+  "profile": "engineering-review",
+  "theme": "tech-blue",
+  "layout": "horizontal",
+  "counts": {
+    "nodes": 26,
+    "edges": 23,
+    "modules": 0
+  },
+  "nodes": [
+    {
+      "id": "laneReporter",
+      "label": "报障人 / 服务经理",
+      "type": "service"
+    },
+    {
+      "id": "laneChannel",
+      "label": "企业微信 Channel Adapter",
+      "type": "service"
+    },
+    {
+      "id": "laneMateClaw",
+      "label": "Java MateClaw",
+      "type": "service"
+    },
+    {
+      "id": "laneSources",
+      "label": "观测云 / 只读证据源",
+      "type": "service"
+    },
+    {
+      "id": "laneHumans",
+      "label": "开发 / 处置人 / 知识审核人",
+      "type": "service"
+    },
+    {
+      "id": "report",
+      "label": "@ 助手报障",
+      "type": "terminal"
+    },
+    {
+      "id": "context",
+      "label": "补客户 / 时间 / 截图",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "readSummary",
+      "label": "阅读业务摘要",
+      "type": "document"
+    },
+    {
+      "id": "confirmRecovery",
+      "label": "确认恢复",
+      "type": "terminal"
+    },
+    {
+      "id": "ack",
+      "label": "确认收到 / 补问",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "progress",
+      "label": "原路回执进展",
+      "type": "document"
+    },
+    {
+      "id": "closedNotice",
+      "label": "关闭后 @ 报障人",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "intakeSession",
+      "label": "IntakeSession\n完整性校验",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "plan",
+      "label": "三类路径规划\n权威与预算",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "orchestrate",
+      "label": "只读取证编排",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "diagnose",
+      "label": "诊断 + 双投影",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "lifecycle",
+      "label": "登记 outcome\n验证并关闭",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "makeCandidate",
+      "label": "生成 Candidate\n不可直接批准",
+      "type": "database",
+      "size": "large"
+    },
+    {
+      "id": "logSearch",
+      "label": "log_search",
+      "type": "process"
+    },
+    {
+      "id": "traceBundle",
+      "label": "PS ID 全链路",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "evidenceBundle",
+      "label": "返回 EvidenceBundle",
+      "type": "document",
+      "size": "large"
+    },
+    {
+      "id": "inspect",
+      "label": "开发核验证据",
+      "type": "process"
+    },
+    {
+      "id": "execute",
+      "label": "人工处置\n系统不执行",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "reviewCandidate",
+      "label": "知识审核\n满足资格？",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "approvedPlaybook",
+      "label": "批准新版本",
+      "type": "terminal"
+    },
+    {
+      "id": "rejectedCandidate",
+      "label": "驳回并留痕",
+      "type": "terminal"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "from": "report",
+      "to": "ack",
+      "type": "primary"
+    },
+    {
+      "id": "edge-2",
+      "from": "ack",
+      "to": "context",
+      "type": "optional",
+      "label": "缺字段"
+    },
+    {
+      "id": "edge-3",
+      "from": "context",
+      "to": "intakeSession",
+      "type": "primary"
+    },
+    {
+      "id": "edge-4",
+      "from": "intakeSession",
+      "to": "ack",
+      "type": "optional",
+      "label": "AWAITING_INPUT"
+    },
+    {
+      "id": "edge-5",
+      "from": "intakeSession",
+      "to": "plan",
+      "type": "primary",
+      "label": "READY"
+    },
+    {
+      "id": "edge-6",
+      "from": "plan",
+      "to": "orchestrate",
+      "type": "primary"
+    },
+    {
+      "id": "edge-7",
+      "from": "orchestrate",
+      "to": "logSearch",
+      "type": "data"
+    },
+    {
+      "id": "edge-8",
+      "from": "logSearch",
+      "to": "traceBundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-9",
+      "from": "traceBundle",
+      "to": "evidenceBundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-10",
+      "from": "evidenceBundle",
+      "to": "diagnose",
+      "type": "data"
+    },
+    {
+      "id": "edge-11",
+      "from": "diagnose",
+      "to": "progress",
+      "type": "data"
+    },
+    {
+      "id": "edge-12",
+      "from": "progress",
+      "to": "readSummary",
+      "type": "primary"
+    },
+    {
+      "id": "edge-13",
+      "from": "diagnose",
+      "to": "inspect",
+      "type": "primary"
+    },
+    {
+      "id": "edge-14",
+      "from": "inspect",
+      "to": "execute",
+      "type": "primary"
+    },
+    {
+      "id": "edge-15",
+      "from": "execute",
+      "to": "lifecycle",
+      "type": "data",
+      "label": "登记结果"
+    },
+    {
+      "id": "edge-16",
+      "from": "lifecycle",
+      "to": "confirmRecovery",
+      "type": "primary"
+    },
+    {
+      "id": "edge-17",
+      "from": "confirmRecovery",
+      "to": "closedNotice",
+      "type": "primary"
+    },
+    {
+      "id": "edge-18",
+      "from": "diagnose",
+      "to": "makeCandidate",
+      "type": "data",
+      "label": "证据型"
+    },
+    {
+      "id": "edge-19",
+      "from": "lifecycle",
+      "to": "makeCandidate",
+      "type": "data",
+      "label": "结果型"
+    },
+    {
+      "id": "edge-20",
+      "from": "makeCandidate",
+      "to": "reviewCandidate",
+      "type": "primary"
+    },
+    {
+      "id": "edge-21",
+      "from": "reviewCandidate",
+      "to": "approvedPlaybook",
+      "type": "primary",
+      "label": "是"
+    },
+    {
+      "id": "edge-22",
+      "from": "reviewCandidate",
+      "to": "rejectedCandidate",
+      "type": "optional",
+      "label": "否"
+    },
+    {
+      "id": "edge-23",
+      "from": "approvedPlaybook",
+      "to": "plan",
+      "type": "data",
+      "label": "已审核知识反馈"
+    }
+  ],
+  "modules": []
+}

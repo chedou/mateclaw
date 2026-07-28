@@ -1,9 +1,8 @@
 # IT 智能排障系统设计文档（on MateClaw）
 
-> ⚠️ **已被 `rfcs/intelligent-troubleshooting-architecture-v2.md` 取代为现行架构。**
+> ⚠️ **现行架构见 `rfcs/intelligent-troubleshooting-architecture-v4.md`。**
 > 本文不作废：§5 红线论证与 §12 源码位置索引是逐条核对过 MateClaw 源码的**证据附录**，仍然有效，
-> v2 也继续引用。但**知识模型（SOP = `(system, error_code)`）、"零 LLM = 整条命中路径"的表述、
-> 以及缺失学习环这三处已被 v2 推翻**，不要再照本文实现。
+> v4 继续引用。但实现与优先级以 v4 为准，不要把本文当作独立的现行概要设计。
 >
 > 状态：实施中 v1 · P0—P3 与 P4 未命中路只读 Agent 工程链路已落地；P4 默认关闭，真实数据验证待 T1—T3
 > 作者：MateClaw Team
@@ -36,7 +35,7 @@ MateClaw 的 Workflow 里，每一个「干活步」最终都是调 LLM agent，
 
 ## 2. 顶层形态：确定性领域模块
 
-排障系统 = MateClaw-server 内的一个**确定性领域模块** `vip.mate.troubleshooting`：纯 Java 引擎 + 自有持久化 + 自有状态机 + 自有 REST/webhook。它是既有 Python MVP（`metaclaw_troubleshooting`：类型化规则引擎 + 状态机 + 事务 Outbox，38 测试通过、无架构性偏差）的同构 Spring 重表达，不是重新发明。
+排障系统 = MateClaw-server 内的一个**确定性领域模块** `vip.mate.troubleshooting`：纯 Java 引擎 + 自有持久化 + 自有状态机 + 自有 REST/webhook。后续实现只以当前 Java 领域模块及其测试为准，不维护第二套运行时。
 
 **落点（T4，已坐实）**：MateClaw-server 是**单 Maven 模块**，所有领域都是 `vip.mate.*` 下的平级包（acp/agent/approval/audit/auth/channel/cron/dashboard/goal/hook/kbopen/llm/memory/planning/skill/tool/trigger/wiki/workflow/workspace…），每域内部同一套 `controller/service/repository/model/event` 骨架。排障域照此新增顶层包，**不新建 Maven module、不新建独立 Spring 应用**，复用同一鉴权/持久化/Flyway/启动。
 

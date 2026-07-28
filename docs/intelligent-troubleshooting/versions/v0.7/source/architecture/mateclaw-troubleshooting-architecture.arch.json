@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "title": "MateClaw 智能排障总体架构",
+  "type": "engineering-diagram",
+  "source": "generated",
+  "profile": "engineering-review",
+  "theme": "tech-blue",
+  "layout": "horizontal",
+  "counts": {
+    "nodes": 22,
+    "edges": 17,
+    "modules": 0
+  },
+  "nodes": [
+    {
+      "id": "areaChannels",
+      "label": "入口与通道",
+      "type": "service"
+    },
+    {
+      "id": "areaCore",
+      "label": "MateClaw 证据脊柱",
+      "type": "service"
+    },
+    {
+      "id": "areaEvidence",
+      "label": "只读证据 Tool 插拔层（受控）",
+      "type": "service"
+    },
+    {
+      "id": "areaOutcomes",
+      "label": "在线排障闭环",
+      "type": "service"
+    },
+    {
+      "id": "areaKnowledge",
+      "label": "知识生产闭环",
+      "type": "service"
+    },
+    {
+      "id": "wecom",
+      "label": "企微 @ 报障 / 补问",
+      "type": "user"
+    },
+    {
+      "id": "web",
+      "label": "Web 证据 / 处置 / 审核",
+      "type": "service"
+    },
+    {
+      "id": "alert",
+      "label": "告警 / 工单接入",
+      "type": "document"
+    },
+    {
+      "id": "intake",
+      "label": "报障受理 身份·幂等·脱敏",
+      "type": "service"
+    },
+    {
+      "id": "planning",
+      "label": "调查规划 路径·权威·预算",
+      "type": "service"
+    },
+    {
+      "id": "orchestration",
+      "label": "证据编排 只读·有界·降级",
+      "type": "service"
+    },
+    {
+      "id": "bundle",
+      "label": "证据包 引用·来源·fixture",
+      "type": "document"
+    },
+    {
+      "id": "toolRegistry",
+      "label": "域内 Tool Registry · schema / 权限 / 预算 / 版本",
+      "type": "service"
+    },
+    {
+      "id": "toolPlugins",
+      "label": "Tool 插件 SPI · log_search / trace / metric / K8S / code",
+      "type": "process"
+    },
+    {
+      "id": "sourceAdapters",
+      "label": "来源 Adapter SPI · Guance / Replay / K8S / Git",
+      "type": "service"
+    },
+    {
+      "id": "diagnosis",
+      "label": "诊断 定位·排除·假设·弃权",
+      "type": "service"
+    },
+    {
+      "id": "projection",
+      "label": "双投影 业务摘要·开发证据",
+      "type": "document"
+    },
+    {
+      "id": "lifecycle",
+      "label": "处置闭环 人工动作·结果·关闭",
+      "type": "service"
+    },
+    {
+      "id": "synthesis",
+      "label": "SOP 合成 压缩→草稿",
+      "type": "process"
+    },
+    {
+      "id": "governance",
+      "label": "知识治理 校验·回放·审核",
+      "type": "service"
+    },
+    {
+      "id": "approved",
+      "label": "已批准 Playbook 版本权威",
+      "type": "terminal"
+    },
+    {
+      "id": "safety",
+      "label": "安全边界 写工具=0 · 日志不进模型 · 候选≠权威",
+      "type": "document"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "from": "wecom",
+      "to": "intake",
+      "type": "primary",
+      "label": "报障上下文"
+    },
+    {
+      "id": "edge-2",
+      "from": "web",
+      "to": "intake",
+      "type": "primary"
+    },
+    {
+      "id": "edge-3",
+      "from": "alert",
+      "to": "intake",
+      "type": "data"
+    },
+    {
+      "id": "edge-4",
+      "from": "intake",
+      "to": "planning",
+      "type": "primary"
+    },
+    {
+      "id": "edge-5",
+      "from": "planning",
+      "to": "orchestration",
+      "type": "primary"
+    },
+    {
+      "id": "edge-6",
+      "from": "orchestration",
+      "to": "bundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-7",
+      "from": "orchestration",
+      "to": "toolRegistry",
+      "type": "data",
+      "label": "唯一只读门面 / 服务端计划"
+    },
+    {
+      "id": "edge-8",
+      "from": "toolRegistry",
+      "to": "toolPlugins",
+      "type": "primary"
+    },
+    {
+      "id": "edge-9",
+      "from": "toolPlugins",
+      "to": "sourceAdapters",
+      "type": "primary"
+    },
+    {
+      "id": "edge-10",
+      "from": "bundle",
+      "to": "diagnosis",
+      "type": "primary"
+    },
+    {
+      "id": "edge-11",
+      "from": "diagnosis",
+      "to": "projection",
+      "type": "primary"
+    },
+    {
+      "id": "edge-12",
+      "from": "projection",
+      "to": "lifecycle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-13",
+      "from": "bundle",
+      "to": "synthesis",
+      "type": "data",
+      "label": "脱敏骨架 + 引用"
+    },
+    {
+      "id": "edge-14",
+      "from": "synthesis",
+      "to": "governance",
+      "type": "primary"
+    },
+    {
+      "id": "edge-15",
+      "from": "lifecycle",
+      "to": "governance",
+      "type": "data",
+      "label": "人工解法 / outcome"
+    },
+    {
+      "id": "edge-16",
+      "from": "governance",
+      "to": "approved",
+      "type": "primary"
+    },
+    {
+      "id": "edge-17",
+      "from": "approved",
+      "to": "planning",
+      "type": "data",
+      "label": "已审核知识反馈"
+    }
+  ],
+  "modules": []
+}
