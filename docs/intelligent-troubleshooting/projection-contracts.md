@@ -1,13 +1,15 @@
 # 两个投影合同：BusinessSummary / DeveloperEvidenceView
 
-> 状态：**信息结构已选定（2026-07-28）**——集中兵力做**服务经理**与**开发**两个受众，
-> 企微协同流随 P3 暂缓。
+> 状态：**信息结构已选定并进入正式工作台（2026-07-29）**——集中兵力做**服务经理**与
+> **开发**两个受众，企微协同流随 P3 暂缓。
 >
 > 依据：架构 v4 §7.2（一份 Diagnosis 两种投影）、§5.5（Diagnosis 契约）、§5.10（北极星时间戳）、
 > 录音基线 F5 / F7 / F8。
 >
-> 原型：`mateclaw-ui/src/views/Troubleshooting/prototype/`（Vue，实现权威）
-> + `experience-prototype-demo.html`（静态镜像，可直接演示）。
+> 正式实现：服务端 `vip.mate.troubleshooting.projection` +
+> `mateclaw-ui/src/views/Troubleshooting/FormalWorkbench.vue`。
+> 原型：`mateclaw-ui/src/views/Troubleshooting/prototype/` +
+> `experience-prototype-demo.html`（暂留作降级结局对照，不再是实现权威）。
 >
 > 通道消费方式见 §5（v4.2 补）：IM 侧复用平台已有 `channel/wecom`、`channel/feishu`，
 > 不新建入站；出站交互卡片被 renderer 接缝形状挡住，先发纯文本。
@@ -17,8 +19,8 @@
 ## 0. 这份文档解决什么
 
 页面选型定了之后，真正卡住开发的不是布局，而是**后端该给出什么字段**。本文把选中的信息结构
-逐项翻译成两个类型化投影，让 P1 可以在不实现 Projection 的前提下先把合同定住
-（v4 §4 明确 P1 不新建 Projection 实现，本文只固定形状）。
+逐项翻译成两个类型化投影。P1 当时只固定形状、不实现 Projection；P1 收口后已按本文启动 T15，
+服务端投影与正式 Web 工作台现已落地。
 
 两条纪律先讲清楚：
 
@@ -37,11 +39,11 @@
 │  结论类型徽标 + 一句话结论 + 可信等级
 │  问题 · 影响面 · 下一步            ← 三栏，全部来自类型化字段
 │  北极星三段耗时                    ← 补问 / 调查 / 采纳，分开显示
-│  证据收敛（链路 + 成功样本对照 + 异常点）
-│  知识草稿状态
 │  处置按钮（文案写明「只推进状态，系统不执行」）
 └─────────────────────────────────────────────────
 ┌─ 开发证据台（开发）────────────────────────────── 默认折叠
+│  调查路径 + 证据收敛 + 成功样本对照
+│  知识草稿状态
 │  调用链竖栏 + 影响范围
 │  证据时间线（含判据求值行）
 │  排查步骤草稿 + 系统明确做不到
@@ -132,7 +134,8 @@ public record Hop(String hopId, String service, String duration, boolean anomalo
 
 /** 一步 = 一条证据或一次判据求值，两者都要能被点开看引用。 */
 public record EvidenceStep(
-        String at,                             // 相对时间或「判据」
+        EvidenceStepKind kind,                 // EVIDENCE | CRITERION
+        Instant at,                            // 证据采集时间；判据行为 null
         String title,
         String detail,
         String ref,                            // queryId 或 criterionId
@@ -158,6 +161,7 @@ public record DraftView(
 
 - `StepTone.EXCLUDED`（判据求值为假）与 `UNEVALUATED`（证据缺失）**必须分开**，
   投影不得把两者归并——它们在操作者心智里语义相反；
+- 判据行使用 `kind=CRITERION` 且 `at=null`，不再用 `at="判据"` 这类字符串哨兵值；
 - `draft.steps` 非空时 `draft.reviewStatus` 必须是 `DRAFT` 或 `CANDIDATE`；
 - `contrast.available=false` 时前端要显示这一行而不是隐藏它，
   因为"没取到对照"本身是判断质量的信息（对应 v4 §5.7 该草稿锁定校准期档）；
@@ -180,6 +184,10 @@ public record NorthStarTimings(
 
 三段**必须分开显示**，禁止只给总时长——否则无法判断该优化补问、调查还是呈现（v4 §5.10 / D14）。
 未发生的阶段保持 `null`，前端显示「未发生」，不得用 `0`。
+
+**实现现状（2026-07-29）**：`Diagnosis` 1.5 已持久化该值对象。Servlet Filter 在 Spring 请求映射与
+校验前捕获 `reportedAt`，路由与必填信息就绪后捕获 `readyAt`，结论或 abstain 产出时捕获 `conclusionAt`，
+第一次人工确认记录 `handoffAt`。旧 1.3/1.4 记录使用全 null 的 `unrecorded()`，不回填当前时间。
 
 ---
 
@@ -226,11 +234,11 @@ IM 侧给一条深链回 Web 即可。
 
 | 阶段 | 做什么 |
 |---|---|
-| **P1（当前）** | **只固定本文合同，不实现 Projection**。合成竖线照 v4 §4 推进；时间戳与对照按 T4.5 落到数据里 |
+| P1（已收口） | 只固定本文合同、不实现 Projection；合成竖线照 v4 §4 推进 |
 | P2 | 真实 Guance 打通后，用真实样本校验 `ImpactView.evidenceRefs` 与 `ContrastView` 是否恒能取到 |
 | P3 | 企微 Adapter 消费 `BusinessSummary` 排版并原路回复；投影本身不变 |
-| P5 | 正式 `/troubleshooting` 吸收该结构；删除 dev-only 原型路由与两个原型组件 |
+| P5 / T15（进行中） | 正式 `/troubleshooting` 已读真实投影 API；Diagnosis 1.5 已补 D14，结构化影响、完整 hop 与对照仍待补齐 |
 
-**删除清单（吸收完成后一并删）**：
+**删除清单（正式页覆盖所有降级场景后再删）**：
 `prototype/TroubleshootingExperiencePrototype.vue`、`prototype/DeveloperEvidencePanel.vue`、
 `experience-prototype-demo.html`、router 里的 dev-only 分支。

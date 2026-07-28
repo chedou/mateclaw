@@ -41,8 +41,8 @@ public final class LifecycleRequests {
 
     /**
      * Closure. {@code createKnowledgeCandidate} decides whether this case
-     * sediments a reviewable lesson; the candidate enters a review queue and
-     * never overwrites an approved SOP.
+     * sediments a knowledge candidate. Recording or publishing that candidate
+     * is not an approval decision and never overwrites an approved SOP.
      */
     public record Close(
             @NotNull ClosureOutcome outcome,

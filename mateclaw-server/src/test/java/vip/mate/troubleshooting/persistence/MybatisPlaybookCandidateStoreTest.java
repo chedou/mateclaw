@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookCandidateEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingPlaybookCandidateMapper;
 import vip.mate.troubleshooting.synthesis.MybatisPlaybookCandidateStore;
-import vip.mate.troubleshooting.synthesis.NorthStarTimings;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.synthesis.PlaybookCandidateStore;
 import vip.mate.troubleshooting.synthesis.PlaybookDraft;
 import vip.mate.troubleshooting.synthesis.PlaybookKnowledgeRecord;

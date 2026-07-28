@@ -12,7 +12,7 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
-import vip.mate.troubleshooting.synthesis.NorthStarTimings;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisRequest;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;

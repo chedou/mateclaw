@@ -2,11 +2,13 @@ package vip.mate.troubleshooting.engine;
 
 import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
+import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -18,69 +20,121 @@ import java.util.Set;
 public final class CriterionEvaluator {
 
     public boolean matches(Criterion criterion, Map<String, ?> observed) {
+        return evaluate(criterion, observed) == CriterionOutcome.SATISFIED;
+    }
+
+    /**
+     * Evaluates one criterion without collapsing malformed or absent fields
+     * into counter-evidence. Only a fully evaluable false expression is
+     * {@link CriterionOutcome#EXCLUDED}.
+     */
+    public CriterionOutcome evaluate(Criterion criterion, Map<String, ?> observed) {
         if (criterion == null || observed == null) {
-            return false;
+            return CriterionOutcome.UNEVALUATED;
         }
         return switch (criterion) {
-            case Criterion.NumericGte rule -> number(observed, rule.field())
-                    .stream()
-                    .anyMatch(value -> value >= rule.threshold());
-            case Criterion.MissingOrLte rule -> !truthy(observed.get(rule.presenceField()))
-                    || number(observed, rule.field())
-                    .stream()
-                    .anyMatch(value -> value <= rule.threshold());
-            case Criterion.RatioOfSumGt rule -> ratioMatches(rule, observed);
-            case Criterion.MultipleGt rule -> multipleMatches(rule, observed);
-            case Criterion.ContainsAndIn rule -> containsAndInMatches(rule, observed);
+            case Criterion.NumericGte rule -> compare(
+                    number(observed, rule.field()), value -> value >= rule.threshold());
+            case Criterion.MissingOrLte rule -> evaluateMissingOrLte(rule, observed);
+            case Criterion.RatioOfSumGt rule -> evaluateRatio(rule, observed);
+            case Criterion.MultipleGt rule -> evaluateMultiple(rule, observed);
+            case Criterion.ContainsAndIn rule -> evaluateContainsAndIn(rule, observed);
             case Criterion.BooleanEquals rule -> observed.get(rule.field()) instanceof Boolean value
-                    && value == rule.expected();
+                    ? outcome(value == rule.expected())
+                    : CriterionOutcome.UNEVALUATED;
         };
     }
 
     public List<String> matchingSignals(
             List<AnomalyCriterion> criteria,
             List<EvidenceResult> evidence) {
+        return outcomesBySignal(criteria, evidence).entrySet().stream()
+                .filter(entry -> entry.getValue() == CriterionOutcome.SATISFIED)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /**
+     * Evaluates every authored signal, preserving the distinction between a
+     * false criterion (EXCLUDED) and evidence that never arrived (UNEVALUATED).
+     */
+    public Map<String, CriterionOutcome> outcomesBySignal(
+            List<AnomalyCriterion> criteria,
+            List<EvidenceResult> evidence) {
         Map<String, EvidenceResult> byRequestId = new HashMap<>();
         for (EvidenceResult result : safe(evidence)) {
             byRequestId.put(result.queryId(), result);
         }
-        return safe(criteria).stream()
-                .filter(criterion -> {
-                    EvidenceResult result = byRequestId.get(criterion.sourceRequestId());
-                    return result != null
-                            && result.status() != EvidenceStatus.MISSING
-                            && matches(criterion.rule(), result.observed());
-                })
-                .map(AnomalyCriterion::signal)
-                .toList();
+        Map<String, CriterionOutcome> outcomes = new LinkedHashMap<>();
+        for (AnomalyCriterion criterion : safe(criteria)) {
+            EvidenceResult result = byRequestId.get(criterion.sourceRequestId());
+            CriterionOutcome outcome = result == null || result.status() == EvidenceStatus.MISSING
+                    ? CriterionOutcome.UNEVALUATED
+                    : evaluate(criterion.rule(), result.observed());
+            outcomes.put(criterion.signal(), outcome);
+        }
+        return java.util.Collections.unmodifiableMap(outcomes);
     }
 
-    private boolean ratioMatches(Criterion.RatioOfSumGt rule, Map<String, ?> observed) {
+    private CriterionOutcome evaluateMissingOrLte(
+            Criterion.MissingOrLte rule,
+            Map<String, ?> observed) {
+        if (!observed.containsKey(rule.presenceField())
+                || !truthy(observed.get(rule.presenceField()))) {
+            return CriterionOutcome.SATISFIED;
+        }
+        return compare(number(observed, rule.field()), value -> value <= rule.threshold());
+    }
+
+    private CriterionOutcome evaluateRatio(
+            Criterion.RatioOfSumGt rule,
+            Map<String, ?> observed) {
         OptionalDouble numerator = number(observed, rule.numeratorField());
         OptionalDouble addend = number(observed, rule.addendField());
         if (numerator.isEmpty() || addend.isEmpty()) {
-            return false;
+            return CriterionOutcome.UNEVALUATED;
         }
         double denominator = numerator.getAsDouble() + addend.getAsDouble();
-        return denominator > 0 && numerator.getAsDouble() / denominator > rule.threshold();
+        return outcome(denominator > 0
+                && numerator.getAsDouble() / denominator > rule.threshold());
     }
 
-    private boolean multipleMatches(Criterion.MultipleGt rule, Map<String, ?> observed) {
+    private CriterionOutcome evaluateMultiple(
+            Criterion.MultipleGt rule,
+            Map<String, ?> observed) {
         OptionalDouble value = number(observed, rule.field());
         OptionalDouble baseline = number(observed, rule.baselineField());
-        return value.isPresent()
-                && baseline.isPresent()
-                && baseline.getAsDouble() > 0
-                && value.getAsDouble() > baseline.getAsDouble() * rule.multiplier();
+        if (value.isEmpty() || baseline.isEmpty()) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        return outcome(baseline.getAsDouble() > 0
+                && value.getAsDouble() > baseline.getAsDouble() * rule.multiplier());
     }
 
-    private boolean containsAndInMatches(Criterion.ContainsAndIn rule, Map<String, ?> observed) {
-        String containsValue = string(observed.get(rule.containsField()));
-        String membershipValue = string(observed.get(rule.membershipField()));
+    private CriterionOutcome evaluateContainsAndIn(
+            Criterion.ContainsAndIn rule,
+            Map<String, ?> observed) {
+        if (!(observed.get(rule.containsField()) instanceof String containsValue)
+                || !(observed.get(rule.membershipField()) instanceof String membershipValue)) {
+            return CriterionOutcome.UNEVALUATED;
+        }
         Set<String> accepted = new HashSet<>();
         rule.acceptedValues().forEach(value -> accepted.add(value.toLowerCase(Locale.ROOT)));
-        return containsValue.contains(rule.substring().toLowerCase(Locale.ROOT))
-                && accepted.contains(membershipValue);
+        return outcome(containsValue.toLowerCase(Locale.ROOT)
+                        .contains(rule.substring().toLowerCase(Locale.ROOT))
+                && accepted.contains(membershipValue.toLowerCase(Locale.ROOT)));
+    }
+
+    private CriterionOutcome compare(
+            OptionalDouble value,
+            java.util.function.DoublePredicate predicate) {
+        return value.isPresent()
+                ? outcome(predicate.test(value.getAsDouble()))
+                : CriterionOutcome.UNEVALUATED;
+    }
+
+    private CriterionOutcome outcome(boolean matched) {
+        return matched ? CriterionOutcome.SATISFIED : CriterionOutcome.EXCLUDED;
     }
 
     private OptionalDouble number(Map<String, ?> observed, String field) {
@@ -116,10 +170,6 @@ public final class CriterionEvaluator {
                     && !normalized.equals("null");
         }
         return value != null;
-    }
-
-    private String string(Object value) {
-        return value == null ? "" : String.valueOf(value).toLowerCase(Locale.ROOT);
     }
 
     private <T> List<T> safe(List<T> values) {

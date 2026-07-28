@@ -5,14 +5,16 @@
 形态为 mateclaw-server 内的确定性领域模块 `vip.mate.troubleshooting`。
 
 当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）和
-P1（无错误码证据→PlaybookDraft 竖线）已完成，下一步是 P2 真实 Guance 授权、字段核实与影子样本**。
+P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
+并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳。**
+下一主攻是 P2 真实 Guance 授权、字段核实与 20–30 条影子样本；同时补齐结构化影响、完整 hop 和成功样本对照。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
 `ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
-`TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验、`Diagnosis` 1.4
-兼容契约和未命中路 Vue 展示；相关定向回归与应用上下文启动测试通过。另有
+`TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验和未命中路 Vue 展示；
+`Diagnosis` 1.5 继续兼容 1.3/1.4 存量 JSON，相关定向回归与应用上下文启动测试通过。另有
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的
 fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
@@ -36,13 +38,14 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
    v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11 / v0.12 图形不变，改动在 RFC。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
-4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：当前 P1 及 P2–P5 顺序、完成标准和测试清单。
+4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。
 5.5 **`docs/intelligent-troubleshooting/p1-verification.md`** —— P1 固定 Replay Eval、HTTP 实测、
    fail-closed 边界与未宣称完成的 P2 范围。
 6. **`rfcs/intelligent-troubleshooting-design.md`** —— 源码核对与安全论证附录；
    §5 红线论证、§12 源码位置索引仍有效。
-7. **`docs/intelligent-troubleshooting/detail-page-design.md`** —— 正式详情页历史设计；新信息结构先看 Vue Prototype。
+7. **`docs/intelligent-troubleshooting/detail-page-design.md`** —— 详情页历史设计；当前实现权威是正式
+   `FormalWorkbench.vue` 与服务端 Projection，Prototype 只留作降级结局对照。
 8. **`docs/intelligent-troubleshooting/agent-miss-path-runbook.md`** —— 旧 P4 专用 Agent 配置、启用、验收与回滚。
 
 `rfcs/intelligent-troubleshooting-architecture-v2.md`、`v3.md` 与

@@ -1,5 +1,7 @@
 package vip.mate.troubleshooting.synthesis;
 
+import vip.mate.troubleshooting.model.NorthStarTimings;
+
 import java.time.Instant;
 import java.util.List;
 

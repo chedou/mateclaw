@@ -1,9 +1,12 @@
 package vip.mate.troubleshooting.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.model.ConclusionType;
+import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.DeterministicDiagnosisDraft;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisRule;
@@ -12,10 +15,12 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,14 +41,25 @@ public class DeterministicDiagnosisService {
     private final CriterionEvaluator evaluator;
     private final DiagnosisStateMachine stateMachine;
     private final TroubleshootingPersistenceService persistence;
+    private final Clock clock;
 
+    @Autowired
     public DeterministicDiagnosisService(
             CriterionEvaluator evaluator,
             DiagnosisStateMachine stateMachine,
             TroubleshootingPersistenceService persistence) {
+        this(evaluator, stateMachine, persistence, Clock.systemUTC());
+    }
+
+    DeterministicDiagnosisService(
+            CriterionEvaluator evaluator,
+            DiagnosisStateMachine stateMachine,
+            TroubleshootingPersistenceService persistence,
+            Clock clock) {
         this.evaluator = evaluator;
         this.stateMachine = stateMachine;
         this.persistence = persistence;
+        this.clock = clock;
     }
 
     public StoredDiagnosis diagnoseAndPersist(
@@ -54,8 +70,29 @@ public class DeterministicDiagnosisService {
             boolean rehearsal,
             boolean fixtureMode,
             Instant receivedAt) {
-        Diagnosis diagnosis = diagnose(incident, sop, evidence, rehearsal, fixtureMode);
-        return persistence.createOrGet(workspaceId, diagnosis, receivedAt);
+        return diagnoseAndPersist(
+                workspaceId,
+                incident,
+                sop,
+                evidence,
+                rehearsal,
+                fixtureMode,
+                receivedAt,
+                receivedAt);
+    }
+
+    public StoredDiagnosis diagnoseAndPersist(
+            long workspaceId,
+            IncidentContext incident,
+            SopEntry sop,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            boolean fixtureMode,
+            Instant reportedAt,
+            Instant readyAt) {
+        Diagnosis diagnosis = diagnose(
+                incident, sop, evidence, rehearsal, fixtureMode, reportedAt, readyAt);
+        return persistence.createOrGet(workspaceId, diagnosis, reportedAt);
     }
 
     public Diagnosis diagnose(
@@ -64,6 +101,18 @@ public class DeterministicDiagnosisService {
             List<EvidenceResult> evidence,
             boolean rehearsal,
             boolean fixtureMode) {
+        return diagnose(
+                incident, sop, evidence, rehearsal, fixtureMode, null, null);
+    }
+
+    private Diagnosis diagnose(
+            IncidentContext incident,
+            SopEntry sop,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            boolean fixtureMode,
+            Instant reportedAt,
+            Instant readyAt) {
         if (incident == null || sop == null) {
             throw new IllegalArgumentException("incident and sop are required");
         }
@@ -78,9 +127,13 @@ public class DeterministicDiagnosisService {
         List<String> missing = missingRequests(sop, evidenceByRequest, false);
         List<String> requiredMissing = missingRequests(sop, evidenceByRequest, true);
 
-        List<String> signals = evaluator.matchingSignals(
+        Map<String, CriterionOutcome> outcomes = evaluator.outcomesBySignal(
                 sop.anomalyCriteria(), normalizedEvidence);
-        Decision decision = synthesize(sop.diagnosisRules(), signals);
+        List<String> signals = outcomes.entrySet().stream()
+                .filter(entry -> entry.getValue() == CriterionOutcome.SATISFIED)
+                .map(Map.Entry::getKey)
+                .toList();
+        Decision decision = synthesize(sop.diagnosisRules(), signals, outcomes);
         List<String> warnings = new ArrayList<>();
 
         if (!requiredMissing.isEmpty()) {
@@ -88,14 +141,14 @@ public class DeterministicDiagnosisService {
                     "自动取证不完整，当前不能确认根因。",
                     "观测工具不可用，已降级为 SOP 文本与人工取证指引。",
                     Confidence.LOW,
-                    true);
+                    ConclusionType.INSUFFICIENT_EVIDENCE);
         }
         if (!sop.operational()) {
             decision = new Decision(
                     "SOP 尚未审核，当前仅完成影子取证，不输出正式根因。",
                     "命中草案 SOP；结果仅用于离线比对，不能作为处置建议。",
                     Confidence.LOW,
-                    true);
+                    ConclusionType.INSUFFICIENT_EVIDENCE);
         }
 
         if (fixtureMode) {
@@ -108,15 +161,21 @@ public class DeterministicDiagnosisService {
         if (!sop.operational()) {
             warnings.add("SOP 仍为草案，禁止越过影子模式或输出恢复动作。");
         }
+        if (decision.conclusionType() == ConclusionType.EXCLUDED) {
+            warnings.add("当前 SOP 的所有候选结论都被已取得证据反证；这是排除，不是定位。");
+        }
 
-        List<RecommendedAction> actions = decision.abstained()
-                ? List.of()
-                : List.copyOf(sop.actions());
+        List<RecommendedAction> actions = decision.conclusionType() == ConclusionType.LOCATED
+                ? List.copyOf(sop.actions())
+                : List.of();
         String routeToTeam = actions.stream()
                 .anyMatch(action -> action.actionType() == ActionType.HUMAN_CONTACT)
                 ? sop.ownerTeam()
                 : null;
         String correlationId = UUID.randomUUID().toString().replace("-", "");
+        NorthStarTimings timings = reportedAt == null
+                ? NorthStarTimings.unrecorded()
+                : NorthStarTimings.concluded(reportedAt, readyAt, clock.instant());
         DeterministicDiagnosisDraft draft = new DeterministicDiagnosisDraft(
                 "diag-" + correlationId,
                 "case-" + correlationId,
@@ -129,7 +188,9 @@ public class DeterministicDiagnosisService {
                 decision.summary(),
                 decision.rootCause(),
                 decision.confidence(),
-                decision.abstained(),
+                decision.conclusionType(),
+                decision.conclusionType() == ConclusionType.INSUFFICIENT_EVIDENCE,
+                timings,
                 routeToTeam,
                 rehearsal,
                 fixtureMode,
@@ -166,7 +227,10 @@ public class DeterministicDiagnosisService {
         return result == null || result.status() == EvidenceStatus.MISSING;
     }
 
-    private Decision synthesize(List<DiagnosisRule> rules, List<String> signals) {
+    private Decision synthesize(
+            List<DiagnosisRule> rules,
+            List<String> signals,
+            Map<String, CriterionOutcome> outcomes) {
         Set<String> active = new HashSet<>(signals);
         for (DiagnosisRule rule : rules) {
             if (active.containsAll(rule.requiredSignals())) {
@@ -174,20 +238,45 @@ public class DeterministicDiagnosisService {
                         rule.rootCause(),
                         rule.summary(),
                         rule.confidence(),
-                        rule.abstained());
+                        rule.abstained()
+                                ? ConclusionType.INSUFFICIENT_EVIDENCE
+                                : ConclusionType.LOCATED);
             }
+        }
+        if (allRulesDefinitivelyExcluded(rules, outcomes)) {
+            return new Decision(
+                    "当前 SOP 候选根因均被反证。",
+                    "现有证据已排除当前 SOP 中的候选结论。",
+                    Confidence.MEDIUM,
+                    ConclusionType.EXCLUDED);
         }
         return new Decision(
                 "证据不足，暂不能确认根因。",
                 "SOP 未提供与当前信号匹配的结论规则。",
                 Confidence.LOW,
-                true);
+                ConclusionType.INSUFFICIENT_EVIDENCE);
+    }
+
+    private boolean allRulesDefinitivelyExcluded(
+            List<DiagnosisRule> rules,
+            Map<String, CriterionOutcome> outcomes) {
+        return !rules.isEmpty() && rules.stream().allMatch(rule -> {
+            boolean hasExclusion = false;
+            for (String signal : rule.requiredSignals()) {
+                CriterionOutcome outcome = outcomes.get(signal);
+                if (outcome == null || outcome == CriterionOutcome.UNEVALUATED) {
+                    return false;
+                }
+                hasExclusion |= outcome == CriterionOutcome.EXCLUDED;
+            }
+            return hasExclusion;
+        });
     }
 
     private record Decision(
             String rootCause,
             String summary,
             Confidence confidence,
-            boolean abstained) {
+            ConclusionType conclusionType) {
     }
 }

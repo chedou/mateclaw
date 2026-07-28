@@ -31,7 +31,8 @@
 ```
 
 现已完成 P1 fixture-only 竖线：固定三次取证、结构化归纳、确定性校验、参考解法比较、幂等 candidate 边界和北极星时间戳。
-本阶段未改路由、企微、正式页面和生产数据，也未实现 Loop Controller 或多 Agent Challenger。
+P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影和 D14 运行时采集进入正式工作台。
+仍未实现 Loop Controller 或多 Agent Challenger。
 验证记录见 `p1-verification.md`。
 
 ## 1. 每个变更都要守的红线
@@ -75,7 +76,7 @@
 - [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
       / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
 
-## 4. P1 · 无错误码证据→PlaybookDraft 竖线（当前主攻）
+## 4. P1 · 无错误码证据→PlaybookDraft 竖线（已完成）
 
 ### T1 · PlaybookDraft 合同与结构化归纳
 
@@ -247,10 +248,20 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T15 · 双投影吸收
 
-- [ ] 用户选定 Demo 信息结构后，提炼 `BusinessSummary` 与 `DeveloperEvidenceView`。
-- [ ] 服务经理默认只看问题、影响、结论/下一步、状态；开发证据默认折叠。
-- [ ] 不展示模型私有思维链，只展示证据、判据和可复算推导。
-- [ ] 页面不自行推断影响或结论；所有事实来自后端投影。
+- [x] 用户选定 Demo 信息结构后，提炼 `BusinessSummary` 与 `DeveloperEvidenceView`。
+- [x] 服务经理默认只看问题、影响、结论/下一步、状态；开发证据默认折叠。
+- [x] 不展示模型私有思维链，只展示证据、判据和可复算推导。
+- [x] 页面不自行推断影响或结论；所有事实来自后端投影。
+- [x] 正式 `/troubleshooting` 已吸收双投影并读取真实 API；旧处置台临时保留在
+      `/troubleshooting/legacy`，跳转携带同一个 `diagnosisId`（2026-07-29）。
+- [x] `Diagnosis` 1.5 已持久化 `investigationMode` / `routeAuthority` / `conclusionType`
+      与 D14 四时间戳；定位、排除、假设、弃权不再由前端或投影根据 `routeMode` 猜测。
+- [x] `reportedAt` 由 Servlet Filter 在请求映射前捕获；Duration 以 ISO-8601 输出；首次人工确认补写
+      `handoffAt/adoptCost`，登录态浏览器已完成 Diagnosis 1.5 创建与确认验收。
+- [x] 判据字段缺失、类型错误或不可解析时保持 `UNEVALUATED`；只有完整可求值且为假的判据才能形成
+      `EXCLUDED`，避免把“没取到”升级成“已排除”。
+- [ ] 结构化影响、完整 hop 和成功样本对照仍待进入运行时合同；
+      1.3/1.4 旧记录的 D14 也继续返回 null。正式页面明确显示“未记录/未取得”，不伪造成 0 或正常。
 
 ## 9. 明确不进入当前计划
 
@@ -260,7 +271,7 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - 把 Wiki、Memory、Skill 或聊天记录当成诊断权威。
 - `CODE_BUG / DATA_FIX / BUSINESS_OPERATION / EXTERNAL_CLIENT / INFRASTRUCTURE` 五类 FaultClass。
   录音只支持“代码类只定位、数据/业务类可给人工建议”两种能力边界；五分类需样本证明后另行设计。
-- 在用户选 Demo 前继续堆正式页面。
+- 继续堆 dev-only 原型；信息结构已选定，后续产品增量只进入正式工作台。
 
 ## 10. 工程约定与验证命令
 
@@ -293,9 +304,9 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ## 11. 推荐接手顺序
 
-1. 先让用户看 A/B/C Demo，确认信息结构。
-2. 顺序实施 P1 T1→T5；这些任务共享 synthesis 模块，不建议并行 worktree。
-3. P1 全部测试与 eval 通过后，P2 真实 Guance 和 P3 企微可分两条 lane 并行。
-4. 有真实样本和时延数据后再做 P4 场景路由；不要先搭一个空的通用 Planning 框架。
-5. P2 影子评测证明收益后，再把固定 Challenger 报告接入 P5 知识审核；不先做在线 Agent 群聊。
-6. 知识审核状态和版本替换在 candidate 开始真实积累前完成。
+1. 先读现行录音基线、v4.2、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
+2. 主攻 P2 真实 Guance 授权、measurement/字段/阈值核实和 20–30 条影子样本。
+3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。
+4. P3 企微可独立推进，但只扩现有 `channel/wecom`，不新建入站。
+5. 有真实样本和时延数据后再做 P4 场景路由；不要先搭空的通用 Planning 框架。
+6. P2 影子评测证明收益后，再把固定 Challenger 报告接入 P5；知识审核状态和版本替换须在 candidate 真实积累前完成。

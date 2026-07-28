@@ -76,8 +76,14 @@ const router = createRouter({
           // anyone on duty even if they cannot act on a case.
           path: 'troubleshooting',
           name: 'Troubleshooting',
-          component: () => import('@/views/Troubleshooting/index.vue'),
+          component: () => import('@/views/Troubleshooting/FormalWorkbench.vue'),
           meta: { title: 'Troubleshooting', requiredCapability: 'view:troubleshooting' },
+        },
+        {
+          path: 'troubleshooting/legacy',
+          name: 'TroubleshootingLegacy',
+          component: () => import('@/views/Troubleshooting/index.vue'),
+          meta: { title: 'Troubleshooting Legacy', requiredCapability: 'view:troubleshooting' },
         },
         {
           // SOPs are executable knowledge for the deterministic hit path, so

@@ -1,0 +1,548 @@
+<template>
+  <div class="formal-workbench">
+    <aside class="queue-panel">
+      <header class="queue-head">
+        <div><span class="eyebrow">MateClaw</span><h2>排障队列</h2></div>
+        <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
+      </header>
+      <div class="queue-tools">
+        <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="loadList(false)">
+          <el-option v-for="status in STATUSES" :key="status" :label="statusLabel(status)" :value="status" />
+        </el-select>
+        <el-button v-if="canManageSops" size="small" text @click="router.push('/troubleshooting/sops')">
+          Playbook 管理
+        </el-button>
+      </div>
+      <div v-loading="listLoading" class="queue-list">
+        <button
+          v-for="row in rows"
+          :key="row.diagnosisId"
+          type="button"
+          class="queue-item"
+          :class="{ active: row.diagnosisId === selectedId }"
+          @click="selectDiagnosis(row.diagnosisId)"
+        >
+          <div class="queue-item-top">
+            <code>{{ row.system }}:{{ row.errorCode || 'NO-CODE' }}</code>
+            <span v-if="row.rehearsal" class="rehearsal">演练</span>
+          </div>
+          <strong>{{ row.service }}</strong>
+          <div class="queue-item-bottom">
+            <span :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
+            <time>{{ shortTime(row.updateTime) }}</time>
+          </div>
+        </button>
+        <div v-if="!listLoading && !rows.length" class="queue-empty">
+          <b>还没有诊断记录</b>
+          <p>通过事故上报 API 创建诊断后，会在这里进入值班队列。</p>
+          <code>POST /api/v1/troubleshooting/incidents</code>
+        </div>
+      </div>
+      <footer class="queue-foot">
+        <span>正式入口 · 真实 API</span>
+        <button type="button" @click="openLegacy">旧版处置台</button>
+      </footer>
+    </aside>
+
+    <main v-loading="detailLoading" class="work-area">
+      <div v-if="!business || !developer || !current" class="detail-empty">
+        <div class="empty-mark">MC</div>
+        <h1>选择一条诊断开始排障</h1>
+        <p>服务经理先看业务摘要；开发证据在同一页面按需展开。</p>
+      </div>
+
+      <template v-else>
+        <header class="work-head">
+          <div>
+            <span class="eyebrow">正式排障工作台 · Diagnosis {{ business.diagnosisId }}</span>
+            <h1>{{ business.problem }}</h1>
+          </div>
+          <div class="work-head-actions">
+            <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
+            <el-button size="small" plain @click="openLegacy">打开旧版处置台</el-button>
+          </div>
+        </header>
+
+        <div v-if="business.fixtureMode" class="fixture-banner">
+          <span class="fixture-dot" />
+          <b>Recorded Replay · 非真实观测云</b>
+          <span>当前数据来自受控回放；页面不会把演练证据描述成真实生产观测。</span>
+        </div>
+
+        <section class="business-card">
+          <div class="verdict-head">
+            <div class="verdict-copy">
+              <div class="badge-row">
+                <span class="conclusion-badge" :class="business.conclusionType.toLowerCase()">
+                  {{ conclusionLabel(business.conclusionType) }}
+                </span>
+                <span class="status-badge" :class="statusTone(business.status)">{{ statusLabel(business.status) }}</span>
+                <span class="confidence-badge" :class="business.confidence.toLowerCase()">
+                  可信等级 {{ business.confidence }}
+                </span>
+              </div>
+              <h2>{{ business.headline }}</h2>
+              <p>{{ business.narrative }}</p>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <article>
+              <span class="section-label">问题</span>
+              <strong>{{ business.problem }}</strong>
+            </article>
+            <article>
+              <span class="section-label">影响</span>
+              <strong>{{ business.impact.functionScope }}</strong>
+              <div v-if="impactMetricList.length" class="impact-metrics">
+                <span v-for="metric in impactMetricList" :key="metric">{{ metric }}</span>
+              </div>
+              <small>{{ blastRadiusLabel(business.impact.blastRadius) }} · {{ business.impact.note }}</small>
+            </article>
+            <article>
+              <span class="section-label">{{ business.nextStep.label }}</span>
+              <strong>{{ business.nextStep.text }}</strong>
+              <small class="capability-boundary">{{ business.nextStep.capabilityBoundary }}</small>
+            </article>
+          </div>
+
+          <div class="timing-strip">
+            <article>
+              <span>补问 / Intake</span>
+              <b>{{ timingState(business.timings.readyAt, business.timings.intakeCost, 'recorded') }}</b>
+              <small>{{ timeRange(business.timings.reportedAt, business.timings.readyAt) }}</small>
+            </article>
+            <i />
+            <article>
+              <span>调查 / Investigate</span>
+              <b>{{ timingState(business.timings.conclusionAt, business.timings.investigateCost, 'recorded') }}</b>
+              <small>{{ timeRange(business.timings.readyAt, business.timings.conclusionAt) }}</small>
+            </article>
+            <i />
+            <article>
+              <span>采纳 / Handoff</span>
+              <b>{{ timingState(business.timings.handoffAt, business.timings.adoptCost, 'pending') }}</b>
+              <small>{{ timeRange(business.timings.conclusionAt, business.timings.handoffAt, true) }}</small>
+            </article>
+          </div>
+
+          <div class="lifecycle-bar">
+            <el-button
+              v-if="current.diagnosis.status === 'READY_FOR_HUMAN'"
+              type="primary"
+              :loading="actionLoading"
+              @click="confirm"
+            >确认结论</el-button>
+            <el-button v-if="canTransfer" :disabled="actionLoading" @click="transferOpen = true">结构化转派</el-button>
+            <el-button v-if="canClose" :disabled="actionLoading" @click="closeOpen = true">关闭并沉淀知识</el-button>
+            <span v-if="current.diagnosis.status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
+            <span v-else>按钮只推进领域状态，MateClaw 不执行任何生产变更。</span>
+          </div>
+        </section>
+
+        <details class="developer-fold">
+          <summary>
+            <span class="fold-caret" />
+            <div><b>展开开发证据台</b><small>证据、判据与能力边界，可复核但不展示模型私有思维链</small></div>
+            <span>{{ developer.steps.length }} 个证据 / 判据步骤</span>
+          </summary>
+          <div class="developer-body">
+            <div class="route-card">
+              <span>调查路径</span>
+              <b>{{ investigationLabel(developer.investigationMode, developer.routeAuthority) }}</b>
+              <code>{{ developer.playbookRef || '未命中已审核 Playbook' }}</code>
+            </div>
+
+            <div class="convergence-grid">
+              <section class="trace-summary">
+                <div class="section-head">
+                  <div><span class="section-label">证据收敛</span><h3>PS / Trace 全链路</h3></div>
+                  <code>{{ developer.callChain.psId || '未贯通' }}</code>
+                </div>
+                <div v-if="developer.callChain.hops.length" class="hop-line">
+                  <div
+                    v-for="(hop, index) in developer.callChain.hops"
+                    :key="hop.hopId"
+                    class="hop"
+                    :class="{ anomalous: hop.anomalous }"
+                  >
+                    <span>{{ index + 1 }}</span><b>{{ hop.service }}</b><small>{{ hop.duration }}</small>
+                  </div>
+                </div>
+                <p v-else class="empty-evidence">{{ developer.callChain.emptyReason }}</p>
+                <div class="contrast-row" :class="{ unavailable: !developer.contrast.available }">
+                  <span>成功样本对照</span>
+                  <template v-if="developer.contrast.available">
+                    <b>{{ developer.contrast.failedSample }}</b><em>vs</em>
+                    <b class="baseline">{{ developer.contrast.baselineSample }}</b>
+                  </template>
+                  <b v-else>未取得</b>
+                  <small>{{ developer.contrast.note }}</small>
+                </div>
+              </section>
+
+              <aside class="draft-summary">
+                <div class="section-head">
+                  <div><span class="section-label">知识草稿</span><h3>{{ developer.draft.title }}</h3></div>
+                  <span class="draft-state">{{ developer.draft.reviewStatus }}</span>
+                </div>
+                <ol v-if="developer.draft.steps.length">
+                  <li v-for="step in developer.draft.steps" :key="step">{{ step }}</li>
+                </ol>
+                <p v-else class="empty-evidence">{{ developer.draft.emptyReason }}</p>
+                <small>{{ developer.draft.stateNote }}</small>
+              </aside>
+            </div>
+
+            <section class="evidence-timeline">
+              <div class="developer-section-head">
+                <div><span class="section-label">证据时间线</span><h3>事实与判据逐行复核</h3></div>
+                <span>{{ conclusionLabel(business.conclusionType) }} · {{ business.confidence }}</span>
+              </div>
+              <article
+                v-for="step in developer.steps"
+                :key="`${step.kind}-${step.at || ''}-${step.ref}`"
+                class="evidence-step"
+                :class="step.tone.toLowerCase()"
+              >
+                <time>{{ evidenceTime(step.kind, step.at) }}</time>
+                <span class="step-line"><i /></span>
+                <div><b>{{ step.title }}</b><p>{{ step.detail }}</p><code>{{ step.ref }}</code></div>
+                <span class="tone-label">{{ stepToneLabel(step.tone) }}</span>
+              </article>
+              <div v-if="!developer.steps.length" class="empty-evidence">当前 Diagnosis 没有可展示的证据或判据步骤。</div>
+            </section>
+
+            <aside class="developer-side">
+              <section>
+                <span class="section-label">明确做不到</span><h3>能力边界</h3>
+                <ul class="capability-list"><li v-for="item in developer.capabilityLimits" :key="item">{{ item }}</li></ul>
+              </section>
+              <section v-if="current.diagnosis.recommendedActions.length">
+                <span class="section-label">人工处置动作</span><h3>平台不执行</h3>
+                <article
+                  v-for="action in current.diagnosis.recommendedActions"
+                  :key="action.actionId"
+                  class="action-card"
+                  :class="{ write: action.actionType === 'MANUAL_WRITE' }"
+                >
+                  <div><code>{{ action.actionType }}</code><span>{{ action.approvalStatus }}</span></div>
+                  <b>{{ action.title }}</b><p>{{ action.description }}</p>
+                  <el-button v-if="canApprove(action)" size="small" type="warning" plain @click="openApprove(action)">批准（不执行）</el-button>
+                  <el-button v-if="canRecordOutcome(action)" size="small" plain @click="openOutcome(action)">登记外部结果</el-button>
+                </article>
+              </section>
+            </aside>
+          </div>
+        </details>
+      </template>
+    </main>
+
+    <el-dialog v-model="transferOpen" title="结构化转派" width="460px">
+      <el-form label-position="top">
+        <el-form-item label="目标团队"><el-input v-model="transferForm.targetTeam" placeholder="如 DBA 组" /></el-form-item>
+        <el-form-item label="转派说明"><el-input v-model="transferForm.note" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferOpen = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading" :disabled="!transferForm.targetTeam || !transferForm.note" @click="transfer">转派</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="approveOpen" title="批准生产写操作" width="480px">
+      <el-alert type="warning" :closable="false" class="dialog-alert">批准只推进状态机，MateClaw 不执行任何操作。变更须由授权人员在平台外完成。</el-alert>
+      <el-form label-position="top"><el-form-item label="批准理由（审计依据）"><el-input v-model="approveForm.reason" type="textarea" :rows="3" /></el-form-item></el-form>
+      <template #footer>
+        <el-button @click="approveOpen = false">取消</el-button>
+        <el-button type="warning" :loading="actionLoading" :disabled="!approveForm.reason" @click="approve">批准（不执行）</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="outcomeOpen" title="登记外部处置结果" width="480px">
+      <el-form label-position="top">
+        <el-form-item label="处置结果"><el-select v-model="outcomeForm.outcome" style="width: 100%"><el-option label="SUCCEEDED · 成功" value="SUCCEEDED" /><el-option label="FAILED · 失败" value="FAILED" /><el-option label="SKIPPED · 未执行" value="SKIPPED" /></el-select></el-form-item>
+        <el-form-item label="结果说明"><el-input v-model="outcomeForm.notes" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item><el-checkbox v-model="outcomeForm.recoveryVerified" :disabled="outcomeForm.outcome !== 'SUCCEEDED'">已验证故障恢复</el-checkbox></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="outcomeOpen = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading" :disabled="!outcomeForm.notes" @click="recordOutcome">登记</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="closeOpen" title="关闭归档" width="480px">
+      <el-form label-position="top">
+        <el-form-item label="关闭结论"><el-select v-model="closeForm.outcome" style="width: 100%"><el-option label="RECOVERED · 已恢复" value="RECOVERED" /><el-option label="FALSE_POSITIVE · 误报" value="FALSE_POSITIVE" /><el-option label="TRANSFERRED_OUT · 转出处置" value="TRANSFERRED_OUT" /><el-option label="UNRESOLVED · 未解决" value="UNRESOLVED" /></el-select></el-form-item>
+        <el-form-item label="关闭摘要"><el-input v-model="closeForm.summary" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item v-if="closeForm.outcome === 'RECOVERED'"><el-checkbox v-model="closeForm.recoveryVerified">已验证恢复</el-checkbox></el-form-item>
+        <el-form-item label="对 Playbook 的反馈（可选）"><el-input v-model="closeForm.sopFeedback" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item><el-checkbox v-model="closeForm.createKnowledgeCandidate">生成知识候选</el-checkbox><p class="form-hint">候选只会被记录并进入发布链路；当前没有独立审核状态，更不会覆盖已批准 Playbook。</p></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeOpen = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading" :disabled="!closeForm.summary" @click="close">关闭</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { vLoading } from 'element-plus/es/components/loading/index'
+import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
+import {
+  troubleshootingApi,
+  type ActionOutcomeStatus,
+  type BlastRadius,
+  type ClosureOutcome,
+  type DiagnosisExperienceProjection,
+  type DiagnosisStatus,
+  type DiagnosisSummary,
+  type EvidenceStepTone,
+  type EvidenceStepKind,
+  type RecommendedAction,
+  type StoredDiagnosis,
+} from '@/api'
+import { conclusionLabel, impactMetrics, investigationLabel, timingState } from './formalProjection'
+
+const STATUSES: DiagnosisStatus[] = ['READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED']
+const STATUS_LABEL: Record<DiagnosisStatus, string> = {
+  READY_FOR_HUMAN: '待确认', NEEDS_INVESTIGATION: '需人工深查', CONFIRMED: '已确认', TRANSFERRED: '已转派', CLOSED: '已关闭',
+}
+const BLAST_RADIUS_LABEL: Record<BlastRadius, string> = {
+  SINGLE_CUSTOMER: '单客户影响', MULTI_CUSTOMER: '多客户影响', SYSTEM_WIDE: '系统级影响', UNKNOWN: '影响范围未知',
+}
+const STEP_TONE_LABEL: Record<EvidenceStepTone, string> = {
+  NORMAL: '正常', ANOMALY: '异常 / 命中', EXCLUDED: '已排除', UNEVALUATED: '未求值',
+}
+
+const router = useRouter()
+const route = useRoute()
+const workspaceStore = useWorkspaceStore()
+const canManageSops = computed(() => workspaceStore.can('manage:troubleshooting'))
+const rows = ref<DiagnosisSummary[]>([])
+const selectedId = ref<string | null>(null)
+const current = ref<StoredDiagnosis | null>(null)
+const projection = ref<DiagnosisExperienceProjection | null>(null)
+const statusFilter = ref<DiagnosisStatus | ''>('')
+const listLoading = ref(false)
+const detailLoading = ref(false)
+const actionLoading = ref(false)
+let selectionVersion = 0
+
+const business = computed(() => projection.value?.businessSummary ?? null)
+const developer = computed(() => projection.value?.developerEvidence ?? null)
+const impactMetricList = computed(() => {
+  const impact = business.value?.impact
+  return impact ? impactMetrics(impact.affectedCustomers, impact.affectedUsers) : []
+})
+const canTransfer = computed(() => ['CONFIRMED', 'TRANSFERRED'].includes(current.value?.diagnosis.status || ''))
+const canClose = computed(() => canTransfer.value)
+
+const transferOpen = ref(false)
+const approveOpen = ref(false)
+const outcomeOpen = ref(false)
+const closeOpen = ref(false)
+const targetAction = ref<RecommendedAction | null>(null)
+const transferForm = reactive({ targetTeam: '', note: '' })
+const approveForm = reactive({ reason: '' })
+const outcomeForm = reactive({ outcome: 'SUCCEEDED' as ActionOutcomeStatus, notes: '', recoveryVerified: false })
+const closeForm = reactive({ outcome: 'RECOVERED' as ClosureOutcome, summary: '', recoveryVerified: false, sopFeedback: '', createKnowledgeCandidate: true })
+
+function statusLabel(status: DiagnosisStatus) { return STATUS_LABEL[status] }
+function statusTone(status: DiagnosisStatus) {
+  if (status === 'NEEDS_INVESTIGATION') return 'warning'
+  if (status === 'CLOSED') return 'muted'
+  if (status === 'CONFIRMED' || status === 'TRANSFERRED') return 'success'
+  return 'active'
+}
+function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
+function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
+function shortTime(value?: string | null) { return value ? value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19) : '—' }
+function evidenceTime(kind: EvidenceStepKind, value: string | null) {
+  return kind === 'CRITERION' ? '判据' : shortTime(value).slice(11)
+}
+function timeRange(from: string | null, to: string | null, pending = false) {
+  if (!from && !to) return pending ? '尚未发生交接' : '阶段时间戳尚未纳入 Diagnosis'
+  return `${shortTime(from)} → ${shortTime(to)}`
+}
+function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
+
+async function loadList(autoSelect = true) {
+  listLoading.value = true
+  try {
+    const { data } = await troubleshootingApi.list({ status: statusFilter.value || undefined, limit: 100 })
+    rows.value = data ?? []
+    if (autoSelect && !selectedId.value) {
+      const queryId = typeof route.query.diagnosisId === 'string' ? route.query.diagnosisId : null
+      const target = queryId || rows.value[0]?.diagnosisId
+      if (target) await selectDiagnosis(target, !queryId)
+    }
+  } catch (error) {
+    ElMessage.error(`加载排障队列失败：${errorText(error)}`)
+  } finally { listLoading.value = false }
+}
+
+async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
+  const version = ++selectionVersion
+  selectedId.value = diagnosisId
+  detailLoading.value = true
+  try {
+    const [projectionResponse, diagnosisResponse] = await Promise.all([
+      troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
+    ])
+    if (version !== selectionVersion) return
+    projection.value = projectionResponse.data
+    current.value = diagnosisResponse.data
+    if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
+  } catch (error) {
+    if (version !== selectionVersion) return
+    projection.value = null
+    current.value = null
+    ElMessage.error(`加载诊断投影失败：${errorText(error)}`)
+  } finally { if (version === selectionVersion) detailLoading.value = false }
+}
+
+async function reload() {
+  await Promise.all([loadList(false), selectedId.value ? selectDiagnosis(selectedId.value, false) : Promise.resolve()])
+}
+function openLegacy() { router.push({ path: '/troubleshooting/legacy', query: selectedId.value ? { diagnosisId: selectedId.value } : {} }) }
+async function applyLifecycle(operation: () => Promise<unknown>, message: string) {
+  actionLoading.value = true
+  try {
+    await operation()
+    await reload()
+    ElMessage.success(message)
+    return true
+  } catch (error) {
+    ElMessage.error(errorText(error))
+    return false
+  }
+  finally { actionLoading.value = false }
+}
+async function confirm() { await applyLifecycle(() => troubleshootingApi.confirm(selectedId.value!), '已确认诊断结论') }
+async function transfer() {
+  const applied = await applyLifecycle(
+    () => troubleshootingApi.transfer(selectedId.value!, { ...transferForm }),
+    '已完成结构化转派',
+  )
+  if (!applied) return
+  transferOpen.value = false; transferForm.targetTeam = ''; transferForm.note = ''
+}
+function canApprove(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'PENDING' && canTransfer.value }
+function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
+function openApprove(action: RecommendedAction) { targetAction.value = action; approveForm.reason = ''; approveOpen.value = true }
+async function approve() {
+  const applied = await applyLifecycle(
+    () => troubleshootingApi.approveAction(
+      selectedId.value!, targetAction.value!.actionId, { reason: approveForm.reason },
+    ),
+    '已批准；系统未执行生产变更',
+  )
+  if (!applied) return
+  approveOpen.value = false
+}
+function openOutcome(action: RecommendedAction) { targetAction.value = action; outcomeForm.outcome = 'SUCCEEDED'; outcomeForm.notes = ''; outcomeForm.recoveryVerified = false; outcomeOpen.value = true }
+async function recordOutcome() {
+  const applied = await applyLifecycle(
+    () => troubleshootingApi.recordOutcome(selectedId.value!, targetAction.value!.actionId, {
+      outcome: outcomeForm.outcome, notes: outcomeForm.notes,
+      recoveryVerified: outcomeForm.outcome === 'SUCCEEDED' && outcomeForm.recoveryVerified,
+    }),
+    '已登记平台外处置结果',
+  )
+  if (!applied) return
+  outcomeOpen.value = false
+}
+async function close() {
+  const applied = await applyLifecycle(
+    () => troubleshootingApi.close(selectedId.value!, {
+      outcome: closeForm.outcome, summary: closeForm.summary,
+      recoveryVerified: closeForm.outcome === 'RECOVERED' && closeForm.recoveryVerified,
+      sopFeedback: closeForm.sopFeedback || null,
+      createKnowledgeCandidate: closeForm.createKnowledgeCandidate,
+    }),
+    '诊断已关闭归档',
+  )
+  if (!applied) return
+  closeOpen.value = false
+}
+
+watch(() => route.query.diagnosisId, (value) => {
+  if (typeof value === 'string' && value && value !== selectedId.value) selectDiagnosis(value, false)
+})
+onMounted(() => loadList(true))
+</script>
+
+<style scoped>
+.formal-workbench { --ink:#172033; --muted:#667085; --line:#e1e6ef; --soft:#f5f7fb; --blue:#2f5cf5; --green:#138a58; --amber:#b54708; --red:#d92d20; display:grid; grid-template-columns:264px minmax(0,1fr); height:100%; overflow:hidden; color:var(--ink); background:#f4f6fa; }
+.queue-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:#fff; border-right:1px solid var(--line); }
+.queue-head { display:flex; align-items:center; justify-content:space-between; padding:18px 16px 14px; border-bottom:1px solid var(--line); }
+.eyebrow { display:block; color:var(--blue); font-size:10px; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
+.queue-head h2 { margin:4px 0 0; font-size:17px; letter-spacing:-.02em; }
+.queue-tools { display:flex; align-items:center; gap:4px; padding:10px 12px; border-bottom:1px solid var(--line); }
+.queue-tools .el-select { flex:1; min-width:0; }
+.queue-list { flex:1; min-height:0; overflow-y:auto; }
+.queue-item { width:100%; padding:13px 14px 12px; border:0; border-bottom:1px solid #edf0f5; border-left:3px solid transparent; background:#fff; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.queue-item:hover { background:#f8f9fc; } .queue-item.active { border-left-color:var(--blue); background:#f1f4ff; }
+.queue-item-top,.queue-item-bottom { display:flex; align-items:center; gap:8px; } .queue-item-top code { color:#344054; font-size:11px; font-weight:700; }
+.queue-item strong { display:block; margin-top:5px; font-size:13px; } .queue-item-bottom { margin-top:7px; color:var(--muted); font-size:10.5px; }
+.queue-item-bottom time { margin-left:auto; font-family:var(--mc-mono,monospace); } .rehearsal { padding:1px 6px; border-radius:10px; color:#6941c6; background:#f4f0ff; font-size:9px; }
+.active { color:var(--blue)!important; } .success { color:var(--green)!important; } .warning { color:var(--amber)!important; } .muted { color:#98a2b3!important; }
+.queue-empty { padding:26px 17px; color:var(--muted); font-size:12px; line-height:1.6; } .queue-empty b { color:var(--ink); } .queue-empty p { margin:5px 0 10px; } .queue-empty code { color:var(--blue); font-size:10.5px; }
+.queue-foot { display:flex; align-items:center; justify-content:space-between; padding:10px 13px; border-top:1px solid var(--line); color:#98a2b3; font-size:10px; }
+.queue-foot button { border:0; background:none; color:var(--blue); font:inherit; cursor:pointer; }
+.work-area { min-width:0; overflow-y:auto; padding:24px clamp(20px,3vw,46px) 48px; }
+.detail-empty { display:grid; place-items:center; align-content:center; min-height:70vh; color:var(--muted); text-align:center; }
+.empty-mark { display:grid; place-items:center; width:52px; height:52px; border:1px solid #cdd6f8; border-radius:15px; color:var(--blue); background:#fff; font-weight:800; box-shadow:0 10px 30px rgba(47,92,245,.08); }
+.detail-empty h1 { margin:16px 0 4px; color:var(--ink); font-size:20px; } .detail-empty p { margin:0; font-size:13px; }
+.work-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; max-width:1320px; margin:0 auto 14px; }
+.work-head h1 { margin:5px 0 0; font-size:23px; letter-spacing:-.025em; } .work-head-actions { display:flex; gap:8px; }
+.fixture-banner { display:flex; align-items:center; gap:8px; max-width:1320px; margin:0 auto 12px; padding:9px 13px; border:1px solid #f0d69a; border-radius:9px; color:#7a4e00; background:#fff9e8; font-size:11.5px; }
+.fixture-banner span:last-child { color:#986a13; } .fixture-dot { width:7px; height:7px; border-radius:50%; background:#f79009; box-shadow:0 0 0 4px rgba(247,144,9,.13); }
+.business-card,.developer-fold { max-width:1320px; margin:0 auto; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 8px 28px rgba(21,37,68,.035); }
+.business-card { padding:clamp(18px,2.5vw,30px); } .verdict-head { padding-bottom:22px; }
+.badge-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; } .conclusion-badge,.status-badge,.confidence-badge { padding:4px 9px; border:1px solid var(--line); border-radius:20px; font-size:10.5px; font-weight:700; }
+.conclusion-badge.located { color:#175cd3; border-color:#b2ccff; background:#eff4ff; } .conclusion-badge.excluded { color:#475467; background:#f2f4f7; }
+.conclusion-badge.hypothesis { color:#6941c6; border-color:#d9d6fe; background:#f4f3ff; } .conclusion-badge.insufficient_evidence { color:#b54708; border-color:#fedf89; background:#fffaeb; }
+.confidence-badge.high { color:var(--green); background:#ecfdf3; } .confidence-badge.medium { color:var(--amber); background:#fffaeb; } .confidence-badge.low { color:var(--red); background:#fff2f0; }
+.verdict-copy h2 { margin:14px 0 7px; font-size:clamp(21px,2vw,29px); line-height:1.25; letter-spacing:-.035em; } .verdict-copy>p { max-width:820px; margin:0; color:var(--muted); font-size:13px; line-height:1.75; }
+.route-card { align-self:start; padding:15px; border:1px solid var(--line); border-radius:10px; background:var(--soft); }
+.route-card span,.section-label { display:block; color:#98a2b3; font-size:9.5px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
+.route-card b { display:block; margin:7px 0; font-size:12.5px; } .route-card code { color:var(--blue); font-size:10px; word-break:break-all; }
+.summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:hidden; border:1px solid var(--line); border-radius:11px; }
+.summary-grid article { min-height:130px; padding:17px 18px; } .summary-grid article+article { border-left:1px solid var(--line); }
+.summary-grid strong { display:block; margin:10px 0 8px; font-size:13.5px; line-height:1.55; } .summary-grid small { display:block; color:var(--muted); font-size:10.5px; line-height:1.55; }
+.impact-metrics { display:flex; gap:7px; margin:8px 0; } .impact-metrics span { padding:2px 7px; border-radius:5px; color:#175cd3; background:#eff4ff; font-size:10px; } .capability-boundary { color:var(--amber)!important; }
+.timing-strip { display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:center; margin-top:14px; padding:13px 16px; border:1px solid var(--line); border-radius:10px; background:#fbfcfe; }
+.timing-strip article { display:grid; grid-template-columns:1fr auto; gap:3px 12px; } .timing-strip span { color:var(--muted); font-size:10.5px; } .timing-strip b { color:#344054; font-size:13px; }
+.timing-strip small { grid-column:1/-1; color:#98a2b3; font-size:9.5px; } .timing-strip i { width:5px; height:5px; justify-self:center; border-radius:50%; background:#c7cfdb; }
+.convergence-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(270px,.8fr); gap:14px; margin-top:14px; } .trace-summary,.draft-summary { padding:18px; border:1px solid var(--line); border-radius:10px; }
+.section-head,.developer-section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; } .section-head h3,.developer-section-head h3,.developer-side h3 { margin:5px 0 0; font-size:14px; } .section-head>code { color:var(--blue); font-size:10.5px; }
+.hop-line { display:flex; align-items:stretch; gap:8px; margin-top:17px; } .hop { flex:1; padding:10px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; }
+.hop>span { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; color:#fff; background:var(--blue); font-size:9px; } .hop b,.hop small { display:block; margin-top:5px; font-size:11px; } .hop small { color:var(--muted); }
+.hop.anomalous { border-color:#f5b7b1; background:#fff5f4; } .hop.anomalous>span { background:var(--red); }
+.empty-evidence { margin:14px 0 0; padding:11px 12px; border:1px dashed #cfd6e2; border-radius:7px; color:var(--muted); background:#f8f9fb; font-size:11px; line-height:1.65; }
+.contrast-row { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:14px; padding:10px 12px; border-radius:7px; background:#ecfdf3; font-size:10.5px; }
+.contrast-row>span { color:var(--muted); } .contrast-row em { color:#98a2b3; font-style:normal; } .contrast-row .baseline { color:var(--green); } .contrast-row small { flex-basis:100%; color:var(--muted); } .contrast-row.unavailable { color:var(--amber); background:#fffaeb; }
+.draft-state { padding:2px 7px; border-radius:5px; color:#6941c6; background:#f4f3ff; font-size:9px; font-weight:750; } .draft-summary ol { margin:14px 0 9px; padding-left:20px; color:#344054; font-size:11.5px; line-height:1.6; } .draft-summary>small { color:var(--muted); font-size:10px; }
+.lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--line); } .lifecycle-bar>span { margin-left:5px; color:var(--muted); font-size:10.5px; }
+.developer-fold { margin-top:14px; overflow:hidden; } .developer-fold>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; list-style:none; cursor:pointer; user-select:none; }
+.developer-fold>summary::-webkit-details-marker { display:none; } .developer-fold>summary>div b,.developer-fold>summary>div small { display:block; } .developer-fold>summary>div b { font-size:13.5px; } .developer-fold>summary>div small { margin-top:3px; color:var(--muted); font-size:10.5px; }
+.developer-fold>summary>span:last-child { margin-left:auto; color:var(--muted); font-size:10.5px; } .fold-caret { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:6px solid #98a2b3; transition:transform .18s; } .developer-fold[open] .fold-caret { transform:rotate(90deg); }
+.developer-body { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:20px; padding:22px; border-top:1px solid var(--line); background:#fbfcfe; } .developer-body>.route-card,.developer-body>.convergence-grid { grid-column:1/-1; margin-top:0; } .developer-section-head>span { padding:3px 8px; border-radius:5px; color:#175cd3; background:#eff4ff; font-size:10px; }
+.evidence-timeline { min-width:0; } .evidence-step { display:grid; grid-template-columns:74px 20px minmax(0,1fr) auto; gap:8px; padding-top:17px; } .evidence-step time { padding-top:2px; color:#98a2b3; font-family:var(--mc-mono,monospace); font-size:9.5px; }
+.step-line { position:relative; display:flex; justify-content:center; } .step-line::after { content:''; position:absolute; top:10px; bottom:-18px; width:1px; background:#d7dce5; } .evidence-step:last-child .step-line::after { display:none; }
+.step-line i { position:relative; z-index:1; width:9px; height:9px; margin-top:3px; border-radius:50%; background:var(--blue); box-shadow:0 0 0 4px #eef2ff; }
+.evidence-step.anomaly .step-line i { background:var(--red); box-shadow:0 0 0 4px #fff0ee; } .evidence-step.excluded .step-line i { background:var(--green); box-shadow:0 0 0 4px #eafbf1; } .evidence-step.unevaluated .step-line i { border:1.5px dashed #667085; background:#fff; box-shadow:none; }
+.evidence-step b { font-size:12.5px; } .evidence-step p { margin:4px 0 6px; color:var(--muted); font-size:11px; line-height:1.55; } .evidence-step code { color:var(--blue); font-size:9.5px; }
+.tone-label { align-self:start; padding:2px 6px; border-radius:5px; color:var(--muted); background:#f2f4f7; font-size:9px; } .evidence-step.anomaly .tone-label { color:var(--red); background:#fff2f0; } .evidence-step.excluded .tone-label { color:var(--green); background:#ecfdf3; } .evidence-step.unevaluated .tone-label { color:var(--amber); background:#fffaeb; }
+.developer-side { display:flex; flex-direction:column; gap:14px; } .developer-side>section { padding:16px; border:1px solid var(--line); border-radius:9px; background:#fff; } .capability-list { margin:13px 0 0; padding-left:17px; color:#7a271a; font-size:11px; line-height:1.6; } .capability-list li+li { margin-top:7px; }
+.action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; } .action-card.write { border-color:#f2c4bf; } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:8.5px; }
+.action-card>b { display:block; margin-top:7px; font-size:11.5px; } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:10px; line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:10.5px; }
+@media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:18px 12px 36px}.work-head{align-items:flex-start;flex-direction:column}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}}
+</style>

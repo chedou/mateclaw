@@ -16,11 +16,13 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -101,6 +103,25 @@ public final class TroubleshootingAgentTriageService {
             List<EvidenceResult> suppliedEvidence,
             boolean rehearsal,
             String routeMissReason) {
+        Instant reportedAt = clock.instant();
+        return triage(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                rehearsal,
+                routeMissReason,
+                reportedAt,
+                clock.instant());
+    }
+
+    public StoredDiagnosis triage(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            boolean rehearsal,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt) {
         if (workspaceId <= 0 || incident == null) {
             throw new IllegalArgumentException("workspaceId and incident are required");
         }
@@ -210,11 +231,12 @@ public final class TroubleshootingAgentTriageService {
                 hypothesis,
                 confidence,
                 forcedAbstention,
+                NorthStarTimings.concluded(reportedAt, readyAt, clock.instant()),
                 rehearsal,
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
                 warnings);
         Diagnosis diagnosis = stateMachine.initializeAgentFallback(draft);
-        return persistence.createOrGet(workspaceId, diagnosis, clock.instant());
+        return persistence.createOrGet(workspaceId, diagnosis, reportedAt);
     }
 
     private AgentEntity requireSafeConfiguration(long workspaceId) {

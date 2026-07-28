@@ -92,6 +92,17 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。
 - Diagnosis 人工处置闭环与 Vue 工作台。
+- **正式双投影纵切（2026-07-29）**：新增服务端
+  `DiagnosisExperienceProjection` / `DiagnosisExperienceProjectionService` 与
+  `GET /api/v1/troubleshooting/diagnoses/{id}/projection`；同一 Diagnosis 生成
+  `BusinessSummary` 和 `DeveloperEvidenceView`，构造器落实结论置信、精确人数证据引用等不变量。
+- **正式路由已吸收选定信息结构**：`/troubleshooting` 读取队列、完整 Diagnosis 与双投影真实 API，
+  业务摘要默认展开、开发证据默认折叠，并保留确认、转派、批准不执行、登记外部结果和关闭能力。
+  原工作台临时迁到 `/troubleshooting/legacy`，携同一个 `diagnosisId` 可直接回退。
+- **Diagnosis 1.5 运行时事实已落地（2026-07-29）**：显式持久化
+  `investigationMode` / `routeAuthority` / `conclusionType` / `NorthStarTimings`，保持 1.3/1.4 JSON 兼容；
+  规则被已取得证据全部反证时产出可确认的 `EXCLUDED`，缺证据才是 `INSUFFICIENT_EVIDENCE`。
+  报障/就绪/结论时间在 intake 和调查边界采集，第一次人工确认记录 handoff/adopt cost。
 - KnowledgeCandidate 与 Outbox 发布语义；尚无独立审核语义。
 - 三套只读 Demo 原型，均显式显示 Recorded Replay、MODEL_PROPOSED、MEDIUM、CANDIDATE。
 
@@ -101,6 +112,8 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
 - 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
+- Diagnosis 运行时尚未持久化结构化影响、完整调用链 hop 和成功样本对照；
+  双投影对这些缺口返回 null/UNKNOWN。1.3/1.4 旧记录也不回填伪造的 D14 数据。
 
 ## 5. Demo
 
@@ -116,6 +129,12 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **已选定（2026-07-28）**：集中兵力做**服务经理摘要 + 开发证据台**，业务摘要默认展开、
 开发证据默认折叠；企微协同流随 P3 暂缓，原型里保留结构但不再投入。
 两个投影的类型化合同见 `projection-contracts.md`。
+
+**正式入口已吸收（2026-07-29）**：
+
+- 正式真实数据工作台：`http://127.0.0.1:5173/troubleshooting`
+- 旧版兼容处置台：`http://127.0.0.1:5173/troubleshooting/legacy`
+- dev-only 原型暂时保留用于降级结局对照；正式页补齐等价测试场景后再按删除清单移除。
 
 **原型的三个轴**：
 
@@ -143,11 +162,11 @@ SopSynthesisService.preview()              已完成
   → ReferenceSolutionComparator            已完成，纯结构比较
   → candidate + generationKey              已完成，不可 approved
 
-四个北极星时间戳                        已完成，fixture 样本同样记录
+四个北极星时间戳                        已完成，合成与在线 Diagnosis 1.5 均记录
 ```
 
-P1 仍只深化了现有 synthesis/evidence seam，未创建 Planning、Projection、WeCom、新状态机、
-消息队列、Loop Controller、Challenger 或第二运行时。
+P1 本身只深化了 synthesis/evidence seam；P1 收口后已单独启动 T15 正式页面吸收并实现双投影。
+仍未创建 Planning、WeCom、新状态机、消息队列、Loop Controller、Challenger 或第二运行时。
 
 验收案例必须是“会话消息发送失败（无 error_code）”。比较采用 requiredStepIntents、forbiddenStepIntents、
 orderingConstraints、requiredEvidenceKinds，不做逐字相似度。
@@ -177,6 +196,20 @@ P1 后端的可复现结果和 HTTP 响应见 `p1-verification.md`。当前已�
 注意：`npm run build` 的前置脚本引用缺失的 `../scripts/check-snowflake-precision.sh`，因此 wrapper 会在执行
 Vite 之前失败；直接 `vue-tsc` 和 Vite build 均通过。这是仓库已有构建脚本缺口，不是原型代码错误。
 
+正式双投影纵切（2026-07-29）已通过：
+
+- 排障域后端全量 `210` 个测试，0 failure / 0 error / 0 skipped；其中覆盖 Diagnosis 1.5、
+  D14 请求前置计时、ISO-8601 Duration HTTP 合同、`EXCLUDED`/`UNEVALUATED` 分离及首次人工接管；
+- 前端全量 `114` 个测试、`vue-tsc --noEmit` 与直接 Vite production build；
+- Spring 上下文已用当前工作树真实重启成功，`127.0.0.1:18088` 监听；正式页和旧版页均返回 200；
+- 登录态浏览器创建 Diagnosis 1.5 演练记录
+  `diag-aa2e3a4ddea94c94b3f93986d87de6ce`：`reportedAt → readyAt → conclusionAt` 返回真实时间，
+  两段亚秒耗时显示 `<1秒`，首次“确认结论”后 `handoffAt` 与 `adoptCost=2分55秒` 写回；
+- 重启到最终代码后创建缺字段演练 `diag-bc311517817c4908b76477ff7fb1e945`，结果为
+  `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION / LOW`，证明缺失字段不会被误升为 `EXCLUDED`；
+- 正式页默认只展开 `BusinessSummary`；路由、调用链、对照、知识草稿、判据与能力边界只在开发证据台展开；
+  Recorded Replay 边界、旧版同 `diagnosisId` 跳转均通过，正式页控制台 0 error，仅剩平台既有 intlify warning。
+
 后端定向测试命令：
 
 ```bash
@@ -188,8 +221,8 @@ mvn -pl mateclaw-server -am \
 ## 9. 接手顺序
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
-2. 信息结构**已选定**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见 `projection-contracts.md`；
-   P1 只固定合同不实现 Projection，正式页面吸收留到 P5。
+2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见
+   `projection-contracts.md`；D14 已进 Diagnosis 1.5，下一步补结构化影响、完整 hop 与成功样本对照。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. 下一主攻 P2 真实 Guance 授权、字段核实和 20–30 条影子样本；P3 企微仍可独立推进。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

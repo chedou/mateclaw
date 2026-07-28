@@ -1,5 +1,7 @@
 package vip.mate.troubleshooting.synthesis;
 
+import vip.mate.troubleshooting.model.NorthStarTimings;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;

@@ -281,7 +281,7 @@
         </el-form-item>
         <el-form-item>
           <el-checkbox v-model="closeForm.createKnowledgeCandidate">生成知识候选</el-checkbox>
-          <div class="sub-hint">候选只进审核队列，永不直接覆盖已审核 SOP。</div>
+          <div class="sub-hint">候选只被记录并进入发布链路；当前发布状态不等于独立审核。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -297,6 +297,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { vLoading } from 'element-plus/es/components/loading/index'
 import DerivationChain from './DerivationChain.vue'
 import TroubleshootingExperiencePrototype from './prototype/TroubleshootingExperiencePrototype.vue'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -602,7 +603,14 @@ async function close() {
   applied(data, '已关闭归档')
 }
 
-onMounted(loadList)
+onMounted(async () => {
+  await loadList()
+  const requested = typeof route.query.diagnosisId === 'string'
+    ? route.query.diagnosisId
+    : null
+  const first = requested || rows.value[0]?.diagnosisId
+  if (first) await select(first)
+})
 </script>
 
 <style scoped>

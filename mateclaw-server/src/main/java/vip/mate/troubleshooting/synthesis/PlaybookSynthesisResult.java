@@ -1,5 +1,7 @@
 package vip.mate.troubleshooting.synthesis;
 
+import vip.mate.troubleshooting.model.NorthStarTimings;
+
 import java.util.List;
 
 /** Observable P1 outcome; rejected and abstained attempts never carry a candidate. */

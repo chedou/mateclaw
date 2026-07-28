@@ -19,7 +19,9 @@ class DiagnosisContractTest {
     @Test
     void persistedPayloadRejectsUnknownContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.4\"", "\"contractVersion\":\"9.9\"");
+                .replace(
+                        "\"contractVersion\":\"" + Diagnosis.CURRENT_CONTRACT_VERSION + "\"",
+                        "\"contractVersion\":\"9.9\"");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -29,7 +31,9 @@ class DiagnosisContractTest {
     @Test
     void persistedPayloadRejectsMissingContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.4\",", "");
+                .replace(
+                        "\"contractVersion\":\"" + Diagnosis.CURRENT_CONTRACT_VERSION + "\",",
+                        "");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -46,6 +50,55 @@ class DiagnosisContractTest {
 
         assertEquals("1.3", restored.contractVersion());
         assertTrue(restored.evidenceCitations().isEmpty());
+    }
+
+    @Test
+    void persistedVersion14PayloadDefaultsMissingV15ExperienceFieldsWithoutInventingTimings()
+            throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.4");
+        payload.remove("investigationMode");
+        payload.remove("routeAuthority");
+        payload.remove("conclusionType");
+        payload.remove("timings");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.4", restored.contractVersion());
+        assertEquals(InvestigationMode.ERROR_CODE_PLAYBOOK, restored.investigationMode());
+        assertEquals(RouteAuthority.EXPLICIT, restored.routeAuthority());
+        assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, restored.conclusionType());
+        assertEquals(NorthStarTimings.unrecorded(), restored.timings());
+    }
+
+    @Test
+    void currentContractPersistsScenarioAuthorityAndAllNorthStarIntervals() throws Exception {
+        Instant reportedAt = Instant.parse("2026-07-25T01:00:00Z");
+        Instant readyAt = Instant.parse("2026-07-25T01:00:30Z");
+        Instant conclusionAt = Instant.parse("2026-07-25T01:02:00Z");
+        NorthStarTimings timings = NorthStarTimings.concluded(
+                reportedAt, readyAt, conclusionAt);
+        Diagnosis base = diagnosis();
+        Diagnosis scenario = Diagnosis.initial(
+                base.diagnosisId(), base.caseId(), base.runId(), base.incident(),
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.RULE_MATCHED,
+                ConclusionType.LOCATED,
+                timings,
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "scenario located", "slow dependency", Confidence.MEDIUM, false,
+                "scenario:slow-api", "Slow API", base.evidence(), List.of(), List.of(),
+                "API 组", false, true, List.of(), List.of());
+
+        Diagnosis restored = objectMapper.readValue(
+                objectMapper.writeValueAsString(scenario), Diagnosis.class);
+
+        assertEquals(Diagnosis.CURRENT_CONTRACT_VERSION, restored.contractVersion());
+        assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, restored.investigationMode());
+        assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
+        assertEquals(ConclusionType.LOCATED, restored.conclusionType());
+        assertEquals(timings, restored.timings());
     }
 
     @Test

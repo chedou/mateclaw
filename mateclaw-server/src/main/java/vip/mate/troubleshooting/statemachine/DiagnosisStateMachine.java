@@ -72,6 +72,10 @@ public final class DiagnosisStateMachine {
                 draft.runId(),
                 draft.incident(),
                 vip.mate.troubleshooting.model.RouteMode.DETERMINISTIC,
+                vip.mate.troubleshooting.model.InvestigationMode.ERROR_CODE_PLAYBOOK,
+                vip.mate.troubleshooting.model.RouteAuthority.EXPLICIT,
+                draft.conclusionType(),
+                draft.timings(),
                 initialStatus,
                 draft.summary(),
                 draft.rootCause(),
@@ -276,7 +280,11 @@ public final class DiagnosisStateMachine {
                 "关闭归档：" + outcome.name().toLowerCase() + "（" + summary + "）",
                 actor);
         if (candidate != null) {
-            timeline = event(timeline, "知识候选 " + candidate.candidateId() + " 已提交审核", actor);
+            timeline = event(
+                    timeline,
+                    "知识候选 " + candidate.candidateId()
+                            + " 已记录（发布状态不等于审核）",
+                    actor);
         }
         return diagnosis.closed(
                 closure,

@@ -11,6 +11,7 @@ import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
@@ -20,6 +21,7 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -43,6 +45,8 @@ import static org.mockito.Mockito.when;
 class DeterministicDiagnosisServiceTest {
 
     private static final Instant RECEIVED_AT = Instant.parse("2026-07-25T01:04:59Z");
+    private static final Instant READY_AT = Instant.parse("2026-07-25T01:04:59.250Z");
+    private static final Instant CONCLUSION_AT = Instant.parse("2026-07-25T01:05:00Z");
 
     @Mock private TroubleshootingPersistenceService persistence;
 
@@ -53,9 +57,10 @@ class DeterministicDiagnosisServiceTest {
         service = new DeterministicDiagnosisService(
                 new CriterionEvaluator(),
                 new DiagnosisStateMachine(
-                        Clock.fixed(Instant.parse("2026-07-25T01:05:00Z"), ZoneOffset.UTC),
+                        Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC),
                         prefix -> prefix + "-1"),
-                persistence);
+                persistence,
+                Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC));
     }
 
     @Test
@@ -70,7 +75,8 @@ class DeterministicDiagnosisServiceTest {
                 List.of(evidence(EvidenceStatus.ANOMALY, Map.of("reachable", false))),
                 false,
                 true,
-                RECEIVED_AT);
+                RECEIVED_AT,
+                READY_AT);
 
         Diagnosis diagnosis = stored.diagnosis();
         assertEquals(DiagnosisStatus.READY_FOR_HUMAN, diagnosis.status());
@@ -83,6 +89,10 @@ class DeterministicDiagnosisServiceTest {
         assertEquals(ExecutionStatus.BLOCKED,
                 diagnosis.pendingWrites().getFirst().executionStatus());
         assertEquals(3, diagnosis.timeline().size());
+        assertEquals(ConclusionType.LOCATED, diagnosis.conclusionType());
+        assertEquals(
+                NorthStarTimings.concluded(RECEIVED_AT, READY_AT, CONCLUSION_AT),
+                diagnosis.timings());
         assertFalse(diagnosis.writeExecutionEnabled());
         Diagnosis confirmed = new DiagnosisStateMachine(
                 Clock.fixed(Instant.parse("2026-07-25T01:06:00Z"), ZoneOffset.UTC),
@@ -104,7 +114,39 @@ class DeterministicDiagnosisServiceTest {
         assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, diagnosis.status());
         assertTrue(diagnosis.abstained());
         assertTrue(diagnosis.recommendedActions().isEmpty());
+        assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, diagnosis.conclusionType());
         assertTrue(diagnosis.warnings().getFirst().contains("mongo-reachability"));
+    }
+
+    @Test
+    void completeEvidenceThatDefinitivelyRefutesEveryRuleProducesExcludedConclusion() {
+        Diagnosis diagnosis = service.diagnose(
+                incident(),
+                sop(true, "approved"),
+                List.of(evidence(EvidenceStatus.NORMAL, Map.of("reachable", true))),
+                false,
+                false);
+
+        assertEquals(DiagnosisStatus.READY_FOR_HUMAN, diagnosis.status());
+        assertFalse(diagnosis.abstained());
+        assertEquals(ConclusionType.EXCLUDED, diagnosis.conclusionType());
+        assertEquals(Confidence.MEDIUM, diagnosis.confidence());
+        assertTrue(diagnosis.recommendedActions().isEmpty());
+    }
+
+    @Test
+    void presentEvidenceWithoutTheCriterionFieldCannotProduceExcludedConclusion() {
+        Diagnosis diagnosis = service.diagnose(
+                incident(),
+                sop(true, "approved"),
+                List.of(evidence(EvidenceStatus.NORMAL, Map.of("unrelated", true))),
+                false,
+                false);
+
+        assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, diagnosis.status());
+        assertTrue(diagnosis.abstained());
+        assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, diagnosis.conclusionType());
+        assertEquals(Confidence.LOW, diagnosis.confidence());
     }
 
     @Test

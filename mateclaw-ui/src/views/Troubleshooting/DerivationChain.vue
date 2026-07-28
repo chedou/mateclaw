@@ -95,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import { vLoading } from 'element-plus/es/components/loading/index'
 import { computed, ref, watch } from 'vue'
 import {
   troubleshootingApi,

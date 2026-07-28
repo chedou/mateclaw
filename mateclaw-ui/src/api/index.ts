@@ -1685,6 +1685,10 @@ export interface Diagnosis {
   runId: string
   incident: IncidentContext
   routeMode: RouteMode
+  /** v4 route semantics; do not infer either value from legacy routeMode. */
+  investigationMode: InvestigationMode
+  routeAuthority: RouteAuthority
+  conclusionType: ConclusionType
   status: DiagnosisStatus
   summary: string
   rootCause: string
@@ -1704,6 +1708,8 @@ export interface Diagnosis {
   closure: unknown | null
   knowledgeCandidates: unknown[]
   timeline: TimelineEvent[]
+  /** D14 timing snapshot; legacy 1.3/1.4 rows carry all-null values. */
+  timings: NorthStarTimings
   rehearsal: boolean
   /** True until real evidence bindings and thresholds are live-verified. */
   fixtureMode: boolean
@@ -1772,6 +1778,113 @@ export interface DiagnosisDerivation {
   rules: RuleEvaluation[]
 }
 
+/** Formal workbench projections — the browser renders these and does not infer conclusions. */
+export type ConclusionType = 'LOCATED' | 'EXCLUDED' | 'HYPOTHESIS' | 'INSUFFICIENT_EVIDENCE'
+export type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
+export type InvestigationMode = 'ERROR_CODE_PLAYBOOK' | 'SCENARIO_PLAYBOOK' | 'OPEN_DISCOVERY'
+export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED'
+export type EvidenceStepTone = 'NORMAL' | 'ANOMALY' | 'EXCLUDED' | 'UNEVALUATED'
+export type EvidenceStepKind = 'EVIDENCE' | 'CRITERION'
+export type DraftReviewStatus = 'DRAFT' | 'CANDIDATE'
+
+export interface ImpactView {
+  functionScope: string
+  affectedCustomers: number | null
+  affectedUsers: number | null
+  blastRadius: BlastRadius
+  evidenceRefs: string[]
+  observedAt: string | null
+  note: string
+}
+
+export interface ProjectionNextStep {
+  label: string
+  text: string
+  capabilityBoundary: string | null
+}
+
+export interface NorthStarTimings {
+  reportedAt: string | null
+  readyAt: string | null
+  conclusionAt: string | null
+  handoffAt: string | null
+  intakeCost: string | null
+  investigateCost: string | null
+  adoptCost: string | null
+}
+
+export interface BusinessSummary {
+  diagnosisId: string
+  conclusionType: ConclusionType
+  headline: string
+  narrative: string
+  confidence: Confidence
+  problem: string
+  impact: ImpactView
+  nextStep: ProjectionNextStep
+  status: DiagnosisStatus
+  timings: NorthStarTimings
+  fixtureMode: boolean
+}
+
+export interface CallChainHop {
+  hopId: string
+  service: string
+  duration: string
+  anomalous: boolean
+}
+
+export interface CallChainView {
+  psId: string | null
+  hops: CallChainHop[]
+  emptyReason: string | null
+  blastRadius: BlastRadius
+}
+
+export interface ProjectionEvidenceStep {
+  kind: EvidenceStepKind
+  at: string | null
+  title: string
+  detail: string
+  ref: string
+  tone: EvidenceStepTone
+}
+
+export interface ContrastView {
+  available: boolean
+  failedSample: string | null
+  baselineSample: string | null
+  note: string
+  evidenceRefs: string[]
+}
+
+export interface DraftView {
+  draftId: string | null
+  title: string
+  steps: string[]
+  emptyReason: string | null
+  reviewStatus: DraftReviewStatus
+  stateNote: string
+}
+
+export interface DeveloperEvidenceView {
+  diagnosisId: string
+  investigationMode: InvestigationMode
+  routeAuthority: RouteAuthority
+  playbookRef: string | null
+  callChain: CallChainView
+  steps: ProjectionEvidenceStep[]
+  contrast: ContrastView
+  draft: DraftView
+  capabilityLimits: string[]
+  fixtureMode: boolean
+}
+
+export interface DiagnosisExperienceProjection {
+  businessSummary: BusinessSummary
+  developerEvidence: DeveloperEvidenceView
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: Record<string, unknown>) =>
@@ -1786,6 +1899,12 @@ export const troubleshootingApi = {
   /** How the conclusion was reached: criteria with substituted arithmetic, and losing rules. */
   derivation: (diagnosisId: string) =>
     http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
+
+  /** One diagnosis projected for the service-manager summary and developer evidence desk. */
+  projection: (diagnosisId: string) =>
+    http.get<DiagnosisExperienceProjection>(
+      `/troubleshooting/diagnoses/${diagnosisId}/projection`,
+    ),
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),

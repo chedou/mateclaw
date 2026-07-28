@@ -14,6 +14,7 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.exception.MateClawException;
@@ -177,7 +178,28 @@ class DiagnosisStateMachineTest {
         assertTrue(error.getMessage().contains("not connected"));
     }
 
+    @Test
+    void firstHumanConfirmationRecordsHandoffAndAdoptionCostExactlyOnce() {
+        Instant reportedAt = Instant.parse("2026-07-25T01:00:00Z");
+        Instant readyAt = Instant.parse("2026-07-25T01:00:10Z");
+        Instant conclusionAt = Instant.parse("2026-07-25T01:01:00Z");
+        Diagnosis timed = readyDiagnosis(NorthStarTimings.concluded(
+                reportedAt, readyAt, conclusionAt));
+
+        Diagnosis confirmed = stateMachine.confirm(timed, "on-call");
+        Diagnosis transferred = stateMachine.transfer(
+                confirmed, "DBA", "携带证据", "on-call");
+
+        assertEquals(Instant.parse("2026-07-25T01:02:03Z"), confirmed.timings().handoffAt());
+        assertEquals(java.time.Duration.ofSeconds(63), confirmed.timings().adoptCost());
+        assertEquals(confirmed.timings(), transferred.timings());
+    }
+
     private Diagnosis readyDiagnosis() {
+        return readyDiagnosis(NorthStarTimings.unrecorded());
+    }
+
+    private Diagnosis readyDiagnosis(NorthStarTimings timings) {
         IncidentContext incident = new IncidentContext(
                 "inc-903001",
                 "CSDP",
@@ -220,6 +242,10 @@ class DiagnosisStateMachineTest {
                 "run-903001-001",
                 incident,
                 RouteMode.DETERMINISTIC,
+                vip.mate.troubleshooting.model.InvestigationMode.ERROR_CODE_PLAYBOOK,
+                vip.mate.troubleshooting.model.RouteAuthority.EXPLICIT,
+                vip.mate.troubleshooting.model.ConclusionType.LOCATED,
+                timings,
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "证据一致",
                 "MongoDB 连接数饱和",
@@ -233,7 +259,8 @@ class DiagnosisStateMachineTest {
                 "DBA 值班",
                 false,
                 true,
-                List.of("fixture only"));
+                List.of("fixture only"),
+                List.of());
     }
 
     private RecommendedAction action(Diagnosis diagnosis, String actionId) {

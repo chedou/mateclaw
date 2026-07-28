@@ -114,13 +114,32 @@ public class TroubleshootingIntakeService {
             IncidentContext incident,
             List<EvidenceResult> evidence,
             boolean rehearsal) {
+        return report(workspaceId, incident, evidence, rehearsal, clock.instant());
+    }
+
+    /** Preserves the protocol arrival timestamp captured before request mapping. */
+    public StoredDiagnosis report(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            Instant reportedAt) {
         if (incident == null) {
             throw badRequest("incident is required");
+        }
+        if (reportedAt == null) {
+            throw badRequest("reportedAt is required");
         }
         String routeMissReason = deterministicRouteMissReason(incident);
         if (routeMissReason != null) {
             return triageRouteMiss(
-                    workspaceId, incident, evidence, rehearsal, routeMissReason);
+                    workspaceId,
+                    incident,
+                    evidence,
+                    rehearsal,
+                    routeMissReason,
+                    reportedAt,
+                    clock.instant());
         }
 
         SopEntry sop = sopPersistence.find(
@@ -131,9 +150,12 @@ public class TroubleshootingIntakeService {
                     incident,
                     evidence,
                     rehearsal,
-                    "no SOP registered for " + incident.system() + ":" + incident.errorCode());
+                    "no SOP registered for " + incident.system() + ":" + incident.errorCode(),
+                    reportedAt,
+                    clock.instant());
         }
 
+        Instant readyAt = clock.instant();
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
                         sop, incident, evidence == null ? List.of() : evidence));
@@ -144,7 +166,8 @@ public class TroubleshootingIntakeService {
                 collectedEvidence,
                 rehearsal,
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
-                Instant.now(clock));
+                reportedAt,
+                readyAt);
     }
 
     private List<EvidenceResult> collectMissingEvidence(
@@ -190,7 +213,9 @@ public class TroubleshootingIntakeService {
             IncidentContext incident,
             List<EvidenceResult> evidence,
             boolean rehearsal,
-            String reason) {
+            String reason,
+            Instant reportedAt,
+            Instant readyAt) {
         if (agentTriageService == null) {
             throw routeMiss(reason + "; read-only Agent miss path is disabled or unavailable");
         }
@@ -199,7 +224,9 @@ public class TroubleshootingIntakeService {
                 incident,
                 evidence == null ? List.of() : evidence,
                 rehearsal,
-                reason);
+                reason,
+                reportedAt,
+                readyAt);
     }
 
     private MateClawException routeMiss(String message) {

@@ -78,7 +78,7 @@ class TroubleshootingIntakeServiceTest {
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(stored);
 
         StoredDiagnosis result = intake.report(
@@ -86,7 +86,25 @@ class TroubleshootingIntakeServiceTest {
 
         assertThat(result).isSameAs(stored);
         verify(diagnosisService).diagnoseAndPersist(
-                eq(WORKSPACE_ID), any(), eq(sop), eq(List.of(evidence())), eq(false), eq(true), eq(NOW));
+                eq(WORKSPACE_ID), any(), eq(sop), eq(List.of(evidence())),
+                eq(false), eq(true), eq(NOW), eq(NOW));
+    }
+
+    @Test
+    void keepsProtocolArrivalSeparateFromTheReadyTimestamp() {
+        Instant reportedAt = NOW.minusSeconds(9);
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, incident, List.of(evidence()), false, reportedAt);
+
+        verify(diagnosisService).diagnoseAndPersist(
+                WORKSPACE_ID, incident, sop, List.of(evidence()), false, true,
+                reportedAt, NOW);
     }
 
     @Test
@@ -95,7 +113,7 @@ class TroubleshootingIntakeServiceTest {
         IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
         TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
                 sopPersistence,
@@ -119,7 +137,9 @@ class TroubleshootingIntakeServiceTest {
                 incident,
                 List.of(evidence()),
                 true,
-                "no SOP registered for CSDP:999999"))
+                "no SOP registered for CSDP:999999",
+                NOW,
+                NOW))
                 .thenReturn(stored);
         TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
                 sopPersistence,
@@ -144,7 +164,9 @@ class TroubleshootingIntakeServiceTest {
                 incident,
                 List.of(),
                 false,
-                "incident carries no errorCode; deterministic routing needs one"))
+                "incident carries no errorCode; deterministic routing needs one",
+                NOW,
+                NOW))
                 .thenReturn(stored);
         TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
                 sopPersistence,
@@ -168,7 +190,9 @@ class TroubleshootingIntakeServiceTest {
                 incident,
                 List.of(evidence()),
                 true,
-                "incident completeness is SYMPTOM; deterministic routing needs a structured report"))
+                "incident completeness is SYMPTOM; deterministic routing needs a structured report",
+                NOW,
+                NOW))
                 .thenReturn(stored);
         TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
                 sopPersistence,
@@ -188,14 +212,14 @@ class TroubleshootingIntakeServiceTest {
     void marksEveryDiagnosisAsFixtureBackedWhileSourceAdaptersAreMissing() {
         when(sopPersistence.find(anyLong(), any(), any())).thenReturn(sop());
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
         intake.report(WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(), false);
 
         ArgumentCaptor<Boolean> fixtureMode = ArgumentCaptor.forClass(Boolean.class);
         verify(diagnosisService).diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), fixtureMode.capture(), any());
+                anyLong(), any(), any(), any(), anyBoolean(), fixtureMode.capture(), any(), any());
         assertThat(fixtureMode.getValue())
                 .as("no read-only source adapter exists yet, so evidence cannot be presented as verified")
                 .isTrue();
@@ -209,7 +233,7 @@ class TroubleshootingIntakeServiceTest {
         when(evidenceRouter.collect(sop.evidenceRequests().getFirst(), incident))
                 .thenReturn(evidence());
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
         TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
                 sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -219,7 +243,7 @@ class TroubleshootingIntakeServiceTest {
         verify(evidenceRouter).collect(sop.evidenceRequests().getFirst(), incident);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW));
+                eq(false), eq(true), eq(NOW), eq(NOW));
     }
 
     @Test
@@ -228,7 +252,7 @@ class TroubleshootingIntakeServiceTest {
         IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
         TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
                 sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
@@ -238,7 +262,7 @@ class TroubleshootingIntakeServiceTest {
         verifyNoInteractions(evidenceRouter);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW));
+                eq(false), eq(true), eq(NOW), eq(NOW));
     }
 
     @Test
@@ -252,7 +276,7 @@ class TroubleshootingIntakeServiceTest {
                 "guance:log", NOW);
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
         intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
@@ -260,7 +284,7 @@ class TroubleshootingIntakeServiceTest {
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW));
+                eq(false), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue().getFirst().observed().toString())
                 .contains(TroubleshootingSecretRedactor.REDACTED)
                 .doesNotContain("production-token");
@@ -274,7 +298,7 @@ class TroubleshootingIntakeServiceTest {
         EvidenceResult second = evidenceWithQueryId("token:second-secret");
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
         intake.report(WORKSPACE_ID, incident, List.of(first, second), false);
@@ -282,7 +306,7 @@ class TroubleshootingIntakeServiceTest {
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW));
+                eq(false), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("supplied-redacted-1", "supplied-redacted-2");
@@ -295,7 +319,7 @@ class TroubleshootingIntakeServiceTest {
         EvidenceResult unsafe = evidenceWithQueryId("unsafe id with spaces");
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
         intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
@@ -303,7 +327,7 @@ class TroubleshootingIntakeServiceTest {
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW));
+                eq(false), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("supplied-redacted-1");
@@ -313,13 +337,13 @@ class TroubleshootingIntakeServiceTest {
     void passesRehearsalThroughSoDrillsStayOutOfDeduplication() {
         when(sopPersistence.find(anyLong(), any(), any())).thenReturn(sop());
         when(diagnosisService.diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
         intake.report(WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(), true);
 
         verify(diagnosisService).diagnoseAndPersist(
-                anyLong(), any(), any(), any(), eq(true), anyBoolean(), any());
+                anyLong(), any(), any(), any(), eq(true), anyBoolean(), any(), any());
     }
 
     @Test
@@ -334,7 +358,7 @@ class TroubleshootingIntakeServiceTest {
                 .isEqualTo(409);
 
         verify(diagnosisService, never()).diagnoseAndPersist(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any());
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any());
     }
 
     @Test

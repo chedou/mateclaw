@@ -72,11 +72,11 @@ public class DiagnosisDerivationService {
         }
 
         List<DiagnosisDerivation.CriterionEvaluation> criteria = new ArrayList<>();
-        Map<String, CriterionOutcome> outcomeBySignal = new LinkedHashMap<>();
+        Map<String, CriterionOutcome> outcomeBySignal =
+                evaluator.outcomesBySignal(sop.anomalyCriteria(), diagnosis.evidence());
         for (AnomalyCriterion criterion : sop.anomalyCriteria()) {
             EvidenceResult source = evidenceByRequest.get(criterion.sourceRequestId());
-            CriterionOutcome outcome = outcomeOf(criterion, source);
-            outcomeBySignal.put(criterion.signal(), outcome);
+            CriterionOutcome outcome = outcomeBySignal.get(criterion.signal());
             criteria.add(new DiagnosisDerivation.CriterionEvaluation(
                     criterion.signal(),
                     criterion.sourceRequestId(),
@@ -130,17 +130,6 @@ public class DiagnosisDerivationService {
 
         return new DiagnosisDerivation(
                 diagnosis.diagnosisId(), sop.routingKey(), faithful, note, criteria, rules);
-    }
-
-    private CriterionOutcome outcomeOf(AnomalyCriterion criterion, EvidenceResult source) {
-        // Mirrors CriterionEvaluator.matchingSignals: a missing row means the
-        // criterion never ran, which is not the same as running and failing.
-        if (source == null || source.status() == EvidenceStatus.MISSING) {
-            return CriterionOutcome.UNEVALUATED;
-        }
-        return evaluator.matches(criterion.rule(), source.observed())
-                ? CriterionOutcome.SATISFIED
-                : CriterionOutcome.EXCLUDED;
     }
 
     private String driftNote(Set<String> recorded, Set<String> recomputed) {

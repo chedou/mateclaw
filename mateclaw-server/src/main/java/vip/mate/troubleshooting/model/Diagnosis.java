@@ -16,6 +16,9 @@ public record Diagnosis(
         String runId,
         IncidentContext incident,
         RouteMode routeMode,
+        InvestigationMode investigationMode,
+        RouteAuthority routeAuthority,
+        ConclusionType conclusionType,
         DiagnosisStatus status,
         String summary,
         String rootCause,
@@ -34,14 +37,15 @@ public record Diagnosis(
         ClosureRecord closure,
         List<KnowledgeCandidate> knowledgeCandidates,
         List<TimelineEvent> timeline,
+        NorthStarTimings timings,
         boolean rehearsal,
         boolean fixtureMode,
         boolean writeExecutionEnabled,
         List<String> warnings) {
 
-    public static final String CURRENT_CONTRACT_VERSION = "1.4";
+    public static final String CURRENT_CONTRACT_VERSION = "1.5";
     private static final Set<String> SUPPORTED_CONTRACT_VERSIONS =
-            Set.of("1.3", CURRENT_CONTRACT_VERSION);
+            Set.of("1.3", "1.4", CURRENT_CONTRACT_VERSION);
 
     public Diagnosis {
         diagnosisId = required(diagnosisId, "diagnosisId");
@@ -54,6 +58,31 @@ public record Diagnosis(
         runId = required(runId, "runId");
         if (incident == null || routeMode == null || status == null || confidence == null) {
             throw new IllegalArgumentException("incident, routeMode, status and confidence are required");
+        }
+        boolean legacyContract = !CURRENT_CONTRACT_VERSION.equals(contractVersion);
+        if (investigationMode == null) {
+            if (!legacyContract) {
+                throw new IllegalArgumentException("investigationMode is required for diagnosis 1.5");
+            }
+            investigationMode = defaultInvestigationMode(routeMode);
+        }
+        if (routeAuthority == null) {
+            if (!legacyContract) {
+                throw new IllegalArgumentException("routeAuthority is required for diagnosis 1.5");
+            }
+            routeAuthority = defaultRouteAuthority(routeMode);
+        }
+        if (conclusionType == null) {
+            if (!legacyContract) {
+                throw new IllegalArgumentException("conclusionType is required for diagnosis 1.5");
+            }
+            conclusionType = defaultConclusionType(routeMode, abstained);
+        }
+        if (timings == null) {
+            if (!legacyContract) {
+                throw new IllegalArgumentException("timings are required for diagnosis 1.5");
+            }
+            timings = NorthStarTimings.unrecorded();
         }
         summary = summary == null ? "" : summary;
         rootCause = rootCause == null ? "" : rootCause;
@@ -70,6 +99,15 @@ public record Diagnosis(
         if (writeExecutionEnabled) {
             throw new IllegalArgumentException("production write execution must remain disabled");
         }
+        validateExperienceClassification(
+                incident,
+                routeMode,
+                investigationMode,
+                routeAuthority,
+                conclusionType,
+                confidence,
+                abstained,
+                legacyContract);
         validateEvidenceCitations(evidence, evidenceCitations);
         if (routeMode == RouteMode.LLM_FALLBACK) {
             if (!recommendedActions.isEmpty() || !pendingWrites.isEmpty()) {
@@ -158,6 +196,62 @@ public record Diagnosis(
             boolean fixtureMode,
             List<String> warnings,
             List<TimelineEvent> timeline) {
+        return initial(
+                diagnosisId,
+                caseId,
+                runId,
+                incident,
+                routeMode,
+                defaultInvestigationMode(routeMode),
+                defaultRouteAuthority(routeMode),
+                defaultConclusionType(routeMode, abstained),
+                NorthStarTimings.unrecorded(),
+                status,
+                summary,
+                rootCause,
+                confidence,
+                abstained,
+                sopKey,
+                sopTitle,
+                evidence,
+                triggeredSignals,
+                recommendedActions,
+                routeToTeam,
+                rehearsal,
+                fixtureMode,
+                warnings,
+                timeline);
+    }
+
+    /**
+     * Creates a diagnosis with the v4 route, conclusion and D14 facts explicitly supplied.
+     * The legacy {@link RouteMode} remains alongside them only for stored-row compatibility.
+     */
+    public static Diagnosis initial(
+            String diagnosisId,
+            String caseId,
+            String runId,
+            IncidentContext incident,
+            RouteMode routeMode,
+            InvestigationMode investigationMode,
+            RouteAuthority routeAuthority,
+            ConclusionType conclusionType,
+            NorthStarTimings timings,
+            DiagnosisStatus status,
+            String summary,
+            String rootCause,
+            Confidence confidence,
+            boolean abstained,
+            String sopKey,
+            String sopTitle,
+            List<EvidenceResult> evidence,
+            List<String> triggeredSignals,
+            List<RecommendedAction> recommendedActions,
+            String routeToTeam,
+            boolean rehearsal,
+            boolean fixtureMode,
+            List<String> warnings,
+            List<TimelineEvent> timeline) {
         if (status != DiagnosisStatus.READY_FOR_HUMAN
                 && status != DiagnosisStatus.NEEDS_INVESTIGATION) {
             throw new IllegalArgumentException("initial diagnosis must start before human confirmation");
@@ -173,6 +267,9 @@ public record Diagnosis(
                 runId,
                 incident,
                 routeMode,
+                investigationMode,
+                routeAuthority,
+                conclusionType,
                 status,
                 summary,
                 rootCause,
@@ -191,6 +288,7 @@ public record Diagnosis(
                 null,
                 List.of(),
                 timeline,
+                timings,
                 rehearsal,
                 fixtureMode,
                 false,
@@ -216,6 +314,11 @@ public record Diagnosis(
                 draft.runId(),
                 draft.incident(),
                 RouteMode.LLM_FALLBACK,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.MODEL_PROPOSED,
+                draft.abstained()
+                        ? ConclusionType.INSUFFICIENT_EVIDENCE
+                        : ConclusionType.HYPOTHESIS,
                 status,
                 draft.summary(),
                 draft.hypothesis(),
@@ -234,6 +337,7 @@ public record Diagnosis(
                 null,
                 List.of(),
                 timeline,
+                draft.timings(),
                 draft.rehearsal(),
                 draft.fixtureMode(),
                 false,
@@ -356,13 +460,104 @@ public record Diagnosis(
             ClosureRecord newClosure,
             List<KnowledgeCandidate> newKnowledgeCandidates,
             List<TimelineEvent> newTimeline) {
+        NorthStarTimings nextTimings = timings;
+        if (newTimeline.size() > timeline.size()) {
+            nextTimings = timings.withHandoff(newTimeline.get(timeline.size()).timestamp());
+        }
         return new Diagnosis(
                 diagnosisId, contractVersion, caseId, runId, incident, routeMode,
+                investigationMode, routeAuthority, conclusionType,
                 newStatus, summary, rootCause, confidence, abstained,
                 sopKey, sopTitle, evidence, evidenceCitations, triggeredSignals, newActions,
                 newPendingWrites, newRouteToTeam, newTransfers, newActionOutcomes,
-                newClosure, newKnowledgeCandidates, newTimeline, rehearsal,
+                newClosure, newKnowledgeCandidates, newTimeline, nextTimings, rehearsal,
                 fixtureMode, false, warnings);
+    }
+
+    private static void validateExperienceClassification(
+            IncidentContext incident,
+            RouteMode routeMode,
+            InvestigationMode investigationMode,
+            RouteAuthority routeAuthority,
+            ConclusionType conclusionType,
+            Confidence confidence,
+            boolean abstained,
+            boolean legacyContract) {
+        // v1.3/v1.4 did not persist these fields and therefore cannot be held to
+        // invariants that did not exist when the row was written. Their derived
+        // values are projection-compatible, while v1.5 writes remain strict.
+        if (legacyContract) {
+            return;
+        }
+        if ((conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE) != abstained) {
+            throw new IllegalArgumentException(
+                    "only INSUFFICIENT_EVIDENCE diagnoses may be abstained");
+        }
+        if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE
+                && confidence != Confidence.LOW) {
+            throw new IllegalArgumentException(
+                    "INSUFFICIENT_EVIDENCE confidence must be LOW");
+        }
+        if (conclusionType == ConclusionType.EXCLUDED && confidence == Confidence.HIGH) {
+            throw new IllegalArgumentException("EXCLUDED confidence cannot be HIGH");
+        }
+        if (routeAuthority == RouteAuthority.MODEL_PROPOSED && confidence == Confidence.HIGH) {
+            throw new IllegalArgumentException("MODEL_PROPOSED confidence cannot be HIGH");
+        }
+        if (routeMode == RouteMode.LLM_FALLBACK) {
+            if (investigationMode != InvestigationMode.OPEN_DISCOVERY
+                    || routeAuthority != RouteAuthority.MODEL_PROPOSED) {
+                throw new IllegalArgumentException(
+                        "LLM_FALLBACK requires OPEN_DISCOVERY + MODEL_PROPOSED");
+            }
+            if (conclusionType != ConclusionType.HYPOTHESIS
+                    && conclusionType != ConclusionType.INSUFFICIENT_EVIDENCE) {
+                throw new IllegalArgumentException(
+                        "LLM_FALLBACK may only produce HYPOTHESIS or INSUFFICIENT_EVIDENCE");
+            }
+            return;
+        }
+        if (investigationMode == InvestigationMode.OPEN_DISCOVERY) {
+            throw new IllegalArgumentException(
+                    "DETERMINISTIC route cannot masquerade as OPEN_DISCOVERY");
+        }
+        if (investigationMode == InvestigationMode.ERROR_CODE_PLAYBOOK) {
+            if (incident.errorCode() == null || incident.errorCode().isBlank()) {
+                throw new IllegalArgumentException(
+                        "ERROR_CODE_PLAYBOOK requires an explicit errorCode");
+            }
+            if (routeAuthority == RouteAuthority.MODEL_PROPOSED) {
+                throw new IllegalArgumentException(
+                        "a model proposal cannot select ERROR_CODE_PLAYBOOK");
+            }
+        }
+    }
+
+    private static InvestigationMode defaultInvestigationMode(RouteMode routeMode) {
+        if (routeMode == null) {
+            return null;
+        }
+        return routeMode == RouteMode.DETERMINISTIC
+                ? InvestigationMode.ERROR_CODE_PLAYBOOK
+                : InvestigationMode.OPEN_DISCOVERY;
+    }
+
+    private static RouteAuthority defaultRouteAuthority(RouteMode routeMode) {
+        if (routeMode == null) {
+            return null;
+        }
+        return routeMode == RouteMode.DETERMINISTIC
+                ? RouteAuthority.EXPLICIT
+                : RouteAuthority.MODEL_PROPOSED;
+    }
+
+    private static ConclusionType defaultConclusionType(RouteMode routeMode, boolean abstained) {
+        if (abstained) {
+            return ConclusionType.INSUFFICIENT_EVIDENCE;
+        }
+        return routeMode == RouteMode.LLM_FALLBACK
+                ? ConclusionType.HYPOTHESIS
+                : ConclusionType.LOCATED;
     }
 
     private List<TimelineEvent> advancedTimeline(List<TimelineEvent> candidate) {

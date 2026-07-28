@@ -13,6 +13,7 @@ import vip.mate.agent.model.AgentEntity;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.Diagnosis;
+import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -120,6 +121,7 @@ class TroubleshootingAgentTriageServiceTest {
 
         Diagnosis diagnosis = stored.diagnosis();
         assertThat(diagnosis.routeMode()).isEqualTo(RouteMode.LLM_FALLBACK);
+        assertThat(diagnosis.conclusionType()).isEqualTo(ConclusionType.HYPOTHESIS);
         assertThat(diagnosis.status()).isEqualTo(DiagnosisStatus.READY_FOR_HUMAN);
         assertThat(diagnosis.abstained()).isFalse();
         assertThat(diagnosis.evidence()).containsExactly(evidence);
@@ -138,6 +140,9 @@ class TroubleshootingAgentTriageServiceTest {
         assertThat(diagnosis.recommendedActions()).isEmpty();
         assertThat(diagnosis.writeExecutionEnabled()).isFalse();
         assertThat(diagnosis.fixtureMode()).isTrue();
+        assertThat(diagnosis.timings().reportedAt()).isEqualTo(NOW);
+        assertThat(diagnosis.timings().readyAt()).isEqualTo(NOW);
+        assertThat(diagnosis.timings().conclusionAt()).isEqualTo(NOW);
         verify(agentService).chatWithToolAllowlist(
                 eq(AGENT_ID), any(), any(), any(ChatOrigin.class),
                 eq(Set.of(TroubleshootingEvidenceTool.FUNCTION_NAME)));
