@@ -10,7 +10,7 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.2 / 蓝图 v0.12**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.2 / 蓝图 v0.13**
 
 ## 1. 一句话
 
@@ -58,8 +58,9 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.12。该增量不扩大 P1：当前仍是一轮 PlaybookDraft 归纳 + 确定性校验；P2 才在历史样本上
-影子运行 Evidence Challenger / Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
+蓝图已升级到 v0.13：v0.12 锁定通道复用，v0.13 校准正式工作台、双投影与 canonical evidence
+事实吸收的实现状态。两版均不扩大 P1：P2 才在历史样本上影子运行 Evidence Challenger /
+Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ## 4. 当前代码真实状态
 
@@ -112,8 +113,11 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
 - 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
-- Diagnosis 运行时尚未持久化结构化影响、完整调用链 hop 和成功样本对照；
-  双投影对这些缺口返回 null/UNKNOWN。1.3/1.4 旧记录也不回填伪造的 D14 数据。
+- 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
+  `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
+  不新增表或第二份事实。
+- 在线 Diagnosis 尚未稳定保存完整 `log_trace_bundle`、`contrast_sample` 与真实影响人数/BlastRadius；
+  缺失时继续返回 null/UNKNOWN。1.3/1.4 旧记录也不回填伪造的 D14 数据。
 
 ## 5. Demo
 
@@ -198,7 +202,7 @@ Vite 之前失败；直接 `vue-tsc` 和 Vite build 均通过。这是仓库已�
 
 正式双投影纵切（2026-07-29）已通过：
 
-- 排障域后端全量 `210` 个测试，0 failure / 0 error / 0 skipped；其中覆盖 Diagnosis 1.5、
+- 排障域后端全量 `214` 个测试，0 failure / 0 error / 0 skipped；其中覆盖 Diagnosis 1.5、
   D14 请求前置计时、ISO-8601 Duration HTTP 合同、`EXCLUDED`/`UNEVALUATED` 分离及首次人工接管；
 - 前端全量 `114` 个测试、`vue-tsc --noEmit` 与直接 Vite production build；
 - Spring 上下文已用当前工作树真实重启成功，`127.0.0.1:18088` 监听；正式页和旧版页均返回 200；
@@ -209,6 +213,13 @@ Vite 之前失败；直接 `vue-tsc` 和 Vite build 均通过。这是仓库已�
   `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION / LOW`，证明缺失字段不会被误升为 `EXCLUDED`；
 - 正式页默认只展开 `BusinessSummary`；路由、调用链、对照、知识草稿、判据与能力边界只在开发证据台展开；
   Recorded Replay 边界、旧版同 `diagnosisId` 跳转均通过，正式页控制台 0 error，仅剩平台既有 intlify warning。
+- 投影测试已覆盖已有 evidence 的渐进能力：903001 的 `trace` 只显示一个明确的部分异常 hop；
+  完整 `log_trace_bundle` 显示有界三跳链路；`contrast_sample` 显示失败 92% 对成功 3%，
+  `log_count=148` 只描述事件量并明确不等于 148 名客户/用户。
+- 运行态复验 `diag-e0c5b51e77544d278e0dd30ad2b25d7c`：Diagnosis 聚合往返后被全局
+  Long→String 精度保护写成十进制字符串的时间戳/时延/计数仍可严格复算；正式页显示
+  `order-api → order-service → mongo-primary`、`未记录 / 42 ms / 3001 ms` 与 92% 对 3% 的对照，
+  所有排障接口 200、控制台 0 error。指数、小数、空格、前导零和 long 越界字符串继续 fail closed。
 
 后端定向测试命令：
 
@@ -222,7 +233,8 @@ mvn -pl mateclaw-server -am \
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
 2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见
-   `projection-contracts.md`；D14 已进 Diagnosis 1.5，下一步补结构化影响、完整 hop 与成功样本对照。
+   `projection-contracts.md`；D14 已进 Diagnosis 1.5，投影也已能消费既有 canonical hop/对照；
+   下一步是让真实在线取证稳定产出这些事实，而不是再造一套展示数据。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. 下一主攻 P2 真实 Guance 授权、字段核实和 20–30 条影子样本；P3 企微仍可独立推进。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

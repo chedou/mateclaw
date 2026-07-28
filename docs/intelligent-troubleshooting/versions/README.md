@@ -26,6 +26,9 @@
 - **v0.12**：图形不变。修正一处融合缺口——设计此前把企微当成需新建的入站通道，而平台自带
   `vip.mate.channel.wecom`。新增 RFC §7.4 与 D17（通道复用，不新建入站；诊断卡片不得复用
   tool-guard 的 `ApprovalNotice` 形状）；同版纳入已选定的两个投影合同。
+- **v0.13**：图形与 RFC 语义不变；校准正式实现状态。P1 fixture 闭环和 Web 双投影已完成，
+  P2 真实 Guance 仍待授权与样本验证。双投影直接复用 Diagnosis 内 canonical evidence，
+  严格区分事件量与影响人数，并保留旧版处置台作为兼容入口。
 
 v0.2–v0.6 中存在用户已经否定的 MetaClaw/其他项目材料，因此不作为当前 MateClaw-only 架构版本导入。
 原始下载文件仍留在用户 Downloads 中，不得把其中结论重新并入现行设计。

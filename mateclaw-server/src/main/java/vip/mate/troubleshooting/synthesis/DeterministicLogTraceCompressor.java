@@ -1,11 +1,11 @@
 package vip.mate.troubleshooting.synthesis;
 
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.CanonicalNumberParser;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -299,27 +299,22 @@ public final class DeterministicLogTraceCompressor {
     }
 
     private long exactLong(Object raw, String field) {
-        if (!(raw instanceof Number value)) {
-            throw new IllegalArgumentException(field + " must be numeric");
+        Long value = CanonicalNumberParser.parseExactLong(raw);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    field + " must be an integer or canonical decimal integer string");
         }
-        try {
-            return new BigDecimal(String.valueOf(value)).longValueExact();
-        } catch (ArithmeticException invalid) {
-            throw new IllegalArgumentException(field + " must be an integer", invalid);
-        }
+        return value;
     }
 
     private Double optionalDuration(Object raw) {
         if (raw == null) {
             return null;
         }
-        if (!(raw instanceof Number value)) {
-            throw new IllegalArgumentException("duration_ms must be numeric");
-        }
-        double duration = value.doubleValue();
-        if (!Double.isFinite(duration) || duration < 0) {
+        Double duration = CanonicalNumberParser.parseFiniteNonNegativeDouble(raw);
+        if (duration == null) {
             throw new IllegalArgumentException(
-                    "duration_ms must be finite and non-negative");
+                    "duration_ms must be finite, non-negative, and canonical");
         }
         return duration;
     }

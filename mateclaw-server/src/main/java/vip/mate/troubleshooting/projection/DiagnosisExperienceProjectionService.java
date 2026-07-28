@@ -14,10 +14,7 @@ import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
-import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BlastRadius;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
-import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.CallChainView;
-import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DeveloperEvidenceView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DraftView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceStep;
@@ -43,12 +40,15 @@ public class DiagnosisExperienceProjectionService {
 
     private final TroubleshootingPersistenceService persistence;
     private final DiagnosisDerivationService derivationService;
+    private final CanonicalEvidenceViewProjector evidenceProjector;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
-            DiagnosisDerivationService derivationService) {
+            DiagnosisDerivationService derivationService,
+            CanonicalEvidenceViewProjector evidenceProjector) {
         this.persistence = persistence;
         this.derivationService = derivationService;
+        this.evidenceProjector = evidenceProjector;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -60,7 +60,10 @@ public class DiagnosisExperienceProjectionService {
         ConclusionType conclusionType = diagnosis.conclusionType();
         RouteAuthority authority = diagnosis.routeAuthority();
         Confidence confidence = projectedConfidence(diagnosis, conclusionType, authority);
-        ImpactView impact = impact(diagnosis);
+        CanonicalEvidenceViewProjector.ProjectionFacts evidenceFacts =
+                evidenceProjector.project(diagnosis);
+        ImpactView impact = evidenceFacts.impact();
+        capabilityLimits.addAll(evidenceFacts.capabilityLimits());
 
         BusinessSummary business = new BusinessSummary(
                 diagnosis.diagnosisId(),
@@ -76,7 +79,6 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.fixtureMode());
 
         capabilityLimits.add(WRITE_BOUNDARY);
-        capabilityLimits.add("当前 Diagnosis 尚未保存完整调用链 hop 和成功样本对照；缺失值保持为空。");
         if (!diagnosis.timings().recorded()) {
             capabilityLimits.add("该旧记录创建时尚未采集 D14 阶段时间戳，不用 0 或当前时间回填。");
         }
@@ -87,14 +89,9 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.investigationMode(),
                 authority,
                 diagnosis.sopKey(),
-                callChain(diagnosis, impact.blastRadius()),
+                evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
-                new ContrastView(
-                        false,
-                        null,
-                        null,
-                        "当前 Diagnosis 未保存同窗口成功样本对照，不能把对照缺失解释成无异常。",
-                        List.of()),
+                evidenceFacts.contrast(),
                 draft(diagnosis),
                 deduplicate(capabilityLimits),
                 diagnosis.fixtureMode());
@@ -164,18 +161,6 @@ public class DiagnosisExperienceProjectionService {
         return fallback(diagnosis.incident().title(), diagnosis.summary(), "待确认故障现象");
     }
 
-    private ImpactView impact(Diagnosis diagnosis) {
-        return new ImpactView(
-                fallback(diagnosis.incident().impact(), "待确认"),
-                null,
-                null,
-                BlastRadius.UNKNOWN,
-                List.of(),
-                null,
-                "当前 intake 只保存文本影响描述，未保存有证据引用的客户数、用户数或扩散范围。"
-        );
-    }
-
     private NextStep nextStep(Diagnosis diagnosis, ConclusionType conclusionType) {
         String team = fallback(diagnosis.routeToTeam(), "责任开发");
         return switch (conclusionType) {
@@ -206,14 +191,6 @@ public class DiagnosisExperienceProjectionService {
                     "补齐缺失的日志、调用链或指标证据后重新调查。",
                     "证据不足，系统已弃权且没有给出根因；" + WRITE_BOUNDARY);
         };
-    }
-
-    private CallChainView callChain(Diagnosis diagnosis, BlastRadius blastRadius) {
-        String reason = diagnosis.incident().traceId() == null
-                ? "当前诊断未关联 PS / Trace ID，也未保存可重放的调用链 hop。"
-                : "已关联 PS / Trace ID，但当前 Diagnosis 未保存 hop 列表；请查看下方证据与判据。";
-        return new CallChainView(
-                diagnosis.incident().traceId(), List.of(), reason, blastRadius);
     }
 
     private List<EvidenceStep> evidenceSteps(

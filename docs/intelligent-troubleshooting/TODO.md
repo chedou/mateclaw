@@ -8,7 +8,7 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.2** / 蓝图 v0.12）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.2** / 蓝图 v0.13）
 >
 > 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微 P3 暂缓）
 >
@@ -260,8 +260,13 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       `handoffAt/adoptCost`，登录态浏览器已完成 Diagnosis 1.5 创建与确认验收。
 - [x] 判据字段缺失、类型错误或不可解析时保持 `UNEVALUATED`；只有完整可求值且为假的判据才能形成
       `EXCLUDED`，避免把“没取到”升级成“已排除”。
-- [ ] 结构化影响、完整 hop 和成功样本对照仍待进入运行时合同；
-      1.3/1.4 旧记录的 D14 也继续返回 null。正式页面明确显示“未记录/未取得”，不伪造成 0 或正常。
+- [x] 双投影已直接复用 Diagnosis 内既有 canonical evidence：`log_count` 只作为带引用的事件量，
+      不冒充客户/用户数；`trace` 只显示“部分异常 hop”；`log_trace_bundle + contrast_sample`
+      可确定性压缩为有界调用链和失败/成功样本对照。未新增表、接口或第二套证据结构。
+- [x] 聚合持久化的 Long→String 精度保护已纳入投影边界：只接受 canonical 十进制整数表示，
+      完整链路、对照计数和事件量往返后仍可复算；宽松数值强转继续 fail closed。
+- [ ] 在线 Diagnosis 仍需在真实取证路径保存完整 `log_trace_bundle`、`contrast_sample` 与经核实的
+      影响人数/BlastRadius；旧记录缺失时继续返回 null/UNKNOWN。1.3/1.4 的 D14 也不回填伪数据。
 
 ## 9. 明确不进入当前计划
 

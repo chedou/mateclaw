@@ -34,9 +34,10 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
    （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
 2.6 **`docs/intelligent-troubleshooting/projection-contracts.md`** —— **已选定的两个投影合同**：
    BusinessSummary / DeveloperEvidenceView / NorthStarTimings，含服务端不变量与通道消费方式。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.12**：
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.13**：
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
-   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11 / v0.12 图形不变，改动在 RFC。
+   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.13 图形不变，
+   v0.13 校准正式工作台、双投影与证据事实吸收的实现状态，RFC 仍为 v4.2。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。

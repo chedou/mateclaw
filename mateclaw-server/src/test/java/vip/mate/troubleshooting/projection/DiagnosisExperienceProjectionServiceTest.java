@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Instant;
 import java.util.List;
@@ -50,7 +51,10 @@ class DiagnosisExperienceProjectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiagnosisExperienceProjectionService(persistence, derivationService);
+        service = new DiagnosisExperienceProjectionService(
+                persistence,
+                derivationService,
+                new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()));
     }
 
     @Test
@@ -71,6 +75,11 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(business.impact().affectedUsers()).isNull();
         assertThat(business.impact().blastRadius())
                 .isEqualTo(DiagnosisExperienceProjection.BlastRadius.UNKNOWN);
+        assertThat(business.impact().evidenceRefs()).containsExactly("EV-1");
+        assertThat(business.impact().observedAt()).isEqualTo(NOW);
+        assertThat(business.impact().note())
+                .contains("148 条")
+                .contains("不是客户数或用户数");
         assertThat(business.timings().reportedAt()).isEqualTo(REPORTED_AT);
         assertThat(business.timings().readyAt()).isEqualTo(READY_AT);
         assertThat(business.timings().conclusionAt()).isEqualTo(NOW);
@@ -86,8 +95,13 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(RouteAuthority.EXPLICIT);
         assertThat(developer.playbookRef()).isEqualTo("csdp:903001");
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
-        assertThat(developer.callChain().hops()).isEmpty();
-        assertThat(developer.callChain().emptyReason()).contains("未保存 hop");
+        assertThat(developer.callChain().hops()).hasSize(1);
+        assertThat(developer.callChain().hops().getFirst().service()).isEqualTo("mongo.find");
+        assertThat(developer.callChain().hops().getFirst().duration()).isEqualTo("3001 ms");
+        assertThat(developer.callChain().hops().getFirst().anomalous()).isTrue();
+        assertThat(developer.callChain().emptyReason()).isNull();
+        assertThat(developer.capabilityLimits())
+                .anyMatch(item -> item.contains("仅保存异常 hop") && item.contains("完整调用链"));
         assertThat(developer.steps())
                 .extracting(DiagnosisExperienceProjection.EvidenceStep::tone)
                 .contains(
@@ -97,6 +111,56 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(developer.contrast().available()).isFalse();
         assertThat(developer.capabilityLimits()).anyMatch(item -> item.contains("生产变更"));
         assertThat(developer.fixtureMode()).isTrue();
+    }
+
+    @Test
+    void projectsBoundedCanonicalTraceAndNegativeControlWithoutNewStorage() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(evidenceRichDiagnosis(), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        DiagnosisExperienceProjection.DeveloperEvidenceView developer = result.developerEvidence();
+        assertThat(developer.callChain().psId())
+                .isEqualTo("synthetic-ps-message-send-001");
+        assertThat(developer.callChain().hops())
+                .extracting(DiagnosisExperienceProjection.Hop::service)
+                .containsExactly("session-api", "session-state", "session-api");
+        assertThat(developer.callChain().hops())
+                .extracting(DiagnosisExperienceProjection.Hop::duration)
+                .containsExactly("未记录", "42 ms", "87 ms");
+        assertThat(developer.callChain().hops())
+                .extracting(DiagnosisExperienceProjection.Hop::anomalous)
+                .containsExactly(false, true, true);
+        assertThat(developer.callChain().emptyReason()).isNull();
+
+        assertThat(developer.contrast().available()).isTrue();
+        assertThat(developer.contrast().failedSample()).isEqualTo("失败样本 92/100（92%）");
+        assertThat(developer.contrast().baselineSample()).isEqualTo("成功样本 3/100（3%）");
+        assertThat(developer.contrast().note())
+                .contains("session_state_conflict")
+                .contains("89 个百分点");
+        assertThat(developer.contrast().evidenceRefs())
+                .containsExactly("SYNTH-CONTRAST-SAMPLE");
+        assertThat(developer.capabilityLimits())
+                .noneMatch(item -> item.contains("尚未保存完整调用链 hop 和成功样本对照"));
+    }
+
+    @Test
+    void derivesScalarHopAnomalyFromObservedStatusInsteadOfTheEvidenceEnvelope() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        deterministicDiagnosis("ok", EvidenceStatus.ANOMALY), 2, false));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.developerEvidence().callChain().hops()).isEmpty();
+        assertThat(result.developerEvidence().capabilityLimits())
+                .anyMatch(item -> item.contains("尚未保存可复算的完整调用链 hop"));
     }
 
     @Test
@@ -180,6 +244,12 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     private Diagnosis deterministicDiagnosis() {
+        return deterministicDiagnosis("timeout", EvidenceStatus.NORMAL);
+    }
+
+    private Diagnosis deterministicDiagnosis(
+            String observedStatus,
+            EvidenceStatus traceEvidenceStatus) {
         return Diagnosis.initial(
                 DIAGNOSIS_ID, "case-1", "run-1", incident(),
                 RouteMode.DETERMINISTIC,
@@ -190,11 +260,82 @@ class DiagnosisExperienceProjectionServiceTest {
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "连接池利用率达到 100%", "Mongo 连接池打满", Confidence.HIGH, false,
                 "csdp:903001", "订单服务 Mongo 连接池耗尽",
-                List.of(new EvidenceResult(
-                        "EV-2", "M", "M::mongodb:(...)", EvidenceStatus.ANOMALY,
-                        "Mongo 连接池利用率达到 100%", Map.of("ratio", 1),
-                        "recorded-replay", NOW)),
+                List.of(
+                        new EvidenceResult(
+                                "EV-1", "L", "L::order-svc:(count,trace_id)",
+                                EvidenceStatus.ANOMALY,
+                                "错误码日志计数", Map.of(
+                                        "count", "148",
+                                        "trace_id", "synthetic-trace-903001"),
+                                "recorded-replay", NOW),
+                        new EvidenceResult(
+                                "EV-2", "M", "M::mongodb:(...)", EvidenceStatus.ANOMALY,
+                                "Mongo 连接池利用率达到 100%", Map.of("ratio", 1),
+                                "recorded-replay", NOW),
+                        new EvidenceResult(
+                                "EV-3", "T", "T::order-svc:(...)", traceEvidenceStatus,
+                                "失败调用链定位", Map.of(
+                                        "failed_hop", "mongo.find",
+                                        "status", observedStatus,
+                                        "duration_ms", "3001"),
+                                "recorded-replay", NOW)),
                 List.of("pool_exhausted"), List.of(), "DBA 组",
+                true, true, List.of("Recorded replay fixture"), List.of());
+    }
+
+    private Diagnosis evidenceRichDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-1", "CSDP", "csdp-session-service", null,
+                "会话消息发送失败", "P2", "消息发送功能受影响",
+                null, NOW, "18m", "manual",
+                IncidentCompleteness.LOG, "message send failed");
+        EvidenceResult trace = new EvidenceResult(
+                "SYNTH-TRACE-BUNDLE", "L", "recorded:trace-bundle",
+                EvidenceStatus.ANOMALY, "PS ID 全链路日志包",
+                Map.of(
+                        "ps_id", "synthetic-ps-message-send-001",
+                        "entries", List.of(
+                                Map.of(
+                                        "timestamp", "1753002781000",
+                                        "service", "session-api",
+                                        "level", "INFO",
+                                        "message", "message accepted"),
+                                Map.of(
+                                        "timestamp", "1753002781042",
+                                        "service", "session-state",
+                                        "level", "ERROR",
+                                        "message", "concurrent state write rejected",
+                                        "duration_ms", "42"),
+                                Map.of(
+                                        "timestamp", "1753002781087",
+                                        "service", "session-api",
+                                        "level", "ERROR",
+                                        "message", "message send failed",
+                                        "duration_ms", "87"))),
+                "recorded-replay:message-send-failed", NOW);
+        EvidenceResult contrast = new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "recorded:contrast-sample",
+                EvidenceStatus.NORMAL, "同窗口成功请求与失败请求的结构化对照",
+                Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", "100",
+                        "failure_match_count", "92",
+                        "success_sample_count", "100",
+                        "success_match_count", "3"),
+                "recorded-replay:message-send-failed", NOW);
+        return Diagnosis.initial(
+                DIAGNOSIS_ID, "case-1", "run-1", incident,
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.RULE_MATCHED,
+                ConclusionType.LOCATED,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "会话状态写入冲突", "session-state 并发状态写入冲突",
+                Confidence.MEDIUM, false,
+                "scenario:message-send-failed", "会话消息发送失败",
+                List.of(trace, contrast), List.of("session_state_conflict"),
+                List.of(), "会话研发组",
                 true, true, List.of("Recorded replay fixture"), List.of());
     }
 
