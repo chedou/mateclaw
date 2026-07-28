@@ -94,6 +94,17 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - B 开发证据台：`http://127.0.0.1:5173/prototype/troubleshooting?variant=B`
 - C 企微协同流：`http://127.0.0.1:5173/prototype/troubleshooting?variant=C`
 
+**不启服务也能演示**：`docs/intelligent-troubleshooting/experience-prototype-demo.html`
+（Vue 组件的静态镜像，双击即开；Vue 仍是实现权威，两者一并删除）。
+
+**原型现在变两个轴，这才是它的区分度所在**：
+
+- `outcome` = 系统最终能说什么：`HYPOTHESIS` / `EXCLUDED` / `INSUFFICIENT` / `SOURCE_DOWN`
+- `authority` = 这条路径凭什么被选中：`EXPLICIT` / `RULE_MATCHED` / `MODEL_PROPOSED`（置信上限随之变化）
+
+只演 happy path 的原型没有区分度——**「查不出来」才是这套系统最常产出的结局**，
+三种降级结局（弃权 / 排除 / 源故障）现在都能在同一版式下看到。
+
 推荐组合：A 做默认摘要，B 做折叠后的开发证据，C 用于说明真实入口和补问/闭环。最终仍由用户看过后选择。
 
 原型文件：
@@ -150,7 +161,7 @@ mvn -pl mateclaw-server -am \
 ## 9. 接手顺序
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
-2. 确认用户对 A/B/C 的选择；未选择前不吸收正式页面。
+2. 确认用户对 A/B/C 的选择；**先在 4 种结局下各看一遍**再定，未选择前不吸收正式页面。
 3. 顺序做 P1 T1→T5（含 T4.5 对照与时间戳）；合成模块共享文件，不建议并行 worktree。
 4. P1 eval 通过后，P2 真实 Guance 与 P3 企微可并行。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

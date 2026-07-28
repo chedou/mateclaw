@@ -60,7 +60,11 @@
 - [x] A/B/C 三套 Demo 浏览器冒烟通过。
 - [x] 第一性原理评价 v4 并落修订：D5′ 晋升分档、北极星时间戳、成功样本对照、
       PENDING-EVIDENCE 标记、红线收敛到 v4 §9（`architecture-critique-v4.md`）。
+- [x] 原型补齐区分度：4 种结局 × 3 档路由可信、北极星三段耗时、成功样本对照、
+      conclusionType 标记、可点的处置按钮、重复 `:key` 修复；另出不依赖 dev server 的
+      静态镜像 `experience-prototype-demo.html`。
 - [ ] 用户选择最终信息结构：A 服务经理摘要 / B 开发证据台 / C 企微协同，或明确组合方式。
+      **选之前请在 4 种结局下各看一遍**——版式的成败在降级结局上，不在 happy path 上。
 
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（当前主攻）
 
