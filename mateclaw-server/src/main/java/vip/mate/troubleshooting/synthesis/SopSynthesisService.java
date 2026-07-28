@@ -14,30 +14,38 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * First half of the SOP learning loop: sample logs, follow the returned PS ID,
- * and deterministically compress the bounded trace bundle.
+ * Fixture-confined P1 SOP learning lane.
  *
- * <p>This preview deliberately stops before model induction and persistence.
- * It cannot create or promote a SOP candidate. Until a workspace-to-observability
- * asset mapping exists, it is also confined to explicitly registered fixture
- * scopes and the recorded replay adapter.</p>
+ * <p>{@link #preview(long, SopSynthesisRequest)} stops after bounded evidence
+ * compression. {@link #generate(long, PlaybookSynthesisRequest)} adds one
+ * structured induction, deterministic validation/reference comparison, and a
+ * review-only candidate. Neither path can promote an active playbook. Until a
+ * workspace-to-observability asset mapping exists, both remain confined to
+ * explicitly registered fixture scopes and the recorded replay adapter.</p>
  */
 @Service
 public final class SopSynthesisService {
 
     private static final String SEARCH_REQUEST_ID = "SYNTH-LOG-SEARCH";
     private static final String TRACE_REQUEST_ID = "SYNTH-TRACE-BUNDLE";
+    private static final String CONTRAST_REQUEST_ID = "SYNTH-CONTRAST-SAMPLE";
     private static final Pattern SAFE_TARGET =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}");
     private static final Pattern SAFE_WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
@@ -50,37 +58,64 @@ public final class SopSynthesisService {
     private final DeterministicLogTraceCompressor compressor;
     private final EvidenceProperties.SynthesisPreview previewPolicy;
     private final Clock clock;
+    private final PlaybookDraftInducer inducer;
+    private final PlaybookDraftValidator validator;
+    private final PlaybookCandidateStore candidateStore;
+    private final ReferenceSolutionComparator referenceComparator =
+            new ReferenceSolutionComparator();
 
     @Autowired
     public SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor,
-            EvidenceProperties properties) {
-        this(evidenceRouter, compressor, previewPolicy(properties), Clock.systemUTC());
+            EvidenceProperties properties,
+            PlaybookDraftInducer inducer,
+            PlaybookDraftValidator validator,
+            PlaybookCandidateStore candidateStore) {
+        this(evidenceRouter, compressor, previewPolicy(properties), Clock.systemUTC(),
+                inducer, validator, candidateStore);
     }
 
     public SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor) {
-        this(evidenceRouter, compressor, previewPolicy(null), Clock.systemUTC());
+        this(evidenceRouter, compressor, previewPolicy(null), Clock.systemUTC(),
+                null, null, null);
     }
 
     SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor,
             Clock clock) {
-        this(evidenceRouter, compressor, previewPolicy(null), clock);
+        this(evidenceRouter, compressor, previewPolicy(null), clock, null, null, null);
+    }
+
+    SopSynthesisService(
+            EvidenceSourceRouter evidenceRouter,
+            DeterministicLogTraceCompressor compressor,
+            Clock clock,
+            PlaybookDraftInducer inducer,
+            PlaybookDraftValidator validator,
+            PlaybookCandidateStore candidateStore) {
+        this(evidenceRouter, compressor, previewPolicy(null), clock,
+                inducer, validator, candidateStore);
     }
 
     private SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor,
             EvidenceProperties.SynthesisPreview previewPolicy,
-            Clock clock) {
+            Clock clock,
+            PlaybookDraftInducer inducer,
+            PlaybookDraftValidator validator,
+            PlaybookCandidateStore candidateStore) {
         this.evidenceRouter = evidenceRouter;
         this.compressor = compressor;
         this.previewPolicy = previewPolicy;
         this.clock = clock;
+        this.inducer = inducer;
+        this.validator = validator;
+        this.candidateStore = candidateStore;
     }
 
     public SopSynthesisPreview preview(long workspaceId, SopSynthesisRequest request) {
@@ -122,14 +157,44 @@ public final class SopSynthesisService {
                 incident,
                 "log_trace_bundle");
 
+        EvidenceResult contrast = collectOptional(
+                new EvidenceRequest(
+                        CONTRAST_REQUEST_ID,
+                        "contrast_sample",
+                        "compare same-window successful requests with the failed scenario",
+                        Map.of(
+                                "scenario_key", request.searchTerm(),
+                                "exclude_ps_id", psId),
+                        window.expression(),
+                        false),
+                incident);
+
         LogTraceSkeleton skeleton;
         try {
             skeleton = compressor.compress(trace);
         } catch (IllegalArgumentException malformed) {
             throw unavailable("log_trace_bundle cannot be compressed safely");
         }
+        boolean contrastMalformed = false;
+        if (contrast != null) {
+            try {
+                skeleton = compressor.compress(trace, contrast);
+            } catch (IllegalArgumentException malformedContrast) {
+                contrast = null;
+                contrastMalformed = true;
+            }
+        }
         if (!psId.equals(skeleton.psId())) {
             throw unavailable("log_search and log_trace_bundle returned different PS IDs");
+        }
+
+        List<String> warnings = new ArrayList<>();
+        warnings.add("该 evidencePreview 仅表示取证与确定性压缩完成；本对象自身尚未调用模型或创建 candidate。");
+        warnings.add("当前证据源为 fixture recorded-replay；真实 PS ID 贯通与 DQL 字段待 P2 内网验证。");
+        if (contrast == null) {
+            warnings.add(contrastMalformed
+                    ? "成功样本对照格式无效，已确定性降级为 contrastAvailable=false。"
+                    : "成功样本对照不可用，草案可继续生成但锁定校准期资格。" );
         }
 
         return new SopSynthesisPreview(
@@ -141,12 +206,112 @@ public final class SopSynthesisService {
                 psId,
                 evidenceReference(search),
                 evidenceReference(trace),
+                contrast == null ? null : evidenceReference(contrast),
                 skeleton,
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
-                List.of(
-                        "当前仅完成日志取样、全链路拉取和确定性压缩；尚未调用模型或创建 SOP candidate。",
-                        "当前预览只允许登记过的 fixture workspace/service，并仅调用 recorded-replay；"
-                                + "真实 PS ID 贯通与 DQL 字段待 T2 内网验证。"));
+                warnings);
+    }
+
+    /** Runs the complete P1 fixture lane and persists only a review-only candidate. */
+    public PlaybookSynthesisResult generate(
+            long workspaceId,
+            PlaybookSynthesisRequest request) {
+        if (inducer == null || validator == null || candidateStore == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.synthesis_not_configured", 503,
+                    "Playbook synthesis generation dependencies are not configured");
+        }
+        if (request == null || !safeIdentifier(request.sourceIncidentId())) {
+            throw invalid("a mapped safe sourceIncidentId is required");
+        }
+        Instant started = Instant.now(clock);
+        if (request.readyAt().isAfter(started)) {
+            throw invalid("readyAt cannot be in the future");
+        }
+
+        SopSynthesisPreview preview = preview(workspaceId, request.evidenceRequest());
+        PlaybookDraftInducer.InductionResult induction = inducer.induce(modelInput(preview));
+
+        if (induction.status() == PlaybookDraftInducer.Status.REJECTED) {
+            NorthStarTimings timings = concludedTimings(request);
+            return new PlaybookSynthesisResult(
+                    PlaybookSynthesisResult.Stage.MODEL_REJECTED,
+                    preview, null, null, timings, induction.errors(), preview.warnings());
+        }
+        if (induction.status() == PlaybookDraftInducer.Status.ABSTAINED) {
+            NorthStarTimings timings = concludedTimings(request);
+            return new PlaybookSynthesisResult(
+                    PlaybookSynthesisResult.Stage.ABSTAINED,
+                    preview, null, null, timings,
+                    List.of(induction.abstainReason()), preview.warnings());
+        }
+        if (induction.invocation() == null || induction.proposal() == null) {
+            NorthStarTimings timings = concludedTimings(request);
+            return new PlaybookSynthesisResult(
+                    PlaybookSynthesisResult.Stage.MODEL_REJECTED,
+                    preview, null, null, timings,
+                    List.of("MODEL_RESULT_INCOMPLETE"), preview.warnings());
+        }
+
+        String evidenceBundleId = evidenceBundleId(preview);
+        String generationKey = hash(
+                workspaceId + "|" + request.sourceIncidentId() + "|" + evidenceBundleId
+                        + "|" + induction.invocation().modelConfigVersion()
+                        + "|" + PlaybookDraft.CONTRACT_VERSION);
+        PlaybookDraft draft = draft(
+                request, preview, induction.proposal(), induction.invocation(), generationKey);
+        PlaybookDraftValidator.ValidationResult validation = validator.validate(
+                draft,
+                new PlaybookDraftValidator.ValidationContext(
+                        preview.system(), preview.searchTerm(), evidenceKinds(preview),
+                        preview.contrastAvailable()));
+        if (!validation.valid()) {
+            PlaybookDraft rejected = draft.withValidationErrors(validation.errors());
+            NorthStarTimings timings = concludedTimings(request);
+            return new PlaybookSynthesisResult(
+                    PlaybookSynthesisResult.Stage.VALIDATION_REJECTED,
+                    preview, null, rejected, timings,
+                    validation.errors().stream()
+                            .map(error -> error.code() + ":" + error.fieldPath())
+                            .toList(),
+                    preview.warnings());
+        }
+
+        ReferenceSolutionComparator.Comparison comparison = referenceComparator.compare(
+                draft, ReferenceSolution.messageSendFailure());
+        List<String> eligibilityReasons = new ArrayList<>();
+        eligibilityReasons.add("P1_CALIBRATION_PERIOD");
+        if (!preview.contrastAvailable()) {
+            eligibilityReasons.add("CONTRAST_UNAVAILABLE");
+        }
+        if (!comparison.passed()) {
+            eligibilityReasons.add("REFERENCE_SOLUTION_DELTA");
+        }
+        Instant conclusionAt = Instant.now(clock);
+        NorthStarTimings timings = timings(request, conclusionAt);
+        PlaybookKnowledgeRecord candidate = new PlaybookKnowledgeRecord(
+                "candidate-" + generationKey.substring(0, 24),
+                draft,
+                "EVIDENCE_DERIVED",
+                "CANDIDATE",
+                "VALID",
+                "",
+                "",
+                evidenceBundleId,
+                preview.service(),
+                comparison,
+                "NOT_ELIGIBLE",
+                eligibilityReasons,
+                preview.fixtureMode(),
+                timings,
+                conclusionAt);
+        PlaybookCandidateStore.StoredCandidate stored = candidateStore.saveOrGet(
+                workspaceId, candidate);
+        return new PlaybookSynthesisResult(
+                stored.created()
+                        ? PlaybookSynthesisResult.Stage.CANDIDATE_CREATED
+                        : PlaybookSynthesisResult.Stage.CANDIDATE_REUSED,
+                preview, stored.candidate(), null, timings, List.of(), preview.warnings());
     }
 
     private IncidentContext incident(SopSynthesisRequest request, Instant occurredAt) {
@@ -182,6 +347,130 @@ public final class SopSynthesisService {
             throw unavailable(stage + " evidence is missing");
         }
         return raw;
+    }
+
+    private EvidenceResult collectOptional(
+            EvidenceRequest request,
+            IncidentContext incident) {
+        try {
+            EvidenceResult raw = evidenceRouter.collect(
+                    request, incident, FIXTURE_ONLY_SOURCES);
+            if (raw == null
+                    || !request.requestId().equals(raw.queryId())
+                    || raw.status() == EvidenceStatus.MISSING) {
+                return null;
+            }
+            return raw;
+        } catch (RuntimeException sourceFailure) {
+            return null;
+        }
+    }
+
+    private SynthesisModelInput modelInput(SopSynthesisPreview preview) {
+        List<SynthesisModelInput.EvidenceDescriptor> evidence = new ArrayList<>();
+        evidence.add(new SynthesisModelInput.EvidenceDescriptor(
+                preview.searchEvidence().queryId(), "log_search"));
+        evidence.add(new SynthesisModelInput.EvidenceDescriptor(
+                preview.traceEvidence().queryId(), "log_trace_bundle"));
+        if (preview.contrastEvidence() != null) {
+            evidence.add(new SynthesisModelInput.EvidenceDescriptor(
+                    preview.contrastEvidence().queryId(), "contrast_sample"));
+        }
+        return new SynthesisModelInput(
+                preview.system(), preview.service(), preview.searchTerm(),
+                evidence, preview.skeleton());
+    }
+
+    private Map<String, String> evidenceKinds(SopSynthesisPreview preview) {
+        Map<String, String> kinds = new LinkedHashMap<>();
+        kinds.put(preview.searchEvidence().queryId(), "log_search");
+        kinds.put(preview.traceEvidence().queryId(), "log_trace_bundle");
+        if (preview.contrastEvidence() != null) {
+            kinds.put(preview.contrastEvidence().queryId(), "contrast_sample");
+        }
+        return Map.copyOf(kinds);
+    }
+
+    private NorthStarTimings timings(
+            PlaybookSynthesisRequest request,
+            Instant conclusionAt) {
+        try {
+            request.reportedAt().toEpochMilli();
+            request.readyAt().toEpochMilli();
+            conclusionAt.toEpochMilli();
+            return NorthStarTimings.concluded(
+                    request.reportedAt(), request.readyAt(), conclusionAt);
+        } catch (ArithmeticException | DateTimeException | IllegalArgumentException invalidTime) {
+            throw invalid("north-star timestamps are invalid or non-chronological");
+        }
+    }
+
+    private NorthStarTimings concludedTimings(PlaybookSynthesisRequest request) {
+        return timings(request, Instant.now(clock));
+    }
+
+    private String evidenceBundleId(SopSynthesisPreview preview) {
+        StringBuilder canonical = new StringBuilder(2048);
+        canonical.append(preview.system()).append('|')
+                .append(preview.service()).append('|')
+                .append(preview.searchTerm()).append('|')
+                .append(preview.matchCount()).append('|')
+                .append(preview.psId()).append('|');
+        appendEvidence(canonical, preview.searchEvidence());
+        appendEvidence(canonical, preview.traceEvidence());
+        if (preview.contrastEvidence() != null) {
+            appendEvidence(canonical, preview.contrastEvidence());
+        }
+        canonical.append(preview.skeleton());
+        return "evidence-bundle-" + hash(canonical.toString()).substring(0, 32);
+    }
+
+    private void appendEvidence(
+            StringBuilder canonical,
+            SopSynthesisPreview.EvidenceReference evidence) {
+        canonical.append(evidence.queryId()).append('|')
+                .append(evidence.status()).append('|')
+                .append(evidence.source()).append('|')
+                .append(evidence.collectedAt()).append('|');
+    }
+
+    private PlaybookDraft draft(
+            PlaybookSynthesisRequest request,
+            SopSynthesisPreview preview,
+            PlaybookDraftProposal proposal,
+            PlaybookDraftInducer.ModelInvocation invocation,
+            String generationKey) {
+        return new PlaybookDraft(
+                "draft-" + generationKey.substring(0, 24),
+                generationKey,
+                request.sourceIncidentId(),
+                proposal.proposedType(),
+                proposal.proposedSelector(),
+                proposal.title(),
+                proposal.evidencePlan(),
+                proposal.criteria(),
+                proposal.diagnosisHypotheses(),
+                proposal.humanActions(),
+                proposal.evidenceCitations(),
+                new PlaybookDraft.ModelProvenance(
+                        invocation.provider(),
+                        invocation.modelName(),
+                        invocation.modelConfigVersion(),
+                        PlaybookDraft.CONTRACT_VERSION,
+                        invocation.calledAt(),
+                        invocation.invocationCount()),
+                preview.contrastAvailable(),
+                List.of());
+    }
+
+    private String hash(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(
+                    digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     private void requireFixtureScope(long workspaceId, SopSynthesisRequest request) {

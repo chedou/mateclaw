@@ -191,12 +191,18 @@ class RecordedReplayAdapterTest {
         assertThat(adapter.supports("trace")).isTrue();
         assertThat(adapter.supports("log_search")).isTrue();
         assertThat(adapter.supports("log_trace_bundle")).isTrue();
+        assertThat(adapter.supports("contrast_sample")).isTrue();
         assertThat(adapter.collect(request("EV-1"), incident("903001")).observed())
                 .containsEntry("count", 148);
         assertThat(adapter.collect(
                 request("SYNTH-LOG-SEARCH", "log_search"),
                 incident("csdp-session-service", null)).observed())
                 .containsEntry("ps_id", "synthetic-ps-message-send-001");
+        assertThat(adapter.collect(
+                request("SYNTH-CONTRAST-SAMPLE", "contrast_sample"),
+                incident("csdp-session-service", null)).observed())
+                .containsEntry("failure_match_count", 92)
+                .containsEntry("success_match_count", 3);
     }
 
     @Test
@@ -242,6 +248,9 @@ class RecordedReplayAdapterTest {
         Map<String, Object> target = switch (signalKind) {
             case "log_search" -> Map.of("search_term", "message_send_failed");
             case "log_trace_bundle" -> Map.of("ps_id", "synthetic-ps-message-send-001");
+            case "contrast_sample" -> Map.of(
+                    "scenario_key", "message_send_failed",
+                    "exclude_ps_id", "synthetic-ps-message-send-001");
             default -> Map.of("service", "order-svc", "error_code", "903001");
         };
         return new EvidenceRequest(

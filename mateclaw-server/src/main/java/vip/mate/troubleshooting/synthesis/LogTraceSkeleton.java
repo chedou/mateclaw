@@ -19,7 +19,8 @@ public record LogTraceSkeleton(
         List<Integer> anomalySequenceIndexes,
         Map<String, DurationSummary> durationByService,
         int sourceEntryCount,
-        int omittedEntryCount) {
+        int omittedEntryCount,
+        ContrastSummary contrast) {
 
     public LogTraceSkeleton {
         psId = required(psId, "psId");
@@ -29,6 +30,7 @@ public record LogTraceSkeleton(
                 anomalySequenceIndexes == null ? List.of() : anomalySequenceIndexes);
         durationByService = Collections.unmodifiableMap(
                 new LinkedHashMap<>(durationByService == null ? Map.of() : durationByService));
+        contrast = contrast == null ? ContrastSummary.unavailable() : contrast;
         if (startedAtEpochMs < 0 || endedAtEpochMs < startedAtEpochMs || elapsedMs < 0) {
             throw new IllegalArgumentException("trace timestamps must be chronological");
         }
@@ -37,6 +39,23 @@ public record LogTraceSkeleton(
                 || timeline.size() + omittedEntryCount != sourceEntryCount) {
             throw new IllegalArgumentException("trace skeleton counts are inconsistent");
         }
+    }
+
+    /** Backward-compatible constructor for callers that have no control sample. */
+    public LogTraceSkeleton(
+            String psId,
+            long startedAtEpochMs,
+            long endedAtEpochMs,
+            long elapsedMs,
+            List<String> serviceSequence,
+            List<TimelineEvent> timeline,
+            List<Integer> anomalySequenceIndexes,
+            Map<String, DurationSummary> durationByService,
+            int sourceEntryCount,
+            int omittedEntryCount) {
+        this(psId, startedAtEpochMs, endedAtEpochMs, elapsedMs, serviceSequence,
+                timeline, anomalySequenceIndexes, durationByService, sourceEntryCount,
+                omittedEntryCount, ContrastSummary.unavailable());
     }
 
     public record TimelineEvent(
@@ -78,6 +97,54 @@ public record LogTraceSkeleton(
                     || averageMs > maxMs) {
                 throw new IllegalArgumentException("duration summary is invalid");
             }
+        }
+    }
+
+    /** Deterministic failed-versus-successful sample delta exposed to the model. */
+    public record ContrastSummary(
+            boolean available,
+            String discriminatingFeature,
+            long failureSampleCount,
+            long failureMatchCount,
+            long successSampleCount,
+            long successMatchCount,
+            double failureRate,
+            double successRate,
+            double rateDelta) {
+
+        public ContrastSummary {
+            discriminatingFeature = discriminatingFeature == null
+                    ? ""
+                    : discriminatingFeature.trim();
+            if (!available) {
+                if (failureSampleCount != 0 || failureMatchCount != 0
+                        || successSampleCount != 0 || successMatchCount != 0
+                        || failureRate != 0 || successRate != 0 || rateDelta != 0) {
+                    throw new IllegalArgumentException(
+                            "unavailable contrast must not contain invented measurements");
+                }
+            } else if (discriminatingFeature.isBlank()
+                    || failureSampleCount <= 0
+                    || successSampleCount <= 0
+                    || failureMatchCount < 0
+                    || successMatchCount < 0
+                    || failureMatchCount > failureSampleCount
+                    || successMatchCount > successSampleCount
+                    || !unit(failureRate)
+                    || !unit(successRate)
+                    || !Double.isFinite(rateDelta)
+                    || rateDelta < -1
+                    || rateDelta > 1) {
+                throw new IllegalArgumentException("contrast summary is invalid");
+            }
+        }
+
+        public static ContrastSummary unavailable() {
+            return new ContrastSummary(false, "", 0, 0, 0, 0, 0, 0, 0);
+        }
+
+        private static boolean unit(double value) {
+            return Double.isFinite(value) && value >= 0 && value <= 1;
         }
     }
 

@@ -19,6 +19,7 @@ import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
+import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
@@ -65,6 +66,23 @@ public class SopManagementController {
             @Valid @RequestBody SopSynthesisPreviewRequest request,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(synthesisService.preview(
+                resolveWorkspace(workspaceId), request.toDomainRequest()));
+    }
+
+    /**
+     * Runs the fixture-confined P1 evidence-to-draft lane.
+     *
+     * <p>Success creates or reuses a review-only evidence-derived candidate.
+     * Model rejection, explicit abstention, and deterministic validation
+     * rejection are returned as typed results and never write a candidate.
+     * There is intentionally no approval parameter or promotion side effect.</p>
+     */
+    @PostMapping("/synthesis/candidates")
+    @RequireWorkspaceRole("admin")
+    public R<PlaybookSynthesisResult> generateSynthesisCandidate(
+            @Valid @RequestBody PlaybookSynthesisGenerateRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(synthesisService.generate(
                 resolveWorkspace(workspaceId), request.toDomainRequest()));
     }
 

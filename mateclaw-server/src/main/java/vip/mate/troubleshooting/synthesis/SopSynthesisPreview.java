@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.synthesis;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
 import java.time.Instant;
@@ -15,6 +16,7 @@ public record SopSynthesisPreview(
         String psId,
         EvidenceReference searchEvidence,
         EvidenceReference traceEvidence,
+        EvidenceReference contrastEvidence,
         LogTraceSkeleton skeleton,
         boolean fixtureMode,
         List<String> warnings) {
@@ -31,6 +33,14 @@ public record SopSynthesisPreview(
         if (matchCount <= 0 || !psId.equals(skeleton.psId())) {
             throw new IllegalArgumentException("synthesis preview evidence is inconsistent");
         }
+        if ((contrastEvidence != null) != skeleton.contrast().available()) {
+            throw new IllegalArgumentException("contrast reference and summary must agree");
+        }
+    }
+
+    @JsonProperty("contrastAvailable")
+    public boolean contrastAvailable() {
+        return skeleton.contrast().available();
     }
 
     public enum Stage {

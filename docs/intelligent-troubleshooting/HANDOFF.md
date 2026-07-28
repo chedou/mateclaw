@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-07-28
+> 更新时间：2026-07-29
 >
 > 仓库：`webonne/mateclaw`
 >
@@ -81,17 +81,24 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
+- `contrast_sample` 成功样本对照；缺失只降级并锁定校准期，不中断草稿生成。
+- `PlaybookDraftInducer`：复用现有模型配置和 Spring AI 结构化输出，最多一次低温调用。
+- `PlaybookDraftValidator`：确定性拦截猜码、伪引用、secret、DQL/raw log、工具调用和生产写。
+- `ReferenceSolutionComparator`：对会议正例按意图、顺序和证据类型比较，不做文字相似度。
+- `SopSynthesisService.generate()` 与 `POST /sops/synthesis/candidates`：幂等创建/复用只待审 candidate。
+- 独立 `reviewStatus=CANDIDATE` / `validationStatus=VALID`，且
+  `approvalEligibility=NOT_ELIGIBLE`；不写 active approved Playbook。
+- H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
+- 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
+  正例创建并幂等复用，危险输出在入库前被拒绝。
 - Diagnosis 人工处置闭环与 Vue 工作台。
 - KnowledgeCandidate 与 Outbox 发布语义；尚无独立审核语义。
 - 三套只读 Demo 原型，均显式显示 Recorded Replay、MODEL_PROPOSED、MEDIUM、CANDIDATE。
 
 ### 尚未完成
 
-- PlaybookDraft 结构化模型归纳。
-- 引用/selector/动作/secret/DQL 的确定性 Validator。
-- 与人工参考解法的结构化比较和固定 replay eval。
-- Candidate generationKey 幂等与独立 review status。
 - 真实 Guance measurement/字段/PS ID/阈值内网验证；`fixtureMode` 仍应为 true。
+- 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
 - 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
 
@@ -126,22 +133,21 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - `/prototype/troubleshooting` 是 dev-only publicPrototype 路由（`import.meta.env.DEV` 条件注册），
   生产构建不含该分支；正式 `/troubleshooting` 鉴权和 capability gate 未放宽。
 
-## 6. 当前主攻 P1
+## 6. P1 已收口，下一门是 P2 真实证据
 
 ```text
-SopSynthesisService.preview()              已有
-  → PlaybookDraftInducer                   待做，最多一个模型调用
-  → PlaybookDraftValidator                 待做，确定性信任边界
-  → ReferenceSolutionComparator            待做，纯函数优先
-  → candidate + generationKey              待做，不可 approved
+SopSynthesisService.preview()              已完成
+  → contrast_sample                        已完成，缺失只降级
+  → PlaybookDraftInducer                   已完成，最多一个模型调用
+  → PlaybookDraftValidator                 已完成，确定性信任边界
+  → ReferenceSolutionComparator            已完成，纯结构比较
+  → candidate + generationKey              已完成，不可 approved
 
-并行补两件 v4.1 要求的小事（T4.5）：
-  contrast_sample 成功样本对照           待做，缺失只降级不失败
-  四个北极星时间戳                        待做，fixture 样本也要记
+四个北极星时间戳                        已完成，fixture 样本同样记录
 ```
 
-P1 最多新增两个 service seam：模型归纳、确定性校验。不要一次创建 Planning、Projection、WeCom、新状态机、
-消息队列、Loop Controller、Challenger 或八个目标模块。
+P1 仍只深化了现有 synthesis/evidence seam，未创建 Planning、Projection、WeCom、新状态机、
+消息队列、Loop Controller、Challenger 或第二运行时。
 
 验收案例必须是“会话消息发送失败（无 error_code）”。比较采用 requiredStepIntents、forbiddenStepIntents、
 orderingConstraints、requiredEvidenceKinds，不做逐字相似度。
@@ -153,6 +159,14 @@ orderingConstraints、requiredEvidenceKinds，不做逐字相似度。
 （见 `architecture-critique-v4.md` §2.5）。动手前读 v4 §9；要改红线也只改那里。
 
 ## 8. 验证现状
+
+P1 后端的可复现结果和 HTTP 响应见 `p1-verification.md`。当前已确认：
+
+- 固定 Replay Eval 正例可创建/复用 candidate，危险负例在入库前拒绝。
+- Spring 上下文启动并将本地 H2 迁移到 V174。
+- 本地 HTTP preview 返回 `READY_FOR_MODEL`，对照差值 `0.89`。
+- 本地无模型配置时 generate 返回 `MODEL_REJECTED / MODEL_UNAVAILABLE`，`candidate=null`。
+- 真实 Guance 与真实模型效果未验证，不得将 Recorded Replay 结果等同生产成功。
 
 本轮三套原型已通过：
 
@@ -176,8 +190,8 @@ mvn -pl mateclaw-server -am \
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
 2. 信息结构**已选定**（服务经理 + 开发两个投影，企微 P3 暂缓），合同见 `projection-contracts.md`；
    P1 只固定合同不实现 Projection，正式页面吸收留到 P5。
-3. 顺序做 P1 T1→T5（含 T4.5 对照与时间戳）；合成模块共享文件，不建议并行 worktree。
-4. P1 eval 通过后，P2 真实 Guance 与 P3 企微可并行。
+3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
+4. 下一主攻 P2 真实 Guance 授权、字段核实和 20–30 条影子样本；P3 企微仍可独立推进。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 
 ## 10. 不要做

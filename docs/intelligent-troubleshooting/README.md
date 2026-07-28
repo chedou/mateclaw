@@ -14,14 +14,16 @@
    一条证据脊柱、在线诊断/知识生产两个闭环、三类调查路径与实施顺序。
 3. [架构师评审 v4](./architecture-review-v4.md)
    评审结论、范围收敛、测试覆盖图、失败模式和资源预算。
-4. [架构蓝图 v0.10](./architecture-blueprint.html)
+4. [架构蓝图 v0.12](./architecture-blueprint.html)
    面向讨论和汇报的精简可视化版本，已嵌入架构图、流程图和泳道图。
    [历史版本](./versions/index.html)按版本完整保留，不再覆盖。
 5. [HANDOFF](./HANDOFF.md)
    当前实施状态、红线、真实缺口与接手指针。
 6. [TODO](./TODO.md)
-   当前优先级：无错误码证据→PlaybookDraft→参考解法比较→candidate。
-7. [源码核对与安全论证附录](../../rfcs/intelligent-troubleshooting-design.md)
+   P1 已完成；当前优先级是 P2 真实 Guance 授权、字段核实和影子样本。
+7. [P1 主链路验证记录](./p1-verification.md)
+   固定 Replay Eval、REST 实测、fail-closed 边界与未完成范围。
+8. [源码核对与安全论证附录](../../rfcs/intelligent-troubleshooting-design.md)
    native Workflow、ToolGuard、身份与通道等源码证据；不作为独立现行概要设计。
 
 设计门户：[index.html](./index.html)。
@@ -31,7 +33,7 @@
 - [总体架构图](./diagrams/mateclaw-troubleshooting-architecture.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-architecture.svg)
 - [端到端流程图](./diagrams/mateclaw-troubleshooting-flow.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-flow.svg)
 - [跨角色泳道图](./diagrams/mateclaw-troubleshooting-swimlane.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-swimlane.svg)
-- [架构蓝图版本库](./versions/index.html) · v0.7–v0.10 完整快照
+- [架构蓝图版本库](./versions/index.html) · v0.7–v0.12 完整快照
 
 ## 一句话架构
 
@@ -50,15 +52,10 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 反证评测面：Evidence Challenger + Safety Challenger → AdversarialEvalReport
 ```
 
-## 七条不可突破的红线
+## 不可突破的红线
 
-1. 错误码 approved Playbook 命中路零 LLM。
-2. 生产写工具不注册。
-3. 人工批准只推进领域状态，不执行工具；写操作始终在系统外由人完成。
-4. 未命中路 Agent 只有一个只读证据工具，且必须经过服务端会话、脱敏预算和引用校验。
-5. AI 生成的 PlaybookDraft 永远先进入 candidate；模型不能批准知识或生成生产写。
-6. Loop 预算、检查点和停止原因由服务端控制；Agent 不能自行续期或递归创建 Agent。
-7. 多 Agent 只做结构化反证；共识、票数或 Judge 文本不能成为诊断/知识权威。
+红线的**唯一权威清单**是 [现行概要设计 v4 §9](../../rfcs/intelligent-troubleshooting-architecture-v4.md)。
+本入口不复制条目，避免 README、HANDOFF、TODO 和蓝图之间出现口径分叉。
 
 ## 代码入口
 
@@ -72,13 +69,14 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 ## 当前真实状态
 
 - 旧 P0–P4 领域底座已经落地；v4 P0 产品/架构/体验校准已完成并通过架构师评审。
-- 当前 P1 复用已有 `SopSynthesisService.preview()`：日志取样、PS ID、全链路与确定性压缩已完成；
-  结构化 PlaybookDraft、校验、参考解法比较和 candidate 幂等仍待实现。
+- P1 无错误码竖线已完成：固定三次取证、成功样本对照、确定性压缩、一次结构化归纳、
+  Validator、参考解法比较、幂等 candidate 与北极星时间戳。
 - Loop Engineering 与多 Agent 反证已进入现行目标设计，但 P1 不实现；P2 先做固定角色影子评测，
   P4 才为 SCENARIO / OPEN_DISCOVERY 引入领域 Loop Control。
 - P4 默认关闭，尚未完成专用 Agent 与唯一模型的实机演练。
 - Guance Adapter 与 Recorded Replay Adapter 已接到统一 Router，但真实 measurement、字段与阈值
   尚未在内网验证，`fixtureMode` 仍应保持开启。
+- 本地无真实模型配置时，生成接口已实测会返回 `MODEL_REJECTED`且不产生 candidate。
 - 生产写执行能力不存在；`execute` 端点继续恒拒绝。
 - “从日志生成 SOP”是当前产品主线之一，但产物只可成为 candidate，不得自动晋升或改写权威 Playbook。
 

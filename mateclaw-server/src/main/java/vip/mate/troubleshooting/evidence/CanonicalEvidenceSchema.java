@@ -38,6 +38,12 @@ final class CanonicalEvidenceSchema {
                     "match_count", FieldType.NUMBER,
                     "ps_id", FieldType.STRING,
                     "sample_message", FieldType.STRING)),
+            "contrast_sample", scalar(Map.of(
+                    "discriminating_feature", FieldType.STRING,
+                    "failure_sample_count", FieldType.NUMBER,
+                    "failure_match_count", FieldType.NUMBER,
+                    "success_sample_count", FieldType.NUMBER,
+                    "success_match_count", FieldType.NUMBER)),
             "log_trace_bundle", rows(
                     Map.of(
                             "ps_id", FieldType.STRING,

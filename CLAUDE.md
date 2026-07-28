@@ -4,8 +4,8 @@
 当前的**活跃工作**：在 MateClaw 之上落地 **IT 智能排障系统**（首个域 CSDP 工单/客服链路），
 形态为 mateclaw-server 内的确定性领域模块 `vip.mate.troubleshooting`。
 
-当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）已完成，
-下一步是 P1“无错误码证据→PlaybookDraft”竖线**。
+当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）和
+P1（无错误码证据→PlaybookDraft 竖线）已完成，下一步是 P2 真实 Guance 授权、字段核实与影子样本**。
 P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控制状态机、三方言 V172、
 租户化事务 Outbox 与五分钟幂等；P1 含接入 controller（不走 Trigger，PAT 走既有 JwtAuthFilter）
 与三个 capability；P2 含生命周期 REST、队列列表、Vue 工作台（含 `/troubleshooting/sops` SOP 管理）与
@@ -13,8 +13,9 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
 `TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验、`Diagnosis` 1.4
 兼容契约和未命中路 Vue 展示；相关定向回归与应用上下文启动测试通过。另有
-`SopSynthesisService.preview()` 已完成 `log_search → PS ID → log_trace_bundle → 确定性压缩` 的
-fixture-only 预演，尚未调用模型或创建 candidate。
+`SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
+确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的
+fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
 **注意：P4 开关默认关闭，专用 Agent 尚未按运行手册配置和实机演练；观测云 measurement/字段/阈值仍未完成
 内网 T2 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。**
 
@@ -37,6 +38,8 @@ fixture-only 预演，尚未调用模型或创建 candidate。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：当前 P1 及 P2–P5 顺序、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。
+5.5 **`docs/intelligent-troubleshooting/p1-verification.md`** —— P1 固定 Replay Eval、HTTP 实测、
+   fail-closed 边界与未宣称完成的 P2 范围。
 6. **`rfcs/intelligent-troubleshooting-design.md`** —— 源码核对与安全论证附录；
    §5 红线论证、§12 源码位置索引仍有效。
 7. **`docs/intelligent-troubleshooting/detail-page-design.md`** —— 正式详情页历史设计；新信息结构先看 Vue Prototype。
@@ -58,11 +61,18 @@ fixture-only 预演，尚未调用模型或创建 candidate。
   硬作用域必须清空并恢复请求级 ThinkingLevel，不得放大迭代/reasoning；原始工具参数仅可进入 Guard 与 callback，
   不得进入 event/SSE/log/audit/approval，`NEEDS_APPROVAL` 在硬作用域直接拦截；
   ToolGuard BLOCK 作为纵深防御，不能替代硬白名单。
+- 上述“显式唯一 enabled 模型 / 禁止 provider fallback / 未配置返回 409”是**在线未命中路 Agent**
+  的硬作用域合同。P1 `PlaybookDraftInducer` 不是 Agent 运行时；它按 v4 §12 复用平台已配置的
+  默认模型，一次调用并记录真实 provenance，缺模型/供应商失败返回 typed
+  `MODEL_REJECTED`，不创建 candidate。
 - `l0/sop_kb.json` 已脱敏；源表 xlsx 含真实 token/IP/人名，未入库、不得入库。
 - Loop 的预算、检查点、恢复和停止原因由服务端控制；Agent 不得递归委派、续期或通过共识提升权威。
 - Evidence/Safety Challenger 只产结构化 `AdversarialEvalReport`，先 P2 影子运行；P1 不增加多 Agent 调用。
-- 模型提议 Scenario 时只能返回已注册 `scenarioKey` 和候选参数；EvidencePlan/DQL/工具名均由服务端 approved
-  Playbook 决定。OPEN_DISCOVERY 使用独立 DiscoveryPolicy，不能伪装成 approved Playbook。
+- **运行时调查**中，模型提议 Scenario 时只能返回已注册 `scenarioKey` 和候选参数；
+  可执行 EvidencePlan/DQL/工具名均由服务端 approved Playbook 决定。
+  **P1 离线知识合成**可让模型在 `PlaybookDraft` 中提议只读 `evidencePlan`，但它不可路由/执行，
+  必须通过确定性 Validator 并且只能保存为 `CANDIDATE / NOT_ELIGIBLE`。
+  OPEN_DISCOVERY 使用独立 DiscoveryPolicy，不能伪装成 approved Playbook。
 - **通道一律复用平台现有 `ChannelAdapter` / `CardKind`，不新建入站**（D17）。企微已有
   `vip.mate.channel.wecom`；诊断卡片**不得**复用 tool-guard 的 `ApprovalNotice` 形状——
   "批准=回放执行"与排障"确认=只推进状态"语义相反。出站交互卡片需先泛化平台 renderer 接缝。

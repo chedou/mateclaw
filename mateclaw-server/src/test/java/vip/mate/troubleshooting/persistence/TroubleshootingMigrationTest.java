@@ -90,6 +90,33 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2MigrationCreatesAnIdempotentReviewOnlyPlaybookCandidateTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v174;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V174__troubleshooting_playbook_candidate.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains("mate_troubleshooting_playbook_candidate"));
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_playbook_candidate");
+            assertTrue(columns.contains("generation_key"));
+            assertTrue(columns.contains("review_status"));
+            assertTrue(columns.contains("validation_status"));
+            assertTrue(columns.contains("fixture_mode"));
+            assertFalse(columns.contains("approved"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_playbook_candidate_generation"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_playbook_candidate_record"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-07-28
+> 更新时间：2026-07-29
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -30,8 +30,9 @@
   → candidate（不可直接生效）
 ```
 
-已有代码已完成前四步的 fixture-only 预演。P1 只补“结构化归纳、确定性校验、参考解法比较、候选边界”，
-不同时改路由、企微、正式页面和生产数据；本阶段也不实现 Loop Controller 或多 Agent Challenger。
+现已完成 P1 fixture-only 竖线：固定三次取证、结构化归纳、确定性校验、参考解法比较、幂等 candidate 边界和北极星时间戳。
+本阶段未改路由、企微、正式页面和生产数据，也未实现 Loop Controller 或多 Agent Challenger。
+验证记录见 `p1-verification.md`。
 
 ## 1. 每个变更都要守的红线
 
@@ -78,43 +79,43 @@
 
 ### T1 · PlaybookDraft 合同与结构化归纳
 
-- [ ] 新增 `PlaybookDraft` 值对象：generationKey、proposedType/selector、evidencePlan、criteria、
+- [x] 新增 `PlaybookDraft` 值对象：generationKey、proposedType/selector、evidencePlan、criteria、
   diagnosisHypotheses、humanActions、evidenceCitations、modelProvenance、validationErrors。
-- [ ] 模型输入只包含已确认上下文和 `LogTraceSkeleton`，不含原始 EvidenceResult/DQL。
-- [ ] 复用 MateClaw 现有模型配置工厂和 Spring AI 1.1.8 `BeanOutputConverter`。
-- [ ] 一次结构化调用、低温、固定 token 上限；空响应、坏 JSON、provider 失败返回 rejected result。
-- [ ] 当前 `SopSynthesisPreview` 与 API 路径保持兼容，不做全仓改名。
+- [x] 模型输入只包含已确认上下文和 `LogTraceSkeleton`，不含原始 EvidenceResult/DQL。
+- [x] 复用 MateClaw 现有模型配置工厂和 Spring AI 1.1.8 `BeanOutputConverter`。
+- [x] 一次结构化调用、低温、固定 token 上限；空响应、坏 JSON、provider 失败返回 rejected result。
+- [x] 当前 `SopSynthesisPreview` 与 API 路径保持兼容，不做全仓改名。
 
 完成标准：有效固定模型响应可生成 draft；模型未配置/失败时不创建 candidate，也不影响既有 preview。
 
 ### T2 · 确定性 PlaybookDraftValidator
 
-- [ ] selector/type/必填字段/长度/枚举/跨字段不变量校验。
-- [ ] evidence citation 必须属于本次 EvidenceBundle。
-- [ ] 拒绝 DQL、原始日志包、工具调用、生产写动作和未脱敏 secret。
-- [ ] 错误码候选不得由模型猜码进入 deterministic 权威；场景候选只能提议注册 selector。
-- [ ] 验证结果保存具体错误码和字段路径，供审核人理解，而不是只返回 false。
+- [x] selector/type/必填字段/长度/枚举/跨字段不变量校验。
+- [x] evidence citation 必须属于本次 EvidenceBundle。
+- [x] 拒绝 DQL、原始日志包、工具调用、生产写动作和未脱敏 secret。
+- [x] 错误码候选不得由模型猜码进入 deterministic 权威；场景候选只能提议注册 selector。
+- [x] 验证结果保存具体错误码和字段路径，供审核人理解，而不是只返回 false。
 
 完成标准：伪造引用、危险动作、坏 selector、secret、DQL 均可被稳定拒绝并有测试。
 
 ### T3 · ReferenceSolution 比较与离线 Eval
 
-- [ ] 建会议正例 `会话消息发送失败` 的人工参考解法。
-- [ ] 参考解法结构：requiredStepIntents、forbiddenStepIntents、orderingConstraints、
+- [x] 建会议正例 `会话消息发送失败` 的人工参考解法。
+- [x] 参考解法结构：requiredStepIntents、forbiddenStepIntents、orderingConstraints、
   requiredEvidenceKinds。
-- [ ] 比较输出覆盖率、缺失步骤、顺序违规、引用缺口、危险动作，不做逐字相似度。
-- [ ] 至少加入一条负例，要求 abstain 或校验失败。
-- [ ] prompt/model/schema 变更必须跑固定 replay eval，并与上一次 baseline 比较。
+- [x] 比较输出覆盖率、缺失步骤、顺序违规、引用缺口、危险动作，不做逐字相似度。
+- [x] 至少加入一条负例，要求 abstain 或校验失败。
+- [x] prompt/model/schema 变更必须跑固定 replay eval，并与上一次 baseline 比较。
 
 完成标准：必需意图全覆盖、必要顺序满足、引用有效、禁止动作命中数为 0；差异逐项可解释。
 
 ### T4 · Candidate 幂等与不可晋升边界
 
-- [ ] `generationKey = hash(workspaceId, incident, bundle, modelConfigVersion, contractVersion)`。
-- [ ] 同一生成请求重试返回同一 candidate，不重复入库。
-- [ ] fixture 生成物始终保留 `fixtureMode=true`。
-- [ ] P1 只能创建 draft/candidate，不能写 active approved Playbook。
-- [ ] Outbox publication status 与 review status 分开；不复用 `PENDING/PUBLISHED` 表示审核。
+- [x] `generationKey = hash(workspaceId, incident, bundle, modelConfigVersion, contractVersion)`。
+- [x] 同一生成请求重试返回同一 candidate，不重复入库。
+- [x] fixture 生成物始终保留 `fixtureMode=true`。
+- [x] P1 只能创建 draft/candidate，不能写 active approved Playbook。
+- [x] Outbox publication status 与 review status 分开；不复用 `PENDING/PUBLISHED` 表示审核。
 
 完成标准：重复请求幂等；API/持久化往返不丢 fixture、引用和验证结果；任何接口都不能直升 approved。
 
@@ -122,14 +123,14 @@
 
 来自第一性原理评价，用户已认可；论证见 `architecture-critique-v4.md` §2.3 / §2.4。
 
-- [ ] 合成流水线增加第 2.5 步 `contrast_sample`：同窗口同接口的**成功样本**对照。
-- [ ] `DeterministicLogTraceCompressor` 产出里带失败↔成功差异；模型看到的是差异，不是单条链路。
-- [ ] 对照取不到时**降级不失败**：草稿仍生成，标 `contrastAvailable=false`，
+- [x] 合成流水线增加第 2.5 步 `contrast_sample`：同窗口同接口的**成功样本**对照。
+- [x] `DeterministicLogTraceCompressor` 产出里带失败↔成功差异；模型看到的是差异，不是单条链路。
+- [x] 对照取不到时**降级不失败**：草稿仍生成，标 `contrastAvailable=false`，
       并按 v4 §5.7 一律走校准期档，不得进入运行期晋升。
-- [ ] 记录四个北极星时间戳：`reportedAt` / `readyAt`（IntakeSession）、
+- [x] 记录四个北极星时间戳：`reportedAt` / `readyAt`（IntakeSession）、
       `conclusionAt` / `handoffAt`（Diagnosis）；abstain 也要写 `conclusionAt`。
-- [ ] 未发生的阶段保持 `null`，不得用 `0` 或当前时间填充。
-- [ ] 三段差值（补问成本 / 系统调查成本 / 人的采纳成本）分开统计，禁止只报总时长。
+- [x] 未发生的阶段保持 `null`，不得用 `0` 或当前时间填充。
+- [x] 三段差值（补问成本 / 系统调查成本 / 人的采纳成本）分开统计，禁止只报总时长。
 
 完成标准：对照命中与缺失两条路径都有测试；fixture 样本也能算出三段差值，
 P2 拿到真实数据时有可比基线。
@@ -140,13 +141,13 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T5 · P1 测试清单
 
-- [ ] `PlaybookDraftInducerTest`：成功、空响应、坏 JSON、provider 失败、prompt injection。
-- [ ] `PlaybookDraftValidatorTest`：引用、selector、动作、DQL/raw log、跨字段不变量。
-- [ ] `ReferenceSolutionComparatorTest`：必需意图、顺序、禁止动作、证据类型、delta。
-- [ ] 扩展 `SopSynthesisServiceTest`：任一步失败不调用模型；成功只产 candidate。
-- [ ] 扩展 `SopSynthesisReplayTest`：正例 + 负例 + 固定 eval baseline。
-- [ ] Candidate 集成测试：generationKey 幂等、不可直升 approved、fixture 标记保留。
-- [ ] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
+- [x] `PlaybookDraftInducerTest`：成功、空响应、坏 JSON、provider 失败、prompt injection。
+- [x] `PlaybookDraftValidatorTest`：引用、selector、动作、DQL/raw log、跨字段不变量。
+- [x] `ReferenceSolutionComparatorTest`：必需意图、顺序、禁止动作、证据类型、delta。
+- [x] 扩展 `SopSynthesisServiceTest`：任一步失败不调用模型；成功只产 candidate。
+- [x] 固定 Replay Eval：真实 Recorded Replay 组合固定模型正例 + 危险输出负例。
+- [x] Candidate 集成测试：generationKey 幂等、不可直升 approved、fixture 标记保留。
+- [x] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
       四个时间戳往返不丢，未发生阶段保持 `null`。
 
 ## 5. P2 · 接真实 Guance 和影子评估

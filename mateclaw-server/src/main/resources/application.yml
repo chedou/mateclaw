@@ -149,6 +149,9 @@ mateclaw:
           log_count: [guance, recorded-replay]
           log_search: [guance, recorded-replay]
           log_trace_bundle: [guance, recorded-replay]
+          # P1 contrast is replay-only. Add a Guance source in P2 only after
+          # workspace authorization and the real aggregation fields are verified.
+          contrast_sample: [recorded-replay]
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
       default-sources: []
