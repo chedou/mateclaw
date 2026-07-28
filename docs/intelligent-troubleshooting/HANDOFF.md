@@ -10,7 +10,7 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.1 / 蓝图 v0.11**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.2 / 蓝图 v0.12**
 
 ## 1. 一句话
 
@@ -50,6 +50,7 @@ MateClaw 智能排障的中心是一条“报障上下文 → 只读取证 → �
 | **D14** | 北极星用四个时间戳度量，三段差值分开统计 |
 | **D15** | 证据合成必须取成功样本对照；缺失只降级不失败，且锁定校准期档 |
 | **D16** | 未被真实失败检验过的设计分支标 `PENDING-EVIDENCE`，不得据以新增实现、接口或表结构 |
+| **D17** | 通道一律复用平台现有 `ChannelAdapter` / `CardKind`，不新建入站；诊断卡片不得复用 tool-guard 的 `ApprovalNotice` 形状（v4 §7.4） |
 
 修改 D4、D5/D5′、D9 必须单独 RFC 并由用户明确确认。
 D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之前，不得据其新增实现。
@@ -57,7 +58,7 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.8。该增量不扩大 P1：当前仍是一轮 PlaybookDraft 归纳 + 确定性校验；P2 才在历史样本上
+蓝图已升级到 v0.12。该增量不扩大 P1：当前仍是一轮 PlaybookDraft 归纳 + 确定性校验；P2 才在历史样本上
 影子运行 Evidence Challenger / Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ## 4. 当前代码真实状态
@@ -69,6 +70,14 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - 受限 Agent miss-path：唯一只读证据工具、服务端会话、硬白名单、引用校验、abstain。
 - `EvidenceSourceRouter`，Guance 与 Recorded Replay 两个 Adapter，canonical schema 和脱敏。
 - 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
+- **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
+  （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
+  `ExternalIdentityEntity`/`ExternalIdentityMapper`、`RequireWorkspaceRole`、`R`、`MateClawException`），
+  反向平台侧有 5 个文件知道排障域（`Capability`、`FeishuCardDispatcher`、飞书 kind factory、
+  `AgentGraphBuilder` 的调用级硬交集、`WikiRawMaterialEntity`）。单 JAR 兄弟包，D10 成立。
+- **已发现并修正的融合缺口**：设计此前把企微当成需新建的入站通道，而平台自带
+  `vip.mate.channel.wecom`（Adapter + 多 kind Dispatcher + `ChannelSessionStore`）。
+  已改为复用（v4 §7.4 / D17），P3 因此从"新建入站"变成"注册一个 card kind"。
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
@@ -83,7 +92,7 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 - 与人工参考解法的结构化比较和固定 replay eval。
 - Candidate generationKey 幂等与独立 review status。
 - 真实 Guance measurement/字段/PS ID/阈值内网验证；`fixtureMode` 仍应为 true。
-- 企微 IntakeSession 和原路闭环。
+- 企微 IntakeSession 和原路闭环（**做法已定：扩平台现有 `channel/wecom`，见 v4 §7.4 / D17**）。
 - Scenario Playbook Registry 与 DiscoveryPolicy。
 
 ## 5. Demo
@@ -110,13 +119,12 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 只演 happy path 的原型没有区分度——**「查不出来」才是这套系统最常产出的结局**，
 三种降级结局（弃权 / 排除 / 源故障）现在都能在同一版式下看到。
 
-推荐组合：A 做默认摘要，B 做折叠后的开发证据，C 用于说明真实入口和补问/闭环。最终仍由用户看过后选择。
-
-原型文件：
+原型文件（评审完与静态镜像一并删除）：
 
 - `mateclaw-ui/src/views/Troubleshooting/prototype/TroubleshootingExperiencePrototype.vue`
-- `/prototype/troubleshooting` 是 dev-only publicPrototype 路由；生产构建不注册。
-- 正式 `/troubleshooting` 鉴权和 capability gate 未放宽。
+- `mateclaw-ui/src/views/Troubleshooting/prototype/DeveloperEvidencePanel.vue`
+- `/prototype/troubleshooting` 是 dev-only publicPrototype 路由（`import.meta.env.DEV` 条件注册），
+  生产构建不含该分支；正式 `/troubleshooting` 鉴权和 capability gate 未放宽。
 
 ## 6. 当前主攻 P1
 

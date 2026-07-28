@@ -8,9 +8,12 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 已改为 v4.1 / 蓝图 v0.11）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.2** / 蓝图 v0.12）
 >
 > 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微 P3 暂缓）
+>
+> **通道复用（D17）**：企微/飞书一律扩平台现有 `ChannelAdapter` / `CardKind`，不新建入站——
+> 平台自带 `vip.mate.channel.wecom`，详见 v4 §7.4。
 
 ## 0. 当前判断
 
@@ -175,20 +178,33 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ## 6. P3 · 企业微信一线闭环
 
-### T9 · IntakeSession
+### T9 · IntakeSession（**扩平台现有企微通道，不新建入站**）
 
-- [ ] 企微群 @ 智能小助手入站，PAT/签名校验和 workspace 身份映射。
-- [ ] 保存 conversationRef、reporterRef、sourceMessageId、受控附件引用。
-- [ ] `RECEIVED → AWAITING_INPUT → READY`；缺客户 ID/系统/时间窗时原路补问。
+平台已自带 `vip.mate.channel.wecom.WeComChannelAdapter`（支持 proactiveSend 与交互卡片）
+和 `WeComCardDispatcher` 多 kind 注册表。排障域在飞书上已经示范过正确做法，企微照做。
+详见架构 v4 §7.4 / D17。
+
+- [ ] 注册 `WeComCardKind`（`ts.` 前缀，与 tool-guard 卡片前缀不相交）到 `WeComCardDispatcher`。
+      **不自建 webhook、不自建签名校验**——那是 Adapter 的职责。
+- [ ] `conversationRef` / `reporterRef` / `sourceMessageId` / 附件引用取自 `ChannelMessage`
+      （`chatId` / `senderId` / `messageId` / `contentParts`）与 `ChannelSessionStore`，不新建会话表。
+- [ ] `RECEIVED → AWAITING_INPUT → READY` 记在 `IntakeSession`；补问往返靠通道会话，
+      **不塞进 `DiagnosisStateMachine`**。
 - [ ] 视频只保存引用与元数据，当前不做内容理解。
 - [ ] sourceMessageId 幂等和版本检查，覆盖重复、乱序和并发补充消息。
+- [ ] 身份映射复用 `auth.sso.ExternalIdentityEntity`，未绑定即拒绝（同飞书 `CardOperatorResolver`）。
 
 ### T10 · 原路回复与关闭通知
 
 - [ ] 2 秒内回复“已收到/还缺什么”，完整调查异步返回。
 - [ ] 业务摘要来自 `BusinessSummary` 类型化投影，通道 Adapter 负责企微排版。
-- [ ] 关闭且 outcome 已登记后原路 @ 原报障人。
+- [ ] 关闭且 outcome 已登记后原路 @ 原报障人：用现成的
+      `ChannelAdapter.proactiveSend(targetId, content, DeliveryOptions)`，出站不需要新机制。
 - [ ] 未映射为可信 workspace 主体时，只允许报障/补充，不允许审核或推进受审计状态。
+- [ ] **出站交互卡片先不做**：`WeComCardRenderer` / `FeishuCardRenderer` 的签名都是
+      `render(ApprovalNotice)`（tool-guard 形状），且"批准=回放执行"与排障"确认=只推进状态"
+      语义相反。**严禁把 `BusinessSummary` 适配成 `ApprovalNotice`**——先泛化平台接缝（单独评审），
+      在此之前 IM 出站只发纯文本摘要。
 
 ## 7. P4 · 场景 Playbook 与开放探索
 
