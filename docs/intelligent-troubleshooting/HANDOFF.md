@@ -9,6 +9,8 @@
 > 当前架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
+>
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.1 / 蓝图 v0.11**
 
 ## 1. 一句话
 
@@ -42,10 +44,18 @@ MateClaw 智能排障的中心是一条“报障上下文 → 只读取证 → �
 | D9 | 自动化永久止于只读；生产写只在系统外由人完成并登记 outcome |
 | D10 | 所有能力继续在当前 Java MateClaw 运行，不引入第二运行时 |
 | D11 | Agent 仍只看到唯一只读证据门面；内部按语义 Tool 与来源 Adapter 两层 SPI 插拔 |
-| D12 | Loop Engineering 是一等控制机制；调查内循环与知识外循环都有显式状态、预算、验证和停止原因 |
-| D13 | 多 Agent 只做固定角色、固定一轮的结构化反证；先影子后治理，永不以共识/投票取得裁决权 |
+| D12 | Loop Engineering 是一等控制机制；调查内循环与知识外循环都有显式状态、预算、验证和停止原因 · **PENDING-EVIDENCE** |
+| D13 | 多 Agent 只做固定角色、固定一轮的结构化反证；先影子后治理，永不以共识/投票取得裁决权 · **PENDING-EVIDENCE** |
+| **D5′** | `EVIDENCE_DERIVED` 晋升分校准期 / 运行期两档；退出校准期靠样本数据而非日期 |
+| **D14** | 北极星用四个时间戳度量，三段差值分开统计 |
+| **D15** | 证据合成必须取成功样本对照；缺失只降级不失败，且锁定校准期档 |
+| **D16** | 未被真实失败检验过的设计分支标 `PENDING-EVIDENCE`，不得据以新增实现、接口或表结构 |
 
-修改 D4、D5、D9 必须单独 RFC 并由用户明确确认。
+修改 D4、D5/D5′、D9 必须单独 RFC 并由用户明确确认。
+D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之前，不得据其新增实现。
+
+**红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
+（此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
 蓝图已升级到 v0.8。该增量不扩大 P1：当前仍是一轮 PlaybookDraft 归纳 + 确定性校验；P2 才在历史样本上
 影子运行 Evidence Challenger / Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
@@ -100,6 +110,10 @@ SopSynthesisService.preview()              已有
   → PlaybookDraftValidator                 待做，确定性信任边界
   → ReferenceSolutionComparator            待做，纯函数优先
   → candidate + generationKey              待做，不可 approved
+
+并行补两件 v4.1 要求的小事（T4.5）：
+  contrast_sample 成功样本对照           待做，缺失只降级不失败
+  四个北极星时间戳                        待做，fixture 样本也要记
 ```
 
 P1 最多新增两个 service seam：模型归纳、确定性校验。不要一次创建 Planning、Projection、WeCom、新状态机、
@@ -110,14 +124,9 @@ orderingConstraints、requiredEvidenceKinds，不做逐字相似度。
 
 ## 7. 安全与信任边界
 
-1. 生产写工具一个都不注册。
-2. 人工确认/批准只推进领域状态，执行零个工具。
-3. 原始日志包、DQL、凭据不进模型或 Diagnosis。
-4. 模型只看脱敏的 Incident + `LogTraceSkeleton`，P1 不给任何工具。
-5. 模型场景选路只可提议注册 `scenarioKey`；EvidencePlan/DQL/工具来自 approved Playbook。
-6. 模型输出转换成功不等于可信，必须过领域 Validator。
-7. Recorded Replay 不证明真实观测云，页面和 API 必须保留 fixture 标记。
-8. Candidate 审核状态与 Outbox 发布状态绝不复用。
+**唯一权威清单：`rfcs/intelligent-troubleshooting-architecture-v4.md` §9。**
+本文不再复述条目——同一批约束此前在 v4 §1.2、v4 §9、本文和 TODO 各写一遍且互不一致
+（见 `architecture-critique-v4.md` §2.5）。动手前读 v4 §9；要改红线也只改那里。
 
 ## 8. 验证现状
 
@@ -142,7 +151,7 @@ mvn -pl mateclaw-server -am \
 
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
 2. 确认用户对 A/B/C 的选择；未选择前不吸收正式页面。
-3. 顺序做 P1 T1→T5；合成模块共享文件，不建议并行 worktree。
+3. 顺序做 P1 T1→T5（含 T4.5 对照与时间戳）；合成模块共享文件，不建议并行 worktree。
 4. P1 eval 通过后，P2 真实 Guance 与 P3 企微可并行。
 5. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 

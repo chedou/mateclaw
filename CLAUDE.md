@@ -22,12 +22,16 @@ fixture-only 预演，尚未调用模型或创建 candidate。
 
 0. **`docs/intelligent-troubleshooting/recording-product-baseline.md`** —— **现行产品事实**：
    2026-07-27 录音 F1–F11，明确核心差异化、首个案例、企微入口和能力边界。
-1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计**：
+1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.1）**：
    证据脊柱、在线诊断/知识生产双闭环、ERROR_CODE/SCENARIO/OPEN_DISCOVERY 三种调查路径和分阶段实施。
+   **§9 是红线的唯一权威清单**，其余文档只引用不复述。
 2. **`docs/intelligent-troubleshooting/architecture-review-v4.md`** —— **架构师评审**：
    Step 0、8 个架构问题、测试覆盖图、性能预算、失败模式与 P1 实施边界。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.10**：
-   增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证；v0.10 统一修复架构图、流程图和泳道图的正交走廊、箭头端点与标签间距。
+2.5 **`docs/intelligent-troubleshooting/architecture-critique-v4.md`** —— **第一性原理评价与修订决议**
+   （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.11**：
+   增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
+   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11 图形不变，改动在 RFC v4.1。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：当前 P1 及 P2–P5 顺序、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。
