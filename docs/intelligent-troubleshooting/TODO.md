@@ -311,6 +311,13 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 - [x] 页面不自行推断影响或结论；所有事实来自后端投影。
 - [x] 正式 `/troubleshooting` 已吸收双投影并读取真实 API；旧处置台临时保留在
       `/troubleshooting/legacy`，跳转携带同一个 `diagnosisId`（2026-07-29）。
+- [x] 正式工作台已提供受 `operate:troubleshooting` 保护的 Web 事件上报入口，复用既有
+      `POST /api/v1/troubleshooting/incidents` 与唯一 Diagnosis 主链，不新建第二套 Intake。浏览器只提交
+      system/service/现象/严重级别及可选错误码、Trace 安全标识，默认演练；不接受原始日志、DQL、凭据、
+      影响人数、调用方 evidence 或自定义 incidentId；服务端 Intake 在路由、持久化或模型前再次拒绝 Incident
+      字段中的 DQL、原始日志和堆栈正文。错误码优先走零 LLM Playbook；未命中路径未启用时明确
+      fail closed。非演练事件统一服从五分钟幂等：错误码事件按 route，无码事件按规范化 system/service/
+      symptom/trace 生成稳定键（2026-07-29）。
 - [x] `Diagnosis` 1.5 已持久化 `investigationMode` / `routeAuthority` / `conclusionType`
       与 D14 四时间戳；定位、排除、假设、弃权不再由前端或投影根据 `routeMode` 猜测。
 - [x] `reportedAt` 由 Servlet Filter 在请求映射前捕获；Duration 以 ISO-8601 输出；首次人工确认补写

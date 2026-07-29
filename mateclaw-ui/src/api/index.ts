@@ -1598,7 +1598,27 @@ export type ExecutionStatus = 'COMPLETED' | 'PENDING' | 'BLOCKED' | 'NOT_APPLICA
 export type ActionOutcomeStatus = 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
 export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' | 'UNRESOLVED'
 export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
+export type IncidentSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type SopStatus = 'candidate' | 'approved' | 'deprecated'
+
+/**
+ * Browser incident-intake boundary.
+ *
+ * Deliberately excludes caller-owned evidence, raw logs, impact counts and an
+ * incident id. Those facts must come from the server-owned evidence spine or
+ * be derived by the domain rather than being asserted by a console form.
+ */
+export interface IncidentReportRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  errorCode?: string
+  traceId?: string
+  intakeSource: 'web:formal-workbench'
+  completeness: IncidentCompleteness
+  rehearsal: boolean
+}
 
 /** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
 export interface SopEntry {
@@ -2052,7 +2072,7 @@ export interface GuanceEvidenceValidationReport {
 
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
-  report: (data: Record<string, unknown>) =>
+  report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
 
   list: (params?: { status?: string; system?: string; limit?: number }) =>

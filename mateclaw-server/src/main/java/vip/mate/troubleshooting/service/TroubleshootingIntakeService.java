@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
@@ -183,6 +184,7 @@ public class TroubleshootingIntakeService {
             throw badRequest("reportedAt is required");
         }
         IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        requireSafeIncidentText(sanitizedIncident);
         List<EvidenceResult> sanitizedSuppliedEvidence =
                 TroubleshootingEvidenceSanitizer.sanitizeSupplied(evidence);
         String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
@@ -280,6 +282,14 @@ public class TroubleshootingIntakeService {
             return "incident completeness is SYMPTOM; deterministic routing needs a structured report";
         }
         return null;
+    }
+
+    private void requireSafeIncidentText(IncidentContext incident) {
+        try {
+            TroubleshootingBusinessTextPolicy.requireNoDeveloperEvidence(incident);
+        } catch (IllegalArgumentException unsafeText) {
+            throw badRequest(unsafeText.getMessage());
+        }
     }
 
     private StoredDiagnosis triageRouteMiss(

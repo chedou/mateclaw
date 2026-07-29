@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.engine.Criterion;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -374,6 +376,111 @@ class TroubleshootingIntakeServiceTest {
         assertThat(persistedImpact.note())
                 .contains(TroubleshootingSecretRedactor.REDACTED)
                 .doesNotContain("another-secret");
+    }
+
+    @Test
+    void rejectsDqlAndRawLogTextBeforeRoutingPersistenceOrAgentUse() {
+        IncidentContext dqlInTitle = new IncidentContext(
+                "unsafe-dql", "CSDP", "order-svc", "903001",
+                "L::logs:(message) {service='order-svc'} [-15m]", "P2",
+                "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.STRUCTURED, "订单创建超时");
+        IncidentContext rawLogInInput = new IncidentContext(
+                "unsafe-log", "CSDP", "order-svc", null,
+                "会话消息发送失败", "P2", "待确认", null, NOW, null,
+                "web:formal-workbench", IncidentCompleteness.SYMPTOM,
+                "2026-07-25 09:12:03 ERROR request failed\n"
+                        + "at vip.mate.OrderService.create(OrderService.java:42)");
+        IncidentContext jsonLog = new IncidentContext(
+                "unsafe-json", "CSDP", "order-svc", null,
+                "{\"timestamp\":\"2026-07-25T09:12:03Z\",\"level\":\"ERROR\","
+                        + "\"message\":\"request failed\"}",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext prettyJsonLog = new IncidentContext(
+                "unsafe-pretty-json", "CSDP", "order-svc", null,
+                "{\n  \"timestamp\": \"2026-07-25T09:12:03Z\",\n"
+                        + "  \"level\": \"ERROR\",\n"
+                        + "  \"message\": \"request failed\"\n}",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext lateJsonLog = new IncidentContext(
+                "unsafe-late-json", "CSDP", "order-svc", null,
+                "{\"payload\":\"" + "x".repeat(1025)
+                        + "\",\"level\":\"ERROR\"}",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext oversizedBusinessText = new IncidentContext(
+                "unsafe-oversized-text", "CSDP", "order-svc", null,
+                "x".repeat(2001),
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext pythonTraceback = new IncidentContext(
+                "unsafe-python", "CSDP", "order-svc", null,
+                "会话消息发送失败", "P2", "待确认", null, NOW, null,
+                "web:formal-workbench", IncidentCompleteness.SYMPTOM,
+                "Traceback (most recent call last):\n"
+                        + "  File \"/app/order.py\", line 42, in create");
+        IncidentContext goPanic = new IncidentContext(
+                "unsafe-go", "CSDP", "order-svc", null,
+                "panic: runtime error: index out of range\n"
+                        + "goroutine 18 [running]:",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext nodeStack = new IncidentContext(
+                "unsafe-node", "CSDP", "order-svc", null,
+                "会话消息发送失败", "P2", "待确认", null, NOW, null,
+                "web:formal-workbench", IncidentCompleteness.SYMPTOM,
+                "TypeError: request failed\n"
+                        + "    at async submitReport (/app/index.js:42:17)");
+        IncidentContext browserStack = new IncidentContext(
+                "unsafe-browser", "CSDP", "order-svc", null,
+                "会话消息发送失败\n    at /app/bootstrap.js:3:9",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext safariStack = new IncidentContext(
+                "unsafe-safari", "CSDP", "order-svc", null,
+                "Error: request failed\n"
+                        + "submit@https://app.example.com/main.js:42:17",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext accessLog = new IncidentContext(
+                "unsafe-access-log", "CSDP", "order-svc", null,
+                "127.0.0.1 - - [29/Jul/2026:12:00:00 +0800] "
+                        + "\"GET /orders HTTP/1.1\" 500 612",
+                "P2", "待确认", null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM, null);
+        IncidentContext unsafeSource = new IncidentContext(
+                "unsafe-source", "CSDP", "order-svc", "903001",
+                "订单创建超时", "P2", "待确认", null, NOW, null,
+                "L::logs:(message)", IncidentCompleteness.STRUCTURED, null);
+        IncidentContext unsafeImpactRef = new IncidentContext(
+                "unsafe-impact-ref", "CSDP", "order-svc", "903001",
+                "订单创建超时", "P2",
+                new IncidentImpact(
+                        "订单创建", null, null, BlastRadius.UNKNOWN,
+                        List.of("L::logs:message"), null, ""),
+                null, NOW, null, "web:formal-workbench",
+                IncidentCompleteness.STRUCTURED, null);
+
+        for (IncidentContext unsafe : List.of(
+                dqlInTitle, rawLogInInput, jsonLog, prettyJsonLog, lateJsonLog,
+                oversizedBusinessText,
+                pythonTraceback, goPanic, nodeStack, browserStack, safariStack, accessLog,
+                unsafeSource, unsafeImpactRef)) {
+            assertThatThrownBy(() -> intake.report(
+                    WORKSPACE_ID, unsafe, List.of(), false))
+                    .isInstanceOf(MateClawException.class)
+                    .extracting(error -> ((MateClawException) error).getCode())
+                    .isEqualTo(400);
+        }
+        assertThatCode(() -> TroubleshootingBusinessTextPolicy.requireNoDeveloperEvidence(
+                "Error: order submit failed；用户打开 `/orders/{id}` 返回 404，"
+                        + "Windows 路径 C:\\data\\orders 不可用",
+                "title"))
+                .doesNotThrowAnyException();
+
+        verifyNoInteractions(sopPersistence, diagnosisService, evidenceRouter, agentTriageService);
     }
 
     @Test

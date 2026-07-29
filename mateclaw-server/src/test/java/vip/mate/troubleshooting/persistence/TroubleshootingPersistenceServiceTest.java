@@ -94,6 +94,23 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
+    void symptomOnlyProductionDiagnosisAlsoStoresAFiveMinuteDeduplicationKey() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+
+        service.createOrGet(
+                7L,
+                symptomDiagnosis(false),
+                Instant.parse("2026-07-25T01:04:59Z"));
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertNotNull(entity.getValue().getDedupKey());
+        assertEquals(64, entity.getValue().getDedupKey().length());
+    }
+
+    @Test
     void rehearsalSkipsDeduplicationLookupAndStoresNullKey() {
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
 
@@ -292,6 +309,43 @@ class TroubleshootingPersistenceServiceTest {
                 abstained,
                 "csdp:903001",
                 "903001 SOP",
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                rehearsal,
+                true,
+                List.of());
+    }
+
+    private Diagnosis symptomDiagnosis(boolean rehearsal) {
+        IncidentContext incident = new IncidentContext(
+                "inc-symptom",
+                "CSDP",
+                "csdp-wechat",
+                null,
+                "会话消息发送失败",
+                "P2",
+                "待确认",
+                "trace-safe-1",
+                Instant.parse("2026-07-25T01:02:00Z"),
+                null,
+                "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM,
+                null);
+        return Diagnosis.initial(
+                "diag-symptom",
+                "case-symptom",
+                "run-symptom",
+                incident,
+                RouteMode.LLM_FALLBACK,
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "证据不足",
+                "待补证",
+                Confidence.LOW,
+                true,
+                null,
+                null,
                 List.of(),
                 List.of(),
                 List.of(),

@@ -72,6 +72,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - Java 领域模块 `vip.mate.troubleshooting`、REST、RBAC、三方言 Flyway、状态机和持久化。
 - 903001 确定性错误码竖线，命中路零 LLM。
 - 受限 Agent miss-path：唯一只读证据工具、服务端会话、硬白名单、引用校验、abstain。
+- **正式 Web Incident Intake（2026-07-29）**：`/troubleshooting` 已提供
+  `operate:troubleshooting` 权限内的“上报事件”，直接复用既有 Incident API 与同一 Diagnosis 队列；
+  旧 `/troubleshooting/legacy` 保留。表单只暴露 system/service/现象/严重级别、可选错误码与 Trace
+  安全标识，默认演练；不允许调用方填写原始日志、DQL、凭据、影响人数、evidence、incidentId 或
+  occurredAt。Intake 会在任何路由、持久化或模型调用前再次拒绝 Incident 字段中的 DQL、原始日志和
+  堆栈正文。错误码命中仍零 LLM，未命中路径未启用时保留表单并明确 fail closed；非演练无码事件也以
+  规范化 system/service/symptom/trace 建立五分钟稳定键，不再因缺 errorCode 绕过去重。
 - `EvidenceSourceRouter`，Guance 与 Recorded Replay 两个 Adapter，canonical schema 和脱敏。
 - **P2 T6 租户授权边界（2026-07-29）**：`workspaceId` 已贯穿 Intake、Agent 会话、SOP 合成、
   Router 和 Adapter；Guance 必须由唯一的 `workspace/system/service + signalKind → concrete binding`
@@ -400,11 +407,27 @@ P2 正式准入阶梯与真源耗时证据（2026-07-29）已通过代码级验�
   `vue-tsc --noEmit` 与直接 Vite 生产构建通过，构建完成 `6270` 个模块转换。
 - Standards / Spec 双轴最终复核均 PASS；审查中发现并修复“分别观测两个核心信号被误写成同
   PS ID 链”和“应用侧 round-trip 被误写成服务端 DQL 执行耗时”两处 P2，最终无剩余 P0/P1/P2。
-- 后端已用最终工作树重启为 PID `80166` 并监听 `18088`；正式、Playbook、legacy 三个前端路由
+- 当轮后端已用最终工作树重启并监听 `18088`；正式、Playbook、legacy 三个前端路由
   均返回 200，未登录访问 Guance readiness 返回预期 401，未绕过 Workspace 权限。
-- 默认 Guance 适配器、资产授权表与 `fixtureMode` 均未放开；本机当前登录数据不接受历史默认
-  管理员凭据，因此本轮没有绕过权限、重置账号或伪造真实 T7/T8 运行结果。Scenario Registry/
-  Planning 继续等待真实样本门禁。
+- 默认 Guance 适配器、资产授权表与 `fixtureMode` 均未放开；本机使用登录页提供的本地管理员测试账号
+  完成验收，没有绕过权限、重置账号或伪造真实 T7/T8 运行结果。Scenario Registry/Planning 继续等待
+  真实样本门禁。
+
+正式 Web Incident Intake（2026-07-29）已通过运行验收：
+
+- 登录态浏览器从正式 `/troubleshooting` 上报 rehearsal 事件，真实创建并打开
+  `diag-c09f30ab1fa54a5c940dead87203bd90`；队列同步新增记录，服务端在证据不足时诚实返回
+  `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION / LOW`，没有伪造“已定位”。
+- 无错误码 rehearsal 进入未命中路径时，因受限 Agent 未启用返回预期 409；对话框与输入保留，队列未新增
+  伪 Diagnosis，页面明确说明 fail-closed。非演练五分钟幂等未用合成生产记录做浏览器写入，错误码与无码
+  两条键生成、无码持久化及危险文本提前 400 均由 `IncidentDeduplicationKeyTest`、Persistence 与 Intake
+  回归覆盖。
+- 后端 Controller、去重、持久化和 Intake 定向 `39` 个测试通过；排障域 + Skill Manifest 全量
+  `335` 个测试通过。前端 `16` 个测试文件 / `126` 个测试通过，`vue-tsc --noEmit` 与直接 Vite
+  生产构建通过，构建完成 `6271` 个模块转换。
+- 正式、Playbook、legacy 三个前端路由均返回 200；未登录访问后端 Diagnosis 列表返回预期 401。
+  当前本地后端 PID `32933` 监听 `18088`，前端 PID `92308` 监听 `5173`；本增量未放开生产写、
+  Guance 真源、Recorded Replay 或 fixture 边界。
 
 后端定向测试命令：
 
