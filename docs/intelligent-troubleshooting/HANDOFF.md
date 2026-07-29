@@ -129,6 +129,11 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
+- **正式 Playbook 证据学习入口（2026-07-29）**：`/troubleshooting/sops` 已增加“无错误码证据预览”，
+  直接调用正式 `POST /api/v1/troubleshooting/sops/synthesis/preview`，可见固定
+  `log_search → log_trace_bundle → contrast_sample` Evidence Spine、PS ID 调用链和成功样本对照。
+  服务端继续把该接口硬限制在 Recorded Replay；本次预览入口与弹窗没有模型调用、candidate 创建、审核或
+  晋升入口，不改变 SOP 管理页已有的独立治理能力。Replay 在默认配置中仍为关闭，只有本地验证时才可显式启用。
 - `contrast_sample` 成功样本对照；缺失只降级并锁定校准期，不中断草稿生成。
 - `PlaybookDraftInducer`：复用现有模型配置和 Spring AI 结构化输出，最多一次低温调用。
 - `PlaybookDraftValidator`：确定性拦截猜码、伪引用、secret、DQL/raw log、工具调用和生产写。
@@ -198,6 +203,7 @@ P3 T9 与 T10 纯文本闭环已落地，含 leader 切换后的 DB 路由回源
 **正式入口已吸收（2026-07-29）**：
 
 - 正式真实数据工作台：`http://127.0.0.1:5173/troubleshooting`
+- 正式 Playbook 管理与无错误码证据预览：`http://127.0.0.1:5173/troubleshooting/sops`
 - 旧版兼容处置台：`http://127.0.0.1:5173/troubleshooting/legacy`
 - dev-only 原型暂时保留用于降级结局对照；正式页补齐等价测试场景后再按删除清单移除。
 
@@ -344,6 +350,15 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
   `npm run build` 仍被仓库已有的缺失前置脚本拦住。
 - 本轮未修改 RFC、蓝图或三张图：真源门是已定 P2/T7 实施接缝，没有新增架构语义；
   当前 v0.16 继续有效。真实 T7/T8 依然未完成。
+
+正式无错误码 Evidence Spine 入口（2026-07-29）已通过：
+
+- 前端 `15` 个测试文件 / `119` 个测试全通过，`vue-tsc --noEmit` 通过，直接 Vite 生产构建
+  完成 `6270` 个模块转换；后端 synthesis Replay / service / controller 定向 `14` 个测试全通过。
+- 登录态浏览器从正式 `/troubleshooting/sops` 打开“无错误码证据预览”并完成会议案例回放；页面显示
+  4 条日志命中、同一 PS ID 三段调用链、92%↔3% 成功样本对照与 `+89` 个百分点差异，控制台 0 error。
+- 本地运行时只为验证显式启用了 Recorded Replay；默认配置仍为关闭。本次预览交互与 API 均未调用模型、
+  创建 candidate、执行审核/晋升或扩大任何生产写边界；T7/T8 状态不变。
 
 后端定向测试命令：
 

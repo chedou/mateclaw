@@ -302,10 +302,12 @@
         </el-form-item>
         <el-form-item label="时间窗口">
           <el-select v-model="guanceValidationForm.window" style="width: 100%">
-            <el-option label="前 5 分钟" value="-5m" />
-            <el-option label="前 15 分钟" value="-15m" />
-            <el-option label="前 30 分钟" value="-30m" />
-            <el-option label="前 1 小时" value="-1h" />
+            <el-option
+              v-for="option in EVIDENCE_WINDOW_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -409,6 +411,7 @@ import {
   investigationLabel,
   timingState,
 } from './formalProjection'
+import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 
 const STATUSES: DiagnosisStatus[] = ['READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED']
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {

@@ -152,6 +152,14 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
       四个时间戳往返不丢，未发生阶段保持 `null`。
 
+### T5.5 · 正式 Evidence Spine 开发入口
+
+- [x] 正式 `/troubleshooting/sops` 直接调用既有 synthesis preview API，不新增第二套取证实现。
+- [x] 页面显式展示 `log_search → log_trace_bundle → contrast_sample`、PS ID 确定性调用链和
+      失败/成功样本差异；对照缺失时保持不可用状态，不伪造测量值。
+- [x] 该入口由服务端硬限制为 Recorded Replay，默认数据源仍关闭；不调用模型、不创建 candidate、
+      不提供审核、晋升或生产写操作。
+
 ## 5. P2 · 接真实 Guance 和影子评估
 
 ### T6 · Workspace→观测资产授权

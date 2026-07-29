@@ -14,6 +14,7 @@
       </div>
       <div class="top-actions">
         <el-button :icon="Refresh" :loading="listLoading" @click="reload">刷新</el-button>
+        <el-button plain @click="synthesisOpen = true">无错误码证据预览</el-button>
         <el-button type="primary" :icon="Plus" @click="openRegister">注册 SOP</el-button>
       </div>
     </header>
@@ -237,6 +238,8 @@
         >注册为 candidate</el-button>
       </template>
     </el-dialog>
+
+    <SynthesisPreviewDialog v-model="synthesisOpen" />
   </div>
 </template>
 
@@ -253,6 +256,7 @@ import {
   type SopSummary,
 } from '@/api'
 import { nextSopStatus, parseCandidateSopJson } from './sopRegistry'
+import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
 const STATUS_LABEL: Record<SopStatus, string> = {
@@ -288,6 +292,7 @@ const listLoading = ref(false)
 const detailLoading = ref(false)
 const statusUpdating = ref(false)
 const registerOpen = ref(false)
+const synthesisOpen = ref(false)
 const registering = ref(false)
 const registerJson = ref(EMPTY_TEMPLATE)
 let detailRequest = 0

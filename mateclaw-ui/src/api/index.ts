@@ -1633,6 +1633,86 @@ export interface SopSummary {
   updateTime: string
 }
 
+/** Shared bounded request shape for deterministic evidence-chain probes. */
+export interface EvidenceChainPreviewRequest {
+  system: string
+  service: string
+  searchTerm: string
+  window: string
+  occurredAt: string | null
+}
+
+/** Fixture-confined input for the no-error-code Evidence -> call-chain preview. */
+export type SopSynthesisPreviewRequest = EvidenceChainPreviewRequest
+
+export interface SynthesisEvidenceReference {
+  queryId: string
+  status: EvidenceStatus
+  source: string
+  collectedAt: string
+}
+
+export interface LogTraceTimelineEvent {
+  sequenceIndex: number
+  offsetMs: number
+  service: string
+  level: string
+  message: string
+  durationMs: number | null
+  anomalous: boolean
+}
+
+export interface LogTraceDurationSummary {
+  sampleCount: number
+  minMs: number
+  maxMs: number
+  averageMs: number
+}
+
+export interface LogTraceContrastSummary {
+  available: boolean
+  discriminatingFeature: string
+  failureSampleCount: number
+  failureMatchCount: number
+  successSampleCount: number
+  successMatchCount: number
+  failureRate: number
+  successRate: number
+  rateDelta: number
+}
+
+/** Bounded deterministic projection; it is safe to expose, unlike the raw trace bundle. */
+export interface LogTraceSkeleton {
+  psId: string
+  startedAtEpochMs: number
+  endedAtEpochMs: number
+  elapsedMs: number
+  serviceSequence: string[]
+  timeline: LogTraceTimelineEvent[]
+  anomalySequenceIndexes: number[]
+  durationByService: Record<string, LogTraceDurationSummary>
+  sourceEntryCount: number
+  omittedEntryCount: number
+  contrast: LogTraceContrastSummary
+}
+
+/** Read-only result after three routed evidence steps and deterministic compression. */
+export interface SopSynthesisPreview {
+  stage: 'READY_FOR_MODEL'
+  system: string
+  service: string
+  searchTerm: string
+  matchCount: number
+  psId: string
+  searchEvidence: SynthesisEvidenceReference
+  traceEvidence: SynthesisEvidenceReference
+  contrastEvidence: SynthesisEvidenceReference | null
+  skeleton: LogTraceSkeleton
+  fixtureMode: boolean
+  contrastAvailable: boolean
+  warnings: string[]
+}
+
 export interface IncidentContext {
   incidentId: string
   system: string
@@ -1994,15 +2074,13 @@ export const troubleshootingApi = {
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
 
   /** Admin-only, read-only, Guance-only canonical chain; never counts as T7 acceptance. */
-  validateGuanceEvidence: (data: {
-    system: string
-    service: string
-    searchTerm: string
-    window: string
-    occurredAt: string | null
-  }) => http.post<GuanceEvidenceValidationReport>(
+  validateGuanceEvidence: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceValidationReport>(
     '/troubleshooting/evidence/guance/validate', data,
   ),
+
+  /** Runs the meeting-case evidence lane without invoking a model or writing a candidate. */
+  previewSopSynthesis: (data: SopSynthesisPreviewRequest) =>
+    http.post<SopSynthesisPreview>('/troubleshooting/sops/synthesis/preview', data),
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
