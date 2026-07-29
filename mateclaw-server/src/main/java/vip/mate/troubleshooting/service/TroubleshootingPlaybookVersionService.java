@@ -70,16 +70,6 @@ public class TroubleshootingPlaybookVersionService {
         return Optional.of(read(entity));
     }
 
-    /** Resolves the immutable identity embedded in a routeable Playbook. */
-    public Optional<ApprovedPlaybookVersion> findByPlaybookId(
-            long workspaceId,
-            String playbookId) {
-        validateWorkspace(workspaceId);
-        TroubleshootingPlaybookVersionEntity entity = mapper.findByPlaybookId(
-                workspaceId, required(playbookId, "playbookId"));
-        return entity == null ? Optional.empty() : Optional.of(read(entity));
-    }
-
     /**
      * Locks the exact active-approved authority for a persisted Diagnosis.
      * The caller must keep a surrounding transaction open through insertion.
