@@ -21,6 +21,9 @@
           <el-button v-if="canManageTroubleshooting" size="small" text @click="router.push('/troubleshooting/sops')">
             Playbook 管理
           </el-button>
+          <el-button v-if="canManageTroubleshooting" size="small" text @click="openEvaluationLedger">
+            T8 样本台账
+          </el-button>
         </div>
       </div>
       <div v-loading="listLoading" class="queue-list">
@@ -83,6 +86,7 @@
           </div>
           <div class="work-head-actions">
             <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
+            <el-button v-if="canManageTroubleshooting" size="small" plain @click="openEvaluationLedger">T8 样本台账</el-button>
             <el-button size="small" plain @click="openLegacy">打开旧版处置台</el-button>
           </div>
         </header>
@@ -455,8 +459,24 @@
           :disabled="!guanceValidationForm.searchTerm"
           @click="previewGuanceSpine"
         >完整 Evidence Spine</el-button>
+        <el-button
+          v-if="guanceSpinePreview && guanceSpinePreview.stage !== 'BLOCKED'"
+          type="success"
+          plain
+          @click="openEvaluationLedger"
+        >进入 T8 样本台账</el-button>
       </template>
     </el-dialog>
+
+    <EvaluationSampleLedgerDialog
+      v-model="evaluationLedgerOpen"
+      :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
+      :current-diagnosis-status="current?.diagnosis.status || null"
+      :capture-context="evaluationCaptureContext"
+      :capture-enabled="canCaptureEvaluationSample"
+      :capture-disabled-reason="evaluationCaptureDisabledReason"
+      @open-diagnosis="openDiagnosisFromLedger"
+    />
 
     <el-dialog v-model="transferOpen" title="结构化转派" width="460px">
       <el-form label-position="top">
@@ -552,6 +572,11 @@ import {
   type FormalIncidentForm,
 } from './incidentReport'
 import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
+import {
+  type EvaluationSampleCaptureContext,
+  suggestedEvaluationScenarioKey,
+} from './evaluationSamples'
 
 const STATUSES: DiagnosisStatus[] = ['READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED']
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
@@ -604,9 +629,37 @@ const canValidateGuance = computed(() => {
 const guanceAcceptance = computed(() => guanceReadiness.value
   ? guanceAcceptanceProgress(guanceReadiness.value)
   : null)
+const evaluationCaptureContext = computed<EvaluationSampleCaptureContext | null>(() => {
+  const diagnosis = current.value?.diagnosis
+  const incident = diagnosis?.incident
+  if (!diagnosis || !incident) return null
+  const formMatchesIncident = guanceValidationForm.system === incident.system
+    && guanceValidationForm.service === incident.service
+  const searchTerm = formMatchesIncident
+    ? guanceValidationForm.searchTerm.trim()
+    : (incident.errorCode || '').trim()
+  if (!searchTerm) return null
+  return {
+    diagnosisId: diagnosis.diagnosisId,
+    system: incident.system,
+    service: incident.service,
+    scenarioKey: suggestedEvaluationScenarioKey(incident.errorCode),
+    searchTerm,
+    window: formMatchesIncident ? guanceValidationForm.window : '-15m',
+  }
+})
+const canCaptureEvaluationSample = computed(() => canManageTroubleshooting.value
+  && Boolean(guanceSpinePreview.value)
+  && guanceSpinePreview.value?.stage !== 'BLOCKED')
+const evaluationCaptureDisabledReason = computed(() => {
+  if (!canManageTroubleshooting.value) return '当前 Workspace 缺少 manage:troubleshooting 权限。'
+  if (!evaluationCaptureContext.value) return '当前 Diagnosis 没有可安全映射的搜索键。'
+  return '先在真源验收中取得一条非 BLOCKED Evidence Spine，再采集历史样本。'
+})
 
 const incidentReportOpen = ref(false)
 const guanceValidationOpen = ref(false)
+const evaluationLedgerOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
 const outcomeOpen = ref(false)
@@ -781,6 +834,16 @@ function openGuanceValidation() {
   guanceValidationOpen.value = true
 }
 
+function openEvaluationLedger() {
+  if (!canManageTroubleshooting.value) return
+  evaluationLedgerOpen.value = true
+}
+
+async function openDiagnosisFromLedger(diagnosisId: string) {
+  evaluationLedgerOpen.value = false
+  await selectDiagnosis(diagnosisId)
+}
+
 async function validateGuance() {
   const version = selectionVersion
   const request = { ...guanceValidationForm }
@@ -918,8 +981,8 @@ onMounted(() => loadList(true))
 .queue-head h2 { margin:4px 0 0; font-size:17px; letter-spacing:-.02em; }
 .queue-tools { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
 .queue-tools .el-select { flex:1; min-width:0; }
-.queue-action-row { display:flex; align-items:center; gap:5px; }
-.queue-action-row .el-button { flex:1; margin-left:0; }
+.queue-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
+.queue-action-row .el-button { flex:1 1 70px; margin-left:0; }
 .queue-list { flex:1; min-height:0; overflow-y:auto; }
 .queue-item { width:100%; padding:13px 14px 12px; border:0; border-bottom:1px solid #edf0f5; border-left:3px solid transparent; background:#fff; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .queue-item:hover { background:#f8f9fc; } .queue-item.active { border-left-color:var(--blue); background:#f1f4ff; }

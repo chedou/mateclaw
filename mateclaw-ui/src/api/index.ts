@@ -2115,6 +2115,98 @@ export interface GuanceEvidenceSpinePreview {
   warnings: string[]
 }
 
+export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
+export type EvaluationSampleReferenceStatus = 'EVIDENCE_CAPTURED' | 'READY_FOR_EVALUATION'
+
+export interface EvaluationEvidenceSnapshot {
+  stage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
+  fixtureMode: boolean
+  matchCount: number
+  psId: string
+  traceEntries: number
+  serviceSequence: string[]
+  anomalyCount: number
+  traceElapsedMs: number
+  contrast: GuanceSpineContrast
+  sourceRequestCount: number
+  totalDurationMs: number
+  steps: GuanceSpinePreviewStep[]
+  completedAt: string
+}
+
+export interface EvaluationReferenceSolution {
+  referenceId: string
+  scenarioKey: string
+  requiredStepIntents: string[]
+  forbiddenStepIntents: string[]
+  orderingConstraints: Array<{ beforeIntent: string; afterIntent: string }>
+  requiredEvidenceKinds: string[]
+}
+
+export interface EvaluationOutcomeSnapshot {
+  outcome: ClosureOutcome
+  summary: string
+  recoveryVerified: boolean
+  closedAt: string
+}
+
+/** Secret-free historical sample; source lookup keys and raw evidence never appear here. */
+export interface EvidenceEvaluationSample {
+  sampleId: string
+  sampleKey: string
+  diagnosisId: string
+  system: string
+  service: string
+  scenarioKey: string
+  sourcePlatform: EvaluationSampleSourcePlatform
+  evidence: EvaluationEvidenceSnapshot
+  diagnosisFixtureMode: boolean
+  referenceStatus: EvaluationSampleReferenceStatus
+  referenceSolution: EvaluationReferenceSolution | null
+  outcome: EvaluationOutcomeSnapshot | null
+  version: number
+  capturedBy: string
+  finalizedBy: string | null
+  capturedAt: string
+  finalizedAt: string | null
+}
+
+export interface StoredEvidenceEvaluationSample {
+  sample: EvidenceEvaluationSample
+  created: boolean
+}
+
+export interface EvaluationSampleSummary {
+  total: number
+  guance: number
+  recordedReplay: number
+  evidenceCaptured: number
+  readyForEvaluation: number
+  fullSpineObserved: number
+  coreChainObserved: number
+  linkedFixtureDiagnoses: number
+  minimumEvaluationTarget: number
+  targetRangeMax: number
+}
+
+export interface EvidenceEvaluationSampleLedger {
+  samples: EvidenceEvaluationSample[]
+  summary: EvaluationSampleSummary
+}
+
+export interface CaptureGuanceEvaluationSampleRequest {
+  diagnosisId: string
+  scenarioKey: string
+  searchTerm: string
+  window: string
+}
+
+export interface FinalizeEvaluationSampleReferenceRequest {
+  expectedVersion: number
+  requiredStepIntents: string[]
+  forbiddenStepIntents: string[]
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: IncidentReportRequest) =>
@@ -2148,6 +2240,26 @@ export const troubleshootingApi = {
   /** Runs the shared three-stage spine against Guance only; never falls back to Replay. */
   previewGuanceEvidenceSpine: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceSpinePreview>(
     '/troubleshooting/evidence/guance/spine/preview', data,
+  ),
+
+  /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */
+  captureGuanceEvaluationSample: (data: CaptureGuanceEvaluationSampleRequest) =>
+    http.post<StoredEvidenceEvaluationSample>(
+      '/troubleshooting/evaluation-samples/guance', data,
+    ),
+
+  /** Lists sample accumulation only; the response deliberately has no gate-pass verdict. */
+  evaluationSamples: (params?: { diagnosisId?: string; limit?: number }) =>
+    http.get<EvidenceEvaluationSampleLedger>(
+      '/troubleshooting/evaluation-samples', { params },
+    ),
+
+  /** Stores human-authored intent keys; closure outcome is derived by the server. */
+  finalizeEvaluationSampleReference: (
+    sampleId: string,
+    data: FinalizeEvaluationSampleReferenceRequest,
+  ) => http.put<EvidenceEvaluationSample>(
+    `/troubleshooting/evaluation-samples/${encodeURIComponent(sampleId)}/reference`, data,
   ),
 
   /** Runs the meeting-case evidence lane without invoking a model or writing a candidate. */

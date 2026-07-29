@@ -454,6 +454,26 @@ P2 正式工作台完整 Guance Evidence Spine 预览（2026-07-29）已通过�
   T7/T8 运行结果。单条预览只是采集真实 T8 样本的工具，下一主攻仍是 owner 配置 T7 真字段并累积
   20–30 条 T8 历史样本。
 
+T8 历史样本台账基础设施（2026-07-29）已实现，真实样本与 Gate 仍未完成：
+
+- 正式 `/troubleshooting` 增加管理员“T8 样本台账”；采集接口服务端重新执行同一 Guance-only
+  `EvidenceSpineOrchestrator`，不信任或持久化浏览器预览，不回退 Recorded Replay，不调用模型；
+- H2/MySQL/Kingbase V181 新增 workspace 隔离、sample key 幂等和乐观版本冻结；聚合只保存结构化
+  Evidence Spine 投影、来源、fixture 分离标记和审计时间，不含搜索键、DQL、凭据、原始行或日志正文；
+- 人工参考解只接受有序 required/forbidden intent key；关联 Diagnosis 必须 CLOSED，权威 outcome、
+  恢复验证和业务安全摘要由服务端读取。冻结后不可改写，相同重试幂等，不同内容冲突；
+- 页面分别展示 Guance/Recorded Replay、Evidence Spine 完整/核心链、参考解状态和关联 fixture
+  Diagnosis；`20–30` 只是数量目标，合同与 UI 都没有 `passed` 或 T8 Gate verdict；
+- 排障域 + Skill Manifest 后端 `363` 个测试、前端 `17` 个测试文件 / `130` 个测试全通过；
+  `vue-tsc --noEmit`、改动文件 ESLint、`git diff --check` 和直接 Vite 生产构建均通过，构建完成
+  `6275` 个模块转换；
+- 最终工作树后端 PID `16551` 已以 schema V181 启动并监听 `18088`，前端 PID `92308` 监听
+  `5173`。登录态浏览器验证正式页、T8 台账和同 Diagnosis 的 legacy 路由均正常；台账为 `0/20`、
+  Guance 未就绪时采集按钮禁用，未伪造任何样本。控制台仅有登录/仪表盘既有的 settings 401、
+  SSO providers 404、active model 500，没有本轮页面新增错误；
+- 默认 Guance binding 仍为空、`fixtureMode` 仍未解除，本地台账当前没有伪造真实样本。下一步仍是
+  owner 完成 T7 字段核实后，用该入口采集并冻结 20–30 条历史样本，再实现质量/性能聚合与影子对比。
+
 后端定向测试命令：
 
 ```bash

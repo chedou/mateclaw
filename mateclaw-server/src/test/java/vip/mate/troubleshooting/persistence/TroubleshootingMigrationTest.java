@@ -272,6 +272,36 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V181CreatesTheSecretFreeEvaluationSampleLedger() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v181;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V181__troubleshooting_evaluation_sample.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains("mate_troubleshooting_evaluation_sample"));
+            Set<String> sampleColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_evaluation_sample");
+            assertTrue(sampleColumns.contains("sample_key"));
+            assertTrue(sampleColumns.contains("reference_status"));
+            assertTrue(sampleColumns.contains("evidence_stage"));
+            assertTrue(sampleColumns.contains("diagnosis_fixture_mode"));
+            assertTrue(sampleColumns.contains("aggregate_json"));
+            assertFalse(sampleColumns.contains("search_term"));
+            assertFalse(sampleColumns.contains("dql"));
+            assertFalse(sampleColumns.contains("raw_log"));
+            assertEquals(1, countIndexes(connection, "uk_ts_eval_sample_id"));
+            assertEquals(1, countIndexes(connection, "uk_ts_eval_sample_key"));
+            assertEquals(1, countIndexes(connection, "idx_ts_eval_sample_status"));
+            assertEquals(1, countIndexes(connection, "idx_ts_eval_sample_diagnosis"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,
