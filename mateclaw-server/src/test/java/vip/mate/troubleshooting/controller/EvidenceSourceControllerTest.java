@@ -81,7 +81,9 @@ class EvidenceSourceControllerTest {
                         .value("CANONICAL_CHAIN_OBSERVED"))
                 .andExpect(jsonPath("$.data.matchCount").value(4))
                 .andExpect(jsonPath("$.data.psId").value("ps-message-001"))
-                .andExpect(jsonPath("$.data.traceEntries").value(2));
+                .andExpect(jsonPath("$.data.traceEntries").value(2))
+                .andExpect(jsonPath("$.data.totalDurationMs").value(50))
+                .andExpect(jsonPath("$.data.steps[0].durationMs").value(12));
 
         verify(validation).validate(
                 7L, "CSDP", "session-svc", "message_send_failed", "-15m", occurredAt);
@@ -121,8 +123,15 @@ class EvidenceSourceControllerTest {
                 4L,
                 "ps-message-001",
                 2,
-                List.of(),
+                50L,
+                List.of(new GuanceEvidenceValidationReport.Step(
+                        "log_search",
+                        GuanceEvidenceValidationReport.StepStatus.CANONICAL_RESULT_OBSERVED,
+                        "T7-GUANCE-LOG-SEARCH",
+                        "canonical match count and PS ID observed",
+                        12L,
+                        Instant.parse("2026-07-29T08:00:00Z"))),
                 Instant.parse("2026-07-29T08:00:00Z"),
-                List.of("不代表 T7 已验收"));
+                List.of("待 T7 字段验收与 T8 历史样本"));
     }
 }

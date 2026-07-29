@@ -239,6 +239,14 @@
                     <span :class="guanceReadiness.endpointConfigured ? 'success' : 'warning'">端点 {{ guanceReadiness.endpointConfigured ? '已配置' : '未就绪' }}</span>
                     <span :class="guanceReadiness.uniqueAssetAuthorized ? 'success' : 'warning'">Workspace 资产 {{ guanceReadiness.uniqueAssetAuthorized ? '唯一授权' : '未唯一授权' }}</span>
                   </div>
+                  <ol v-if="guanceAcceptance" class="acceptance-ladder">
+                    <li v-for="stage in guanceAcceptance.stages" :key="stage.code">
+                      <span>{{ stage.code }}</span>
+                      <div><b>{{ stage.title }}</b><small>{{ stage.detail }}</small></div>
+                      <strong :class="acceptanceTone(stage.state)">{{ acceptanceStateLabel(stage.state) }}</strong>
+                    </li>
+                  </ol>
+                  <p v-if="guanceAcceptance" class="next-source-action"><b>下一步</b>{{ guanceAcceptance.nextAction }}</p>
                   <ul class="signal-readiness-list">
                     <li v-for="signal in guanceReadiness.signals" :key="signal.signalKind">
                       <code>{{ signal.signalKind }}</code>
@@ -250,7 +258,7 @@
                   <div v-if="guanceValidation" class="validation-result" :class="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED' ? 'passed' : 'blocked'">
                     <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
                     <span v-if="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED'">
-                      {{ guanceValidation.matchCount }} 条命中 · PS {{ guanceValidation.psId }} · {{ guanceValidation.traceEntries }} 个链路节点
+                      {{ guanceValidation.matchCount }} 条命中 · PS {{ guanceValidation.psId }} · {{ guanceValidation.traceEntries }} 个链路节点 · 总耗时 {{ guanceValidation.totalDurationMs }} ms
                     </span>
                     <small>{{ guanceValidation.warnings[0] }}</small>
                   </div>
@@ -261,7 +269,7 @@
                     :disabled="!canValidateGuance"
                     @click="openGuanceValidation"
                   >执行单次只读验证</el-button>
-                  <small class="gate-note">成功也只证明一次读链可用；T7 仍需 20–30 个真实样本，fixtureMode 不会自动关闭。</small>
+                  <small class="gate-note">成功只证明一次读链可用；T7 负责真字段验收，T8 才建立 20–30 条历史样本，fixtureMode 不会自动关闭。</small>
                 </template>
                 <p v-else class="empty-evidence">{{ readinessError || '正在检查当前 Workspace 的真源绑定…' }}</p>
               </section>
@@ -290,7 +298,7 @@
     </main>
 
     <el-dialog v-model="guanceValidationOpen" title="Guance 单次只读验证" width="520px">
-      <el-alert type="warning" :closable="false" class="dialog-alert">该操作只读取真实观测数据，不持久化原始日志，不回退到 Recorded Replay，也不代表 T7 验收通过。</el-alert>
+      <el-alert type="warning" :closable="false" class="dialog-alert">该操作只读取真实观测数据，不持久化原始日志，不回退到 Recorded Replay；一次成功仍需 T7 owner 字段验收，也不等于 T8 样本基线完成。</el-alert>
       <el-form label-position="top">
         <div class="validation-scope">
           <span>Workspace 资产</span>
@@ -314,8 +322,9 @@
       <div v-if="guanceValidation" class="dialog-validation-result">
         <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
         <ul>
-          <li v-for="step in guanceValidation.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span></li>
+          <li v-for="step in guanceValidation.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span><time>{{ step.durationMs == null ? '未执行' : `${step.durationMs} ms` }}</time></li>
         </ul>
+        <p>端到端 {{ guanceValidation.totalDurationMs }} ms</p>
         <small v-for="warning in guanceValidation.warnings" :key="warning">{{ warning }}</small>
       </div>
       <template #footer>
@@ -404,6 +413,7 @@ import {
 import {
   closureOutcomeLabel,
   conclusionLabel,
+  guanceAcceptanceProgress,
   guanceReadinessLabel,
   guanceSignalLabel,
   guanceValidationLabel,
@@ -456,6 +466,9 @@ const canValidateGuance = computed(() => {
   const status = guanceReadiness.value?.status
   return status === 'READY_FOR_VALIDATION' || status === 'CANONICAL_SIGNALS_OBSERVED'
 })
+const guanceAcceptance = computed(() => guanceReadiness.value
+  ? guanceAcceptanceProgress(guanceReadiness.value)
+  : null)
 
 const guanceValidationOpen = ref(false)
 const transferOpen = ref(false)
@@ -479,14 +492,23 @@ function statusTone(status: DiagnosisStatus) {
 function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
 function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
 function readinessTone(value: GuanceReadinessStatus) {
-  if (value === 'CANONICAL_SIGNALS_OBSERVED') return 'success'
-  if (value === 'READY_FOR_VALIDATION') return 'active'
+  if (value === 'CANONICAL_SIGNALS_OBSERVED' || value === 'READY_FOR_VALIDATION') return 'active'
   return 'warning'
 }
 function signalTone(value: GuanceSignalStatus) {
   if (value === 'CANONICAL_RESULT_OBSERVED') return 'success'
   if (value === 'READY_FOR_VALIDATION') return 'active'
   return 'warning'
+}
+function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
+  if (value === 'READY') return 'success'
+  if (value === 'OWNER_EVIDENCE_REQUIRED') return 'active'
+  return 'warning'
+}
+function acceptanceStateLabel(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
+  if (value === 'READY') return '就绪'
+  if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
+  return '阻断'
 }
 function shortTime(value?: string | null) { return value ? value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19) : '—' }
 function evidenceTime(kind: EvidenceStepKind, value: string | null) {
@@ -585,7 +607,7 @@ async function validateGuance() {
     guanceValidation.value = response.data
     guanceReadiness.value = response.data.readiness
     if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
-      ElMessage.success('单次规范化读链已观测；fixtureMode 保持开启')
+      ElMessage.success('单次规范化读链已观测；待 T7 owner 字段验收，fixtureMode 保持开启')
     } else {
       ElMessage.warning('真源验证被就绪门或规范化合同阻断')
     }
@@ -736,11 +758,17 @@ onMounted(() => loadList(true))
 .developer-side { display:flex; flex-direction:column; gap:14px; } .developer-side>section { padding:16px; border:1px solid var(--line); border-radius:9px; background:#fff; } .capability-list { margin:13px 0 0; padding-left:17px; color:#7a271a; font-size:11px; line-height:1.6; } .capability-list li+li { margin-top:7px; }
 .source-gate-card { min-height:120px; } .source-gate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; } .source-gate-state { flex:none; padding:3px 7px; border-radius:5px; background:#f2f4f7; font-size:9px; font-weight:700; }
 .source-scope { display:flex; align-items:center; gap:5px; margin:12px 0 8px; color:#98a2b3; font-size:9.5px; } .source-scope code { color:#344054; word-break:break-all; } .source-meta { display:flex; flex-wrap:wrap; gap:7px; font-size:9px; }
+.acceptance-ladder { margin:12px 0 0; padding:0; list-style:none; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.acceptance-ladder li { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:start; gap:8px; padding:8px; background:#fbfcfe; }
+.acceptance-ladder li+li { border-top:1px solid var(--line); }
+.acceptance-ladder li>span { display:grid; place-items:center; width:25px; height:20px; border-radius:4px; color:#344054; background:#eef1f6; font:700 8.5px var(--mc-mono,monospace); }
+.acceptance-ladder b,.acceptance-ladder small { display:block; } .acceptance-ladder b { font-size:9.5px; } .acceptance-ladder small { margin-top:3px; color:var(--muted); font-size:8.5px; line-height:1.45; }
+.acceptance-ladder strong { font-size:8px; white-space:nowrap; } .next-source-action { margin:8px 0 0; padding:8px; border-radius:6px; color:#344054; background:#eff4ff; font-size:9px; line-height:1.5; } .next-source-action b { display:block; margin-bottom:2px; color:#175cd3; }
 .signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid #edf0f5; } .signal-readiness-list code { font-size:9.5px; } .signal-readiness-list span { font-size:9px; } .signal-readiness-list small { grid-column:1/-1; color:#98a2b3; font-size:8.5px; word-break:break-all; }
 .source-blocker { margin:7px 0; padding:7px 8px; border-radius:5px; color:#7a271a; background:#fff2f0; font-size:9.5px; line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:9px; line-height:1.55; }
 .validation-result { margin:9px 0; padding:9px; border-radius:7px; font-size:9.5px; } .validation-result.passed { color:#067647; background:#ecfdf3; } .validation-result.blocked { color:#b54708; background:#fffaeb; } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
 .validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; background:#f8f9fc; } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:10px; } .validation-scope code { margin-top:5px; color:var(--blue); font-size:11px; }
-.dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; } .dialog-validation-result>b { font-size:12px; } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:flex; gap:10px; padding:5px 0; color:var(--muted); font-size:10px; } .dialog-validation-result li code { flex:none; color:var(--blue); } .dialog-validation-result>small { display:block; color:var(--amber); font-size:9.5px; line-height:1.5; }
+.dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; } .dialog-validation-result>b { font-size:12px; } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:10px; } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:#344054; font-family:var(--mc-mono,monospace); font-size:9px; white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:#344054; font-size:10px; font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:9.5px; line-height:1.5; }
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; } .action-card.write { border-color:#f2c4bf; } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:8.5px; }
 .action-card>b { display:block; margin-top:7px; font-size:11.5px; } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:10px; line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:10.5px; }
 @media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}

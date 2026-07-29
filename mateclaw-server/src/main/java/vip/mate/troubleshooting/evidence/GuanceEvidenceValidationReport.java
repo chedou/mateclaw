@@ -10,6 +10,7 @@ public record GuanceEvidenceValidationReport(
         Long matchCount,
         String psId,
         Integer traceEntries,
+        Long totalDurationMs,
         List<Step> steps,
         Instant completedAt,
         List<String> warnings) {
@@ -17,6 +18,7 @@ public record GuanceEvidenceValidationReport(
     public GuanceEvidenceValidationReport {
         stage = stage == null ? Stage.BLOCKED : stage;
         psId = psId == null ? null : psId.trim();
+        totalDurationMs = totalDurationMs == null ? 0L : Math.max(0L, totalDurationMs);
         steps = List.copyOf(steps == null ? List.of() : steps);
         completedAt = completedAt == null ? Instant.EPOCH : completedAt;
         warnings = List.copyOf(warnings == null ? List.of() : warnings);
@@ -38,6 +40,7 @@ public record GuanceEvidenceValidationReport(
             StepStatus status,
             String evidenceRef,
             String detail,
+            Long durationMs,
             Instant collectedAt) {
 
         public Step {
@@ -45,6 +48,7 @@ public record GuanceEvidenceValidationReport(
             status = status == null ? StepStatus.BLOCKED : status;
             evidenceRef = evidenceRef == null ? "" : evidenceRef.trim();
             detail = detail == null ? "" : detail.trim();
+            durationMs = durationMs == null ? null : Math.max(0L, durationMs);
         }
     }
 }

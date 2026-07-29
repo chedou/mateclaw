@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { GuanceReadinessStatus, GuanceSignalStatus } from '@/api'
 import {
   closureOutcomeLabel,
   conclusionLabel,
   formatDuration,
+  guanceAcceptanceProgress,
   guanceReadinessLabel,
   guanceSignalLabel,
   guanceValidationLabel,
@@ -10,6 +12,25 @@ import {
   investigationLabel,
   timingState,
 } from '../formalProjection'
+
+function readiness(
+  status: GuanceReadinessStatus,
+  signalStatus: GuanceSignalStatus = 'UNAUTHORIZED',
+  authorized = false,
+) {
+  return {
+    status,
+    uniqueAssetAuthorized: authorized,
+    signals: ['log_search', 'log_trace_bundle'].map(signalKind => ({
+      signalKind,
+      routedToGuance: true,
+      status: signalStatus,
+      bindingRef: `${signalKind}-binding`,
+      lastObservedAt: null,
+      detail: '',
+    })),
+  }
+}
 
 describe('formal troubleshooting projection formatting', () => {
   it('keeps conclusion semantics explicit', () => {
@@ -50,10 +71,54 @@ describe('formal troubleshooting projection formatting', () => {
 
   it('keeps the real-source gate distinct from T7 acceptance', () => {
     expect(guanceReadinessLabel('READY_FOR_VALIDATION')).toBe('可执行单次验证')
-    expect(guanceReadinessLabel('CANONICAL_SIGNALS_OBSERVED')).toBe('已观测规范化读链')
+    expect(guanceReadinessLabel('CANONICAL_SIGNALS_OBSERVED'))
+      .toBe('核心规范化信号已分别观测')
     expect(guanceSignalLabel('NOT_ROUTED')).toBe('未路由到 Guance')
     expect(guanceSignalLabel('INVALID_BINDING')).toBe('绑定无效')
     expect(guanceValidationLabel('CANONICAL_CHAIN_OBSERVED'))
-      .toBe('单次规范化读链通过（非 T7 验收）')
+      .toBe('单次规范化读链通过（待 T7 字段验收）')
+  })
+
+  it('keeps T6 authorization, T7 field verification, and T8 samples as separate gates', () => {
+    expect(guanceAcceptanceProgress(readiness('UNAUTHORIZED'))).toEqual({
+      stages: [
+        expect.objectContaining({ code: 'T6', state: 'BLOCKED' }),
+        expect.objectContaining({ code: 'T7', state: 'BLOCKED' }),
+        expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
+      ],
+      nextAction: '为当前 Workspace / system / service 配置唯一资产授权与 log_search、log_trace_bundle 绑定。',
+    })
+
+    const ready = guanceAcceptanceProgress(readiness(
+      'READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true,
+    ))
+    expect(ready.stages).toEqual([
+      expect.objectContaining({ code: 'T6', state: 'READY' }),
+      expect.objectContaining({ code: 'T7', state: 'READY' }),
+      expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
+    ])
+    expect(ready.nextAction).toContain('会议案例')
+
+    const observed = guanceAcceptanceProgress(readiness(
+      'CANONICAL_SIGNALS_OBSERVED', 'CANONICAL_RESULT_OBSERVED', true,
+    ))
+    expect(observed.stages).toEqual([
+      expect.objectContaining({ code: 'T6', state: 'READY' }),
+      expect.objectContaining({ code: 'T7', state: 'OWNER_EVIDENCE_REQUIRED' }),
+      expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
+    ])
+    expect(observed.stages[1].detail).toContain('measurement')
+    expect(observed.stages[2].detail).toContain('20–30')
+    expect(observed.nextAction).toContain('fixtureMode')
+
+    const missingRuntime = guanceAcceptanceProgress(readiness(
+      'CONFIGURATION_INCOMPLETE', 'READY_FOR_VALIDATION', true,
+    ))
+    expect(missingRuntime.stages).toEqual([
+      expect.objectContaining({ code: 'T6', state: 'READY' }),
+      expect.objectContaining({ code: 'T7', state: 'BLOCKED' }),
+      expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
+    ])
+    expect(missingRuntime.stages[1].title).toBe('真源运行条件未就绪')
   })
 })

@@ -18,16 +18,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Runs the smallest real-source acceptance chain required before T7 can start.
+ * Runs the smallest real-source validation chain used during T7.
  *
  * <p>This service never persists evidence, never falls back to a fixture source,
  * and returns only structural counts and identifiers. A successful run proves
  * transport plus canonical normalization for one sample; it does not satisfy
- * the 20-30 sample T7 acceptance gate.</p>
+ * T7 field acceptance or the 20-30 sample T8 historical baseline.</p>
  */
 @Service
 public class GuanceEvidenceValidationService {
@@ -38,27 +39,40 @@ public class GuanceEvidenceValidationService {
     private static final Pattern WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
     private static final String SEARCH_REQUEST = "T7-GUANCE-LOG-SEARCH";
     private static final String TRACE_REQUEST = "T7-GUANCE-TRACE-BUNDLE";
-    private static final String ACCEPTANCE_WARNING =
-            "本次结果只证明一次 Guance 读链与规范化合同可用，不代表 T7 已验收；不会自动关闭 fixtureMode。";
+    private static final String SUCCESS_WARNING =
+            "本次结果只证明一次 Guance 读链与规范化合同可用；仍需 owner 完成 T7 字段验收，"
+                    + "再建立 T8 的 20–30 条历史样本；不会自动关闭 fixtureMode。";
+    private static final String BLOCKED_WARNING =
+            "本次未形成可验收的同 PS ID Guance 读链；T7/T8 状态不变，不会自动关闭 fixtureMode。";
 
     private final EvidenceSourceRouter router;
     private final GuanceEvidenceReadinessService readinessService;
     private final Clock clock;
+    private final LongSupplier ticker;
 
     @Autowired
     public GuanceEvidenceValidationService(
             EvidenceSourceRouter router,
             GuanceEvidenceReadinessService readinessService) {
-        this(router, readinessService, Clock.systemUTC());
+        this(router, readinessService, Clock.systemUTC(), System::nanoTime);
     }
 
     GuanceEvidenceValidationService(
             EvidenceSourceRouter router,
             GuanceEvidenceReadinessService readinessService,
             Clock clock) {
+        this(router, readinessService, clock, System::nanoTime);
+    }
+
+    GuanceEvidenceValidationService(
+            EvidenceSourceRouter router,
+            GuanceEvidenceReadinessService readinessService,
+            Clock clock,
+            LongSupplier ticker) {
         this.router = router;
         this.readinessService = readinessService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
+        this.ticker = ticker == null ? System::nanoTime : ticker;
     }
 
     public GuanceEvidenceValidationReport validate(
@@ -68,13 +82,14 @@ public class GuanceEvidenceValidationService {
             String searchTerm,
             String window,
             Instant occurredAt) {
+        long validationStarted = ticker.getAsLong();
         String safeSearchTerm = safeValue(searchTerm, "searchTerm");
         String safeWindow = safeWindow(window);
         Instant observationEnd = safeOccurredAt(occurredAt);
         GuanceEvidenceReadiness readiness =
                 readinessService.inspect(workspaceId, system, service);
         if (!canValidate(readiness.status())) {
-            return blockedBeforeQuery(readiness);
+            return blockedBeforeQuery(readiness, validationStarted);
         }
 
         IncidentContext incident = incident(readiness, observationEnd);
@@ -86,11 +101,13 @@ public class GuanceEvidenceValidationService {
                 Map.of("search_term", safeSearchTerm),
                 safeWindow,
                 true);
-        EvidenceResult search = collect(searchRequest, workspaceId, incident);
+        TimedEvidenceResult timedSearch = collectTimed(searchRequest, workspaceId, incident);
+        EvidenceResult search = timedSearch.result();
         SearchObservation searchObservation = searchObservation(searchRequest, search);
         if (searchObservation == null) {
             steps.add(blockedStep("log_search", SEARCH_REQUEST,
-                    "Guance did not return valid canonical search evidence"));
+                    "Guance did not return valid canonical search evidence",
+                    timedSearch.durationMs()));
             steps.add(notRunStep("log_trace_bundle",
                     "search evidence did not establish a PS ID"));
             return report(
@@ -99,12 +116,14 @@ public class GuanceEvidenceValidationService {
                     null,
                     null,
                     null,
-                    steps);
+                    steps,
+                    validationStarted);
         }
         steps.add(observedStep(
                 "log_search",
                 SEARCH_REQUEST,
                 "canonical match count and PS ID observed",
+                timedSearch.durationMs(),
                 search.collectedAt()));
 
         EvidenceRequest traceRequest = new EvidenceRequest(
@@ -114,25 +133,29 @@ public class GuanceEvidenceValidationService {
                 Map.of("ps_id", searchObservation.psId()),
                 safeWindow,
                 true);
-        EvidenceResult trace = collect(traceRequest, workspaceId, incident);
+        TimedEvidenceResult timedTrace = collectTimed(traceRequest, workspaceId, incident);
+        EvidenceResult trace = timedTrace.result();
         Integer entryCount = traceEntryCount(traceRequest, trace, searchObservation.psId());
         if (entryCount == null) {
             steps.add(blockedStep(
                     "log_trace_bundle",
                     TRACE_REQUEST,
-                    "Guance did not return the same PS ID as canonical trace evidence"));
+                    "Guance did not return the same PS ID as canonical trace evidence",
+                    timedTrace.durationMs()));
             return report(
                     GuanceEvidenceValidationReport.Stage.BLOCKED,
                     readinessService.inspect(workspaceId, system, service),
                     searchObservation.matchCount(),
                     searchObservation.psId(),
                     null,
-                    steps);
+                    steps,
+                    validationStarted);
         }
         steps.add(observedStep(
                 "log_trace_bundle",
                 TRACE_REQUEST,
                 "canonical entries for the same PS ID observed",
+                timedTrace.durationMs(),
                 trace.collectedAt()));
 
         return report(
@@ -141,7 +164,8 @@ public class GuanceEvidenceValidationService {
                 searchObservation.matchCount(),
                 searchObservation.psId(),
                 entryCount,
-                steps);
+                steps,
+                validationStarted);
     }
 
     private EvidenceResult collect(
@@ -149,6 +173,15 @@ public class GuanceEvidenceValidationService {
             long workspaceId,
             IncidentContext incident) {
         return router.collect(workspaceId, request, incident, GUANCE_ONLY);
+    }
+
+    private TimedEvidenceResult collectTimed(
+            EvidenceRequest request,
+            long workspaceId,
+            IncidentContext incident) {
+        long started = ticker.getAsLong();
+        EvidenceResult result = collect(request, workspaceId, incident);
+        return new TimedEvidenceResult(result, elapsedMillis(started));
     }
 
     private SearchObservation searchObservation(
@@ -236,7 +269,8 @@ public class GuanceEvidenceValidationService {
     }
 
     private GuanceEvidenceValidationReport blockedBeforeQuery(
-            GuanceEvidenceReadiness readiness) {
+            GuanceEvidenceReadiness readiness,
+            long validationStarted) {
         return report(
                 GuanceEvidenceValidationReport.Stage.BLOCKED,
                 readiness,
@@ -245,7 +279,8 @@ public class GuanceEvidenceValidationService {
                 null,
                 List.of(
                         notRunStep("log_search", "Guance readiness gate is not open"),
-                        notRunStep("log_trace_bundle", "Guance readiness gate is not open")));
+                        notRunStep("log_trace_bundle", "Guance readiness gate is not open")),
+                validationStarted);
     }
 
     private GuanceEvidenceValidationReport report(
@@ -254,16 +289,20 @@ public class GuanceEvidenceValidationService {
             Long matchCount,
             String psId,
             Integer traceEntries,
-            List<GuanceEvidenceValidationReport.Step> steps) {
+            List<GuanceEvidenceValidationReport.Step> steps,
+            long validationStarted) {
         return new GuanceEvidenceValidationReport(
                 stage,
                 readiness,
                 matchCount,
                 psId,
                 traceEntries,
+                elapsedMillis(validationStarted),
                 steps,
                 Instant.now(clock),
-                List.of(ACCEPTANCE_WARNING));
+                List.of(stage == GuanceEvidenceValidationReport.Stage.CANONICAL_CHAIN_OBSERVED
+                        ? SUCCESS_WARNING
+                        : BLOCKED_WARNING));
     }
 
     private GuanceEvidenceValidationReport.Step notRunStep(
@@ -274,18 +313,21 @@ public class GuanceEvidenceValidationService {
                 GuanceEvidenceValidationReport.StepStatus.NOT_RUN,
                 "",
                 detail,
+                null,
                 null);
     }
 
     private GuanceEvidenceValidationReport.Step blockedStep(
             String signalKind,
             String evidenceRef,
-            String detail) {
+            String detail,
+            long durationMs) {
         return new GuanceEvidenceValidationReport.Step(
                 signalKind,
                 GuanceEvidenceValidationReport.StepStatus.BLOCKED,
                 evidenceRef,
                 detail,
+                durationMs,
                 null);
     }
 
@@ -293,13 +335,20 @@ public class GuanceEvidenceValidationService {
             String signalKind,
             String evidenceRef,
             String detail,
+            long durationMs,
             Instant collectedAt) {
         return new GuanceEvidenceValidationReport.Step(
                 signalKind,
                 GuanceEvidenceValidationReport.StepStatus.CANONICAL_RESULT_OBSERVED,
                 evidenceRef,
                 detail,
+                durationMs,
                 collectedAt);
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        long elapsedNanos = ticker.getAsLong() - startedNanos;
+        return elapsedNanos <= 0L ? 0L : Duration.ofNanos(elapsedNanos).toMillis();
     }
 
     private boolean canValidate(GuanceEvidenceReadiness.Status status) {
@@ -358,5 +407,8 @@ public class GuanceEvidenceValidationService {
     }
 
     private record SearchObservation(long matchCount, String psId) {
+    }
+
+    private record TimedEvidenceResult(EvidenceResult result, long durationMs) {
     }
 }

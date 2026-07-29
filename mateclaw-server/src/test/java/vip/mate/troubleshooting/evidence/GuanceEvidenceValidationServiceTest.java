@@ -15,6 +15,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,7 +39,11 @@ class GuanceEvidenceValidationServiceTest {
                 response("[\"ps-message-001\",1753775940000,\"gateway\",\"INFO\",\"accepted\",12],"
                                 + "[\"ps-message-001\",1753775941000,\"session-svc\",\"ERROR\",\"send failed\",3010]",
                         "[\"ps_id\",\"time\",\"service\",\"status\",\"message\",\"duration_ms\"]"));
-        Fixture fixture = fixture(transport, true);
+        Fixture fixture = fixture(
+                transport,
+                true,
+                new SequenceTicker(0L, 0L, 12_000_000L, 12_000_000L,
+                        45_000_000L, 50_000_000L));
 
         GuanceEvidenceValidationReport result = fixture.validation().validate(
                 7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW);
@@ -53,6 +58,10 @@ class GuanceEvidenceValidationServiceTest {
                 .containsExactly(
                         GuanceEvidenceValidationReport.StepStatus.CANONICAL_RESULT_OBSERVED,
                         GuanceEvidenceValidationReport.StepStatus.CANONICAL_RESULT_OBSERVED);
+        assertThat(result.steps())
+                .extracting(GuanceEvidenceValidationReport.Step::durationMs)
+                .containsExactly(12L, 33L);
+        assertThat(result.totalDurationMs()).isEqualTo(50L);
         assertThat(result.readiness().status())
                 .isEqualTo(GuanceEvidenceReadiness.Status.CANONICAL_SIGNALS_OBSERVED);
         assertThat(transport.calls.get()).isEqualTo(2);
@@ -65,7 +74,8 @@ class GuanceEvidenceValidationServiceTest {
                         "runtime-secret",
                         "L::");
         assertThat(result.warnings())
-                .anyMatch(value -> value.contains("不代表 T7 已验收"));
+                .anyMatch(value -> value.contains("T7 字段验收")
+                        && value.contains("T8 的 20–30 条历史样本"));
     }
 
     @Test
@@ -83,6 +93,10 @@ class GuanceEvidenceValidationServiceTest {
         assertThat(result.steps())
                 .allMatch(step -> step.status()
                         == GuanceEvidenceValidationReport.StepStatus.NOT_RUN);
+        assertThat(result.warnings())
+                .anyMatch(value -> value.contains("未形成可验收的同 PS ID Guance 读链"));
+        assertThat(result.warnings())
+                .noneMatch(value -> value.contains("只证明一次 Guance 读链"));
         assertThat(transport.calls.get()).isZero();
     }
 
@@ -106,6 +120,11 @@ class GuanceEvidenceValidationServiceTest {
                     assertThat(step.status())
                             .isEqualTo(GuanceEvidenceValidationReport.StepStatus.BLOCKED);
                 });
+        assertThat(result.readiness().status())
+                .as("a rejected trace must not be recorded as a canonical signal observation")
+                .isEqualTo(GuanceEvidenceReadiness.Status.READY_FOR_VALIDATION);
+        assertThat(result.warnings())
+                .anyMatch(value -> value.contains("未形成可验收的同 PS ID Guance 读链"));
         assertThat(result.toString()).doesNotContain("send failed");
     }
 
@@ -165,6 +184,14 @@ class GuanceEvidenceValidationServiceTest {
             SequenceTransport transport,
             boolean authorize,
             EvidenceSourceAdapter... additionalAdapters) {
+        return fixture(transport, authorize, System::nanoTime, additionalAdapters);
+    }
+
+    private Fixture fixture(
+            SequenceTransport transport,
+            boolean authorize,
+            LongSupplier ticker,
+            EvidenceSourceAdapter... additionalAdapters) {
         EvidenceProperties properties = new EvidenceProperties();
         properties.setRoutes(Map.of(
                 "CSDP", Map.of(
@@ -198,7 +225,7 @@ class GuanceEvidenceValidationServiceTest {
         GuanceEvidenceReadinessService readiness =
                 new GuanceEvidenceReadinessService(properties, adapter);
         return new Fixture(
-                new GuanceEvidenceValidationService(router, readiness, CLOCK), readiness);
+                new GuanceEvidenceValidationService(router, readiness, CLOCK, ticker), readiness);
     }
 
     private EvidenceProperties.Binding binding(
@@ -254,6 +281,22 @@ class GuanceEvidenceValidationServiceTest {
                 throw new AssertionError("unexpected Guance request");
             }
             return new Response(200, responses.removeFirst());
+        }
+    }
+
+    private static final class SequenceTicker implements LongSupplier {
+        private final Deque<Long> values = new ArrayDeque<>();
+
+        private SequenceTicker(Long... values) {
+            this.values.addAll(List.of(values));
+        }
+
+        @Override
+        public long getAsLong() {
+            if (values.isEmpty()) {
+                throw new AssertionError("unexpected timing read");
+            }
+            return values.removeFirst();
         }
     }
 }

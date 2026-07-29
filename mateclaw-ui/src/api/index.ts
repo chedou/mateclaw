@@ -2033,6 +2033,7 @@ export interface GuanceValidationStep {
   status: GuanceValidationStepStatus
   evidenceRef: string
   detail: string
+  durationMs: number | null
   collectedAt: string | null
 }
 
@@ -2043,6 +2044,7 @@ export interface GuanceEvidenceValidationReport {
   matchCount: number | null
   psId: string | null
   traceEntries: number | null
+  totalDurationMs: number
   steps: GuanceValidationStep[]
   completedAt: string
   warnings: string[]
@@ -2073,7 +2075,7 @@ export const troubleshootingApi = {
   evidenceReadiness: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
 
-  /** Admin-only, read-only, Guance-only canonical chain; never counts as T7 acceptance. */
+  /** Admin-only Guance chain; one run does not by itself complete T7 or T8. */
   validateGuanceEvidence: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceValidationReport>(
     '/troubleshooting/evidence/guance/validate', data,
   ),

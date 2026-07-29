@@ -87,7 +87,8 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   尚未在内网验证，`fixtureMode` 仍应保持开启。正式工作台的开发证据台已有
   **P2 真源门**：按 workspace/system/service 显示绑定就绪状态，并允许管理员发起一次
   Guance-only `log_search → log_trace_bundle` 只读验证。该入口不返回原始日志/DQL/密钥、
-  不回退 Replay、不持久化验证数据；单次通过不代表 T7 或 20–30 样本验收完成。
+  不回退 Replay、不持久化验证数据；报告只增加应用侧每步与端到端 round-trip。页面分别显示 T6 授权、
+  T7 真字段验收和 T8 20–30 条历史样本门禁，单次通过不代表 T7/T8 验收完成。
 - 本地无真实模型配置时，生成接口已实测会返回 `MODEL_REJECTED`且不产生 candidate。
 - 生产写执行能力不存在；`execute` 端点继续恒拒绝。
 - “从日志生成 SOP”是当前产品主线之一，但产物只可成为 candidate，不得自动晋升或改写权威 Playbook。

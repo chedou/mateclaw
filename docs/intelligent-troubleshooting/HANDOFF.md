@@ -387,6 +387,25 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
   Scenario Registry/Planning、DiscoveryPolicy、Loop Controller 或 Challenger。真 Guance 影响人数/
   BlastRadius 仍等待 T7 owner 配置与内网样本。
 
+P2 正式准入阶梯与真源耗时证据（2026-07-29）已通过代码级验证：
+
+- 正式工作台的“P2 真源门”现将 T6 唯一资产授权、T7 measurement/字段/同 PS ID 链路验收、
+  T8 20–30 条历史样本基线分别投影，按实时 Guance readiness 给出下一步动作；页面不再把 T8
+  样本数量误写进 T7，也不会把单次进程内观测伪装成 owner 验收。
+- Guance-only `log_search → log_trace_bundle` 验证报告新增每步和端到端的应用侧 round-trip，
+  作为后续 T8 取证 p50/p95 的同口径输入；它不宣称是 Guance 服务端 DQL 执行耗时，T7 仍需
+  owner 用真实返回字段或观测平台核实。报告边界只包含结构化计数、PS ID、证据引用、时间戳和
+  耗时，不包含 DQL、原始日志、搜索键、窗口或凭据。
+- 排障域 + Skill Manifest 后端 `332` 个测试、前端 `15` 个测试文件 / `120` 个测试全通过；
+  `vue-tsc --noEmit` 与直接 Vite 生产构建通过，构建完成 `6270` 个模块转换。
+- Standards / Spec 双轴最终复核均 PASS；审查中发现并修复“分别观测两个核心信号被误写成同
+  PS ID 链”和“应用侧 round-trip 被误写成服务端 DQL 执行耗时”两处 P2，最终无剩余 P0/P1/P2。
+- 后端已用最终工作树重启为 PID `80166` 并监听 `18088`；正式、Playbook、legacy 三个前端路由
+  均返回 200，未登录访问 Guance readiness 返回预期 401，未绕过 Workspace 权限。
+- 默认 Guance 适配器、资产授权表与 `fixtureMode` 均未放开；本机当前登录数据不接受历史默认
+  管理员凭据，因此本轮没有绕过权限、重置账号或伪造真实 T7/T8 运行结果。Scenario Registry/
+  Planning 继续等待真实样本门禁。
+
 后端定向测试命令：
 
 ```bash
