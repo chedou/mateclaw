@@ -16,7 +16,8 @@ import java.time.ZoneOffset;
 
 /** MyBatis implementation of the generationKey idempotency boundary. */
 @Component
-public class MybatisPlaybookCandidateStore implements PlaybookCandidateStore {
+public class MybatisPlaybookCandidateStore
+        implements PlaybookCandidateStore, PlaybookCandidateReader {
 
     private final TroubleshootingPlaybookCandidateMapper mapper;
     private final ObjectMapper objectMapper;
@@ -52,6 +53,24 @@ public class MybatisPlaybookCandidateStore implements PlaybookCandidateStore {
             }
             return new StoredCandidate(read(existing), false);
         }
+    }
+
+    @Override
+    public java.util.List<PlaybookKnowledgeRecord> list(long workspaceId, int limit) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
+        int capped = Math.min(Math.max(limit, 1), 200);
+        return mapper.selectList(
+                        new LambdaQueryWrapper<TroubleshootingPlaybookCandidateEntity>()
+                                .eq(TroubleshootingPlaybookCandidateEntity::getWorkspaceId,
+                                        workspaceId)
+                                .eq(TroubleshootingPlaybookCandidateEntity::getDeleted, 0)
+                                .orderByDesc(TroubleshootingPlaybookCandidateEntity::getId)
+                                .last("LIMIT " + capped))
+                .stream()
+                .map(this::read)
+                .toList();
     }
 
     private TroubleshootingPlaybookCandidateEntity entity(

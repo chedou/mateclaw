@@ -8,51 +8,99 @@
         </button>
         <span class="divider">/</span>
         <div>
-          <h1>SOP 管理</h1>
-          <p>确定性命中路的权威知识；新条目必须先以 candidate 注册。</p>
+          <h1>Playbook 与知识治理</h1>
+          <p>已批准 Playbook 驱动确定性命中；三类候选统一进入只读审阅台账。</p>
         </div>
       </div>
       <div class="top-actions">
-        <el-button :icon="Refresh" :loading="listLoading" @click="reload">刷新</el-button>
-        <el-button plain @click="synthesisOpen = true">无错误码证据预览</el-button>
-        <el-button type="primary" :icon="Plus" @click="openRegister">注册 SOP</el-button>
+        <el-button
+          :icon="Refresh"
+          :loading="activeDesk === 'registry' ? listLoading : reviewLoading"
+          @click="reload"
+        >刷新</el-button>
+        <template v-if="activeDesk === 'registry'">
+          <el-button plain @click="synthesisOpen = true">无错误码证据预览</el-button>
+          <el-button type="primary" :icon="Plus" @click="openRegister">注册候选</el-button>
+        </template>
       </div>
     </header>
 
-    <section class="filterbar" aria-label="SOP 筛选">
-      <el-select
-        v-model="statusFilter"
-        clearable
-        placeholder="全部状态"
-        style="width: 152px"
-        @change="loadList()"
-      >
-        <el-option
-          v-for="status in SOP_STATUSES"
-          :key="status"
-          :label="STATUS_LABEL[status]"
-          :value="status"
-        />
-      </el-select>
-      <el-input
-        v-model="systemFilter"
-        clearable
-        placeholder="按 system 精确筛选"
-        style="width: 220px"
-        @clear="loadList()"
-        @keyup.enter="loadList()"
-      />
-      <el-button @click="loadList()">查询</el-button>
-      <button v-if="statusFilter || systemFilter" class="clear-filter" type="button" @click="clearFilters">
-        清除筛选
-      </button>
-      <span class="registry-count">{{ rows.length }} 条路由</span>
-      <div class="lifecycle" aria-label="SOP 生命周期">
-        <span>candidate</span><i>→</i><span>approved</span><i>→</i><span>deprecated</span>
+    <section class="filterbar" aria-label="Playbook 工作区筛选">
+      <div class="desk-switch" role="tablist" aria-label="知识治理工作区">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeDesk === 'registry'"
+          :class="{ active: activeDesk === 'registry' }"
+          @click="activeDesk = 'registry'"
+        >生效路由 <b>{{ rows.length }}</b></button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeDesk === 'review'"
+          :class="{ active: activeDesk === 'review' }"
+          @click="activeDesk = 'review'"
+        >知识候选 <b>{{ knowledgeRows.length }}</b></button>
       </div>
+
+      <template v-if="activeDesk === 'registry'">
+        <span class="filter-separator" />
+        <el-select
+          v-model="statusFilter"
+          clearable
+          placeholder="全部状态"
+          style="width: 152px"
+          @change="loadList()"
+        >
+          <el-option
+            v-for="status in SOP_STATUSES"
+            :key="status"
+            :label="STATUS_LABEL[status]"
+            :value="status"
+          />
+        </el-select>
+        <el-input
+          v-model="systemFilter"
+          clearable
+          placeholder="按 system 精确筛选"
+          style="width: 220px"
+          @clear="loadList()"
+          @keyup.enter="loadList()"
+        />
+        <el-button @click="loadList()">查询</el-button>
+        <button
+          v-if="statusFilter || systemFilter"
+          class="clear-filter"
+          type="button"
+          @click="clearFilters"
+        >清除筛选</button>
+        <span class="registry-count">{{ rows.length }} 条路由</span>
+        <div class="lifecycle" aria-label="SOP 生命周期">
+          <span>candidate</span><i>→</i><span>qualification gate</span><i>→</i><span>approved version</span><i>→</i><span>deprecated</span>
+        </div>
+      </template>
+
+      <template v-else>
+        <span class="filter-separator" />
+        <el-select v-model="originFilter" clearable placeholder="全部来源" style="width: 180px">
+          <el-option label="证据生成" value="EVIDENCE_DERIVED" />
+          <el-option label="关闭结果沉淀" value="OUTCOME_BACKED" />
+          <el-option label="人工注册" value="MANUAL" />
+        </el-select>
+        <el-input
+          v-model="reviewQuery"
+          clearable
+          placeholder="搜索 selector、标题或来源"
+          style="width: 260px"
+        />
+        <span class="registry-count">{{ filteredKnowledgeRows.length }} 条候选</span>
+        <div class="lifecycle review-lifecycle" aria-label="知识审核生命周期">
+          <span>candidate</span><i>→</i><span>qualification gate</span><i>→</i><span>new version</span>
+        </div>
+      </template>
     </section>
 
-    <div class="workspace">
+    <div v-if="activeDesk === 'registry'" class="workspace">
       <section class="registry" aria-label="SOP 注册表">
         <el-table
           :data="rows"
@@ -175,24 +223,266 @@
             </section>
 
             <div class="review-action">
-              <template v-if="nextStatus">
+              <template v-if="selectedSop.status === 'candidate'">
                 <div>
-                  <strong>{{ nextStatus === 'approved' ? '审核后进入命中路' : '将当前版本退出命中路' }}</strong>
-                  <p v-if="nextStatus === 'approved'">
-                    状态只能前进；错误批准只能先标记过期，当前 API 尚不能为同一路由直接注册替代版。
-                  </p>
-                  <p v-else>
-                    标记后该路由将退出命中路；当前 API 尚不能为同一路由直接注册替代版。
-                  </p>
+                  <strong>晋升门禁尚未开放</strong>
+                  <p>先在“知识候选”核对来源、回放、owner 与版本替代条件；旧式 candidate → approved 按钮已停止暴露。</p>
+                </div>
+                <el-button disabled>等待资格门禁</el-button>
+              </template>
+              <template v-else-if="nextStatus === 'deprecated'">
+                <div>
+                  <strong>将当前版本退出命中路</strong>
+                  <p>标记后该路由将退出命中路；替代版本必须通过新的版本化晋升合同。</p>
                 </div>
                 <el-button
-                  :type="nextStatus === 'approved' ? 'primary' : 'danger'"
-                  :plain="nextStatus === 'deprecated'"
+                  type="danger"
+                  plain
                   :loading="statusUpdating"
                   @click="advanceStatus"
-                >{{ nextStatus === 'approved' ? '审核通过' : '标记过期' }}</el-button>
+                >标记过期</el-button>
               </template>
               <span v-else>生命周期已结束；该版本只保留审计记录。</span>
+            </div>
+          </div>
+        </Transition>
+      </aside>
+    </div>
+
+    <div v-else class="workspace review-workspace">
+      <section class="registry" aria-label="知识候选审阅队列">
+        <el-table
+          :data="filteredKnowledgeRows"
+          :aria-busy="reviewLoading"
+          row-key="key"
+          height="100%"
+          :row-class-name="reviewRowClassName"
+          @row-click="selectReview"
+        >
+          <el-table-column label="候选知识" min-width="230">
+            <template #default="{ row }">
+              <div class="review-title-cell">
+                <strong>{{ row.title }}</strong>
+                <span class="mono">{{ row.selector }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="来源" width="132">
+            <template #default="{ row }">
+              <el-tag :type="originTagType(row.origin)" size="small" effect="plain">
+                {{ originLabel(row.origin) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="审核状态" width="118">
+            <template #default="{ row }">
+              <span class="mono state-text">{{ reviewStatusLabel(row.reviewStatus) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="晋升资格" width="122">
+            <template #default="{ row }">
+              <span
+                class="eligibility"
+                :class="{ eligible: row.approvalEligibility === 'ELIGIBLE_FOR_APPROVAL' }"
+              ><i />{{ eligibilityLabel(row.approvalEligibility) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="来源记录" min-width="150">
+            <template #default="{ row }">
+              <span class="mono muted source-ref">{{ row.sourceRef }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="166">
+            <template #default="{ row }">
+              <span class="mono muted">{{ formatTime(row.createdAt) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="!reviewLoading && reviewUnavailable" class="review-unavailable" role="alert">
+          <div>
+            <strong>Review Inbox · UNAVAILABLE</strong>
+            <p>
+              {{ knowledgeRows.length
+                ? '无法刷新，当前继续展示上一次成功快照；请勿据此判断候选已清空。'
+                : '无法读取持久化候选；当前状态不是“零候选”。' }}
+            </p>
+          </div>
+          <el-button size="small" type="danger" plain @click="loadReviewInbox">重试</el-button>
+        </div>
+        <div v-else-if="!reviewLoading && !filteredKnowledgeRows.length" class="empty-state">
+          <strong>没有匹配的知识候选</strong>
+          <p>候选来自证据生成、关闭结果沉淀或人工注册；此页面不生成模拟记录。</p>
+        </div>
+      </section>
+
+      <aside
+        class="inspector review-inspector"
+        :class="{ 'is-loading': reviewLoading || manualDetailLoading }"
+        :aria-busy="reviewLoading || manualDetailLoading"
+        aria-label="知识候选详情检查器"
+      >
+        <div v-if="!selectedReview" class="inspector-empty">
+          <span class="empty-mark">K</span>
+          <strong>选择一条候选查看资格证据</strong>
+          <p>这里展示服务端真实持久化记录，不会把发布成功、模型输出或一次关闭误写成审批通过。</p>
+        </div>
+
+        <Transition v-else name="inspector" mode="out-in">
+          <div :key="selectedReview.key" class="inspector-body">
+            <div class="inspector-head">
+              <div>
+                <span class="eyebrow">{{ selectedReview.recordId }}</span>
+                <h2>{{ selectedReview.title }}</h2>
+                <div class="route-line">{{ selectedReview.selector }}</div>
+              </div>
+              <el-tag :type="originTagType(selectedReview.origin)" effect="plain">
+                {{ originLabel(selectedReview.origin) }}
+              </el-tag>
+            </div>
+
+            <el-alert
+              v-if="!selectedReview.reviewStatePersisted"
+              type="warning"
+              :closable="false"
+              title="该来源尚未迁移到独立 KnowledgeRecord 审核合同；页面只呈现事实，不推断审核状态。"
+            />
+            <el-alert
+              v-else-if="selectedReview.fixtureMode"
+              type="info"
+              :closable="false"
+              title="该证据草稿仍带 fixture 标记，只能用于校准与审阅，不能晋升为生产 Playbook。"
+            />
+
+            <dl class="metadata review-metadata">
+              <div><dt>origin</dt><dd class="mono">{{ selectedReview.origin }}</dd></div>
+              <div><dt>review</dt><dd class="mono">{{ selectedReview.reviewStatus || 'NOT_AVAILABLE' }}</dd></div>
+              <div><dt>validation</dt><dd class="mono">{{ selectedReview.validationStatus }}</dd></div>
+              <div><dt>eligibility</dt><dd class="mono">{{ selectedReview.approvalEligibility }}</dd></div>
+              <div><dt>service</dt><dd>{{ selectedReview.service || '合同未提供' }}</dd></div>
+              <div><dt>source</dt><dd class="mono">{{ selectedReview.sourceRef }}</dd></div>
+            </dl>
+
+            <section class="qualification-card">
+              <div class="section-title">
+                <span>资格门禁</span>
+                <el-tag type="danger" size="small" effect="plain">
+                  {{ eligibilityLabel(selectedReview.approvalEligibility) }}
+                </el-tag>
+              </div>
+              <ul class="gate-reasons">
+                <li v-for="reason in selectedReview.eligibilityReasons" :key="reason">
+                  <code>{{ reason }}</code>
+                  <span>{{ reviewReasonLabel(reason) }}</span>
+                </li>
+              </ul>
+            </section>
+
+            <section class="evidence-reference-card">
+              <div class="section-title">
+                <span>证据引用</span>
+                <span class="muted">{{ selectedReview.evidenceRefs.length }} 条</span>
+              </div>
+              <div v-if="selectedReview.evidenceRefs.length" class="reference-list">
+                <code v-for="reference in selectedReview.evidenceRefs" :key="reference">
+                  {{ reference }}
+                </code>
+              </div>
+              <p v-else class="empty-copy">当前读取合同没有可审计引用。</p>
+            </section>
+
+            <template v-if="selectedEvidenceRecord">
+              <section class="candidate-detail-card">
+                <div class="section-title"><span>证据生成草稿</span></div>
+                <div class="counts">
+                  <div><b>{{ selectedEvidenceRecord.draft.evidencePlan.length }}</b><span>取证步骤</span></div>
+                  <div><b>{{ selectedEvidenceRecord.draft.criteria.length }}</b><span>判据</span></div>
+                  <div><b>{{ selectedEvidenceRecord.draft.diagnosisHypotheses.length }}</b><span>根因假设</span></div>
+                  <div><b>{{ selectedEvidenceRecord.draft.humanActions.length }}</b><span>人工动作</span></div>
+                </div>
+                <ol v-if="selectedEvidenceRecord.draft.evidencePlan.length" class="draft-steps">
+                  <li v-for="step in selectedEvidenceRecord.draft.evidencePlan" :key="step.intentKey">
+                    <code>{{ step.signalKind }}</code>
+                    <span>{{ step.purpose }}</span>
+                    <small>{{ step.required ? 'required' : 'optional' }}</small>
+                  </li>
+                </ol>
+              </section>
+
+              <section class="candidate-detail-card">
+                <div class="section-title"><span>模型与参考解法</span></div>
+                <dl class="compact-facts">
+                  <div><dt>provider / model</dt><dd>{{ selectedEvidenceRecord.draft.modelProvenance.provider }} / {{ selectedEvidenceRecord.draft.modelProvenance.modelName }}</dd></div>
+                  <div><dt>config</dt><dd class="mono">{{ selectedEvidenceRecord.draft.modelProvenance.modelConfigVersion }}</dd></div>
+                  <div><dt>generated at</dt><dd class="mono">{{ formatTime(selectedEvidenceRecord.draft.modelProvenance.generatedAt) }}</dd></div>
+                  <div><dt>invocations</dt><dd>{{ selectedEvidenceRecord.draft.modelProvenance.invocationCount }}</dd></div>
+                  <div><dt>reference</dt><dd class="mono">{{ selectedEvidenceRecord.referenceComparison.referenceId }}</dd></div>
+                  <div><dt>intent coverage</dt><dd>{{ percent(selectedEvidenceRecord.referenceComparison.requiredIntentCoverage) }}</dd></div>
+                  <div><dt>reference verdict</dt><dd>{{ selectedEvidenceRecord.referenceComparison.passed ? 'PASS' : 'DELTA' }}</dd></div>
+                  <div><dt>contrast</dt><dd>{{ selectedEvidenceRecord.draft.contrastAvailable ? 'AVAILABLE' : 'UNAVAILABLE' }}</dd></div>
+                </dl>
+                <ul v-if="selectedComparisonIssues.length" class="reference-issues">
+                  <li
+                    v-for="issue in selectedComparisonIssues"
+                    :key="issue.code"
+                    :class="{ danger: issue.danger }"
+                  >
+                    <strong>{{ issue.label }}</strong>
+                    <code>{{ issue.items.join(' · ') }}</code>
+                  </li>
+                </ul>
+                <p v-else class="comparison-pass">结构化参考比较没有记录差异项。</p>
+              </section>
+            </template>
+
+            <template v-else-if="selectedOutcomeCandidate">
+              <section class="candidate-detail-card">
+                <div class="section-title"><span>关闭结果沉淀</span></div>
+                <p class="candidate-summary">{{ selectedOutcomeCandidate.resolutionSummary }}</p>
+                <p v-if="selectedOutcomeCandidate.feedback" class="candidate-feedback">
+                  SOP 反馈：{{ selectedOutcomeCandidate.feedback }}
+                </p>
+                <dl class="compact-facts">
+                  <div><dt>case / run</dt><dd class="mono">{{ selectedOutcomeCandidate.sourceCaseId }} / {{ selectedOutcomeCandidate.sourceRunId }}</dd></div>
+                  <div><dt>created by</dt><dd>{{ selectedOutcomeCandidate.createdBy }}</dd></div>
+                  <div><dt>recommended actions</dt><dd>{{ selectedOutcomeCandidate.recommendedActions.length }}</dd></div>
+                  <div><dt>recorded outcomes</dt><dd>{{ selectedOutcomeCandidate.actionOutcomes.length }}</dd></div>
+                </dl>
+              </section>
+            </template>
+
+            <template v-else-if="selectedManualSop">
+              <section class="candidate-detail-card">
+                <div class="section-title"><span>人工注册合同</span></div>
+                <dl class="compact-facts">
+                  <div><dt>title</dt><dd>{{ selectedManualSop.title }}</dd></div>
+                  <div><dt>owner</dt><dd>{{ selectedManualSop.ownerTeam || '未指定' }}</dd></div>
+                  <div><dt>contract</dt><dd class="mono">{{ selectedManualSop.contractVersion }}</dd></div>
+                  <div><dt>verified</dt><dd class="mono">{{ selectedManualSop.verified }}</dd></div>
+                </dl>
+                <div class="counts manual-counts">
+                  <div><b>{{ selectedManualSop.evidenceRequests.length }}</b><span>取证请求</span></div>
+                  <div><b>{{ selectedManualSop.anomalyCriteria.length }}</b><span>异常判据</span></div>
+                  <div><b>{{ selectedManualSop.diagnosisRules.length }}</b><span>诊断规则</span></div>
+                  <div><b>{{ selectedManualSop.actions.length }}</b><span>建议动作</span></div>
+                </div>
+              </section>
+            </template>
+
+            <section class="capability-boundary">
+              <strong>当前能力边界</strong>
+              <ul>
+                <li v-for="limit in reviewInbox.capabilityLimits" :key="limit">
+                  {{ reviewReasonLabel(limit) }}
+                </li>
+              </ul>
+            </section>
+
+            <div class="review-action locked-review-action">
+              <div>
+                <strong>只读审阅，不执行晋升</strong>
+                <p>只有资格计算、固定回放、乐观锁和 selector 唯一 active 版本全部落地后，才开放审核决策。</p>
+              </div>
+              <el-button disabled>批准不可用</el-button>
             </div>
           </div>
         </Transition>
@@ -251,11 +541,20 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { copyToClipboard } from '@/utils/clipboard'
 import {
   troubleshootingApi,
+  type KnowledgeOrigin,
+  type KnowledgeReviewInbox,
   type SopEntry,
   type SopStatus,
   type SopSummary,
 } from '@/api'
 import { nextSopStatus, parseCandidateSopJson } from './sopRegistry'
+import {
+  buildKnowledgeReviewRows,
+  filterKnowledgeReviewRows,
+  referenceComparisonIssues,
+  reviewReasonLabel,
+  type KnowledgeReviewRow,
+} from './knowledgeReview'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
@@ -283,6 +582,7 @@ const EMPTY_TEMPLATE = JSON.stringify({
 }, null, 2)
 
 const router = useRouter()
+const activeDesk = ref<'registry' | 'review'>('registry')
 const rows = ref<SopSummary[]>([])
 const selectedSop = ref<SopEntry | null>(null)
 const selectedRouteKey = ref<string | null>(null)
@@ -295,11 +595,44 @@ const registerOpen = ref(false)
 const synthesisOpen = ref(false)
 const registering = ref(false)
 const registerJson = ref(EMPTY_TEMPLATE)
+const reviewInbox = ref<KnowledgeReviewInbox>({
+  evidenceDerived: [],
+  outcomeBacked: [],
+  manual: [],
+  capabilityLimits: [],
+})
+const reviewLoading = ref(false)
+const reviewUnavailable = ref(false)
+const originFilter = ref<'' | KnowledgeOrigin>('')
+const reviewQuery = ref('')
+const selectedReviewKey = ref<string | null>(null)
+const selectedManualSop = ref<SopEntry | null>(null)
+const manualDetailLoading = ref(false)
 let detailRequest = 0
+let manualDetailRequest = 0
 
 const nextStatus = computed(() => selectedSop.value
   ? nextSopStatus(selectedSop.value.status)
   : null)
+
+const knowledgeRows = computed(() => buildKnowledgeReviewRows(reviewInbox.value))
+const filteredKnowledgeRows = computed(() => filterKnowledgeReviewRows(
+  knowledgeRows.value,
+  originFilter.value,
+  reviewQuery.value,
+))
+const selectedReview = computed(() => filteredKnowledgeRows.value.find(
+  (row) => row.key === selectedReviewKey.value,
+) ?? null)
+const selectedEvidenceRecord = computed(() => selectedReview.value?.source.kind === 'EVIDENCE_DERIVED'
+  ? selectedReview.value.source.record
+  : null)
+const selectedOutcomeCandidate = computed(() => selectedReview.value?.source.kind === 'OUTCOME_BACKED'
+  ? selectedReview.value.source.candidate
+  : null)
+const selectedComparisonIssues = computed(() => selectedEvidenceRecord.value
+  ? referenceComparisonIssues(selectedEvidenceRecord.value.referenceComparison)
+  : [])
 
 const prettyContract = computed(() => selectedSop.value
   ? JSON.stringify(selectedSop.value, null, 2)
@@ -349,6 +682,30 @@ async function loadList() {
   }
 }
 
+async function loadReviewInbox() {
+  reviewLoading.value = true
+  try {
+    const { data } = await troubleshootingApi.knowledgeReviewInbox({ limit: 200 })
+    reviewInbox.value = data ?? {
+      evidenceDerived: [], outcomeBacked: [], manual: [], capabilityLimits: [],
+    }
+    reviewUnavailable.value = false
+    const retained = knowledgeRows.value.find((row) => row.key === selectedReviewKey.value)
+    if (retained) return
+    const first = knowledgeRows.value[0]
+    if (first) {
+      await selectReview(first)
+    } else {
+      selectedReviewKey.value = null
+      selectedManualSop.value = null
+    }
+  } catch {
+    reviewUnavailable.value = true
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
 async function selectSop(row: SopSummary) {
   selectedRouteKey.value = row.routeKey
   const request = ++detailRequest
@@ -361,7 +718,31 @@ async function selectSop(row: SopSummary) {
   }
 }
 
+async function selectReview(row: KnowledgeReviewRow) {
+  selectedReviewKey.value = row.key
+  selectedManualSop.value = null
+  const request = ++manualDetailRequest
+  if (row.source.kind !== 'MANUAL') {
+    manualDetailLoading.value = false
+    return
+  }
+  manualDetailLoading.value = true
+  try {
+    const { data } = await troubleshootingApi.getSop(
+      row.source.summary.system,
+      row.source.summary.errorCode,
+    )
+    if (request === manualDetailRequest) selectedManualSop.value = data
+  } finally {
+    if (request === manualDetailRequest) manualDetailLoading.value = false
+  }
+}
+
 async function reload() {
+  if (activeDesk.value === 'review') {
+    await loadReviewInbox()
+    return
+  }
   await loadList()
   const row = rows.value.find((item) => item.routeKey === selectedRouteKey.value)
   if (row) await selectSop(row)
@@ -390,6 +771,7 @@ async function registerSop() {
     selectedRouteKey.value = `${data.system.toLowerCase()}:${data.errorCode}`
     selectedSop.value = data
     await loadList()
+    await loadReviewInbox()
     ElMessage.success(`已注册候选 SOP ${data.system}:${data.errorCode}`)
   } finally {
     registering.value = false
@@ -399,19 +781,14 @@ async function registerSop() {
 async function advanceStatus() {
   const sop = selectedSop.value
   const target = nextStatus.value
-  if (!sop || !target) return
-  const approving = target === 'approved'
-  const title = approving
-    ? `审核通过 ${sop.system}:${sop.errorCode}？`
-    : `标记 ${sop.system}:${sop.errorCode} 为过期？`
-  const message = approving
-    ? '通过后，该 SOP 会开始驱动未来故障的确定性结论。请确认取证、判据、规则和动作均已审核。'
-    : '过期后，该版本立即退出命中路且不能恢复；当前 API 尚不能为同一路由直接注册替代版。'
+  if (!sop || target !== 'deprecated') return
+  const title = `标记 ${sop.system}:${sop.errorCode} 为过期？`
+  const message = '过期后，该版本立即退出命中路且不能恢复；替代版本必须通过新的版本化晋升合同。'
   try {
     await ElMessageBox.confirm(message, title, {
-      confirmButtonText: approving ? '审核通过' : '标记过期',
+      confirmButtonText: '标记过期',
       cancelButtonText: '取消',
-      type: approving ? 'warning' : 'error',
+      type: 'error',
       customClass: 'sop-status-confirm',
     })
   } catch {
@@ -425,7 +802,7 @@ async function advanceStatus() {
     selectedSop.value = data
     statusFilter.value = ''
     await loadList()
-    ElMessage.success(approving ? 'SOP 已审核生效' : 'SOP 已标记过期')
+    ElMessage.success('SOP 已标记过期')
   } finally {
     statusUpdating.value = false
   }
@@ -440,6 +817,10 @@ function rowClassName({ row }: { row: SopSummary }) {
   return row.routeKey === selectedRouteKey.value ? 'selected-row' : ''
 }
 
+function reviewRowClassName({ row }: { row: KnowledgeReviewRow }) {
+  return row.key === selectedReviewKey.value ? 'selected-row' : ''
+}
+
 function statusTagType(status: SopStatus): 'warning' | 'success' | 'info' {
   if (status === 'candidate') return 'warning'
   if (status === 'approved') return 'success'
@@ -450,12 +831,41 @@ function statusLabel(status: SopStatus) {
   return STATUS_LABEL[status]
 }
 
+function originLabel(origin: KnowledgeOrigin) {
+  if (origin === 'EVIDENCE_DERIVED') return '证据生成'
+  if (origin === 'OUTCOME_BACKED') return '关闭沉淀'
+  return '人工注册'
+}
+
+function originTagType(origin: KnowledgeOrigin): 'primary' | 'success' | 'warning' {
+  if (origin === 'EVIDENCE_DERIVED') return 'primary'
+  if (origin === 'OUTCOME_BACKED') return 'success'
+  return 'warning'
+}
+
+function reviewStatusLabel(status: string | null) {
+  if (!status) return '尚无审核合同'
+  const labels: Record<string, string> = {
+    DRAFT: '草稿', CANDIDATE: '候选', IN_REVIEW: '审阅中',
+    APPROVED: '已批准', REJECTED: '已拒绝', DEPRECATED: '已过期',
+  }
+  return labels[status] ?? status
+}
+
+function eligibilityLabel(eligibility: string) {
+  return eligibility === 'ELIGIBLE_FOR_APPROVAL' ? '可申请批准' : '不可晋升'
+}
+
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`
+}
+
 function formatTime(value?: string | null) {
   if (!value) return '—'
   return value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19)
 }
 
-onMounted(loadList)
+onMounted(() => Promise.all([loadList(), loadReviewInbox()]))
 </script>
 
 <style scoped>
@@ -515,6 +925,27 @@ onMounted(loadList)
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-blank);
 }
+.desk-switch {
+  display: inline-flex; flex-shrink: 0; padding: 3px; gap: 2px;
+  border: 1px solid var(--el-border-color-lighter); border-radius: 7px;
+  background: var(--el-fill-color-light);
+}
+.desk-switch button {
+  min-height: 28px; padding: 4px 10px; border: 0; border-radius: 5px;
+  background: transparent; color: var(--el-text-color-secondary); cursor: pointer;
+  font: 600 11px/1.2 inherit;
+}
+.desk-switch button:hover { color: var(--el-text-color-primary); }
+.desk-switch button.active {
+  background: var(--el-bg-color); color: var(--el-color-primary);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--el-text-color-primary) 10%, transparent);
+}
+.desk-switch b {
+  display: inline-block; min-width: 17px; margin-left: 4px; padding: 1px 4px;
+  border-radius: 8px; background: var(--el-fill-color-dark); color: inherit;
+  font: 600 9.5px var(--mc-mono, monospace);
+}
+.filter-separator { width: 1px; height: 24px; margin: 0 3px; background: var(--el-border-color-lighter); }
 .clear-filter {
   border: 0; background: transparent; color: var(--el-text-color-secondary); cursor: pointer;
   font: inherit; font-size: 12px;
@@ -529,12 +960,27 @@ onMounted(loadList)
 .lifecycle i { color: var(--el-text-color-placeholder); font-style: normal; }
 
 .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(560px, 1fr) 430px; }
+.review-workspace { grid-template-columns: minmax(680px, 1fr) 480px; }
 .registry { min-width: 0; min-height: 0; position: relative; border-right: 1px solid var(--el-border-color-lighter); }
 .route-cell { display: flex; flex-direction: column; gap: 2px; }
 .route-cell strong { font: 600 12px var(--mc-mono, monospace); color: var(--el-text-color-primary); }
 .route-cell span { font: 10px var(--mc-mono, monospace); color: var(--el-text-color-placeholder); }
+.review-title-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.review-title-cell strong {
+  overflow: hidden; color: var(--el-text-color-primary); font-size: 11.5px;
+  font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
+}
+.review-title-cell span { color: var(--ts-signal); font-size: 10px; }
 .mono { font-family: var(--mc-mono, monospace); }
 .muted { color: var(--el-text-color-secondary); font-size: 10.5px; }
+.state-text { color: var(--el-text-color-regular); font-size: 10.5px; }
+.source-ref { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eligibility {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--el-color-danger); font-size: 10.5px;
+}
+.eligibility i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.eligibility.eligible { color: var(--el-color-success); }
 .operational { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 11px; }
 .operational i { width: 6px; height: 6px; border-radius: 50%; background: var(--el-text-color-placeholder); }
 .operational.live { color: var(--el-color-success); }
@@ -548,6 +994,15 @@ onMounted(loadList)
 }
 .empty-state p { margin: 6px 0 14px; font-size: 12px; color: var(--el-text-color-secondary); }
 .empty-state .el-button { pointer-events: auto; }
+.review-unavailable {
+  position: absolute; z-index: 4; top: 10px; right: 12px; left: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--el-color-danger) 40%, var(--el-border-color-lighter));
+  border-radius: 7px; background: color-mix(in srgb, var(--el-color-danger) 7%, var(--el-bg-color));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--el-text-color-primary) 8%, transparent);
+}
+.review-unavailable strong { color: var(--el-color-danger); font: 600 10.5px var(--mc-mono, monospace); }
+.review-unavailable p { margin: 3px 0 0; color: var(--el-text-color-regular); font-size: 10.5px; }
 
 .inspector {
   min-width: 0; overflow-y: auto;
@@ -572,6 +1027,7 @@ onMounted(loadList)
 .metadata div:nth-child(odd) { padding-right: 12px; }
 .metadata dt { color: var(--el-text-color-secondary); font: 10px var(--mc-mono, monospace); }
 .metadata dd { margin: 4px 0 0; font-size: 11.5px; color: var(--el-text-color-primary); }
+.review-metadata dd { overflow-wrap: anywhere; }
 .contract-health, .json-section { margin-top: 18px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; font-size: 12px; font-weight: 650; }
 .warning-count { color: var(--el-color-warning); font-size: 10.5px; font-weight: 500; }
@@ -603,6 +1059,64 @@ onMounted(loadList)
 .review-action strong { font-size: 12px; }
 .review-action p { margin: 3px 0 0; color: var(--el-text-color-secondary); font-size: 10.5px; line-height: 1.5; }
 .review-action > span { color: var(--el-text-color-secondary); font-size: 11px; }
+.qualification-card,
+.evidence-reference-card,
+.candidate-detail-card,
+.capability-boundary { margin-top: 18px; }
+.qualification-card {
+  padding: 12px; border: 1px solid color-mix(in srgb, var(--el-color-danger) 35%, var(--el-border-color-lighter));
+  border-radius: 7px; background: color-mix(in srgb, var(--el-color-danger) 5%, var(--el-bg-color));
+}
+.gate-reasons { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gate-reasons li { display: grid; gap: 3px; }
+.gate-reasons code { color: var(--el-color-danger); font: 9.5px var(--mc-mono, monospace); }
+.gate-reasons span { color: var(--el-text-color-regular); font-size: 10.5px; line-height: 1.55; }
+.reference-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.reference-list code {
+  padding: 4px 6px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px;
+  background: var(--el-bg-color); color: var(--el-text-color-regular);
+  font: 9.5px var(--mc-mono, monospace);
+}
+.empty-copy { margin: 0; color: var(--el-text-color-secondary); font-size: 10.5px; }
+.draft-steps { display: grid; gap: 7px; margin: 10px 0 0; padding: 0; list-style: none; }
+.draft-steps li {
+  display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 8px;
+  padding: 7px 8px; border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.draft-steps code { color: var(--ts-signal); font: 9.5px var(--mc-mono, monospace); }
+.draft-steps span { color: var(--el-text-color-regular); font-size: 10.5px; }
+.draft-steps small { color: var(--el-text-color-placeholder); font: 9px var(--mc-mono, monospace); }
+.compact-facts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; gap: 0 14px; }
+.compact-facts div { padding: 7px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.compact-facts dt { color: var(--el-text-color-secondary); font: 9.5px var(--mc-mono, monospace); }
+.compact-facts dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--el-text-color-primary); font-size: 10.5px; }
+.reference-issues { display: grid; gap: 7px; margin: 10px 0 0; padding: 0; list-style: none; }
+.reference-issues li {
+  display: grid; gap: 3px; padding: 8px 9px; border-left: 2px solid var(--el-color-warning);
+  background: color-mix(in srgb, var(--el-color-warning) 7%, var(--el-bg-color));
+}
+.reference-issues li.danger {
+  border-left-color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--el-color-danger) 7%, var(--el-bg-color));
+}
+.reference-issues strong { color: var(--el-text-color-regular); font-size: 10.5px; }
+.reference-issues code { overflow-wrap: anywhere; color: var(--el-text-color-secondary); font: 9.5px/1.5 var(--mc-mono, monospace); }
+.comparison-pass { margin: 9px 0 0; color: var(--el-color-success); font-size: 10.5px; }
+.candidate-summary { margin: 0; color: var(--el-text-color-primary); font-size: 11.5px; line-height: 1.65; }
+.candidate-feedback {
+  margin: 8px 0 0; padding: 8px 9px; border-left: 2px solid var(--ts-signal);
+  background: color-mix(in srgb, var(--ts-signal) 7%, var(--el-bg-color));
+  color: var(--el-text-color-regular); font-size: 10.5px; line-height: 1.55;
+}
+.manual-counts { margin-top: 10px; }
+.capability-boundary {
+  padding: 10px 11px; border-left: 2px solid var(--el-color-warning);
+  background: color-mix(in srgb, var(--el-color-warning) 8%, var(--el-bg-color));
+}
+.capability-boundary strong { color: var(--el-color-warning); font-size: 11px; }
+.capability-boundary ul { margin: 6px 0 0; padding-left: 17px; }
+.capability-boundary li { margin: 3px 0; color: var(--el-text-color-regular); font-size: 10.5px; line-height: 1.55; }
+.locked-review-action { align-items: flex-end; }
 .register-note { margin-bottom: 12px; }
 .register-note code, .validation code { font-family: var(--mc-mono, monospace); }
 .json-input :deep(textarea) { font-family: var(--mc-mono, monospace); font-size: 11px; line-height: 1.55; }

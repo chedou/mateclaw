@@ -9,12 +9,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
+import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisRequest;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
+import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 
@@ -27,6 +30,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,7 +43,8 @@ class SopSynthesisControllerTest {
         SopManagementController controller = new SopManagementController(
                 mock(TroubleshootingSopPersistenceService.class),
                 mock(TroubleshootingPersistenceService.class),
-                synthesis);
+                synthesis,
+                mock(PlaybookCandidateReader.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -78,6 +83,61 @@ class SopSynthesisControllerTest {
                 .isEqualTo("incident-message-send-001");
         assertThat(request.getValue().evidenceRequest().searchTerm())
                 .isEqualTo("message_send_failed");
+    }
+
+    @Test
+    void exposesAllPersistedCandidateLanesAsOneReadOnlyReviewInbox() throws Exception {
+        TroubleshootingPersistenceService persistence =
+                mock(TroubleshootingPersistenceService.class);
+        TroubleshootingSopPersistenceService sopPersistence =
+                mock(TroubleshootingSopPersistenceService.class);
+        PlaybookCandidateReader candidateReader = mock(PlaybookCandidateReader.class);
+        SopManagementController controller = new SopManagementController(
+                sopPersistence,
+                persistence,
+                mock(SopSynthesisService.class),
+                candidateReader);
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+        KnowledgeCandidate outcomeBacked = new KnowledgeCandidate(
+                "candidate-outcome-001",
+                KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                "diag-001", "case-001", "run-001",
+                "CSDP", "903001", "csdp:903001",
+                "Mongo connection pool exhausted",
+                List.of("LOG-SEARCH", "TRACE-BUNDLE"),
+                List.of(), List.of(),
+                "Recovered after the owner recycled the stale connection",
+                "retain the verification step", "owner-a",
+                Instant.parse("2026-07-20T09:20:00Z"));
+        when(candidateReader.list(7L, 12)).thenReturn(List.of());
+        when(persistence.listKnowledgeCandidates(7L, 12))
+                .thenReturn(List.of(outcomeBacked));
+        when(sopPersistence.list(7L, "candidate", null, 12)).thenReturn(List.of(
+                new SopSummary(
+                        "manual-sop-001", "csdp:903002", "CSDP", "903002",
+                        "session-svc", "candidate", false, false,
+                        java.time.LocalDateTime.parse("2026-07-20T09:10:00"),
+                        java.time.LocalDateTime.parse("2026-07-20T09:10:00"))));
+
+        mvc.perform(get("/api/v1/troubleshooting/sops/review-inbox")
+                        .header("X-Workspace-Id", "7")
+                        .param("limit", "12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.evidenceDerived").isArray())
+                .andExpect(jsonPath("$.data.outcomeBacked[0].candidateId")
+                        .value("candidate-outcome-001"))
+                .andExpect(jsonPath("$.data.manual[0].sopId")
+                        .value("manual-sop-001"))
+                .andExpect(jsonPath("$.data.capabilityLimits[0]")
+                        .value("REVIEW_DECISIONS_NOT_IMPLEMENTED"));
+
+        verify(candidateReader).list(7L, 12);
+        verify(persistence).listKnowledgeCandidates(7L, 12);
+        verify(sopPersistence).list(7L, "candidate", null, 12);
     }
 
     private PlaybookSynthesisResult abstained() {

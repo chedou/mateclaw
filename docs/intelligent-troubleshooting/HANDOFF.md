@@ -161,6 +161,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - `SopSynthesisService.generate()` 与 `POST /sops/synthesis/candidates`：幂等创建/复用只待审 candidate。
 - 独立 `reviewStatus=CANDIDATE` / `validationStatus=VALID`，且
   `approvalEligibility=NOT_ELIGIBLE`；不写 active approved Playbook。
+- **正式 Knowledge Review Inbox（2026-07-29）**：`GET /api/v1/troubleshooting/sops/review-inbox`
+  按 workspace 统一读取证据生成、关闭结果沉淀和人工注册三类真实候选；正式
+  `/troubleshooting/sops` 可按来源筛选并查看状态、资格缺口、证据引用、模型来源、参考解法和关闭结果。
+  `OUTCOME_BACKED` 与旧 `MANUAL` 尚未迁入独立 KnowledgeRecord，页面明确投影为
+  `NOT_EVALUATED / NOT_ELIGIBLE`，不把发布状态或 candidate 字段伪装成审核结论。旧式
+  candidate → approved 按钮已从正式页面撤下；Review Inbox 只读，T14 的审核状态机、来源资格计算、
+  乐观锁与 selector 单 active 新版本替换仍未完成。
 - H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。
@@ -183,7 +190,7 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   同时带 `observedAt`，每条引用都要通过 schema 且公共字段一致，任何引用缺失、混入非影响证据或相互
   矛盾都一律降级为 null/UNKNOWN。Intake 在路由、取证和持久化前统一脱敏影响文本。当前完成的是合同与
   信任边界，不代表真源已产出影响数据。
-- KnowledgeCandidate 与 Outbox 发布语义；尚无独立审核语义。
+- KnowledgeCandidate 与 Outbox 继续只表达发布语义；现已进入统一只读 Review Inbox，但尚无独立审核决策语义。
 - 三套只读 Demo 原型，均显式显示 Recorded Replay、MODEL_PROPOSED、MEDIUM、CANDIDATE。
 
 ### 尚未完成

@@ -1,11 +1,13 @@
 package vip.mate.troubleshooting.persistence;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -138,6 +140,42 @@ class MybatisPlaybookCandidateStoreTest {
 
         assertThat(result.created()).isFalse();
         assertThat(result.candidate()).isEqualTo(candidate());
+    }
+
+    @Test
+    void listsPersistedReviewCandidatesWithoutChangingTheirQualificationState()
+            throws Exception {
+        TroubleshootingPlaybookCandidateMapper mapper =
+                mock(TroubleshootingPlaybookCandidateMapper.class);
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        PlaybookKnowledgeRecord candidate = candidate();
+        TroubleshootingPlaybookCandidateEntity row =
+                new TroubleshootingPlaybookCandidateEntity();
+        row.setWorkspaceId(7L);
+        row.setRecordId(candidate.recordId());
+        row.setReviewStatus(candidate.reviewStatus());
+        row.setAggregateJson(objectMapper.writeValueAsString(candidate));
+        row.setDeleted(0);
+        when(mapper.selectList(any())).thenReturn(List.of(row));
+        MybatisPlaybookCandidateStore store = new MybatisPlaybookCandidateStore(
+                mapper, objectMapper);
+
+        List<PlaybookKnowledgeRecord> result = store.list(7L, 500);
+
+        assertThat(result).containsExactly(candidate);
+        assertThat(result.getFirst().reviewStatus()).isEqualTo("CANDIDATE");
+        assertThat(result.getFirst().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<TroubleshootingPlaybookCandidateEntity>> query =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(mapper).selectList(query.capture());
+        assertThat(query.getValue().getCustomSqlSegment())
+                .contains("workspace_id")
+                .contains("deleted")
+                .contains("ORDER BY id DESC")
+                .endsWith("LIMIT 200");
+        assertThat(query.getValue().getParamNameValuePairs().values())
+                .contains(7L, 0);
     }
 
     private PlaybookKnowledgeRecord candidate() {

@@ -1653,6 +1653,128 @@ export interface SopSummary {
   updateTime: string
 }
 
+export type KnowledgeOrigin = 'EVIDENCE_DERIVED' | 'OUTCOME_BACKED' | 'MANUAL'
+export type KnowledgeReviewStatus =
+  | 'DRAFT' | 'CANDIDATE' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEPRECATED'
+export type KnowledgeValidationStatus = 'VALID' | 'INVALID' | 'PENDING' | 'NOT_EVALUATED'
+export type KnowledgeApprovalEligibility = 'NOT_ELIGIBLE' | 'ELIGIBLE_FOR_APPROVAL'
+
+export interface PlaybookDraftSelector {
+  system: string
+  scenarioKey: string | null
+  errorCode: string | null
+}
+
+export interface PlaybookDraftModelProvenance {
+  provider: string
+  modelName: string
+  modelConfigVersion: string
+  draftContractVersion: string
+  generatedAt: string
+  invocationCount: number
+}
+
+export interface PlaybookDraft {
+  draftId: string
+  generationKey: string
+  sourceIncident: string | null
+  proposedType: 'ERROR_CODE' | 'SCENARIO'
+  proposedSelector: PlaybookDraftSelector
+  title: string
+  evidencePlan: Array<{
+    intentKey: string
+    signalKind: string
+    purpose: string
+    required: boolean
+  }>
+  criteria: Array<{
+    criterionKey: string
+    description: string
+    evidenceKinds: string[]
+    evidenceCitations: string[]
+  }>
+  diagnosisHypotheses: Array<{
+    hypothesisKey: string
+    summary: string
+    evidenceCitations: string[]
+  }>
+  humanActions: Array<{
+    intentKey: string
+    instruction: string
+    executionMode: string
+    evidenceCitations: string[]
+  }>
+  evidenceCitations: string[]
+  modelProvenance: PlaybookDraftModelProvenance
+  contrastAvailable: boolean
+  validationErrors: Array<{ code: string; fieldPath: string; message: string }>
+}
+
+export interface ReferenceSolutionComparison {
+  referenceId: string
+  passed: boolean
+  requiredIntentCoverage: number
+  missingStepIntents: string[]
+  forbiddenStepIntentsPresent: string[]
+  orderingViolations: string[]
+  missingEvidenceKinds: string[]
+}
+
+export interface PlaybookKnowledgeRecord {
+  recordId: string
+  draft: PlaybookDraft
+  origin: 'EVIDENCE_DERIVED'
+  reviewStatus: KnowledgeReviewStatus
+  validationStatus: KnowledgeValidationStatus
+  reviewer: string
+  reviewReason: string
+  evidenceBundleId: string
+  service: string
+  referenceComparison: ReferenceSolutionComparison
+  approvalEligibility: KnowledgeApprovalEligibility
+  eligibilityReasons: string[]
+  fixtureMode: boolean
+  timings: NorthStarTimings
+  createdAt: string
+}
+
+export interface KnowledgeActionOutcome {
+  outcomeId: string
+  actionId: string
+  outcome: ActionOutcomeStatus
+  notes: string
+  recoveryVerified: boolean
+  actor: string
+  recordedAt: string
+}
+
+export interface KnowledgeCandidate {
+  candidateId: string
+  contractVersion: string
+  sourceDiagnosisId: string
+  sourceCaseId: string
+  sourceRunId: string
+  system: string
+  errorCode: string | null
+  sopKey: string | null
+  rootCause: string
+  evidenceIds: string[]
+  recommendedActions: RecommendedAction[]
+  actionOutcomes: KnowledgeActionOutcome[]
+  resolutionSummary: string
+  feedback: string | null
+  createdBy: string
+  createdAt: string
+}
+
+/** Read-only knowledge governance projection; this endpoint cannot promote a candidate. */
+export interface KnowledgeReviewInbox {
+  evidenceDerived: PlaybookKnowledgeRecord[]
+  outcomeBacked: KnowledgeCandidate[]
+  manual: SopSummary[]
+  capabilityLimits: string[]
+}
+
 /** Shared bounded request shape for deterministic evidence-chain probes. */
 export interface EvidenceChainPreviewRequest {
   system: string
@@ -2523,6 +2645,10 @@ export const troubleshootingApi = {
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
+
+  /** Both persisted candidate lanes, with no review or promotion side effect. */
+  knowledgeReviewInbox: (params?: { limit?: number }) =>
+    http.get<KnowledgeReviewInbox>('/troubleshooting/sops/review-inbox', { params }),
 
   getSop: (system: string, errorCode: string) =>
     http.get<SopEntry>(

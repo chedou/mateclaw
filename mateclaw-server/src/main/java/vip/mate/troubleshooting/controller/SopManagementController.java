@@ -18,8 +18,10 @@ import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
-import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
+import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
+import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
@@ -50,6 +52,7 @@ public class SopManagementController {
     private final TroubleshootingSopPersistenceService sopPersistence;
     private final TroubleshootingPersistenceService persistence;
     private final SopSynthesisService synthesisService;
+    private final PlaybookCandidateReader candidateReader;
 
     /**
      * Previews the first three learning-loop stages without invoking a model or
@@ -84,6 +87,29 @@ public class SopManagementController {
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(synthesisService.generate(
                 resolveWorkspace(workspaceId), request.toDomainRequest()));
+    }
+
+    /**
+     * Unifies the three persisted candidate lanes for the knowledge review desk.
+     *
+     * <p>The response is intentionally read-only. The current evidence-derived
+     * records are fixture-confined and not eligible, while outcome-backed and
+     * legacy manual rows do not yet own an independent KnowledgeRecord review
+     * state. None may be promoted by this endpoint.</p>
+     */
+    @GetMapping("/review-inbox")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeReviewInbox> reviewInbox(
+            @RequestParam(required = false) Integer limit,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        long resolvedWorkspace = resolveWorkspace(workspaceId);
+        int resolvedLimit = limit == null ? DEFAULT_PAGE_SIZE : limit;
+        return R.ok(new KnowledgeReviewInbox(
+                candidateReader.list(resolvedWorkspace, resolvedLimit),
+                persistence.listKnowledgeCandidates(resolvedWorkspace, resolvedLimit),
+                sopPersistence.list(
+                        resolvedWorkspace, "candidate", null, resolvedLimit),
+                KnowledgeReviewInbox.CURRENT_CAPABILITY_LIMITS));
     }
 
     /**
