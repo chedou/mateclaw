@@ -157,11 +157,12 @@ public class SopManagementController {
     }
 
     /**
-     * Promotes or retires a SOP.
+     * Retires an approved SOP version.
      *
-     * <p>Approving is the moment unreviewed knowledge starts driving real
-     * conclusions, so it is an explicit, forward-only transition rather than a
-     * writable status field.</p>
+     * <p>The compatibility route deliberately rejects candidate approval.
+     * Promotion must later go through the source eligibility and versioned
+     * replacement command; a generic status mutation cannot make knowledge
+     * authoritative.</p>
      */
     @PostMapping("/{system}/{errorCode}/status")
     @RequireWorkspaceRole("admin")
@@ -191,7 +192,7 @@ public class SopManagementController {
                 resolveWorkspace(workspaceId), limit == null ? DEFAULT_PAGE_SIZE : limit));
     }
 
-    /** Target of a review decision: {@code approved} or {@code deprecated}. */
+    /** Compatibility status command; only {@code deprecated} is accepted. */
     public record StatusChange(@NotBlank String status) {}
 
     private long resolveWorkspace(Long workspaceId) {

@@ -96,6 +96,7 @@ class Vertical903001Test {
     private TroubleshootingIntakeService intake;
     private DiagnosisLifecycleService lifecycle;
     private TroubleshootingSopPersistenceService sopPersistence;
+    private ObjectMapper objectMapper;
 
     @BeforeAll
     static void initTableInfo() {
@@ -110,8 +111,7 @@ class Vertical903001Test {
 
     @BeforeEach
     void setUp() {
-        ObjectMapper objectMapper = new ObjectMapper()
-                .findAndRegisterModules();
+        objectMapper = new ObjectMapper().findAndRegisterModules();
 
         sopPersistence = new TroubleshootingSopPersistenceService(sopMapper(), objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
@@ -264,8 +264,22 @@ class Vertical903001Test {
     // ================= the 903001 knowledge entry =================
 
     private void registerApprovedSop() {
-        sopPersistence.register(WORKSPACE_ID, sop903001());
-        sopPersistence.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        SopEntry candidate = sop903001();
+        sopPersistence.register(WORKSPACE_ID, candidate);
+        SopEntry approved = new SopEntry(
+                candidate.sopId(), candidate.contractVersion(), candidate.system(),
+                candidate.errorCode(), candidate.service(), candidate.title(), candidate.cause(),
+                candidate.category(), candidate.ownerTeam(), "approved", true,
+                candidate.evidenceRequests(), candidate.anomalyCriteria(),
+                candidate.diagnosisRules(), candidate.actions());
+        TroubleshootingSopEntity row = sopRows.get(candidate.routingKey());
+        row.setStatus("approved");
+        row.setVerified(true);
+        try {
+            row.setAggregateJson(objectMapper.writeValueAsString(approved));
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
     }
 
     private SopEntry sop903001() {

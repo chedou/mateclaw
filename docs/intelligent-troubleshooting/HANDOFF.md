@@ -166,8 +166,10 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `/troubleshooting/sops` 可按来源筛选并查看状态、资格缺口、证据引用、模型来源、参考解法和关闭结果。
   `OUTCOME_BACKED` 与旧 `MANUAL` 尚未迁入独立 KnowledgeRecord，页面明确投影为
   `NOT_EVALUATED / NOT_ELIGIBLE`，不把发布状态或 candidate 字段伪装成审核结论。旧式
-  candidate → approved 按钮已从正式页面撤下；Review Inbox 只读，T14 的审核状态机、来源资格计算、
-  乐观锁与 selector 单 active 新版本替换仍未完成。
+  candidate → approved 按钮已从正式页面撤下；旧
+  `POST /sops/{system}/{errorCode}/status` 也已 fail closed 拒绝 `approved`，只保留现有 approved
+  版本的 `deprecated` 退役能力，不能从隐藏 API 绕过资格门禁。Review Inbox 仍只读，T14 的审核状态机、
+  来源资格计算、乐观锁与 selector 单 active 新版本替换仍未完成。
 - H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。

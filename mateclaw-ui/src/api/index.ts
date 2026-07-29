@@ -2659,8 +2659,8 @@ export const troubleshootingApi = {
   registerSop: (data: SopEntry) =>
     http.post<SopEntry>('/troubleshooting/sops', data),
 
-  /** Forward-only review transition: candidate -> approved -> deprecated. */
-  updateSopStatus: (system: string, errorCode: string, status: Exclude<SopStatus, 'candidate'>) =>
+  /** Compatibility transition: only retires an already approved version. */
+  updateSopStatus: (system: string, errorCode: string, status: 'deprecated') =>
     http.post<SopEntry>(
       `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}/status`,
       { status },

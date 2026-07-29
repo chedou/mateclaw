@@ -99,18 +99,13 @@ public class TroubleshootingSopPersistenceService {
     }
 
     /**
-     * Moves a SOP along its review lifecycle.
+     * Retires an already approved SOP version.
      *
-     * <p>Only {@code candidate → approved} and {@code approved → deprecated},
-     * and only forwards. The deterministic path acts on an approved SOP without
-     * a human in the loop, so promotion has to be a deliberate review decision
-     * rather than a flag anyone can flip back and forth. Deprecation leaves the
-     * review trail intact; publishing a replacement for the same route requires
-     * a separate version model because the current registry keeps route keys unique.</p>
-     *
-     * <p>Approving also sets {@code verified}, because {@link SopEntry#operational()}
-     * requires both — a half-promoted SOP would keep abstaining while looking
-     * approved, which is the most confusing failure available here.</p>
+     * <p>The legacy endpoint used to allow {@code candidate → approved} by
+     * flipping this aggregate in place. That bypasses origin-specific
+     * eligibility, fixed replay, optimistic review and the v4 invariant that
+     * approval creates a new version. Until that promotion command exists,
+     * candidate approval fails closed here as well as in the UI.</p>
      */
     @Transactional
     public SopEntry updateStatus(
@@ -122,13 +117,17 @@ public class TroubleshootingSopPersistenceService {
                     "no SOP registered for " + system + ":" + errorCode);
         }
         String target = targetStatus == null ? "" : targetStatus.trim().toLowerCase(Locale.ROOT);
-        boolean legal = ("approved".equals(target) && "candidate".equals(current.status()))
-                || ("deprecated".equals(target) && "approved".equals(current.status()));
+        if ("approved".equals(target)) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_promotion_gate_required", 409,
+                    "candidate approval requires the eligibility gate and must create a new version");
+        }
+        boolean legal = "deprecated".equals(target) && "approved".equals(current.status());
         if (!legal) {
             throw new MateClawException(
                     "err.troubleshooting.sop_status_transition", 409,
                     "illegal SOP transition " + current.status() + " -> " + target
-                            + "; only candidate->approved and approved->deprecated are allowed");
+                            + "; the legacy endpoint only allows approved->deprecated");
         }
 
         SopEntry updated = new SopEntry(

@@ -19,6 +19,8 @@ import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingSopEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingSopMapper;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,7 @@ class SopLifecycleTest {
     private static final long WORKSPACE_ID = 1L;
 
     private final Map<String, TroubleshootingSopEntity> rows = new LinkedHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private TroubleshootingSopPersistenceService service;
 
     @BeforeAll
@@ -54,8 +57,7 @@ class SopLifecycleTest {
 
     @BeforeEach
     void setUp() {
-        service = new TroubleshootingSopPersistenceService(
-                sopMapper(), new ObjectMapper().findAndRegisterModules());
+        service = new TroubleshootingSopPersistenceService(sopMapper(), objectMapper);
     }
 
     @Test
@@ -95,25 +97,23 @@ class SopLifecycleTest {
     }
 
     @Test
-    void approvingMakesTheSopOperational() {
+    void refusesLegacyApprovalThatBypassesEligibilityAndVersionGates() {
         service.register(WORKSPACE_ID, sop("candidate", false));
 
-        SopEntry approved = service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        assertThatThrownBy(() ->
+                service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved"))
+                .as("legacy status mutation must not bypass source eligibility, replay, "
+                        + "optimistic locking, or new-version promotion")
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("eligibility gate")
+                .hasMessageContaining("new version");
 
-        assertThat(approved.status()).isEqualTo("approved");
-        assertThat(approved.verified())
-                .as("operational() needs both, so approving must set verified too")
-                .isTrue();
-        assertThat(approved.operational()).isTrue();
-        assertThat(service.find(WORKSPACE_ID, "CSDP", "903001").operational())
-                .as("and it must survive the serialization round-trip")
-                .isTrue();
+        assertThat(service.find(WORKSPACE_ID, "CSDP", "903001").operational()).isFalse();
     }
 
     @Test
     void refusesToDemoteAnApprovedSopBackToCandidate() {
-        service.register(WORKSPACE_ID, sop("candidate", false));
-        service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        seedApprovedSop();
 
         assertThatThrownBy(() ->
                 service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "candidate"))
@@ -135,8 +135,7 @@ class SopLifecycleTest {
 
     @Test
     void deprecatingRetiresAnApprovedSopFromTheDeterministicPath() {
-        service.register(WORKSPACE_ID, sop("candidate", false));
-        service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        seedApprovedSop();
 
         SopEntry retired = service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "deprecated");
 
@@ -153,8 +152,7 @@ class SopLifecycleTest {
 
     @Test
     void listsWhatIsOperationalSoAReviewerCanSeeWhatIsLive() {
-        service.register(WORKSPACE_ID, sop("candidate", false));
-        service.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        seedApprovedSop();
 
         List<SopSummary> all = service.list(WORKSPACE_ID, null, null, 50);
 
@@ -176,6 +174,33 @@ class SopLifecycleTest {
                 List.of(new DiagnosisRule("R-a", List.of("error_present"),
                         "Mongo 连接池打满", "连接可用数归零", Confidence.HIGH, false)),
                 List.of());
+    }
+
+    /** Existing approved rows predate the versioned promotion command. */
+    private void seedApprovedSop() {
+        SopEntry approved = sop("approved", true);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        TroubleshootingSopEntity entity = new TroubleshootingSopEntity();
+        entity.setId(1L);
+        entity.setWorkspaceId(WORKSPACE_ID);
+        entity.setSopId(approved.sopId());
+        entity.setRouteKey(approved.routingKey());
+        entity.setSystem(approved.system());
+        entity.setErrorCode(approved.errorCode());
+        entity.setService(approved.service());
+        entity.setStatus(approved.status());
+        entity.setVerified(approved.verified());
+        entity.setContractVersion(approved.contractVersion());
+        try {
+            entity.setAggregateJson(objectMapper.writeValueAsString(approved));
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+        entity.setVersion(0);
+        entity.setDeleted(0);
+        entity.setCreateTime(now);
+        entity.setUpdateTime(now);
+        rows.put(entity.getRouteKey(), entity);
     }
 
     private TroubleshootingSopMapper sopMapper() {

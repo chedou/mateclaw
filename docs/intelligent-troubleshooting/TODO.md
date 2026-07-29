@@ -350,6 +350,9 @@ Challenger 影子运行和两者对比仍未实现。
       关闭候选和旧人工候选没有独立审核合同，必须显式显示 `NOT_EVALUATED / NOT_ELIGIBLE`，不得由前端
       猜成已审核。旧式 candidate → approved 按钮已从正式页面撤下；本项只补审阅台账，不代表下面的
       状态机、资格计算或版本替换完成（2026-07-29）。
+- [x] 旧 `POST /sops/{system}/{errorCode}/status` 已拒绝 `candidate → approved`，只允许既有
+      approved 版本退役为 deprecated；页面隐藏按钮不再是唯一防线，资格与新版本晋升合同完成前服务端
+      保持 fail closed（2026-07-29）。
 - [ ] 新建/扩展审核状态：DRAFT → CANDIDATE → IN_REVIEW → APPROVED/REJECTED → DEPRECATED。
 - [ ] EVIDENCE_DERIVED / OUTCOME_BACKED / MANUAL 分别按 v4 的最低证据计算晋升资格。
 - [ ] 审核记录 reviewer、reason、validation summary、reference comparison 和模型版本。
