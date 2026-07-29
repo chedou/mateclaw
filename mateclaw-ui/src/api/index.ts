@@ -1769,6 +1769,7 @@ export interface KnowledgeCandidate {
 
 export interface KnowledgeReviewSnapshot {
   validationStatus: KnowledgeValidationStatus
+  qualificationPhase: 'CALIBRATION' | 'RUNTIME' | 'NOT_APPLICABLE' | 'UNKNOWN'
   validationErrors: PlaybookDraft['validationErrors']
   referenceComparison: ReferenceSolutionComparison | null
   modelConfigVersion: string | null
@@ -1791,6 +1792,14 @@ export interface KnowledgeReviewState {
   updatedAt: string
 }
 
+/** Current server-computed qualification for one exact persisted source row. */
+export interface KnowledgeReviewSourceState {
+  origin: KnowledgeOrigin
+  sourceRecordId: string
+  selectorKey: string | null
+  snapshot: KnowledgeReviewSnapshot
+}
+
 export interface KnowledgeReviewDecisionRequest {
   expectedVersion: number
   reason: string
@@ -1801,6 +1810,7 @@ export interface KnowledgeReviewInbox {
   evidenceDerived: PlaybookKnowledgeRecord[]
   outcomeBacked: KnowledgeCandidate[]
   manual: SopSummary[]
+  sourceStates: KnowledgeReviewSourceState[]
   reviewStates: KnowledgeReviewState[]
   capabilityLimits: string[]
 }

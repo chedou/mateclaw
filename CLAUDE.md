@@ -29,8 +29,13 @@ V184 增加当前 Guance binding 的不可变 T7 owner 验收：只有 Workspace
 都在任何源调用前强制要求当前指纹已验收。默认环境仍没有真实验收记录，不能将该接缝写成 T7 已通过。
 V185 新增 workspace 隔离的知识审核台账：正式 Review Inbox 按当前三类来源的精确来源键加载状态，
 无记录为 `CANDIDATE/v0`，可开始审阅为 `IN_REVIEW/v1`、按乐观版本拒绝为 `REJECTED/v2`，并冻结
-脱敏的来源快照、服务端登录主体和理由。旧 candidate 直升 approved 已 fail closed；分来源资格计算、
-新版本替换以及 `APPROVED / DEPRECATED` 后半状态机仍未完成。
+脱敏的来源快照、服务端登录主体和理由。Review Inbox 现同时返回每条来源的服务端当前资格投影：
+`EVIDENCE_DERIVED` 显式处于默认 `CALIBRATION` 档，从 draft 校验、参考比较、引用与 fixture 计算缺口，
+且不会把 candidate 生成成功冒充正例回放；`MANUAL` 对完整 SOP 合同执行证据请求/判据/规则交叉引用校验，
+同时保留版本化 selector 唯一性证明缺口；`OUTCOME_BACKED` 明确暴露当前候选合同尚不能证明
+ClosureRecord / 恢复验证。浏览器不再自行拼装来源资格。旧 candidate 直升 approved 已 fail closed；
+真实回放/owner/outcome 证明、数据驱动的 `RUNTIME` 档切换、新版本替换以及
+`APPROVED / DEPRECATED` 后半状态机仍未完成。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
 有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
 不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确

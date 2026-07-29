@@ -10,6 +10,7 @@ import java.util.List;
  */
 public record KnowledgeReviewSnapshot(
         String validationStatus,
+        KnowledgeQualificationPhase qualificationPhase,
         List<PlaybookDraft.ValidationError> validationErrors,
         ReferenceSolutionComparator.Comparison referenceComparison,
         String modelConfigVersion,
@@ -24,6 +25,9 @@ public record KnowledgeReviewSnapshot(
         if (approvalEligibility == null || approvalEligibility.isBlank()) {
             throw new IllegalArgumentException("approvalEligibility is required");
         }
+        qualificationPhase = qualificationPhase == null
+                ? KnowledgeQualificationPhase.UNKNOWN
+                : qualificationPhase;
         validationErrors = List.copyOf(
                 validationErrors == null ? List.of() : validationErrors);
         eligibilityReasons = List.copyOf(

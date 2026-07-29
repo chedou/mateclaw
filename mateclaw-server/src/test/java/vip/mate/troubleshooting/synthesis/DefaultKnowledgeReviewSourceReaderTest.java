@@ -45,7 +45,11 @@ class DefaultKnowledgeReviewSourceReaderTest {
         assertThat(source.snapshot().modelConfigVersion()).isEqualTo("7:v1");
         assertThat(source.snapshot().fixtureMode()).isTrue();
         assertThat(source.snapshot().eligibilityReasons())
-                .containsExactly("P1_CALIBRATION_PERIOD");
+                .containsExactly(
+                        "OWNER_REQUIRED",
+                        "POSITIVE_REPLAY_REQUIRED",
+                        "NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED",
+                        "FIXTURE_ONLY");
         verify(evidence).find(7L, "record-1");
     }
 
@@ -71,7 +75,10 @@ class DefaultKnowledgeReviewSourceReaderTest {
         assertThat(source.snapshot().fixtureMode()).isNull();
         assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
         assertThat(source.snapshot().eligibilityReasons())
-                .containsExactly("OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED");
+                .containsExactly(
+                        "OUTCOME_VERIFICATION_NOT_PROJECTED",
+                        "POSITIVE_REPLAY_REQUIRED",
+                        "OWNER_REQUIRED");
     }
 
     @Test
@@ -89,9 +96,11 @@ class DefaultKnowledgeReviewSourceReaderTest {
                 7L, KnowledgeOrigin.MANUAL, "sop-1").orElseThrow();
 
         assertThat(source.selectorKey()).isEqualTo("csdp:903002");
-        assertThat(source.snapshot().validationStatus()).isEqualTo("NOT_EVALUATED");
+        assertThat(source.snapshot().validationStatus()).isEqualTo("VALID");
         assertThat(source.snapshot().eligibilityReasons())
-                .containsExactly("MANUAL_ELIGIBILITY_GATE_NOT_IMPLEMENTED");
+                .containsExactly(
+                        "VERSIONED_SELECTOR_UNIQUENESS_REQUIRED",
+                        "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
     }
 
     @Test

@@ -17,12 +17,14 @@ import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewInboxService;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewQualificationPolicy;
+import vip.mate.troubleshooting.synthesis.KnowledgeQualificationPhase;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisRequest;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
-import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewSnapshot;
-import vip.mate.troubleshooting.synthesis.KnowledgeReviewSourceKey;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewStatus;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
@@ -34,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -53,7 +54,7 @@ class SopSynthesisControllerTest {
                 mock(TroubleshootingSopPersistenceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 synthesis,
-                mock(PlaybookCandidateReader.class),
+                mock(KnowledgeReviewInboxService.class),
                 mock(KnowledgeReviewWorkflowService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -101,14 +102,15 @@ class SopSynthesisControllerTest {
                 mock(TroubleshootingPersistenceService.class);
         TroubleshootingSopPersistenceService sopPersistence =
                 mock(TroubleshootingSopPersistenceService.class);
-        PlaybookCandidateReader candidateReader = mock(PlaybookCandidateReader.class);
+        KnowledgeReviewInboxService inboxService =
+                mock(KnowledgeReviewInboxService.class);
         KnowledgeReviewWorkflowService reviews =
                 mock(KnowledgeReviewWorkflowService.class);
         SopManagementController controller = new SopManagementController(
                 sopPersistence,
                 persistence,
                 mock(SopSynthesisService.class),
-                candidateReader,
+                inboxService,
                 reviews);
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -126,17 +128,19 @@ class SopSynthesisControllerTest {
                 "Recovered after the owner recycled the stale connection",
                 "retain the verification step", "owner-a",
                 Instant.parse("2026-07-20T09:20:00Z"));
-        when(candidateReader.list(7L, 12)).thenReturn(List.of());
-        when(persistence.listKnowledgeCandidates(7L, 12))
-                .thenReturn(List.of(outcomeBacked));
-        when(sopPersistence.list(7L, "candidate", null, 12)).thenReturn(List.of(
-                new SopSummary(
-                        "manual-sop-001", "csdp:903002", "CSDP", "903002",
-                        "session-svc", "candidate", false, false,
-                        java.time.LocalDateTime.parse("2026-07-20T09:10:00"),
-                        java.time.LocalDateTime.parse("2026-07-20T09:10:00"))));
-        when(reviews.listForSources(eq(7L), anyList()))
-                .thenReturn(List.of(reviewState()));
+        SopSummary manual = new SopSummary(
+                "manual-sop-001", "csdp:903002", "CSDP", "903002",
+                "session-svc", "candidate", false, false,
+                java.time.LocalDateTime.parse("2026-07-20T09:10:00"),
+                java.time.LocalDateTime.parse("2026-07-20T09:10:00"));
+        when(inboxService.read(7L, 12)).thenReturn(new KnowledgeReviewInbox(
+                List.of(),
+                List.of(outcomeBacked),
+                List.of(manual),
+                List.of(new KnowledgeReviewQualificationPolicy()
+                        .outcome(outcomeBacked)),
+                List.of(reviewState()),
+                KnowledgeReviewInbox.CURRENT_CAPABILITY_LIMITS));
 
         mvc.perform(get("/api/v1/troubleshooting/sops/review-inbox")
                         .header("X-Workspace-Id", "7")
@@ -147,6 +151,9 @@ class SopSynthesisControllerTest {
                         .value("candidate-outcome-001"))
                 .andExpect(jsonPath("$.data.manual[0].sopId")
                         .value("manual-sop-001"))
+                .andExpect(jsonPath("$.data.sourceStates[0].snapshot"
+                                + ".eligibilityReasons[0]")
+                        .value("OUTCOME_VERIFICATION_NOT_PROJECTED"))
                 .andExpect(jsonPath("$.data.reviewStates[0].sourceRecordId")
                         .value("candidate-outcome-001"))
                 .andExpect(jsonPath("$.data.reviewStates[0].status")
@@ -154,18 +161,7 @@ class SopSynthesisControllerTest {
                 .andExpect(jsonPath("$.data.capabilityLimits[0]")
                         .value("REVIEW_START_AND_REJECT_ONLY"));
 
-        verify(candidateReader).list(7L, 12);
-        verify(persistence).listKnowledgeCandidates(7L, 12);
-        verify(sopPersistence).list(7L, "candidate", null, 12);
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<KnowledgeReviewSourceKey>> sourceKeys =
-                ArgumentCaptor.forClass(List.class);
-        verify(reviews).listForSources(eq(7L), sourceKeys.capture());
-        assertThat(sourceKeys.getValue()).containsExactly(
-                new KnowledgeReviewSourceKey(
-                        KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001"),
-                new KnowledgeReviewSourceKey(
-                        KnowledgeOrigin.MANUAL, "manual-sop-001"));
+        verify(inboxService).read(7L, 12);
     }
 
     @Test
@@ -176,7 +172,7 @@ class SopSynthesisControllerTest {
                 mock(TroubleshootingSopPersistenceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 mock(SopSynthesisService.class),
-                mock(PlaybookCandidateReader.class),
+                mock(KnowledgeReviewInboxService.class),
                 reviews);
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -244,7 +240,9 @@ class SopSynthesisControllerTest {
                 "reviewer-a",
                 "核对关闭结果",
                 new KnowledgeReviewSnapshot(
-                        "NOT_EVALUATED", List.of(), null, null,
+                        "NOT_EVALUATED",
+                        KnowledgeQualificationPhase.NOT_APPLICABLE,
+                        List.of(), null, null,
                         "NOT_ELIGIBLE",
                         List.of("OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED"),
                         null),

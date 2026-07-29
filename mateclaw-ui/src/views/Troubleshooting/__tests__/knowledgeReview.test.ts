@@ -94,6 +94,7 @@ const inbox: KnowledgeReviewInbox = {
     reason: '核对关闭结果与证据引用',
     snapshot: {
       validationStatus: 'NOT_EVALUATED',
+      qualificationPhase: 'UNKNOWN',
       validationErrors: [],
       referenceComparison: null,
       modelConfigVersion: null,
@@ -104,6 +105,66 @@ const inbox: KnowledgeReviewInbox = {
     version: 1,
     createdAt: '2026-07-20T09:21:00Z',
     updatedAt: '2026-07-20T09:21:00Z',
+  }],
+  sourceStates: [{
+    origin: 'EVIDENCE_DERIVED',
+    sourceRecordId: 'candidate-evidence-001',
+    selectorKey: 'csdp:scenario:message_send_failed',
+    snapshot: {
+      validationStatus: 'VALID',
+      qualificationPhase: 'CALIBRATION',
+      validationErrors: [],
+      referenceComparison: {
+        referenceId: 'reference/v1', passed: false, requiredIntentCoverage: 0.5,
+        missingStepIntents: ['compare_success_sample'],
+        forbiddenStepIntentsPresent: [], orderingViolations: [], missingEvidenceKinds: [],
+      },
+      modelConfigVersion: '7:v1',
+      approvalEligibility: 'NOT_ELIGIBLE',
+      eligibilityReasons: [
+        'REFERENCE_SOLUTION_DELTA',
+        'OWNER_REQUIRED',
+        'POSITIVE_REPLAY_REQUIRED',
+        'NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED',
+        'FIXTURE_ONLY',
+      ],
+      fixtureMode: true,
+    },
+  }, {
+    origin: 'OUTCOME_BACKED',
+    sourceRecordId: 'candidate-outcome-001',
+    selectorKey: 'csdp:903001',
+    snapshot: {
+      validationStatus: 'NOT_EVALUATED',
+      qualificationPhase: 'NOT_APPLICABLE',
+      validationErrors: [],
+      referenceComparison: null,
+      modelConfigVersion: null,
+      approvalEligibility: 'NOT_ELIGIBLE',
+      eligibilityReasons: [
+        'OUTCOME_VERIFICATION_NOT_PROJECTED',
+        'POSITIVE_REPLAY_REQUIRED',
+        'OWNER_REQUIRED',
+      ],
+      fixtureMode: null,
+    },
+  }, {
+    origin: 'MANUAL',
+    sourceRecordId: 'manual-sop-001',
+    selectorKey: 'csdp:903002',
+    snapshot: {
+      validationStatus: 'VALID',
+      qualificationPhase: 'NOT_APPLICABLE',
+      validationErrors: [],
+      referenceComparison: null,
+      modelConfigVersion: null,
+      approvalEligibility: 'NOT_ELIGIBLE',
+      eligibilityReasons: [
+        'VERSIONED_SELECTOR_UNIQUENESS_REQUIRED',
+        'POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED',
+      ],
+      fixtureMode: null,
+    },
   }],
   capabilityLimits: [
     'REVIEW_START_AND_REJECT_ONLY',
@@ -128,10 +189,14 @@ describe('knowledge review projection', () => {
       validationStatus: 'NOT_EVALUATED',
       approvalEligibility: 'NOT_ELIGIBLE',
       reviewStatePersisted: true,
-      selector: 'CSDP:903001',
+      selector: 'csdp:903001',
     })
     expect(rows[0].reviewState?.reason).toContain('核对关闭结果')
-    expect(rows[0].eligibilityReasons).toContain('OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED')
+    expect(rows[0].eligibilityReasons).toEqual([
+      'OUTCOME_VERIFICATION_NOT_PROJECTED',
+      'POSITIVE_REPLAY_REQUIRED',
+      'OWNER_REQUIRED',
+    ])
     expect(rows[1]).toMatchObject({
       origin: 'EVIDENCE_DERIVED',
       reviewStatus: 'CANDIDATE',
@@ -139,18 +204,37 @@ describe('knowledge review projection', () => {
       validationStatus: 'VALID',
       fixtureMode: true,
       reviewStatePersisted: false,
+      selector: 'csdp:scenario:message_send_failed',
     })
     expect(rows[1].eligibilityReasons).toEqual([
-      'P1_CALIBRATION_PERIOD', 'CONTRAST_UNAVAILABLE',
+      'REFERENCE_SOLUTION_DELTA',
+      'OWNER_REQUIRED',
+      'POSITIVE_REPLAY_REQUIRED',
+      'NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED',
+      'FIXTURE_ONLY',
     ])
     expect(rows[2]).toMatchObject({
       origin: 'MANUAL',
       reviewStatus: 'CANDIDATE',
       reviewVersion: 0,
-      validationStatus: 'NOT_EVALUATED',
+      validationStatus: 'VALID',
       reviewStatePersisted: false,
-      selector: 'CSDP:903002',
+      selector: 'csdp:903002',
     })
+  })
+
+  it('fails closed instead of rebuilding a selector when its server state is missing', () => {
+    const rows = buildKnowledgeReviewRows({
+      ...inbox,
+      sourceStates: inbox.sourceStates.filter(
+        (state) => state.origin !== 'OUTCOME_BACKED',
+      ),
+    })
+    const outcome = rows.find((row) => row.origin === 'OUTCOME_BACKED')
+
+    expect(outcome?.selector).toBe('服务端未返回 selector')
+    expect(outcome?.approvalEligibility).toBe('NOT_ELIGIBLE')
+    expect(outcome?.eligibilityReasons).toEqual(['SOURCE_QUALIFICATION_MISSING'])
   })
 
   it('filters by origin and searches source, selector and title', () => {
@@ -169,7 +253,8 @@ describe('knowledge review projection', () => {
   it('renders machine reasons as explicit Chinese gate conditions', () => {
     expect(reviewReasonLabel('P1_CALIBRATION_PERIOD')).toContain('校准期')
     expect(reviewReasonLabel('REVIEW_START_AND_REJECT_ONLY')).toContain('开始审阅和拒绝')
-    expect(reviewReasonLabel('OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED')).toContain('关闭结果')
+    expect(reviewReasonLabel('OUTCOME_VERIFICATION_NOT_PROJECTED')).toContain('关闭结果')
+    expect(reviewReasonLabel('VERSIONED_SELECTOR_UNIQUENESS_REQUIRED')).toContain('selector')
     expect(reviewReasonLabel('UNKNOWN_FUTURE_REASON')).toBe('UNKNOWN_FUTURE_REASON')
   })
 

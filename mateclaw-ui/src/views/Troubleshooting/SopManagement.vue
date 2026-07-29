@@ -357,6 +357,7 @@
               <div><dt>origin</dt><dd class="mono">{{ selectedReview.origin }}</dd></div>
               <div><dt>review</dt><dd class="mono">{{ selectedReview.reviewStatus }} / v{{ selectedReview.reviewVersion }}</dd></div>
               <div><dt>validation</dt><dd class="mono">{{ selectedReview.validationStatus }}</dd></div>
+              <div><dt>phase</dt><dd class="mono">{{ selectedReview.qualificationSnapshot.qualificationPhase }}</dd></div>
               <div><dt>eligibility</dt><dd class="mono">{{ selectedReview.approvalEligibility }}</dd></div>
               <div><dt>service</dt><dd>{{ selectedReview.service || '合同未提供' }}</dd></div>
               <div><dt>source</dt><dd class="mono">{{ selectedReview.sourceRef }}</dd></div>
@@ -375,6 +376,7 @@
                 <div><dt>reviewer</dt><dd>{{ selectedReview.reviewer }}</dd></div>
                 <div><dt>updated</dt><dd class="mono">{{ formatTime(selectedReview.reviewState.updatedAt) }}</dd></div>
                 <div><dt>snapshot validation</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.validationStatus }}</dd></div>
+                <div><dt>snapshot phase</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.qualificationPhase }}</dd></div>
                 <div><dt>model config</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.modelConfigVersion || 'NOT_APPLICABLE' }}</dd></div>
                 <div><dt>reference</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.referenceComparison?.referenceId || 'NOT_APPLICABLE' }}</dd></div>
                 <div><dt>fixture</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.fixtureMode ?? 'UNKNOWN' }}</dd></div>
@@ -419,6 +421,19 @@
                 <li v-for="reason in selectedReview.eligibilityReasons" :key="reason">
                   <code>{{ reason }}</code>
                   <span>{{ reviewReasonLabel(reason) }}</span>
+                </li>
+              </ul>
+              <ul
+                v-if="selectedReview.qualificationSnapshot.validationErrors.length"
+                class="reference-issues qualification-errors"
+              >
+                <li
+                  v-for="issue in selectedReview.qualificationSnapshot.validationErrors"
+                  :key="issue.code + ':' + issue.fieldPath"
+                  class="danger"
+                >
+                  <strong>{{ issue.code }} · {{ issue.fieldPath }}</strong>
+                  <code>{{ issue.message }}</code>
                 </li>
               </ul>
             </section>
@@ -665,6 +680,7 @@ const reviewInbox = ref<KnowledgeReviewInbox>({
   evidenceDerived: [],
   outcomeBacked: [],
   manual: [],
+  sourceStates: [],
   reviewStates: [],
   capabilityLimits: [],
 })
@@ -759,7 +775,8 @@ async function loadReviewInbox() {
   try {
     const { data } = await troubleshootingApi.knowledgeReviewInbox({ limit: 200 })
     reviewInbox.value = data ?? {
-      evidenceDerived: [], outcomeBacked: [], manual: [], reviewStates: [], capabilityLimits: [],
+      evidenceDerived: [], outcomeBacked: [], manual: [], sourceStates: [],
+      reviewStates: [], capabilityLimits: [],
     }
     reviewUnavailable.value = false
     const retained = knowledgeRows.value.find((row) => row.key === selectedReviewKey.value)

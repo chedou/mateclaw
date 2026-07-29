@@ -17,6 +17,7 @@ public record KnowledgeReviewInbox(
         List<PlaybookKnowledgeRecord> evidenceDerived,
         List<KnowledgeCandidate> outcomeBacked,
         List<SopSummary> manual,
+        List<KnowledgeReviewSource> sourceStates,
         List<KnowledgeReviewState> reviewStates,
         List<String> capabilityLimits) {
 
@@ -31,6 +32,8 @@ public record KnowledgeReviewInbox(
         outcomeBacked = List.copyOf(
                 outcomeBacked == null ? List.of() : outcomeBacked);
         manual = List.copyOf(manual == null ? List.of() : manual);
+        sourceStates = List.copyOf(
+                sourceStates == null ? List.of() : sourceStates);
         reviewStates = List.copyOf(
                 reviewStates == null ? List.of() : reviewStates);
         capabilityLimits = List.copyOf(

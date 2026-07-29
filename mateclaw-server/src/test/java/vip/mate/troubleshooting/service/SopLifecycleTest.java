@@ -164,6 +164,22 @@ class SopLifecycleTest {
     }
 
     @Test
+    void listsAFullCandidateContractWithTheSameIndexedIdentity() {
+        SopEntry candidate = service.register(
+                WORKSPACE_ID, sop("candidate", false));
+
+        List<SopRegistryRecord> records =
+                service.listRecords(WORKSPACE_ID, "candidate", null, 50);
+
+        assertThat(records).hasSize(1);
+        assertThat(records.getFirst().entry()).isEqualTo(candidate);
+        assertThat(records.getFirst().summary().sopId())
+                .isEqualTo(candidate.sopId());
+        assertThat(records.getFirst().summary().routeKey())
+                .isEqualTo(candidate.routingKey());
+    }
+
+    @Test
     void findsOneManualCandidateByWorkspaceAndStableSopId() throws Exception {
         TroubleshootingSopMapper mapper = mock(TroubleshootingSopMapper.class);
         SopEntry source = sop("candidate", false);

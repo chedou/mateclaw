@@ -166,12 +166,16 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `/troubleshooting/sops` 可按来源筛选并查看状态、资格缺口、证据引用、模型来源、参考解法和关闭结果。
   三类来源共用 V185 独立审核台账：无记录为 `CANDIDATE/v0`，登录管理员可开始审阅为
   `IN_REVIEW/v1`，再按精确版本拒绝为 `REJECTED/v2`。审核台账保存服务端登录主体、理由与开始时的
-  validation/reference/model/fixture 快照；reason 拒绝凭据、DQL、原始日志和堆栈。`OUTCOME_BACKED`
-  与旧 `MANUAL` 的来源校验仍明确投影为 `NOT_EVALUATED / NOT_ELIGIBLE`，不把发布状态伪装成校验结论。旧式
+  validation/reference/model/fixture 快照；reason 拒绝凭据、DQL、原始日志和堆栈。Inbox 还为每个精确
+  来源返回服务端当前资格投影：证据型显式处于默认 `CALIBRATION` 档并核对
+  validation/reference/citation/fixture，candidate 生成本身不计作正例回放；人工型对完整 SOP 合同执行
+  evidence request→criterion→rule 交叉引用校验，并保留版本化 selector 唯一性证明缺口；关闭型显式暴露
+  当前候选合同仍缺 ClosureRecord/恢复验证、正例回放和 owner；前端不再自行拼资格原因。旧式
   candidate → approved 按钮已从正式页面撤下；旧
   `POST /sops/{system}/{errorCode}/status` 也已 fail closed 拒绝 `approved`，只保留现有 approved
-  版本的 `deprecated` 退役能力，不能从隐藏 API 绕过资格门禁。批准仍保持关闭；T14 的分来源资格计算、
-  selector 单 active 的新版本替换与 `APPROVED / DEPRECATED` 后半状态机仍未完成。
+  版本的 `deprecated` 退役能力，不能从隐藏 API 绕过资格门禁。批准仍保持关闭；真实回放/owner/outcome
+  证明、数据驱动的 `RUNTIME` 档切换尚未接入 Gate，selector 单 active 的新版本替换与
+  `APPROVED / DEPRECATED` 后半状态机仍未完成。
 - H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。

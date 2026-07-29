@@ -79,6 +79,29 @@ public class TroubleshootingSopPersistenceService {
      */
     public java.util.List<SopSummary> list(
             long workspaceId, String status, String system, int limit) {
+        return listEntities(workspaceId, status, system, limit).stream()
+                .map(SopSummary::from)
+                .toList();
+    }
+
+    /**
+     * Reads registry metadata and full contracts in one bounded query.
+     *
+     * <p>The normal registry endpoint keeps using {@link #list} and returns
+     * summaries only. Knowledge qualification needs the complete manual
+     * candidate contract, so it consumes this paired internal projection
+     * instead of issuing one query per row.</p>
+     */
+    public java.util.List<SopRegistryRecord> listRecords(
+            long workspaceId, String status, String system, int limit) {
+        return listEntities(workspaceId, status, system, limit).stream()
+                .map(entity -> new SopRegistryRecord(
+                        SopSummary.from(entity), read(entity)))
+                .toList();
+    }
+
+    private java.util.List<TroubleshootingSopEntity> listEntities(
+            long workspaceId, String status, String system, int limit) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
@@ -95,7 +118,7 @@ public class TroubleshootingSopPersistenceService {
         if (system != null && !system.isBlank()) {
             query.eq(TroubleshootingSopEntity::getSystem, system.trim());
         }
-        return mapper.selectList(query).stream().map(SopSummary::from).toList();
+        return mapper.selectList(query);
     }
 
     /**

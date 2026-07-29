@@ -214,6 +214,37 @@ class KnowledgeReviewWorkflowServiceTest {
         assertThat(keys.getValue()).containsExactlyElementsOf(requested);
     }
 
+    @Test
+    void readsPrePhaseSnapshotsAsUnknownInsteadOfBreakingTheReviewLedger() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        TroubleshootingKnowledgeReviewEntity legacy = persisted("IN_REVIEW", 1);
+        legacy.setSnapshotJson("""
+                {
+                  "validationStatus":"VALID",
+                  "validationErrors":[],
+                  "referenceComparison":null,
+                  "modelConfigVersion":"model-config-v7",
+                  "approvalEligibility":"NOT_ELIGIBLE",
+                  "eligibilityReasons":["FIXTURE_ONLY"],
+                  "fixtureMode":true
+                }
+                """);
+        when(mapper.listBySources(eq(7L), any()))
+                .thenReturn(List.of(legacy));
+
+        KnowledgeReviewState state = service(
+                mapper, mock(KnowledgeReviewSourceReader.class))
+                .listForSources(
+                        7L,
+                        List.of(new KnowledgeReviewSourceKey(
+                                KnowledgeOrigin.EVIDENCE_DERIVED, "record-1")))
+                .getFirst();
+
+        assertThat(state.snapshot().qualificationPhase())
+                .isEqualTo(KnowledgeQualificationPhase.UNKNOWN);
+    }
+
     private KnowledgeReviewWorkflowService service(
             TroubleshootingKnowledgeReviewMapper mapper,
             KnowledgeReviewSourceReader sources) {
@@ -228,6 +259,7 @@ class KnowledgeReviewWorkflowServiceTest {
                         List.of(), List.of(), List.of(), List.of());
         KnowledgeReviewSnapshot snapshot = new KnowledgeReviewSnapshot(
                 "VALID",
+                KnowledgeQualificationPhase.CALIBRATION,
                 List.of(),
                 comparison,
                 "model-config-v7",

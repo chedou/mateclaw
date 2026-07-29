@@ -348,8 +348,9 @@ Challenger 影子运行和两者对比仍未实现。
 - [x] 正式 `/troubleshooting/sops` 增加统一 Knowledge Review Inbox；服务端按 workspace
       同时读取 `EVIDENCE_DERIVED` PlaybookKnowledgeRecord、`OUTCOME_BACKED` 关闭候选与
       `MANUAL` 注册候选，页面展示来源、审核/校验状态、晋升资格、缺失条件、证据引用、模型与参考解法。
-      未开始独立审核时统一投影为 `CANDIDATE/v0`；关闭候选和旧人工候选的来源校验仍显式为
-      `NOT_EVALUATED / NOT_ELIGIBLE`，不得由前端猜成已校验。旧式 candidate → approved 按钮已撤下。
+      未开始独立审核时统一投影为 `CANDIDATE/v0`；每条来源的当前资格由服务端返回，人工候选执行
+      完整合同交叉引用校验，关闭候选则显式保留当前合同无法证明的 outcome/恢复验证缺口，
+      不得由前端猜成已校验。旧式 candidate → approved 按钮已撤下。
 - [x] 旧 `POST /sops/{system}/{errorCode}/status` 已拒绝 `candidate → approved`，只允许既有
       approved 版本退役为 deprecated；页面隐藏按钮不再是唯一防线，资格与新版本晋升合同完成前服务端
       保持 fail closed（2026-07-29）。
@@ -359,6 +360,14 @@ Challenger 影子运行和两者对比仍未实现。
         审核人只从登录主体取得，reason 禁止凭据、DQL、原始日志和堆栈。
   - [ ] `APPROVED / DEPRECATED` 仍等资格 Gate 与新版本替换命令完成后开放。
 - [ ] EVIDENCE_DERIVED / OUTCOME_BACKED / MANUAL 分别按 v4 的最低证据计算晋升资格。
+  - [x] 当前来源事实已由统一服务端策略计算并随 Inbox 返回：证据型显式处于默认
+        `CALIBRATION` 档并核对 validation/reference/citation/fixture，不把 candidate 生成当正例回放；
+        人工型核对 owner 与证据请求→判据→规则交叉引用，并保留版本化 selector 唯一性缺口；关闭型不再用
+        “尚未实现”占位，而是明确列出候选合同缺少 ClosureRecord/恢复验证、正例回放和 owner；
+        前端只消费该投影，缺失时 fail closed（2026-07-29）。
+  - [ ] 将真实 T8 正/负例或弃权回放、知识 owner、关闭 Diagnosis 的 outcome/恢复验证、版本化
+        selector 唯一约束接入 Gate；以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
+        切换，条件全部可由服务端证明后才允许返回 `ELIGIBLE_FOR_APPROVAL`。
 - [x] 审核记录 reviewer、reason，并在开始审阅时冻结 validation summary、
       reference comparison、模型版本、fixture 与当时的资格缺口（2026-07-29）。
 - [ ] approved 永远创建新版本；乐观锁 + selector active-approved 唯一约束防并发双权威。
