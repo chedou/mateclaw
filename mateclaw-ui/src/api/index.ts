@@ -1729,6 +1729,11 @@ export interface SopSynthesisPreview {
   contrastEvidence: SynthesisEvidenceReference | null
   skeleton: LogTraceSkeleton
   fixtureMode: boolean
+  traceEntries: number
+  sourceRequestCount: number
+  totalDurationMs: number
+  timings: EvidenceSpineTimings
+  completedAt: string
   contrastAvailable: boolean
   warnings: string[]
 }
@@ -2126,6 +2131,7 @@ export interface GuanceEvidenceSpinePreview {
 
 export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
 export type EvaluationSampleReferenceStatus = 'EVIDENCE_CAPTURED' | 'READY_FOR_EVALUATION'
+export type EvaluationExpectedDisposition = 'DRAFT' | 'ABSTAIN'
 
 export interface EvaluationEvidenceSnapshot {
   stage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
@@ -2164,15 +2170,22 @@ export interface EvaluationOutcomeSnapshot {
 export interface EvidenceEvaluationSample {
   sampleId: string
   sampleKey: string
+  captureIdentityKey: string
+  captureRevision: number
   diagnosisId: string
   system: string
   service: string
   scenarioKey: string
   sourcePlatform: EvaluationSampleSourcePlatform
   evidence: EvaluationEvidenceSnapshot
+  /** SHA-256 of the exact bounded model input; null only for legacy V181 samples. */
+  modelInputHash: string | null
+  /** Frozen evidence anchor used for a reproducible source rerun. */
+  evidenceOccurredAt: string | null
   diagnosisFixtureMode: boolean
   referenceStatus: EvaluationSampleReferenceStatus
   referenceSolution: EvaluationReferenceSolution | null
+  expectedDisposition: EvaluationExpectedDisposition | null
   outcome: EvaluationOutcomeSnapshot | null
   version: number
   capturedBy: string
@@ -2218,17 +2231,146 @@ export interface EvidenceEvaluationSampleLedger {
   summary: EvaluationSampleSummary
 }
 
-export interface CaptureGuanceEvaluationSampleRequest {
+export interface CaptureEvaluationSampleRequest {
   diagnosisId: string
   scenarioKey: string
   searchTerm: string
   window: string
 }
 
+export interface CaptureRecordedReplayEvaluationSampleRequest {
+  diagnosisId: string
+}
+
+export interface RecordedReplayEvaluationCapability {
+  available: boolean
+  reasonCode: string
+  reason: string
+  scenarioKey: string | null
+  searchTerm: string | null
+  window: string | null
+}
+
 export interface FinalizeEvaluationSampleReferenceRequest {
   expectedVersion: number
   requiredStepIntents: string[]
   forbiddenStepIntents: string[]
+  expectedDisposition: EvaluationExpectedDisposition
+}
+
+export type BaselineEvaluationStatus =
+  | 'MODEL_REJECTED'
+  | 'ABSTAINED'
+  | 'VALIDATION_REJECTED'
+  | 'SCORED'
+export type BaselineActualDisposition = 'NONE' | 'DRAFT' | 'ABSTAIN'
+export type BaselineClassification =
+  | 'HELPFUL'
+  | 'UNHELPFUL'
+  | 'HARMFUL_BLOCKED'
+  | 'TECHNICAL_FAILURE'
+
+export interface BaselineValidationSnapshot {
+  executed: boolean
+  valid: boolean
+  errorCodes: string[]
+}
+
+export interface BaselineQualitySnapshot {
+  expectedDisposition: EvaluationExpectedDisposition
+  actualDisposition: BaselineActualDisposition
+  classification: BaselineClassification
+  citationComplete: boolean | null
+  requiredIntentCoverage: number | null
+  missingStepIntents: string[]
+  forbiddenStepIntentsPresent: string[]
+  orderingViolations: string[]
+  missingEvidenceKinds: string[]
+  abstainAssessmentCodes: string[]
+  dangerousProposalDetected: boolean
+}
+
+export interface BaselineModelSnapshot {
+  provider: string
+  modelName: string
+  modelConfigVersion: string
+  calledAt: string
+  invocationCount: number
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+}
+
+/** Candidate-free, immutable single-Agent baseline fact. Draft text is never returned. */
+export interface BaselineEvaluationRun {
+  runId: string
+  runKey: string
+  sampleId: string
+  diagnosisId: string
+  sampleVersion: number
+  sourcePlatform: EvaluationSampleSourcePlatform
+  evidenceFixtureMode: boolean
+  diagnosisFixtureMode: boolean
+  modelInputHash: string
+  status: BaselineEvaluationStatus
+  modelErrorCodes: string[]
+  validation: BaselineValidationSnapshot
+  quality: BaselineQualitySnapshot
+  model: BaselineModelSnapshot
+  evidenceDurationMs: number
+  modelDurationMs: number
+  composedTotalDurationMs: number
+  executedBy: string
+  executedAt: string
+}
+
+export interface StoredBaselineEvaluationRun {
+  run: BaselineEvaluationRun
+  created: boolean
+}
+
+export interface BaselineCohortMetrics {
+  runCount: number
+  helpful: number
+  unhelpful: number
+  harmfulBlocked: number
+  technicalFailure: number
+  modelP50Ms: number | null
+  modelP95Ms: number | null
+  composedTotalP50Ms: number | null
+  composedTotalP95Ms: number | null
+  tokenMeasuredRuns: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface BaselineSourceMetrics {
+  runCount: number
+  evidenceFixtureRuns: number
+  realDiagnosis: BaselineCohortMetrics
+  fixtureDiagnosis: BaselineCohortMetrics
+}
+
+export interface BaselineEvaluationSummary {
+  total: number
+  scored: number
+  abstained: number
+  modelRejected: number
+  validationRejected: number
+  guance: BaselineSourceMetrics
+  recordedReplay: BaselineSourceMetrics
+}
+
+export interface BaselineEvaluationLedger {
+  runs: BaselineEvaluationRun[]
+  summary: BaselineEvaluationSummary
+}
+
+export interface RunBaselineEvaluationRequest {
+  expectedSampleVersion: number
+  searchTerm: string
+  window: string
 }
 
 export const troubleshootingApi = {
@@ -2267,10 +2409,22 @@ export const troubleshootingApi = {
   ),
 
   /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */
-  captureGuanceEvaluationSample: (data: CaptureGuanceEvaluationSampleRequest) =>
+  captureGuanceEvaluationSample: (data: CaptureEvaluationSampleRequest) =>
     http.post<StoredEvidenceEvaluationSample>(
       '/troubleshooting/evaluation-samples/guance', data,
     ),
+
+  /** Runs only the registered fixture Replay adapter and stores a separate T8 sample. */
+  captureRecordedReplayEvaluationSample: (data: CaptureRecordedReplayEvaluationSampleRequest) =>
+    http.post<StoredEvidenceEvaluationSample>(
+      '/troubleshooting/evaluation-samples/recorded-replay', data,
+    ),
+
+  /** Exact server-owned adapter, route, fixture catalog and scope readiness. */
+  recordedReplayEvaluationCapability: (params: { diagnosisId: string }) =>
+    http.get<RecordedReplayEvaluationCapability>(
+    '/troubleshooting/evaluation-samples/recorded-replay/capability', { params },
+  ),
 
   /** Lists sample accumulation only; the response deliberately has no gate-pass verdict. */
   evaluationSamples: (params?: { diagnosisId?: string; limit?: number }) =>
@@ -2285,6 +2439,20 @@ export const troubleshootingApi = {
   ) => http.put<EvidenceEvaluationSample>(
     `/troubleshooting/evaluation-samples/${encodeURIComponent(sampleId)}/reference`, data,
   ),
+
+  /** Replays the frozen source input and invokes one pinned model without writing a candidate. */
+  runEvaluationBaseline: (
+    sampleId: string,
+    data: RunBaselineEvaluationRequest,
+  ) => http.post<StoredBaselineEvaluationRun>(
+    `/troubleshooting/evaluation-samples/${encodeURIComponent(sampleId)}/baseline-runs`, data,
+  ),
+
+  /** Lists source-separated descriptive baseline facts; never returns a Gate verdict. */
+  evaluationBaselineRuns: (params?: { diagnosisId?: string; limit?: number }) =>
+    http.get<BaselineEvaluationLedger>(
+      '/troubleshooting/evaluation-samples/baseline-runs', { params },
+    ),
 
   /** Runs the meeting-case evidence lane without invoking a model or writing a candidate. */
   previewSopSynthesis: (data: SopSynthesisPreviewRequest) =>

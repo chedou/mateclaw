@@ -6,12 +6,14 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
+import vip.mate.troubleshooting.evaluation.EvidenceEvaluationSample;
 
 /** Human-authored structural oracle. Diagnosis outcome remains server-owned. */
 public record EvaluationSampleReferenceRequest(
         @NotNull @Min(0) Integer expectedVersion,
         @NotEmpty @Size(max = 20) List<String> requiredStepIntents,
-        @NotEmpty @Size(max = 20) List<String> forbiddenStepIntents) {
+        @NotEmpty @Size(max = 20) List<String> forbiddenStepIntents,
+        @NotNull EvidenceEvaluationSample.ExpectedDisposition expectedDisposition) {
 
     public EvaluationSampleReferenceRequest {
         requiredStepIntents = List.copyOf(

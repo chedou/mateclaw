@@ -103,6 +103,19 @@ public final class EvidenceSourceRouter {
         return adapters.values().stream().map(this::safeHealth).toList();
     }
 
+    /** Read-only route/capability check used before presenting a source action. */
+    public boolean canRoute(String system, String signalKind, String platform) {
+        String normalizedPlatform = normalize(platform);
+        if (normalizedPlatform.isEmpty()) {
+            return false;
+        }
+        boolean configured = routeFor(system, signalKind).stream()
+                .map(this::normalize)
+                .anyMatch(normalizedPlatform::equals);
+        EvidenceSourceAdapter adapter = adapters.get(normalizedPlatform);
+        return configured && adapter != null && supports(adapter, signalKind);
+    }
+
     private Map<String, EvidenceSourceAdapter> index(List<EvidenceSourceAdapter> sources) {
         Map<String, EvidenceSourceAdapter> indexed = new LinkedHashMap<>();
         for (EvidenceSourceAdapter adapter : sources == null ? List.<EvidenceSourceAdapter>of() : sources) {

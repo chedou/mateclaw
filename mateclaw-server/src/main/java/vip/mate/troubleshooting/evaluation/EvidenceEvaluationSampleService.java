@@ -2,9 +2,11 @@ package vip.mate.troubleshooting.evaluation;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.model.ClosureRecord;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -13,14 +15,13 @@ import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
+import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
+import vip.mate.troubleshooting.synthesis.SopSynthesisRequest;
+import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -32,21 +33,33 @@ public class EvidenceEvaluationSampleService {
 
     private static final Pattern STRUCTURED_KEY =
             Pattern.compile("[a-z][a-z0-9_:-]{1,63}");
-    private static final List<String> REQUIRED_EVIDENCE_KINDS =
-            List.of("log_search", "log_trace_bundle", "contrast_sample");
     private static final int MAX_INTENTS = 20;
+    private static final int MAX_REVISION_ATTEMPTS = 8;
 
     private final GuanceEvidenceSpinePreviewService previewService;
     private final TroubleshootingPersistenceService persistenceService;
     private final EvidenceEvaluationSampleStore store;
+    private final EvaluationModelInputFactory modelInputFactory;
+    private final SopSynthesisService replayService;
+    private final RecordedReplayEvaluationCapabilityService replayCapabilityService;
     private final Clock clock;
 
     @Autowired
     public EvidenceEvaluationSampleService(
             GuanceEvidenceSpinePreviewService previewService,
             TroubleshootingPersistenceService persistenceService,
-            EvidenceEvaluationSampleStore store) {
-        this(previewService, persistenceService, store, Clock.systemUTC());
+            EvidenceEvaluationSampleStore store,
+            EvaluationModelInputFactory modelInputFactory,
+            SopSynthesisService replayService,
+            RecordedReplayEvaluationCapabilityService replayCapabilityService) {
+        this(
+                previewService,
+                persistenceService,
+                store,
+                modelInputFactory,
+                replayService,
+                replayCapabilityService,
+                Clock.systemUTC());
     }
 
     EvidenceEvaluationSampleService(
@@ -54,9 +67,64 @@ public class EvidenceEvaluationSampleService {
             TroubleshootingPersistenceService persistenceService,
             EvidenceEvaluationSampleStore store,
             Clock clock) {
+        this(
+                previewService,
+                persistenceService,
+                store,
+                new EvaluationModelInputFactory(
+                        new ObjectMapper().findAndRegisterModules()),
+                null,
+                null,
+                clock);
+    }
+
+    EvidenceEvaluationSampleService(
+            GuanceEvidenceSpinePreviewService previewService,
+            TroubleshootingPersistenceService persistenceService,
+            EvidenceEvaluationSampleStore store,
+            EvaluationModelInputFactory modelInputFactory,
+            Clock clock) {
+        this(
+                previewService,
+                persistenceService,
+                store,
+                modelInputFactory,
+                null,
+                null,
+                clock);
+    }
+
+    EvidenceEvaluationSampleService(
+            GuanceEvidenceSpinePreviewService previewService,
+            TroubleshootingPersistenceService persistenceService,
+            EvidenceEvaluationSampleStore store,
+            EvaluationModelInputFactory modelInputFactory,
+            SopSynthesisService replayService,
+            Clock clock) {
+        this(
+                previewService,
+                persistenceService,
+                store,
+                modelInputFactory,
+                replayService,
+                null,
+                clock);
+    }
+
+    EvidenceEvaluationSampleService(
+            GuanceEvidenceSpinePreviewService previewService,
+            TroubleshootingPersistenceService persistenceService,
+            EvidenceEvaluationSampleStore store,
+            EvaluationModelInputFactory modelInputFactory,
+            SopSynthesisService replayService,
+            RecordedReplayEvaluationCapabilityService replayCapabilityService,
+            Clock clock) {
         this.previewService = previewService;
         this.persistenceService = persistenceService;
         this.store = store;
+        this.modelInputFactory = modelInputFactory;
+        this.replayService = replayService;
+        this.replayCapabilityService = replayCapabilityService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -84,48 +152,149 @@ public class EvidenceEvaluationSampleService {
         Instant occurredAt = incident.occurredAt() == null
                 ? Instant.now(clock)
                 : incident.occurredAt();
-        String sampleKey = sampleKey(
+        String captureIdentityKey = EvaluationKeys.captureIdentityKey(
                 workspaceId,
                 normalizedDiagnosisId,
                 normalizedScenario,
+                EvidenceEvaluationSample.SourcePlatform.GUANCE,
                 plan.searchTerm(),
                 plan.window(),
                 occurredAt);
-
-        Optional<EvidenceEvaluationSample> existing =
-                store.findBySampleKey(workspaceId, sampleKey);
-        if (existing.isPresent()) {
-            return new EvidenceEvaluationSampleStore.StoredSample(existing.get(), false);
-        }
-
-        GuanceEvidenceSpinePreview preview = previewService.preview(
+        GuanceEvidenceSpineObservation observation = previewService.observe(
                 workspaceId,
                 incident.system(),
                 incident.service(),
                 plan.searchTerm(),
                 plan.window(),
                 occurredAt);
+        GuanceEvidenceSpinePreview preview = observation.preview();
         if (preview.stage() == GuanceEvidenceSpinePreview.Stage.BLOCKED) {
             throw conflict("Guance Evidence Spine was not observed; no sample was persisted");
         }
-
-        EvidenceEvaluationSample sample;
+        EvaluationModelInputFactory.FingerprintedInput modelInput = modelInputFactory.create(
+                incident.system(),
+                incident.service(),
+                normalizedScenario,
+                observation);
         try {
-            sample = EvidenceEvaluationSample.captured(
-                    "eval-" + sampleKey.substring(0, 24),
-                    sampleKey,
-                    normalizedDiagnosisId,
-                    incident.system(),
-                    incident.service(),
-                    normalizedScenario,
-                    preview,
-                    diagnosis.fixtureMode(),
-                    normalizedActor,
-                    Instant.now(clock));
+            return persistRevision(
+                    workspaceId,
+                    captureIdentityKey,
+                    modelInput.fingerprint(),
+                    captureRevision -> {
+                        String sampleKey = EvaluationKeys.sampleKey(
+                                workspaceId,
+                                normalizedDiagnosisId,
+                                normalizedScenario,
+                                EvidenceEvaluationSample.SourcePlatform.GUANCE,
+                                plan.searchTerm(),
+                                plan.window(),
+                                occurredAt,
+                                captureRevision);
+                        return EvidenceEvaluationSample.captured(
+                                "eval-" + sampleKey.substring(0, 24),
+                                sampleKey,
+                                captureIdentityKey,
+                                captureRevision,
+                                normalizedDiagnosisId,
+                                incident.system(),
+                                incident.service(),
+                                normalizedScenario,
+                                preview,
+                                modelInput.fingerprint(),
+                                occurredAt,
+                                diagnosis.fixtureMode(),
+                                normalizedActor,
+                                Instant.now(clock));
+                    });
         } catch (IllegalArgumentException invalidPreview) {
             throw conflict("Guance Evidence Spine was not observed: " + invalidPreview.getMessage());
         }
-        return store.saveOrGet(workspaceId, sample);
+    }
+
+    /** Captures the same frozen contract from the fixture-confined recorded Replay source. */
+    public EvidenceEvaluationSampleStore.StoredSample captureRecordedReplay(
+            long workspaceId,
+            String diagnosisId,
+            String actor) {
+        validateWorkspace(workspaceId);
+        if (replayService == null || replayCapabilityService == null) {
+            throw conflict("Recorded Replay evaluation capture is not configured");
+        }
+        String normalizedDiagnosisId = required(diagnosisId, "diagnosisId");
+        String normalizedActor = required(actor, "actor");
+        RecordedReplayEvaluationCapability capability =
+                replayCapabilityService.inspect(workspaceId, normalizedDiagnosisId);
+        if (capability == null || !capability.available()) {
+            String reason = capability == null
+                    ? "capability unavailable"
+                    : capability.reasonCode();
+            throw conflict("server-owned Replay target is not ready: " + reason);
+        }
+        String normalizedScenario = structuredKey(capability.scenarioKey(), "scenarioKey");
+        EvidenceSpinePlan plan = safePlan(capability.searchTerm(), capability.window());
+
+        StoredDiagnosis storedDiagnosis =
+                persistenceService.get(workspaceId, normalizedDiagnosisId);
+        Diagnosis diagnosis = storedDiagnosis.diagnosis();
+        IncidentContext incident = diagnosis.incident();
+        Instant occurredAt = incident.occurredAt() == null
+                ? Instant.now(clock)
+                : incident.occurredAt();
+        String captureIdentityKey = EvaluationKeys.captureIdentityKey(
+                workspaceId,
+                normalizedDiagnosisId,
+                normalizedScenario,
+                EvidenceEvaluationSample.SourcePlatform.RECORDED_REPLAY,
+                plan.searchTerm(),
+                plan.window(),
+                occurredAt);
+        SopSynthesisPreview preview = replayService.preview(
+                workspaceId,
+                new SopSynthesisRequest(
+                        incident.system(),
+                        incident.service(),
+                        plan.searchTerm(),
+                        plan.window(),
+                        occurredAt));
+        EvaluationModelInputFactory.FingerprintedInput modelInput = modelInputFactory.create(
+                incident.system(), incident.service(), normalizedScenario, preview);
+        try {
+            return persistRevision(
+                    workspaceId,
+                    captureIdentityKey,
+                    modelInput.fingerprint(),
+                    captureRevision -> {
+                        String sampleKey = EvaluationKeys.sampleKey(
+                                workspaceId,
+                                normalizedDiagnosisId,
+                                normalizedScenario,
+                                EvidenceEvaluationSample.SourcePlatform.RECORDED_REPLAY,
+                                plan.searchTerm(),
+                                plan.window(),
+                                occurredAt,
+                                captureRevision);
+                        return EvidenceEvaluationSample.capturedReplay(
+                                "eval-" + sampleKey.substring(0, 24),
+                                sampleKey,
+                                captureIdentityKey,
+                                captureRevision,
+                                normalizedDiagnosisId,
+                                incident.system(),
+                                incident.service(),
+                                normalizedScenario,
+                                preview,
+                                modelInput.fingerprint(),
+                                occurredAt,
+                                diagnosis.fixtureMode(),
+                                normalizedActor,
+                                Instant.now(clock));
+                    });
+        } catch (IllegalArgumentException invalidPreview) {
+            throw conflict(
+                    "Recorded Replay Evidence Spine was not observed: "
+                            + invalidPreview.getMessage());
+        }
     }
 
     /**
@@ -138,6 +307,7 @@ public class EvidenceEvaluationSampleService {
             int expectedVersion,
             List<String> requiredStepIntents,
             List<String> forbiddenStepIntents,
+            EvidenceEvaluationSample.ExpectedDisposition expectedDisposition,
             String actor) {
         validateWorkspace(workspaceId);
         if (expectedVersion < 0) {
@@ -145,6 +315,9 @@ public class EvidenceEvaluationSampleService {
         }
         String normalizedSampleId = required(sampleId, "sampleId");
         String normalizedActor = required(actor, "actor");
+        if (expectedDisposition == null) {
+            throw invalid("expectedDisposition is required");
+        }
         EvidenceEvaluationSample sample = store.get(workspaceId, normalizedSampleId)
                 .orElseThrow(() -> notFound(
                         "evaluation sample not found: " + normalizedSampleId));
@@ -164,13 +337,18 @@ public class EvidenceEvaluationSampleService {
                     "reference finalization requires a closed Diagnosis with an outcome");
         }
 
+        List<String> requiredEvidenceKinds = new ArrayList<>(
+                List.of("log_search", "log_trace_bundle"));
+        if (sample.evidence().contrast().available()) {
+            requiredEvidenceKinds.add("contrast_sample");
+        }
         ReferenceSolution reference = new ReferenceSolution(
                 sample.sampleId() + "/reference/v1",
                 sample.scenarioKey(),
                 required,
                 forbidden,
                 ordering(required),
-                REQUIRED_EVIDENCE_KINDS);
+                List.copyOf(requiredEvidenceKinds));
         EvidenceEvaluationSample.OutcomeSnapshot outcome;
         try {
             outcome = new EvidenceEvaluationSample.OutcomeSnapshot(
@@ -187,6 +365,7 @@ public class EvidenceEvaluationSampleService {
         if (sample.referenceStatus()
                 == EvidenceEvaluationSample.ReferenceStatus.READY_FOR_EVALUATION) {
             if (reference.equals(sample.referenceSolution())
+                    && expectedDisposition == sample.expectedDisposition()
                     && outcome.equals(sample.outcome())) {
                 return sample;
             }
@@ -197,8 +376,30 @@ public class EvidenceEvaluationSampleService {
         }
 
         EvidenceEvaluationSample finalized = sample.finalizeReference(
-                reference, outcome, normalizedActor, Instant.now(clock));
+                reference,
+                expectedDisposition,
+                outcome,
+                normalizedActor,
+                Instant.now(clock));
         return store.finalizeReference(workspaceId, finalized, expectedVersion);
+    }
+
+    /** Backward-compatible default for existing P1 tests and callers. */
+    public EvidenceEvaluationSample finalizeReference(
+            long workspaceId,
+            String sampleId,
+            int expectedVersion,
+            List<String> requiredStepIntents,
+            List<String> forbiddenStepIntents,
+            String actor) {
+        return finalizeReference(
+                workspaceId,
+                sampleId,
+                expectedVersion,
+                requiredStepIntents,
+                forbiddenStepIntents,
+                EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                actor);
     }
 
     public EvidenceEvaluationSampleLedger list(
@@ -255,27 +456,6 @@ public class EvidenceEvaluationSampleService {
         return List.copyOf(constraints);
     }
 
-    private String sampleKey(
-            long workspaceId,
-            String diagnosisId,
-            String scenarioKey,
-            String searchTerm,
-            String window,
-            Instant occurredAt) {
-        String raw = workspaceId
-                + "\u001f" + diagnosisId
-                + "\u001f" + scenarioKey
-                + "\u001f" + searchTerm
-                + "\u001f" + window
-                + "\u001f" + occurredAt.toString();
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is unavailable", impossible);
-        }
-    }
-
     private String structuredKey(String value, String field) {
         String normalized = required(value, field);
         if (!STRUCTURED_KEY.matcher(normalized).matches()) {
@@ -295,6 +475,56 @@ public class EvidenceEvaluationSampleService {
         if (workspaceId <= 0) {
             throw invalid("workspaceId must be positive");
         }
+    }
+
+    private boolean sameFrozenInput(
+            Optional<EvidenceEvaluationSample> latest,
+            String modelInputHash) {
+        return latest.isPresent()
+                && modelInputHash != null
+                && modelInputHash.equals(latest.get().modelInputHash());
+    }
+
+    private EvidenceEvaluationSampleStore.StoredSample persistRevision(
+            long workspaceId,
+            String captureIdentityKey,
+            String modelInputHash,
+            RevisionFactory revisionFactory) {
+        Optional<EvidenceEvaluationSample> latest =
+                store.findLatestByCaptureIdentity(workspaceId, captureIdentityKey);
+        for (int attempt = 0; attempt < MAX_REVISION_ATTEMPTS; attempt++) {
+            if (sameFrozenInput(latest, modelInputHash)) {
+                return new EvidenceEvaluationSampleStore.StoredSample(
+                        latest.orElseThrow(), false);
+            }
+            EvidenceEvaluationSample candidate = revisionFactory.create(nextRevision(latest));
+            EvidenceEvaluationSampleStore.StoredSample stored =
+                    store.saveOrGet(workspaceId, candidate);
+            EvidenceEvaluationSample winner = stored.sample();
+            if (!captureIdentityKey.equals(winner.captureIdentityKey())) {
+                throw conflict("evaluation sample revision identity conflict");
+            }
+            if (modelInputHash.equals(winner.modelInputHash())) {
+                return stored;
+            }
+            Optional<EvidenceEvaluationSample> refreshed =
+                    store.findLatestByCaptureIdentity(workspaceId, captureIdentityKey);
+            latest = refreshed.isPresent()
+                    && refreshed.get().captureRevision() >= winner.captureRevision()
+                    ? refreshed
+                    : Optional.of(winner);
+        }
+        throw conflict("evaluation sample revision allocation is contended; retry capture");
+    }
+
+    private int nextRevision(Optional<EvidenceEvaluationSample> latest) {
+        return latest.map(sample -> Math.addExact(sample.captureRevision(), 1))
+                .orElse(1);
+    }
+
+    @FunctionalInterface
+    private interface RevisionFactory {
+        EvidenceEvaluationSample create(int captureRevision);
     }
 
     private MateClawException invalid(String message) {

@@ -56,6 +56,16 @@ const preview: SopSynthesisPreview = {
     },
   },
   fixtureMode: true,
+  traceEntries: 3,
+  sourceRequestCount: 3,
+  totalDurationMs: 40,
+  timings: {
+    logSearchDurationMs: 10,
+    logTraceDurationMs: 20,
+    contrastDurationMs: 5,
+    compressionDurationMs: 5,
+  },
+  completedAt: '2026-07-20T09:13:03Z',
   contrastAvailable: true,
   warnings: ['fixture recorded-replay'],
 }

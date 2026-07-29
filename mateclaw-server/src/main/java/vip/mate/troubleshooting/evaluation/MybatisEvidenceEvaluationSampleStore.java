@@ -45,6 +45,27 @@ public class MybatisEvidenceEvaluationSampleStore
     }
 
     @Override
+    public Optional<EvidenceEvaluationSample> findLatestByCaptureIdentity(
+            long workspaceId,
+            String captureIdentityKey) {
+        validateWorkspace(workspaceId);
+        if (captureIdentityKey == null || captureIdentityKey.isBlank()) {
+            throw new IllegalArgumentException("captureIdentityKey is required");
+        }
+        TroubleshootingEvidenceEvaluationSampleEntity latest = mapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingEvidenceEvaluationSampleEntity>()
+                        .eq(TroubleshootingEvidenceEvaluationSampleEntity::getWorkspaceId,
+                                workspaceId)
+                        .eq(TroubleshootingEvidenceEvaluationSampleEntity::getCaptureIdentityKey,
+                                captureIdentityKey.trim())
+                        .eq(TroubleshootingEvidenceEvaluationSampleEntity::getDeleted, 0)
+                        .orderByDesc(
+                                TroubleshootingEvidenceEvaluationSampleEntity::getCaptureRevision)
+                        .last("LIMIT 1"));
+        return Optional.ofNullable(latest).map(this::read);
+    }
+
+    @Override
     public Optional<EvidenceEvaluationSample> get(long workspaceId, String sampleId) {
         validateWorkspace(workspaceId);
         if (sampleId == null || sampleId.isBlank()) {
@@ -166,6 +187,8 @@ public class MybatisEvidenceEvaluationSampleStore
         entity.setWorkspaceId(workspaceId);
         entity.setSampleId(sample.sampleId());
         entity.setSampleKey(sample.sampleKey());
+        entity.setCaptureIdentityKey(sample.captureIdentityKey());
+        entity.setCaptureRevision(sample.captureRevision());
         entity.setDiagnosisId(sample.diagnosisId());
         entity.setSystem(sample.system());
         entity.setService(sample.service());

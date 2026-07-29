@@ -20,7 +20,7 @@ class EvidenceEvaluationSampleTest {
 
     @Test
     void separatesRealGuanceEvidenceFromTheLinkedFixtureDiagnosis() {
-        EvidenceEvaluationSample sample = captured(true);
+        EvidenceEvaluationSample sample = capturedWithModelInput(true);
 
         assertThat(sample.sourcePlatform())
                 .isEqualTo(EvidenceEvaluationSample.SourcePlatform.GUANCE);
@@ -29,7 +29,9 @@ class EvidenceEvaluationSampleTest {
         assertThat(sample.referenceStatus())
                 .isEqualTo(EvidenceEvaluationSample.ReferenceStatus.EVIDENCE_CAPTURED);
         assertThat(sample.referenceSolution()).isNull();
+        assertThat(sample.expectedDisposition()).isNull();
         assertThat(sample.outcome()).isNull();
+        assertThat(sample.modelInputHash()).isEqualTo("b".repeat(64));
     }
 
     @Test
@@ -44,12 +46,18 @@ class EvidenceEvaluationSampleTest {
                         NOW.plusSeconds(30));
 
         EvidenceEvaluationSample finalized = captured.finalizeReference(
-                reference, outcome, "reviewer@example.com", NOW.plusSeconds(40));
+                reference,
+                EvidenceEvaluationSample.ExpectedDisposition.ABSTAIN,
+                outcome,
+                "reviewer@example.com",
+                NOW.plusSeconds(40));
 
         assertThat(finalized.referenceStatus())
                 .isEqualTo(EvidenceEvaluationSample.ReferenceStatus.READY_FOR_EVALUATION);
         assertThat(finalized.version()).isEqualTo(1);
         assertThat(finalized.referenceSolution()).isEqualTo(reference);
+        assertThat(finalized.expectedDisposition())
+                .isEqualTo(EvidenceEvaluationSample.ExpectedDisposition.ABSTAIN);
         assertThat(finalized.outcome()).isEqualTo(outcome);
         assertThat(finalized.finalizedBy()).isEqualTo("reviewer@example.com");
     }
@@ -198,6 +206,25 @@ class EvidenceEvaluationSampleTest {
 
         assertThat(restored.evidence().timings())
                 .isEqualTo(vip.mate.troubleshooting.evidence.EvidenceSpineTimings.unmeasured());
+        assertThat(restored.modelInputHash()).isNull();
+        assertThat(restored.expectedDisposition()).isNull();
+    }
+
+    @Test
+    void rejectsMalformedModelInputFingerprints() {
+        EvidenceEvaluationSample sample = captured(false);
+
+        assertThatThrownBy(() -> new EvidenceEvaluationSample(
+                sample.sampleId(), sample.sampleKey(), sample.diagnosisId(),
+                sample.system(), sample.service(), sample.scenarioKey(),
+                sample.sourcePlatform(), sample.evidence(), "not-a-sha256",
+                NOW,
+                sample.diagnosisFixtureMode(), sample.referenceStatus(),
+                sample.referenceSolution(), sample.expectedDisposition(), sample.outcome(),
+                sample.version(), sample.capturedBy(), sample.finalizedBy(),
+                sample.capturedAt(), sample.finalizedAt()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("modelInputHash");
     }
 
     private EvidenceEvaluationSample captured(boolean diagnosisFixtureMode) {
@@ -209,6 +236,22 @@ class EvidenceEvaluationSampleTest {
                 "session-svc",
                 "message_send_failed",
                 fullPreview(),
+                diagnosisFixtureMode,
+                "admin@example.com",
+                NOW);
+    }
+
+    private EvidenceEvaluationSample capturedWithModelInput(boolean diagnosisFixtureMode) {
+        return EvidenceEvaluationSample.captured(
+                "eval-012345678901234567890123",
+                "a".repeat(64),
+                "diag-1",
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                fullPreview(),
+                "b".repeat(64),
+                NOW,
                 diagnosisFixtureMode,
                 "admin@example.com",
                 NOW);

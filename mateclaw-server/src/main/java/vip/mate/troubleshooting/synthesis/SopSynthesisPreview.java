@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.synthesis;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
 import java.time.Instant;
@@ -19,7 +20,46 @@ public record SopSynthesisPreview(
         EvidenceReference contrastEvidence,
         LogTraceSkeleton skeleton,
         boolean fixtureMode,
+        int traceEntries,
+        int sourceRequestCount,
+        long totalDurationMs,
+        EvidenceSpineTimings timings,
+        Instant completedAt,
         List<String> warnings) {
+
+    /** Backward-compatible constructor for existing preview-only callers. */
+    public SopSynthesisPreview(
+            Stage stage,
+            String system,
+            String service,
+            String searchTerm,
+            long matchCount,
+            String psId,
+            EvidenceReference searchEvidence,
+            EvidenceReference traceEvidence,
+            EvidenceReference contrastEvidence,
+            LogTraceSkeleton skeleton,
+            boolean fixtureMode,
+            List<String> warnings) {
+        this(
+                stage,
+                system,
+                service,
+                searchTerm,
+                matchCount,
+                psId,
+                searchEvidence,
+                traceEvidence,
+                contrastEvidence,
+                skeleton,
+                fixtureMode,
+                skeleton == null ? 0 : skeleton.sourceEntryCount(),
+                3,
+                0,
+                EvidenceSpineTimings.unmeasured(),
+                traceEvidence == null ? null : traceEvidence.collectedAt(),
+                warnings);
+    }
 
     public SopSynthesisPreview {
         if (stage == null || searchEvidence == null || traceEvidence == null || skeleton == null) {
@@ -35,6 +75,20 @@ public record SopSynthesisPreview(
         }
         if ((contrastEvidence != null) != skeleton.contrast().available()) {
             throw new IllegalArgumentException("contrast reference and summary must agree");
+        }
+        if (!fixtureMode
+                || traceEntries <= 0
+                || traceEntries != skeleton.sourceEntryCount()
+                || sourceRequestCount != 3
+                || totalDurationMs < 0
+                || completedAt == null) {
+            throw new IllegalArgumentException(
+                    "synthesis preview measurement facts are incomplete");
+        }
+        timings = timings == null ? EvidenceSpineTimings.unmeasured() : timings;
+        if (totalDurationMs < timings.observedWorkDurationMs()) {
+            throw new IllegalArgumentException(
+                    "synthesis preview total duration is shorter than measured work");
         }
     }
 

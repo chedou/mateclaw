@@ -68,6 +68,8 @@ class MybatisEvidenceEvaluationSampleStoreTest {
         assertThat(row.get().getReferenceStatus()).isEqualTo("EVIDENCE_CAPTURED");
         assertThat(row.get().getFixtureMode()).isFalse();
         assertThat(row.get().getDiagnosisFixtureMode()).isTrue();
+        assertThat(row.get().getCaptureIdentityKey()).isEqualTo("a".repeat(64));
+        assertThat(row.get().getCaptureRevision()).isEqualTo(1);
         assertThat(row.get().getAggregateJson())
                 .doesNotContain("source_lookup_key", "runtime-secret", "L::logs");
         verify(mapper, times(1))
@@ -163,6 +165,25 @@ class MybatisEvidenceEvaluationSampleStoreTest {
 
         assertThat(result.created()).isFalse();
         assertThat(result.sample()).isEqualTo(sample());
+    }
+
+    @Test
+    void returnsTheLatestImmutableCaptureRevisionForAnIdentity() {
+        TroubleshootingEvidenceEvaluationSampleMapper mapper =
+                mock(TroubleshootingEvidenceEvaluationSampleMapper.class);
+        TroubleshootingEvidenceEvaluationSampleEntity latest =
+                new TroubleshootingEvidenceEvaluationSampleEntity();
+        latest.setAggregateJson(new ObjectMapper().findAndRegisterModules()
+                .valueToTree(sample()).toString());
+        latest.setCaptureRevision(3);
+        when(mapper.selectOne(any())).thenReturn(latest);
+
+        EvidenceEvaluationSample result = store(mapper)
+                .findLatestByCaptureIdentity(7L, "a".repeat(64))
+                .orElseThrow();
+
+        assertThat(result).isEqualTo(sample());
+        verify(mapper).selectOne(any());
     }
 
     private MybatisEvidenceEvaluationSampleStore store(

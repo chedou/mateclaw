@@ -18,6 +18,8 @@ public class TroubleshootingEvidenceEvaluationSampleEntity {
     private Long workspaceId;
     private String sampleId;
     private String sampleKey;
+    private String captureIdentityKey;
+    private Integer captureRevision;
     private String diagnosisId;
     private String system;
     private String service;

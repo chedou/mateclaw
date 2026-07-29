@@ -1,8 +1,14 @@
 import type {
+  BaselineClassification,
+  BaselineCohortMetrics,
+  BaselineEvaluationStatus,
+  BaselineEvaluationSummary,
+  EvaluationExpectedDisposition,
   EvaluationSampleReferenceStatus,
   EvaluationLatencySummary,
   EvaluationSampleSummary,
   EvaluationSampleSourcePlatform,
+  RecordedReplayEvaluationCapability,
 } from '@/api'
 
 const STRUCTURED_KEY = /^[a-z][a-z0-9_:-]{1,63}$/
@@ -21,6 +27,12 @@ export interface EvaluationSampleCaptureContext {
   window: string
 }
 
+export interface ReplayEvaluationDiagnosisScope {
+  diagnosisId: string
+  system: string
+  service: string
+}
+
 export interface EvaluationLatencyCard {
   key: EvaluationSampleSourcePlatform
   source: string
@@ -28,6 +40,18 @@ export interface EvaluationLatencyCard {
   evidence: string
   compression: string
   total: string
+}
+
+export interface BaselineMetricCard {
+  key: string
+  source: string
+  cohort: string
+  evidenceMode: string
+  runCount: number
+  classifications: string
+  modelLatency: string
+  composedLatency: string
+  tokens: string
 }
 
 export function parseEvaluationIntentKeys(input: string): ParsedIntentKeys {
@@ -55,12 +79,62 @@ export function suggestedEvaluationScenarioKey(errorCode: string | null) {
   return ''
 }
 
+/** Builds Replay capture input only from the server-owned capability target. */
+export function replayEvaluationCaptureContext(
+  scope: ReplayEvaluationDiagnosisScope | null,
+  capability: RecordedReplayEvaluationCapability | null,
+): EvaluationSampleCaptureContext | null {
+  if (!scope || !capability?.available
+    || !capability.scenarioKey || !capability.searchTerm || !capability.window) return null
+  return {
+    diagnosisId: scope.diagnosisId,
+    system: scope.system,
+    service: scope.service,
+    scenarioKey: capability.scenarioKey,
+    searchTerm: capability.searchTerm,
+    window: capability.window,
+  }
+}
+
+/** Restores the exact lookup window that belongs to the frozen sample source. */
+export function evaluationSourceCaptureContext(
+  source: EvaluationSampleSourcePlatform,
+  guanceContext: EvaluationSampleCaptureContext | null,
+  replayContext: EvaluationSampleCaptureContext | null,
+): EvaluationSampleCaptureContext | null {
+  return source === 'RECORDED_REPLAY' ? replayContext : guanceContext
+}
+
 export function evaluationReferenceStatusLabel(value: EvaluationSampleReferenceStatus) {
   return value === 'READY_FOR_EVALUATION' ? '可进入评估集' : '待人工参考解'
 }
 
 export function evaluationSourceLabel(value: EvaluationSampleSourcePlatform) {
   return value === 'GUANCE' ? 'Guance 真源' : 'Recorded Replay'
+}
+
+export function evaluationExpectedDispositionLabel(value: EvaluationExpectedDisposition) {
+  return value === 'DRAFT' ? '预期生成草案' : '预期安全拒答'
+}
+
+export function baselineStatusLabel(value: BaselineEvaluationStatus) {
+  const labels: Record<BaselineEvaluationStatus, string> = {
+    MODEL_REJECTED: '模型调用失败',
+    ABSTAINED: '模型已拒答',
+    VALIDATION_REJECTED: '草案被安全校验拦截',
+    SCORED: '结构比较已完成',
+  }
+  return labels[value]
+}
+
+export function baselineClassificationLabel(value: BaselineClassification) {
+  const labels: Record<BaselineClassification, string> = {
+    HELPFUL: '有帮助',
+    UNHELPFUL: '无帮助',
+    HARMFUL_BLOCKED: '危险提议已拦截',
+    TECHNICAL_FAILURE: '技术失败',
+  }
+  return labels[value]
 }
 
 export function evaluationSampleProgress(summary: EvaluationSampleSummary) {
@@ -79,6 +153,48 @@ export function evaluationLatencyCards(
     latencyCard('GUANCE', summary.guanceLatency),
     latencyCard('RECORDED_REPLAY', summary.recordedReplayLatency),
   ]
+}
+
+export function evaluationBaselineCards(
+  summary: BaselineEvaluationSummary,
+): BaselineMetricCard[] {
+  return ([
+    ['GUANCE', summary.guance],
+    ['RECORDED_REPLAY', summary.recordedReplay],
+  ] as const).flatMap(([source, metrics]) => [
+    baselineCard(source, 'real', metrics.realDiagnosis),
+    baselineCard(source, 'fixture', metrics.fixtureDiagnosis),
+  ])
+}
+
+function baselineCard(
+  sourceKey: EvaluationSampleSourcePlatform,
+  cohortKey: 'real' | 'fixture',
+  metrics: BaselineCohortMetrics,
+): BaselineMetricCard {
+  return {
+    key: `${sourceKey}:${cohortKey}`,
+    source: evaluationSourceLabel(sourceKey),
+    cohort: cohortKey === 'real' ? '真实 Diagnosis' : 'fixture Diagnosis',
+    evidenceMode: sourceKey === 'GUANCE' ? '真实取证' : 'fixture 取证',
+    runCount: metrics.runCount,
+    classifications: metrics.runCount <= 0
+      ? '暂无运行'
+      : `有帮助 ${metrics.helpful} · 无帮助 ${metrics.unhelpful} · 危险已拦截 ${metrics.harmfulBlocked} · 技术失败 ${metrics.technicalFailure}`,
+    modelLatency: latencyPair(
+      metrics.runCount,
+      metrics.modelP50Ms,
+      metrics.modelP95Ms,
+    ),
+    composedLatency: latencyPair(
+      metrics.runCount,
+      metrics.composedTotalP50Ms,
+      metrics.composedTotalP95Ms,
+    ),
+    tokens: metrics.tokenMeasuredRuns <= 0
+      ? 'Token 暂不可得'
+      : `${metrics.tokenMeasuredRuns} 次可测 · 输入 ${metrics.promptTokens} · 输出 ${metrics.completionTokens} · 合计 ${metrics.totalTokens}`,
+  }
 }
 
 function latencyCard(

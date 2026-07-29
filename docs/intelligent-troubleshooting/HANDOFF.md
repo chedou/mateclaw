@@ -184,7 +184,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
   `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 配置和真实返回，
   不得将“入口已实现”改写为“T7 已通过”。
-- 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
+- 真实模型的输出质量和延迟数据仍未取得；V182 已提供固定输入/固定模型版本的单 Agent 基线运行与
+  结构化质量/Token/时延记录，本地未配模型时继续 fail closed，不能把“可运行”写成“已评估”。
 - 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
   以及“关闭且 outcome 已登记”后持久化原路 @ 通知；尚未完成的只是需单独平台评审的
   出站交互卡片（继续扩平台现有 `channel/wecom`，见 v4 §7.4 / D17）。
@@ -495,8 +496,53 @@ T8 应用侧计时与分来源描述性统计（2026-07-29）已实现，真实�
   正式 `/troubleshooting`、旧版 `/troubleshooting/legacy` 均返回 200，未登录 T8 API 返回预期 401。
   隔离登录态浏览器验证正式页、T8 台账和 legacy 均为 0 console error；本地台账诚实保持 `0/20`，
   两个来源均显示 0 条可测样本，未伪造真实观测；
-- 下一步仍是 owner 完成 T7 真实 binding/字段核实并采集 20–30 条历史样本；随后补模型时延、
-  引用完整率、必需意图覆盖、abstain/有害性、Challenger 与单 Agent 基线，才能评审整体 T8。
+- 下一步仍是 owner 完成 T7 真实 binding/字段核实并采集 20–30 条历史样本；单 Agent 运行接缝已在
+  下一节补齐，但没有真实样本就没有可报告的质量/成本基线，Challenger 也仍不能启动。
+
+T8 可复现单 Agent 基线接缝（2026-07-29）已实现，真实样本、Challenger 与 Gate 仍未完成：
+
+- 新采集样本同时冻结 Evidence Spine 的 `evidenceOccurredAt` 与精确有界 `SynthesisModelInput` SHA-256；
+  服务器只在内存中持有脱敏 `LogTraceSkeleton` 来生成指纹，样本/API 仍不保存或返回日志正文、DQL、
+  搜索键、窗口或凭据。V181 旧样本缺少指纹时保持可读，但必须重新采集才能运行基线；
+- 人工参考解新增显式 `expectedDisposition=DRAFT|ABSTAIN`。关联 Diagnosis 仍须 CLOSED，outcome、恢复验证
+  和业务安全摘要仍由服务端读取；旧调用兼容默认 DRAFT，但正式 HTTP 请求不能省略期望行为；
+- `POST /evaluation-samples/{sampleId}/baseline-runs` 先读取并钉死实际执行的 model + provider 配置快照，
+  以不含凭据的 `model-config/v2` 指纹区分版本，再用数据库租约原子占住样本+模型版本运行键；未抢到的
+  并发请求不访问证据源、不调模型。15 分钟 claim 在外部取证/模型调用期间每 4 分钟 CAS 续租，续租失败
+  会中断当前有界外部调用，且 persistence/evidence/model/complete 每个边界重新核对所有权；旧 worker
+  不再继续或发布结果，释放/到期后新 worker 才能接管。抢到后按冻结 lookup key
+  重跑 Guance-only 或 fixture-confined Recorded Replay Evidence Spine，
+  输入指纹漂移即 409 并要求保留旧样本、另采新样本；随后固定一个默认模型配置执行一次结构化归纳。
+  没有可用模型时在访问证据源前 409；不会创建 candidate、触发审核或改变 approved Playbook；
+- H2/MySQL/Kingbase V182 增加运行租约、证据 fixture / Diagnosis fixture 标记，完成后只保存模型版本、
+  模型/组合时延、Token、Validator code、引用/必需意图/顺序/
+  禁止意图比较和逐样本 `HELPFUL / UNHELPFUL / HARMFUL_BLOCKED / TECHNICAL_FAILURE` 分类。草案正文、
+  拒答正文、原始证据、lookup material、candidate、approval 和 Gate verdict 均不在合同或表中；
+- 正式 T8 台账可分别采集 Guance 真源与 Recorded Replay 对照，对两类新冻结样本运行基线；
+  已有运行不再遮挡“当前模型版本”按钮，相同版本返回幂等结果，模型配置变更后创建新版本运行。
+  页面按样本来源恢复 Guance 或 Replay 的冻结 lookup context，无码 Replay 样本不再错误依赖 Guance context。
+  汇总先按 Guance / Recorded Replay，再按真实/fixture Diagnosis 分层显示模型 p50/p95、证据+模型总
+  p50/p95 和 Token。页面明确这些只是描述性事实，不等于 T8 通过，不会关闭 `fixtureMode`；
+- V183 为 H2/MySQL/Kingbase 增加 `capture_identity_key + capture_revision` 和 workspace 内唯一约束。
+  每次 Guance / Replay 采集都会先重跑来源：输入指纹未变时幂等返回最新 revision，漂移时自动创建
+  不可变 `rN`，旧样本及其人工 oracle 不覆盖；并发异指纹争用同一 revision 时会核对数据库赢家
+  `modelInputHash`，不一致则基于最新 revision 有界重试。核心链没有 contrast 时参考解不会伪造
+  contrast 必需项；
+- 拒答只有在人工预期 `ABSTAIN`、完整 proposal 没有草案载荷、原因安全有界且证据落地时才计为
+  `HELPFUL`；理由必须同时表达证据不足并引用本次实际 evidence ID / signal kind。安全但残留字段的拒答、
+  或应弃权却生成的安全草案进入 `UNHELPFUL`；残留 payload 仍带当前 ValidationContext 校验 selector、
+  signal kind、citation 及该样本人工 reference 的 `forbiddenStepIntents`；危险原因、命中样本级禁止
+  humanAction/evidencePlan、越权或伪造引用进入 `HARMFUL_BLOCKED`，拒答正文仍不持久化；
+- `GET /evaluation-samples/recorded-replay/capability?diagnosisId=...` 在服务端读取同 Workspace Diagnosis，核对
+  workspace/system/service fixture scope、两个核心路由、Adapter 与 `ApprovedEvidenceSpineCatalog`，只在精确
+  fixture 匹配唯一已批准方案时返回其原始 `scenarioKey/searchTerm/window`。采集 POST 只接受 `diagnosisId`，
+  浏览器附带 target 字段直接返回 400；
+  正式页无码主案例不依赖 Guance 表单或 errorCode，只有 capability 为 READY 才允许 Replay 采集，默认关闭
+  和范围外场景都会显示明确原因；
+- 排障域 + Skill Manifest 后端 `425` 个测试、前端 `17` 个测试文件 / `134` 个测试全通过；
+  `vue-tsc --noEmit`、改动文件 ESLint、`git diff --check` 与直接 Vite 生产构建通过，构建完成
+  `6275` 个模块转换。当前没有伪造 Guance 样本或真实模型结果；D12/D13、Loop、Planning、
+  Evidence/Safety Challenger 继续保持 `PENDING-EVIDENCE`。
 
 后端定向测试命令：
 

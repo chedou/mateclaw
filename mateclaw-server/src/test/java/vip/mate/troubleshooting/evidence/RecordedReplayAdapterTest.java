@@ -215,6 +215,31 @@ class RecordedReplayAdapterTest {
     }
 
     @Test
+    void reportsOnlyAnExactRegisteredCoreFixtureAsAvailable() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                CLOCK);
+
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "csdp-session-service", "message_send_failed"))
+                .isTrue();
+        assertThat(adapter.coreFixtureSearchTerm("CSDP", "csdp-session-service"))
+                .contains("message_send_failed");
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "csdp-session-service", "unregistered_search"))
+                .isFalse();
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "another-service", "message_send_failed"))
+                .isFalse();
+        assertThat(adapter.coreFixtureSearchTerm("CSDP", "another-service"))
+                .isEmpty();
+    }
+
+    @Test
     void bundledP6SearchReplayRequiresTheRecordedSearchTerm() {
         EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
         config.setEnabled(true);

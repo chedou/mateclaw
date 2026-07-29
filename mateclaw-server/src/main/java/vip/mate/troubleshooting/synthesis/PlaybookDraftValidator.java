@@ -26,8 +26,6 @@ public final class PlaybookDraftValidator {
                     + "update\\s+(?:the\\s+)?(?:production|database)|drop\\s+table)");
     private static final Set<String> ALLOWED_SIGNAL_KINDS = Set.of(
             "log_search", "log_trace_bundle", "contrast_sample");
-    private static final Set<String> FORBIDDEN_INTENTS = Set.copyOf(
-            ReferenceSolution.messageSendFailure().forbiddenStepIntents());
     private static final int MAX_ITEMS = 32;
     private static final int MAX_TEXT = 1_000;
 
@@ -53,7 +51,7 @@ public final class PlaybookDraftValidator {
         for (int index = 0; index < draft.evidencePlan().size(); index++) {
             PlaybookDraft.EvidencePlanStep step = draft.evidencePlan().get(index);
             String path = "evidencePlan[" + index + "]";
-            validateIntent(step.intentKey(), path + ".intentKey", errors);
+            validateIntent(step.intentKey(), path + ".intentKey", context, errors);
             if (!ALLOWED_SIGNAL_KINDS.contains(normalize(step.signalKind()))) {
                 add(errors, "SIGNAL_KIND_NOT_ALLOWED", path + ".signalKind",
                         "evidence plan contains a non-read-only or unknown signal kind");
@@ -83,7 +81,7 @@ public final class PlaybookDraftValidator {
         for (int index = 0; index < draft.humanActions().size(); index++) {
             PlaybookDraft.HumanAction action = draft.humanActions().get(index);
             String path = "humanActions[" + index + "]";
-            validateIntent(action.intentKey(), path + ".intentKey", errors);
+            validateIntent(action.intentKey(), path + ".intentKey", context, errors);
             boundedText(action.instruction(), path + ".instruction", true, errors);
             if (!"EXTERNAL_HUMAN".equals(normalizeUpper(action.executionMode()))) {
                 add(errors, "ACTION_MODE_FORBIDDEN", path + ".executionMode",
@@ -104,6 +102,162 @@ public final class PlaybookDraftValidator {
         scanAllText(draft, errors);
         List<PlaybookDraft.ValidationError> unique = List.copyOf(new LinkedHashSet<>(errors));
         return new ValidationResult(unique.isEmpty(), unique);
+    }
+
+    /**
+     * Validates an abstention before any draft payload can be discarded.
+     * A refusal is a separate protocol branch: every draft field must be empty,
+     * while the reason and any attempted hidden payload still cross the same
+     * secret/tool/production-write scanner as a normal draft.
+     */
+    public ValidationResult validateAbstention(
+            PlaybookDraftProposal proposal,
+            ValidationContext context) {
+        if (context == null) {
+            throw new IllegalArgumentException("validation context is required");
+        }
+        List<PlaybookDraft.ValidationError> errors = new ArrayList<>();
+        if (proposal == null || !proposal.abstain()) {
+            add(errors, "ABSTAIN_PROPOSAL_REQUIRED", "abstain",
+                    "an abstention requires its complete model proposal");
+            return new ValidationResult(false, errors);
+        }
+        if (hasDraftPayload(proposal)) {
+            add(errors, "ABSTAIN_DRAFT_FIELDS_PRESENT", "proposal",
+                    "an abstention cannot carry a hidden draft payload");
+        }
+        validateAbstentionResidue(proposal, context, errors);
+        scan(proposal.abstainReason(), "abstainReason", errors);
+        scanProposalText(proposal, errors);
+        List<PlaybookDraft.ValidationError> unique = List.copyOf(new LinkedHashSet<>(errors));
+        return new ValidationResult(unique.isEmpty(), unique);
+    }
+
+    /**
+     * Applies the same authority checks to every non-empty residual field without
+     * pretending that an abstention must satisfy the mandatory shape of a draft.
+     */
+    private void validateAbstentionResidue(
+            PlaybookDraftProposal proposal,
+            ValidationContext context,
+            List<PlaybookDraft.ValidationError> errors) {
+        if (present(proposal.proposedType())
+                && !"SCENARIO".equals(normalizeUpper(proposal.proposedType()))) {
+            add(errors, "TYPE_NOT_ALLOWED", "proposedType",
+                    "P1 no-error-code synthesis may only propose SCENARIO playbooks");
+        }
+        if (proposal.proposedSelector() != null) {
+            validateSelector(proposal.proposedSelector(), context, errors);
+        }
+        boundedText(proposal.title(), "title", false, errors);
+        boundedSize(proposal.evidencePlan(), "evidencePlan", false, errors);
+        boundedSize(proposal.criteria(), "criteria", false, errors);
+        boundedSize(proposal.diagnosisHypotheses(), "diagnosisHypotheses", false, errors);
+        boundedSize(proposal.humanActions(), "humanActions", false, errors);
+
+        for (int index = 0; index < proposal.evidencePlan().size(); index++) {
+            PlaybookDraft.EvidencePlanStep step = proposal.evidencePlan().get(index);
+            String path = "evidencePlan[" + index + "]";
+            validateIntent(step.intentKey(), path + ".intentKey", context, errors);
+            if (!ALLOWED_SIGNAL_KINDS.contains(normalize(step.signalKind()))) {
+                add(errors, "SIGNAL_KIND_NOT_ALLOWED", path + ".signalKind",
+                        "evidence plan contains a non-read-only or unknown signal kind");
+            } else if (!context.evidenceKindsById().containsValue(normalize(step.signalKind()))) {
+                add(errors, "UNAVAILABLE_EVIDENCE_KIND", path + ".signalKind",
+                        "evidence plan cannot claim a signal kind absent from this bundle");
+            }
+            boundedText(step.purpose(), path + ".purpose", true, errors);
+        }
+        for (int index = 0; index < proposal.criteria().size(); index++) {
+            PlaybookDraft.Criterion criterion = proposal.criteria().get(index);
+            String path = "criteria[" + index + "]";
+            safeKey(criterion.criterionKey(), path + ".criterionKey", errors);
+            boundedText(criterion.description(), path + ".description", true, errors);
+            validateKinds(criterion.evidenceKinds(), path + ".evidenceKinds", context, errors);
+            citations(criterion.evidenceCitations(), path + ".evidenceCitations", context, errors);
+            bindKindsToCitations(criterion, path, context, errors);
+        }
+        for (int index = 0; index < proposal.diagnosisHypotheses().size(); index++) {
+            PlaybookDraft.DiagnosisHypothesis hypothesis =
+                    proposal.diagnosisHypotheses().get(index);
+            String path = "diagnosisHypotheses[" + index + "]";
+            safeKey(hypothesis.hypothesisKey(), path + ".hypothesisKey", errors);
+            boundedText(hypothesis.summary(), path + ".summary", true, errors);
+            citations(hypothesis.evidenceCitations(), path + ".evidenceCitations", context, errors);
+        }
+        for (int index = 0; index < proposal.humanActions().size(); index++) {
+            PlaybookDraft.HumanAction action = proposal.humanActions().get(index);
+            String path = "humanActions[" + index + "]";
+            validateIntent(action.intentKey(), path + ".intentKey", context, errors);
+            boundedText(action.instruction(), path + ".instruction", true, errors);
+            if (!"EXTERNAL_HUMAN".equals(normalizeUpper(action.executionMode()))) {
+                add(errors, "ACTION_MODE_FORBIDDEN", path + ".executionMode",
+                        "P1 actions must be executed by a human outside MateClaw");
+            }
+            citations(action.evidenceCitations(), path + ".evidenceCitations", context, errors);
+        }
+        if (!proposal.evidenceCitations().isEmpty()) {
+            citations(proposal.evidenceCitations(), "evidenceCitations", context, errors);
+        }
+    }
+
+    private boolean hasDraftPayload(PlaybookDraftProposal proposal) {
+        return present(proposal.proposedType())
+                || proposal.proposedSelector() != null
+                || present(proposal.title())
+                || !proposal.evidencePlan().isEmpty()
+                || !proposal.criteria().isEmpty()
+                || !proposal.diagnosisHypotheses().isEmpty()
+                || !proposal.humanActions().isEmpty()
+                || !proposal.evidenceCitations().isEmpty();
+    }
+
+    private void scanProposalText(
+            PlaybookDraftProposal proposal,
+            List<PlaybookDraft.ValidationError> errors) {
+        scan(proposal.proposedType(), "proposedType", errors);
+        scan(proposal.title(), "title", errors);
+        if (proposal.proposedSelector() != null) {
+            scan(proposal.proposedSelector().system(), "proposedSelector.system", errors);
+            scan(proposal.proposedSelector().scenarioKey(),
+                    "proposedSelector.scenarioKey", errors);
+            scan(proposal.proposedSelector().errorCode(),
+                    "proposedSelector.errorCode", errors);
+        }
+        for (int index = 0; index < proposal.evidencePlan().size(); index++) {
+            PlaybookDraft.EvidencePlanStep step = proposal.evidencePlan().get(index);
+            scan(step.intentKey(), "evidencePlan[" + index + "].intentKey", errors);
+            scan(step.signalKind(), "evidencePlan[" + index + "].signalKind", errors);
+            scan(step.purpose(), "evidencePlan[" + index + "].purpose", errors);
+        }
+        for (int index = 0; index < proposal.criteria().size(); index++) {
+            PlaybookDraft.Criterion criterion = proposal.criteria().get(index);
+            scan(criterion.criterionKey(), "criteria[" + index + "].criterionKey", errors);
+            scan(criterion.description(), "criteria[" + index + "].description", errors);
+        }
+        for (int index = 0; index < proposal.diagnosisHypotheses().size(); index++) {
+            PlaybookDraft.DiagnosisHypothesis hypothesis =
+                    proposal.diagnosisHypotheses().get(index);
+            scan(hypothesis.hypothesisKey(),
+                    "diagnosisHypotheses[" + index + "].hypothesisKey", errors);
+            scan(hypothesis.summary(),
+                    "diagnosisHypotheses[" + index + "].summary", errors);
+        }
+        for (int index = 0; index < proposal.humanActions().size(); index++) {
+            PlaybookDraft.HumanAction action = proposal.humanActions().get(index);
+            scan(action.intentKey(), "humanActions[" + index + "].intentKey", errors);
+            scan(action.instruction(), "humanActions[" + index + "].instruction", errors);
+            scan(action.executionMode(),
+                    "humanActions[" + index + "].executionMode", errors);
+        }
+        for (int index = 0; index < proposal.evidenceCitations().size(); index++) {
+            scan(proposal.evidenceCitations().get(index),
+                    "evidenceCitations[" + index + "]", errors);
+        }
+    }
+
+    private boolean present(String value) {
+        return value != null && !value.isBlank();
     }
 
     private void validateSelector(
@@ -275,15 +429,12 @@ public final class PlaybookDraftValidator {
     private void validateIntent(
             String value,
             String path,
+            ValidationContext context,
             List<PlaybookDraft.ValidationError> errors) {
         safeKey(value, path, errors);
-        String canonical = normalize(value)
-                .replace('-', '_')
-                .replace('.', '_')
-                .replace('/', '_');
-        if (FORBIDDEN_INTENTS.contains(canonical)) {
+        if (context.forbiddenStepIntents().contains(canonicalIntent(value))) {
             add(errors, "FORBIDDEN_INTENT", path,
-                    "intent is forbidden for an evidence-derived P1 draft");
+                    "intent is forbidden by the sample's human-authored reference solution");
         }
         scan(value, path, errors);
     }
@@ -327,6 +478,16 @@ public final class PlaybookDraftValidator {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
+    private static String canonicalIntent(String value) {
+        return value == null
+                ? ""
+                : value.trim()
+                        .toLowerCase(Locale.ROOT)
+                        .replace('-', '_')
+                        .replace('.', '_')
+                        .replace('/', '_');
+    }
+
     private boolean equalsIgnoreCase(String left, String right) {
         return left != null && right != null && left.equalsIgnoreCase(right);
     }
@@ -335,11 +496,33 @@ public final class PlaybookDraftValidator {
             String system,
             String scenarioKey,
             Map<String, String> evidenceKindsById,
-            boolean contrastAvailable) {
+            boolean contrastAvailable,
+            Set<String> forbiddenStepIntents) {
+
+        public ValidationContext(
+                String system,
+                String scenarioKey,
+                Map<String, String> evidenceKindsById,
+                boolean contrastAvailable) {
+            this(
+                    system,
+                    scenarioKey,
+                    evidenceKindsById,
+                    contrastAvailable,
+                    Set.copyOf(ReferenceSolution.messageSendFailure().forbiddenStepIntents()));
+        }
 
         public ValidationContext {
             evidenceKindsById = Map.copyOf(
                     evidenceKindsById == null ? Map.of() : evidenceKindsById);
+            LinkedHashSet<String> normalizedForbidden = new LinkedHashSet<>();
+            if (forbiddenStepIntents != null) {
+                forbiddenStepIntents.stream()
+                        .map(PlaybookDraftValidator::canonicalIntent)
+                        .filter(value -> !value.isBlank())
+                        .forEach(normalizedForbidden::add);
+            }
+            forbiddenStepIntents = Set.copyOf(normalizedForbidden);
         }
     }
 

@@ -11,10 +11,27 @@ workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed
 P2 真源验证接缝已增加 workspace 级就绪投影、管理员手工触发的 Guance-only
 `log_search → log_trace_bundle` 单次只读验证，以及正式工作台的“P2 真源门”；
 API 只返回计数、PS ID、节点数和绑定状态，不返回 DQL、密钥或原始日志，也绝不回退 Replay。
-正式工作台已增加管理员 T8 历史样本台账：服务端重新执行 Guance-only 三段 Evidence Spine，V181
-只持久化脱敏结构投影；人工参考步骤只能在关联 Diagnosis 关闭后冻结，outcome 由服务端读取，
+正式工作台已增加管理员 T8 历史样本台账：服务端可分别重新执行 Guance-only 真源链和
+fixture-confined Recorded Replay，两个来源使用不同样本键；Replay 按钮还必须通过服务端的 Adapter、
+路由、fixture scope 与精确样本 capability 检查。页面只向 Replay 采集接口提交 `diagnosisId`，服务端再以
+Diagnosis + `ApprovedEvidenceSpineCatalog` + fixture 唯一解析场景键、搜索键和窗口；浏览器提交这些目标字段会
+直接被拒绝。V181 只持久化脱敏结构投影。人工参考步骤
+只能在关联 Diagnosis 关闭后冻结，outcome 由服务端读取，
 页面按 Guance/Replay 展示参考解、fixture 分组计数，以及应用侧取证/确定性压缩/端到端总耗时的
-描述性 p50/p95；旧记录缺少计时时保持不可测，模型耗时与质量指标仍未实现，不产生 T8 通过结论。
+描述性 p50/p95；旧记录缺少计时时保持不可测。V182 进一步冻结精确模型输入指纹和期望
+`DRAFT/ABSTAIN`，可对两类来源样本与固定模型配置执行 candidate-free 单 Agent 基线。V183 增加
+`captureIdentityKey + captureRevision`：每次采集都先重跑来源，同指纹复用最新行，发生漂移则创建
+不可变的新 revision，旧 oracle 不覆盖；并发异指纹碰撞会核对赢家指纹并基于最新 revision 有界重试。
+运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
+有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
+不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确
+表达证据不足并引用实际 evidence ID / signal kind；安全但残留草案字段属于 `UNHELPFUL`，只有真实危险动作、
+命中该样本人工 reference 的 forbidden intent、越权引用或不安全原因进入 `HARMFUL_BLOCKED`，不能靠拒答
+绕过；结果只保存
+模型/组合时延、Token、确定性校验和逐样本 `HELPFUL/UNHELPFUL/HARMFUL_BLOCKED/TECHNICAL_FAILURE`
+分类，不保存草案/拒答正文、搜索键、原始证据或 Gate verdict；汇总再按来源与真实/fixture Diagnosis 分层。
+当前本地仍无真实 T7 样本和可报告的
+模型效果；Challenger 继续为 PENDING-EVIDENCE，`fixtureMode` 不变，也不产生 T8 通过结论。
 P3 T9 已完成企微普通消息 pre-route 与独立 IntakeSession，T10 已完成 READY 持久化异步调查、
 Intake 归属幂等 Diagnosis、稳定业务身份/精确投递路由分离、leader 回源恢复、平台 ACK 后完成、
 纯文本 BusinessSummary 与正式工作台深链，以及 Diagnosis 关闭后持久化、无硬重试上限的

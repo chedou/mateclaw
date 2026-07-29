@@ -8,6 +8,10 @@ public interface EvidenceEvaluationSampleStore {
 
     Optional<EvidenceEvaluationSample> findBySampleKey(long workspaceId, String sampleKey);
 
+    Optional<EvidenceEvaluationSample> findLatestByCaptureIdentity(
+            long workspaceId,
+            String captureIdentityKey);
+
     Optional<EvidenceEvaluationSample> get(long workspaceId, String sampleId);
 
     StoredSample saveOrGet(long workspaceId, EvidenceEvaluationSample sample);

@@ -74,11 +74,28 @@ public class GuanceEvidenceSpinePreviewService {
             String searchTerm,
             String window,
             Instant occurredAt) {
+        return observe(
+                workspaceId, system, service, searchTerm, window, occurredAt).preview();
+    }
+
+    /**
+     * Collects the same public preview plus its bounded in-memory skeleton for
+     * reproducible T8 input fingerprinting. The controller continues to expose
+     * only {@link #preview(long, String, String, String, String, Instant)}.
+     */
+    public GuanceEvidenceSpineObservation observe(
+            long workspaceId,
+            String system,
+            String service,
+            String searchTerm,
+            String window,
+            Instant occurredAt) {
         long started = ticker.getAsLong();
         GuanceEvidenceReadiness readiness =
                 readinessService.inspect(workspaceId, system, service);
         if (!canCollect(readiness.status())) {
-            return blocked(readiness, elapsedMillis(started));
+            return new GuanceEvidenceSpineObservation(
+                    blocked(readiness, elapsedMillis(started)), null);
         }
 
         Instant observationEnd = safeOccurredAt(occurredAt);
@@ -88,7 +105,9 @@ public class GuanceEvidenceSpinePreviewService {
                 workspaceId, incident, plan, GUANCE_ONLY);
         GuanceEvidenceReadiness updatedReadiness =
                 readinessService.inspect(workspaceId, system, service);
-        return project(spine, updatedReadiness, elapsedMillis(started));
+        return new GuanceEvidenceSpineObservation(
+                project(spine, updatedReadiness, elapsedMillis(started)),
+                spine.skeleton());
     }
 
     private GuanceEvidenceSpinePreview project(

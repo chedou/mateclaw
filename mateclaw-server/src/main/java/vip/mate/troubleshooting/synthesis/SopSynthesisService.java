@@ -203,6 +203,11 @@ public final class SopSynthesisService {
                 contrast == null ? null : evidenceReference(contrast),
                 skeleton,
                 TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                skeleton.sourceEntryCount(),
+                spine.sourceRequestCount(),
+                spine.timings().observedWorkDurationMs(),
+                spine.timings(),
+                contrast == null ? trace.collectedAt() : contrast.collectedAt(),
                 warnings);
     }
 

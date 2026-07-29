@@ -9,6 +9,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.core.io.ClassPathResource;
 import vip.mate.llm.chatmodel.ProviderChatModelFactory;
 import vip.mate.llm.model.ModelConfigEntity;
+import vip.mate.llm.model.ModelProviderEntity;
 import vip.mate.llm.service.ModelConfigService;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 import vip.mate.troubleshooting.synthesis.PlaybookCandidateStore;
@@ -57,7 +58,8 @@ class PlaybookSynthesisReplayEvalTest {
                 List.of(replay), properties, CLOCK);
 
         when(modelConfigs.getDefaultModel()).thenReturn(model());
-        when(chatModels.buildFor(any(), any())).thenReturn(chatModel);
+        when(chatModels.resolveProvider(any())).thenReturn(provider());
+        when(chatModels.buildFor(any(), any(), any())).thenReturn(chatModel);
         PlaybookDraftInducer inducer = new PlaybookDraftInducer(
                 modelConfigs, chatModels, objectMapper);
         PlaybookCandidateStore store = (workspaceId, candidate) -> {
@@ -134,6 +136,19 @@ class PlaybookSynthesisReplayEvalTest {
         model.setModelName("fixed-replay-eval");
         model.setUpdateTime(LocalDateTime.parse("2026-07-20T00:00:00"));
         return model;
+    }
+
+    private ModelProviderEntity provider() {
+        ModelProviderEntity provider = new ModelProviderEntity();
+        provider.setProviderId("openai");
+        provider.setChatModel("org.springframework.ai.openai.OpenAiChatModel");
+        provider.setBaseUrl("https://api.example.test/v1");
+        provider.setGenerateKwargs("{\"response_format\":\"json\"}");
+        provider.setEnabled(true);
+        provider.setIsLocal(false);
+        provider.setRequireApiKey(true);
+        provider.setUpdateTime(LocalDateTime.parse("2026-07-20T00:00:00"));
+        return provider;
     }
 
     private ChatResponse response(String body) {

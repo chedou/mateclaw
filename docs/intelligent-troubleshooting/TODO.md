@@ -203,21 +203,44 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       台账只纳入完整计时样本，以 nearest-rank 分别计算 Guance / Recorded Replay 的取证、压缩和
       端到端 p50/p95。V181 旧 JSON 缺少计时时兼容读取并排除统计；该指标不是 Guance DQL 时延，
       也不包含模型耗时或质量结论。
+- [x] 建立 candidate-free 单 Agent 基线运行接缝：V182 样本冻结精确有界模型输入 SHA-256 与人工
+      `DRAFT/ABSTAIN` 期望；运行时先原子占住样本+模型版本键，再按 Guance / Recorded Replay
+      重放同一 lookup、核对输入指纹，并对固定模型配置只调用一次。结果只保存模型/组合时延、
+      Token、Validator code 和逐样本结构比较分类，不保存草案正文、
+      拒答正文、搜索键、原始证据、candidate 或 Gate verdict；正式台按 Guance/Recorded Replay
+      分来源展示已有运行事实，但当前没有真实样本结果。
+- [x] 关闭基线并发与复现缺口：模型版本使用 `model-config/v2` 覆盖并钉死 model + provider 配置快照；
+      15 分钟 claim 每 4 分钟 CAS 续租，丢失所有权会中断当前有界外部调用，并在 persistence / evidence /
+      model / complete 边界拒绝继续；ABSTAIN 校验完整 proposal，安全的协议残留或应弃权却生成安全草案
+      归 `UNHELPFUL`，样本人工 reference 的 forbidden intents 进入 ValidationContext；只有危险原因、命中样本级
+      禁止动作、越权引用等真实安全问题归 `HARMFUL_BLOCKED`。
+- [x] V183 增加不可变采集修订：相同 capture identity 每次先重跑 Guance/Replay，同模型输入指纹复用
+      最新 revision，证据漂移自动创建 `rN`，旧样本和人工参考解不覆盖；并发异指纹争用同一 revision 时
+      核对数据库赢家指纹，不一致则基于最新 revision 有界重试，绝不误返回另一份输入。
+- [x] Replay 采集按钮绑定服务端 capability：同时核对 fixture workspace/system/service scope、
+      `log_search` / `log_trace_bundle` 路由、Adapter 支持与精确搜索样本；页面只提交 `diagnosisId`，
+      服务端从 Diagnosis 与 `ApprovedEvidenceSpineCatalog` 唯一解析 scenario/search/window，浏览器提交目标字段
+      直接返回 400；无码主案例不依赖 Guance 表单或错误码，默认关闭时明确禁用。Guance/Replay 基线按钮
+      分别恢复各自来源的冻结 lookup context，不再用 Guance context 代跑 Replay 样本。
 - [ ] 建 20–30 条历史样本，保留人工结论、参考步骤和 outcome。
 - [ ] 统计 p50/p95 取证/压缩/模型/总时延、引用完整率、必需意图覆盖率、abstain 质量。
 - [ ] 分开统计“没帮上忙”和“引向错误方向”；有害动作、高置信错误为 0 才可继续放权。
-- [ ] Recorded Replay 与真实 Guance 结果分组展示和统计，禁止混成一个成功率。
+- [x] Recorded Replay 与真实 Guance 结果分组展示和统计，并在每个来源内继续分开
+      真实 Diagnosis / fixture Diagnosis，禁止混成一个成功率。
 - [ ] 在同一批样本上影子运行 Evidence Challenger + Safety Challenger，各一次调用、固定一轮。
 - [ ] 与单 Agent/单次归纳基线比较引用完整率、弃权质量、危险动作拦截、p50/p95、token 和失败率。
 - [ ] 无可复现质量收益或成本不可接受时，停止在影子模式，不进入在线或晋升 Gate。
 - [ ] 在这批样本上确定 v4 §5.7 的**退出校准期阈值**（必需意图覆盖率、危险动作拦截率、
       高置信错误数为 0），并统计 §5.10 三段时间差；退出条件是数据达标，不是排期到点。
 
-2026-07-29：上述完整预览已接入正式台账，当前完成的是**采集、冻结参考解、分组计数与应用侧
-取证/压缩/总时延描述性统计能力**，
+2026-07-29：上述完整预览与单 Agent 基线接缝已接入正式台账，当前完成的是**采集、冻结参考解、
+可复现输入指纹、不可变采集修订、钉死 Provider 的单模型版本运行、分组计数与应用侧
+取证/压缩/模型/总时延描述性统计能力**，
 不是 20–30 条真实样本本身，更不是 T8 验收结论。`contrast_sample` 未绑定或不可用时仍保留核心
 同 PS ID 链路，显式标记对照缺失并继续校准期；Guance 与 Recorded Replay、证据 fixture 与关联
-Diagnosis fixture 分开记录。模型时延、引用/意图覆盖、abstain、有害性和 Challenger 对比仍未实现；
+Diagnosis fixture 分开记录。逐样本引用/意图覆盖、安全且证据落地的拒答原因、危险提议分类已经具备
+结构化存储；Recorded Replay 采集和基线执行已接入。但当前没有真实数据，不能产出质量结论；
+Challenger 影子运行和两者对比仍未实现。
 只有 owner 完成 T7、实际累积 20–30 条并跑完质量/完整性能统计后，
 才能计算和评审整体 T8 基线。
 

@@ -6,9 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.Prompt;
 import vip.mate.llm.chatmodel.ProviderChatModelFactory;
 import vip.mate.llm.model.ModelConfigEntity;
+import vip.mate.llm.model.ModelProviderEntity;
 import vip.mate.llm.service.ModelConfigService;
 
 import java.time.Clock;
@@ -38,12 +40,18 @@ class PlaybookDraftInducerTest {
                 modelConfigs, chatModels, new ObjectMapper().findAndRegisterModules(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         when(modelConfigs.getDefaultModel()).thenReturn(model());
-        when(chatModels.buildFor(any(), any())).thenReturn(chatModel);
+        when(chatModels.resolveProvider(any())).thenReturn(provider());
+        when(chatModels.buildFor(any(), any(), any())).thenReturn(chatModel);
     }
 
     @Test
     void makesExactlyOneStructuredLowTemperatureCall() {
         ChatResponse response = response(validJson());
+        Usage usage = mock(Usage.class);
+        when(usage.getPromptTokens()).thenReturn(320);
+        when(usage.getCompletionTokens()).thenReturn(160);
+        when(usage.getTotalTokens()).thenReturn(480);
+        when(response.getMetadata().getUsage()).thenReturn(usage);
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
 
         PlaybookDraftInducer.InductionResult result = inducer.induce(input("message accepted"));
@@ -51,12 +59,80 @@ class PlaybookDraftInducerTest {
         assertThat(result.status()).isEqualTo(PlaybookDraftInducer.Status.ACCEPTED);
         assertThat(result.proposal().title()).contains("消息发送失败");
         assertThat(result.invocation().invocationCount()).isEqualTo(1);
-        assertThat(result.invocation().modelConfigVersion()).contains("fixed-model");
+        assertThat(result.invocation().modelConfigVersion())
+                .matches("modelcfg-sha256:[a-f0-9]{64}");
+        assertThat(result.invocation().promptTokens()).isEqualTo(320L);
+        assertThat(result.invocation().completionTokens()).isEqualTo(160L);
+        assertThat(result.invocation().totalTokens()).isEqualTo(480L);
 
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
         org.mockito.Mockito.verify(chatModel, org.mockito.Mockito.times(1)).call(prompt.capture());
         assertThat(prompt.getValue().getOptions().getTemperature()).isEqualTo(0.1);
         assertThat(prompt.getValue().getOptions().getMaxTokens()).isEqualTo(1800);
+    }
+
+    @Test
+    void preparedInvocationPinsOneModelConfigurationForAnEvaluationRun() {
+        ChatResponse response = response(validJson());
+        when(chatModel.call(any(Prompt.class))).thenReturn(response);
+
+        PlaybookDraftInducer.ModelPreparation preparation = inducer.prepare();
+        PlaybookDraftInducer.InductionResult result = inducer.induce(
+                input("normal"), preparation.preparedModel());
+
+        assertThat(preparation.ready()).isTrue();
+        assertThat(preparation.preparedModel().modelConfigVersion())
+                .matches("modelcfg-sha256:[a-f0-9]{64}");
+        assertThat(result.status()).isEqualTo(PlaybookDraftInducer.Status.ACCEPTED);
+        org.mockito.Mockito.verify(modelConfigs, org.mockito.Mockito.times(1))
+                .getDefaultModel();
+    }
+
+    @Test
+    void reportsAnIncompleteDefaultModelAsUnavailableInsteadOfThrowing() {
+        ModelConfigEntity invalid = model();
+        invalid.setProvider(" ");
+        when(modelConfigs.getDefaultModel()).thenReturn(invalid);
+
+        PlaybookDraftInducer.ModelPreparation preparation = inducer.prepare();
+
+        assertThat(preparation.ready()).isFalse();
+        assertThat(preparation.preparedModel()).isNull();
+        assertThat(preparation.errors()).containsExactly("MODEL_CONFIGURATION_INVALID");
+    }
+
+    @Test
+    void hashesAndPinsTheFullStableProviderAndModelIdentityWithoutExposingIt() {
+        ModelProviderEntity first = provider();
+        ModelProviderEntity second = provider();
+        second.setBaseUrl("https://second.example.test/v1");
+        second.setUpdateTime(LocalDateTime.parse("2026-07-20T00:01:00"));
+        when(chatModels.resolveProvider(any())).thenReturn(first, second);
+
+        String firstVersion = inducer.prepare().preparedModel().modelConfigVersion();
+        String secondVersion = inducer.prepare().preparedModel().modelConfigVersion();
+
+        assertThat(firstVersion).matches("modelcfg-sha256:[a-f0-9]{64}");
+        assertThat(secondVersion).matches("modelcfg-sha256:[a-f0-9]{64}");
+        assertThat(secondVersion).isNotEqualTo(firstVersion);
+        assertThat(firstVersion).doesNotContain("openai", "fixed-model");
+    }
+
+    @Test
+    void executesAgainstTheProviderSnapshotPinnedDuringPreparation() {
+        ModelProviderEntity pinned = provider();
+        when(chatModels.resolveProvider(any())).thenReturn(pinned);
+        PlaybookDraftInducer.ModelPreparation preparation = inducer.prepare();
+        ChatResponse response = response(validJson());
+        when(chatModel.call(any(Prompt.class))).thenReturn(response);
+
+        inducer.induce(input("normal"), preparation.preparedModel());
+
+        assertThat(preparation.preparedModel().providerConfig()).isSameAs(pinned);
+        org.mockito.Mockito.verify(chatModels).buildFor(
+                org.mockito.ArgumentMatchers.same(preparation.preparedModel().model()),
+                org.mockito.ArgumentMatchers.same(pinned),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -94,8 +170,7 @@ class PlaybookDraftInducerTest {
     void supportsExplicitAbstentionAsAFirstClassResult() {
         ChatResponse response = response("""
                 {"abstain":true,"abstainReason":"insufficient discriminating evidence",\
-                 "proposedType":"SCENARIO","proposedSelector":{"system":"CSDP",\
-                 "scenarioKey":"message_send_failed","errorCode":null},"title":"",\
+                 "proposedType":null,"proposedSelector":null,"title":"",\
                  "evidencePlan":[],"criteria":[],"diagnosisHypotheses":[],\
                  "humanActions":[],"evidenceCitations":[]}
                 """);
@@ -104,6 +179,7 @@ class PlaybookDraftInducerTest {
         PlaybookDraftInducer.InductionResult result = inducer.induce(input("normal"));
 
         assertThat(result.status()).isEqualTo(PlaybookDraftInducer.Status.ABSTAINED);
+        assertThat(result.proposal()).isNotNull();
         assertThat(result.abstainReason()).contains("insufficient");
     }
 
@@ -134,6 +210,19 @@ class PlaybookDraftInducerTest {
         model.setModelName("fixed-model");
         model.setUpdateTime(LocalDateTime.parse("2026-07-20T00:00:00"));
         return model;
+    }
+
+    private ModelProviderEntity provider() {
+        ModelProviderEntity provider = new ModelProviderEntity();
+        provider.setProviderId("openai");
+        provider.setChatModel("org.springframework.ai.openai.OpenAiChatModel");
+        provider.setBaseUrl("https://api.example.test/v1");
+        provider.setGenerateKwargs("{\"response_format\":\"json\"}");
+        provider.setEnabled(true);
+        provider.setIsLocal(false);
+        provider.setRequireApiKey(true);
+        provider.setUpdateTime(LocalDateTime.parse("2026-07-20T00:00:00"));
+        return provider;
     }
 
     private ChatResponse response(String body) {

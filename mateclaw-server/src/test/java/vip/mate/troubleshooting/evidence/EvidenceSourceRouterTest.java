@@ -108,6 +108,34 @@ class EvidenceSourceRouterTest {
     }
 
     @Test
+    void capabilityCheckRequiresAnExactConfiguredAndSupportingAdapter() {
+        StubAdapter replay = StubAdapter.returning(
+                "recorded-replay", result("EV-1", "recorded-replay"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of(
+                        "log_search", List.of("recorded-replay"))),
+                replay);
+
+        assertThat(router.canRoute("csdp", "LOG_SEARCH", "RECORDED-REPLAY"))
+                .isTrue();
+        assertThat(router.canRoute("CSDP", "log_trace_bundle", "recorded-replay"))
+                .isFalse();
+        assertThat(router.canRoute("another-system", "log_search", "recorded-replay"))
+                .isFalse();
+        assertThat(router.canRoute("CSDP", "log_search", "guance"))
+                .isFalse();
+
+        StubAdapter unsupported = StubAdapter.unsupported("recorded-replay");
+        EvidenceSourceRouter unsupportedRouter = router(
+                Map.of("CSDP", Map.of(
+                        "log_search", List.of("recorded-replay"))),
+                unsupported);
+        assertThat(unsupportedRouter.canRoute(
+                "CSDP", "log_search", "recorded-replay"))
+                .isFalse();
+    }
+
+    @Test
     void rejectsDuplicatePlatformNamesAtTheCompositionBoundary() {
         EvidenceProperties properties = new EvidenceProperties();
 
@@ -171,20 +199,30 @@ class EvidenceSourceRouterTest {
         private final String platform;
         private final EvidenceResult result;
         private final boolean throwsOnCollect;
+        private final boolean supportsSignal;
         private final AtomicInteger calls = new AtomicInteger();
 
-        private StubAdapter(String platform, EvidenceResult result, boolean throwsOnCollect) {
+        private StubAdapter(
+                String platform,
+                EvidenceResult result,
+                boolean throwsOnCollect,
+                boolean supportsSignal) {
             this.platform = platform;
             this.result = result;
             this.throwsOnCollect = throwsOnCollect;
+            this.supportsSignal = supportsSignal;
         }
 
         static StubAdapter returning(String platform, EvidenceResult result) {
-            return new StubAdapter(platform, result, false);
+            return new StubAdapter(platform, result, false, true);
         }
 
         static StubAdapter throwing(String platform) {
-            return new StubAdapter(platform, null, true);
+            return new StubAdapter(platform, null, true, true);
+        }
+
+        static StubAdapter unsupported(String platform) {
+            return new StubAdapter(platform, null, false, false);
         }
 
         int calls() {
@@ -198,7 +236,7 @@ class EvidenceSourceRouterTest {
 
         @Override
         public boolean supports(String signalKind) {
-            return true;
+            return supportsSignal;
         }
 
         @Override

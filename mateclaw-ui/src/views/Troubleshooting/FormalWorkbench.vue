@@ -473,8 +473,11 @@
       :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
       :current-diagnosis-status="current?.diagnosis.status || null"
       :capture-context="evaluationCaptureContext"
+      :replay-capture-context="replayEvaluationCaptureContextValue"
       :capture-enabled="canCaptureEvaluationSample"
       :capture-disabled-reason="evaluationCaptureDisabledReason"
+      :replay-capture-enabled="canCaptureReplayEvaluationSample"
+      :replay-capture-disabled-reason="replayCaptureDisabledReason"
       @open-diagnosis="openDiagnosisFromLedger"
     />
 
@@ -550,6 +553,7 @@ import {
   type GuanceSignalStatus,
   type GuanceSpinePreviewStepStatus,
   type RecommendedAction,
+  type RecordedReplayEvaluationCapability,
   type StoredDiagnosis,
 } from '@/api'
 import {
@@ -575,6 +579,7 @@ import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import {
   type EvaluationSampleCaptureContext,
+  replayEvaluationCaptureContext,
   suggestedEvaluationScenarioKey,
 } from './evaluationSamples'
 
@@ -606,9 +611,11 @@ const incidentReportLoading = ref(false)
 const readinessLoading = ref(false)
 const validationLoading = ref(false)
 const spinePreviewLoading = ref(false)
+const replayCapabilityLoading = ref(false)
 const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
 const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
 const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
+const replayCapability = ref<RecordedReplayEvaluationCapability | null>(null)
 const readinessError = ref('')
 let selectionVersion = 0
 
@@ -648,6 +655,15 @@ const evaluationCaptureContext = computed<EvaluationSampleCaptureContext | null>
     window: formMatchesIncident ? guanceValidationForm.window : '-15m',
   }
 })
+const replayEvaluationCaptureContextValue = computed(() => {
+  const diagnosis = current.value?.diagnosis
+  const incident = diagnosis?.incident
+  return replayEvaluationCaptureContext(diagnosis && incident ? {
+    diagnosisId: diagnosis.diagnosisId,
+    system: incident.system,
+    service: incident.service,
+  } : null, replayCapability.value)
+})
 const canCaptureEvaluationSample = computed(() => canManageTroubleshooting.value
   && Boolean(guanceSpinePreview.value)
   && guanceSpinePreview.value?.stage !== 'BLOCKED')
@@ -655,6 +671,13 @@ const evaluationCaptureDisabledReason = computed(() => {
   if (!canManageTroubleshooting.value) return '当前 Workspace 缺少 manage:troubleshooting 权限。'
   if (!evaluationCaptureContext.value) return '当前 Diagnosis 没有可安全映射的搜索键。'
   return '先在真源验收中取得一条非 BLOCKED Evidence Spine，再采集历史样本。'
+})
+const canCaptureReplayEvaluationSample = computed(() => canManageTroubleshooting.value
+  && Boolean(replayEvaluationCaptureContextValue.value))
+const replayCaptureDisabledReason = computed(() => {
+  if (!canManageTroubleshooting.value) return '当前 Workspace 缺少 manage:troubleshooting 权限。'
+  if (replayCapabilityLoading.value) return '正在核对服务端 Replay 能力与 fixture 登记范围。'
+  return replayCapability.value?.reason || '服务端尚未确认 Replay 能力与 fixture 登记范围。'
 })
 
 const incidentReportOpen = ref(false)
@@ -790,6 +813,7 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     guanceValidation.value = null
     guanceSpinePreview.value = null
     guanceReadiness.value = null
+    replayCapability.value = null
     readinessError.value = ''
     if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
     void loadGuanceReadiness(
@@ -834,9 +858,37 @@ function openGuanceValidation() {
   guanceValidationOpen.value = true
 }
 
-function openEvaluationLedger() {
+async function openEvaluationLedger() {
   if (!canManageTroubleshooting.value) return
+  const diagnosisId = current.value?.diagnosis.diagnosisId
+  if (diagnosisId) await loadReplayCapability(diagnosisId, selectionVersion)
   evaluationLedgerOpen.value = true
+}
+
+async function loadReplayCapability(
+  diagnosisId: string,
+  version = selectionVersion,
+) {
+  replayCapabilityLoading.value = true
+  try {
+    const response = await troubleshootingApi.recordedReplayEvaluationCapability({
+      diagnosisId,
+    })
+    if (version !== selectionVersion) return
+    replayCapability.value = response.data
+  } catch {
+    if (version !== selectionVersion) return
+    replayCapability.value = {
+      available: false,
+      reasonCode: 'CAPABILITY_UNAVAILABLE',
+      reason: '服务端 Replay 能力检查暂不可用。',
+      scenarioKey: null,
+      searchTerm: null,
+      window: null,
+    }
+  } finally {
+    if (version === selectionVersion) replayCapabilityLoading.value = false
+  }
 }
 
 async function openDiagnosisFromLedger(diagnosisId: string) {

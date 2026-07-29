@@ -4,7 +4,9 @@ import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.ClosureOutcome;
+import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
+import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,15 +21,20 @@ import java.util.regex.Pattern;
 public record EvidenceEvaluationSample(
         String sampleId,
         String sampleKey,
+        String captureIdentityKey,
+        int captureRevision,
         String diagnosisId,
         String system,
         String service,
         String scenarioKey,
         SourcePlatform sourcePlatform,
         EvidenceSnapshot evidence,
+        String modelInputHash,
+        Instant evidenceOccurredAt,
         boolean diagnosisFixtureMode,
         ReferenceStatus referenceStatus,
         ReferenceSolution referenceSolution,
+        ExpectedDisposition expectedDisposition,
         OutcomeSnapshot outcome,
         int version,
         String capturedBy,
@@ -39,16 +46,33 @@ public record EvidenceEvaluationSample(
             Pattern.compile("[a-z][a-z0-9_:-]{1,63}");
     private static final List<String> SIGNAL_KINDS = List.of(
             "log_search", "log_trace_bundle", "contrast_sample");
-    private static final List<String> EVIDENCE_REFS = List.of(
+    private static final List<String> GUANCE_EVIDENCE_REFS = List.of(
             "T8-GUANCE-LOG-SEARCH",
             "T8-GUANCE-TRACE-BUNDLE",
             "T8-GUANCE-CONTRAST-SAMPLE");
+    private static final List<String> REPLAY_EVIDENCE_REFS = List.of(
+            "SYNTH-LOG-SEARCH",
+            "SYNTH-TRACE-BUNDLE",
+            "SYNTH-CONTRAST-SAMPLE");
 
     public EvidenceEvaluationSample {
         sampleId = required(sampleId, "sampleId");
         sampleKey = required(sampleKey, "sampleKey");
         if (!sampleKey.matches("[a-f0-9]{64}")) {
             throw new IllegalArgumentException("sampleKey must be a SHA-256 value");
+        }
+        captureIdentityKey = captureIdentityKey == null || captureIdentityKey.isBlank()
+                ? sampleKey
+                : captureIdentityKey.trim();
+        if (!captureIdentityKey.matches("[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "captureIdentityKey must be a SHA-256 value");
+        }
+        if (captureRevision == 0) {
+            // V181/V182 JSON predates explicit immutable recapture revisions.
+            captureRevision = 1;
+        } else if (captureRevision < 0) {
+            throw new IllegalArgumentException("captureRevision must be positive");
         }
         diagnosisId = required(diagnosisId, "diagnosisId");
         system = required(system, "system");
@@ -68,6 +92,7 @@ public record EvidenceEvaluationSample(
             throw new IllegalArgumentException(
                     "Recorded Replay evidence must remain fixture evidence");
         }
+        modelInputHash = optionalHash(modelInputHash, "modelInputHash");
         if (version < 0) {
             throw new IllegalArgumentException("version must not be negative");
         }
@@ -76,6 +101,7 @@ public record EvidenceEvaluationSample(
 
         if (referenceStatus == ReferenceStatus.EVIDENCE_CAPTURED) {
             if (referenceSolution != null || outcome != null
+                    || expectedDisposition != null
                     || finalizedBy != null || finalizedAt != null || version != 0) {
                 throw new IllegalArgumentException(
                         "an evidence-only sample cannot contain finalized reference facts");
@@ -91,7 +117,252 @@ public record EvidenceEvaluationSample(
         }
     }
 
+    /** Backward-compatible canonical constructor for JSON/callers predating recapture revisions. */
+    public EvidenceEvaluationSample(
+            String sampleId,
+            String sampleKey,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            SourcePlatform sourcePlatform,
+            EvidenceSnapshot evidence,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            ReferenceStatus referenceStatus,
+            ReferenceSolution referenceSolution,
+            ExpectedDisposition expectedDisposition,
+            OutcomeSnapshot outcome,
+            int version,
+            String capturedBy,
+            String finalizedBy,
+            Instant capturedAt,
+            Instant finalizedAt) {
+        this(
+                sampleId,
+                sampleKey,
+                sampleKey,
+                1,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                sourcePlatform,
+                evidence,
+                modelInputHash,
+                evidenceOccurredAt,
+                diagnosisFixtureMode,
+                referenceStatus,
+                referenceSolution,
+                expectedDisposition,
+                outcome,
+                version,
+                capturedBy,
+                finalizedBy,
+                capturedAt,
+                finalizedAt);
+    }
+
+    /** Backward-compatible constructor for V181 JSON and callers predating model input scoring. */
+    public EvidenceEvaluationSample(
+            String sampleId,
+            String sampleKey,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            SourcePlatform sourcePlatform,
+            EvidenceSnapshot evidence,
+            boolean diagnosisFixtureMode,
+            ReferenceStatus referenceStatus,
+            ReferenceSolution referenceSolution,
+            OutcomeSnapshot outcome,
+            int version,
+            String capturedBy,
+            String finalizedBy,
+            Instant capturedAt,
+            Instant finalizedAt) {
+        this(
+                sampleId,
+                sampleKey,
+                sampleKey,
+                1,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                sourcePlatform,
+                evidence,
+                null,
+                null,
+                diagnosisFixtureMode,
+                referenceStatus,
+                referenceSolution,
+                null,
+                outcome,
+                version,
+                capturedBy,
+                finalizedBy,
+                capturedAt,
+                finalizedAt);
+    }
+
     /** Creates a Guance sample from an observed, secret-free Evidence Spine projection. */
+    public static EvidenceEvaluationSample captured(
+            String sampleId,
+            String sampleKey,
+            String captureIdentityKey,
+            int captureRevision,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            GuanceEvidenceSpinePreview preview,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            String actor,
+            Instant capturedAt) {
+        if (preview == null || preview.stage() == GuanceEvidenceSpinePreview.Stage.BLOCKED) {
+            throw new IllegalArgumentException(
+                    "an evaluation sample requires observed Guance evidence");
+        }
+        return new EvidenceEvaluationSample(
+                sampleId,
+                sampleKey,
+                captureIdentityKey,
+                captureRevision,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                SourcePlatform.GUANCE,
+                EvidenceSnapshot.from(preview),
+                requiredHash(modelInputHash, "modelInputHash"),
+                requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
+                diagnosisFixtureMode,
+                ReferenceStatus.EVIDENCE_CAPTURED,
+                null,
+                null,
+                null,
+                0,
+                actor,
+                null,
+                capturedAt,
+                null);
+    }
+
+    /** Backward-compatible revision-one Guance factory. */
+    public static EvidenceEvaluationSample captured(
+            String sampleId,
+            String sampleKey,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            GuanceEvidenceSpinePreview preview,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            String actor,
+            Instant capturedAt) {
+        return captured(
+                sampleId,
+                sampleKey,
+                sampleKey,
+                1,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                preview,
+                modelInputHash,
+                evidenceOccurredAt,
+                diagnosisFixtureMode,
+                actor,
+                capturedAt);
+    }
+
+    /** Creates a fixture-separated sample from the server-owned recorded Replay lane. */
+    public static EvidenceEvaluationSample capturedReplay(
+            String sampleId,
+            String sampleKey,
+            String captureIdentityKey,
+            int captureRevision,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            SopSynthesisPreview preview,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            String actor,
+            Instant capturedAt) {
+        if (preview == null
+                || preview.stage() != SopSynthesisPreview.Stage.READY_FOR_MODEL
+                || !preview.fixtureMode()) {
+            throw new IllegalArgumentException(
+                    "an evaluation sample requires a recorded Replay preview");
+        }
+        return new EvidenceEvaluationSample(
+                sampleId,
+                sampleKey,
+                captureIdentityKey,
+                captureRevision,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                SourcePlatform.RECORDED_REPLAY,
+                EvidenceSnapshot.from(preview),
+                requiredHash(modelInputHash, "modelInputHash"),
+                requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
+                diagnosisFixtureMode,
+                ReferenceStatus.EVIDENCE_CAPTURED,
+                null,
+                null,
+                null,
+                0,
+                actor,
+                null,
+                capturedAt,
+                null);
+    }
+
+    /** Backward-compatible revision-one Replay factory. */
+    public static EvidenceEvaluationSample capturedReplay(
+            String sampleId,
+            String sampleKey,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            SopSynthesisPreview preview,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            String actor,
+            Instant capturedAt) {
+        return capturedReplay(
+                sampleId,
+                sampleKey,
+                sampleKey,
+                1,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                preview,
+                modelInputHash,
+                evidenceOccurredAt,
+                diagnosisFixtureMode,
+                actor,
+                capturedAt);
+    }
+
+    /** Backward-compatible factory for tests and V181 callers without a frozen input hash. */
     public static EvidenceEvaluationSample captured(
             String sampleId,
             String sampleKey,
@@ -110,14 +381,19 @@ public record EvidenceEvaluationSample(
         return new EvidenceEvaluationSample(
                 sampleId,
                 sampleKey,
+                sampleKey,
+                1,
                 diagnosisId,
                 system,
                 service,
                 scenarioKey,
                 SourcePlatform.GUANCE,
                 EvidenceSnapshot.from(preview),
+                null,
+                null,
                 diagnosisFixtureMode,
                 ReferenceStatus.EVIDENCE_CAPTURED,
+                null,
                 null,
                 null,
                 0,
@@ -130,14 +406,16 @@ public record EvidenceEvaluationSample(
     /** Finalizes the immutable human-authored oracle and authoritative Diagnosis outcome. */
     public EvidenceEvaluationSample finalizeReference(
             ReferenceSolution reference,
+            ExpectedDisposition expectedDisposition,
             OutcomeSnapshot authoritativeOutcome,
             String actor,
             Instant finalizedAt) {
         if (referenceStatus != ReferenceStatus.EVIDENCE_CAPTURED) {
             throw new IllegalStateException("evaluation sample reference is already finalized");
         }
-        if (reference == null || authoritativeOutcome == null) {
-            throw new IllegalArgumentException("reference and authoritative outcome are required");
+        if (reference == null || expectedDisposition == null || authoritativeOutcome == null) {
+            throw new IllegalArgumentException(
+                    "reference, expected disposition and authoritative outcome are required");
         }
         if (!scenarioKey.equals(reference.scenarioKey())) {
             throw new IllegalArgumentException("reference scenario must match the evaluation sample");
@@ -146,21 +424,40 @@ public record EvidenceEvaluationSample(
         return new EvidenceEvaluationSample(
                 sampleId,
                 sampleKey,
+                captureIdentityKey,
+                captureRevision,
                 diagnosisId,
                 system,
                 service,
                 scenarioKey,
                 sourcePlatform,
                 evidence,
+                modelInputHash,
+                evidenceOccurredAt,
                 diagnosisFixtureMode,
                 ReferenceStatus.READY_FOR_EVALUATION,
                 reference,
+                expectedDisposition,
                 authoritativeOutcome,
                 version + 1,
                 capturedBy,
                 required(actor, "actor"),
                 capturedAt,
                 normalizedFinalizedAt);
+    }
+
+    /** Existing P1 fixtures expect a draft; new T8 callers must submit the oracle explicitly. */
+    public EvidenceEvaluationSample finalizeReference(
+            ReferenceSolution reference,
+            OutcomeSnapshot authoritativeOutcome,
+            String actor,
+            Instant finalizedAt) {
+        return finalizeReference(
+                reference,
+                ExpectedDisposition.DRAFT,
+                authoritativeOutcome,
+                actor,
+                finalizedAt);
     }
 
     public enum SourcePlatform {
@@ -171,6 +468,12 @@ public record EvidenceEvaluationSample(
     public enum ReferenceStatus {
         EVIDENCE_CAPTURED,
         READY_FOR_EVALUATION
+    }
+
+    /** Human-owned oracle used to score abstention separately from an unhelpful answer. */
+    public enum ExpectedDisposition {
+        DRAFT,
+        ABSTAIN
     }
 
     /** Structural Evidence Spine facts safe for persistence and later aggregate scoring. */
@@ -278,6 +581,38 @@ public record EvidenceEvaluationSample(
                     preview.steps().stream().map(StepSnapshot::from).toList(),
                     preview.completedAt());
         }
+
+        static EvidenceSnapshot from(SopSynthesisPreview preview) {
+            LogTraceSkeleton skeleton = preview.skeleton();
+            boolean contrastAvailable = preview.contrastEvidence() != null;
+            GuanceEvidenceSpinePreview.Stage stage = contrastAvailable
+                    ? GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED
+                    : GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED;
+            return new EvidenceSnapshot(
+                    stage,
+                    true,
+                    preview.matchCount(),
+                    preview.psId(),
+                    preview.traceEntries(),
+                    skeleton.serviceSequence(),
+                    skeleton.anomalySequenceIndexes().size(),
+                    skeleton.elapsedMs(),
+                    ContrastSnapshot.from(skeleton.contrast()),
+                    preview.sourceRequestCount(),
+                    preview.totalDurationMs(),
+                    preview.timings(),
+                    List.of(
+                            StepSnapshot.replay(
+                                    "log_search", preview.searchEvidence(),
+                                    REPLAY_EVIDENCE_REFS.get(0)),
+                            StepSnapshot.replay(
+                                    "log_trace_bundle", preview.traceEvidence(),
+                                    REPLAY_EVIDENCE_REFS.get(1)),
+                            StepSnapshot.replay(
+                                    "contrast_sample", preview.contrastEvidence(),
+                                    REPLAY_EVIDENCE_REFS.get(2))),
+                    preview.completedAt());
+        }
     }
 
     public record ContrastSnapshot(
@@ -305,6 +640,18 @@ public record EvidenceEvaluationSample(
         }
 
         static ContrastSnapshot from(GuanceEvidenceSpinePreview.Contrast contrast) {
+            return new ContrastSnapshot(
+                    contrast.available(),
+                    contrast.failureSampleCount(),
+                    contrast.failureMatchCount(),
+                    contrast.successSampleCount(),
+                    contrast.successMatchCount(),
+                    contrast.failureRate(),
+                    contrast.successRate(),
+                    contrast.rateDelta());
+        }
+
+        static ContrastSnapshot from(LogTraceSkeleton.ContrastSummary contrast) {
             return new ContrastSnapshot(
                     contrast.available(),
                     contrast.failureSampleCount(),
@@ -347,6 +694,23 @@ public record EvidenceEvaluationSample(
             return new StepSnapshot(
                     step.signalKind(), step.status(), step.evidenceRef(), step.collectedAt());
         }
+
+        static StepSnapshot replay(
+                String signalKind,
+                SopSynthesisPreview.EvidenceReference reference,
+                String missingEvidenceRef) {
+            return reference == null
+                    ? new StepSnapshot(
+                            signalKind,
+                            GuanceEvidenceSpinePreview.StepStatus.MISSING,
+                            missingEvidenceRef,
+                            null)
+                    : new StepSnapshot(
+                            signalKind,
+                            GuanceEvidenceSpinePreview.StepStatus.CANONICAL_RESULT_OBSERVED,
+                            reference.queryId(),
+                            reference.collectedAt());
+        }
     }
 
     public record OutcomeSnapshot(
@@ -371,10 +735,14 @@ public record EvidenceEvaluationSample(
     private static void validateSteps(
             GuanceEvidenceSpinePreview.Stage stage,
             List<StepSnapshot> steps) {
+        List<String> evidenceRefs = GUANCE_EVIDENCE_REFS.getFirst()
+                .equals(steps.getFirst().evidenceRef())
+                ? GUANCE_EVIDENCE_REFS
+                : REPLAY_EVIDENCE_REFS;
         for (int index = 0; index < SIGNAL_KINDS.size(); index++) {
             StepSnapshot step = steps.get(index);
             if (!SIGNAL_KINDS.get(index).equals(step.signalKind())
-                    || !EVIDENCE_REFS.get(index).equals(step.evidenceRef())) {
+                    || !evidenceRefs.get(index).equals(step.evidenceRef())) {
                 throw new IllegalArgumentException(
                         "evidence snapshot step order and references are fixed");
             }
@@ -404,6 +772,18 @@ public record EvidenceEvaluationSample(
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value.trim();
+    }
+
+    private static String requiredHash(String value, String name) {
+        String normalized = required(value, name);
+        if (!normalized.matches("[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(name + " must be a SHA-256 value");
+        }
+        return normalized;
+    }
+
+    private static String optionalHash(String value, String name) {
+        return value == null ? null : requiredHash(value, name);
     }
 
     private static Instant requiredInstant(Instant value, String name) {

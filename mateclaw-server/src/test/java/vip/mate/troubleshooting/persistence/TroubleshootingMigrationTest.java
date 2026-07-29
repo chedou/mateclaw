@@ -302,6 +302,95 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V182CreatesTheCandidateFreeBaselineEvaluationLedger() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v182;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V182__troubleshooting_baseline_evaluation_run.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains("mate_troubleshooting_baseline_eval_run"));
+            Set<String> runColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_baseline_eval_run");
+            assertTrue(runColumns.contains("run_key"));
+            assertTrue(runColumns.contains("sample_version"));
+            assertTrue(runColumns.contains("evidence_fixture_mode"));
+            assertTrue(runColumns.contains("diagnosis_fixture_mode"));
+            assertTrue(runColumns.contains("model_config_version"));
+            assertTrue(runColumns.contains("claim_token"));
+            assertTrue(runColumns.contains("reservation_expires_at"));
+            assertTrue(runColumns.contains("model_duration_ms"));
+            assertTrue(runColumns.contains("result_json"));
+            assertFalse(runColumns.contains("search_term"));
+            assertFalse(runColumns.contains("draft_json"));
+            assertFalse(runColumns.contains("abstain_reason"));
+            assertFalse(runColumns.contains("gate_verdict"));
+            assertEquals(1, countIndexes(connection, "uk_ts_baseline_eval_run_id"));
+            assertEquals(1, countIndexes(connection, "uk_ts_baseline_eval_run_key"));
+            assertEquals(1, countIndexes(connection, "idx_ts_baseline_eval_sample"));
+            assertEquals(1, countIndexes(connection, "idx_ts_baseline_eval_diagnosis"));
+            assertEquals(1, countIndexes(connection, "idx_ts_baseline_eval_claim"));
+        }
+    }
+
+    @Test
+    void h2V183BackfillsAndIndexesImmutableEvaluationSampleRevisions() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v183;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V181__troubleshooting_evaluation_sample.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("""
+                        INSERT INTO mate_troubleshooting_evaluation_sample (
+                            id, workspace_id, sample_id, sample_key, diagnosis_id,
+                            system, service, scenario_key, source_platform,
+                            evidence_stage, reference_status, fixture_mode,
+                            diagnosis_fixture_mode, aggregate_json, version, deleted)
+                        VALUES (
+                            1, 7, 'eval-old',
+                            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                            'diag-1', 'CSDP', 'session-svc', 'message_send_failed',
+                            'GUANCE', 'FULL_SPINE_OBSERVED', 'EVIDENCE_CAPTURED',
+                            FALSE, FALSE, '{}', 0, 0)
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V183__troubleshooting_evaluation_sample_revision.sql");
+
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_evaluation_sample");
+            assertTrue(columns.contains("capture_identity_key"));
+            assertTrue(columns.contains("capture_revision"));
+            assertFalse(isNullable(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_evaluation_sample",
+                    "capture_identity_key"));
+            assertEquals(1, countIndexes(connection, "uk_ts_eval_capture_revision"));
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT capture_identity_key, capture_revision
+                    FROM mate_troubleshooting_evaluation_sample
+                    WHERE id = 1
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals(
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        row.getString("capture_identity_key"));
+                assertEquals(1, row.getInt("capture_revision"));
+            }
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

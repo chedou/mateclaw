@@ -67,6 +67,21 @@ public record EvidenceSpineTimings(
         return Math.addExact(acquisitionDurationMs, compressionDurationMs);
     }
 
+    /** Sum of every stage actually measured, including a degraded or missing contrast lookup. */
+    public long observedWorkDurationMs() {
+        long total = 0L;
+        for (Long value : new Long[] {
+                logSearchDurationMs,
+                logTraceDurationMs,
+                contrastDurationMs,
+                compressionDurationMs}) {
+            if (value != null) {
+                total = Math.addExact(total, value);
+            }
+        }
+        return total;
+    }
+
     private static void nonNegative(Long value, String name) {
         if (value != null && value < 0L) {
             throw new IllegalArgumentException(name + " must not be negative");
