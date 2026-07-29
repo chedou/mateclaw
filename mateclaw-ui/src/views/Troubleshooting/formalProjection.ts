@@ -1,6 +1,9 @@
 import type {
   ClosureOutcome,
   ConclusionType,
+  GuanceReadinessStatus,
+  GuanceSignalStatus,
+  GuanceValidationStage,
   InvestigationMode,
   RouteAuthority,
 } from '@/api'
@@ -31,6 +34,27 @@ const AUTHORITY_LABEL: Record<RouteAuthority, string> = {
   MODEL_PROPOSED: '模型提议',
 }
 
+const GUANCE_READINESS_LABEL: Record<GuanceReadinessStatus, string> = {
+  DISABLED: '适配器未启用',
+  CONFIGURATION_INCOMPLETE: '运行时配置不完整',
+  UNAUTHORIZED: 'Workspace 资产未授权',
+  READY_FOR_VALIDATION: '可执行单次验证',
+  CANONICAL_SIGNALS_OBSERVED: '已观测规范化读链',
+}
+
+const GUANCE_SIGNAL_LABEL: Record<GuanceSignalStatus, string> = {
+  NOT_ROUTED: '未路由到 Guance',
+  UNAUTHORIZED: '资产未授权',
+  INVALID_BINDING: '绑定无效',
+  READY_FOR_VALIDATION: '待单次验证',
+  CANONICAL_RESULT_OBSERVED: '已观测规范化结果',
+}
+
+const GUANCE_VALIDATION_LABEL: Record<GuanceValidationStage, string> = {
+  BLOCKED: '单次规范化读链未通过',
+  CANONICAL_CHAIN_OBSERVED: '单次规范化读链通过（非 T7 验收）',
+}
+
 export function conclusionLabel(value: ConclusionType) {
   return CONCLUSION_LABEL[value]
 }
@@ -41,6 +65,18 @@ export function closureOutcomeLabel(value: ClosureOutcome) {
 
 export function investigationLabel(mode: InvestigationMode, authority: RouteAuthority) {
   return `${INVESTIGATION_LABEL[mode]} · ${AUTHORITY_LABEL[authority]}`
+}
+
+export function guanceReadinessLabel(value: GuanceReadinessStatus) {
+  return GUANCE_READINESS_LABEL[value]
+}
+
+export function guanceSignalLabel(value: GuanceSignalStatus) {
+  return GUANCE_SIGNAL_LABEL[value]
+}
+
+export function guanceValidationLabel(value: GuanceValidationStage) {
+  return GUANCE_VALIDATION_LABEL[value]
 }
 
 /** Unknown means unknown: an absent count never becomes a visible zero. */

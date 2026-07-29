@@ -9,7 +9,7 @@
         <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="loadList(false)">
           <el-option v-for="status in STATUSES" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
-        <el-button v-if="canManageSops" size="small" text @click="router.push('/troubleshooting/sops')">
+        <el-button v-if="canManageTroubleshooting" size="small" text @click="router.push('/troubleshooting/sops')">
           Playbook 管理
         </el-button>
       </div>
@@ -226,6 +226,45 @@
             </section>
 
             <aside class="developer-side">
+              <section v-loading="readinessLoading" class="source-gate-card">
+                <div class="source-gate-head">
+                  <div><span class="section-label">P2 真源门</span><h3>Guance 只读证据适配器</h3></div>
+                  <span v-if="guanceReadiness" class="source-gate-state" :class="readinessTone(guanceReadiness.status)">
+                    {{ guanceReadinessLabel(guanceReadiness.status) }}
+                  </span>
+                </div>
+                <template v-if="guanceReadiness">
+                  <p class="source-scope"><code>{{ guanceReadiness.system }}</code><span>/</span><code>{{ guanceReadiness.service }}</code></p>
+                  <div class="source-meta">
+                    <span :class="guanceReadiness.endpointConfigured ? 'success' : 'warning'">端点 {{ guanceReadiness.endpointConfigured ? '已配置' : '未就绪' }}</span>
+                    <span :class="guanceReadiness.uniqueAssetAuthorized ? 'success' : 'warning'">Workspace 资产 {{ guanceReadiness.uniqueAssetAuthorized ? '唯一授权' : '未唯一授权' }}</span>
+                  </div>
+                  <ul class="signal-readiness-list">
+                    <li v-for="signal in guanceReadiness.signals" :key="signal.signalKind">
+                      <code>{{ signal.signalKind }}</code>
+                      <span :class="signalTone(signal.status)">{{ guanceSignalLabel(signal.status) }}</span>
+                      <small>{{ signal.bindingRef || '无 binding' }}</small>
+                    </li>
+                  </ul>
+                  <p v-for="blocker in guanceReadiness.blockers" :key="blocker" class="source-blocker">{{ blocker }}</p>
+                  <div v-if="guanceValidation" class="validation-result" :class="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED' ? 'passed' : 'blocked'">
+                    <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
+                    <span v-if="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED'">
+                      {{ guanceValidation.matchCount }} 条命中 · PS {{ guanceValidation.psId }} · {{ guanceValidation.traceEntries }} 个链路节点
+                    </span>
+                    <small>{{ guanceValidation.warnings[0] }}</small>
+                  </div>
+                  <el-button
+                    v-if="canManageTroubleshooting"
+                    size="small"
+                    plain
+                    :disabled="!canValidateGuance"
+                    @click="openGuanceValidation"
+                  >执行单次只读验证</el-button>
+                  <small class="gate-note">成功也只证明一次读链可用；T7 仍需 20–30 个真实样本，fixtureMode 不会自动关闭。</small>
+                </template>
+                <p v-else class="empty-evidence">{{ readinessError || '正在检查当前 Workspace 的真源绑定…' }}</p>
+              </section>
               <section>
                 <span class="section-label">明确做不到</span><h3>能力边界</h3>
                 <ul class="capability-list"><li v-for="item in developer.capabilityLimits" :key="item">{{ item }}</li></ul>
@@ -249,6 +288,44 @@
         </details>
       </template>
     </main>
+
+    <el-dialog v-model="guanceValidationOpen" title="Guance 单次只读验证" width="520px">
+      <el-alert type="warning" :closable="false" class="dialog-alert">该操作只读取真实观测数据，不持久化原始日志，不回退到 Recorded Replay，也不代表 T7 验收通过。</el-alert>
+      <el-form label-position="top">
+        <div class="validation-scope">
+          <span>Workspace 资产</span>
+          <code>{{ guanceValidationForm.system }} / {{ guanceValidationForm.service }}</code>
+        </div>
+        <el-form-item label="可安全插入 DQL 模板的搜索键">
+          <el-input v-model="guanceValidationForm.searchTerm" placeholder="例如 message_send_failed" />
+          <p class="form-hint">仅允许资源标识符字符；未提供 errorCode 时不会用自由文本故障描述自动填充。</p>
+        </el-form-item>
+        <el-form-item label="时间窗口">
+          <el-select v-model="guanceValidationForm.window" style="width: 100%">
+            <el-option label="前 5 分钟" value="-5m" />
+            <el-option label="前 15 分钟" value="-15m" />
+            <el-option label="前 30 分钟" value="-30m" />
+            <el-option label="前 1 小时" value="-1h" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div v-if="guanceValidation" class="dialog-validation-result">
+        <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
+        <ul>
+          <li v-for="step in guanceValidation.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span></li>
+        </ul>
+        <small v-for="warning in guanceValidation.warnings" :key="warning">{{ warning }}</small>
+      </div>
+      <template #footer>
+        <el-button @click="guanceValidationOpen = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="validationLoading"
+          :disabled="!guanceValidationForm.searchTerm"
+          @click="validateGuance"
+        >开始只读验证</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="transferOpen" title="结构化转派" width="460px">
       <el-form label-position="top">
@@ -315,12 +392,19 @@ import {
   type DiagnosisSummary,
   type EvidenceStepTone,
   type EvidenceStepKind,
+  type GuanceEvidenceReadiness,
+  type GuanceEvidenceValidationReport,
+  type GuanceReadinessStatus,
+  type GuanceSignalStatus,
   type RecommendedAction,
   type StoredDiagnosis,
 } from '@/api'
 import {
   closureOutcomeLabel,
   conclusionLabel,
+  guanceReadinessLabel,
+  guanceSignalLabel,
+  guanceValidationLabel,
   impactMetrics,
   investigationLabel,
   timingState,
@@ -340,7 +424,7 @@ const STEP_TONE_LABEL: Record<EvidenceStepTone, string> = {
 const router = useRouter()
 const route = useRoute()
 const workspaceStore = useWorkspaceStore()
-const canManageSops = computed(() => workspaceStore.can('manage:troubleshooting'))
+const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troubleshooting'))
 const rows = ref<DiagnosisSummary[]>([])
 const selectedId = ref<string | null>(null)
 const current = ref<StoredDiagnosis | null>(null)
@@ -349,6 +433,11 @@ const statusFilter = ref<DiagnosisStatus | ''>('')
 const listLoading = ref(false)
 const detailLoading = ref(false)
 const actionLoading = ref(false)
+const readinessLoading = ref(false)
+const validationLoading = ref(false)
+const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
+const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
+const readinessError = ref('')
 let selectionVersion = 0
 
 const business = computed(() => projection.value?.businessSummary ?? null)
@@ -360,7 +449,12 @@ const impactMetricList = computed(() => {
 })
 const canTransfer = computed(() => ['CONFIRMED', 'TRANSFERRED'].includes(current.value?.diagnosis.status || ''))
 const canClose = computed(() => canTransfer.value)
+const canValidateGuance = computed(() => {
+  const status = guanceReadiness.value?.status
+  return status === 'READY_FOR_VALIDATION' || status === 'CANONICAL_SIGNALS_OBSERVED'
+})
 
+const guanceValidationOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
 const outcomeOpen = ref(false)
@@ -370,6 +464,7 @@ const transferForm = reactive({ targetTeam: '', note: '' })
 const approveForm = reactive({ reason: '' })
 const outcomeForm = reactive({ outcome: 'SUCCEEDED' as ActionOutcomeStatus, notes: '', recoveryVerified: false })
 const closeForm = reactive({ outcome: 'RECOVERED' as ClosureOutcome, summary: '', recoveryVerified: false, sopFeedback: '', createKnowledgeCandidate: true })
+const guanceValidationForm = reactive({ system: '', service: '', searchTerm: '', window: '-15m', occurredAt: null as string | null })
 
 function statusLabel(status: DiagnosisStatus) { return STATUS_LABEL[status] }
 function statusTone(status: DiagnosisStatus) {
@@ -380,6 +475,16 @@ function statusTone(status: DiagnosisStatus) {
 }
 function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
 function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
+function readinessTone(value: GuanceReadinessStatus) {
+  if (value === 'CANONICAL_SIGNALS_OBSERVED') return 'success'
+  if (value === 'READY_FOR_VALIDATION') return 'active'
+  return 'warning'
+}
+function signalTone(value: GuanceSignalStatus) {
+  if (value === 'CANONICAL_RESULT_OBSERVED') return 'success'
+  if (value === 'READY_FOR_VALIDATION') return 'active'
+  return 'warning'
+}
 function shortTime(value?: string | null) { return value ? value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19) : '—' }
 function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   return kind === 'CRITERION' ? '判据' : shortTime(value).slice(11)
@@ -409,6 +514,8 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
   const version = ++selectionVersion
   selectedId.value = diagnosisId
   detailLoading.value = true
+  guanceValidationOpen.value = false
+  validationLoading.value = false
   try {
     const [projectionResponse, diagnosisResponse] = await Promise.all([
       troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
@@ -416,13 +523,75 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     if (version !== selectionVersion) return
     projection.value = projectionResponse.data
     current.value = diagnosisResponse.data
+    guanceValidation.value = null
+    guanceReadiness.value = null
+    readinessError.value = ''
     if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
+    void loadGuanceReadiness(
+      diagnosisResponse.data.diagnosis.incident.system,
+      diagnosisResponse.data.diagnosis.incident.service,
+      version,
+    )
   } catch (error) {
     if (version !== selectionVersion) return
     projection.value = null
     current.value = null
     ElMessage.error(`加载诊断投影失败：${errorText(error)}`)
   } finally { if (version === selectionVersion) detailLoading.value = false }
+}
+
+async function loadGuanceReadiness(system: string, service: string, version = selectionVersion) {
+  readinessLoading.value = true
+  try {
+    const response = await troubleshootingApi.evidenceReadiness({ system, service })
+    if (version !== selectionVersion) return
+    guanceReadiness.value = response.data
+    readinessError.value = ''
+  } catch {
+    if (version !== selectionVersion) return
+    guanceReadiness.value = null
+    readinessError.value = '真源就绪检查暂不可用；不影响当前 Diagnosis 的阅读和处置。'
+  } finally {
+    if (version === selectionVersion) readinessLoading.value = false
+  }
+}
+
+function openGuanceValidation() {
+  const incident = current.value?.diagnosis.incident
+  if (!incident || !canValidateGuance.value) return
+  guanceValidationForm.system = incident.system
+  guanceValidationForm.service = incident.service
+  guanceValidationForm.searchTerm = incident.errorCode || ''
+  guanceValidationForm.window = '-15m'
+  guanceValidationForm.occurredAt = incident.occurredAt
+  guanceValidation.value = null
+  guanceValidationOpen.value = true
+}
+
+async function validateGuance() {
+  const version = selectionVersion
+  const request = { ...guanceValidationForm }
+  validationLoading.value = true
+  try {
+    const response = await troubleshootingApi.validateGuanceEvidence(request)
+    const incident = current.value?.diagnosis.incident
+    if (version !== selectionVersion
+      || !incident
+      || incident.system !== request.system
+      || incident.service !== request.service) return
+    guanceValidation.value = response.data
+    guanceReadiness.value = response.data.readiness
+    if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
+      ElMessage.success('单次规范化读链已观测；fixtureMode 保持开启')
+    } else {
+      ElMessage.warning('真源验证被就绪门或规范化合同阻断')
+    }
+  } catch (error) {
+    if (version !== selectionVersion) return
+    ElMessage.error(`Guance 只读验证失败：${errorText(error)}`)
+  } finally {
+    if (version === selectionVersion) validationLoading.value = false
+  }
 }
 
 async function reload() {
@@ -562,6 +731,13 @@ onMounted(() => loadList(true))
 .evidence-step b { font-size:12.5px; } .evidence-step p { margin:4px 0 6px; color:var(--muted); font-size:11px; line-height:1.55; } .evidence-step code { color:var(--blue); font-size:9.5px; }
 .tone-label { align-self:start; padding:2px 6px; border-radius:5px; color:var(--muted); background:#f2f4f7; font-size:9px; } .evidence-step.anomaly .tone-label { color:var(--red); background:#fff2f0; } .evidence-step.excluded .tone-label { color:var(--green); background:#ecfdf3; } .evidence-step.unevaluated .tone-label { color:var(--amber); background:#fffaeb; }
 .developer-side { display:flex; flex-direction:column; gap:14px; } .developer-side>section { padding:16px; border:1px solid var(--line); border-radius:9px; background:#fff; } .capability-list { margin:13px 0 0; padding-left:17px; color:#7a271a; font-size:11px; line-height:1.6; } .capability-list li+li { margin-top:7px; }
+.source-gate-card { min-height:120px; } .source-gate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; } .source-gate-state { flex:none; padding:3px 7px; border-radius:5px; background:#f2f4f7; font-size:9px; font-weight:700; }
+.source-scope { display:flex; align-items:center; gap:5px; margin:12px 0 8px; color:#98a2b3; font-size:9.5px; } .source-scope code { color:#344054; word-break:break-all; } .source-meta { display:flex; flex-wrap:wrap; gap:7px; font-size:9px; }
+.signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid #edf0f5; } .signal-readiness-list code { font-size:9.5px; } .signal-readiness-list span { font-size:9px; } .signal-readiness-list small { grid-column:1/-1; color:#98a2b3; font-size:8.5px; word-break:break-all; }
+.source-blocker { margin:7px 0; padding:7px 8px; border-radius:5px; color:#7a271a; background:#fff2f0; font-size:9.5px; line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:9px; line-height:1.55; }
+.validation-result { margin:9px 0; padding:9px; border-radius:7px; font-size:9.5px; } .validation-result.passed { color:#067647; background:#ecfdf3; } .validation-result.blocked { color:#b54708; background:#fffaeb; } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
+.validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; background:#f8f9fc; } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:10px; } .validation-scope code { margin-top:5px; color:var(--blue); font-size:11px; }
+.dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; } .dialog-validation-result>b { font-size:12px; } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:flex; gap:10px; padding:5px 0; color:var(--muted); font-size:10px; } .dialog-validation-result li code { flex:none; color:var(--blue); } .dialog-validation-result>small { display:block; color:var(--amber); font-size:9.5px; line-height:1.5; }
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; } .action-card.write { border-color:#f2c4bf; } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:8.5px; }
 .action-card>b { display:block; margin-top:7px; font-size:11.5px; } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:10px; line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:10.5px; }
 @media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}

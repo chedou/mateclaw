@@ -3,6 +3,9 @@ import {
   closureOutcomeLabel,
   conclusionLabel,
   formatDuration,
+  guanceReadinessLabel,
+  guanceSignalLabel,
+  guanceValidationLabel,
   impactMetrics,
   investigationLabel,
   timingState,
@@ -43,5 +46,14 @@ describe('formal troubleshooting projection formatting', () => {
       .toBe('错误码 Playbook · 显式命中')
     expect(investigationLabel('OPEN_DISCOVERY', 'MODEL_PROPOSED'))
       .toBe('开放调查 · 模型提议')
+  })
+
+  it('keeps the real-source gate distinct from T7 acceptance', () => {
+    expect(guanceReadinessLabel('READY_FOR_VALIDATION')).toBe('可执行单次验证')
+    expect(guanceReadinessLabel('CANONICAL_SIGNALS_OBSERVED')).toBe('已观测规范化读链')
+    expect(guanceSignalLabel('NOT_ROUTED')).toBe('未路由到 Guance')
+    expect(guanceSignalLabel('INVALID_BINDING')).toBe('绑定无效')
+    expect(guanceValidationLabel('CANONICAL_CHAIN_OBSERVED'))
+      .toBe('单次规范化读链通过（非 T7 验收）')
   })
 })

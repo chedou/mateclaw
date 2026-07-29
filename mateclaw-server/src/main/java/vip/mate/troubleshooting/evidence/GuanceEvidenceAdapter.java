@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
@@ -21,7 +22,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,7 +42,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private final ObjectMapper objectMapper;
     private final EvidenceHttpTransport transport;
     private final Clock clock;
-    private final AtomicBoolean reachable = new AtomicBoolean();
+    private final ConcurrentMap<ObservationKey, Instant> observations =
+            new ConcurrentHashMap<>();
 
     GuanceEvidenceAdapter(
             EvidenceProperties.Guance config,
@@ -103,11 +106,18 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             if (observed.isEmpty()) {
                 return missing(request, "Guance returned no canonical evidence rows");
             }
-            reachable.set(true);
+            Instant collectedAt = Instant.now(clock);
+            observations.put(
+                    new ObservationKey(
+                            workspaceId,
+                            normalizeKey(incident.system()),
+                            normalizeKey(incident.service()),
+                            normalizeKey(request.signalKind())),
+                    collectedAt);
             return new EvidenceResult(
                     request.requestId(), namespace(binding), "", EvidenceStatus.NORMAL,
                     summary(binding, request), observed,
-                    "guance:" + normalizeKey(request.signalKind()), Instant.now(clock));
+                    "guance:" + normalizeKey(request.signalKind()), collectedAt);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return missing(request, "Guance collection interrupted");
@@ -135,10 +145,11 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                     PLATFORM, EvidenceSourceHealth.Status.DEGRADED, false,
                     "base URL, API key, or bindings missing");
         }
-        if (reachable.get()) {
+        if (!observations.isEmpty()) {
             return new EvidenceSourceHealth(
                     PLATFORM, EvidenceSourceHealth.Status.READY, false,
-                    "API reachable; query semantics are not live-verified");
+                    "canonical evidence observed for at least one scoped signal; "
+                            + "T7 sample acceptance remains unverified");
         }
         return new EvidenceSourceHealth(
                 PLATFORM, EvidenceSourceHealth.Status.DEGRADED, false,
@@ -151,6 +162,109 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 && present(config.getApiKey())
                 && config.getBindings() != null
                 && !config.getBindings().isEmpty();
+    }
+
+    boolean enabled() {
+        return config.isEnabled();
+    }
+
+    /** Checks the endpoint shape without opening a connection or reading credentials. */
+    boolean endpointConfigured() {
+        if (!config.isEnabled() || !present(config.getBaseUrl())) {
+            return false;
+        }
+        try {
+            queryUri();
+            return true;
+        } catch (RuntimeException invalidEndpoint) {
+            return false;
+        }
+    }
+
+    /** Must be called only after an exact workspace asset authorization was established. */
+    GuanceEvidenceReadiness.CredentialState credentialState() {
+        return present(config.getApiKey())
+                ? GuanceEvidenceReadiness.CredentialState.CONFIGURED
+                : GuanceEvidenceReadiness.CredentialState.MISSING;
+    }
+
+    boolean hasUniqueAssetScope(long workspaceId, String system, String service) {
+        return exactAssetScopes(workspaceId, system, service).size() == 1;
+    }
+
+    SignalInspection inspectSignal(
+            long workspaceId,
+            String system,
+            String service,
+            String signalKind) {
+        String normalizedSignal = normalizeKey(signalKind);
+        List<EvidenceProperties.AssetBinding> matches =
+                exactAssetScopes(workspaceId, system, service);
+        if (matches.isEmpty()) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
+                    "", null, "workspace asset is not authorized");
+        }
+        if (matches.size() != 1) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    "", null, "workspace asset authorization is ambiguous");
+        }
+
+        EvidenceProperties.AssetBinding asset = matches.getFirst();
+        if (asset.getSignalBindings() == null) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
+                    "", null, "signal binding is not authorized");
+        }
+        List<Map.Entry<String, String>> signalEntries = asset.getSignalBindings().entrySet().stream()
+                .filter(entry -> normalizeKey(entry.getKey()).equals(normalizedSignal))
+                .toList();
+        if (signalEntries.isEmpty()) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
+                    "", null, "signal binding is not authorized");
+        }
+        if (signalEntries.size() != 1) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    "", null, "signal binding is ambiguous");
+        }
+
+        String rawBindingRef = signalEntries.getFirst().getValue();
+        String bindingRef = rawBindingRef == null ? "" : rawBindingRef.trim();
+        if (!safeReference(bindingRef) || config.getBindings() == null) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    "", null, "signal binding reference is invalid");
+        }
+        String normalizedBindingRef = normalizeKey(bindingRef);
+        List<Map.Entry<String, EvidenceProperties.Binding>> bindingEntries =
+                config.getBindings().entrySet().stream()
+                        .filter(entry -> safeReference(entry.getKey())
+                                && normalizeKey(entry.getKey()).equals(normalizedBindingRef))
+                        .toList();
+        if (bindingEntries.size() != 1
+                || !validBinding(signalKind, bindingEntries.getFirst().getValue())) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    bindingRef, null, "canonical binding is missing or invalid");
+        }
+
+        Instant observedAt = observations.get(new ObservationKey(
+                workspaceId,
+                normalizeKey(system),
+                normalizeKey(service),
+                normalizedSignal));
+        return new SignalInspection(
+                observedAt == null
+                        ? GuanceEvidenceReadiness.SignalStatus.READY_FOR_VALIDATION
+                        : GuanceEvidenceReadiness.SignalStatus.CANONICAL_RESULT_OBSERVED,
+                bindingRef,
+                observedAt,
+                observedAt == null
+                        ? "authorized canonical binding is ready for validation"
+                        : "canonical result observed in this process");
     }
 
     private boolean hasAnyAuthorizedBinding() {
@@ -175,12 +289,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             String system,
             String service,
             String signalKind) {
-        List<EvidenceProperties.AssetBinding> matches = assetBindings().stream()
-                .filter(asset -> asset != null
-                        && asset.getWorkspaceId() == workspaceId
-                        && normalizeKey(asset.getSystem()).equals(normalizeKey(system))
-                        && normalizeKey(asset.getService()).equals(normalizeKey(service)))
-                .toList();
+        List<EvidenceProperties.AssetBinding> matches =
+                exactAssetScopes(workspaceId, system, service);
         if (matches.size() != 1) {
             return null;
         }
@@ -198,14 +308,15 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 .filter(entry -> normalizeKey(entry.getKey()).equals(wantedSignal))
                 .toList();
         if (signalEntries.size() != 1
-                || !present(signalEntries.getFirst().getValue())
+                || !safeReference(signalEntries.getFirst().getValue())
                 || config.getBindings() == null) {
             return null;
         }
         String wantedBinding = normalizeKey(signalEntries.getFirst().getValue());
         List<Map.Entry<String, EvidenceProperties.Binding>> bindingEntries =
                 config.getBindings().entrySet().stream()
-                .filter(entry -> normalizeKey(entry.getKey()).equals(wantedBinding))
+                .filter(entry -> safeReference(entry.getKey())
+                        && normalizeKey(entry.getKey()).equals(wantedBinding))
                 .toList();
         if (bindingEntries.size() != 1) {
             return null;
@@ -233,6 +344,18 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private List<EvidenceProperties.AssetBinding> assetBindings() {
         List<EvidenceProperties.AssetBinding> configured = config.getAssetBindings();
         return configured == null ? List.of() : configured;
+    }
+
+    private List<EvidenceProperties.AssetBinding> exactAssetScopes(
+            long workspaceId,
+            String system,
+            String service) {
+        return assetBindings().stream()
+                .filter(asset -> asset != null
+                        && asset.getWorkspaceId() == workspaceId
+                        && normalizeKey(asset.getSystem()).equals(normalizeKey(system))
+                        && normalizeKey(asset.getService()).equals(normalizeKey(service)))
+                .toList();
     }
 
     private boolean validBinding(String signalKind, EvidenceProperties.Binding binding) {
@@ -545,10 +668,33 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         return value != null && !value.isBlank();
     }
 
+    private boolean safeReference(String value) {
+        if (!present(value)) {
+            return false;
+        }
+        String normalized = value.trim();
+        return SAFE_VALUE.matcher(normalized).matches()
+                && TroubleshootingSecretRedactor.redact(normalized).equals(normalized);
+    }
+
     private String normalizeKey(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private record WindowRange(String expression, Instant start, Instant end) {
+    }
+
+    record SignalInspection(
+            GuanceEvidenceReadiness.SignalStatus status,
+            String bindingRef,
+            Instant lastObservedAt,
+            String detail) {
+    }
+
+    private record ObservationKey(
+            long workspaceId,
+            String system,
+            String service,
+            String signalKind) {
     }
 }

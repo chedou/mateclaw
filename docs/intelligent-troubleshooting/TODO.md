@@ -159,11 +159,16 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 设计 workspace/system/service 到 Guance 资产与 binding 的显式授权关系。
 - [x] 未授权必须 fail closed，不能回退默认全局 API key/measurement。
 - [x] 密钥只来自运行时配置，不进领域表、日志、prompt 或页面。
+- [x] 正式工作台按 workspace/system/service 展示秘密无关的真源就绪投影。
+- [x] 增加管理员触发的 Guance-only `log_search → log_trace_bundle` 单次只读验证；
+      在 Router 调用前限制允许源，不得回退 Recorded Replay。
 
 2026-07-29：`workspaceId` 已贯穿唯一 Evidence Router/Adapter 脊柱；Guance 只有命中唯一、精确的
 `asset-bindings[workspaceId,system,service].signal-bindings[signalKind]` 后才会读取运行时 API Key 并发请求。
 默认授权表为空，重复/缺失/大小写归一后歧义均在 transport 前返回 `MISSING`。这只完成授权机制，**不代表**
 任何真实资产、measurement、字段或阈值已经通过 T7。
+单次验证报告只保留匹配数、PS ID、trace 节点数、证据引用和时间戳；不保留原始行、
+查询文本或凭据。它是 owner 执行 T7 的工具，不是 T7 完成证明。
 
 ### T7 · 内网核实
 

@@ -1906,6 +1906,68 @@ export interface DiagnosisExperienceProjection {
   developerEvidence: DeveloperEvidenceView
 }
 
+export type GuanceReadinessStatus =
+  | 'DISABLED'
+  | 'CONFIGURATION_INCOMPLETE'
+  | 'UNAUTHORIZED'
+  | 'READY_FOR_VALIDATION'
+  | 'CANONICAL_SIGNALS_OBSERVED'
+export type GuanceCredentialState = 'NOT_INSPECTED' | 'MISSING' | 'CONFIGURED'
+export type GuanceSignalStatus =
+  | 'NOT_ROUTED'
+  | 'UNAUTHORIZED'
+  | 'INVALID_BINDING'
+  | 'READY_FOR_VALIDATION'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceSignalReadiness {
+  signalKind: string
+  routedToGuance: boolean
+  status: GuanceSignalStatus
+  bindingRef: string
+  lastObservedAt: string | null
+  detail: string
+}
+
+/** Secret-free, non-probing readiness for one workspace-owned source asset. */
+export interface GuanceEvidenceReadiness {
+  system: string
+  service: string
+  status: GuanceReadinessStatus
+  adapterEnabled: boolean
+  endpointConfigured: boolean
+  credentialState: GuanceCredentialState
+  uniqueAssetAuthorized: boolean
+  signals: GuanceSignalReadiness[]
+  blockers: string[]
+}
+
+export type GuanceValidationStage = 'BLOCKED' | 'CANONICAL_CHAIN_OBSERVED'
+export type GuanceValidationStepStatus =
+  | 'NOT_RUN'
+  | 'BLOCKED'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceValidationStep {
+  signalKind: string
+  status: GuanceValidationStepStatus
+  evidenceRef: string
+  detail: string
+  collectedAt: string | null
+}
+
+/** Structural outcome only; raw source rows and DQL never cross this boundary. */
+export interface GuanceEvidenceValidationReport {
+  stage: GuanceValidationStage
+  readiness: GuanceEvidenceReadiness
+  matchCount: number | null
+  psId: string | null
+  traceEntries: number | null
+  steps: GuanceValidationStep[]
+  completedAt: string
+  warnings: string[]
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: Record<string, unknown>) =>
@@ -1926,6 +1988,21 @@ export const troubleshootingApi = {
     http.get<DiagnosisExperienceProjection>(
       `/troubleshooting/diagnoses/${diagnosisId}/projection`,
     ),
+
+  /** Inspects bindings for this exact workspace asset without probing Guance. */
+  evidenceReadiness: (params: { system: string; service: string }) =>
+    http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
+
+  /** Admin-only, read-only, Guance-only canonical chain; never counts as T7 acceptance. */
+  validateGuanceEvidence: (data: {
+    system: string
+    service: string
+    searchTerm: string
+    window: string
+    occurredAt: string | null
+  }) => http.post<GuanceEvidenceValidationReport>(
+    '/troubleshooting/evidence/guance/validate', data,
+  ),
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),

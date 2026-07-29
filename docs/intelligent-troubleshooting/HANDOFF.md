@@ -76,6 +76,11 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - **P2 T6 租户授权边界（2026-07-29）**：`workspaceId` 已贯穿 Intake、Agent 会话、SOP 合成、
   Router 和 Adapter；Guance 必须由唯一的 `workspace/system/service + signalKind → concrete binding`
   映射显式放行，映射缺失或歧义时在使用 API Key、发 HTTP 前 fail closed。默认 `asset-bindings=[]`。
+- **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
+  只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
+  管理员可从正式工作台的“P2 真源门”触发 Guance-only
+  `log_search → log_trace_bundle`；Router 先限定允许源，因此不会回退 Replay。报告仅含匹配数、
+  PS ID、trace 节点数、绑定引用与时间戳，不含原始日志、DQL 或凭据，且明确不关闭 `fixtureMode`。
 - 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
 - **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
   （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
@@ -159,7 +164,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 ### 尚未完成
 
 - 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
-  `fixtureMode` 仍应为 true。
+  `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 配置和真实返回，
+  不得将“入口已实现”改写为“T7 已通过”。
 - 真实模型的输出质量和延迟评估；本地未配模型时已验证 fail closed。
 - 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
   以及“关闭且 outcome 已登记”后持久化原路 @ 通知；尚未完成的只是需单独平台评审的
@@ -326,6 +332,19 @@ P3 T10 关闭结果通知与正式页闭环（2026-07-29）已通过：
   应用内浏览器实测“最终处置结果 / 已恢复 / 人工验证时间”可见，控制台 0 error；
 - v0.16 继续冻结 v0.15 的三张图与生成源，本版只校准已验证的实现状态，不伪造新架构语义。
 
+P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
+
+- 排障域 + Skill Manifest 后端共 `317` 个测试，0 failure / 0 error / 0 skipped；
+  其中 Guance Adapter/Router/自动配置/就绪/验证/API 定向共 `40` 个测试。
+- 新测试覆盖未授权时不读 API Key且零 transport 调用、重复资产作用域 fail closed、
+  归一化后重复的 source route fail closed、secret 形态 binding 引用不出投影、超大窗口与越界
+  `occurredAt` 稳定返回 400、Guance-only 两步调用、同一 PS ID 一致性、Guance 无结果时绝不回退 Replay，
+  以及原始日志/DQL/凭据/搜索键/窗口不进报告。
+- 前端 `14` 个测试文件 / `116` 个测试全通过，`vue-tsc --noEmit` 与直接 Vite 生产构建通过；
+  `npm run build` 仍被仓库已有的缺失前置脚本拦住。
+- 本轮未修改 RFC、蓝图或三张图：真源门是已定 P2/T7 实施接缝，没有新增架构语义；
+  当前 v0.16 继续有效。真实 T7/T8 依然未完成。
+
 后端定向测试命令：
 
 ```bash
@@ -344,8 +363,8 @@ mvn -pl mateclaw-server -am \
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
-5. P2 T6 授权机制已完成；下一主攻是由 owner 配置真实资产映射、完成 T7 字段核实，并建立
-   20–30 条 T8 影子样本。
+5. P2 T6 授权机制和真源验证接缝已完成；下一主攻是由 owner 在运行时配置真实资产映射，
+   用正式工作台的“P2 真源门”跑通首个会议案例，再完成 T7 字段核实和 20–30 条 T8 影子样本。
 6. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 
 ## 10. 不要做
