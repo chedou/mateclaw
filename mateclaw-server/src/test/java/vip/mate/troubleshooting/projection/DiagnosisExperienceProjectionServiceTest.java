@@ -151,6 +151,30 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void distinguishesPersistedMissingContrastFromAContrastThatWasNeverSaved() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        evidenceRichDiagnosisWithMissingContrast(), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.DeveloperEvidenceView developer =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).developerEvidence();
+
+        assertThat(developer.callChain().hops()).hasSize(3);
+        assertThat(developer.contrast().available()).isFalse();
+        assertThat(developer.contrast().note())
+                .contains("已发起采集")
+                .contains("MISSING")
+                .contains("contrastAvailable=false")
+                .doesNotContain("未保存同窗口成功样本对照");
+        assertThat(developer.contrast().evidenceRefs())
+                .containsExactly("ONLINE-CONTRAST-SAMPLE");
+        assertThat(developer.capabilityLimits())
+                .anyMatch(item -> item.contains("采集已执行") && item.contains("MISSING"));
+    }
+
+    @Test
     void projectsStructuredImpactOnlyWhenCanonicalEvidenceReproducesEveryMeasuredFact() {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(structuredImpactDiagnosis(2), 0, true));
@@ -359,6 +383,28 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     private Diagnosis evidenceRichDiagnosis() {
+        EvidenceResult contrast = new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "recorded:contrast-sample",
+                EvidenceStatus.NORMAL, "同窗口成功请求与失败请求的结构化对照",
+                Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", "100",
+                        "failure_match_count", "92",
+                        "success_sample_count", "100",
+                        "success_match_count", "3"),
+                "recorded-replay:message-send-failed", NOW);
+        return evidenceRichDiagnosis(contrast);
+    }
+
+    private Diagnosis evidenceRichDiagnosisWithMissingContrast() {
+        EvidenceResult contrast = new EvidenceResult(
+                "ONLINE-CONTRAST-SAMPLE", "UNKNOWN", "",
+                EvidenceStatus.MISSING, "all configured evidence sources unavailable",
+                Map.of(), "router:unavailable", NOW);
+        return evidenceRichDiagnosis(contrast);
+    }
+
+    private Diagnosis evidenceRichDiagnosis(EvidenceResult contrast) {
         IncidentContext incident = new IncidentContext(
                 "incident-1", "CSDP", "csdp-session-service", null,
                 "会话消息发送失败", "P2", "消息发送功能受影响",
@@ -387,16 +433,6 @@ class DiagnosisExperienceProjectionServiceTest {
                                         "level", "ERROR",
                                         "message", "message send failed",
                                         "duration_ms", "87"))),
-                "recorded-replay:message-send-failed", NOW);
-        EvidenceResult contrast = new EvidenceResult(
-                "SYNTH-CONTRAST-SAMPLE", "L", "recorded:contrast-sample",
-                EvidenceStatus.NORMAL, "同窗口成功请求与失败请求的结构化对照",
-                Map.of(
-                        "discriminating_feature", "session_state_conflict",
-                        "failure_sample_count", "100",
-                        "failure_match_count", "92",
-                        "success_sample_count", "100",
-                        "success_match_count", "3"),
                 "recorded-replay:message-send-failed", NOW);
         return Diagnosis.initial(
                 DIAGNOSIS_ID, "case-1", "run-1", incident,

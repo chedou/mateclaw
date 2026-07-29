@@ -19,7 +19,6 @@ import java.util.Map;
 public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
 
     private static final String PLATFORM = "recorded-replay";
-
     private final EvidenceProperties.RecordedReplay config;
     private final Clock clock;
     private final Map<ReplayKey, ReplayRecord> records;
@@ -85,7 +84,7 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
                 normalize(incident.system()),
                 normalize(incident.errorCode()),
                 normalize(incident.service()),
-                normalize(request.requestId()),
+                replayRequestId(request.requestId()),
                 normalize(request.signalKind())));
         if (replay == null || !matchesRequestTarget(request, replay)) {
             return missing(request);
@@ -218,6 +217,13 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String replayRequestId(String requestId) {
+        String normalized = normalize(requestId);
+        // Online and synthesis use the same fixture facts through explicit,
+        // server-owned aliases. Unknown ids remain exact misses.
+        return normalize(EvidenceSpineStage.replayCatalogRequestId(normalized));
     }
 
     private record ReplayKey(

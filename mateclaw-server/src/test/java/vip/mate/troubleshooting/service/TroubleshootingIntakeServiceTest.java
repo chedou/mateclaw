@@ -420,6 +420,29 @@ class TroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void remapsCallerSuppliedServerStageIdsBeforeDeterministicPersistence() {
+        SopEntry sop = sop();
+        IncidentContext incident = incident("903001", IncidentCompleteness.STRUCTURED);
+        EvidenceResult callerClaim = new EvidenceResult(
+                "ONLINE-CONTRAST-SAMPLE", "UNKNOWN", "", EvidenceStatus.MISSING,
+                "caller claims collection ran", Map.of(), "supplied", NOW);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, incident, List.of(callerClaim), false);
+
+        ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
+                eq(false), eq(true), eq(NOW), eq(NOW));
+        assertThat(evidenceCaptor.getValue())
+                .extracting(EvidenceResult::queryId)
+                .containsExactly("supplied-reserved-1");
+    }
+
+    @Test
     void passesRehearsalThroughSoDrillsStayOutOfDeduplication() {
         when(sopPersistence.find(anyLong(), any(), any())).thenReturn(sop());
         when(diagnosisService.diagnoseAndPersist(

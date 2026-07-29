@@ -175,13 +175,21 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
   以及“关闭且 outcome 已登记”后持久化原路 @ 通知；尚未完成的只是需单独平台评审的
   出站交互卡片（继续扩平台现有 `channel/wecom`，见 v4 §7.4 / D17）。
-- Scenario Playbook Registry 与 DiscoveryPolicy。
+- 完整持久化 Scenario Playbook Registry 与 DiscoveryPolicy 尚未完成；当前只落了会议正例
+  `message_send_failed` 的配置型 approved Evidence Spine 目录，用于先锁住 server-owned plan 边界。
 - 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
   `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
   不新增表或第二份事实。
-- 在线 Diagnosis 尚未稳定保存完整 `log_trace_bundle`、`contrast_sample`，真 Guance 也尚未稳定产出
-  可复算的 `incident_impact` 人数/BlastRadius；
-  缺失时继续返回 null/UNKNOWN。1.3/1.4 旧记录也不回填伪造的 D14 数据。
+- **在线 Evidence Spine 已收口（2026-07-29）**：Agent 只能提交 workspace/system 可见的注册
+  `scenario_key`；服务端从 `ApprovedEvidenceSpineCatalog` 解析搜索词、窗口和 Adapter 白名单，再固定执行
+  `log_search → log_trace_bundle → contrast_sample`，与合成预览共用唯一
+  `EvidenceSpineOrchestrator` 和既有 Router/Adapter。三次源调用先整体占用预算，完整 canonical evidence
+  进入同一个 Diagnosis；初始 supplied evidence 和工具结果共用模型安全投影，只返回证据引用、白名单标量与
+  去掉 query/entries/日志正文的确定性 trace 骨架，并拒绝直接请求其他 signal kind。计划预检失败会粘滞记录，
+  核心 trace 缺失由服务端强制 abstain；对照不可用时保存显式 `MISSING`、不阻断核心链路，正式页明确显示
+  “已采集但来源不可用”，不再误写成“尚未保存”。
+- 真 Guance 尚未稳定产出可复算的 `incident_impact` 人数/BlastRadius；缺失时继续返回 null/UNKNOWN。
+  1.3/1.4 旧记录也不回填伪造的 D14 数据。
 
 ## 5. Demo
 
@@ -360,6 +368,25 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
 - 本地运行时只为验证显式启用了 Recorded Replay；默认配置仍为关闭。本次预览交互与 API 均未调用模型、
   创建 candidate、执行审核/晋升或扩大任何生产写边界；T7/T8 状态不变。
 
+在线 Diagnosis 共享 Evidence Spine（2026-07-29）已通过代码级验证：
+
+- 后端排障域 + Skill Manifest 共 `332` 个测试全通过；新增覆盖同一编排器的三段依赖目标、PS ID 一致性、
+  canonical schema、成功样本可选降级、在线 Diagnosis 三条 evidence/citation 持久化，以及 Replay 仅接受
+  三个显式 server-owned online alias、未知 alias 继续精确 miss；核心 trace 缺失即使模型试图给结论也会
+  被服务端强制降为 `INSUFFICIENT_EVIDENCE`。调用方伪造 server-owned stage ID 会在 Agent 与确定性
+  intake 两个入口统一重映射，不能冒充“服务端已执行采集”。
+- Agent 只可选择注册 `scenario_key`，不能提供 search term、window、平台、DQL 或其他 signal kind；完整
+  EvidencePlan 由服务端 approved 配置解析。会话在调用前整体预留三次 source request，预检失败会粘滞并
+  强制 abstain；预算不足时零 Router 调用。初始 supplied evidence 与工具响应统一不含 source query、原始
+  `entries` 或日志正文，只含白名单标量、证据引用和确定性 trace 骨架。
+- 正式投影会区分“对照从未保存”和“`ONLINE-CONTRAST-SAMPLE` 已保存为 `MISSING`”；后者显示
+  `contrastAvailable=false`、来源不可用及证据引用，不再把降级状态写成未采集。
+- 正式前端 `15` 个测试文件 / `119` 个测试通过，`vue-tsc --noEmit` 与 Vite 生产构建通过，构建完成
+  `6270` 个模块转换；正式、Playbook 与 legacy 路由合同未改。
+- 该收口没有解除 `fixtureMode`；当前仅实现一个配置型 approved 场景目录，尚未实现完整持久化
+  Scenario Registry/Planning、DiscoveryPolicy、Loop Controller 或 Challenger。真 Guance 影响人数/
+  BlastRadius 仍等待 T7 owner 配置与内网样本。
+
 后端定向测试命令：
 
 ```bash
@@ -373,8 +400,9 @@ mvn -pl mateclaw-server -am \
 1. 先读 `recording-product-baseline.md`、架构 v4、架构评审、TODO。
 2. 信息结构**已选定并已进入正式路由**（服务经理 + 开发两个投影；企微独立 UI 原型暂缓，
    P3 T9 与 T10 纯文本闭环已进入真实通道接缝），合同见
-   `projection-contracts.md`；D14 已进 Diagnosis 1.5，投影也已能消费既有 canonical hop/对照；
-   下一步是让真实在线取证稳定产出这些事实，而不是再造一套展示数据。
+   `projection-contracts.md`；D14 已进 Diagnosis 1.5，在线 Diagnosis 与知识合成也已通过共享
+   Evidence Spine 稳定保存 canonical hop/对照。下一步是让真 Guance 产出经 owner 核实的同构事实，
+   不是再造一套展示数据。
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。

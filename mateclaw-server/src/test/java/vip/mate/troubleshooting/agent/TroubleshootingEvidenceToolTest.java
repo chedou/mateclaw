@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
@@ -14,6 +15,7 @@ import vip.mate.troubleshooting.model.IncidentContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class TroubleshootingEvidenceToolTest {
@@ -30,71 +33,253 @@ class TroubleshootingEvidenceToolTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void collectsThroughTheSharedRouterAndRecordsTheCanonicalResult() throws Exception {
-        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
-        TroubleshootingAgentProperties properties = properties();
-        TroubleshootingEvidenceSessionRegistry sessions =
-                new TroubleshootingEvidenceSessionRegistry(router, properties);
-        TroubleshootingEvidenceTool tool =
-                new TroubleshootingEvidenceTool(sessions, objectMapper);
-        IncidentContext incident = incident();
-        EvidenceResult collected = new EvidenceResult(
-                "agent-log-1", "L", "safe query", EvidenceStatus.ANOMALY,
-                "发现错误日志", Map.of("count", 12), "recorded-replay", Instant.now());
-        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
-                .thenReturn(collected);
-
-        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
-                     sessions.open("triage-1", 7L, incident, List.of())) {
-            String json = tool.collectTroubleshootingEvidence(
-                    "agent-log-1",
-                    "log_count",
-                    "确认异常日志",
-                    "{\"service\":\"order-svc\"}",
-                    "-15m",
-                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
-
-            assertThat(objectMapper.readValue(json, EvidenceResult.class)).isEqualTo(collected);
-            assertThat(session.snapshot().evidence()).containsExactly(collected);
-            assertThat(session.snapshot().toolCollectedQueryIds()).containsExactly("agent-log-1");
-        }
-
-        verify(router).collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class));
-    }
-
-    @Test
-    void redactsSuppliedAndCollectedEvidenceBeforeAgentOrDiagnosisUse() throws Exception {
+    void completesTheOnlineEvidenceSpineAndReturnsOnlyTheCompressedTraceToTheAgent()
+            throws Exception {
         EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
         TroubleshootingEvidenceSessionRegistry sessions =
                 new TroubleshootingEvidenceSessionRegistry(router, properties());
         TroubleshootingEvidenceTool tool =
                 new TroubleshootingEvidenceTool(sessions, objectMapper);
+        when(router.collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> {
+                    EvidenceRequest request = invocation.getArgument(1);
+                    assertThat(request.window()).isEqualTo("-15m");
+                    if ("log_search".equals(request.signalKind())) {
+                        assertThat(request.target())
+                                .containsExactly(Map.entry(
+                                        "search_term", "message_send_failed"));
+                    }
+                    return spineEvidence(request);
+                });
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
+                     sessions.open("triage-1", 7L, incident(), List.of())) {
+            String json = tool.collectTroubleshootingEvidence(
+                    "model-request-id",
+                    "log_search",
+                    "查找消息发送失败样本",
+                    "{\"scenario_key\":\"message_send_failed\"}",
+                    null,
+                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
+
+            JsonNode response = objectMapper.readTree(json);
+            assertThat(response.path("mode").asText()).isEqualTo("EVIDENCE_SPINE");
+            assertThat(response.path("evidence").findValuesAsText("queryId"))
+                    .containsExactly(
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
+            assertThat(response.path("traceSkeleton").path("psId").asText())
+                    .isEqualTo("synthetic-ps-1");
+            assertThat(response.path("searchMatchCount").asLong()).isEqualTo(4);
+            assertThat(response.path("traceSkeleton").path("contrast")
+                    .path("available").asBoolean()).isTrue();
+            assertThat(json)
+                    .doesNotContain("raw-dql-must-not-reach-model")
+                    .doesNotContain("\"entries\"");
+            assertThat(session.snapshot().evidence())
+                    .extracting(EvidenceResult::queryId)
+                    .containsExactly(
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
+            assertThat(session.snapshot().toolCollectedQueryIds())
+                    .containsExactlyInAnyOrder(
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
+        }
+
+        verify(router, times(3)).collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay")));
+    }
+
+    @Test
+    void refusesDirectDependentTraceCollectionBeforeRawEntriesCanReachTheAgent()
+            throws Exception {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, properties());
+        TroubleshootingEvidenceTool tool =
+                new TroubleshootingEvidenceTool(sessions, objectMapper);
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
+                     sessions.open("triage-1", 7L, incident(), List.of())) {
+            String json = tool.collectTroubleshootingEvidence(
+                    "direct-trace",
+                    "log_trace_bundle",
+                    "bypass compression",
+                    "{\"ps_id\":\"synthetic-ps-1\"}",
+                    null,
+                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
+
+            EvidenceResult refused = objectMapper.readValue(json, EvidenceResult.class);
+            assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
+            assertThat(refused.source()).isEqualTo("agent-tool:rejected");
+            assertThat(session.snapshot().coreEvidenceFailure())
+                    .isEqualTo("online evidence plan request was rejected");
+        }
+
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void refusesToStartASpineWhenTheSessionCannotReserveAllThreeSourceCalls()
+            throws Exception {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingAgentProperties bounded = properties();
+        bounded.setMaxEvidenceRequests(2);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, bounded);
+        TroubleshootingEvidenceTool tool =
+                new TroubleshootingEvidenceTool(sessions, objectMapper);
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
+                     sessions.open("triage-1", 7L, incident(), List.of())) {
+            String json = tool.collectTroubleshootingEvidence(
+                    "model-search-1",
+                    "log_search",
+                    "search",
+                    "{\"scenario_key\":\"message_send_failed\"}",
+                    null,
+                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
+
+            EvidenceResult refused = objectMapper.readValue(json, EvidenceResult.class);
+            assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
+            assertThat(session.snapshot().evidence()).isEmpty();
+            assertThat(session.snapshot().coreEvidenceFailure())
+                    .isEqualTo("online evidence plan request was rejected");
+        }
+
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void refusesModelOwnedSearchTermsAndRecordsAStickyCoreFailure() throws Exception {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, properties());
+        TroubleshootingEvidenceTool tool =
+                new TroubleshootingEvidenceTool(sessions, objectMapper);
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
+                     sessions.open("triage-1", 7L, incident(), List.of())) {
+            String json = tool.collectTroubleshootingEvidence(
+                    "model-search-1",
+                    "log_search",
+                    "attempt to own executable plan",
+                    "{\"search_term\":\"message_send_failed\"}",
+                    null,
+                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
+
+            EvidenceResult refused = objectMapper.readValue(json, EvidenceResult.class);
+            assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
+            assertThat(session.snapshot().evidence()).isEmpty();
+            assertThat(session.snapshot().coreEvidenceFailure())
+                    .isEqualTo("online evidence plan request was rejected");
+        }
+
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void redactsSuppliedEvidenceBeforeSessionUse() {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, properties());
         EvidenceResult supplied = sensitiveEvidence(
                 "token=supplied-secret", "supplied-secret");
-        EvidenceResult collected = sensitiveEvidence(
-                "token=collected-secret", "collected-secret");
-        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
-                .thenReturn(collected);
 
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
                      sessions.open("triage-1", 7L, incident(), List.of(supplied))) {
-            String json = tool.collectTroubleshootingEvidence(
-                    "agent-log-1", "log_count", "确认异常", "{}", "-15m",
-                    ChatOrigin.web("triage-1", "troubleshooting", 7L, null).toToolContext());
-
-            assertThat(json)
-                    .contains("<REDACTED>")
-                    .doesNotContain("collected-secret");
-            EvidenceResult returned = objectMapper.readValue(json, EvidenceResult.class);
-            assertThat(returned.queryId()).isEqualTo("agent-log-1");
-            assertThat(returned.query()).doesNotContain("collected-secret");
-            assertThat(returned.summary()).doesNotContain("collected-secret");
-            assertThat(returned.namespace()).doesNotContain("collected-secret");
-            assertThat(returned.source()).doesNotContain("collected-secret");
-            assertThat(returned.observed().toString()).doesNotContain("collected-secret");
             assertThat(session.snapshot().evidence().toString())
                     .contains("<REDACTED>")
-                    .doesNotContain("supplied-secret", "collected-secret");
+                    .doesNotContain("supplied-secret");
+        }
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void remapsCallerSuppliedServerStageIdsBeforeCollectingTheRealSpine()
+            throws Exception {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, properties());
+        TroubleshootingEvidenceTool tool =
+                new TroubleshootingEvidenceTool(sessions, objectMapper);
+        EvidenceResult supplied = new EvidenceResult(
+                TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID,
+                "UNKNOWN", "", EvidenceStatus.MISSING,
+                "caller supplied missing contrast", Map.of(), "supplied", Instant.now());
+        when(router.collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> spineEvidence(invocation.getArgument(1)));
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
+                     sessions.open("triage-1", 7L, incident(), List.of(supplied))) {
+            assertThat(session.snapshot().evidence())
+                    .extracting(EvidenceResult::queryId)
+                    .containsExactly("supplied-reserved-1");
+
+            JsonNode response = objectMapper.readTree(tool.collectTroubleshootingEvidence(
+                    "model-search-1", "log_search", "collect approved spine",
+                    "{\"scenario_key\":\"message_send_failed\"}", null,
+                    ChatOrigin.web(
+                            "triage-1", "troubleshooting", 7L, null).toToolContext()));
+
+            assertThat(response.path("mode").asText()).isEqualTo("EVIDENCE_SPINE");
+            assertThat(session.snapshot().evidence())
+                    .extracting(EvidenceResult::queryId)
+                    .containsExactly(
+                            "supplied-reserved-1",
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
+            assertThat(session.snapshot().evidence().getLast().status())
+                    .isEqualTo(EvidenceStatus.ANOMALY);
+        }
+    }
+
+    @Test
+    void reportsAMissingTraceWithoutMisclassifyingTheSearchAsMalformedTrace()
+            throws Exception {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceSessionRegistry sessions =
+                new TroubleshootingEvidenceSessionRegistry(router, properties());
+        TroubleshootingEvidenceTool tool =
+                new TroubleshootingEvidenceTool(sessions, objectMapper);
+        when(router.collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> {
+                    EvidenceRequest request = invocation.getArgument(1);
+                    if ("log_trace_bundle".equals(request.signalKind())) {
+                        return new EvidenceResult(
+                                request.requestId(), "UNKNOWN", "", EvidenceStatus.MISSING,
+                                "trace unavailable", Map.of(), "router:unavailable",
+                                Instant.now());
+                    }
+                    return spineEvidence(request);
+                });
+
+        try (TroubleshootingEvidenceSessionRegistry.SessionHandle ignored =
+                     sessions.open("triage-1", 7L, incident(), List.of())) {
+            JsonNode response = objectMapper.readTree(tool.collectTroubleshootingEvidence(
+                    "model-search-1", "log_search", "collect approved spine",
+                    "{\"scenario_key\":\"message_send_failed\"}", null,
+                    ChatOrigin.web(
+                            "triage-1", "troubleshooting", 7L, null).toToolContext()));
+
+            assertThat(response.path("mode").asText()).isEqualTo("EVIDENCE_SPINE");
+            assertThat(response.path("traceSkeleton").isNull()).isTrue();
+            assertThat(response.path("warnings").toString())
+                    .contains("log_trace_bundle evidence is missing")
+                    .contains("core evidence is incomplete")
+                    .doesNotContain("malformed trace evidence");
         }
     }
 
@@ -144,42 +329,42 @@ class TroubleshootingEvidenceToolTest {
     }
 
     @Test
-    void refusesDuplicateRequestIdsWithoutOverwritingCitedEvidence() throws Exception {
+    void refusesASecondSpineWithoutOverwritingTheFirstCanonicalBundle() throws Exception {
         EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
         TroubleshootingEvidenceSessionRegistry sessions =
                 new TroubleshootingEvidenceSessionRegistry(router, properties());
         TroubleshootingEvidenceTool tool =
                 new TroubleshootingEvidenceTool(sessions, objectMapper);
-        EvidenceResult first = new EvidenceResult(
-                "adapter-first", "L", "first query", EvidenceStatus.ANOMALY,
-                "first result", Map.of("count", 1), "source-1", Instant.now());
-        EvidenceResult second = new EvidenceResult(
-                "adapter-second", "L", "second query", EvidenceStatus.NORMAL,
-                "second result", Map.of("count", 0), "source-2", Instant.now());
-        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
-                .thenReturn(first, second);
+        when(router.collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> spineEvidence(invocation.getArgument(1)));
 
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
                      sessions.open("triage-1", 7L, incident(), List.of())) {
             ToolContext context = ChatOrigin.web(
                     "triage-1", "troubleshooting", 7L, null).toToolContext();
-            EvidenceResult accepted = objectMapper.readValue(
-                    tool.collectTroubleshootingEvidence(
-                            "agent-log-1", "log_count", "first", "{}", "-15m", context),
-                    EvidenceResult.class);
+            JsonNode accepted = objectMapper.readTree(tool.collectTroubleshootingEvidence(
+                    "model-search-1", "log_search", "first",
+                    "{\"scenario_key\":\"message_send_failed\"}", null, context));
             EvidenceResult refused = objectMapper.readValue(
                     tool.collectTroubleshootingEvidence(
-                            "agent-log-1", "log_count", "second", "{}", "-15m", context),
+                            "model-search-2", "log_search", "second",
+                            "{\"scenario_key\":\"message_send_failed\"}", null, context),
                     EvidenceResult.class);
 
-            assertThat(accepted.summary()).isEqualTo("first result");
+            assertThat(accepted.path("mode").asText()).isEqualTo("EVIDENCE_SPINE");
             assertThat(refused.status()).isEqualTo(EvidenceStatus.MISSING);
-            assertThat(session.snapshot().evidence()).containsExactly(accepted);
+            assertThat(session.snapshot().evidence()).hasSize(3);
             assertThat(session.snapshot().toolCollectedQueryIds())
-                    .containsExactly("agent-log-1");
+                    .containsExactlyInAnyOrder(
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                            TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
         }
 
-        verify(router, times(1)).collect(eq(7L), any(), any());
+        verify(router, times(3)).collect(
+                eq(7L), any(), any(), eq(Set.of("recorded-replay")));
     }
 
     @Test
@@ -201,6 +386,15 @@ class TroubleshootingEvidenceToolTest {
     private TroubleshootingAgentProperties properties() {
         TroubleshootingAgentProperties properties = new TroubleshootingAgentProperties();
         properties.setMaxEvidenceRequests(4);
+        TroubleshootingAgentProperties.ScenarioEvidencePlan plan =
+                new TroubleshootingAgentProperties.ScenarioEvidencePlan();
+        plan.setEnabled(true);
+        plan.setSystem("CSDP");
+        plan.setSearchTerm("message_send_failed");
+        plan.setWindow("-15m");
+        plan.setWorkspaceIds(List.of(7L));
+        plan.setPermittedPlatforms(List.of("recorded-replay"));
+        properties.setApprovedScenarioPlans(Map.of("message_send_failed", plan));
         return properties;
     }
 
@@ -226,5 +420,45 @@ class TroubleshootingEvidenceToolTest {
                                 "Bearer " + secret, "safe-value")),
                 "cookie=" + secret,
                 Instant.now());
+    }
+
+    private EvidenceResult spineEvidence(EvidenceRequest request) {
+        Map<String, Object> observed = switch (request.signalKind()) {
+            case "log_search" -> Map.of(
+                    "match_count", 4,
+                    "ps_id", "synthetic-ps-1",
+                    "sample_message", "message send failed");
+            case "log_trace_bundle" -> Map.of(
+                    "ps_id", "synthetic-ps-1",
+                    "entries", List.of(
+                            traceEntry(1_000, "session-api", "INFO", "accepted", 3),
+                            traceEntry(1_020, "session-domain", "ERROR", "state conflict", 18),
+                            traceEntry(1_040, "openim", "ERROR", "send rejected", 20)));
+            case "contrast_sample" -> Map.of(
+                    "discriminating_feature", "session_state_conflict",
+                    "failure_sample_count", 100,
+                    "failure_match_count", 92,
+                    "success_sample_count", 100,
+                    "success_match_count", 3);
+            default -> throw new IllegalArgumentException(request.signalKind());
+        };
+        return new EvidenceResult(
+                request.requestId(), "L", "raw-dql-must-not-reach-model",
+                EvidenceStatus.ANOMALY, "canonical evidence", observed,
+                "recorded-replay", Instant.now());
+    }
+
+    private Map<String, Object> traceEntry(
+            long timestamp,
+            String service,
+            String level,
+            String message,
+            double durationMs) {
+        return Map.of(
+                "timestamp", timestamp,
+                "service", service,
+                "level", level,
+                "message", message,
+                "duration_ms", durationMs);
     }
 }

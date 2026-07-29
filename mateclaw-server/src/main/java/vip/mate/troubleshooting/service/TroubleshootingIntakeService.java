@@ -183,12 +183,14 @@ public class TroubleshootingIntakeService {
             throw badRequest("reportedAt is required");
         }
         IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        List<EvidenceResult> sanitizedSuppliedEvidence =
+                TroubleshootingEvidenceSanitizer.sanitizeSupplied(evidence);
         String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
         if (routeMissReason != null) {
             return triageRouteMiss(
                     workspaceId,
                     sanitizedIncident,
-                    evidence,
+                    sanitizedSuppliedEvidence,
                     rehearsal,
                     routeMissReason,
                     reportedAt,
@@ -202,7 +204,7 @@ public class TroubleshootingIntakeService {
             return triageRouteMiss(
                     workspaceId,
                     sanitizedIncident,
-                    evidence,
+                    sanitizedSuppliedEvidence,
                     rehearsal,
                     "no SOP registered for " + sanitizedIncident.system()
                             + ":" + sanitizedIncident.errorCode(),
@@ -217,7 +219,7 @@ public class TroubleshootingIntakeService {
                         workspaceId,
                         sop,
                         sanitizedIncident,
-                        evidence == null ? List.of() : evidence));
+                        sanitizedSuppliedEvidence));
         if (intakeSessionId == null) {
             return diagnosisService.diagnoseAndPersist(
                     workspaceId,

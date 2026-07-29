@@ -8,8 +8,11 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.evidence.EvidenceProperties;
+import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.EvidenceSpineResult;
+import vip.mate.troubleshooting.evidence.EvidenceSpineStage;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
-import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
@@ -45,9 +48,12 @@ import java.util.regex.Pattern;
 @Service
 public final class SopSynthesisService {
 
-    private static final String SEARCH_REQUEST_ID = "SYNTH-LOG-SEARCH";
-    private static final String TRACE_REQUEST_ID = "SYNTH-TRACE-BUNDLE";
-    private static final String CONTRAST_REQUEST_ID = "SYNTH-CONTRAST-SAMPLE";
+    private static final String SEARCH_REQUEST_ID =
+            EvidenceSpineStage.SEARCH.synthesisRequestId();
+    private static final String TRACE_REQUEST_ID =
+            EvidenceSpineStage.TRACE.synthesisRequestId();
+    private static final String CONTRAST_REQUEST_ID =
+            EvidenceSpineStage.CONTRAST.synthesisRequestId();
     private static final Pattern SAFE_TARGET =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}");
     private static final Pattern SAFE_WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
@@ -56,8 +62,7 @@ public final class SopSynthesisService {
     private static final int MAX_REFERENCE_SOURCE_CHARS = 256;
     private static final Set<String> FIXTURE_ONLY_SOURCES = Set.of("recorded-replay");
 
-    private final EvidenceSourceRouter evidenceRouter;
-    private final DeterministicLogTraceCompressor compressor;
+    private final EvidenceSpineOrchestrator evidenceOrchestration;
     private final EvidenceProperties.SynthesisPreview previewPolicy;
     private final Clock clock;
     private final PlaybookDraftInducer inducer;
@@ -68,28 +73,41 @@ public final class SopSynthesisService {
 
     @Autowired
     public SopSynthesisService(
-            EvidenceSourceRouter evidenceRouter,
-            DeterministicLogTraceCompressor compressor,
+            EvidenceSpineOrchestrator evidenceOrchestration,
             EvidenceProperties properties,
             PlaybookDraftInducer inducer,
             PlaybookDraftValidator validator,
             PlaybookCandidateStore candidateStore) {
-        this(evidenceRouter, compressor, previewPolicy(properties), Clock.systemUTC(),
+        this(evidenceOrchestration, previewPolicy(properties), Clock.systemUTC(),
                 inducer, validator, candidateStore);
     }
 
     public SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor) {
-        this(evidenceRouter, compressor, previewPolicy(null), Clock.systemUTC(),
+        this(new EvidenceSpineOrchestrator(evidenceRouter, compressor),
+                previewPolicy(null), Clock.systemUTC(),
                 null, null, null);
+    }
+
+    public SopSynthesisService(
+            EvidenceSourceRouter evidenceRouter,
+            DeterministicLogTraceCompressor compressor,
+            EvidenceProperties properties,
+            PlaybookDraftInducer inducer,
+            PlaybookDraftValidator validator,
+            PlaybookCandidateStore candidateStore) {
+        this(new EvidenceSpineOrchestrator(evidenceRouter, compressor),
+                previewPolicy(properties), Clock.systemUTC(),
+                inducer, validator, candidateStore);
     }
 
     SopSynthesisService(
             EvidenceSourceRouter evidenceRouter,
             DeterministicLogTraceCompressor compressor,
             Clock clock) {
-        this(evidenceRouter, compressor, previewPolicy(null), clock, null, null, null);
+        this(new EvidenceSpineOrchestrator(evidenceRouter, compressor),
+                previewPolicy(null), clock, null, null, null);
     }
 
     SopSynthesisService(
@@ -99,20 +117,19 @@ public final class SopSynthesisService {
             PlaybookDraftInducer inducer,
             PlaybookDraftValidator validator,
             PlaybookCandidateStore candidateStore) {
-        this(evidenceRouter, compressor, previewPolicy(null), clock,
+        this(new EvidenceSpineOrchestrator(evidenceRouter, compressor),
+                previewPolicy(null), clock,
                 inducer, validator, candidateStore);
     }
 
     private SopSynthesisService(
-            EvidenceSourceRouter evidenceRouter,
-            DeterministicLogTraceCompressor compressor,
+            EvidenceSpineOrchestrator evidenceOrchestration,
             EvidenceProperties.SynthesisPreview previewPolicy,
             Clock clock,
             PlaybookDraftInducer inducer,
             PlaybookDraftValidator validator,
             PlaybookCandidateStore candidateStore) {
-        this.evidenceRouter = evidenceRouter;
-        this.compressor = compressor;
+        this.evidenceOrchestration = evidenceOrchestration;
         this.previewPolicy = previewPolicy;
         this.clock = clock;
         this.inducer = inducer;
@@ -135,63 +152,35 @@ public final class SopSynthesisService {
         requireFixtureScope(workspaceId, request);
 
         IncidentContext incident = incident(request, occurredAt);
-        EvidenceResult search = collect(
+        EvidenceSpineResult spine = evidenceOrchestration.collect(
                 workspaceId,
-                new EvidenceRequest(
-                        SEARCH_REQUEST_ID,
-                        "log_search",
-                        "sample logs and extract PS ID for SOP synthesis",
-                        Map.of("search_term", request.searchTerm()),
-                        window.expression(),
-                        true),
                 incident,
-                "log_search");
+                new EvidenceSpinePlan(
+                        SEARCH_REQUEST_ID,
+                        TRACE_REQUEST_ID,
+                        CONTRAST_REQUEST_ID,
+                        request.searchTerm(),
+                        window.expression()),
+                FIXTURE_ONLY_SOURCES);
+        if (!spine.coreComplete()) {
+            throw unavailable(spine.coreFailure() == null
+                    ? "evidence spine is incomplete"
+                    : spine.coreFailure());
+        }
+
+        EvidenceResult search = spine.searchEvidence();
         long matchCount = positiveLong(search.observed().get("match_count"), "match_count");
         String psId = safePsId(search.observed().get("ps_id"));
-
-        EvidenceResult trace = collect(
-                workspaceId,
-                new EvidenceRequest(
-                        TRACE_REQUEST_ID,
-                        "log_trace_bundle",
-                        "collect the bounded cross-service trace before deterministic compression",
-                        Map.of("ps_id", psId),
-                        window.expression(),
-                        true),
-                incident,
-                "log_trace_bundle");
-
-        EvidenceResult contrast = collectOptional(
-                workspaceId,
-                new EvidenceRequest(
-                        CONTRAST_REQUEST_ID,
-                        "contrast_sample",
-                        "compare same-window successful requests with the failed scenario",
-                        Map.of(
-                                "scenario_key", request.searchTerm(),
-                                "exclude_ps_id", psId),
-                        window.expression(),
-                        false),
-                incident);
-
-        LogTraceSkeleton skeleton;
-        try {
-            skeleton = compressor.compress(trace);
-        } catch (IllegalArgumentException malformed) {
-            throw unavailable("log_trace_bundle cannot be compressed safely");
-        }
-        boolean contrastMalformed = false;
-        if (contrast != null) {
-            try {
-                skeleton = compressor.compress(trace, contrast);
-            } catch (IllegalArgumentException malformedContrast) {
-                contrast = null;
-                contrastMalformed = true;
-            }
-        }
-        if (!psId.equals(skeleton.psId())) {
-            throw unavailable("log_search and log_trace_bundle returned different PS IDs");
-        }
+        EvidenceResult trace = spine.traceEvidence();
+        EvidenceResult rawContrast = spine.contrastEvidence();
+        boolean contrastMalformed = rawContrast != null
+                && rawContrast.status() == EvidenceStatus.MISSING
+                && "evidence-spine:invalid".equals(rawContrast.source());
+        EvidenceResult contrast = rawContrast == null
+                || rawContrast.status() == EvidenceStatus.MISSING
+                ? null
+                : rawContrast;
+        LogTraceSkeleton skeleton = spine.skeleton();
 
         List<String> warnings = new ArrayList<>();
         warnings.add("该 evidencePreview 仅表示取证与确定性压缩完成；本对象自身尚未调用模型或创建 candidate。");
@@ -334,43 +323,6 @@ public final class SopSynthesisService {
                 "synthesis_preview",
                 IncidentCompleteness.LOG,
                 null);
-    }
-
-    private EvidenceResult collect(
-            long workspaceId,
-            EvidenceRequest request,
-            IncidentContext incident,
-            String stage) {
-        EvidenceResult raw = evidenceRouter.collect(
-                workspaceId, request, incident, FIXTURE_ONLY_SOURCES);
-        if (raw == null) {
-            throw unavailable(stage + " returned no evidence");
-        }
-        if (!request.requestId().equals(raw.queryId())) {
-            throw unavailable(stage + " returned an unexpected evidence id");
-        }
-        if (raw.status() == EvidenceStatus.MISSING) {
-            throw unavailable(stage + " evidence is missing");
-        }
-        return raw;
-    }
-
-    private EvidenceResult collectOptional(
-            long workspaceId,
-            EvidenceRequest request,
-            IncidentContext incident) {
-        try {
-            EvidenceResult raw = evidenceRouter.collect(
-                    workspaceId, request, incident, FIXTURE_ONLY_SOURCES);
-            if (raw == null
-                    || !request.requestId().equals(raw.queryId())
-                    || raw.status() == EvidenceStatus.MISSING) {
-                return null;
-            }
-            return raw;
-        } catch (RuntimeException sourceFailure) {
-            return null;
-        }
     }
 
     private SynthesisModelInput modelInput(SopSynthesisPreview preview) {

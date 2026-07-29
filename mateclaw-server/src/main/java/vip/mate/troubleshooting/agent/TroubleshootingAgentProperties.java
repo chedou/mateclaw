@@ -4,6 +4,10 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /** Fail-closed configuration for deterministic-route misses. */
 @Getter
 @Setter
@@ -24,4 +28,22 @@ public class TroubleshootingAgentProperties {
 
     /** Hard character budget for the complete initial model prompt. */
     private int maxPromptChars = 32_000;
+
+    /**
+     * Server-owned, approved scenario plans visible to the miss-path Agent.
+     * The model may select only the map key; every executable field below is
+     * resolved by the server after workspace and system checks.
+     */
+    private Map<String, ScenarioEvidencePlan> approvedScenarioPlans = new LinkedHashMap<>();
+
+    @Getter
+    @Setter
+    public static class ScenarioEvidencePlan {
+        private boolean enabled;
+        private String system;
+        private String searchTerm;
+        private String window = "-15m";
+        private List<Long> workspaceIds = List.of();
+        private List<String> permittedPlatforms = List.of();
+    }
 }

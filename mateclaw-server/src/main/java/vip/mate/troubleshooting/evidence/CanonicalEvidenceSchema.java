@@ -90,6 +90,25 @@ public final class CanonicalEvidenceSchema {
                 || validIncidentImpact(observed);
     }
 
+    /**
+     * Detects the unique canonical signal shape without trusting a caller-supplied kind.
+     * Canonical result shapes are intentionally disjoint; ambiguous or malformed input
+     * is withheld from downstream model projections.
+     */
+    public static String detectSignalKind(Map<String, Object> observed) {
+        String detected = null;
+        for (String signalKind : SCHEMAS.keySet().stream().sorted().toList()) {
+            if (!isValid(signalKind, observed)) {
+                continue;
+            }
+            if (detected != null) {
+                return null;
+            }
+            detected = signalKind;
+        }
+        return detected;
+    }
+
     static boolean isRowSet(String signalKind) {
         SignalSchema schema = schema(signalKind);
         return schema != null && !schema.rowFields().isEmpty();

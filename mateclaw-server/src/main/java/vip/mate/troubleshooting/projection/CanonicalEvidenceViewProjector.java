@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.CanonicalNumberParser;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
+import vip.mate.troubleshooting.evidence.EvidenceSpineStage;
 import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -199,6 +200,8 @@ final class CanonicalEvidenceViewProjector {
                 "failure_match_count",
                 "success_sample_count",
                 "success_match_count");
+        EvidenceResult missingContrast = firstMissingStage(
+                diagnosis.evidence(), EvidenceSpineStage.CONTRAST);
 
         if (traceBundle != null) {
             try {
@@ -208,9 +211,13 @@ final class CanonicalEvidenceViewProjector {
                     capabilityLimits.add("调用链按安全预算压缩，省略 "
                             + skeleton.omittedEntryCount() + " 条非关键日志事件。");
                 }
+                if (contrastEvidence == null && missingContrast != null) {
+                    capabilityLimits.add(
+                            "成功样本对照采集已执行，但证据来源返回 MISSING；未推断正常基线。");
+                }
                 return new CallChainAndContrast(
                         callChain(traceBundle, skeleton, blastRadius),
-                        contrast(skeleton.contrast(), contrastEvidence));
+                        contrast(skeleton.contrast(), contrastEvidence, missingContrast));
             } catch (IllegalArgumentException malformedBundleOrContrast) {
                 if (contrastEvidence != null) {
                     try {
@@ -241,6 +248,9 @@ final class CanonicalEvidenceViewProjector {
             if (contrastEvidence != null) {
                 capabilityLimits.add(
                         "已有成功样本对照证据，但缺少可复算的失败调用链，暂不展示统计结论。");
+            } else if (missingContrast != null) {
+                capabilityLimits.add(
+                        "成功样本对照采集已执行，但证据来源返回 MISSING；未推断正常基线。");
             }
             return new CallChainAndContrast(
                     new CallChainView(
@@ -248,14 +258,18 @@ final class CanonicalEvidenceViewProjector {
                             List.of(failedHop),
                             null,
                             blastRadius),
-                    unavailableContrast(contrastEvidence == null
-                            ? "当前 Diagnosis 未保存同窗口成功样本对照，不能把对照缺失解释成无异常。"
-                            : "对照证据尚不能与完整失败链路一起复算，不能据此判断无异常。"));
+                    contrastUnavailable(
+                            contrastEvidence,
+                            missingContrast,
+                            "对照证据尚不能与完整失败链路一起复算，不能据此判断无异常。"));
         }
 
         capabilityLimits.add("当前 Diagnosis 尚未保存可复算的完整调用链 hop。");
         if (contrastEvidence != null) {
             capabilityLimits.add("已有成功样本对照证据，但缺少失败调用链，暂不展示统计结论。");
+        } else if (missingContrast != null) {
+            capabilityLimits.add(
+                    "成功样本对照采集已执行，但证据来源返回 MISSING；未推断正常基线。");
         } else {
             capabilityLimits.add("当前 Diagnosis 尚未保存同窗口成功样本对照。");
         }
@@ -265,9 +279,10 @@ final class CanonicalEvidenceViewProjector {
         return new CallChainAndContrast(
                 new CallChainView(
                         diagnosis.incident().traceId(), List.of(), reason, blastRadius),
-                unavailableContrast(contrastEvidence == null
-                        ? "当前 Diagnosis 未保存同窗口成功样本对照，不能把对照缺失解释成无异常。"
-                        : "对照证据尚不能与失败调用链一起复算，不能据此判断无异常。"));
+                contrastUnavailable(
+                        contrastEvidence,
+                        missingContrast,
+                        "对照证据尚不能与失败调用链一起复算，不能据此判断无异常。"));
     }
 
     private CallChainView callChain(
@@ -322,10 +337,10 @@ final class CanonicalEvidenceViewProjector {
 
     private ContrastView contrast(
             LogTraceSkeleton.ContrastSummary summary,
-            EvidenceResult evidence) {
+            EvidenceResult evidence,
+            EvidenceResult missingContrast) {
         if (!summary.available() || evidence == null) {
-            return unavailableContrast(
-                    "当前 Diagnosis 未保存同窗口成功样本对照，不能把对照缺失解释成无异常。");
+            return contrastUnavailable(evidence, missingContrast, null);
         }
         return new ContrastView(
                 true,
@@ -341,6 +356,38 @@ final class CanonicalEvidenceViewProjector {
 
     private ContrastView unavailableContrast(String note) {
         return new ContrastView(false, null, null, note, List.of());
+    }
+
+    private ContrastView contrastUnavailable(
+            EvidenceResult presentContrast,
+            EvidenceResult missingContrast,
+            String presentButUnusableNote) {
+        if (presentContrast != null) {
+            return unavailableContrast(presentButUnusableNote == null
+                    ? "对照证据无法安全复算，不能据此判断无异常。"
+                    : presentButUnusableNote);
+        }
+        if (missingContrast != null) {
+            return new ContrastView(
+                    false,
+                    null,
+                    null,
+                    "同窗口成功样本对照已发起采集，但证据来源返回 MISSING；"
+                            + "contrastAvailable=false，不能把来源不可用解释成无异常。",
+                    List.of(missingContrast.queryId()));
+        }
+        return unavailableContrast(
+                "当前 Diagnosis 未保存同窗口成功样本对照，不能把对照缺失解释成无异常。");
+    }
+
+    private EvidenceResult firstMissingStage(
+            List<EvidenceResult> evidence,
+            EvidenceSpineStage stage) {
+        return evidence.stream()
+                .filter(item -> item.status() == EvidenceStatus.MISSING)
+                .filter(item -> stage.matchesRequestId(item.queryId()))
+                .findFirst()
+                .orElse(null);
     }
 
     private EvidenceResult firstEvidenceWithFields(

@@ -240,6 +240,54 @@ class RecordedReplayAdapterTest {
         assertThat(result.observed()).isEmpty();
     }
 
+    @Test
+    void bundledP6ReplayAcceptsOnlyTheExplicitServerOwnedOnlineSpineAliases() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                CLOCK);
+
+        EvidenceResult search = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-LOG-SEARCH", "log_search", "online search",
+                        Map.of("search_term", "message_send_failed"), "-15m", true),
+                incident("csdp-session-service", null));
+        EvidenceResult trace = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-TRACE-BUNDLE", "log_trace_bundle", "online trace",
+                        Map.of("ps_id", "synthetic-ps-message-send-001"), "-15m", true),
+                incident("csdp-session-service", null));
+        EvidenceResult contrast = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-CONTRAST-SAMPLE", "contrast_sample", "online contrast",
+                        Map.of(
+                                "scenario_key", "message_send_failed",
+                                "exclude_ps_id", "synthetic-ps-message-send-001"),
+                        "-15m", false),
+                incident("csdp-session-service", null));
+        EvidenceResult inventedAlias = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-TRACE-OTHER", "log_trace_bundle", "invented",
+                        Map.of("ps_id", "synthetic-ps-message-send-001"), "-15m", true),
+                incident("csdp-session-service", null));
+
+        assertThat(search.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(search.queryId()).isEqualTo("ONLINE-LOG-SEARCH");
+        assertThat(trace.observed()).containsEntry(
+                "ps_id", "synthetic-ps-message-send-001");
+        assertThat(contrast.observed())
+                .containsEntry("failure_match_count", 92)
+                .containsEntry("success_match_count", 3);
+        assertThat(inventedAlias.status()).isEqualTo(EvidenceStatus.MISSING);
+    }
+
     private RecordedReplayAdapter adapter(String json) {
         EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
         config.setEnabled(true);

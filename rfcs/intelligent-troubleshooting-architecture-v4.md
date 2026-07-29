@@ -814,8 +814,8 @@ Diagnosis，避免未成形的报障污染已有处置不变量。
 | `RouteMode.DETERMINISTIC` | 映射为 `ERROR_CODE_PLAYBOOK + EXPLICIT/RULE_MATCHED` |
 | `RouteMode.LLM_FALLBACK` | 映射为 `OPEN_DISCOVERY + MODEL_PROPOSED` |
 | `TroubleshootingIntakeService` | 先委托新的 Planning 接口，后续再收拢内部实现 |
-| `EvidenceSourceRouter.collect()` | 保留为 Adapter 路由内部 seam；上层新增批量 Evidence Orchestration |
-| `TroubleshootingEvidenceTool` | 保持 Agent 唯一只读门面；后续内部委托域内 `ReadOnlyEvidenceToolRegistry`，不直接向 Agent 展开插件列表 |
+| `EvidenceSourceRouter.collect()` | 保留为 Adapter 路由内部 seam；已由共享 `EvidenceSpineOrchestrator` 编排 `log_search → log_trace_bundle → contrast_sample`，在线 Diagnosis 与 SOP 合成不再各自实现 |
+| `TroubleshootingEvidenceTool` | 保持 Agent 唯一只读门面；模型只提交 workspace/system 可见的注册 `scenario_key`，搜索词、窗口、平台白名单与三阶段 EvidencePlan 由服务端 approved 配置解析；初始/工具证据统一投影为无 query、无 entries、无日志正文的模型安全骨架，并禁止直取其他 signal kind；后续内部委托域内 `ReadOnlyEvidenceToolRegistry`，不直接向 Agent 展开插件列表 |
 | `Agent Graph` + `TroubleshootingAgentTriageService` | 作为调查内循环的兼容实现；保留 maxIterations/maxEvidenceRequests，后续把预算、检查点和 stopReason 投影为 `LoopRun` |
 | `SopSynthesisService.preview()` | 作为 SOP Synthesis 的前三步，继续 fixture-only，补模型/校验/候选前不得声称完成；内部新合同用 `PlaybookDraft` |
 | `KnowledgeCandidate` + Outbox | 保留发布语义；另建审核状态，禁止复用 outbox status |

@@ -259,6 +259,9 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 ### T11 · Scenario Playbook
 
+- [x] 先为会议正例 `message_send_failed` 建配置型 approved Evidence Spine 目录：模型只提交 workspace/system
+      可见 `scenario_key`，搜索词、窗口、平台白名单和三阶段 request ID 全由服务端解析；当前平台固定
+      `recorded-replay`。这只锁定 Planning 安全边界，不等于完整持久化 Registry 已完成（2026-07-29）。
 - [ ] 先做 `slow_interface`、`system_unavailable`，再考虑更多场景。
 - [ ] approved Scenario Playbook 拥有固定 EvidencePlan、ParameterBindingSpec、criteria 和输出策略。
 - [ ] 模型只产 `ScenarioProposal(scenarioKey, parameterCandidates, reason, confidence)`。
@@ -319,8 +322,15 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       observedAt 必须由安全 evidenceRefs 指向的本次 canonical `incident_impact` 证据逐项复算，
       每条引用都必须通过 schema，任一引用混入非影响证据或彼此不一致都返回 null/UNKNOWN，不把任意
       日志量或前端输入冒充人数。
-- [ ] 在线 Diagnosis 仍需在真实取证路径保存完整 `log_trace_bundle`、`contrast_sample` 与经核实的
-      影响人数/BlastRadius；旧记录缺失时继续返回 null/UNKNOWN。1.3/1.4 的 D14 也不回填伪数据。
+- [x] 在线 Diagnosis 的安全 `log_search` 已由服务端固定展开为
+      `log_search → log_trace_bundle → contrast_sample`，与 `SopSynthesisService` 复用唯一
+      `EvidenceSpineOrchestrator`。Agent 只提交注册 `scenario_key`；搜索词、窗口和平台白名单来自 approved
+      服务端配置。三次 Router 调用先整体预留预算；预检失败粘滞并强制 abstain。完整 canonical evidence
+      保存进同一个 Diagnosis，supplied evidence 与工具响应共用模型安全投影，不含 query、原始 `entries`
+      或日志正文。核心 trace 缺失由服务端强制 abstain；对照缺失保存为显式 `MISSING` 并在正式页显示
+      “已采集但来源不可用”，不冒充正常基线或“尚未保存”（2026-07-29）。
+- [ ] 真 Guance 仍需稳定产出经核实的 `incident_impact` 人数/BlastRadius；旧记录或缺失事实继续返回
+      null/UNKNOWN。1.3/1.4 的 D14 也不回填伪数据。
 
 ## 9. 明确不进入当前计划
 

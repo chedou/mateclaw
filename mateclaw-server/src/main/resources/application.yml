@@ -151,6 +151,17 @@ mateclaw:
       # Separate from the normal conversation window because this invocation
       # deliberately bypasses ambient conversation context.
       max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}
+      # Initial approved Scenario Playbook. The model can return only this key;
+      # search term, window and source allowlist remain server-owned. The plan is
+      # deliberately replay-only until Guance T7/T8 verification is complete.
+      approved-scenario-plans:
+        message_send_failed:
+          enabled: true
+          system: CSDP
+          search-term: message_send_failed
+          window: -15m
+          workspace-ids: ["${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}"]
+          permitted-platforms: [recorded-replay]
     evidence:
       # Evidence collection is fail-closed. Routes are explicit, while both
       # concrete sources remain disabled until an operator opts in.
