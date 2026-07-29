@@ -19,6 +19,7 @@ import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
@@ -95,7 +96,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(InvestigationMode.ERROR_CODE_PLAYBOOK);
         assertThat(developer.routeAuthority())
                 .isEqualTo(RouteAuthority.EXPLICIT);
-        assertThat(developer.playbookRef()).isEqualTo("csdp:903001");
+        assertThat(developer.playbookRef())
+                .isEqualTo("csdp:903001 · playbook-903001@v3");
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
         assertThat(developer.callChain().hops()).hasSize(1);
         assertThat(developer.callChain().hops().getFirst().service()).isEqualTo("mongo.find");
@@ -358,7 +360,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "连接池利用率达到 100%", "Mongo 连接池打满", Confidence.HIGH, false,
-                "csdp:903001", "订单服务 Mongo 连接池耗尽",
+                "csdp:903001", "订单服务 Mongo 连接池耗尽", "DBA 组",
+                new PlaybookVersionRef("playbook-903001", 3),
                 List.of(
                         new EvidenceResult(
                                 "EV-1", "L", "L::order-svc:(count,trace_id)",

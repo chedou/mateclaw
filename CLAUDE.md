@@ -6,7 +6,7 @@
 
 当前实施状态：**旧 P0–P4 领域底座已形成；新架构 v4 的 P0（产品/架构/体验校准）和
 P1（无错误码证据→PlaybookDraft 竖线）已完成；T15 已把双投影吸收进正式工作台，
-并把 `Diagnosis` 升级到 1.5，持久化调查路径/权威、结论类型和 D14 阶段时间戳；P2 T6 已完成
+并从 `Diagnosis` 1.5 开始持久化调查路径/权威、结论类型和 D14 阶段时间戳；当前合同已演进到 1.8；P2 T6 已完成
 workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed 授权机制；
 P2 真源验证接缝已增加 workspace 级就绪投影、管理员手工触发的 Guance-only
 `log_search → log_trace_bundle` 单次只读验证，以及正式工作台的“P2 真源门”；
@@ -34,8 +34,11 @@ V185 新增 workspace 隔离的知识审核台账：正式 Review Inbox 按当�
 且不会把 candidate 生成成功冒充正例回放；`MANUAL` 对完整 SOP 合同执行证据请求/判据/规则交叉引用校验；
 浏览器不再自行拼装来源资格。V186 已增加不可变 Playbook version store、审核时冻结 baseline、
 单 active selector 数据库唯一约束，以及服务端门禁的 `APPROVED / DEPRECATED` 新版本替换和审计退役。
-Diagnosis 1.7 在确定性命中时冻结来源 Playbook owner，`knowledge-candidate.v2` 与关闭事务同时冻结
-outcome、恢复验证、actor 和时间。合同只接受 v1/v2：v1 不得携带 proof/owner，v2 必须携带与
+Diagnosis 1.8 在 1.7 冻结来源 Playbook owner 的基础上，又冻结精确
+`playbookId + playbookVersion`；新的确定性诊断落库前必须从 V186 不可变版本库复核路由内容，
+判定链也只能从该冻结版本重建。1.3–1.7 旧记录继续可读，但没有精确引用时禁止拿当前 Playbook
+补猜历史推导。`knowledge-candidate.v2` 与关闭事务同时冻结 outcome、恢复验证、actor 和时间。
+候选合同只接受 v1/v2：v1 不得携带 proof/owner，v2 必须携带与
 createdBy/createdAt 一致的服务端关闭 proof；历史 v1 候选继续 fail closed。真实精确候选回放和数据驱动的
 `RUNTIME` 档切换仍未完成，现有来源不能因版本命令可用而被视为可晋升。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
@@ -64,8 +67,8 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 `ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
 `TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验和未命中路 Vue 展示；
-`Diagnosis` 1.7 在 1.6 的结构化 `IncidentImpact` 之上冻结来源 Playbook owner，继续兼容
-1.3–1.6 的存量 JSON；精确人数必须带观测时间，且只有所有引用均为本次 canonical
+`Diagnosis` 1.8 在 1.7 的来源 owner 之上冻结精确 Playbook 版本，继续兼容
+1.3–1.7 的存量 JSON；精确人数必须带观测时间，且只有所有引用均为本次 canonical
 `incident_impact`、彼此无矛盾并逐项复算声明值时，人数和非 UNKNOWN 扩散范围才进入正式投影。另有
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的

@@ -10,6 +10,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeReviewEntity;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeReviewMapper;
 import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 
@@ -90,7 +91,7 @@ public class KnowledgeReviewWorkflowService {
                     "knowledge review source resolver returned a mismatched identity");
         }
 
-        Optional<ApprovedPlaybookRef> activeBaseline = source.selectorKey() == null
+        Optional<PlaybookVersionRef> activeBaseline = source.selectorKey() == null
                 ? Optional.empty()
                 : playbookVersions.activeRef(workspaceId, source.selectorKey());
 
@@ -108,10 +109,10 @@ public class KnowledgeReviewWorkflowService {
         entity.setSnapshotJson(write(source.snapshot()));
         entity.setActiveBaselineKnown(true);
         entity.setBasePlaybookId(activeBaseline
-                .map(ApprovedPlaybookRef::playbookId)
+                .map(PlaybookVersionRef::playbookId)
                 .orElse(null));
         entity.setBasePlaybookVersion(activeBaseline
-                .map(ApprovedPlaybookRef::playbookVersion)
+                .map(PlaybookVersionRef::playbookVersion)
                 .orElse(null));
         entity.setVersion(1);
         entity.setDeleted(0);

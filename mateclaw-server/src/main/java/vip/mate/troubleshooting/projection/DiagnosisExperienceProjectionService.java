@@ -88,7 +88,7 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.diagnosisId(),
                 diagnosis.investigationMode(),
                 authority,
-                diagnosis.sopKey(),
+                playbookRef(diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
                 evidenceFacts.contrast(),
@@ -97,6 +97,20 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.fixtureMode());
 
         return new DiagnosisExperienceProjection(business, developer);
+    }
+
+    private String playbookRef(Diagnosis diagnosis) {
+        if (diagnosis.sopKey() == null) {
+            return null;
+        }
+        if (diagnosis.sourcePlaybook() == null) {
+            return diagnosis.sopKey() + " · 历史记录未冻结版本";
+        }
+        return diagnosis.sopKey()
+                + " · "
+                + diagnosis.sourcePlaybook().playbookId()
+                + "@v"
+                + diagnosis.sourcePlaybook().playbookVersion();
     }
 
     private DiagnosisDerivation derivation(

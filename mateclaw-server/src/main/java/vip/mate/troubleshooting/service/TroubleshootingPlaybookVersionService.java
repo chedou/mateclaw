@@ -6,10 +6,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingPlaybookVersionMapper;
-import vip.mate.troubleshooting.synthesis.ApprovedPlaybookRef;
 import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.KnowledgePromotionMaterial;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewSnapshot;
@@ -41,7 +41,7 @@ public class TroubleshootingPlaybookVersionService {
         this.objectMapper = objectMapper;
     }
 
-    public Optional<ApprovedPlaybookRef> activeRef(
+    public Optional<PlaybookVersionRef> activeRef(
             long workspaceId,
             String selectorKey) {
         validateWorkspace(workspaceId);
@@ -50,8 +50,34 @@ public class TroubleshootingPlaybookVersionService {
                 mapper.findActive(workspaceId, selector);
         return active == null
                 ? Optional.empty()
-                : Optional.of(new ApprovedPlaybookRef(
+                : Optional.of(new PlaybookVersionRef(
                         active.getPlaybookId(), active.getPlaybookVersion()));
+    }
+
+    /** Reads one immutable authority by the identity frozen into a Diagnosis. */
+    public Optional<ApprovedPlaybookVersion> findByRef(
+            long workspaceId,
+            PlaybookVersionRef ref) {
+        validateWorkspace(workspaceId);
+        if (ref == null) {
+            throw new IllegalArgumentException("Playbook version reference is required");
+        }
+        TroubleshootingPlaybookVersionEntity entity = mapper.findByPlaybookId(
+                workspaceId, ref.playbookId());
+        if (entity == null || entity.getPlaybookVersion() != ref.playbookVersion()) {
+            return Optional.empty();
+        }
+        return Optional.of(read(entity));
+    }
+
+    /** Resolves the immutable identity embedded in a routeable Playbook. */
+    public Optional<ApprovedPlaybookVersion> findByPlaybookId(
+            long workspaceId,
+            String playbookId) {
+        validateWorkspace(workspaceId);
+        TroubleshootingPlaybookVersionEntity entity = mapper.findByPlaybookId(
+                workspaceId, required(playbookId, "playbookId"));
+        return entity == null ? Optional.empty() : Optional.of(read(entity));
     }
 
     public Optional<ApprovedPlaybookVersion> findByReview(

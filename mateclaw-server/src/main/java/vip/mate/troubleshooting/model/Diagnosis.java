@@ -27,6 +27,7 @@ public record Diagnosis(
         String sopKey,
         String sopTitle,
         String sourcePlaybookOwner,
+        PlaybookVersionRef sourcePlaybook,
         List<EvidenceResult> evidence,
         List<String> evidenceCitations,
         List<String> triggeredSignals,
@@ -44,9 +45,12 @@ public record Diagnosis(
         boolean writeExecutionEnabled,
         List<String> warnings) {
 
-    public static final String CURRENT_CONTRACT_VERSION = "1.7";
+    public static final String CURRENT_CONTRACT_VERSION = "1.8";
+    private static final String FROZEN_OWNER_CONTRACT_VERSION = "1.7";
     private static final Set<String> SUPPORTED_CONTRACT_VERSIONS =
-            Set.of("1.3", "1.4", "1.5", "1.6", CURRENT_CONTRACT_VERSION);
+            Set.of(
+                    "1.3", "1.4", "1.5", "1.6",
+                    FROZEN_OWNER_CONTRACT_VERSION, CURRENT_CONTRACT_VERSION);
 
     public Diagnosis {
         diagnosisId = required(diagnosisId, "diagnosisId");
@@ -90,6 +94,25 @@ public record Diagnosis(
         sourcePlaybookOwner = sourcePlaybookOwner == null
                 || sourcePlaybookOwner.isBlank()
                 ? null : sourcePlaybookOwner.trim();
+        if (sourcePlaybook != null
+                && !CURRENT_CONTRACT_VERSION.equals(contractVersion)) {
+            throw new IllegalArgumentException(
+                    "only diagnosis 1.8 may carry an exact Playbook version");
+        }
+        if (sourcePlaybook != null && (sopKey == null || sopKey.isBlank())) {
+            throw new IllegalArgumentException(
+                    "an exact Playbook version requires a diagnosis selector");
+        }
+        if (CURRENT_CONTRACT_VERSION.equals(contractVersion)
+                && routeMode == RouteMode.DETERMINISTIC
+                && sourcePlaybook == null) {
+            throw new IllegalArgumentException(
+                    "diagnosis 1.8 deterministic routes require an exact Playbook version");
+        }
+        if (routeMode == RouteMode.LLM_FALLBACK && sourcePlaybook != null) {
+            throw new IllegalArgumentException(
+                    "LLM fallback cannot claim an approved Playbook version");
+        }
         evidence = immutable(evidence);
         evidenceCitations = immutable(evidenceCitations);
         triggeredSignals = immutable(triggeredSignals);
@@ -274,6 +297,7 @@ public record Diagnosis(
                 sopKey,
                 sopTitle,
                 null,
+                null,
                 evidence,
                 triggeredSignals,
                 recommendedActions,
@@ -315,6 +339,66 @@ public record Diagnosis(
             boolean fixtureMode,
             List<String> warnings,
             List<TimelineEvent> timeline) {
+        return initial(
+                diagnosisId,
+                caseId,
+                runId,
+                incident,
+                routeMode,
+                investigationMode,
+                routeAuthority,
+                conclusionType,
+                timings,
+                status,
+                summary,
+                rootCause,
+                confidence,
+                abstained,
+                sopKey,
+                sopTitle,
+                sourcePlaybookOwner,
+                null,
+                evidence,
+                triggeredSignals,
+                recommendedActions,
+                routeToTeam,
+                rehearsal,
+                fixtureMode,
+                warnings,
+                timeline);
+    }
+
+    /**
+     * Creates a current diagnosis and freezes the immutable Playbook authority
+     * used for its deterministic decision.
+     */
+    public static Diagnosis initial(
+            String diagnosisId,
+            String caseId,
+            String runId,
+            IncidentContext incident,
+            RouteMode routeMode,
+            InvestigationMode investigationMode,
+            RouteAuthority routeAuthority,
+            ConclusionType conclusionType,
+            NorthStarTimings timings,
+            DiagnosisStatus status,
+            String summary,
+            String rootCause,
+            Confidence confidence,
+            boolean abstained,
+            String sopKey,
+            String sopTitle,
+            String sourcePlaybookOwner,
+            PlaybookVersionRef sourcePlaybook,
+            List<EvidenceResult> evidence,
+            List<String> triggeredSignals,
+            List<RecommendedAction> recommendedActions,
+            String routeToTeam,
+            boolean rehearsal,
+            boolean fixtureMode,
+            List<String> warnings,
+            List<TimelineEvent> timeline) {
         if (status != DiagnosisStatus.READY_FOR_HUMAN
                 && status != DiagnosisStatus.NEEDS_INVESTIGATION) {
             throw new IllegalArgumentException("initial diagnosis must start before human confirmation");
@@ -325,7 +409,9 @@ public record Diagnosis(
                 .toList();
         return new Diagnosis(
                 diagnosisId,
-                CURRENT_CONTRACT_VERSION,
+                sourcePlaybook == null
+                        ? FROZEN_OWNER_CONTRACT_VERSION
+                        : CURRENT_CONTRACT_VERSION,
                 caseId,
                 runId,
                 incident,
@@ -341,6 +427,7 @@ public record Diagnosis(
                 sopKey,
                 sopTitle,
                 sourcePlaybookOwner,
+                sourcePlaybook,
                 evidence,
                 List.of(),
                 triggeredSignals,
@@ -388,6 +475,7 @@ public record Diagnosis(
                 draft.hypothesis(),
                 draft.confidence(),
                 draft.abstained(),
+                null,
                 null,
                 null,
                 null,
@@ -533,7 +621,8 @@ public record Diagnosis(
                 diagnosisId, contractVersion, caseId, runId, incident, routeMode,
                 investigationMode, routeAuthority, conclusionType,
                 newStatus, summary, rootCause, confidence, abstained,
-                sopKey, sopTitle, sourcePlaybookOwner, evidence, evidenceCitations,
+                sopKey, sopTitle, sourcePlaybookOwner, sourcePlaybook,
+                evidence, evidenceCitations,
                 triggeredSignals, newActions,
                 newPendingWrites, newRouteToTeam, newTransfers, newActionOutcomes,
                 newClosure, newKnowledgeCandidates, newTimeline, nextTimings, rehearsal,

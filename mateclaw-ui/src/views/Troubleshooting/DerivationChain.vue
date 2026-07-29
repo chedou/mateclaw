@@ -6,7 +6,11 @@
     </p>
 
     <p v-else-if="derivation && !derivation.faithful" class="unfaithful">
-      {{ derivation.note ?? 'SOP 自本次诊断后已变更，下面的判定链无法还原当时的推导。' }}
+      {{ derivation.note ?? '诊断记录与冻结 Playbook 版本不一致，判定链不可信。' }}
+    </p>
+
+    <p v-else-if="isDeterministic && loadError" class="unfaithful">
+      {{ loadError }}
     </p>
 
     <!-- 第一步：取到了什么证据 -->
@@ -121,6 +125,7 @@ const OUTCOME_ORDER: Record<CriterionOutcome, number> = {
 }
 
 const derivation = ref<DiagnosisDerivation | null>(null)
+const loadError = ref('')
 const loading = ref(false)
 const isDeterministic = computed(() => props.diagnosis.routeMode === 'DETERMINISTIC')
 let loadRevision = 0
@@ -158,9 +163,14 @@ async function load(diagnosisId: string) {
   const revision = ++loadRevision
   loading.value = true
   derivation.value = null
+  loadError.value = ''
   try {
     const { data } = await troubleshootingApi.derivation(diagnosisId)
     if (revision === loadRevision) derivation.value = data
+  } catch {
+    if (revision === loadRevision) {
+      loadError.value = '判定链暂不可重建；服务端已保守停止，不会用当前知识补猜历史过程。请稍后重试或核对 Diagnosis 的精确 Playbook 版本。'
+    }
   } finally {
     if (revision === loadRevision) loading.value = false
   }
@@ -174,6 +184,7 @@ watch(
     } else {
       loadRevision += 1
       derivation.value = null
+      loadError.value = ''
       loading.value = false
     }
   },

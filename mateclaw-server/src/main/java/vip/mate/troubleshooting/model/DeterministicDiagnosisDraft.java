@@ -10,6 +10,7 @@ public record DeterministicDiagnosisDraft(
         String runId,
         IncidentContext incident,
         SopEntry sop,
+        PlaybookVersionRef sourcePlaybook,
         List<EvidenceResult> evidence,
         List<String> triggeredSignals,
         List<RecommendedAction> recommendedActions,

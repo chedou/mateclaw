@@ -649,6 +649,21 @@ T14 关闭候选事实投影（2026-07-30）已实现，精确候选回放仍未
   `/troubleshooting`、`/troubleshooting/sops`、`/troubleshooting/legacy` 都正常且各自 0 console error；
   现存 v1 关闭候选正确显示历史 proof/owner 缺口和 `POSITIVE_REPLAY_REQUIRED`，未被伪装成可晋升。
 
+T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
+
+- Diagnosis 合同升级为 1.8；新的确定性命中路在落库前按 `SopEntry.sopId` 回读 V186 不可变
+  Playbook 版本，同时校验 selector 和完整路由合同；缺版本或并发替换导致内容不一致时 409
+  fail closed，不持久化不可核验的诊断。
+- Diagnosis 冻结 `sourcePlaybook(playbookId, playbookVersion)` 并在所有后续生命周期转换中保留。
+  1.3–1.7 存量 JSON 保持可读；1.8 确定性聚合缺少引用时在合同边界直接拒绝。
+- `DiagnosisDerivationService` 不再读取当前 active SOP，只按冻结引用读取精确历史版本；旧诊断缺引用、
+  版本丢失或 selector 不一致都显式停止，不用今日知识伪造当时判定链。冻结版本重算与聚合信号
+  不一致时按数据完整性故障暴露。
+- 正式开发证据台的调查路径显示 `selector · playbookId@vN`；历史记录明示“未冻结版本”。
+  旧处置台判定链接口失败时也显示保守停止文案，不留未处理 Promise 或空白推导。
+- 本增量没有改变候选晋升资格；`POSITIVE_REPLAY_REQUIRED`、真实 T7/T8、Challenger/Loop
+  `PENDING-EVIDENCE`、hit-path 零 LLM 和生产写禁用边界全部保持。
+
 后端定向测试命令：
 
 ```bash

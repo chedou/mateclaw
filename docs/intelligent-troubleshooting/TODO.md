@@ -371,6 +371,10 @@ Challenger 影子运行和两者对比仍未实现。
         `knowledge-candidate.v2` 在同一个关闭事务中冻结 outcome、恢复验证、actor 与时间。新关闭候选可由服务端
         消除 `OUTCOME_VERIFICATION_NOT_PROJECTED / OWNER_REQUIRED`，历史 v1 行继续 fail closed。候选合同仅接受
         v1/v2：v1 不得携带 proof/owner，v2 缺少服务端关闭 proof 直接拒绝（2026-07-30）。
+  - [x] Diagnosis 1.8 在确定性落库前从 V186 版本库复核并冻结精确
+        `playbookId + playbookVersion`；判定链只从该不可变版本重建。新合同缺少引用直接拒绝，
+        1.3–1.7 旧行继续可读但重建时 fail closed，正式开发证据台显示精确版本或“历史未冻结”，
+        不用当前 active Playbook 冒充历史知识（2026-07-30）。
   - [ ] 将真实 T8 正/负例或弃权回放接入精确候选 Gate；
         selector 单 active-approved 已由 V186 数据库唯一约束关闭，以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
         切换，条件全部可由服务端证明后才允许返回 `ELIGIBLE_FOR_APPROVAL`。

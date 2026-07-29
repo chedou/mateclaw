@@ -44,14 +44,17 @@ import vip.mate.troubleshooting.service.DeterministicDiagnosisService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,6 +99,7 @@ class Vertical903001Test {
     private TroubleshootingIntakeService intake;
     private DiagnosisLifecycleService lifecycle;
     private TroubleshootingSopPersistenceService sopPersistence;
+    private TroubleshootingPlaybookVersionService playbookVersions;
     private ObjectMapper objectMapper;
 
     @BeforeAll
@@ -113,15 +117,14 @@ class Vertical903001Test {
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
 
+        playbookVersions = mock(TroubleshootingPlaybookVersionService.class);
         sopPersistence = new TroubleshootingSopPersistenceService(
-                sopMapper(),
-                mock(vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService.class),
-                objectMapper);
+                sopMapper(), playbookVersions, objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
                 diagnosisMapper(), outboxMapper(), objectMapper);
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();
         DeterministicDiagnosisService diagnosisService = new DeterministicDiagnosisService(
-                new CriterionEvaluator(), stateMachine, persistence);
+                new CriterionEvaluator(), stateMachine, persistence, playbookVersions);
 
         intake = new TroubleshootingIntakeService(sopPersistence, diagnosisService);
         lifecycle = new DiagnosisLifecycleService(persistence, stateMachine);
@@ -283,6 +286,22 @@ class Vertical903001Test {
         } catch (Exception error) {
             throw new IllegalStateException(error);
         }
+        when(playbookVersions.findByPlaybookId(WORKSPACE_ID, approved.sopId()))
+                .thenReturn(Optional.of(new ApprovedPlaybookVersion(
+                        approved.sopId(),
+                        1,
+                        approved.routingKey(),
+                        "APPROVED",
+                        "LEGACY",
+                        approved.sopId(),
+                        null,
+                        null,
+                        "migration",
+                        "test backfill",
+                        null,
+                        approved,
+                        OCCURRED_AT,
+                        OCCURRED_AT)));
     }
 
     private SopEntry sop903001() {

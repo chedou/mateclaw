@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
@@ -22,23 +23,28 @@ import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,6 +55,7 @@ class DeterministicDiagnosisServiceTest {
     private static final Instant CONCLUSION_AT = Instant.parse("2026-07-25T01:05:00Z");
 
     @Mock private TroubleshootingPersistenceService persistence;
+    @Mock private TroubleshootingPlaybookVersionService playbookVersions;
 
     private DeterministicDiagnosisService service;
 
@@ -60,6 +67,7 @@ class DeterministicDiagnosisServiceTest {
                         Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC),
                         prefix -> prefix + "-1"),
                 persistence,
+                playbookVersions,
                 Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC));
     }
 
@@ -67,6 +75,8 @@ class DeterministicDiagnosisServiceTest {
     void hitPathEvaluatesRulesInitializesStateAndPersistsWithoutLlm() {
         when(persistence.createOrGet(eq(7L), any(Diagnosis.class), eq(RECEIVED_AT)))
                 .thenAnswer(invocation -> new StoredDiagnosis(invocation.getArgument(1), 0, true));
+        when(playbookVersions.findByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
 
         StoredDiagnosis stored = service.diagnoseAndPersist(
                 7L,
@@ -90,7 +100,11 @@ class DeterministicDiagnosisServiceTest {
                 diagnosis.pendingWrites().getFirst().executionStatus());
         assertEquals(3, diagnosis.timeline().size());
         assertEquals(ConclusionType.LOCATED, diagnosis.conclusionType());
+        assertEquals(Diagnosis.CURRENT_CONTRACT_VERSION, diagnosis.contractVersion());
         assertEquals("DBA 值班", diagnosis.sourcePlaybookOwner());
+        assertEquals(
+                new PlaybookVersionRef("sop-903001", 3),
+                diagnosis.sourcePlaybook());
         assertEquals(
                 NorthStarTimings.concluded(RECEIVED_AT, READY_AT, CONCLUSION_AT),
                 diagnosis.timings());
@@ -100,7 +114,29 @@ class DeterministicDiagnosisServiceTest {
                 prefix -> prefix + "-2")
                 .confirm(diagnosis, "on-call");
         assertEquals(DiagnosisStatus.CONFIRMED, confirmed.status());
+        assertEquals(diagnosis.sourcePlaybook(), confirmed.sourcePlaybook());
         verify(persistence).createOrGet(7L, diagnosis, RECEIVED_AT);
+    }
+
+    @Test
+    void persistedHitPathFailsClosedWithoutAnImmutablePlaybookVersion() {
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.diagnoseAndPersist(
+                        7L,
+                        incident(),
+                        sop(true, "approved"),
+                        List.of(evidence(
+                                EvidenceStatus.ANOMALY,
+                                Map.of("reachable", false))),
+                        false,
+                        true,
+                        RECEIVED_AT,
+                        READY_AT));
+
+        assertEquals(409, error.getCode());
+        verify(persistence, never()).createOrGet(
+                eq(7L), any(Diagnosis.class), eq(RECEIVED_AT));
     }
 
     @Test
@@ -237,5 +273,23 @@ class DeterministicDiagnosisServiceTest {
                 observed,
                 "fixture",
                 Instant.parse("2026-07-25T01:03:00Z"));
+    }
+
+    private ApprovedPlaybookVersion approvedVersion() {
+        return new ApprovedPlaybookVersion(
+                "sop-903001",
+                3,
+                "csdp:903001",
+                "APPROVED",
+                "MANUAL",
+                "manual-903001",
+                "review-903001",
+                2,
+                "reviewer",
+                "fixed replay passed",
+                null,
+                sop(true, "approved"),
+                RECEIVED_AT,
+                RECEIVED_AT);
     }
 }

@@ -9,6 +9,7 @@ import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingPlaybookVersionMapper;
@@ -35,6 +36,27 @@ class TroubleshootingPlaybookVersionServiceTest {
 
     private final ObjectMapper objectMapper =
             new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void resolvesOnlyTheExactImmutablePlaybookVersion() {
+        TroubleshootingPlaybookVersionMapper mapper =
+                mock(TroubleshootingPlaybookVersionMapper.class);
+        TroubleshootingPlaybookVersionService service =
+                new TroubleshootingPlaybookVersionService(mapper, objectMapper);
+        TroubleshootingPlaybookVersionEntity version = approvedEntity(
+                "playbook-old", 3, "review-old", sop("playbook-old", "approved", true));
+        when(mapper.findByPlaybookId(7L, "playbook-old")).thenReturn(version);
+
+        assertThat(service.findByRef(
+                7L, new PlaybookVersionRef("playbook-old", 3)))
+                .get()
+                .extracting(
+                        ApprovedPlaybookVersion::playbookId,
+                        ApprovedPlaybookVersion::playbookVersion)
+                .containsExactly("playbook-old", 3);
+        assertThat(service.findByRef(
+                7L, new PlaybookVersionRef("playbook-old", 2))).isEmpty();
+    }
 
     @Test
     void approvalCreatesANewVersionAndDeprecatesTheExactFrozenAuthority() throws Exception {

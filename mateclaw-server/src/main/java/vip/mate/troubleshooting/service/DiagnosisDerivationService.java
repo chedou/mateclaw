@@ -11,7 +11,9 @@ import vip.mate.troubleshooting.model.DiagnosisDerivation;
 import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,43 +30,55 @@ import java.util.Set;
  * managed to test. This service reconstructs that from the stored evidence and
  * the SOP's criteria.</p>
  *
- * <p>Reconstruction has a trap worth naming: the diagnosis kept its evidence and
- * its signals, but the criteria that connected them live in the SOP, which
- * evolves. Recomputing against today's SOP could therefore describe a decision
- * that never happened. So the service recomputes and then checks itself against
- * the signals recorded at the time; a mismatch means the knowledge changed, and
- * it says so rather than presenting a tidy fiction.</p>
+ * <p>Reconstruction uses the exact immutable Playbook version frozen by the
+ * Diagnosis. Reading today's active Playbook would describe a decision that
+ * never happened after a replacement. Older Diagnosis contracts without that
+ * reference therefore fail closed instead of guessing.</p>
  */
 @Service
 public class DiagnosisDerivationService {
 
     private final TroubleshootingPersistenceService persistence;
-    private final TroubleshootingSopPersistenceService sopPersistence;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
     private final CriterionEvaluator evaluator;
     private final CriterionRenderer renderer;
 
     public DiagnosisDerivationService(
             TroubleshootingPersistenceService persistence,
-            TroubleshootingSopPersistenceService sopPersistence,
+            TroubleshootingPlaybookVersionService playbookVersions,
             CriterionEvaluator evaluator,
             CriterionRenderer renderer) {
         this.persistence = persistence;
-        this.sopPersistence = sopPersistence;
+        this.playbookVersions = playbookVersions;
         this.evaluator = evaluator;
         this.renderer = renderer;
     }
 
     public DiagnosisDerivation explain(long workspaceId, String diagnosisId) {
         Diagnosis diagnosis = persistence.get(workspaceId, diagnosisId).diagnosis();
-        SopEntry sop = sopPersistence.find(
-                workspaceId, diagnosis.incident().system(), diagnosis.incident().errorCode());
-        if (sop == null) {
+        PlaybookVersionRef sourcePlaybook = diagnosis.sourcePlaybook();
+        if (sourcePlaybook == null) {
             throw new MateClawException(
-                    "err.troubleshooting.sop_not_found",
+                    "err.troubleshooting.diagnosis_playbook_version_not_frozen",
                     409,
-                    "the SOP behind this diagnosis is no longer registered, "
-                            + "so its derivation cannot be rebuilt");
+                    "this historical diagnosis did not freeze an exact Playbook version; "
+                            + "current knowledge will not be used to invent its derivation");
         }
+        ApprovedPlaybookVersion version = playbookVersions.findByRef(
+                        workspaceId, sourcePlaybook)
+                .orElseThrow(() -> new MateClawException(
+                        "err.troubleshooting.diagnosis_playbook_version_missing",
+                        409,
+                        "the exact Playbook version behind this diagnosis is unavailable; "
+                                + "its derivation cannot be rebuilt"));
+        if (!version.selectorKey().equals(diagnosis.sopKey())
+                || !version.selectorKey().equals(version.playbook().routingKey())) {
+            throw new MateClawException(
+                    "err.troubleshooting.diagnosis_playbook_selector_mismatch",
+                    409,
+                    "the frozen Playbook version does not match the diagnosis selector");
+        }
+        SopEntry sop = version.playbook();
 
         Map<String, EvidenceResult> evidenceByRequest = new LinkedHashMap<>();
         for (EvidenceResult result : diagnosis.evidence()) {
@@ -133,9 +147,9 @@ public class DiagnosisDerivationService {
     }
 
     private String driftNote(Set<String> recorded, Set<String> recomputed) {
-        return "SOP 自本次诊断后已变更：当时命中 " + describe(recorded)
-                + "，按当前 SOP 重算得到 " + describe(recomputed)
-                + "。以下推导反映的是当前知识，不是当时的判定过程。";
+        return "诊断记录与冻结 Playbook 版本不一致：当时记录命中 "
+                + describe(recorded) + "，按该不可变版本重算得到 "
+                + describe(recomputed) + "。请按数据完整性故障处理，不展示为可信判定链。";
     }
 
     private String describe(Set<String> signals) {

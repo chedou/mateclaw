@@ -2010,6 +2010,11 @@ export interface ClosureRecord {
   closedAt: string
 }
 
+export interface PlaybookVersionRef {
+  playbookId: string
+  playbookVersion: number
+}
+
 export interface Diagnosis {
   diagnosisId: string
   contractVersion: string
@@ -2037,6 +2042,8 @@ export interface Diagnosis {
   routeToTeam: string | null
   /** Frozen Playbook owner; absent on Diagnosis contracts before 1.7. */
   sourcePlaybookOwner?: string | null
+  /** Exact immutable authority used by Diagnosis 1.8 deterministic routes. */
+  sourcePlaybook?: PlaybookVersionRef | null
   transfers: unknown[]
   actionOutcomes: unknown[]
   closure: ClosureRecord | null

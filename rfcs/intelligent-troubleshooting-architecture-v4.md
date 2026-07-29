@@ -427,13 +427,17 @@ completeness, missingRequired[], collectedAt, fixtureMode
 diagnosisId, incidentId, investigationMode, routeAuthority,
 confidence, conclusionType, conclusion, evidenceCitations[], derivation,
 impact, recommendedHumanActions[], abstained, capabilityBoundary,
-status, contractVersion, createdAt
+status, contractVersion, sourcePlaybookVersionRef?, createdAt
 
 conclusionType = LOCATED | EXCLUDED | HYPOTHESIS | INSUFFICIENT_EVIDENCE
 ```
 
 `recommendedHumanActions` 只描述人工下一步。现有 `recommendedActions/pendingWrites` 在兼容期保留，
 但输出投影必须明确“平台不执行”。
+
+`sourcePlaybookVersionRef = playbookId + version`。确定性路由只有在落库前复核了对应的不可变
+approved 版本后才能写入该引用；后续重建判定链必须读该精确版本，不得读当前 active Playbook。
+旧 Diagnosis 没有该引用时只能显式标记“不可重建”，不能用当前知识补猜。
 
 ### 5.6 InvestigationPlaybook / DiscoveryPolicy
 

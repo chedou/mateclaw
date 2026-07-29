@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.Confidence;
@@ -16,9 +17,11 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -41,24 +44,28 @@ public class DeterministicDiagnosisService {
     private final CriterionEvaluator evaluator;
     private final DiagnosisStateMachine stateMachine;
     private final TroubleshootingPersistenceService persistence;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
     private final Clock clock;
 
     @Autowired
     public DeterministicDiagnosisService(
             CriterionEvaluator evaluator,
             DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence) {
-        this(evaluator, stateMachine, persistence, Clock.systemUTC());
+            TroubleshootingPersistenceService persistence,
+            TroubleshootingPlaybookVersionService playbookVersions) {
+        this(evaluator, stateMachine, persistence, playbookVersions, Clock.systemUTC());
     }
 
     DeterministicDiagnosisService(
             CriterionEvaluator evaluator,
             DiagnosisStateMachine stateMachine,
             TroubleshootingPersistenceService persistence,
+            TroubleshootingPlaybookVersionService playbookVersions,
             Clock clock) {
         this.evaluator = evaluator;
         this.stateMachine = stateMachine;
         this.persistence = persistence;
+        this.playbookVersions = playbookVersions;
         this.clock = clock;
     }
 
@@ -91,7 +98,14 @@ public class DeterministicDiagnosisService {
             Instant reportedAt,
             Instant readyAt) {
         Diagnosis diagnosis = diagnose(
-                incident, sop, evidence, rehearsal, fixtureMode, reportedAt, readyAt);
+                incident,
+                sop,
+                exactPlaybook(workspaceId, sop),
+                evidence,
+                rehearsal,
+                fixtureMode,
+                reportedAt,
+                readyAt);
         return persistence.createOrGet(workspaceId, diagnosis, reportedAt);
     }
 
@@ -107,7 +121,14 @@ public class DeterministicDiagnosisService {
             Instant readyAt,
             String intakeSessionId) {
         Diagnosis diagnosis = diagnose(
-                incident, sop, evidence, rehearsal, fixtureMode, reportedAt, readyAt);
+                incident,
+                sop,
+                exactPlaybook(workspaceId, sop),
+                evidence,
+                rehearsal,
+                fixtureMode,
+                reportedAt,
+                readyAt);
         return persistence.createOrGetForIntake(
                 workspaceId, diagnosis, intakeSessionId);
     }
@@ -119,12 +140,13 @@ public class DeterministicDiagnosisService {
             boolean rehearsal,
             boolean fixtureMode) {
         return diagnose(
-                incident, sop, evidence, rehearsal, fixtureMode, null, null);
+                incident, sop, null, evidence, rehearsal, fixtureMode, null, null);
     }
 
     private Diagnosis diagnose(
             IncidentContext incident,
             SopEntry sop,
+            PlaybookVersionRef sourcePlaybook,
             List<EvidenceResult> evidence,
             boolean rehearsal,
             boolean fixtureMode,
@@ -199,6 +221,7 @@ public class DeterministicDiagnosisService {
                 "run-" + correlationId,
                 incident,
                 sop,
+                sourcePlaybook,
                 normalizedEvidence,
                 signals,
                 actions,
@@ -213,6 +236,25 @@ public class DeterministicDiagnosisService {
                 fixtureMode,
                 warnings);
         return stateMachine.initializeDeterministic(draft);
+    }
+
+    private PlaybookVersionRef exactPlaybook(long workspaceId, SopEntry sop) {
+        ApprovedPlaybookVersion version = playbookVersions.findByPlaybookId(
+                        workspaceId, sop.sopId())
+                .orElseThrow(() -> new MateClawException(
+                        "err.troubleshooting.playbook_version_not_frozen",
+                        409,
+                        "the routeable Playbook has no immutable version record; "
+                                + "diagnosis stopped before persisting an unverifiable decision"));
+        if (!version.selectorKey().equals(sop.routingKey())
+                || !version.playbook().equals(sop)) {
+            throw new MateClawException(
+                    "err.troubleshooting.playbook_version_mismatch",
+                    409,
+                    "the routeable Playbook no longer matches its immutable version record");
+        }
+        return new PlaybookVersionRef(
+                version.playbookId(), version.playbookVersion());
     }
 
     private Map<String, EvidenceResult> indexEvidence(List<EvidenceResult> evidence) {

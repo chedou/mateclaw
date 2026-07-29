@@ -18,8 +18,8 @@ class DiagnosisContractTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void currentContractIsVersion17ForFrozenPlaybookOwnership() {
-        assertEquals("1.7", Diagnosis.CURRENT_CONTRACT_VERSION);
+    void currentContractIsVersion18ForFrozenPlaybookAuthority() {
+        assertEquals("1.8", Diagnosis.CURRENT_CONTRACT_VERSION);
     }
 
     @Test
@@ -51,6 +51,7 @@ class DiagnosisContractTest {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.3");
         payload.remove("evidenceCitations");
+        payload.remove("sourcePlaybook");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -67,6 +68,7 @@ class DiagnosisContractTest {
         payload.remove("routeAuthority");
         payload.remove("conclusionType");
         payload.remove("timings");
+        payload.remove("sourcePlaybook");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -82,6 +84,7 @@ class DiagnosisContractTest {
             throws Exception {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.5");
+        payload.remove("sourcePlaybook");
         ((ObjectNode) payload.path("incident")).put("impact", "订单创建功能受影响");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
@@ -113,7 +116,9 @@ class DiagnosisContractTest {
                 timings,
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "scenario located", "slow dependency", Confidence.MEDIUM, false,
-                "scenario:slow-api", "Slow API", base.evidence(), List.of(), List.of(),
+                "scenario:slow-api", "Slow API", "API 组",
+                new PlaybookVersionRef("playbook-scenario", 4),
+                base.evidence(), List.of(), List.of(),
                 "API 组", false, true, List.of(), List.of());
 
         Diagnosis restored = objectMapper.readValue(
@@ -124,6 +129,31 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
         assertEquals(ConclusionType.LOCATED, restored.conclusionType());
         assertEquals(timings, restored.timings());
+        assertEquals(
+                new PlaybookVersionRef("playbook-scenario", 4),
+                restored.sourcePlaybook());
+    }
+
+    @Test
+    void currentDeterministicContractRejectsMissingExactPlaybookVersion() {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.remove("sourcePlaybook");
+
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.treeToValue(payload, Diagnosis.class));
+    }
+
+    @Test
+    void version17WithoutExactPlaybookVersionRemainsReadableWithoutGuessing() throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.7");
+        payload.remove("sourcePlaybook");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.7", restored.contractVersion());
+        assertNull(restored.sourcePlaybook());
     }
 
     @Test
@@ -131,6 +161,7 @@ class DiagnosisContractTest {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.6");
         payload.remove("sourcePlaybookOwner");
+        payload.remove("sourcePlaybook");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -236,6 +267,10 @@ class DiagnosisContractTest {
                 "run-contract",
                 incident,
                 RouteMode.DETERMINISTIC,
+                InvestigationMode.ERROR_CODE_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.unrecorded(),
                 DiagnosisStatus.NEEDS_INVESTIGATION,
                 "insufficient evidence",
                 "unknown",
@@ -243,12 +278,15 @@ class DiagnosisContractTest {
                 true,
                 "csdp:903001",
                 "SOP",
+                "DBA 组",
+                new PlaybookVersionRef("playbook-contract", 3),
                 List.of(),
                 List.of(),
                 List.of(),
                 null,
                 false,
                 true,
+                List.of(),
                 List.of());
     }
 }

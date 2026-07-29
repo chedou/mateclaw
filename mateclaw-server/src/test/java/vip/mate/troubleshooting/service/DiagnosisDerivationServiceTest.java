@@ -21,17 +21,25 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -46,19 +54,21 @@ class DiagnosisDerivationServiceTest {
     private static final long WORKSPACE_ID = 1L;
     private static final String DIAGNOSIS_ID = "diag-1";
     private static final Instant NOW = Instant.parse("2026-07-26T09:12:03Z");
+    private static final PlaybookVersionRef PLAYBOOK_REF =
+            new PlaybookVersionRef("playbook-903001", 3);
 
     @Mock
     private TroubleshootingPersistenceService persistence;
 
     @Mock
-    private TroubleshootingSopPersistenceService sopPersistence;
+    private TroubleshootingPlaybookVersionService playbookVersions;
 
     private DiagnosisDerivationService service;
 
     @BeforeEach
     void setUp() {
         service = new DiagnosisDerivationService(
-                persistence, sopPersistence, new CriterionEvaluator(), new CriterionRenderer());
+                persistence, playbookVersions, new CriterionEvaluator(), new CriterionRenderer());
     }
 
     @Test
@@ -134,29 +144,48 @@ class DiagnosisDerivationServiceTest {
     }
 
     @Test
-    void refusesToNarrateADecisionItCanNoLongerReconstruct() {
-        // The SOP has been edited since: what fired then no longer fires now.
+    void refusesToNarrateAStoredDecisionThatDisagreesWithItsFrozenPlaybook() {
+        // A mismatch against the frozen version is an integrity failure, not normal version drift.
         given(diagnosis(List.of("pool_exhausted", "db_hop_failure"), List.of(metricEvidence())), sop());
 
         DiagnosisDerivation derivation = service.explain(WORKSPACE_ID, DIAGNOSIS_ID);
 
         assertThat(derivation.faithful())
-                .as("recomputed signals disagree with what was recorded")
+                .as("frozen rules disagree with what the aggregate recorded")
                 .isFalse();
         assertThat(derivation.note())
-                .contains("SOP 自本次诊断后已变更")
+                .contains("冻结 Playbook 版本")
                 .contains("db_hop_failure");
     }
 
     @Test
-    void reportsWhenTheSopBehindTheDiagnosisIsGone() {
+    void reportsWhenTheExactPlaybookVersionBehindTheDiagnosisIsGone() {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID)).thenReturn(
                 new StoredDiagnosis(diagnosis(List.of(), List.of(metricEvidence())), 1, false));
-        when(sopPersistence.find(anyLong(), any(), any())).thenReturn(null);
 
         assertThatThrownBy(() -> service.explain(WORKSPACE_ID, DIAGNOSIS_ID))
                 .isInstanceOf(MateClawException.class)
-                .hasMessageContaining("no longer registered");
+                .hasMessageContaining("exact Playbook version");
+    }
+
+    @Test
+    void legacyDiagnosisWithoutAnExactVersionFailsClosedWithoutReadingCurrentKnowledge() {
+        Diagnosis legacy = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-1", "run-1",
+                incident(),
+                RouteMode.DETERMINISTIC,
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "legacy", "legacy", Confidence.HIGH, false,
+                "csdp:903001", "legacy SOP",
+                List.of(metricEvidence()), List.of("pool_exhausted"), List.of(),
+                null, false, true, List.of());
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(legacy, 1, false));
+
+        assertThatThrownBy(() -> service.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("did not freeze");
+        verify(playbookVersions, never()).findByRef(anyLong(), any());
     }
 
     // ---------- helpers ----------
@@ -164,7 +193,8 @@ class DiagnosisDerivationServiceTest {
     private void given(Diagnosis diagnosis, SopEntry sop) {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(diagnosis, 1, false));
-        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(playbookVersions.findByRef(WORKSPACE_ID, PLAYBOOK_REF))
+                .thenReturn(Optional.of(version(sop)));
     }
 
     private CriterionOutcome outcome(DiagnosisDerivation derivation, String signal) {
@@ -236,12 +266,40 @@ class DiagnosisDerivationServiceTest {
     private Diagnosis diagnosis(List<String> triggeredSignals, List<EvidenceResult> evidence) {
         return Diagnosis.initial(
                 DIAGNOSIS_ID, "case-1", "run-1",
-                new IncidentContext("inc-1", "CSDP", "order-svc", "903001", "订单创建超时",
-                        "P0", "成功率下降", "7f3a91c", NOW, "21:18", "alert_webhook",
-                        IncidentCompleteness.STRUCTURED, "[ALERT] code=903001"),
-                RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
+                incident(),
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.ERROR_CODE_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                vip.mate.troubleshooting.model.ConclusionType.LOCATED,
+                NorthStarTimings.unrecorded(),
+                DiagnosisStatus.READY_FOR_HUMAN,
                 "连接可用数归零", "Mongo 连接池打满", Confidence.HIGH, false,
-                "csdp:903001", "订单服务 Mongo 连接池耗尽",
-                evidence, triggeredSignals, List.of(), null, false, true, List.of());
+                "csdp:903001", "订单服务 Mongo 连接池耗尽", "DBA 组", PLAYBOOK_REF,
+                evidence, triggeredSignals, List.of(), null, false, true, List.of(), List.of());
+    }
+
+    private IncidentContext incident() {
+        return new IncidentContext(
+                "inc-1", "CSDP", "order-svc", "903001", "订单创建超时",
+                "P0", "成功率下降", "7f3a91c", NOW, "21:18", "alert_webhook",
+                IncidentCompleteness.STRUCTURED, "[ALERT] code=903001");
+    }
+
+    private ApprovedPlaybookVersion version(SopEntry sop) {
+        return new ApprovedPlaybookVersion(
+                PLAYBOOK_REF.playbookId(),
+                PLAYBOOK_REF.playbookVersion(),
+                sop.routingKey(),
+                "APPROVED",
+                "MANUAL",
+                "manual-903001",
+                "review-903001",
+                2,
+                "reviewer",
+                "fixed replay passed",
+                null,
+                sop,
+                NOW,
+                NOW);
     }
 }
