@@ -474,6 +474,30 @@ T8 历史样本台账基础设施（2026-07-29）已实现，真实样本与 Gat
 - 默认 Guance binding 仍为空、`fixtureMode` 仍未解除，本地台账当前没有伪造真实样本。下一步仍是
   owner 完成 T7 字段核实后，用该入口采集并冻结 20–30 条历史样本，再实现质量/性能聚合与影子对比。
 
+T8 应用侧计时与分来源描述性统计（2026-07-29）已实现，真实样本与 Gate 仍未完成：
+
+- 唯一 `EvidenceSpineOrchestrator` 现用单调时钟记录 `log_search`、`log_trace_bundle`、
+  `contrast_sample` 三次 Router 往返，以及核心/对照两次确定性压缩的合计耗时；这些是 MateClaw
+  应用侧墙钟时间，不是 Guance 服务端 DQL 执行时延。外层预览继续记录包含 readiness 开销的
+  端到端总耗时，并拒绝“总耗时小于已测工作量”的矛盾投影；
+- 安全计时投影随 T8 样本聚合保存，不新增表或迁移。V181 已存 JSON 没有 `timings` 时按“未测量”
+  兼容读取，零毫秒仍表示真实的亚毫秒观测；只有四段计时完整的样本才进入汇总；
+- 台账采用 nearest-rank，分别计算 Guance / Recorded Replay 的取证、确定性压缩、端到端总耗时
+  p50/p95，两个来源绝不混算。正式页同时展示每组可测样本数；零样本明确显示“暂无可测样本”，
+  并说明模型耗时、结果质量与 Gate verdict 尚不在本次统计内；
+- Standards / Spec 本地双轴审查发现的 V181 旧 JSON 兼容性和端到端耗时一致性缺口已补测试关闭；
+  没有新增模型调用、Replay 回退、candidate、生产写或 `fixtureMode=false` 路径；
+- 排障域 + Skill Manifest 后端 `369` 个测试、前端 `17` 个测试文件 / `131` 个测试全通过；
+  `vue-tsc --noEmit`、改动文件 ESLint、`git diff --check` 与直接 Vite 生产构建通过，构建完成
+  `6275` 个模块转换。`npm run build` 仍因基线 `package.json` 引用了仓库中不存在的
+  `../scripts/check-snowflake-precision.sh` 而在 Vite 前停止，本轮未扩大范围修补该上游问题；
+- 最终工作树后端 PID `76866` 以 schema V181 监听 `18088`，前端 PID `92308` 监听 `5173`；
+  正式 `/troubleshooting`、旧版 `/troubleshooting/legacy` 均返回 200，未登录 T8 API 返回预期 401。
+  隔离登录态浏览器验证正式页、T8 台账和 legacy 均为 0 console error；本地台账诚实保持 `0/20`，
+  两个来源均显示 0 条可测样本，未伪造真实观测；
+- 下一步仍是 owner 完成 T7 真实 binding/字段核实并采集 20–30 条历史样本；随后补模型时延、
+  引用完整率、必需意图覆盖、abstain/有害性、Challenger 与单 Agent 基线，才能评审整体 T8。
+
 后端定向测试命令：
 
 ```bash

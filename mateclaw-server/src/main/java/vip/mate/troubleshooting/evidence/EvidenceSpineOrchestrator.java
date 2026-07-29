@@ -12,8 +12,10 @@ import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -32,6 +34,7 @@ public final class EvidenceSpineOrchestrator {
     private final EvidenceSourceRouter router;
     private final DeterministicLogTraceCompressor compressor;
     private final Clock clock;
+    private final LongSupplier ticker;
 
     @Autowired
     public EvidenceSpineOrchestrator(
@@ -44,9 +47,18 @@ public final class EvidenceSpineOrchestrator {
             EvidenceSourceRouter router,
             DeterministicLogTraceCompressor compressor,
             Clock clock) {
+        this(router, compressor, clock, System::nanoTime);
+    }
+
+    EvidenceSpineOrchestrator(
+            EvidenceSourceRouter router,
+            DeterministicLogTraceCompressor compressor,
+            Clock clock,
+            LongSupplier ticker) {
         this.router = router;
         this.compressor = compressor;
         this.clock = clock == null ? Clock.systemUTC() : clock;
+        this.ticker = ticker == null ? System::nanoTime : ticker;
     }
 
     public EvidenceSpineResult collect(
@@ -66,10 +78,14 @@ public final class EvidenceSpineOrchestrator {
                 Map.of("search_term", plan.searchTerm()),
                 plan.window(),
                 true);
+        long searchStarted = ticker.getAsLong();
         EvidenceResult search = collectCanonical(
                 workspaceId, searchRequest, incident, permittedPlatforms);
+        long searchDurationMs = elapsedMillis(searchStarted);
+        EvidenceSpineTimings timings = new EvidenceSpineTimings(
+                searchDurationMs, null, null, null);
         if (search.status() == EvidenceStatus.MISSING) {
-            return failed(search, null, 1, "log_search evidence is missing");
+            return failed(search, null, 1, timings, "log_search evidence is missing");
         }
         Long matchCount = CanonicalNumberParser.parseExactLong(
                 search.observed().get("match_count"));
@@ -79,6 +95,7 @@ public final class EvidenceSpineOrchestrator {
                     invalid(plan.searchRequestId(), "log_search canonical values are unusable"),
                     null,
                     1,
+                    timings,
                     "log_search canonical values are unusable");
         }
 
@@ -89,27 +106,41 @@ public final class EvidenceSpineOrchestrator {
                 Map.of("ps_id", psId),
                 plan.window(),
                 true);
+        long traceStarted = ticker.getAsLong();
         EvidenceResult trace = collectCanonical(
                 workspaceId, traceRequest, incident, permittedPlatforms);
+        long traceDurationMs = elapsedMillis(traceStarted);
+        timings = new EvidenceSpineTimings(
+                searchDurationMs, traceDurationMs, null, null);
         if (trace.status() == EvidenceStatus.MISSING) {
-            return failed(search, trace, 2, "log_trace_bundle evidence is missing");
+            return failed(
+                    search, trace, 2, timings, "log_trace_bundle evidence is missing");
         }
 
         LogTraceSkeleton skeleton;
+        long compressionStarted = ticker.getAsLong();
+        long compressionDurationMs;
         try {
             skeleton = compressor.compress(trace);
         } catch (IllegalArgumentException malformedTrace) {
+            compressionDurationMs = elapsedMillis(compressionStarted);
             return failed(
                     search,
                     invalid(plan.traceRequestId(), "log_trace_bundle cannot be compressed safely"),
                     2,
+                    new EvidenceSpineTimings(
+                            searchDurationMs, traceDurationMs, null, compressionDurationMs),
                     "log_trace_bundle cannot be compressed safely");
         }
+        compressionDurationMs = elapsedMillis(compressionStarted);
+        timings = new EvidenceSpineTimings(
+                searchDurationMs, traceDurationMs, null, compressionDurationMs);
         if (!psId.equals(skeleton.psId())) {
             return failed(
                     search,
                     invalid(plan.traceRequestId(), "log_search and log_trace_bundle PS IDs differ"),
                     2,
+                    timings,
                     "log_search and log_trace_bundle PS IDs differ");
         }
 
@@ -122,27 +153,42 @@ public final class EvidenceSpineOrchestrator {
                         "exclude_ps_id", psId),
                 plan.window(),
                 false);
+        long contrastStarted = ticker.getAsLong();
         EvidenceResult contrast = collectCanonical(
                 workspaceId, contrastRequest, incident, permittedPlatforms);
+        long contrastDurationMs = elapsedMillis(contrastStarted);
         if (contrast.status() != EvidenceStatus.MISSING) {
+            long contrastCompressionStarted = ticker.getAsLong();
             try {
                 skeleton = compressor.compress(trace, contrast);
             } catch (IllegalArgumentException malformedContrast) {
                 contrast = invalid(
                         plan.contrastRequestId(),
                         "contrast_sample cannot be compressed safely");
+            } finally {
+                compressionDurationMs = Math.addExact(
+                        compressionDurationMs,
+                        elapsedMillis(contrastCompressionStarted));
             }
         }
 
-        return new EvidenceSpineResult(search, trace, contrast, skeleton, 3, null);
+        timings = new EvidenceSpineTimings(
+                searchDurationMs,
+                traceDurationMs,
+                contrastDurationMs,
+                compressionDurationMs);
+        return new EvidenceSpineResult(
+                search, trace, contrast, skeleton, 3, timings, null);
     }
 
     private EvidenceSpineResult failed(
             EvidenceResult search,
             EvidenceResult trace,
             int requestCount,
+            EvidenceSpineTimings timings,
             String reason) {
-        return new EvidenceSpineResult(search, trace, null, null, requestCount, reason);
+        return new EvidenceSpineResult(
+                search, trace, null, null, requestCount, timings, reason);
     }
 
     private EvidenceResult collectCanonical(
@@ -199,5 +245,10 @@ public final class EvidenceSpineOrchestrator {
                 Map.of(),
                 source,
                 clock.instant());
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        long elapsedNanos = ticker.getAsLong() - startedNanos;
+        return elapsedNanos <= 0L ? 0L : Duration.ofNanos(elapsedNanos).toMillis();
     }
 }

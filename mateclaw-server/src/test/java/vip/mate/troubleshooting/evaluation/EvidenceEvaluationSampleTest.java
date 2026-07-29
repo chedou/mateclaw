@@ -1,5 +1,7 @@
 package vip.mate.troubleshooting.evaluation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
@@ -183,6 +185,19 @@ class EvidenceEvaluationSampleTest {
                 NOW))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("step order");
+    }
+
+    @Test
+    void readsV181SamplesThatPredateStageTimings() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ObjectNode legacy = (ObjectNode) objectMapper.valueToTree(captured(false));
+        ((ObjectNode) legacy.get("evidence")).remove("timings");
+
+        EvidenceEvaluationSample restored = objectMapper.treeToValue(
+                legacy, EvidenceEvaluationSample.class);
+
+        assertThat(restored.evidence().timings())
+                .isEqualTo(vip.mate.troubleshooting.evidence.EvidenceSpineTimings.unmeasured());
     }
 
     private EvidenceEvaluationSample captured(boolean diagnosisFixtureMode) {

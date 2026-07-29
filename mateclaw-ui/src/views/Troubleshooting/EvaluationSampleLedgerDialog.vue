@@ -24,6 +24,27 @@
         </div>
       </section>
 
+      <section v-if="ledger" class="latency-panel">
+        <div class="panel-head">
+          <div><span>T8 描述性指标</span><h3>分来源应用侧时延</h3></div>
+          <el-tag size="small" type="info">{{ ledger.summary.timingMeasuredSamples }} 条完整计时</el-tag>
+        </div>
+        <div class="latency-grid">
+          <article v-for="card in latencyCards" :key="card.key">
+            <header><b>{{ card.source }}</b><small>{{ card.sampleCount }} 条可测样本</small></header>
+            <dl>
+              <div><dt>证据源往返</dt><dd>{{ card.evidence }}</dd></div>
+              <div><dt>确定性压缩</dt><dd>{{ card.compression }}</dd></div>
+              <div><dt>端到端预览</dt><dd>{{ card.total }}</dd></div>
+            </dl>
+          </article>
+        </div>
+        <p class="latency-note">
+          统计仅覆盖当前筛选范围，Guance 与 Recorded Replay 不混算。这里是 MateClaw 应用侧墙钟时间，
+          不是 Guance 服务端 DQL 耗时；模型耗时与结果质量尚未进入统计，任何数值都不代表 T8 已通过。
+        </p>
+      </section>
+
       <section v-if="captureContext" class="capture-panel">
         <div class="panel-head">
           <div><span>T8 样本采集</span><h3>服务端重新执行 Guance Evidence Spine</h3></div>
@@ -177,6 +198,7 @@ import {
 } from '@/api'
 import {
   type EvaluationSampleCaptureContext,
+  evaluationLatencyCards,
   evaluationReferenceStatusLabel,
   evaluationSampleProgress,
   evaluationSourceLabel,
@@ -216,6 +238,9 @@ const referenceForm = reactive({ required: '', forbidden: '' })
 const progress = computed(() => ledger.value
   ? evaluationSampleProgress(ledger.value.summary)
   : { label: '0 / 20 条可评估样本', percent: 0, note: '' })
+const latencyCards = computed(() => ledger.value
+  ? evaluationLatencyCards(ledger.value.summary)
+  : [])
 const captureFormValid = computed(() => {
   const parsed = parseEvaluationIntentKeys(captureForm.scenarioKey)
   return parsed.invalid.length === 0
@@ -338,8 +363,8 @@ function errorText(error: unknown) {
 <style scoped>
 .ledger-alert { margin-bottom: 14px; }
 .ledger-body { min-height: 220px; }
-.summary-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
-.capture-panel,.sample-panel,.reference-panel { margin-top: 12px; }
+.summary-panel,.latency-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
+.latency-panel,.capture-panel,.sample-panel,.reference-panel { margin-top: 12px; }
 .summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
 .summary-grid article { padding: 11px; border-radius: 8px; background: #f5f7fb; }
 .summary-grid span,.summary-grid small { display: block; color: #667085; font-size: 10px; }
@@ -348,6 +373,16 @@ function errorText(error: unknown) {
 .progress-row b,.progress-row small { display: block; }
 .progress-row b { font-size: 12px; }
 .progress-row small { margin-top: 4px; color: #b54708; font-size: 10px; line-height: 1.5; }
+.latency-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 12px; }
+.latency-grid article { padding: 12px; border: 1px solid #e7eaf0; border-radius: 8px; background: #fbfcfe; }
+.latency-grid header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.latency-grid header b { font-size: 11px; }
+.latency-grid header small { color: #667085; font-size: 9px; }
+.latency-grid dl { display: grid; gap: 7px; margin: 10px 0 0; }
+.latency-grid dl>div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.latency-grid dt { color: #667085; font-size: 9.5px; }
+.latency-grid dd { margin: 0; color: #172033; font-size: 9.5px; font-weight: 650; text-align: right; }
+.latency-note { margin: 10px 0 0; color: #667085; font-size: 9.5px; line-height: 1.55; }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .panel-head span { color: #2f5cf5; font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .panel-head h3 { margin: 4px 0 0; font-size: 14px; }
@@ -371,5 +406,6 @@ function errorText(error: unknown) {
 .reference-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .reference-error { margin: 8px 0 0; color: #d92d20; font-size: 10px; }
 .reference-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
-@media(max-width:760px){.summary-grid{grid-template-columns:1fr 1fr}.progress-row,.capture-form,.reference-form{grid-template-columns:1fr}.sample-row{grid-template-columns:1fr}.sample-actions{text-align:left}}
+@media(max-width:760px){.summary-grid,.latency-grid{grid-template-columns:1fr 1fr}.progress-row,.capture-form,.reference-form{grid-template-columns:1fr}.sample-row{grid-template-columns:1fr}.sample-actions{text-align:left}}
+@media(max-width:520px){.summary-grid,.latency-grid{grid-template-columns:1fr}}
 </style>

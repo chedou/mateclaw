@@ -13,7 +13,25 @@ public record EvidenceSpineResult(
         EvidenceResult contrastEvidence,
         LogTraceSkeleton skeleton,
         int sourceRequestCount,
+        EvidenceSpineTimings timings,
         String coreFailure) {
+
+    public EvidenceSpineResult(
+            EvidenceResult searchEvidence,
+            EvidenceResult traceEvidence,
+            EvidenceResult contrastEvidence,
+            LogTraceSkeleton skeleton,
+            int sourceRequestCount,
+            String coreFailure) {
+        this(
+                searchEvidence,
+                traceEvidence,
+                contrastEvidence,
+                skeleton,
+                sourceRequestCount,
+                EvidenceSpineTimings.unmeasured(),
+                coreFailure);
+    }
 
     public EvidenceSpineResult {
         if (searchEvidence == null) {
@@ -22,6 +40,7 @@ public record EvidenceSpineResult(
         if (sourceRequestCount < 1 || sourceRequestCount > 3) {
             throw new IllegalArgumentException("sourceRequestCount must be between 1 and 3");
         }
+        timings = timings == null ? EvidenceSpineTimings.unmeasured() : timings;
         coreFailure = coreFailure == null || coreFailure.isBlank()
                 ? null
                 : coreFailure.trim();

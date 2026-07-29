@@ -13,7 +13,8 @@ P2 真源验证接缝已增加 workspace 级就绪投影、管理员手工触发
 API 只返回计数、PS ID、节点数和绑定状态，不返回 DQL、密钥或原始日志，也绝不回退 Replay。
 正式工作台已增加管理员 T8 历史样本台账：服务端重新执行 Guance-only 三段 Evidence Spine，V181
 只持久化脱敏结构投影；人工参考步骤只能在关联 Diagnosis 关闭后冻结，outcome 由服务端读取，
-页面只展示 Guance/Replay、参考解和 fixture 分组计数，不产生 T8 通过结论。
+页面按 Guance/Replay 展示参考解、fixture 分组计数，以及应用侧取证/确定性压缩/端到端总耗时的
+描述性 p50/p95；旧记录缺少计时时保持不可测，模型耗时与质量指标仍未实现，不产生 T8 通过结论。
 P3 T9 已完成企微普通消息 pre-route 与独立 IntakeSession，T10 已完成 READY 持久化异步调查、
 Intake 归属幂等 Diagnosis、稳定业务身份/精确投递路由分离、leader 回源恢复、平台 ACK 后完成、
 纯文本 BusinessSummary 与正式工作台深链，以及 Diagnosis 关闭后持久化、无硬重试上限的

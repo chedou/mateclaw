@@ -50,6 +50,28 @@ class GuanceEvidenceSpinePreviewTest {
                 .hasMessageContaining("core-only spine");
     }
 
+    @Test
+    void rejectsAnEndToEndDurationShorterThanItsMeasuredWork() {
+        assertThatThrownBy(() -> new GuanceEvidenceSpinePreview(
+                GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED,
+                readiness(),
+                4L,
+                "ps-message-001",
+                3,
+                List.of("gateway", "session-svc", "openim"),
+                2,
+                42L,
+                validContrast(),
+                3,
+                9L,
+                new EvidenceSpineTimings(1L, 2L, 3L, 4L),
+                canonicalSteps(),
+                COLLECTED_AT,
+                List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("shorter");
+    }
+
     private GuanceEvidenceSpinePreview preview(
             GuanceEvidenceSpinePreview.Stage stage,
             GuanceEvidenceSpinePreview.Contrast contrast,

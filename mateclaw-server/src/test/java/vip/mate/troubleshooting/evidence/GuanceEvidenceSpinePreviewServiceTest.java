@@ -67,6 +67,8 @@ class GuanceEvidenceSpinePreviewServiceTest {
         assertThat(preview.contrast().rateDelta()).isEqualTo(0.89);
         assertThat(preview.sourceRequestCount()).isEqualTo(3);
         assertThat(preview.totalDurationMs()).isEqualTo(47L);
+        assertThat(preview.timings())
+                .isEqualTo(new EvidenceSpineTimings(5L, 7L, 11L, 4L));
         assertThat(preview.steps())
                 .extracting(GuanceEvidenceSpinePreview.Step::status)
                 .containsExactly(
@@ -210,6 +212,7 @@ class GuanceEvidenceSpinePreviewServiceTest {
                 contrast,
                 skeleton(true),
                 3,
+                new EvidenceSpineTimings(5L, 7L, 11L, 4L),
                 null);
     }
 

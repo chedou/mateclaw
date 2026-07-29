@@ -121,6 +121,7 @@ public class GuanceEvidenceSpinePreviewService {
                 contrast(skeleton),
                 spine.sourceRequestCount(),
                 totalDurationMs,
+                spine.timings(),
                 steps(spine),
                 Instant.now(clock),
                 warnings);
@@ -141,6 +142,7 @@ public class GuanceEvidenceSpinePreviewService {
                 GuanceEvidenceSpinePreview.Contrast.unavailable(),
                 0,
                 totalDurationMs,
+                EvidenceSpineTimings.unmeasured(),
                 List.of(
                         notRun("log_search", SEARCH_REQUEST),
                         notRun("log_trace_bundle", TRACE_REQUEST),

@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.evaluation;
 
 import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
+import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
@@ -185,8 +186,40 @@ public record EvidenceEvaluationSample(
             ContrastSnapshot contrast,
             int sourceRequestCount,
             long totalDurationMs,
+            EvidenceSpineTimings timings,
             List<StepSnapshot> steps,
             Instant completedAt) {
+
+        public EvidenceSnapshot(
+                GuanceEvidenceSpinePreview.Stage stage,
+                boolean fixtureMode,
+                Long matchCount,
+                String psId,
+                Integer traceEntries,
+                List<String> serviceSequence,
+                int anomalyCount,
+                Long traceElapsedMs,
+                ContrastSnapshot contrast,
+                int sourceRequestCount,
+                long totalDurationMs,
+                List<StepSnapshot> steps,
+                Instant completedAt) {
+            this(
+                    stage,
+                    fixtureMode,
+                    matchCount,
+                    psId,
+                    traceEntries,
+                    serviceSequence,
+                    anomalyCount,
+                    traceElapsedMs,
+                    contrast,
+                    sourceRequestCount,
+                    totalDurationMs,
+                    EvidenceSpineTimings.unmeasured(),
+                    steps,
+                    completedAt);
+        }
 
         public EvidenceSnapshot {
             if (stage == null || stage == GuanceEvidenceSpinePreview.Stage.BLOCKED) {
@@ -214,6 +247,12 @@ public record EvidenceEvaluationSample(
             if (totalDurationMs < 0) {
                 throw new IllegalArgumentException("totalDurationMs must not be negative");
             }
+            timings = timings == null ? EvidenceSpineTimings.unmeasured() : timings;
+            Long measuredWorkDurationMs = timings.measuredWorkDurationMs();
+            if (measuredWorkDurationMs != null && totalDurationMs < measuredWorkDurationMs) {
+                throw new IllegalArgumentException(
+                        "totalDurationMs cannot be shorter than the measured Evidence Spine work");
+            }
             steps = List.copyOf(steps == null ? List.of() : steps);
             if (steps.size() != 3) {
                 throw new IllegalArgumentException("evidence snapshot requires three steps");
@@ -235,6 +274,7 @@ public record EvidenceEvaluationSample(
                     ContrastSnapshot.from(preview.contrast()),
                     preview.sourceRequestCount(),
                     preview.totalDurationMs(),
+                    preview.timings(),
                     preview.steps().stream().map(StepSnapshot::from).toList(),
                     preview.completedAt());
         }

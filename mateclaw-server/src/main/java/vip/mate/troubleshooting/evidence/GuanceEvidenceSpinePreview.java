@@ -22,9 +22,43 @@ public record GuanceEvidenceSpinePreview(
         Contrast contrast,
         int sourceRequestCount,
         long totalDurationMs,
+        EvidenceSpineTimings timings,
         List<Step> steps,
         Instant completedAt,
         List<String> warnings) {
+
+    public GuanceEvidenceSpinePreview(
+            Stage stage,
+            GuanceEvidenceReadiness readiness,
+            Long matchCount,
+            String psId,
+            Integer traceEntries,
+            List<String> serviceSequence,
+            int anomalyCount,
+            Long traceElapsedMs,
+            Contrast contrast,
+            int sourceRequestCount,
+            long totalDurationMs,
+            List<Step> steps,
+            Instant completedAt,
+            List<String> warnings) {
+        this(
+                stage,
+                readiness,
+                matchCount,
+                psId,
+                traceEntries,
+                serviceSequence,
+                anomalyCount,
+                traceElapsedMs,
+                contrast,
+                sourceRequestCount,
+                totalDurationMs,
+                EvidenceSpineTimings.unmeasured(),
+                steps,
+                completedAt,
+                warnings);
+    }
 
     static final String SEARCH_EVIDENCE_REF = "T8-GUANCE-LOG-SEARCH";
     static final String TRACE_EVIDENCE_REF = "T8-GUANCE-TRACE-BUNDLE";
@@ -52,6 +86,12 @@ public record GuanceEvidenceSpinePreview(
             throw new IllegalArgumentException("sourceRequestCount must be between 0 and 3");
         }
         totalDurationMs = Math.max(0L, totalDurationMs);
+        timings = timings == null ? EvidenceSpineTimings.unmeasured() : timings;
+        Long measuredWorkDurationMs = timings.measuredWorkDurationMs();
+        if (measuredWorkDurationMs != null && totalDurationMs < measuredWorkDurationMs) {
+            throw new IllegalArgumentException(
+                    "totalDurationMs cannot be shorter than the measured Evidence Spine work");
+        }
         steps = List.copyOf(steps == null ? List.of() : steps);
         validateSteps(stage, steps);
         completedAt = completedAt == null ? Instant.EPOCH : completedAt;

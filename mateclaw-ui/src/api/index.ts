@@ -2097,6 +2097,14 @@ export interface GuanceSpineContrast {
   rateDelta: number
 }
 
+/** Application-side wall time; null means the stage was not measured or not reached. */
+export interface EvidenceSpineTimings {
+  logSearchDurationMs: number | null
+  logTraceDurationMs: number | null
+  contrastDurationMs: number | null
+  compressionDurationMs: number | null
+}
+
 /** Guance-only, model-free and secret-free projection of the shared Evidence Spine. */
 export interface GuanceEvidenceSpinePreview {
   stage: GuanceSpinePreviewStage
@@ -2110,6 +2118,7 @@ export interface GuanceEvidenceSpinePreview {
   contrast: GuanceSpineContrast
   sourceRequestCount: number
   totalDurationMs: number
+  timings: EvidenceSpineTimings
   steps: GuanceSpinePreviewStep[]
   completedAt: string
   warnings: string[]
@@ -2130,6 +2139,7 @@ export interface EvaluationEvidenceSnapshot {
   contrast: GuanceSpineContrast
   sourceRequestCount: number
   totalDurationMs: number
+  timings: EvidenceSpineTimings
   steps: GuanceSpinePreviewStep[]
   completedAt: string
 }
@@ -2185,8 +2195,22 @@ export interface EvaluationSampleSummary {
   fullSpineObserved: number
   coreChainObserved: number
   linkedFixtureDiagnoses: number
+  timingMeasuredSamples: number
+  guanceLatency: EvaluationLatencySummary
+  recordedReplayLatency: EvaluationLatencySummary
   minimumEvaluationTarget: number
   targetRangeMax: number
+}
+
+/** Source-isolated descriptive percentiles; this is not an acceptance verdict. */
+export interface EvaluationLatencySummary {
+  sampleCount: number
+  evidenceP50Ms: number | null
+  evidenceP95Ms: number | null
+  compressionP50Ms: number | null
+  compressionP95Ms: number | null
+  totalP50Ms: number | null
+  totalP95Ms: number | null
 }
 
 export interface EvidenceEvaluationSampleLedger {

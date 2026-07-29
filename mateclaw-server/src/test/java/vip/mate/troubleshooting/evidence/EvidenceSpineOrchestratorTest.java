@@ -15,6 +15,9 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.function.LongSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -110,6 +113,31 @@ class EvidenceSpineOrchestratorTest {
         assertThat(result.skeleton().contrast().available()).isFalse();
     }
 
+    @Test
+    void measuresSourceRoundTripsAndBothDeterministicCompressionPasses() {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        when(router.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), eq(INCIDENT), eq((Set<String>) null)))
+                .thenAnswer(invocation -> evidence(invocation.getArgument(1)));
+        EvidenceSpineOrchestrator orchestrator = new EvidenceSpineOrchestrator(
+                router,
+                new DeterministicLogTraceCompressor(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                new SequenceTicker(
+                        0L, 5_000_000L,
+                        10_000_000L, 17_000_000L,
+                        20_000_000L, 22_000_000L,
+                        30_000_000L, 41_000_000L,
+                        50_000_000L, 53_000_000L));
+
+        EvidenceSpineResult result = orchestrator.collect(
+                WORKSPACE_ID, INCIDENT, plan(), null);
+
+        assertThat(result.timings())
+                .isEqualTo(new EvidenceSpineTimings(5L, 7L, 11L, 5L));
+        assertThat(result.timings().evidenceAcquisitionDurationMs()).isEqualTo(23L);
+    }
+
     private EvidenceSpinePlan plan() {
         return new EvidenceSpinePlan(
                 "ONLINE-LOG-SEARCH",
@@ -156,5 +184,21 @@ class EvidenceSpineOrchestratorTest {
                 "level", level,
                 "message", message,
                 "duration_ms", durationMs);
+    }
+
+    private static final class SequenceTicker implements LongSupplier {
+        private final Deque<Long> values = new ArrayDeque<>();
+
+        private SequenceTicker(Long... values) {
+            this.values.addAll(List.of(values));
+        }
+
+        @Override
+        public long getAsLong() {
+            if (values.isEmpty()) {
+                throw new AssertionError("unexpected timing read");
+            }
+            return values.removeFirst();
+        }
     }
 }
