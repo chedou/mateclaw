@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
@@ -32,6 +33,7 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +41,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,6 +56,8 @@ class DeterministicDiagnosisServiceTest {
     private static final Instant RECEIVED_AT = Instant.parse("2026-07-25T01:04:59Z");
     private static final Instant READY_AT = Instant.parse("2026-07-25T01:04:59.250Z");
     private static final Instant CONCLUSION_AT = Instant.parse("2026-07-25T01:05:00Z");
+    private static final PlaybookVersionRef SOURCE_PLAYBOOK =
+            new PlaybookVersionRef("sop-903001", 3);
 
     @Mock private TroubleshootingPersistenceService persistence;
     @Mock private TroubleshootingPlaybookVersionService playbookVersions;
@@ -75,7 +80,7 @@ class DeterministicDiagnosisServiceTest {
     void hitPathEvaluatesRulesInitializesStateAndPersistsWithoutLlm() {
         when(persistence.createOrGet(eq(7L), any(Diagnosis.class), eq(RECEIVED_AT)))
                 .thenAnswer(invocation -> new StoredDiagnosis(invocation.getArgument(1), 0, true));
-        when(playbookVersions.findByPlaybookId(7L, "sop-903001"))
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
                 .thenReturn(Optional.of(approvedVersion()));
 
         StoredDiagnosis stored = service.diagnoseAndPersist(
@@ -104,7 +109,7 @@ class DeterministicDiagnosisServiceTest {
         assertEquals("DBA 值班", diagnosis.sourcePlaybookOwner());
         assertEquals(
                 new PlaybookVersionRef("sop-903001", 3),
-                diagnosis.sourcePlaybook());
+                diagnosis.sourcePlaybookVersionRef());
         assertEquals(
                 NorthStarTimings.concluded(RECEIVED_AT, READY_AT, CONCLUSION_AT),
                 diagnosis.timings());
@@ -114,8 +119,25 @@ class DeterministicDiagnosisServiceTest {
                 prefix -> prefix + "-2")
                 .confirm(diagnosis, "on-call");
         assertEquals(DiagnosisStatus.CONFIRMED, confirmed.status());
-        assertEquals(diagnosis.sourcePlaybook(), confirmed.sourcePlaybook());
+        assertEquals(
+                diagnosis.sourcePlaybookVersionRef(),
+                confirmed.sourcePlaybookVersionRef());
         verify(persistence).createOrGet(7L, diagnosis, RECEIVED_AT);
+    }
+
+    @Test
+    void persistedHitPathsHoldThePlaybookLockUntilDiagnosisInsertCommits() {
+        for (String methodName : List.of(
+                "diagnoseAndPersist", "diagnoseAndPersistForIntake")) {
+            var method = Arrays.stream(
+                            DeterministicDiagnosisService.class.getDeclaredMethods())
+                    .filter(candidate -> candidate.getName().equals(methodName))
+                    .findFirst()
+                    .orElseThrow();
+            assertNotNull(
+                    method.getAnnotation(Transactional.class),
+                    methodName + " must keep the authority lock and insert in one transaction");
+        }
     }
 
     @Test
@@ -144,6 +166,7 @@ class DeterministicDiagnosisServiceTest {
         Diagnosis diagnosis = service.diagnose(
                 incident(),
                 sop(true, "approved"),
+                SOURCE_PLAYBOOK,
                 List.of(evidence(EvidenceStatus.MISSING, Map.of())),
                 false,
                 false);
@@ -160,6 +183,7 @@ class DeterministicDiagnosisServiceTest {
         Diagnosis diagnosis = service.diagnose(
                 incident(),
                 sop(true, "approved"),
+                SOURCE_PLAYBOOK,
                 List.of(evidence(EvidenceStatus.NORMAL, Map.of("reachable", true))),
                 false,
                 false);
@@ -176,6 +200,7 @@ class DeterministicDiagnosisServiceTest {
         Diagnosis diagnosis = service.diagnose(
                 incident(),
                 sop(true, "approved"),
+                SOURCE_PLAYBOOK,
                 List.of(evidence(EvidenceStatus.NORMAL, Map.of("unrelated", true))),
                 false,
                 false);
@@ -191,8 +216,12 @@ class DeterministicDiagnosisServiceTest {
         List<EvidenceResult> evidence = List.of(
                 evidence(EvidenceStatus.ANOMALY, Map.of("reachable", false)));
 
-        Diagnosis first = service.diagnose(incident(), sop(true, "approved"), evidence, true, true);
-        Diagnosis second = service.diagnose(incident(), sop(true, "approved"), evidence, true, true);
+        Diagnosis first = service.diagnose(
+                incident(), sop(true, "approved"), SOURCE_PLAYBOOK,
+                evidence, true, true);
+        Diagnosis second = service.diagnose(
+                incident(), sop(true, "approved"), SOURCE_PLAYBOOK,
+                evidence, true, true);
 
         assertNotEquals(first.diagnosisId(), second.diagnosisId());
         assertNotEquals(first.caseId(), second.caseId());

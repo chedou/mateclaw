@@ -51,7 +51,7 @@ class DiagnosisContractTest {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.3");
         payload.remove("evidenceCitations");
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -68,7 +68,7 @@ class DiagnosisContractTest {
         payload.remove("routeAuthority");
         payload.remove("conclusionType");
         payload.remove("timings");
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -84,7 +84,7 @@ class DiagnosisContractTest {
             throws Exception {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.5");
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
         ((ObjectNode) payload.path("incident")).put("impact", "订单创建功能受影响");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
@@ -131,13 +131,13 @@ class DiagnosisContractTest {
         assertEquals(timings, restored.timings());
         assertEquals(
                 new PlaybookVersionRef("playbook-scenario", 4),
-                restored.sourcePlaybook());
+                restored.sourcePlaybookVersionRef());
     }
 
     @Test
     void currentDeterministicContractRejectsMissingExactPlaybookVersion() {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -148,12 +148,12 @@ class DiagnosisContractTest {
     void version17WithoutExactPlaybookVersionRemainsReadableWithoutGuessing() throws Exception {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.7");
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
         assertEquals("1.7", restored.contractVersion());
-        assertNull(restored.sourcePlaybook());
+        assertNull(restored.sourcePlaybookVersionRef());
     }
 
     @Test
@@ -161,7 +161,7 @@ class DiagnosisContractTest {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.6");
         payload.remove("sourcePlaybookOwner");
-        payload.remove("sourcePlaybook");
+        payload.remove("sourcePlaybookVersionRef");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
@@ -188,6 +188,7 @@ class DiagnosisContractTest {
                         false,
                         diagnosis.sopKey(),
                         diagnosis.sopTitle(),
+                        diagnosis.sourcePlaybookVersionRef(),
                         diagnosis.evidence(),
                         diagnosis.triggeredSignals(),
                         diagnosis.recommendedActions(),
@@ -195,6 +196,21 @@ class DiagnosisContractTest {
                         diagnosis.rehearsal(),
                         diagnosis.fixtureMode(),
                         diagnosis.warnings()));
+    }
+
+    @Test
+    void currentFactoryCannotCreateALegacyDeterministicDiagnosisWithoutExactAuthority() {
+        Diagnosis base = diagnosis();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        base.diagnosisId(), base.caseId(), base.runId(), base.incident(),
+                        RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
+                        base.summary(), base.rootCause(), base.confidence(), false,
+                        base.sopKey(), base.sopTitle(), base.evidence(),
+                        base.triggeredSignals(), base.recommendedActions(), null,
+                        false, true, List.of()));
     }
 
     @Test
@@ -213,6 +229,7 @@ class DiagnosisContractTest {
                 false,
                 base.sopKey(),
                 base.sopTitle(),
+                base.sourcePlaybookVersionRef(),
                 base.evidence(),
                 base.triggeredSignals(),
                 List.of(RecommendedAction.manualWrite(

@@ -80,6 +80,20 @@ public class TroubleshootingPlaybookVersionService {
         return entity == null ? Optional.empty() : Optional.of(read(entity));
     }
 
+    /**
+     * Locks the exact active-approved authority for a persisted Diagnosis.
+     * The caller must keep a surrounding transaction open through insertion.
+     */
+    public Optional<ApprovedPlaybookVersion> lockActiveApprovedByPlaybookId(
+            long workspaceId,
+            String playbookId) {
+        validateWorkspace(workspaceId);
+        TroubleshootingPlaybookVersionEntity entity =
+                mapper.lockActiveApprovedByPlaybookId(
+                        workspaceId, required(playbookId, "playbookId"));
+        return entity == null ? Optional.empty() : Optional.of(read(entity));
+    }
+
     public Optional<ApprovedPlaybookVersion> findByReview(
             long workspaceId,
             String reviewId) {

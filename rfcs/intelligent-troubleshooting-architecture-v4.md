@@ -437,6 +437,8 @@ conclusionType = LOCATED | EXCLUDED | HYPOTHESIS | INSUFFICIENT_EVIDENCE
 
 `sourcePlaybookVersionRef = playbookId + version`。确定性路由只有在落库前复核了对应的不可变
 approved 版本后才能写入该引用；后续重建判定链必须读该精确版本，不得读当前 active Playbook。
+复核和 Diagnosis 插入必须在同一事务边界内，通过行锁或等价的条件写防止
+active-approved 权威在两步之间被替换。
 旧 Diagnosis 没有该引用时只能显式标记“不可重建”，不能用当前知识补猜。
 
 ### 5.6 InvestigationPlaybook / DiscoveryPolicy

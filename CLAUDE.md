@@ -36,7 +36,8 @@ V185 新增 workspace 隔离的知识审核台账：正式 Review Inbox 按当�
 单 active selector 数据库唯一约束，以及服务端门禁的 `APPROVED / DEPRECATED` 新版本替换和审计退役。
 Diagnosis 1.8 在 1.7 冻结来源 Playbook owner 的基础上，又冻结精确
 `playbookId + playbookVersion`；新的确定性诊断落库前必须从 V186 不可变版本库复核路由内容，
-判定链也只能从该冻结版本重建。1.3–1.7 旧记录继续可读，但没有精确引用时禁止拿当前 Playbook
+复核行锁与 Diagnosis 插入保持在同一事务；判定链也只能从该冻结版本重建。
+1.3–1.7 旧记录只保留反序列化兼容，新的确定性工厂必须显式给出精确引用；没有精确引用时禁止拿当前 Playbook
 补猜历史推导。`knowledge-candidate.v2` 与关闭事务同时冻结 outcome、恢复验证、actor 和时间。
 候选合同只接受 v1/v2：v1 不得携带 proof/owner，v2 必须携带与
 createdBy/createdAt 一致的服务端关闭 proof；历史 v1 候选继续 fail closed。真实精确候选回放和数据驱动的

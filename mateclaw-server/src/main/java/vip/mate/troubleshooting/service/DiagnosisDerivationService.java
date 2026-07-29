@@ -56,8 +56,9 @@ public class DiagnosisDerivationService {
 
     public DiagnosisDerivation explain(long workspaceId, String diagnosisId) {
         Diagnosis diagnosis = persistence.get(workspaceId, diagnosisId).diagnosis();
-        PlaybookVersionRef sourcePlaybook = diagnosis.sourcePlaybook();
-        if (sourcePlaybook == null) {
+        PlaybookVersionRef sourcePlaybookVersionRef =
+                diagnosis.sourcePlaybookVersionRef();
+        if (sourcePlaybookVersionRef == null) {
             throw new MateClawException(
                     "err.troubleshooting.diagnosis_playbook_version_not_frozen",
                     409,
@@ -65,7 +66,7 @@ public class DiagnosisDerivationService {
                             + "current knowledge will not be used to invent its derivation");
         }
         ApprovedPlaybookVersion version = playbookVersions.findByRef(
-                        workspaceId, sourcePlaybook)
+                        workspaceId, sourcePlaybookVersionRef)
                 .orElseThrow(() -> new MateClawException(
                         "err.troubleshooting.diagnosis_playbook_version_missing",
                         409,

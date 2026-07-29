@@ -651,18 +651,25 @@ T14 关闭候选事实投影（2026-07-30）已实现，精确候选回放仍未
 
 T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
 
-- Diagnosis 合同升级为 1.8；新的确定性命中路在落库前按 `SopEntry.sopId` 回读 V186 不可变
-  Playbook 版本，同时校验 selector 和完整路由合同；缺版本或并发替换导致内容不一致时 409
-  fail closed，不持久化不可核验的诊断。
-- Diagnosis 冻结 `sourcePlaybook(playbookId, playbookVersion)` 并在所有后续生命周期转换中保留。
+- Diagnosis 合同升级为 1.8；新的确定性命中路在落库前按 `SopEntry.sopId` 以
+  `SELECT ... FOR UPDATE` 锁定仍为 active-approved 的 V186 版本，同时校验 selector 和完整路由合同；
+  锁查询与 Diagnosis 插入在同一事务中。缺版本或并发替换导致内容不一致时 409 fail closed，
+  不持久化不可核验的诊断。
+- Diagnosis 冻结 `sourcePlaybookVersionRef(playbookId, playbookVersion)` 并在所有后续生命周期转换中保留。
   1.3–1.7 存量 JSON 保持可读；1.8 确定性聚合缺少引用时在合同边界直接拒绝。
 - `DiagnosisDerivationService` 不再读取当前 active SOP，只按冻结引用读取精确历史版本；旧诊断缺引用、
   版本丢失或 selector 不一致都显式停止，不用今日知识伪造当时判定链。冻结版本重算与聚合信号
   不一致时按数据完整性故障暴露。
 - 正式开发证据台的调查路径显示 `selector · playbookId@vN`；历史记录明示“未冻结版本”。
-  旧处置台判定链接口失败时也显示保守停止文案，不留未处理 Promise 或空白推导。
+  旧处置台判定链接口失败时也显示保守停止文案，不留未处理 Promise，
+  也不继续渲染“没有判据/规则”的伪空合同。
 - 本增量没有改变候选晋升资格；`POSITIVE_REPLAY_REQUIRED`、真实 T7/T8、Challenger/Loop
   `PENDING-EVIDENCE`、hit-path 零 LLM 和生产写禁用边界全部保持。
+- 最终工作树排障域 + Skill Manifest 后端 `499` 个测试、前端 `19` 个测试文件 / `142` 个测试全部通过；
+  `vue-tsc --noEmit`、变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建均通过。后端 PID `44207`
+  监听 `18088` 且 health 为 UP，前端 PID `92308` 监听 `5173`。登录态应用内浏览器确认正式入口继续读取
+  真实 API；旧版历史诊断展开后显示“判定链暂不可重建”，保留证据步骤并隐藏不可核验的判据/规则步骤，
+  不再出现“该 SOP 没有定义判据/规则”的误导文案。
 
 后端定向测试命令：
 

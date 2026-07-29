@@ -103,14 +103,14 @@ public class DiagnosisExperienceProjectionService {
         if (diagnosis.sopKey() == null) {
             return null;
         }
-        if (diagnosis.sourcePlaybook() == null) {
+        if (diagnosis.sourcePlaybookVersionRef() == null) {
             return diagnosis.sopKey() + " · 历史记录未冻结版本";
         }
         return diagnosis.sopKey()
                 + " · "
-                + diagnosis.sourcePlaybook().playbookId()
+                + diagnosis.sourcePlaybookVersionRef().playbookId()
                 + "@v"
-                + diagnosis.sourcePlaybook().playbookVersion();
+                + diagnosis.sourcePlaybookVersionRef().playbookVersion();
     }
 
     private DiagnosisDerivation derivation(

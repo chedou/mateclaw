@@ -448,6 +448,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 "会话状态写入冲突", "session-state 并发状态写入冲突",
                 Confidence.MEDIUM, false,
                 "scenario:message-send-failed", "会话消息发送失败",
+                new PlaybookVersionRef("playbook-message-send-failed", 1),
                 List.of(trace, contrast), List.of("session_state_conflict"),
                 List.of(), "会话研发组",
                 true, true, List.of("Recorded replay fixture"), List.of());
@@ -525,6 +526,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "消息发送失败", "会话状态冲突", Confidence.MEDIUM, false,
                 "csdp:903001", "会话消息发送失败",
+                new PlaybookVersionRef("playbook-903001", 3),
                 evidence, List.of(), List.of(), "会话研发组",
                 true, true, List.of("Recorded replay fixture"), List.of());
     }
@@ -540,6 +542,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "当前候选根因已被反证", "候选根因均不成立", Confidence.MEDIUM, false,
                 "csdp:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 3),
                 List.of(new EvidenceResult(
                         "EV-2", "M", "M::mongodb:(...)", EvidenceStatus.NORMAL,
                         "Mongo 连接池未耗尽", Map.of("ratio", 0.2),
@@ -559,6 +562,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 DiagnosisStatus.READY_FOR_HUMAN,
                 "慢接口场景规则命中", "下游依赖慢", Confidence.MEDIUM, false,
                 "scenario:slow-api", "慢接口场景 Playbook",
+                new PlaybookVersionRef("playbook-slow-api", 2),
                 List.of(), List.of(), List.of(), "API 组",
                 true, true, List.of("Recorded replay fixture"), List.of());
     }

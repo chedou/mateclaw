@@ -286,7 +286,8 @@ class Vertical903001Test {
         } catch (Exception error) {
             throw new IllegalStateException(error);
         }
-        when(playbookVersions.findByPlaybookId(WORKSPACE_ID, approved.sopId()))
+        when(playbookVersions.lockActiveApprovedByPlaybookId(
+                WORKSPACE_ID, approved.sopId()))
                 .thenReturn(Optional.of(new ApprovedPlaybookVersion(
                         approved.sopId(),
                         1,

@@ -84,7 +84,7 @@ public final class DiagnosisStateMachine {
                 draft.sop().routingKey(),
                 draft.sop().title(),
                 draft.sop().ownerTeam(),
-                draft.sourcePlaybook(),
+                draft.sourcePlaybookVersionRef(),
                 draft.evidence(),
                 draft.triggeredSignals(),
                 draft.recommendedActions(),

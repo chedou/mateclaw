@@ -2043,7 +2043,7 @@ export interface Diagnosis {
   /** Frozen Playbook owner; absent on Diagnosis contracts before 1.7. */
   sourcePlaybookOwner?: string | null
   /** Exact immutable authority used by Diagnosis 1.8 deterministic routes. */
-  sourcePlaybook?: PlaybookVersionRef | null
+  sourcePlaybookVersionRef?: PlaybookVersionRef | null
   transfers: unknown[]
   actionOutcomes: unknown[]
   closure: ClosureRecord | null

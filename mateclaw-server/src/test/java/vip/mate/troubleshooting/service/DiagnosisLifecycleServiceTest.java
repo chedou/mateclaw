@@ -20,6 +20,7 @@ import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -259,6 +260,7 @@ class DiagnosisLifecycleServiceTest {
                 RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
                 "连接可用数归零", "Mongo 连接池打满", Confidence.HIGH, false,
                 "CSDP:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of("pool_exhausted"),
                 List.of(readOnlyAction(), manualWriteAction()),
                 "DBA 组", false, true, List.of());
@@ -274,6 +276,7 @@ class DiagnosisLifecycleServiceTest {
                 RouteMode.DETERMINISTIC, DiagnosisStatus.NEEDS_INVESTIGATION,
                 "SOP 尚未审核", "证据不足，暂不能确认根因。", Confidence.LOW, true,
                 "CSDP:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of(), List.of(),
                 null, false, true, List.of("SOP 仍为草案"));
     }

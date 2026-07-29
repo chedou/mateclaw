@@ -59,6 +59,26 @@ class TroubleshootingPlaybookVersionServiceTest {
     }
 
     @Test
+    void locksOnlyTheStillActiveApprovedAuthorityBeforeDiagnosisPersistence() {
+        TroubleshootingPlaybookVersionMapper mapper =
+                mock(TroubleshootingPlaybookVersionMapper.class);
+        TroubleshootingPlaybookVersionService service =
+                new TroubleshootingPlaybookVersionService(mapper, objectMapper);
+        TroubleshootingPlaybookVersionEntity version = approvedEntity(
+                "playbook-active", 3, "review-active",
+                sop("playbook-active", "approved", true));
+        when(mapper.lockActiveApprovedByPlaybookId(7L, "playbook-active"))
+                .thenReturn(version);
+
+        assertThat(service.lockActiveApprovedByPlaybookId(7L, "playbook-active"))
+                .get()
+                .extracting(
+                        ApprovedPlaybookVersion::playbookId,
+                        ApprovedPlaybookVersion::status)
+                .containsExactly("playbook-active", "APPROVED");
+    }
+
+    @Test
     void approvalCreatesANewVersionAndDeprecatesTheExactFrozenAuthority() throws Exception {
         TroubleshootingPlaybookVersionMapper mapper =
                 mock(TroubleshootingPlaybookVersionMapper.class);

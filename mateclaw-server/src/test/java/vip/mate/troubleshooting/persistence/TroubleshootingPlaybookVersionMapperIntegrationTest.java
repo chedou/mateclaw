@@ -88,6 +88,8 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
                 .isEqualTo("playbook-1");
         assertThat(mapper.findByPlaybookId(7L, "playbook-1").getSelectorKey())
                 .isEqualTo("csdp:903001");
+        assertThat(mapper.lockActiveApprovedByPlaybookId(7L, "playbook-1")
+                .getPlaybookVersion()).isEqualTo(1);
         assertThat(mapper.listLatest(7L, null, null, 10))
                 .singleElement()
                 .extracting("playbookId")

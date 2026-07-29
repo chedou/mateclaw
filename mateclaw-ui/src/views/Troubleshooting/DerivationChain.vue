@@ -34,7 +34,7 @@
     </section>
 
     <!-- 第二步：判据怎么算的 -->
-    <section v-if="isDeterministic" class="step">
+    <section v-if="showDeterministicDerivation" class="step">
       <div class="snum">
         第二步 · 判据怎么算的
         <span class="tally">
@@ -59,7 +59,7 @@
     </section>
 
     <!-- 第三步：规则怎么裁决的 -->
-    <section v-if="isDeterministic" class="step">
+    <section v-if="showDeterministicDerivation" class="step">
       <div class="snum">第三步 · 规则怎么裁决的</div>
       <article
         v-for="r in derivation?.rules ?? []"
@@ -109,6 +109,7 @@ import {
   type EvidenceResult,
   type RuleEvaluation,
 } from '@/api'
+import { canRenderDeterministicDerivation } from './derivationPresentation'
 
 const props = defineProps<{ diagnosis: Diagnosis }>()
 
@@ -128,6 +129,9 @@ const derivation = ref<DiagnosisDerivation | null>(null)
 const loadError = ref('')
 const loading = ref(false)
 const isDeterministic = computed(() => props.diagnosis.routeMode === 'DETERMINISTIC')
+const showDeterministicDerivation = computed(() =>
+  canRenderDeterministicDerivation(isDeterministic.value, derivation.value !== null),
+)
 let loadRevision = 0
 
 const orderedCriteria = computed(() =>

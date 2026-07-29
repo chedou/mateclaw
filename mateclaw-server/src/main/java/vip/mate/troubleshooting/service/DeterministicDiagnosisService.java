@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
@@ -69,6 +70,7 @@ public class DeterministicDiagnosisService {
         this.clock = clock;
     }
 
+    @Transactional
     public StoredDiagnosis diagnoseAndPersist(
             long workspaceId,
             IncidentContext incident,
@@ -88,6 +90,7 @@ public class DeterministicDiagnosisService {
                 receivedAt);
     }
 
+    @Transactional
     public StoredDiagnosis diagnoseAndPersist(
             long workspaceId,
             IncidentContext incident,
@@ -97,10 +100,10 @@ public class DeterministicDiagnosisService {
             boolean fixtureMode,
             Instant reportedAt,
             Instant readyAt) {
-        Diagnosis diagnosis = diagnose(
+        Diagnosis diagnosis = diagnoseAgainstLockedPlaybook(
+                workspaceId,
                 incident,
                 sop,
-                exactPlaybook(workspaceId, sop),
                 evidence,
                 rehearsal,
                 fixtureMode,
@@ -110,6 +113,7 @@ public class DeterministicDiagnosisService {
     }
 
     /** Same deterministic engine, with IntakeSession as the durable owner. */
+    @Transactional
     public StoredDiagnosis diagnoseAndPersistForIntake(
             long workspaceId,
             IncidentContext incident,
@@ -120,10 +124,10 @@ public class DeterministicDiagnosisService {
             Instant reportedAt,
             Instant readyAt,
             String intakeSessionId) {
-        Diagnosis diagnosis = diagnose(
+        Diagnosis diagnosis = diagnoseAgainstLockedPlaybook(
+                workspaceId,
                 incident,
                 sop,
-                exactPlaybook(workspaceId, sop),
                 evidence,
                 rehearsal,
                 fixtureMode,
@@ -133,20 +137,49 @@ public class DeterministicDiagnosisService {
                 workspaceId, diagnosis, intakeSessionId);
     }
 
+    /** Pure evaluation entry point; callers must supply the exact authority under test. */
     public Diagnosis diagnose(
             IncidentContext incident,
             SopEntry sop,
+            PlaybookVersionRef sourcePlaybookVersionRef,
             List<EvidenceResult> evidence,
             boolean rehearsal,
             boolean fixtureMode) {
         return diagnose(
-                incident, sop, null, evidence, rehearsal, fixtureMode, null, null);
+                incident,
+                sop,
+                sourcePlaybookVersionRef,
+                evidence,
+                rehearsal,
+                fixtureMode,
+                null,
+                null);
+    }
+
+    private Diagnosis diagnoseAgainstLockedPlaybook(
+            long workspaceId,
+            IncidentContext incident,
+            SopEntry sop,
+            List<EvidenceResult> evidence,
+            boolean rehearsal,
+            boolean fixtureMode,
+            Instant reportedAt,
+            Instant readyAt) {
+        return diagnose(
+                incident,
+                sop,
+                lockExactPlaybook(workspaceId, sop),
+                evidence,
+                rehearsal,
+                fixtureMode,
+                reportedAt,
+                readyAt);
     }
 
     private Diagnosis diagnose(
             IncidentContext incident,
             SopEntry sop,
-            PlaybookVersionRef sourcePlaybook,
+            PlaybookVersionRef sourcePlaybookVersionRef,
             List<EvidenceResult> evidence,
             boolean rehearsal,
             boolean fixtureMode,
@@ -221,7 +254,7 @@ public class DeterministicDiagnosisService {
                 "run-" + correlationId,
                 incident,
                 sop,
-                sourcePlaybook,
+                sourcePlaybookVersionRef,
                 normalizedEvidence,
                 signals,
                 actions,
@@ -238,8 +271,8 @@ public class DeterministicDiagnosisService {
         return stateMachine.initializeDeterministic(draft);
     }
 
-    private PlaybookVersionRef exactPlaybook(long workspaceId, SopEntry sop) {
-        ApprovedPlaybookVersion version = playbookVersions.findByPlaybookId(
+    private PlaybookVersionRef lockExactPlaybook(long workspaceId, SopEntry sop) {
+        ApprovedPlaybookVersion version = playbookVersions.lockActiveApprovedByPlaybookId(
                         workspaceId, sop.sopId())
                 .orElseThrow(() -> new MateClawException(
                         "err.troubleshooting.playbook_version_not_frozen",

@@ -15,6 +15,7 @@ import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.exception.MateClawException;
@@ -97,6 +98,7 @@ class DiagnosisStateMachineTest {
                 true,
                 ready.sopKey(),
                 ready.sopTitle(),
+                ready.sourcePlaybookVersionRef(),
                 ready.evidence(),
                 ready.triggeredSignals(),
                 List.of(),
@@ -255,6 +257,7 @@ class DiagnosisStateMachineTest {
                 "csdp:903001",
                 "MongoDB 连接异常取证与处置",
                 "DBA 值班",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence),
                 List.of("conn_saturated"),
                 List.of(readonly, write),

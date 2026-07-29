@@ -68,6 +68,20 @@ public interface TroubleshootingPlaybookVersionMapper
             @Param("workspaceId") long workspaceId,
             @Param("playbookId") String playbookId);
 
+    /** Locks the still-active authority until the enclosing Diagnosis transaction commits. */
+    @Select(SELECT_COLUMNS + """
+              FROM mate_troubleshooting_playbook_version
+             WHERE workspace_id = #{workspaceId}
+               AND playbook_id = #{playbookId}
+               AND active_selector_key = selector_key
+               AND status = 'APPROVED'
+               AND deleted = 0
+             FOR UPDATE
+            """)
+    TroubleshootingPlaybookVersionEntity lockActiveApprovedByPlaybookId(
+            @Param("workspaceId") long workspaceId,
+            @Param("playbookId") String playbookId);
+
     /** Selects the latest version per selector before applying registry filters. */
     @Select("""
             <script>

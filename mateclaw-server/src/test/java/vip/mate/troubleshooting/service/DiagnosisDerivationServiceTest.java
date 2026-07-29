@@ -1,5 +1,7 @@
 package vip.mate.troubleshooting.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -169,16 +171,14 @@ class DiagnosisDerivationServiceTest {
     }
 
     @Test
-    void legacyDiagnosisWithoutAnExactVersionFailsClosedWithoutReadingCurrentKnowledge() {
-        Diagnosis legacy = Diagnosis.initial(
-                DIAGNOSIS_ID, "case-1", "run-1",
-                incident(),
-                RouteMode.DETERMINISTIC,
-                DiagnosisStatus.READY_FOR_HUMAN,
-                "legacy", "legacy", Confidence.HIGH, false,
-                "csdp:903001", "legacy SOP",
-                List.of(metricEvidence()), List.of("pool_exhausted"), List.of(),
-                null, false, true, List.of());
+    void legacyDiagnosisWithoutAnExactVersionFailsClosedWithoutReadingCurrentKnowledge()
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ObjectNode payload = objectMapper.valueToTree(
+                diagnosis(List.of("pool_exhausted"), List.of(metricEvidence())));
+        payload.put("contractVersion", "1.7");
+        payload.remove("sourcePlaybookVersionRef");
+        Diagnosis legacy = objectMapper.treeToValue(payload, Diagnosis.class);
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(legacy, 1, false));
 

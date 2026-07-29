@@ -27,7 +27,7 @@ public record Diagnosis(
         String sopKey,
         String sopTitle,
         String sourcePlaybookOwner,
-        PlaybookVersionRef sourcePlaybook,
+        PlaybookVersionRef sourcePlaybookVersionRef,
         List<EvidenceResult> evidence,
         List<String> evidenceCitations,
         List<String> triggeredSignals,
@@ -94,22 +94,22 @@ public record Diagnosis(
         sourcePlaybookOwner = sourcePlaybookOwner == null
                 || sourcePlaybookOwner.isBlank()
                 ? null : sourcePlaybookOwner.trim();
-        if (sourcePlaybook != null
+        if (sourcePlaybookVersionRef != null
                 && !CURRENT_CONTRACT_VERSION.equals(contractVersion)) {
             throw new IllegalArgumentException(
                     "only diagnosis 1.8 may carry an exact Playbook version");
         }
-        if (sourcePlaybook != null && (sopKey == null || sopKey.isBlank())) {
+        if (sourcePlaybookVersionRef != null && (sopKey == null || sopKey.isBlank())) {
             throw new IllegalArgumentException(
                     "an exact Playbook version requires a diagnosis selector");
         }
         if (CURRENT_CONTRACT_VERSION.equals(contractVersion)
                 && routeMode == RouteMode.DETERMINISTIC
-                && sourcePlaybook == null) {
+                && sourcePlaybookVersionRef == null) {
             throw new IllegalArgumentException(
                     "diagnosis 1.8 deterministic routes require an exact Playbook version");
         }
-        if (routeMode == RouteMode.LLM_FALLBACK && sourcePlaybook != null) {
+        if (routeMode == RouteMode.LLM_FALLBACK && sourcePlaybookVersionRef != null) {
             throw new IllegalArgumentException(
                     "LLM fallback cannot claim an approved Playbook version");
         }
@@ -179,50 +179,10 @@ public record Diagnosis(
             boolean rehearsal,
             boolean fixtureMode,
             List<String> warnings) {
-        return initial(
-                diagnosisId,
-                caseId,
-                runId,
-                incident,
-                routeMode,
-                status,
-                summary,
-                rootCause,
-                confidence,
-                abstained,
-                sopKey,
-                sopTitle,
-                evidence,
-                triggeredSignals,
-                recommendedActions,
-                routeToTeam,
-                rehearsal,
-                fixtureMode,
-                warnings,
-                List.of());
-    }
-
-    public static Diagnosis initial(
-            String diagnosisId,
-            String caseId,
-            String runId,
-            IncidentContext incident,
-            RouteMode routeMode,
-            DiagnosisStatus status,
-            String summary,
-            String rootCause,
-            Confidence confidence,
-            boolean abstained,
-            String sopKey,
-            String sopTitle,
-            List<EvidenceResult> evidence,
-            List<String> triggeredSignals,
-            List<RecommendedAction> recommendedActions,
-            String routeToTeam,
-            boolean rehearsal,
-            boolean fixtureMode,
-            List<String> warnings,
-            List<TimelineEvent> timeline) {
+        if (routeMode != RouteMode.LLM_FALLBACK) {
+            throw new IllegalArgumentException(
+                    "deterministic diagnosis creation requires an exact Playbook version");
+        }
         return initial(
                 diagnosisId,
                 caseId,
@@ -233,27 +193,50 @@ public record Diagnosis(
                 defaultRouteAuthority(routeMode),
                 defaultConclusionType(routeMode, abstained),
                 NorthStarTimings.unrecorded(),
-                status,
-                summary,
-                rootCause,
-                confidence,
-                abstained,
-                sopKey,
-                sopTitle,
-                evidence,
-                triggeredSignals,
-                recommendedActions,
-                routeToTeam,
-                rehearsal,
-                fixtureMode,
-                warnings,
-                timeline);
+                status, summary, rootCause, confidence, abstained,
+                sopKey, sopTitle, null, null,
+                evidence, triggeredSignals, recommendedActions, routeToTeam,
+                rehearsal, fixtureMode, warnings, List.of());
     }
 
-    /**
-     * Creates a diagnosis with the v4 route, conclusion and D14 facts explicitly supplied.
-     * The legacy {@link RouteMode} remains alongside them only for stored-row compatibility.
-     */
+    public static Diagnosis initial(
+            String diagnosisId,
+            String caseId,
+            String runId,
+            IncidentContext incident,
+            RouteMode routeMode,
+            DiagnosisStatus status,
+            String summary,
+            String rootCause,
+            Confidence confidence,
+            boolean abstained,
+            String sopKey,
+            String sopTitle,
+            PlaybookVersionRef sourcePlaybookVersionRef,
+            List<EvidenceResult> evidence,
+            List<String> triggeredSignals,
+            List<RecommendedAction> recommendedActions,
+            String routeToTeam,
+            boolean rehearsal,
+            boolean fixtureMode,
+            List<String> warnings) {
+        return initial(
+                diagnosisId,
+                caseId,
+                runId,
+                incident,
+                routeMode,
+                defaultInvestigationMode(routeMode),
+                defaultRouteAuthority(routeMode),
+                defaultConclusionType(routeMode, abstained),
+                NorthStarTimings.unrecorded(),
+                status, summary, rootCause, confidence, abstained,
+                sopKey, sopTitle, null, sourcePlaybookVersionRef,
+                evidence, triggeredSignals, recommendedActions, routeToTeam,
+                rehearsal, fixtureMode, warnings, List.of());
+    }
+
+    /** Creates a current v4 diagnosis with an exact Playbook authority and no owner claim. */
     public static Diagnosis initial(
             String diagnosisId,
             String caseId,
@@ -271,6 +254,7 @@ public record Diagnosis(
             boolean abstained,
             String sopKey,
             String sopTitle,
+            PlaybookVersionRef sourcePlaybookVersionRef,
             List<EvidenceResult> evidence,
             List<String> triggeredSignals,
             List<RecommendedAction> recommendedActions,
@@ -297,67 +281,7 @@ public record Diagnosis(
                 sopKey,
                 sopTitle,
                 null,
-                null,
-                evidence,
-                triggeredSignals,
-                recommendedActions,
-                routeToTeam,
-                rehearsal,
-                fixtureMode,
-                warnings,
-                timeline);
-    }
-
-    /**
-     * Creates a diagnosis and freezes the owner of the Playbook version used
-     * for this run. This is intentionally separate from {@code routeToTeam},
-     * which can later change through human transfer.
-     */
-    public static Diagnosis initial(
-            String diagnosisId,
-            String caseId,
-            String runId,
-            IncidentContext incident,
-            RouteMode routeMode,
-            InvestigationMode investigationMode,
-            RouteAuthority routeAuthority,
-            ConclusionType conclusionType,
-            NorthStarTimings timings,
-            DiagnosisStatus status,
-            String summary,
-            String rootCause,
-            Confidence confidence,
-            boolean abstained,
-            String sopKey,
-            String sopTitle,
-            String sourcePlaybookOwner,
-            List<EvidenceResult> evidence,
-            List<String> triggeredSignals,
-            List<RecommendedAction> recommendedActions,
-            String routeToTeam,
-            boolean rehearsal,
-            boolean fixtureMode,
-            List<String> warnings,
-            List<TimelineEvent> timeline) {
-        return initial(
-                diagnosisId,
-                caseId,
-                runId,
-                incident,
-                routeMode,
-                investigationMode,
-                routeAuthority,
-                conclusionType,
-                timings,
-                status,
-                summary,
-                rootCause,
-                confidence,
-                abstained,
-                sopKey,
-                sopTitle,
-                sourcePlaybookOwner,
-                null,
+                sourcePlaybookVersionRef,
                 evidence,
                 triggeredSignals,
                 recommendedActions,
@@ -390,7 +314,7 @@ public record Diagnosis(
             String sopKey,
             String sopTitle,
             String sourcePlaybookOwner,
-            PlaybookVersionRef sourcePlaybook,
+            PlaybookVersionRef sourcePlaybookVersionRef,
             List<EvidenceResult> evidence,
             List<String> triggeredSignals,
             List<RecommendedAction> recommendedActions,
@@ -409,9 +333,7 @@ public record Diagnosis(
                 .toList();
         return new Diagnosis(
                 diagnosisId,
-                sourcePlaybook == null
-                        ? FROZEN_OWNER_CONTRACT_VERSION
-                        : CURRENT_CONTRACT_VERSION,
+                CURRENT_CONTRACT_VERSION,
                 caseId,
                 runId,
                 incident,
@@ -427,7 +349,7 @@ public record Diagnosis(
                 sopKey,
                 sopTitle,
                 sourcePlaybookOwner,
-                sourcePlaybook,
+                sourcePlaybookVersionRef,
                 evidence,
                 List.of(),
                 triggeredSignals,
@@ -621,7 +543,7 @@ public record Diagnosis(
                 diagnosisId, contractVersion, caseId, runId, incident, routeMode,
                 investigationMode, routeAuthority, conclusionType,
                 newStatus, summary, rootCause, confidence, abstained,
-                sopKey, sopTitle, sourcePlaybookOwner, sourcePlaybook,
+                sopKey, sopTitle, sourcePlaybookOwner, sourcePlaybookVersionRef,
                 evidence, evidenceCitations,
                 triggeredSignals, newActions,
                 newPendingWrites, newRouteToTeam, newTransfers, newActionOutcomes,

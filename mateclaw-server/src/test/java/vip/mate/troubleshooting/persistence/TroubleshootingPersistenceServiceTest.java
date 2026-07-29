@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
@@ -339,6 +340,7 @@ class TroubleshootingPersistenceServiceTest {
                 abstained,
                 "csdp:903001",
                 "903001 SOP",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(),
                 List.of(),
                 List.of(),

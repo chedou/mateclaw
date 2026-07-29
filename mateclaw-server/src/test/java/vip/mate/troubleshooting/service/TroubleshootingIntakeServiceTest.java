@@ -24,6 +24,7 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.intake.IntakeMessageEnvelope;
@@ -653,6 +654,7 @@ class TroubleshootingIntakeServiceTest {
                 RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
                 "连接可用数归零", "Mongo 连接池打满", Confidence.HIGH, false,
                 "CSDP:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of("error_present"), List.of(),
                 null, false, true, List.of());
     }
