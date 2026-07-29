@@ -188,7 +188,47 @@ GET /api/v1/troubleshooting/evidence/sources
 6. 用 20–30 条历史故障标定连接占用、慢查询基线等阈值，比较自动结论与人工结论。
 7. T6 强制校验机制已实现；为目标环境配置并由 owner 复核真实
    workspace→system/service→观测资产/binding 值（默认授权表为空，不能只依赖前端传值）。
-8. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T7/T8 完成后才讨论关闭 `fixtureMode`。
+8. per-binding verification 已由 V184 实现；只有 Workspace owner 可在正式工作台逐项确认后提交，服务端会再次执行
+   Guance-only 两步读链，并把验收绑定到端点、路由、查询模板、行数预算和字段映射的 SHA-256 指纹。
+   配置变化后旧记录自动 `STALE`。当前默认环境没有真实 `ACCEPTED` 记录；只有 T7/T8 真实证据完成后
+   才讨论关闭 `fixtureMode`。
+
+正式工作台会先读取：
+
+```http
+GET /api/v1/troubleshooting/evidence/guance/acceptance?system=CSDP&service=csdp-session-service
+X-Workspace-Id: 1
+```
+
+Workspace owner 完成上面清单后提交（普通 admin 无权代为验收）：
+
+```http
+POST /api/v1/troubleshooting/evidence/guance/acceptance
+X-Workspace-Id: 1
+Content-Type: application/json
+
+{
+  "system": "CSDP",
+  "service": "csdp-session-service",
+  "searchTerm": "message_send_failed",
+  "window": "-15m",
+  "occurredAt": "2026-07-20T09:13:00Z",
+  "checklist": {
+    "measurementAndFieldsVerified": true,
+    "indexVerified": true,
+    "psIdJoinVerified": true,
+    "timestampUnitVerified": true,
+    "timeWindowVerified": true,
+    "dqlLatencyReviewed": true,
+    "legacyRouteConflictReviewed": true
+  }
+}
+```
+
+请求不能提交 binding fingerprint、验证计数、PS ID、actor 或验收状态；这些都由服务端重新计算。
+V184 只保存配置指纹、结构计数、PS ID 哈希、应用侧耗时和审计主体，不保存搜索键、PS ID 原文、
+DQL、凭据或日志。Guance T8 采集与基线复跑都在任何 Router 调用前要求当前指纹为 `ACCEPTED`；
+Recorded Replay 仍走独立 fixture capability，不会被真源验收状态伪装或放开。
 
 ## 7. 正式工作台的完整真源预览
 

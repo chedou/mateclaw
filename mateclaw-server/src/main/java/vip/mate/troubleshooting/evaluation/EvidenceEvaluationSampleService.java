@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
@@ -42,6 +43,7 @@ public class EvidenceEvaluationSampleService {
     private final EvaluationModelInputFactory modelInputFactory;
     private final SopSynthesisService replayService;
     private final RecordedReplayEvaluationCapabilityService replayCapabilityService;
+    private final GuanceEvidenceAcceptanceService acceptanceService;
     private final Clock clock;
 
     @Autowired
@@ -51,7 +53,8 @@ public class EvidenceEvaluationSampleService {
             EvidenceEvaluationSampleStore store,
             EvaluationModelInputFactory modelInputFactory,
             SopSynthesisService replayService,
-            RecordedReplayEvaluationCapabilityService replayCapabilityService) {
+            RecordedReplayEvaluationCapabilityService replayCapabilityService,
+            GuanceEvidenceAcceptanceService acceptanceService) {
         this(
                 previewService,
                 persistenceService,
@@ -59,6 +62,7 @@ public class EvidenceEvaluationSampleService {
                 modelInputFactory,
                 replayService,
                 replayCapabilityService,
+                acceptanceService,
                 Clock.systemUTC());
     }
 
@@ -75,6 +79,7 @@ public class EvidenceEvaluationSampleService {
                         new ObjectMapper().findAndRegisterModules()),
                 null,
                 null,
+                null,
                 clock);
     }
 
@@ -89,6 +94,7 @@ public class EvidenceEvaluationSampleService {
                 persistenceService,
                 store,
                 modelInputFactory,
+                null,
                 null,
                 null,
                 clock);
@@ -108,6 +114,7 @@ public class EvidenceEvaluationSampleService {
                 modelInputFactory,
                 replayService,
                 null,
+                null,
                 clock);
     }
 
@@ -118,6 +125,7 @@ public class EvidenceEvaluationSampleService {
             EvaluationModelInputFactory modelInputFactory,
             SopSynthesisService replayService,
             RecordedReplayEvaluationCapabilityService replayCapabilityService,
+            GuanceEvidenceAcceptanceService acceptanceService,
             Clock clock) {
         this.previewService = previewService;
         this.persistenceService = persistenceService;
@@ -125,6 +133,7 @@ public class EvidenceEvaluationSampleService {
         this.modelInputFactory = modelInputFactory;
         this.replayService = replayService;
         this.replayCapabilityService = replayCapabilityService;
+        this.acceptanceService = acceptanceService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -149,6 +158,11 @@ public class EvidenceEvaluationSampleService {
                 persistenceService.get(workspaceId, normalizedDiagnosisId);
         Diagnosis diagnosis = storedDiagnosis.diagnosis();
         IncidentContext incident = diagnosis.incident();
+        if (acceptanceService == null) {
+            throw conflict("T7 owner acceptance is not configured");
+        }
+        acceptanceService.requireAccepted(
+                workspaceId, incident.system(), incident.service());
         Instant occurredAt = incident.occurredAt() == null
                 ? Instant.now(clock)
                 : incident.occurredAt();

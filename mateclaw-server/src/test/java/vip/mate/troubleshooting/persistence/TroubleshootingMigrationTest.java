@@ -391,6 +391,43 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V184CreatesASecretFreeImmutableGuanceAcceptanceLedger()
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v184;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/"
+                            + "V184__troubleshooting_guance_acceptance.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains(
+                    "mate_troubleshooting_guance_acceptance"));
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_guance_acceptance");
+            assertTrue(columns.contains("acceptance_id"));
+            assertTrue(columns.contains("scope_key"));
+            assertTrue(columns.contains("binding_fingerprint"));
+            assertTrue(columns.contains("aggregate_json"));
+            assertFalse(columns.contains("search_term"));
+            assertFalse(columns.contains("ps_id"));
+            assertFalse(columns.contains("dql"));
+            assertFalse(columns.contains("credential"));
+            assertFalse(columns.contains("raw_log"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_guance_acceptance_id"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_guance_acceptance_binding"));
+            assertEquals(1, countIndexes(
+                    connection, "idx_ts_guance_acceptance_scope"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

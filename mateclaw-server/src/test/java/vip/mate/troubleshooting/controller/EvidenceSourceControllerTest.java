@@ -5,19 +5,26 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptance;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceView;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadinessService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationReport;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationService;
+import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.time.Instant;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,13 +36,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class EvidenceSourceControllerTest {
 
     @Test
+    void reservesPersistentGuanceAcceptanceForTheWorkspaceOwner() throws Exception {
+        RequireWorkspaceRole role = EvidenceSourceController.class
+                .getDeclaredMethod(
+                        "acceptGuance",
+                        GuanceEvidenceAcceptanceRequest.class,
+                        Long.class)
+                .getAnnotation(RequireWorkspaceRole.class);
+
+        assertThat(role).isNotNull();
+        assertThat(role.value()).isEqualTo("owner");
+    }
+
+    @Test
     void exposesWorkspaceSpecificSecretFreeReadiness() throws Exception {
         GuanceEvidenceReadinessService readiness = mock(GuanceEvidenceReadinessService.class);
         EvidenceSourceController controller = new EvidenceSourceController(
                 mock(EvidenceSourceRouter.class),
                 readiness,
                 mock(GuanceEvidenceValidationService.class),
-                mock(GuanceEvidenceSpinePreviewService.class));
+                mock(GuanceEvidenceSpinePreviewService.class),
+                mock(GuanceEvidenceAcceptanceService.class));
         MockMvc mvc = mvc(controller);
         when(readiness.inspect(7L, "CSDP", "session-svc"))
                 .thenReturn(readiness());
@@ -61,7 +82,8 @@ class EvidenceSourceControllerTest {
                 mock(EvidenceSourceRouter.class),
                 mock(GuanceEvidenceReadinessService.class),
                 validation,
-                mock(GuanceEvidenceSpinePreviewService.class));
+                mock(GuanceEvidenceSpinePreviewService.class),
+                mock(GuanceEvidenceAcceptanceService.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
         when(validation.validate(
@@ -101,7 +123,8 @@ class EvidenceSourceControllerTest {
                 mock(EvidenceSourceRouter.class),
                 mock(GuanceEvidenceReadinessService.class),
                 mock(GuanceEvidenceValidationService.class),
-                previewService);
+                previewService,
+                mock(GuanceEvidenceAcceptanceService.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
         when(previewService.preview(
@@ -130,6 +153,86 @@ class EvidenceSourceControllerTest {
 
         verify(previewService).preview(
                 7L, "CSDP", "session-svc", "message_send_failed", "-15m", occurredAt);
+    }
+
+    @Test
+    void exposesAndRecordsTheExactCurrentOwnerAcceptance() throws Exception {
+        GuanceEvidenceAcceptanceService acceptanceService =
+                mock(GuanceEvidenceAcceptanceService.class);
+        EvidenceSourceController controller = new EvidenceSourceController(
+                mock(EvidenceSourceRouter.class),
+                mock(GuanceEvidenceReadinessService.class),
+                mock(GuanceEvidenceValidationService.class),
+                mock(GuanceEvidenceSpinePreviewService.class),
+                acceptanceService);
+        MockMvc mvc = mvc(controller);
+        Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
+        when(acceptanceService.inspect(7L, "CSDP", "session-svc"))
+                .thenReturn(acceptanceView());
+        when(acceptanceService.accept(
+                7L,
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                "-15m",
+                occurredAt,
+                completeChecklist(),
+                "owner"))
+                .thenReturn(acceptanceView());
+
+        mvc.perform(get("/api/v1/troubleshooting/evidence/guance/acceptance")
+                        .header("X-Workspace-Id", "7")
+                        .queryParam("system", "CSDP")
+                        .queryParam("service", "session-svc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.data.acceptance.acceptedBy").value("owner"))
+                .andExpect(jsonPath("$.data.acceptance.validation.psIdFingerprint")
+                        .value("c".repeat(64)))
+                .andExpect(jsonPath("$.data.acceptance.validation.psId").doesNotExist())
+                .andExpect(jsonPath("$.data.searchTerm").doesNotExist())
+                .andExpect(jsonPath("$.data.dql").doesNotExist());
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "owner", "N/A", List.of()));
+        try {
+            mvc.perform(post("/api/v1/troubleshooting/evidence/guance/acceptance")
+                            .header("X-Workspace-Id", "7")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "system":"CSDP",
+                                      "service":"session-svc",
+                                      "searchTerm":"message_send_failed",
+                                      "window":"-15m",
+                                      "occurredAt":"2026-07-29T08:00:00Z",
+                                      "checklist":{
+                                        "measurementAndFieldsVerified":true,
+                                        "indexVerified":true,
+                                        "psIdJoinVerified":true,
+                                        "timestampUnitVerified":true,
+                                        "timeWindowVerified":true,
+                                        "dqlLatencyReviewed":true,
+                                        "legacyRouteConflictReviewed":true
+                                      }
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("ACCEPTED"));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        verify(acceptanceService).accept(
+                7L,
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                "-15m",
+                occurredAt,
+                completeChecklist(),
+                "owner");
     }
 
     private MockMvc mvc(EvidenceSourceController controller) {
@@ -211,5 +314,37 @@ class EvidenceSourceControllerTest {
                                 collectedAt)),
                 collectedAt,
                 List.of("待 T7/T8 验收"));
+    }
+
+    private GuanceEvidenceAcceptance.Checklist completeChecklist() {
+        return new GuanceEvidenceAcceptance.Checklist(
+                true, true, true, true, true, true, true);
+    }
+
+    private GuanceEvidenceAcceptanceView acceptanceView() {
+        Instant acceptedAt = Instant.parse("2026-07-29T08:00:00Z");
+        GuanceEvidenceAcceptance acceptance = new GuanceEvidenceAcceptance(
+                "t7-012345678901234567890123",
+                "CSDP",
+                "session-svc",
+                "b".repeat(64),
+                completeChecklist(),
+                new GuanceEvidenceAcceptance.ValidationFacts(
+                        4,
+                        3,
+                        "c".repeat(64),
+                        12,
+                        20,
+                        40,
+                        acceptedAt),
+                "owner",
+                acceptedAt);
+        return new GuanceEvidenceAcceptanceView(
+                GuanceEvidenceAcceptanceView.Status.ACCEPTED,
+                "CSDP",
+                "session-svc",
+                "b".repeat(64),
+                acceptance,
+                List.of());
     }
 }

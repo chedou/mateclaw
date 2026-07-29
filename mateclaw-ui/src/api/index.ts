@@ -2047,6 +2047,57 @@ export interface GuanceEvidenceReadiness {
   blockers: string[]
 }
 
+export type GuanceEvidenceAcceptanceStatus =
+  | 'BLOCKED'
+  | 'NOT_ACCEPTED'
+  | 'STALE'
+  | 'ACCEPTED'
+
+export interface GuanceEvidenceAcceptanceChecklist {
+  measurementAndFieldsVerified: boolean
+  indexVerified: boolean
+  psIdJoinVerified: boolean
+  timestampUnitVerified: boolean
+  timeWindowVerified: boolean
+  dqlLatencyReviewed: boolean
+  legacyRouteConflictReviewed: boolean
+}
+
+export interface GuanceEvidenceAcceptanceFacts {
+  matchCount: number
+  traceEntries: number
+  psIdFingerprint: string
+  logSearchDurationMs: number
+  logTraceDurationMs: number
+  totalDurationMs: number
+  observedAt: string
+}
+
+/** Immutable owner attestation; no search key, PS ID, DQL, credential or raw row. */
+export interface GuanceEvidenceAcceptance {
+  acceptanceId: string
+  system: string
+  service: string
+  bindingFingerprint: string
+  checklist: GuanceEvidenceAcceptanceChecklist
+  validation: GuanceEvidenceAcceptanceFacts
+  acceptedBy: string
+  acceptedAt: string
+}
+
+export interface GuanceEvidenceAcceptanceView {
+  status: GuanceEvidenceAcceptanceStatus
+  system: string
+  service: string
+  currentBindingFingerprint: string | null
+  acceptance: GuanceEvidenceAcceptance | null
+  blockers: string[]
+}
+
+export interface AcceptGuanceEvidenceRequest extends EvidenceChainPreviewRequest {
+  checklist: GuanceEvidenceAcceptanceChecklist
+}
+
 export type GuanceValidationStage = 'BLOCKED' | 'CANONICAL_CHAIN_OBSERVED'
 export type GuanceValidationStepStatus =
   | 'NOT_RUN'
@@ -2397,6 +2448,18 @@ export const troubleshootingApi = {
   /** Inspects bindings for this exact workspace asset without probing Guance. */
   evidenceReadiness: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
+
+  /** Persistent owner acceptance for the exact current Guance binding fingerprint. */
+  guanceEvidenceAcceptance: (params: { system: string; service: string }) =>
+    http.get<GuanceEvidenceAcceptanceView>(
+      '/troubleshooting/evidence/guance/acceptance', { params },
+    ),
+
+  /** Re-runs the canonical chain before recording the owner checklist. */
+  acceptGuanceEvidence: (data: AcceptGuanceEvidenceRequest) =>
+    http.post<GuanceEvidenceAcceptanceView>(
+      '/troubleshooting/evidence/guance/acceptance', data,
+    ),
 
   /** Admin-only Guance chain; one run does not by itself complete T7 or T8. */
   validateGuanceEvidence: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceValidationReport>(

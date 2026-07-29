@@ -94,6 +94,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   异常数、对照比率、结构化引用与应用侧总耗时；不返回原始行/日志正文/DQL，不调模型、
   不创建 candidate、不回退 Replay。对照缺失只降级为 `CORE_CHAIN_OBSERVED`；单条预览不代表
   T7/T8 已通过，也不会自动关闭 `fixtureMode`。
+- **P2 T7 owner 验收接缝（2026-07-29）**：V184 为当前
+  `workspace/system/service + Guance binding fingerprint` 保存不可变、秘密无关的 owner 验收。
+  只有 Workspace owner 可提交，并必须逐项确认 measurement/字段、索引、同 PS ID、时间单位/窗口、DQL 延迟与 903001 历史冲突；
+  服务端随后再次执行 Guance-only 两步读链。配置指纹覆盖端点、路由、查询模板、行数预算与字段映射，
+  不含运行时凭据；变化后旧验收自动 `STALE`。记录只含结构计数、PS ID 哈希、应用侧耗时、actor/时间，
+  不含搜索键、PS ID 原文、DQL、凭据或日志。Guance T8 采集和基线复跑都在任何 Router 调用前强制要求
+  当前指纹已验收；默认环境仍无真实验收记录，因此 T7/T8 状态不变。
 - 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
 - **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
   （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
@@ -184,6 +191,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
   `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 配置和真实返回，
   不得将“入口已实现”改写为“T7 已通过”。
+- V184 已把 T7 owner 决策做成可留痕且配置变化自动失效的门禁，但本地没有真实 Guance 返回，
+  当前不存在 `ACCEPTED` 记录；这仍是“验收装置已实现”，不是“owner 已验收”。
 - 真实模型的输出质量和延迟数据仍未取得；V182 已提供固定输入/固定模型版本的单 Agent 基线运行与
   结构化质量/Token/时延记录，本地未配模型时继续 fail closed，不能把“可运行”写成“已评估”。
 - 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
@@ -543,6 +552,30 @@ T8 可复现单 Agent 基线接缝（2026-07-29）已实现，真实样本、Cha
   `vue-tsc --noEmit`、改动文件 ESLint、`git diff --check` 与直接 Vite 生产构建通过，构建完成
   `6275` 个模块转换。当前没有伪造 Guance 样本或真实模型结果；D12/D13、Loop、Planning、
   Evidence/Safety Challenger 继续保持 `PENDING-EVIDENCE`。
+
+T7 owner 验收与 T8 真源门禁（2026-07-29）已实现，真实验收与真实样本仍未完成：
+
+- H2/MySQL/Kingbase V184 新增不可变、workspace 隔离的 Guance binding 验收记录。只有 Workspace owner
+  可提交 measurement/字段、索引、同 PS ID、时间单位/窗口、DQL 延迟与 903001 冲突清单；服务端提交时
+  重新执行 Guance-only 两步读链，并在前后两次计算端点、路由、查询模板、行数预算与字段映射指纹，
+  配置变化时拒绝写入或把既有记录投影为 `STALE`；运行时凭据轮换不改变字段级验收。
+- 验收聚合只保存配置 SHA-256、结构计数、PS ID SHA-256、应用侧耗时、actor 与时间，不保存搜索键、
+  PS ID 原文、DQL、凭据或日志。Guance T8 样本采集和已冻结样本的基线复跑都在任何 Router/真源调用前
+  通过同一个 `GuanceEvidenceAcceptanceService.requireAccepted` fail closed；Recorded Replay 继续走独立
+  fixture capability，不读取或继承 Guance 验收状态。
+- Standards / Spec 双轴审查先发现并关闭两处 P1：普通 admin 可代 owner 验收，以及 Guance 基线复跑
+  绕过门禁；最终复核均 PASS，无剩余 P0/P1/P2。回归明确验证 `requireAccepted → observe` 顺序、
+  `STALE` 时零真源/模型调用、Replay 不经过真源门和 owner-only 注解。
+- 最终工作树后端排障域 + Skill Manifest `439` 个测试、前端 `17` 个测试文件 / `135` 个测试全部通过；
+  `vue-tsc --noEmit`、改动文件 ESLint、`git diff --check` 与直接 Vite 生产构建通过，构建完成 `6275`
+  个模块转换。
+- 后端 PID `25353` 已从 schema V183 真实迁移到 V184 并监听 `18088`，前端 PID `92308` 监听 `5173`；
+  health、正式 `/troubleshooting` 与旧版 `/troubleshooting/legacy` 均返回 200，未登录验收 API 返回预期 401。
+  登录态应用内浏览器确认正式页显示“当前绑定不可验收”、T6/T7/T8 全部 fail closed、Guance 采样禁用、
+  Replay 独立显示 fixture 范围原因，台账诚实保持 `0/20`；旧版页面正常，两页均为 0 console error。
+- 默认环境仍没有 Guance owner 配置、真实返回或 `ACCEPTED` 记录，`fixtureMode` 不变；必须由 owner 完成
+  真实 T7，再积累并评审 20–30 条 T8 样本。Loop、Planning 与 Evidence/Safety Challenger 继续
+  `PENDING-EVIDENCE`，不能把本节写成 T7/T8 已通过。
 
 后端定向测试命令：
 

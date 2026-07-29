@@ -2,6 +2,8 @@ package vip.mate.troubleshooting.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -10,8 +12,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vip.mate.common.result.R;
+import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSourceHealth;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceView;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadinessService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
@@ -34,6 +39,7 @@ public class EvidenceSourceController {
     private final GuanceEvidenceReadinessService readinessService;
     private final GuanceEvidenceValidationService validationService;
     private final GuanceEvidenceSpinePreviewService spinePreviewService;
+    private final GuanceEvidenceAcceptanceService acceptanceService;
 
     /** Does not probe or query a source; returns its current fail-closed readiness snapshot. */
     @GetMapping("/sources")
@@ -93,7 +99,52 @@ public class EvidenceSourceController {
                 request.occurredAt()));
     }
 
+    /** Returns whether an owner accepted the exact current binding fingerprint. */
+    @GetMapping("/guance/acceptance")
+    @RequireWorkspaceRole("viewer")
+    public R<GuanceEvidenceAcceptanceView> guanceAcceptance(
+            @RequestParam String system,
+            @RequestParam String service,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(acceptanceService.inspect(
+                resolveWorkspace(workspaceId), system, service));
+    }
+
+    /**
+     * Re-runs the two-stage Guance chain and records an explicit owner
+     * attestation for the exact current binding fingerprint.
+     */
+    @PostMapping("/guance/acceptance")
+    @RequireWorkspaceRole("owner")
+    public R<GuanceEvidenceAcceptanceView> acceptGuance(
+            @Valid @RequestBody GuanceEvidenceAcceptanceRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(acceptanceService.accept(
+                resolveWorkspace(workspaceId),
+                request.system(),
+                request.service(),
+                request.searchTerm(),
+                request.window(),
+                request.occurredAt(),
+                request.checklist(),
+                currentActor()));
+    }
+
     private long resolveWorkspace(Long workspaceId) {
         return workspaceId == null ? DEFAULT_WORKSPACE_ID : workspaceId;
+    }
+
+    private String currentActor() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new MateClawException(
+                    "err.troubleshooting.actor_required",
+                    401,
+                    "Guance owner acceptance requires an authenticated operator");
+        }
+        return authentication.getName();
     }
 }

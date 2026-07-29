@@ -22,6 +22,11 @@ Diagnosis + `ApprovedEvidenceSpineCatalog` + fixture 唯一解析场景键、搜
 `DRAFT/ABSTAIN`，可对两类来源样本与固定模型配置执行 candidate-free 单 Agent 基线。V183 增加
 `captureIdentityKey + captureRevision`：每次采集都先重跑来源，同指纹复用最新行，发生漂移则创建
 不可变的新 revision，旧 oracle 不覆盖；并发异指纹碰撞会核对赢家指纹并基于最新 revision 有界重试。
+V184 增加当前 Guance binding 的不可变 T7 owner 验收：只有 Workspace owner 可提交，并必须显式核对 measurement/字段、索引、
+同 PS ID、时间单位/窗口、DQL 延迟和 903001 历史冲突，服务端随后重新执行 Guance-only 两步读链；
+验收只保存查询模板/字段映射/端点/路由的 SHA-256 配置指纹、结构计数、PS ID 哈希、耗时和审计主体，
+不保存搜索键、PS ID 原文、DQL、凭据或日志。绑定配置变化后旧验收自动过期；Guance T8 采集与基线复跑
+都在任何源调用前强制要求当前指纹已验收。默认环境仍没有真实验收记录，不能将该接缝写成 T7 已通过。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
 有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
 不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确

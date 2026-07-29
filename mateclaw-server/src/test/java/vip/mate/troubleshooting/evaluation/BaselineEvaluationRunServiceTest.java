@@ -10,6 +10,7 @@ import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceStatus;
@@ -47,6 +48,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -84,8 +86,39 @@ class BaselineEvaluationRunServiceTest {
         assertThat(run.model().totalTokens()).isEqualTo(480L);
         assertThat(run.toString())
                 .doesNotContain(SEARCH_TERM, WINDOW, "state conflict", "L::logs");
-        verify(fixture.preview).observe(
+        org.mockito.InOrder gateOrder = inOrder(fixture.acceptance, fixture.preview);
+        gateOrder.verify(fixture.acceptance).requireAccepted(
+                7L, "CSDP", "session-svc");
+        gateOrder.verify(fixture.preview).observe(
                 7L, "CSDP", "session-svc", SEARCH_TERM, WINDOW, NOW);
+    }
+
+    @Test
+    void refusesAStaleGuanceAcceptanceBeforeAnyBaselineSourceCall() {
+        Fixture fixture = fixture(observation("state conflict"));
+        when(fixture.inducer.prepare()).thenReturn(preparation());
+        when(fixture.acceptance.requireAccepted(
+                7L, "CSDP", "session-svc"))
+                .thenThrow(new MateClawException(
+                        "err.troubleshooting.guance_acceptance_conflict",
+                        409,
+                        "T7 owner acceptance is required for the current Guance binding"));
+
+        assertThatThrownBy(() -> fixture.service.run(
+                7L,
+                fixture.sample.sampleId(),
+                fixture.sample.version(),
+                SEARCH_TERM,
+                WINDOW,
+                "reviewer"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("T7 owner acceptance is required");
+
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.inducer, never())
+                .induce(any(SynthesisModelInput.class), any());
+        verify(fixture.runStore, never()).complete(anyLong(), any(), any());
     }
 
     @Test
@@ -554,6 +587,8 @@ class BaselineEvaluationRunServiceTest {
                 mock(TroubleshootingPersistenceService.class);
         GuanceEvidenceSpinePreviewService guance =
                 mock(GuanceEvidenceSpinePreviewService.class);
+        GuanceEvidenceAcceptanceService acceptance =
+                mock(GuanceEvidenceAcceptanceService.class);
         SopSynthesisService replay = mock(SopSynthesisService.class);
         PlaybookDraftInducer inducer = mock(PlaybookDraftInducer.class);
         EvaluationModelInputFactory inputFactory = new EvaluationModelInputFactory(
@@ -616,9 +651,11 @@ class BaselineEvaluationRunServiceTest {
                 persistence,
                 guance,
                 replay,
+                acceptance,
                 inputFactory,
                 inducer,
                 new PlaybookDraftValidator(),
+                BaselineClaimLeaseKeeper.noOp(Duration.ofMinutes(15)),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> values[Math.min(ticks.getAndIncrement(), values.length - 1)]);
 
@@ -633,6 +670,7 @@ class BaselineEvaluationRunServiceTest {
                 .isEqualTo(BaselineEvaluationRun.Classification.HELPFUL);
         verify(replay).preview(eq(7L), any(SopSynthesisRequest.class));
         verify(guance, never()).observe(anyLong(), any(), any(), any(), any(), any());
+        verify(acceptance, never()).requireAccepted(anyLong(), any(), any());
     }
 
     private Fixture fixture(GuanceEvidenceSpineObservation capturedObservation) {
@@ -674,6 +712,8 @@ class BaselineEvaluationRunServiceTest {
                         invocation.getArgument(2), true));
         TroubleshootingPersistenceService persistence = mock(TroubleshootingPersistenceService.class);
         GuanceEvidenceSpinePreviewService preview = mock(GuanceEvidenceSpinePreviewService.class);
+        GuanceEvidenceAcceptanceService acceptance =
+                mock(GuanceEvidenceAcceptanceService.class);
         PlaybookDraftInducer inducer = mock(PlaybookDraftInducer.class);
         EvaluationModelInputFactory inputFactory = new EvaluationModelInputFactory(
                 new ObjectMapper().findAndRegisterModules());
@@ -732,13 +772,15 @@ class BaselineEvaluationRunServiceTest {
                 persistence,
                 preview,
                 null,
+                acceptance,
                 inputFactory,
                 inducer,
                 new PlaybookDraftValidator(),
                 leaseKeeper,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 ticker);
-        return new Fixture(service, sample, preview, inducer, runStore);
+        return new Fixture(
+                service, sample, preview, acceptance, inducer, runStore);
     }
 
     private BaselineClaimLeaseKeeper loseOnceAfterExternalCall(int boundary) {
@@ -1171,6 +1213,7 @@ class BaselineEvaluationRunServiceTest {
             BaselineEvaluationRunService service,
             EvidenceEvaluationSample sample,
             GuanceEvidenceSpinePreviewService preview,
+            GuanceEvidenceAcceptanceService acceptance,
             PlaybookDraftInducer inducer,
             BaselineEvaluationRunStore runStore) {
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,6 +76,33 @@ class EvidenceEvaluationSampleServiceTest {
                 .doesNotContain("source_lookup_key", "runtime-secret", "L::logs");
         verify(fixture.preview).observe(
                 7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW);
+        verify(fixture.acceptance).requireAccepted(
+                7L, "CSDP", "session-svc");
+    }
+
+    @Test
+    void blocksGuanceCaptureBeforeAnySourceCallWhenCurrentT7BindingIsNotAccepted() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        doThrow(new MateClawException(
+                "err.troubleshooting.guance_acceptance_conflict",
+                409,
+                "T7 owner acceptance is required"))
+                .when(fixture.acceptance)
+                .requireAccepted(7L, "CSDP", "session-svc");
+
+        assertThatThrownBy(() -> fixture.service.capture(
+                7L,
+                "diag-1",
+                "message_send_failed",
+                "source_lookup_key",
+                "-15m",
+                "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("T7 owner acceptance is required");
+
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
     }
 
     @Test
@@ -467,6 +496,8 @@ class EvidenceEvaluationSampleServiceTest {
         SopSynthesisService replay = mock(SopSynthesisService.class);
         RecordedReplayEvaluationCapabilityService replayCapability =
                 mock(RecordedReplayEvaluationCapabilityService.class);
+        GuanceEvidenceAcceptanceService acceptance =
+                mock(GuanceEvidenceAcceptanceService.class);
         Diagnosis diagnosis = mock(Diagnosis.class);
         IncidentContext incident = mock(IncidentContext.class);
         when(incident.system()).thenReturn("CSDP");
@@ -496,12 +527,14 @@ class EvidenceEvaluationSampleServiceTest {
                                 new ObjectMapper().findAndRegisterModules()),
                         replay,
                         replayCapability,
+                        acceptance,
                         CLOCK),
                 preview,
                 replay,
                 persistence,
                 store,
-                replayCapability);
+                replayCapability,
+                acceptance);
     }
 
     private EvidenceEvaluationSample capturedSample(boolean diagnosisFixtureMode) {
@@ -674,6 +707,7 @@ class EvidenceEvaluationSampleServiceTest {
             SopSynthesisService replay,
             TroubleshootingPersistenceService persistence,
             EvidenceEvaluationSampleStore store,
-            RecordedReplayEvaluationCapabilityService replayCapability) {
+            RecordedReplayEvaluationCapabilityService replayCapability,
+            GuanceEvidenceAcceptanceService acceptance) {
     }
 }

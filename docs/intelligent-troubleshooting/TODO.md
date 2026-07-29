@@ -184,6 +184,10 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 
 ### T7 · 内网核实
 
+- [x] 建立持久化、按当前 binding 配置指纹失效的 owner 验收接缝：只有 Workspace owner 明确核对
+      measurement/字段、索引、同 PS ID、时间单位/窗口、DQL 延迟与 903001 冲突，且服务端再次跑通
+      Guance-only 两步读链后，才保存 V184 秘密无关验收记录；Guance T8 采集与基线复跑都在 Router
+      调用前强制校验当前指纹。该接缝不代表下面任何真实核实项已完成。
 - [ ] 核实真实 measurement、字段名、索引、PS ID、时间戳单位、时间窗和 DQL 延迟。
 - [ ] 用会议案例跑真实 `log_search → log_trace_bundle`，确认同一 PS ID 全链路。
 - [ ] 核实 903001 的字段/阈值与三处历史 route key 冲突；这只阻塞错误码竖线，不阻塞 P1 fixture。
@@ -222,6 +226,9 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       服务端从 Diagnosis 与 `ApprovedEvidenceSpineCatalog` 唯一解析 scenario/search/window，浏览器提交目标字段
       直接返回 400；无码主案例不依赖 Guance 表单或错误码，默认关闭时明确禁用。Guance/Replay 基线按钮
       分别恢复各自来源的冻结 lookup context，不再用 Guance context 代跑 Replay 样本。
+- [x] Guance 样本采集与基线复跑增加 T7 服务端门禁：只接受当前 workspace/system/service 的 V184
+      owner acceptance，查询模板、字段映射、端点或路由配置变化后旧验收自动 `STALE`，任何真源请求前
+      返回 409；Replay 仍保持独立 fixture capability，不受这条真源门禁混淆。
 - [ ] 建 20–30 条历史样本，保留人工结论、参考步骤和 outcome。
 - [ ] 统计 p50/p95 取证/压缩/模型/总时延、引用完整率、必需意图覆盖率、abstain 质量。
 - [ ] 分开统计“没帮上忙”和“引向错误方向”；有害动作、高置信错误为 0 才可继续放权。

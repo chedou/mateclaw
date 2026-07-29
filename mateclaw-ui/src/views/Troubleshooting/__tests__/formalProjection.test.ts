@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { GuanceReadinessStatus, GuanceSignalStatus } from '@/api'
+import type {
+  GuanceEvidenceAcceptanceStatus,
+  GuanceEvidenceAcceptanceView,
+  GuanceReadinessStatus,
+  GuanceSignalStatus,
+} from '@/api'
 import {
   closureOutcomeLabel,
   conclusionLabel,
@@ -30,6 +35,44 @@ function readiness(
       lastObservedAt: null,
       detail: '',
     })),
+  }
+}
+
+function acceptance(
+  status: GuanceEvidenceAcceptanceStatus,
+): GuanceEvidenceAcceptanceView {
+  return {
+    status,
+    system: 'CSDP',
+    service: 'session-svc',
+    currentBindingFingerprint: 'b'.repeat(64),
+    acceptance: status === 'NOT_ACCEPTED' || status === 'BLOCKED' ? null : {
+      acceptanceId: 't7-012345678901234567890123',
+      system: 'CSDP',
+      service: 'session-svc',
+      bindingFingerprint: status === 'STALE' ? 'c'.repeat(64) : 'b'.repeat(64),
+      checklist: {
+        measurementAndFieldsVerified: true,
+        indexVerified: true,
+        psIdJoinVerified: true,
+        timestampUnitVerified: true,
+        timeWindowVerified: true,
+        dqlLatencyReviewed: true,
+        legacyRouteConflictReviewed: true,
+      },
+      validation: {
+        matchCount: 4,
+        traceEntries: 3,
+        psIdFingerprint: 'd'.repeat(64),
+        logSearchDurationMs: 12,
+        logTraceDurationMs: 20,
+        totalDurationMs: 40,
+        observedAt: '2026-07-29T08:00:00Z',
+      },
+      acceptedBy: 'owner',
+      acceptedAt: '2026-07-29T08:00:00Z',
+    },
+    blockers: [],
   }
 }
 
@@ -124,5 +167,43 @@ describe('formal troubleshooting projection formatting', () => {
       expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
     ])
     expect(missingRuntime.stages[1].title).toBe('真源运行条件未就绪')
+  })
+
+  it('unlocks T8 collection only for the current owner-accepted binding', () => {
+    const accepted = guanceAcceptanceProgress(
+      readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
+      acceptance('ACCEPTED'),
+    )
+
+    expect(accepted.stages).toEqual([
+      expect.objectContaining({ code: 'T6', state: 'READY' }),
+      expect.objectContaining({
+        code: 'T7',
+        state: 'READY',
+        title: '当前绑定已完成 owner 验收',
+      }),
+      expect.objectContaining({
+        code: 'T8',
+        state: 'READY',
+        title: '真实历史样本采集已解锁',
+      }),
+    ])
+    expect(accepted.stages[2].detail).toContain('不代表 T8 已通过')
+    expect(accepted.nextAction).toContain('20–30')
+
+    const stale = guanceAcceptanceProgress(
+      readiness(
+        'CANONICAL_SIGNALS_OBSERVED',
+        'CANONICAL_RESULT_OBSERVED',
+        true,
+      ),
+      acceptance('STALE'),
+    )
+    expect(stale.stages[1]).toEqual(expect.objectContaining({
+      state: 'OWNER_EVIDENCE_REQUIRED',
+      title: '绑定已变更，旧验收已过期',
+    }))
+    expect(stale.stages[2].state).toBe('BLOCKED')
+    expect(stale.nextAction).toContain('配置指纹已变化')
   })
 })

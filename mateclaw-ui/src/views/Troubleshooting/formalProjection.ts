@@ -1,6 +1,7 @@
 import type {
   ClosureOutcome,
   ConclusionType,
+  GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
   GuanceReadinessStatus,
   GuanceSignalStatus,
@@ -116,6 +117,7 @@ export function guanceSpinePreviewLabel(value: GuanceSpinePreviewStage) {
  */
 export function guanceAcceptanceProgress(
   readiness: GuanceAcceptanceInput,
+  ownerAcceptance: GuanceEvidenceAcceptanceView | null = null,
 ): GuanceAcceptanceProgress {
   const { status } = readiness
   const coreSignalsAuthorized = ['log_search', 'log_trace_bundle'].every(signalKind =>
@@ -127,6 +129,8 @@ export function guanceAcceptanceProgress(
   const sourceReady = status === 'READY_FOR_VALIDATION'
     || status === 'CANONICAL_SIGNALS_OBSERVED'
   const coreSignalsObserved = status === 'CANONICAL_SIGNALS_OBSERVED'
+  const ownerAccepted = ownerAcceptance?.status === 'ACCEPTED'
+  const ownerAcceptanceStale = ownerAcceptance?.status === 'STALE'
 
   const stages: GuanceAcceptanceStage[] = [
     {
@@ -139,33 +143,53 @@ export function guanceAcceptanceProgress(
     },
     {
       code: 'T7',
-      state: coreSignalsObserved
-        ? 'OWNER_EVIDENCE_REQUIRED'
-        : sourceReady ? 'READY' : 'BLOCKED',
-      title: coreSignalsObserved
-        ? '核心信号已观测，真链路待验收'
-        : sourceReady
-          ? '首条真实读链待执行'
-          : sourceAuthorized ? '真源运行条件未就绪' : '被 T6 阻断',
-      detail: coreSignalsObserved
-        ? '当前进程已分别观测两个核心信号；该状态不证明同一 PS ID，仍需验证报告核实 measurement、字段、索引、时间单位/窗、DQL 延迟与 903001 冲突。'
-        : sourceReady
-          ? '用会议案例执行 Guance-only 的 log_search → log_trace_bundle。'
-          : sourceAuthorized
-            ? '端点、运行时凭据或适配器尚未就绪，不得发起真实查询。'
-            : 'T6 未就绪前不得查询真实观测资产。',
+      state: ownerAccepted
+        ? 'READY'
+        : ownerAcceptanceStale || coreSignalsObserved
+          ? 'OWNER_EVIDENCE_REQUIRED'
+          : sourceReady ? 'READY' : 'BLOCKED',
+      title: ownerAccepted
+        ? '当前绑定已完成 owner 验收'
+        : ownerAcceptanceStale
+          ? '绑定已变更，旧验收已过期'
+          : coreSignalsObserved
+            ? '核心信号已观测，真链路待验收'
+            : sourceReady
+              ? '首条真实读链待执行'
+              : sourceAuthorized ? '真源运行条件未就绪' : '被 T6 阻断',
+      detail: ownerAccepted
+        ? `配置指纹已由 ${ownerAcceptance?.acceptance?.acceptedBy || 'owner'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；验收不会关闭 fixtureMode。`
+        : ownerAcceptanceStale
+          ? '查询模板、字段映射、路由或端点发生变化，必须重新执行真实同 PS ID 链并完成 owner 清单。'
+          : coreSignalsObserved
+            ? '当前进程已分别观测两个核心信号；该状态不证明同一 PS ID，仍需验证报告核实 measurement、字段、索引、时间单位/窗、DQL 延迟与 903001 冲突。'
+            : sourceReady
+              ? '用会议案例执行 Guance-only 的 log_search → log_trace_bundle。'
+              : sourceAuthorized
+                ? '端点、运行时凭据或适配器尚未就绪，不得发起真实查询。'
+                : 'T6 未就绪前不得查询真实观测资产。',
     },
     {
       code: 'T8',
-      state: 'BLOCKED',
-      title: '历史样本基线未开始',
-      detail: coreSignalsObserved
-        ? 'T7 经 owner 验收后，再建立 20–30 条真实样本并统计质量、危险错误和 p50/p95。'
-        : '等待 T7 真字段与同 PS ID 链路验收。',
+      state: ownerAccepted && sourceReady ? 'READY' : 'BLOCKED',
+      title: ownerAccepted && sourceReady
+        ? '真实历史样本采集已解锁'
+        : '历史样本基线未开始',
+      detail: ownerAccepted && sourceReady
+        ? '可开始积累 20–30 条真实样本；当前只是具备采集条件，不代表 T8 已通过。'
+        : ownerAccepted
+          ? 'T7 验收仍保留，但当前真源运行条件未就绪，不能采集 T8 样本。'
+          : '等待当前绑定完成 T7 owner 验收，再建立 20–30 条真实样本。',
     },
   ]
 
   const nextAction = (() => {
+    if (ownerAccepted && sourceReady) {
+      return '当前绑定已完成 T7 owner 验收；从关闭 Diagnosis 积累 20–30 条真实样本、冻结参考解并运行单 Agent 基线。'
+    }
+    if (ownerAcceptanceStale) {
+      return 'Guance 配置指纹已变化；重新执行同 PS ID 两步读链并完成 T7 owner 清单。'
+    }
     switch (status) {
       case 'DISABLED':
         return '由 owner 启用 Guance 适配器；启用本身不会授予任何 Workspace 资产。'

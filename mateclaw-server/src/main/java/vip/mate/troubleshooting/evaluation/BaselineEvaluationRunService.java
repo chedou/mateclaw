@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
@@ -61,6 +62,7 @@ public final class BaselineEvaluationRunService {
     private final TroubleshootingPersistenceService persistenceService;
     private final GuanceEvidenceSpinePreviewService previewService;
     private final SopSynthesisService replayService;
+    private final GuanceEvidenceAcceptanceService acceptanceService;
     private final EvaluationModelInputFactory modelInputFactory;
     private final PlaybookDraftInducer inducer;
     private final PlaybookDraftValidator validator;
@@ -76,6 +78,7 @@ public final class BaselineEvaluationRunService {
             TroubleshootingPersistenceService persistenceService,
             GuanceEvidenceSpinePreviewService previewService,
             SopSynthesisService replayService,
+            GuanceEvidenceAcceptanceService acceptanceService,
             EvaluationModelInputFactory modelInputFactory,
             PlaybookDraftInducer inducer,
             PlaybookDraftValidator validator,
@@ -86,6 +89,7 @@ public final class BaselineEvaluationRunService {
                 persistenceService,
                 previewService,
                 replayService,
+                acceptanceService,
                 modelInputFactory,
                 inducer,
                 validator,
@@ -109,6 +113,7 @@ public final class BaselineEvaluationRunService {
                 runStore,
                 persistenceService,
                 previewService,
+                null,
                 null,
                 modelInputFactory,
                 inducer,
@@ -135,6 +140,7 @@ public final class BaselineEvaluationRunService {
                 persistenceService,
                 previewService,
                 replayService,
+                null,
                 modelInputFactory,
                 inducer,
                 validator,
@@ -149,6 +155,7 @@ public final class BaselineEvaluationRunService {
             TroubleshootingPersistenceService persistenceService,
             GuanceEvidenceSpinePreviewService previewService,
             SopSynthesisService replayService,
+            GuanceEvidenceAcceptanceService acceptanceService,
             EvaluationModelInputFactory modelInputFactory,
             PlaybookDraftInducer inducer,
             PlaybookDraftValidator validator,
@@ -160,6 +167,7 @@ public final class BaselineEvaluationRunService {
         this.persistenceService = persistenceService;
         this.previewService = previewService;
         this.replayService = replayService;
+        this.acceptanceService = acceptanceService;
         this.modelInputFactory = modelInputFactory;
         this.inducer = inducer;
         this.validator = validator;
@@ -306,6 +314,11 @@ public final class BaselineEvaluationRunService {
             EvidenceEvaluationSample sample,
             EvidenceSpinePlan plan) {
         if (sample.sourcePlatform() == EvidenceEvaluationSample.SourcePlatform.GUANCE) {
+            if (acceptanceService == null) {
+                throw conflict("T7 owner acceptance is not configured");
+            }
+            acceptanceService.requireAccepted(
+                    workspaceId, sample.system(), sample.service());
             GuanceEvidenceSpineObservation observation = previewService.observe(
                     workspaceId,
                     sample.system(),

@@ -274,6 +274,26 @@
                       <strong :class="acceptanceTone(stage.state)">{{ acceptanceStateLabel(stage.state) }}</strong>
                     </li>
                   </ol>
+                  <div
+                    v-if="guanceOwnerAcceptance"
+                    class="validation-result owner-acceptance-result"
+                    :class="ownerAcceptanceTone(guanceOwnerAcceptance.status)"
+                  >
+                    <b>{{ ownerAcceptanceStateLabel(guanceOwnerAcceptance.status) }}</b>
+                    <span v-if="guanceOwnerAcceptance.acceptance">
+                      {{ guanceOwnerAcceptance.acceptance.acceptedBy }} ·
+                      {{ shortTime(guanceOwnerAcceptance.acceptance.acceptedAt) }}
+                    </span>
+                    <small>
+                      当前配置指纹
+                      <code>{{ shortFingerprint(guanceOwnerAcceptance.currentBindingFingerprint) }}</code>
+                      <template v-if="guanceOwnerAcceptance.acceptance">
+                        · 验收指纹
+                        <code>{{ shortFingerprint(guanceOwnerAcceptance.acceptance.bindingFingerprint) }}</code>
+                      </template>
+                    </small>
+                    <small v-for="blocker in guanceOwnerAcceptance.blockers" :key="blocker">{{ blocker }}</small>
+                  </div>
                   <p v-if="guanceAcceptance" class="next-source-action"><b>下一步</b>{{ guanceAcceptance.nextAction }}</p>
                   <ul class="signal-readiness-list">
                     <li v-for="signal in guanceReadiness.signals" :key="signal.signalKind">
@@ -307,7 +327,7 @@
                     :disabled="!canValidateGuance"
                     @click="openGuanceValidation"
                   >打开真源验收</el-button>
-                  <small class="gate-note">成功只证明一次读链可用；T7 负责真字段验收，T8 才建立 20–30 条历史样本，fixtureMode 不会自动关闭。</small>
+                  <small class="gate-note">单次读链不会自动通过 T7。owner 验收会绑定当前配置指纹；配置变化后自动过期。T8 仍需 20–30 条真实样本，fixtureMode 不会自动关闭。</small>
                 </template>
                 <p v-else class="empty-evidence">{{ readinessError || '正在检查当前 Workspace 的真源绑定…' }}</p>
               </section>
@@ -427,6 +447,54 @@
         <p>端到端 {{ guanceValidation.totalDurationMs }} ms</p>
         <small v-for="warning in guanceValidation.warnings" :key="warning">{{ warning }}</small>
       </div>
+      <div
+        v-if="guanceOwnerAcceptance"
+        class="dialog-validation-result owner-acceptance-result"
+        :class="ownerAcceptanceTone(guanceOwnerAcceptance.status)"
+      >
+        <b>{{ ownerAcceptanceStateLabel(guanceOwnerAcceptance.status) }}</b>
+        <p v-if="guanceOwnerAcceptance.acceptance">
+          {{ guanceOwnerAcceptance.acceptance.acceptedBy }} ·
+          {{ shortTime(guanceOwnerAcceptance.acceptance.acceptedAt) }}
+        </p>
+        <small>
+          当前配置指纹
+          <code>{{ shortFingerprint(guanceOwnerAcceptance.currentBindingFingerprint) }}</code>
+        </small>
+        <small v-for="blocker in guanceOwnerAcceptance.blockers" :key="blocker">{{ blocker }}</small>
+      </div>
+      <div
+        v-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
+        class="t7-owner-checklist"
+      >
+        <b>T7 owner 字段核实清单</b>
+        <el-checkbox v-model="guanceAcceptanceChecklist.measurementAndFieldsVerified">
+          已核实真实 measurement 与 canonical 字段映射
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.indexVerified">
+          已核实索引、数据范围与查询资产
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.psIdJoinVerified">
+          已确认 log_search 与 trace 使用同一 PS ID
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.timestampUnitVerified">
+          已核实时间戳单位
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.timeWindowVerified">
+          已核实时间窗口语义
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.dqlLatencyReviewed">
+          已在 Guance 侧核对 DQL 延迟
+        </el-checkbox>
+        <el-checkbox v-model="guanceAcceptanceChecklist.legacyRouteConflictReviewed">
+          已复核 903001 与历史 route key 冲突
+        </el-checkbox>
+        <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
+      </div>
+      <p
+        v-else-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED'"
+        class="source-blocker"
+      >只有当前 Workspace owner 可以提交 T7 验收；admin 可以执行只读验证，但不能替 owner 解锁真实 T8。</p>
       <div v-if="guanceSpinePreview" class="dialog-validation-result spine-dialog-result">
         <b>{{ guanceSpinePreviewLabel(guanceSpinePreview.stage) }}</b>
         <ul>
@@ -459,6 +527,13 @@
           :disabled="!guanceValidationForm.searchTerm"
           @click="previewGuanceSpine"
         >完整 Evidence Spine</el-button>
+        <el-button
+          v-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
+          type="success"
+          :loading="acceptanceLoading"
+          :disabled="!canAcceptGuance"
+          @click="acceptGuance"
+        >确认当前绑定 T7 验收</el-button>
         <el-button
           v-if="guanceSpinePreview && guanceSpinePreview.stage !== 'BLOCKED'"
           type="success"
@@ -546,6 +621,8 @@ import {
   type DiagnosisSummary,
   type EvidenceStepTone,
   type EvidenceStepKind,
+  type GuanceEvidenceAcceptanceChecklist,
+  type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceReadiness,
   type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
@@ -599,6 +676,7 @@ const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const canOperateTroubleshooting = computed(() => workspaceStore.can('operate:troubleshooting'))
 const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troubleshooting'))
+const canAcceptGuanceOwner = computed(() => workspaceStore.isAtLeast('owner'))
 const rows = ref<DiagnosisSummary[]>([])
 const selectedId = ref<string | null>(null)
 const current = ref<StoredDiagnosis | null>(null)
@@ -611,10 +689,12 @@ const incidentReportLoading = ref(false)
 const readinessLoading = ref(false)
 const validationLoading = ref(false)
 const spinePreviewLoading = ref(false)
+const acceptanceLoading = ref(false)
 const replayCapabilityLoading = ref(false)
 const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
 const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
 const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
+const guanceOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
 const replayCapability = ref<RecordedReplayEvaluationCapability | null>(null)
 const readinessError = ref('')
 let selectionVersion = 0
@@ -634,7 +714,7 @@ const canValidateGuance = computed(() => {
   return status === 'READY_FOR_VALIDATION' || status === 'CANONICAL_SIGNALS_OBSERVED'
 })
 const guanceAcceptance = computed(() => guanceReadiness.value
-  ? guanceAcceptanceProgress(guanceReadiness.value)
+  ? guanceAcceptanceProgress(guanceReadiness.value, guanceOwnerAcceptance.value)
   : null)
 const evaluationCaptureContext = computed<EvaluationSampleCaptureContext | null>(() => {
   const diagnosis = current.value?.diagnosis
@@ -665,11 +745,14 @@ const replayEvaluationCaptureContextValue = computed(() => {
   } : null, replayCapability.value)
 })
 const canCaptureEvaluationSample = computed(() => canManageTroubleshooting.value
+  && guanceOwnerAcceptance.value?.status === 'ACCEPTED'
   && Boolean(guanceSpinePreview.value)
   && guanceSpinePreview.value?.stage !== 'BLOCKED')
 const evaluationCaptureDisabledReason = computed(() => {
   if (!canManageTroubleshooting.value) return '当前 Workspace 缺少 manage:troubleshooting 权限。'
   if (!evaluationCaptureContext.value) return '当前 Diagnosis 没有可安全映射的搜索键。'
+  if (guanceOwnerAcceptance.value?.status === 'STALE') return 'Guance 绑定配置已变化，必须重新完成 T7 owner 验收。'
+  if (guanceOwnerAcceptance.value?.status !== 'ACCEPTED') return '当前 Guance 绑定尚未完成持久化 T7 owner 验收。'
   return '先在真源验收中取得一条非 BLOCKED Evidence Spine，再采集历史样本。'
 })
 const canCaptureReplayEvaluationSample = computed(() => canManageTroubleshooting.value
@@ -694,10 +777,26 @@ const approveForm = reactive({ reason: '' })
 const outcomeForm = reactive({ outcome: 'SUCCEEDED' as ActionOutcomeStatus, notes: '', recoveryVerified: false })
 const closeForm = reactive({ outcome: 'RECOVERED' as ClosureOutcome, summary: '', recoveryVerified: false, sopFeedback: '', createKnowledgeCandidate: true })
 const guanceValidationForm = reactive({ system: '', service: '', searchTerm: '', window: '-15m', occurredAt: null as string | null })
+const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
+  measurementAndFieldsVerified: false,
+  indexVerified: false,
+  psIdJoinVerified: false,
+  timestampUnitVerified: false,
+  timeWindowVerified: false,
+  dqlLatencyReviewed: false,
+  legacyRouteConflictReviewed: false,
+}
+const guanceAcceptanceChecklist = reactive<GuanceEvidenceAcceptanceChecklist>({
+  ...EMPTY_T7_CHECKLIST,
+})
 const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentReportForm))
 const incidentRoutePreview = computed(() => formalIncidentRoutePreview(incidentReportForm))
 const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
   && incidentReportErrors.value.length === 0)
+const canAcceptGuance = computed(() => canManageTroubleshooting.value
+  && canAcceptGuanceOwner.value
+  && guanceValidation.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
+  && Object.values(guanceAcceptanceChecklist).every(Boolean))
 
 function statusLabel(status: DiagnosisStatus) { return STATUS_LABEL[status] }
 function statusTone(status: DiagnosisStatus) {
@@ -726,6 +825,19 @@ function acceptanceStateLabel(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUI
   if (value === 'READY') return '就绪'
   if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
   return '阻断'
+}
+function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
+  if (value === 'ACCEPTED') return '当前绑定已验收'
+  if (value === 'STALE') return '配置变化，验收已过期'
+  if (value === 'NOT_ACCEPTED') return '尚未完成 owner 验收'
+  return '当前绑定不可验收'
+}
+function ownerAcceptanceTone(value: GuanceEvidenceAcceptanceView['status']) {
+  if (value === 'ACCEPTED') return 'passed'
+  return value === 'STALE' ? 'blocked' : 'pending'
+}
+function shortFingerprint(value?: string | null) {
+  return value ? `${value.slice(0, 12)}…` : '不可用'
 }
 function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
   if (value === 'CANONICAL_RESULT_OBSERVED') return '规范化证据已观测'
@@ -803,6 +915,7 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
   guanceValidationOpen.value = false
   validationLoading.value = false
   spinePreviewLoading.value = false
+  acceptanceLoading.value = false
   try {
     const [projectionResponse, diagnosisResponse] = await Promise.all([
       troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
@@ -813,6 +926,7 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     guanceValidation.value = null
     guanceSpinePreview.value = null
     guanceReadiness.value = null
+    guanceOwnerAcceptance.value = null
     replayCapability.value = null
     readinessError.value = ''
     if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
@@ -832,13 +946,18 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
 async function loadGuanceReadiness(system: string, service: string, version = selectionVersion) {
   readinessLoading.value = true
   try {
-    const response = await troubleshootingApi.evidenceReadiness({ system, service })
+    const [readinessResponse, acceptanceResponse] = await Promise.all([
+      troubleshootingApi.evidenceReadiness({ system, service }),
+      troubleshootingApi.guanceEvidenceAcceptance({ system, service }),
+    ])
     if (version !== selectionVersion) return
-    guanceReadiness.value = response.data
+    guanceReadiness.value = readinessResponse.data
+    guanceOwnerAcceptance.value = acceptanceResponse.data
     readinessError.value = ''
   } catch {
     if (version !== selectionVersion) return
     guanceReadiness.value = null
+    guanceOwnerAcceptance.value = null
     readinessError.value = '真源就绪检查暂不可用；不影响当前 Diagnosis 的阅读和处置。'
   } finally {
     if (version === selectionVersion) readinessLoading.value = false
@@ -855,6 +974,7 @@ function openGuanceValidation() {
   guanceValidationForm.occurredAt = incident.occurredAt
   guanceValidation.value = null
   guanceSpinePreview.value = null
+  Object.assign(guanceAcceptanceChecklist, EMPTY_T7_CHECKLIST)
   guanceValidationOpen.value = true
 }
 
@@ -919,6 +1039,31 @@ async function validateGuance() {
     ElMessage.error(`Guance 只读验证失败：${errorText(error)}`)
   } finally {
     if (version === selectionVersion) validationLoading.value = false
+  }
+}
+
+async function acceptGuance() {
+  if (!canAcceptGuance.value) return
+  const version = selectionVersion
+  const request = {
+    ...guanceValidationForm,
+    checklist: { ...guanceAcceptanceChecklist },
+  }
+  acceptanceLoading.value = true
+  try {
+    const response = await troubleshootingApi.acceptGuanceEvidence(request)
+    const incident = current.value?.diagnosis.incident
+    if (version !== selectionVersion
+      || !incident
+      || incident.system !== request.system
+      || incident.service !== request.service) return
+    guanceOwnerAcceptance.value = response.data
+    ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
+  } catch (error) {
+    if (version !== selectionVersion) return
+    ElMessage.error(`T7 owner 验收未记录：${errorText(error)}`)
+  } finally {
+    if (version === selectionVersion) acceptanceLoading.value = false
   }
 }
 
@@ -1103,7 +1248,8 @@ onMounted(() => loadList(true))
 .acceptance-ladder strong { font-size:8px; white-space:nowrap; } .next-source-action { margin:8px 0 0; padding:8px; border-radius:6px; color:#344054; background:#eff4ff; font-size:9px; line-height:1.5; } .next-source-action b { display:block; margin-bottom:2px; color:#175cd3; }
 .signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid #edf0f5; } .signal-readiness-list code { font-size:9.5px; } .signal-readiness-list span { font-size:9px; } .signal-readiness-list small { grid-column:1/-1; color:#98a2b3; font-size:8.5px; word-break:break-all; }
 .source-blocker { margin:7px 0; padding:7px 8px; border-radius:5px; color:#7a271a; background:#fff2f0; font-size:9.5px; line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:9px; line-height:1.55; }
-.validation-result { margin:9px 0; padding:9px; border-radius:7px; font-size:9.5px; } .validation-result.passed { color:#067647; background:#ecfdf3; } .validation-result.blocked { color:#b54708; background:#fffaeb; } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
+.validation-result { margin:9px 0; padding:9px; border-radius:7px; font-size:9.5px; } .validation-result.passed { color:#067647; background:#ecfdf3; } .validation-result.blocked { color:#b54708; background:#fffaeb; } .validation-result.pending { color:#175cd3; background:#eff4ff; } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
+.owner-acceptance-result code { font-size:9px; overflow-wrap:anywhere; } .owner-acceptance-result.passed { border-color:#a9e7c8; background:#ecfdf3; } .owner-acceptance-result.blocked { border-color:#fedf89; background:#fffaeb; } .owner-acceptance-result.pending { border-color:#b2ccff; background:#eff4ff; }
 .spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
 .validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; background:#f8f9fc; } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:10px; } .validation-scope code { margin-top:5px; color:var(--blue); font-size:11px; }
 .incident-form-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 14px; }
@@ -1115,6 +1261,7 @@ onMounted(() => loadList(true))
 .incident-route-preview.bounded_discovery>b { color:var(--amber); }
 .incident-rehearsal { margin-top:2px; }
 .dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; } .dialog-validation-result>b { font-size:12px; } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:10px; } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:#344054; font-family:var(--mc-mono,monospace); font-size:9px; white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:#344054; font-size:10px; font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:9.5px; line-height:1.5; }
+.t7-owner-checklist { display:grid; gap:7px; margin-top:12px; padding:12px; border:1px solid #b2ccff; border-radius:8px; background:#f5f8ff; } .t7-owner-checklist>b { margin-bottom:2px; color:#175cd3; font-size:12px; } .t7-owner-checklist .el-checkbox { height:auto; margin-right:0; white-space:normal; } .t7-owner-checklist .form-hint { margin-top:5px; line-height:1.55; }
 .spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:7px; background:#f5f8ff; }
 .spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:10px; line-height:1.5; }
 .spine-facts span { color:var(--muted); }
