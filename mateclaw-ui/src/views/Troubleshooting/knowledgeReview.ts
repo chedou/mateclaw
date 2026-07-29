@@ -69,6 +69,7 @@ const REASON_LABELS: Record<string, string> = {
   SELECTOR_REQUIRED: '候选没有可用于版本替换的明确 selector。',
   SOURCE_QUALIFICATION_MISSING: '服务端没有返回该来源的资格投影，当前保持不可晋升。',
   REVIEW_START_AND_REJECT_ONLY: '当前只开放开始审阅和拒绝；批准决策仍保持关闭。',
+  APPROVAL_IS_SERVER_GATED: '批准命令已接入，但只有服务端当前资格全部通过时才会创建新版本。',
   APPROVAL_REQUIRES_ELIGIBILITY_GATE: '批准必须通过来源对应的资格门禁，不能由按钮绕过。',
   PROMOTION_MUST_CREATE_NEW_VERSION: '晋升必须创建新版本，并显式替代旧的 approved 版本。',
 }

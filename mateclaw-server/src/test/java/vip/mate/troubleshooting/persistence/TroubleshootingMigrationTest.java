@@ -18,6 +18,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TroubleshootingMigrationTest {
@@ -466,6 +467,149 @@ class TroubleshootingMigrationTest {
                     connection, "uk_ts_knowledge_review_source"));
             assertEquals(1, countIndexes(
                     connection, "idx_ts_knowledge_review_status"));
+        }
+    }
+
+    @Test
+    void h2V186CreatesImmutableVersionsAndEnforcesOneActiveSelector()
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v186;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V185__troubleshooting_knowledge_review.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_sop (
+                            id, workspace_id, sop_id, route_key, system, error_code,
+                            service, status, verified, contract_version, aggregate_json,
+                            version, deleted, create_time, update_time
+                        ) VALUES (
+                            11, 7, 'legacy-approved', 'csdp:903001', 'CSDP', '903001',
+                            'order-svc', 'approved', TRUE, 'sop.v1', '{}',
+                            0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_knowledge_review (
+                            id, workspace_id, review_id, origin, source_record_id,
+                            selector_key, status, reviewer, reason, snapshot_json,
+                            version, deleted, create_time, update_time
+                        ) VALUES (
+                            21, 7, 'review-inflight', 'MANUAL', 'manual-inflight',
+                            'csdp:903001', 'IN_REVIEW', 'reviewer-a',
+                            '迁移前已开始审核', '{}', 1, 0,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V186__troubleshooting_playbook_version.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains("mate_troubleshooting_playbook_version"));
+            Set<String> versionColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_playbook_version");
+            assertTrue(versionColumns.contains("playbook_version"));
+            assertTrue(versionColumns.contains("active_selector_key"));
+            assertTrue(versionColumns.contains("source_origin"));
+            assertTrue(versionColumns.contains("review_id"));
+            assertTrue(versionColumns.contains("approval_snapshot_json"));
+            assertTrue(versionColumns.contains("deprecated_by"));
+            assertTrue(versionColumns.contains("deprecation_reason"));
+            assertTrue(versionColumns.contains("deprecated_at"));
+            Set<String> reviewColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_knowledge_review");
+            assertTrue(reviewColumns.contains("active_baseline_known"));
+            assertTrue(reviewColumns.contains("base_playbook_id"));
+            assertTrue(reviewColumns.contains("base_playbook_version"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_playbook_version_active"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_playbook_version_number"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_playbook_version_review"));
+            assertEquals(0, countIndexes(connection, "uk_ts_sop_route"));
+            assertEquals(1, countIndexes(
+                    connection, "idx_ts_sop_route_sources"));
+
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT playbook_id, playbook_version, active_selector_key
+                    FROM mate_troubleshooting_playbook_version
+                    WHERE workspace_id = 7 AND selector_key = 'csdp:903001'
+                    """)) {
+                try (ResultSet row = query.executeQuery()) {
+                    assertTrue(row.next());
+                    assertEquals("legacy-approved", row.getString("playbook_id"));
+                    assertEquals(1, row.getInt("playbook_version"));
+                    assertEquals("csdp:903001", row.getString("active_selector_key"));
+                    assertFalse(row.next());
+                }
+            }
+
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT active_baseline_known, base_playbook_id,
+                           base_playbook_version
+                    FROM mate_troubleshooting_knowledge_review
+                    WHERE workspace_id = 7 AND review_id = 'review-inflight'
+                    """)) {
+                try (ResultSet row = query.executeQuery()) {
+                    assertTrue(row.next());
+                    assertTrue(row.getBoolean("active_baseline_known"));
+                    assertEquals("legacy-approved", row.getString("base_playbook_id"));
+                    assertEquals(1, row.getInt("base_playbook_version"));
+                }
+            }
+
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_sop (
+                            id, workspace_id, sop_id, route_key, system, error_code,
+                            service, status, verified, contract_version, aggregate_json,
+                            version, deleted, create_time, update_time
+                        ) VALUES
+                            (12, 7, 'manual-source-2', 'csdp:903001', 'CSDP', '903001',
+                             'order-svc', 'candidate', FALSE, 'sop.v1', '{}',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (13, 7, 'manual-source-3', 'csdp:903001', 'CSDP', '903001',
+                             'order-svc', 'candidate', FALSE, 'sop.v1', '{}',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+            }
+
+            assertThrows(java.sql.SQLException.class, () -> {
+                try (PreparedStatement duplicate = connection.prepareStatement("""
+                        INSERT INTO mate_troubleshooting_playbook_version (
+                            id, workspace_id, playbook_id, selector_key,
+                            playbook_version, active_selector_key,
+                            system, error_code, service, status,
+                            source_origin, source_record_id, review_id, review_version,
+                            approved_by, approval_reason, approval_snapshot_json,
+                            contract_version, aggregate_json, version, deleted,
+                            create_time, update_time
+                        ) VALUES (
+                            14, 7, 'second-active', 'csdp:903001',
+                            2, 'csdp:903001',
+                            'CSDP', '903001', 'order-svc', 'APPROVED',
+                            'MANUAL', 'manual-2', 'review-2', 1,
+                            'reviewer-a', '并发审批', '{}',
+                            'sop.v1', '{}', 0, 0,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                        """)) {
+                    duplicate.executeUpdate();
+                }
+            });
         }
     }
 

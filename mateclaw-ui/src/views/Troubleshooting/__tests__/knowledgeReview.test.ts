@@ -160,14 +160,13 @@ const inbox: KnowledgeReviewInbox = {
       modelConfigVersion: null,
       approvalEligibility: 'NOT_ELIGIBLE',
       eligibilityReasons: [
-        'VERSIONED_SELECTOR_UNIQUENESS_REQUIRED',
         'POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED',
       ],
       fixtureMode: null,
     },
   }],
   capabilityLimits: [
-    'REVIEW_START_AND_REJECT_ONLY',
+    'APPROVAL_IS_SERVER_GATED',
     'APPROVAL_REQUIRES_ELIGIBILITY_GATE',
   ],
 }
@@ -252,7 +251,7 @@ describe('knowledge review projection', () => {
 
   it('renders machine reasons as explicit Chinese gate conditions', () => {
     expect(reviewReasonLabel('P1_CALIBRATION_PERIOD')).toContain('校准期')
-    expect(reviewReasonLabel('REVIEW_START_AND_REJECT_ONLY')).toContain('开始审阅和拒绝')
+    expect(reviewReasonLabel('APPROVAL_IS_SERVER_GATED')).toContain('服务端')
     expect(reviewReasonLabel('OUTCOME_VERIFICATION_NOT_PROJECTED')).toContain('关闭结果')
     expect(reviewReasonLabel('VERSIONED_SELECTOR_UNIQUENESS_REQUIRED')).toContain('selector')
     expect(reviewReasonLabel('UNKNOWN_FUTURE_REASON')).toBe('UNKNOWN_FUTURE_REASON')

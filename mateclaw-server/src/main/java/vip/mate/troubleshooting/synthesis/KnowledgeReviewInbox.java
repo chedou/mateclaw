@@ -22,7 +22,7 @@ public record KnowledgeReviewInbox(
         List<String> capabilityLimits) {
 
     public static final List<String> CURRENT_CAPABILITY_LIMITS = List.of(
-            "REVIEW_START_AND_REJECT_ONLY",
+            "APPROVAL_IS_SERVER_GATED",
             "APPROVAL_REQUIRES_ELIGIBILITY_GATE",
             "PROMOTION_MUST_CREATE_NEW_VERSION");
 

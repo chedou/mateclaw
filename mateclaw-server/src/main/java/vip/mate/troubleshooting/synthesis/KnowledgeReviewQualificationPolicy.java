@@ -111,9 +111,6 @@ public final class KnowledgeReviewQualificationPolicy {
         if (sop.ownerTeam() == null || sop.ownerTeam().isBlank()) {
             reasons.add("OWNER_REQUIRED");
         }
-        // V172 keeps one row per route, but it cannot yet prove the
-        // version-aware single-active-approved invariant needed by promotion.
-        reasons.add("VERSIONED_SELECTOR_UNIQUENESS_REQUIRED");
         // Manual registration currently has no server-owned replay
         // attestation. UI input cannot turn this condition into PASS.
         reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");

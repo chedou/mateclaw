@@ -351,26 +351,32 @@ Challenger 影子运行和两者对比仍未实现。
       未开始独立审核时统一投影为 `CANDIDATE/v0`；每条来源的当前资格由服务端返回，人工候选执行
       完整合同交叉引用校验，关闭候选则显式保留当前合同无法证明的 outcome/恢复验证缺口，
       不得由前端猜成已校验。旧式 candidate → approved 按钮已撤下。
-- [x] 旧 `POST /sops/{system}/{errorCode}/status` 已拒绝 `candidate → approved`，只允许既有
-      approved 版本退役为 deprecated；页面隐藏按钮不再是唯一防线，资格与新版本晋升合同完成前服务端
-      保持 fail closed（2026-07-29）。
-- [ ] 新建/扩展审核状态：DRAFT → CANDIDATE → IN_REVIEW → APPROVED/REJECTED → DEPRECATED。
+- [x] 旧 `POST /sops/{system}/{errorCode}/status` 已拒绝 `candidate → approved`；V186 版本化
+      Playbook 不能从通用状态接口退役：有 review 的版本必须携精确 review version 与 reason，迁移生成的
+      LEGACY 权威必须携精确 playbookVersion，并统一记录服务端 actor/reason/退役时间（2026-07-30）。
+- [x] 新建/扩展审核状态：DRAFT → CANDIDATE → IN_REVIEW → APPROVED/REJECTED → DEPRECATED。
   - [x] H2/MySQL/Kingbase V185 独立审核台账；无记录为 `CANDIDATE/v0`，可开始为
         `IN_REVIEW/v1`，可按精确版本拒绝为 `REJECTED/v2`。重试幂等，并发旧版本 409；
         审核人只从登录主体取得，reason 禁止凭据、DQL、原始日志和堆栈。
-  - [ ] `APPROVED / DEPRECATED` 仍等资格 Gate 与新版本替换命令完成后开放。
+  - [x] V186 开放服务端门禁的 `APPROVED / DEPRECATED`：批准前重读当前资格与 server-owned
+        routeable material，退役只作用于该审核创建且仍占有 selector 的 active 版本；重试幂等，旧版本 409。
+        V185 已处于 `IN_REVIEW` 的记录在迁移时冻结当时 active baseline；不同 `sopId` 的不可变 MANUAL
+        source 可共享 selector，避免首版终态后无法创建替代候选。
 - [ ] EVIDENCE_DERIVED / OUTCOME_BACKED / MANUAL 分别按 v4 的最低证据计算晋升资格。
   - [x] 当前来源事实已由统一服务端策略计算并随 Inbox 返回：证据型显式处于默认
         `CALIBRATION` 档并核对 validation/reference/citation/fixture，不把 candidate 生成当正例回放；
-        人工型核对 owner 与证据请求→判据→规则交叉引用，并保留版本化 selector 唯一性缺口；关闭型不再用
+        人工型核对 owner 与证据请求→判据→规则交叉引用；关闭型不再用
         “尚未实现”占位，而是明确列出候选合同缺少 ClosureRecord/恢复验证、正例回放和 owner；
         前端只消费该投影，缺失时 fail closed（2026-07-29）。
-  - [ ] 将真实 T8 正/负例或弃权回放、知识 owner、关闭 Diagnosis 的 outcome/恢复验证、版本化
-        selector 唯一约束接入 Gate；以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
+  - [ ] 将真实 T8 正/负例或弃权回放、知识 owner、关闭 Diagnosis 的 outcome/恢复验证接入 Gate；
+        selector 单 active-approved 已由 V186 数据库唯一约束关闭，以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
         切换，条件全部可由服务端证明后才允许返回 `ELIGIBLE_FOR_APPROVAL`。
 - [x] 审核记录 reviewer、reason，并在开始审阅时冻结 validation summary、
       reference comparison、模型版本、fixture 与当时的资格缺口（2026-07-29）。
-- [ ] approved 永远创建新版本；乐观锁 + selector active-approved 唯一约束防并发双权威。
+- [x] approved 永远创建新版本；审核开始冻结旧权威 baseline，批准时乐观校验，V186 以 nullable
+      `active_selector_key` 数据库唯一约束防并发双权威；替代或显式退役同时把旧 review 置为
+      `DEPRECATED`。确定性命中只读取 operational 权威；最新版本已退役时直接 route miss，绝不回落
+      复活 legacy 行；治理详情仍可读取最新历史版本（2026-07-30）。
 - [ ] 定义 `AdversarialEvalReport`：反证、缺证据、危险动作、权威违规、未解决分歧和成本。
 - [ ] Challenger 首期只读冻结 EvidenceBundle；缺证据只返回 EvidenceGap，由 Loop Control 决定是否补证。
 - [ ] P2 影子评测达标后才允许 `PROMOTION_GATE`；报告不可用不得默认通过。

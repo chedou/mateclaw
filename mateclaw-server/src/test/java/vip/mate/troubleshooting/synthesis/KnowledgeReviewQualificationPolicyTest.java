@@ -63,7 +63,6 @@ class KnowledgeReviewQualificationPolicyTest {
         assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
         assertThat(source.snapshot().eligibilityReasons())
                 .containsExactly(
-                        "VERSIONED_SELECTOR_UNIQUENESS_REQUIRED",
                         "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
     }
 
@@ -94,7 +93,6 @@ class KnowledgeReviewQualificationPolicyTest {
         assertThat(source.snapshot().eligibilityReasons()).containsExactly(
                 "CONTRACT_VALIDATION_FAILED",
                 "OWNER_REQUIRED",
-                "VERSIONED_SELECTOR_UNIQUENESS_REQUIRED",
                 "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
     }
 

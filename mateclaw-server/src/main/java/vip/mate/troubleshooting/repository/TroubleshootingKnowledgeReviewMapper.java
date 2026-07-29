@@ -18,6 +18,7 @@ public interface TroubleshootingKnowledgeReviewMapper
     @Select("""
             SELECT id, workspace_id, review_id, origin, source_record_id,
                    selector_key, status, reviewer, reason, snapshot_json,
+                   active_baseline_known, base_playbook_id, base_playbook_version,
                    version, deleted, create_time, update_time
               FROM mate_troubleshooting_knowledge_review
              WHERE workspace_id = #{workspaceId}
@@ -34,6 +35,7 @@ public interface TroubleshootingKnowledgeReviewMapper
             <script>
             SELECT id, workspace_id, review_id, origin, source_record_id,
                    selector_key, status, reviewer, reason, snapshot_json,
+                   active_baseline_known, base_playbook_id, base_playbook_version,
                    version, deleted, create_time, update_time
               FROM mate_troubleshooting_knowledge_review
              WHERE workspace_id = #{workspaceId}

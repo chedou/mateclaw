@@ -113,7 +113,10 @@ class Vertical903001Test {
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
 
-        sopPersistence = new TroubleshootingSopPersistenceService(sopMapper(), objectMapper);
+        sopPersistence = new TroubleshootingSopPersistenceService(
+                sopMapper(),
+                mock(vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService.class),
+                objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
                 diagnosisMapper(), outboxMapper(), objectMapper);
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();

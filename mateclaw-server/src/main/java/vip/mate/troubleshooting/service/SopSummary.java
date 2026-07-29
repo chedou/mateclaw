@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.service;
 
 import vip.mate.troubleshooting.model.TroubleshootingSopEntity;
+import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
 
 import java.time.LocalDateTime;
 
@@ -22,7 +23,30 @@ public record SopSummary(
         boolean verified,
         boolean operational,
         LocalDateTime createTime,
-        LocalDateTime updateTime) {
+        LocalDateTime updateTime,
+        Integer playbookVersion,
+        String sourceOrigin,
+        String sourceRecordId,
+        String reviewId,
+        Integer reviewVersion) {
+
+    /** Compatibility constructor for legacy registry rows and existing callers. */
+    public SopSummary(
+            String sopId,
+            String routeKey,
+            String system,
+            String errorCode,
+            String service,
+            String status,
+            boolean verified,
+            boolean operational,
+            LocalDateTime createTime,
+            LocalDateTime updateTime) {
+        this(
+                sopId, routeKey, system, errorCode, service, status,
+                verified, operational, createTime, updateTime,
+                null, null, null, null, null);
+    }
 
     public static SopSummary from(TroubleshootingSopEntity entity) {
         boolean verified = Boolean.TRUE.equals(entity.getVerified());
@@ -37,5 +61,26 @@ public record SopSummary(
                 verified && "approved".equals(entity.getStatus()),
                 entity.getCreateTime(),
                 entity.getUpdateTime());
+    }
+
+    public static SopSummary from(TroubleshootingPlaybookVersionEntity entity) {
+        boolean operational = "APPROVED".equals(entity.getStatus())
+                && entity.getActiveSelectorKey() != null;
+        return new SopSummary(
+                entity.getPlaybookId(),
+                entity.getSelectorKey(),
+                entity.getSystem(),
+                entity.getErrorCode(),
+                entity.getService(),
+                entity.getStatus().toLowerCase(java.util.Locale.ROOT),
+                operational,
+                operational,
+                entity.getCreateTime(),
+                entity.getUpdateTime(),
+                entity.getPlaybookVersion(),
+                entity.getSourceOrigin(),
+                entity.getSourceRecordId(),
+                entity.getReviewId(),
+                entity.getReviewVersion());
     }
 }

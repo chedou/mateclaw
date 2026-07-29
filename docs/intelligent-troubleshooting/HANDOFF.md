@@ -165,17 +165,25 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   按 workspace 统一读取证据生成、关闭结果沉淀和人工注册三类真实候选；正式
   `/troubleshooting/sops` 可按来源筛选并查看状态、资格缺口、证据引用、模型来源、参考解法和关闭结果。
   三类来源共用 V185 独立审核台账：无记录为 `CANDIDATE/v0`，登录管理员可开始审阅为
-  `IN_REVIEW/v1`，再按精确版本拒绝为 `REJECTED/v2`。审核台账保存服务端登录主体、理由与开始时的
-  validation/reference/model/fixture 快照；reason 拒绝凭据、DQL、原始日志和堆栈。Inbox 还为每个精确
+  `IN_REVIEW/v1`，再按精确版本拒绝为 `REJECTED/v2`。V186 在开始审阅时同时冻结 selector 的旧权威
+  baseline；V185 已在途的 `IN_REVIEW` 记录由迁移冻结当时 baseline，不会因 source 唯一键永久卡死。
+  批准命令重读当前资格与 server-owned routeable material，永远创建不可变的新 Playbook
+  版本，替代或显式退役会同步把旧 review 推进到 `DEPRECATED`。审核台账保存服务端登录主体、理由与
+  开始时的 validation/reference/model/fixture 快照；reason 拒绝凭据、DQL、原始日志和堆栈。Inbox 还为每个精确
   来源返回服务端当前资格投影：证据型显式处于默认 `CALIBRATION` 档并核对
   validation/reference/citation/fixture，candidate 生成本身不计作正例回放；人工型对完整 SOP 合同执行
-  evidence request→criterion→rule 交叉引用校验，并保留版本化 selector 唯一性证明缺口；关闭型显式暴露
+  evidence request→criterion→rule 交叉引用校验；关闭型显式暴露
   当前候选合同仍缺 ClosureRecord/恢复验证、正例回放和 owner；前端不再自行拼资格原因。旧式
-  candidate → approved 按钮已从正式页面撤下；旧
-  `POST /sops/{system}/{errorCode}/status` 也已 fail closed 拒绝 `approved`，只保留现有 approved
-  版本的 `deprecated` 退役能力，不能从隐藏 API 绕过资格门禁。批准仍保持关闭；真实回放/owner/outcome
-  证明、数据驱动的 `RUNTIME` 档切换尚未接入 Gate，selector 单 active 的新版本替换与
-  `APPROVED / DEPRECATED` 后半状态机仍未完成。
+  candidate → approved 通用按钮继续关闭；旧 `POST /sops/{system}/{errorCode}/status` 也已 fail closed
+  拒绝 `approved`，且不能退役 V186 版本化权威。有 review 的版本必须从原审核记录提交精确 review version
+  与 reason；V186 回填且没有 review 的 LEGACY 权威另有精确 playbookVersion + 服务端 actor/reason 的
+  审计退役命令。MANUAL source 现在以 `sopId` 唯一，不同不可变 source 可共享 selector，用于首版后的
+  人工替代；H2/MySQL/Kingbase 的 nullable `active_selector_key` 唯一约束继续保证每个 selector 最多一个
+  active approved。正式命中路径只返回 operational 权威，最新版本为 `DEPRECATED` 时直接 route miss，
+  不回落复活 legacy 行；治理详情独立读取最新历史版本。当前真实回放/owner/outcome 证明、数据驱动的
+  `RUNTIME` 档切换尚未接入 Gate，因此现有三类真实来源仍保持 `NOT_ELIGIBLE`；版本命令可用不等于已有
+  候选可以晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的可执行 promotion material 也继续 fail closed，
+  直到各自的 server-owned Playbook 合同与证明接入。
 - H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。
@@ -198,7 +206,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   同时带 `observedAt`，每条引用都要通过 schema 且公共字段一致，任何引用缺失、混入非影响证据或相互
   矛盾都一律降级为 null/UNKNOWN。Intake 在路由、取证和持久化前统一脱敏影响文本。当前完成的是合同与
   信任边界，不代表真源已产出影响数据。
-- KnowledgeCandidate 与 Outbox 继续只表达发布语义；Review Inbox 的开始审阅/拒绝已使用独立审核语义和乐观版本。
+- KnowledgeCandidate 与 Outbox 继续只表达发布语义；Review Inbox 的开始审阅、拒绝、批准、替代与退役
+  已使用独立审核语义和乐观版本，批准不会原地修改 candidate。
 - 三套只读 Demo 原型，均显式显示 Recorded Replay、MODEL_PROPOSED、MEDIUM、CANDIDATE。
 
 ### 尚未完成
@@ -591,6 +600,32 @@ T7 owner 验收与 T8 真源门禁（2026-07-29）已实现，真实验收与真
 - 默认环境仍没有 Guance owner 配置、真实返回或 `ACCEPTED` 记录，`fixtureMode` 不变；必须由 owner 完成
   真实 T7，再积累并评审 20–30 条 T8 样本。Loop、Planning 与 Evidence/Safety Challenger 继续
   `PENDING-EVIDENCE`，不能把本节写成 T7/T8 已通过。
+
+T14 版本化知识晋升与审计退役（2026-07-30）已实现，真实来源证明仍未完成：
+
+- H2/MySQL/Kingbase V186 新增不可变 Playbook version store。开始审阅冻结当时 active authority
+  baseline；批准时重读服务端当前资格与 routeable material，并永远创建新版本。乐观审核版本、冻结
+  baseline 与数据库 nullable `active_selector_key` 唯一约束共同防止并发双权威；替代时旧版本和旧 review
+  同步进入 `DEPRECATED`。
+- MANUAL source 改为以 `sopId` 唯一，不同不可变 source 可共享同一 selector；V185 已在途 review 由迁移
+  冻结 baseline。V186 回填的 LEGACY 权威只能用精确 `playbookVersion`、服务端 actor/reason 和 CAS 审计
+  退役；有 review 的版本只能回到原审核记录退役。通用状态接口不能批准或退役版本化权威。
+- 确定性命中只读取 operational authority；最新版本已退役时直接 route miss，不回落复活 legacy source。
+  治理页另读最新历史版本，展示来源、Playbook/review version 与退役审计。批准/退役后详情立即采用服务端
+  响应，不再残留旧状态。
+- 当前 OUTCOME_BACKED 候选在正式页仍明确显示
+  `OUTCOME_VERIFICATION_NOT_PROJECTED / POSITIVE_REPLAY_REQUIRED / OWNER_REQUIRED`，只有“开始审阅”而没有
+  批准入口；现有三类来源都没有因命令落地而被伪装成可晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的
+  server-owned promotion material、真实 T7 owner 验收和 20–30 条 T8 样本仍待接入。
+- 浏览器首轮验收发现 version mapper 的共享列片段把 `SELECT` 拼成 `SELECTid`，真实详情接口返回 500；
+  已补 H2/MyBatis 集成测试覆盖 active/current/review/playbook/latest 五条查询并修复。最终排障域 + Skill
+  Manifest 后端 `483` 个测试、前端 `18` 个测试文件 / `140` 个测试全部通过；`vue-tsc --noEmit`、
+  改动文件 ESLint、`git diff --check` 与直接 Vite 生产构建通过，构建完成 `6276` 个模块转换。
+- 本地 schema 已从 V185 真实迁移到 V186；后端 PID `90360` 监听 `18088`，前端 PID `92308` 监听
+  `5173`，actuator health 为 UP。登录态浏览器验证正式工作台、Playbook 治理页和
+  `/troubleshooting/legacy` 均为 0 console error；T8 台账诚实保持 `0 / 20` 且显示“暂无可测样本”。
+  下一主攻仍是 owner 完成 T7 真配置/验收、积累并评审真实 T8 样本，再接 Challenger 与 Loop；本增量
+  没有放开生产写或 hit-path LLM。
 
 后端定向测试命令：
 

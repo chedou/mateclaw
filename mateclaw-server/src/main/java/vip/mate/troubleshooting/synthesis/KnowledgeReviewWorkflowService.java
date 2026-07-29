@@ -11,12 +11,14 @@ import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeReviewEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeReviewMapper;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -24,8 +26,8 @@ import java.util.UUID;
  *
  * <p>No row means the source is still a virtual {@code CANDIDATE} at version
  * zero. Starting review creates {@code IN_REVIEW/v1}; rejecting advances the
- * exact reviewed version. Approval is intentionally absent until eligibility
- * gates and versioned promotion are implemented.</p>
+ * exact reviewed version. Approval re-reads server-owned qualification and
+ * creates a new Playbook version; it never flips a candidate in place.</p>
  */
 @Service
 public class KnowledgeReviewWorkflowService {
@@ -36,14 +38,20 @@ public class KnowledgeReviewWorkflowService {
 
     private final TroubleshootingKnowledgeReviewMapper mapper;
     private final KnowledgeReviewSourceReader sources;
+    private final KnowledgePromotionMaterialReader promotionMaterials;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
     private final ObjectMapper objectMapper;
 
     public KnowledgeReviewWorkflowService(
             TroubleshootingKnowledgeReviewMapper mapper,
             KnowledgeReviewSourceReader sources,
+            KnowledgePromotionMaterialReader promotionMaterials,
+            TroubleshootingPlaybookVersionService playbookVersions,
             ObjectMapper objectMapper) {
         this.mapper = mapper;
         this.sources = sources;
+        this.promotionMaterials = promotionMaterials;
+        this.playbookVersions = playbookVersions;
         this.objectMapper = objectMapper;
     }
 
@@ -82,6 +90,10 @@ public class KnowledgeReviewWorkflowService {
                     "knowledge review source resolver returned a mismatched identity");
         }
 
+        Optional<ApprovedPlaybookRef> activeBaseline = source.selectorKey() == null
+                ? Optional.empty()
+                : playbookVersions.activeRef(workspaceId, source.selectorKey());
+
         LocalDateTime now = utcNow();
         TroubleshootingKnowledgeReviewEntity entity =
                 new TroubleshootingKnowledgeReviewEntity();
@@ -94,6 +106,13 @@ public class KnowledgeReviewWorkflowService {
         entity.setReviewer(reviewer);
         entity.setReason(auditReason);
         entity.setSnapshotJson(write(source.snapshot()));
+        entity.setActiveBaselineKnown(true);
+        entity.setBasePlaybookId(activeBaseline
+                .map(ApprovedPlaybookRef::playbookId)
+                .orElse(null));
+        entity.setBasePlaybookVersion(activeBaseline
+                .map(ApprovedPlaybookRef::playbookVersion)
+                .orElse(null));
         entity.setVersion(1);
         entity.setDeleted(0);
         entity.setCreateTime(now);
@@ -175,6 +194,242 @@ public class KnowledgeReviewWorkflowService {
     }
 
     /**
+     * Approves the exact review version and atomically creates a new authority.
+     *
+     * <p>The browser supplies only its optimistic review version and a reason.
+     * Current qualification, routeable content, the old active authority and
+     * the reviewer identity all come from server-owned state.</p>
+     */
+    @Transactional
+    public KnowledgeReviewApproval approve(
+            long workspaceId,
+            KnowledgeOrigin origin,
+            String sourceRecordId,
+            int expectedVersion,
+            String actor,
+            String reason) {
+        validateWorkspace(workspaceId);
+        requireOrigin(origin);
+        String sourceId = required(sourceRecordId, "sourceRecordId", 128);
+        String reviewer = required(actor, "reviewer", MAX_ACTOR_LENGTH);
+        String auditReason = safeReason(reason);
+        if (expectedVersion < 1) {
+            throw conflict("approval requires an IN_REVIEW version");
+        }
+
+        TroubleshootingKnowledgeReviewEntity entity = mapper.findBySource(
+                workspaceId, origin.name(), sourceId);
+        if (entity == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.knowledge_review_not_found",
+                    404,
+                    "start review before recording a decision");
+        }
+        KnowledgeReviewState current = read(entity);
+        if (current.status() == KnowledgeReviewStatus.APPROVED
+                && current.version() == expectedVersion + 1
+                && current.reviewer().equals(reviewer)
+                && current.reason().equals(auditReason)) {
+            ApprovedPlaybookVersion prior = playbookVersions.findByReview(
+                            workspaceId, current.reviewId())
+                    .orElseThrow(() -> new MateClawException(
+                            "err.troubleshooting.knowledge_promotion_missing",
+                            500,
+                            "approved review has no persisted Playbook version"));
+            return new KnowledgeReviewApproval(current, prior);
+        }
+        if (current.status() != KnowledgeReviewStatus.IN_REVIEW
+                || current.version() != expectedVersion) {
+            throw conflict("review changed concurrently; reload before deciding");
+        }
+        if (!Boolean.TRUE.equals(entity.getActiveBaselineKnown())) {
+            throw conflict(
+                    "review predates versioned authority baselines; create a new source review");
+        }
+
+        KnowledgeReviewSource source = sources.find(workspaceId, origin, sourceId)
+                .orElseThrow(() -> new MateClawException(
+                        "err.troubleshooting.knowledge_review_source_not_found",
+                        404,
+                        "knowledge candidate no longer exists in this workspace"));
+        requireSameSource(current, source);
+        KnowledgeReviewSnapshot qualification = source.snapshot();
+        if (!"ELIGIBLE_FOR_APPROVAL".equals(
+                qualification.approvalEligibility())
+                || !qualification.eligibilityReasons().isEmpty()) {
+            throw conflict(
+                    "current source is not eligible for approval: "
+                            + String.join(",", qualification.eligibilityReasons()));
+        }
+
+        KnowledgePromotionMaterial material = promotionMaterials.find(
+                        workspaceId, origin, sourceId)
+                .orElseThrow(() -> conflict(
+                        "eligible source has no server-owned routeable promotion artifact"));
+        if (material.origin() != origin
+                || !material.sourceRecordId().equals(sourceId)
+                || !material.selectorKey().equals(source.selectorKey())) {
+            throw new MateClawException(
+                    "err.troubleshooting.knowledge_promotion_source_mismatch",
+                    500,
+                    "promotion material resolver returned a mismatched identity");
+        }
+
+        Optional<ApprovedPlaybookVersion> replaced = playbookVersions.findCurrent(
+                        workspaceId, material.selectorKey())
+                .filter(version -> "APPROVED".equals(version.status()));
+
+        ApprovedPlaybookVersion approved = playbookVersions.promote(
+                workspaceId,
+                material,
+                current.reviewId(),
+                expectedVersion,
+                true,
+                entity.getBasePlaybookId(),
+                entity.getBasePlaybookVersion(),
+                reviewer,
+                auditReason,
+                qualification);
+        LocalDateTime now = utcNow();
+        deprecateReplacedReview(
+                workspaceId, current.reviewId(), reviewer, replaced, now);
+        int changed = mapper.transition(
+                workspaceId,
+                current.reviewId(),
+                KnowledgeReviewStatus.IN_REVIEW.name(),
+                KnowledgeReviewStatus.APPROVED.name(),
+                expectedVersion,
+                reviewer,
+                auditReason,
+                now);
+        if (changed != 1) {
+            throw conflict("review changed concurrently; Playbook promotion was rolled back");
+        }
+        KnowledgeReviewState approvedReview = new KnowledgeReviewState(
+                current.reviewId(),
+                current.origin(),
+                current.sourceRecordId(),
+                current.selectorKey(),
+                KnowledgeReviewStatus.APPROVED,
+                reviewer,
+                auditReason,
+                current.snapshot(),
+                expectedVersion + 1,
+                current.createdAt(),
+                now.toInstant(ZoneOffset.UTC));
+        return new KnowledgeReviewApproval(approvedReview, approved);
+    }
+
+    /** Retires the exact active version created by an approved review. */
+    @Transactional
+    public KnowledgeReviewDeprecation deprecate(
+            long workspaceId,
+            KnowledgeOrigin origin,
+            String sourceRecordId,
+            int expectedVersion,
+            String actor,
+            String reason) {
+        validateWorkspace(workspaceId);
+        requireOrigin(origin);
+        String sourceId = required(sourceRecordId, "sourceRecordId", 128);
+        String reviewer = required(actor, "reviewer", MAX_ACTOR_LENGTH);
+        String auditReason = safeReason(reason);
+        if (expectedVersion < 2) {
+            throw conflict("deprecation requires an exact APPROVED review version");
+        }
+        TroubleshootingKnowledgeReviewEntity entity = mapper.findBySource(
+                workspaceId, origin.name(), sourceId);
+        if (entity == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.knowledge_review_not_found",
+                    404,
+                    "approved review does not exist in this workspace");
+        }
+        KnowledgeReviewState current = read(entity);
+        if (current.status() == KnowledgeReviewStatus.DEPRECATED
+                && current.version() == expectedVersion + 1
+                && current.reviewer().equals(reviewer)
+                && current.reason().equals(auditReason)) {
+            ApprovedPlaybookVersion prior = playbookVersions.findByReview(
+                            workspaceId, current.reviewId())
+                    .orElseThrow(() -> new MateClawException(
+                            "err.troubleshooting.knowledge_promotion_missing",
+                            500,
+                            "deprecated review has no persisted Playbook version"));
+            return new KnowledgeReviewDeprecation(current, prior);
+        }
+        if (current.status() != KnowledgeReviewStatus.APPROVED
+                || current.version() != expectedVersion) {
+            throw conflict("review changed concurrently; reload before retiring it");
+        }
+        ApprovedPlaybookVersion retired = playbookVersions.deprecateByReview(
+                workspaceId, current.reviewId(), reviewer, auditReason);
+        if (!retired.sourceOrigin().equals(origin.name())
+                || !retired.sourceRecordId().equals(sourceId)
+                || !"DEPRECATED".equals(retired.status())) {
+            throw new MateClawException(
+                    "err.troubleshooting.knowledge_promotion_source_mismatch",
+                    500,
+                    "deprecated Playbook version does not match its review source");
+        }
+        LocalDateTime now = utcNow();
+        int changed = mapper.transition(
+                workspaceId,
+                current.reviewId(),
+                KnowledgeReviewStatus.APPROVED.name(),
+                KnowledgeReviewStatus.DEPRECATED.name(),
+                expectedVersion,
+                reviewer,
+                auditReason,
+                now);
+        if (changed != 1) {
+            throw conflict("review changed concurrently; version retirement was rolled back");
+        }
+        KnowledgeReviewState deprecatedReview = new KnowledgeReviewState(
+                current.reviewId(),
+                current.origin(),
+                current.sourceRecordId(),
+                current.selectorKey(),
+                KnowledgeReviewStatus.DEPRECATED,
+                reviewer,
+                auditReason,
+                current.snapshot(),
+                expectedVersion + 1,
+                current.createdAt(),
+                now.toInstant(ZoneOffset.UTC));
+        return new KnowledgeReviewDeprecation(deprecatedReview, retired);
+    }
+
+    /**
+     * Retires a V186 backfilled authority that predates the review ledger.
+     *
+     * <p>This compatibility command is deliberately limited to
+     * {@code sourceOrigin=LEGACY}; reviewed versions must use
+     * {@link #deprecate(long, KnowledgeOrigin, String, int, String, String)}.</p>
+     */
+    @Transactional
+    public ApprovedPlaybookVersion deprecateLegacy(
+            long workspaceId,
+            String playbookId,
+            int expectedPlaybookVersion,
+            String actor,
+            String reason) {
+        validateWorkspace(workspaceId);
+        String stablePlaybookId = required(playbookId, "playbookId", 128);
+        String reviewer = required(actor, "reviewer", MAX_ACTOR_LENGTH);
+        String auditReason = safeReason(reason);
+        if (expectedPlaybookVersion < 1) {
+            throw conflict("legacy deprecation requires an exact Playbook version");
+        }
+        return playbookVersions.deprecateLegacy(
+                workspaceId,
+                stablePlaybookId,
+                expectedPlaybookVersion,
+                reviewer,
+                auditReason);
+    }
+
+    /**
      * Reads states for the exact source rows rendered by the Inbox.
      *
      * <p>A global "latest N reviews" slice is incorrect here: an older source
@@ -217,6 +472,46 @@ public class KnowledgeReviewWorkflowService {
             return current;
         }
         throw conflict("candidate already has a review state; reload before continuing");
+    }
+
+    private void requireSameSource(
+            KnowledgeReviewState review,
+            KnowledgeReviewSource source) {
+        if (source.origin() != review.origin()
+                || !source.sourceRecordId().equals(review.sourceRecordId())
+                || !java.util.Objects.equals(
+                        source.selectorKey(), review.selectorKey())) {
+            throw conflict(
+                    "knowledge source identity or selector changed; create a new source review");
+        }
+    }
+
+    private void deprecateReplacedReview(
+            long workspaceId,
+            String replacementReviewId,
+            String reviewer,
+            Optional<ApprovedPlaybookVersion> replaced,
+            LocalDateTime now) {
+        if (replaced.isEmpty()
+                || replaced.get().reviewId() == null
+                || replaced.get().reviewVersion() == null) {
+            return;
+        }
+        ApprovedPlaybookVersion prior = replaced.get();
+        int expectedApprovedVersion = prior.reviewVersion() + 1;
+        int changed = mapper.transition(
+                workspaceId,
+                prior.reviewId(),
+                KnowledgeReviewStatus.APPROVED.name(),
+                KnowledgeReviewStatus.DEPRECATED.name(),
+                expectedApprovedVersion,
+                reviewer,
+                "superseded by approved review " + replacementReviewId,
+                now);
+        if (changed != 1) {
+            throw conflict(
+                    "replaced review changed concurrently; Playbook promotion was rolled back");
+        }
     }
 
     private KnowledgeReviewState read(TroubleshootingKnowledgeReviewEntity entity) {

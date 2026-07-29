@@ -24,6 +24,9 @@ public class TroubleshootingKnowledgeReviewEntity {
     private String reviewer;
     private String reason;
     private String snapshotJson;
+    private Boolean activeBaselineKnown;
+    private String basePlaybookId;
+    private Integer basePlaybookVersion;
     private Integer version;
 
     @TableLogic

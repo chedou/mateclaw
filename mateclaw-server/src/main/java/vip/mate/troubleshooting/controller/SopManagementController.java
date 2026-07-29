@@ -24,9 +24,12 @@ import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInboxService;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewApproval;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewDeprecation;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
@@ -43,10 +46,9 @@ import java.util.List;
  * proposed, so editing one is a change to how the system behaves for every
  * future incident, not a per-case decision.</p>
  *
- * <p>Registration is deliberately create-only. Route keys are unique and a
- * collision fails closed, which is what surfaces the one-code-many-meanings
- * problem in the source knowledge base instead of letting a second author
- * silently overwrite the first.</p>
+ * <p>Registration is deliberately create-only. Stable source IDs are unique,
+ * while multiple immutable candidates may propose later versions for one
+ * selector. Only the version registry may choose a single active authority.</p>
  */
 @RestController
 @RequestMapping("/api/v1/troubleshooting/sops")
@@ -135,8 +137,8 @@ public class SopManagementController {
     /**
      * Records a rejection against the exact IN_REVIEW version.
      *
-     * <p>There is deliberately no sibling approval route. Approval remains
-     * fail-closed until origin eligibility and versioned promotion exist.</p>
+     * <p>Rejection and approval are separate commands so neither can be
+     * represented as a caller-controlled generic status mutation.</p>
      */
     @PostMapping("/review-inbox/{origin}/{sourceRecordId}/reject")
     @RequireWorkspaceRole("admin")
@@ -155,7 +157,63 @@ public class SopManagementController {
     }
 
     /**
-     * Registers a SOP. Fails with 409 when the route is already taken.
+     * Creates a new approved Playbook version from an eligible review.
+     *
+     * <p>The service re-reads current source qualification and routeable
+     * content, then compares the selector authority frozen at review start.
+     * The request cannot provide Playbook JSON, owner proof, replay proof or
+     * an actor.</p>
+     */
+    @PostMapping("/review-inbox/{origin}/{sourceRecordId}/approve")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeReviewApproval> approveReview(
+            @PathVariable KnowledgeOrigin origin,
+            @PathVariable String sourceRecordId,
+            @Valid @RequestBody ReviewDecision request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(reviewWorkflow.approve(
+                resolveWorkspace(workspaceId),
+                origin,
+                sourceRecordId,
+                request.expectedVersion(),
+                currentActor(),
+                request.reason()));
+    }
+
+    /** Retires the exact active Playbook version created by an approved review. */
+    @PostMapping("/review-inbox/{origin}/{sourceRecordId}/deprecate")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeReviewDeprecation> deprecateReview(
+            @PathVariable KnowledgeOrigin origin,
+            @PathVariable String sourceRecordId,
+            @Valid @RequestBody ReviewDecision request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(reviewWorkflow.deprecate(
+                resolveWorkspace(workspaceId),
+                origin,
+                sourceRecordId,
+                request.expectedVersion(),
+                currentActor(),
+                request.reason()));
+    }
+
+    /** Audited retirement for a V186 legacy migration version without review_id. */
+    @PostMapping("/versions/{playbookId}/deprecate")
+    @RequireWorkspaceRole("admin")
+    public R<ApprovedPlaybookVersion> deprecateLegacyVersion(
+            @PathVariable String playbookId,
+            @Valid @RequestBody LegacyVersionDecision request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(reviewWorkflow.deprecateLegacy(
+                resolveWorkspace(workspaceId),
+                playbookId,
+                request.expectedPlaybookVersion(),
+                currentActor(),
+                request.reason()));
+    }
+
+    /**
+     * Registers an immutable manual source. Duplicate source IDs fail with 409.
      *
      * <p>Callers should register as {@code candidate}; promotion is a separate,
      * reviewed step. A SOP that arrives already approved would put unreviewed
@@ -189,11 +247,28 @@ public class SopManagementController {
             @PathVariable String system,
             @PathVariable String errorCode,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
-        SopEntry sop = sopPersistence.find(resolveWorkspace(workspaceId), system, errorCode);
+        SopEntry sop = sopPersistence.findLatest(
+                resolveWorkspace(workspaceId), system, errorCode);
         if (sop == null) {
             throw new MateClawException(
                     "err.troubleshooting.sop_not_found", 404,
                     "no SOP registered for " + system + ":" + errorCode);
+        }
+        return R.ok(sop);
+    }
+
+    /** Reads the exact manual source row even when a newer version owns its selector. */
+    @GetMapping("/by-id/{sopId}")
+    @RequireWorkspaceRole("admin")
+    public R<SopEntry> getById(
+            @PathVariable String sopId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        SopEntry sop = sopPersistence.findBySopId(
+                resolveWorkspace(workspaceId), sopId);
+        if (sop == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_not_found", 404,
+                    "no SOP registered with id " + sopId);
         }
         return R.ok(sop);
     }
@@ -240,6 +315,11 @@ public class SopManagementController {
     /** The actor is server-derived; callers only provide concurrency and rationale. */
     public record ReviewDecision(
             @Min(0) int expectedVersion,
+            @NotBlank @Size(max = 1000) String reason) {}
+
+    /** Exact migration version plus an audited retirement reason. */
+    public record LegacyVersionDecision(
+            @Min(1) int expectedPlaybookVersion,
             @NotBlank @Size(max = 1000) String reason) {}
 
     private long resolveWorkspace(Long workspaceId) {

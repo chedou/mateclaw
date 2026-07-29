@@ -98,9 +98,7 @@ class DefaultKnowledgeReviewSourceReaderTest {
         assertThat(source.selectorKey()).isEqualTo("csdp:903002");
         assertThat(source.snapshot().validationStatus()).isEqualTo("VALID");
         assertThat(source.snapshot().eligibilityReasons())
-                .containsExactly(
-                        "VERSIONED_SELECTOR_UNIQUENESS_REQUIRED",
-                        "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+                .containsExactly("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
     }
 
     @Test

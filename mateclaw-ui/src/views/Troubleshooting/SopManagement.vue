@@ -181,7 +181,7 @@
               v-else-if="selectedSop.status === 'deprecated'"
               type="info"
               :closable="false"
-              title="该版本已退出命中路；当前注册表按 routeKey 唯一，替代版本需等待版本化模型落地。"
+              title="该版本已退出命中路；替代版本只能由通过资格门禁的审核决策创建。"
             />
 
             <dl class="metadata">
@@ -225,10 +225,37 @@
             <div class="review-action">
               <template v-if="selectedSop.status === 'candidate'">
                 <div>
-                  <strong>晋升门禁尚未开放</strong>
-                  <p>先在“知识候选”核对来源、回放、owner 与版本替代条件；旧式 candidate → approved 按钮已停止暴露。</p>
+                  <strong>晋升只走知识审核</strong>
+                  <p>请在“知识候选”核对来源、回放与 owner；旧式 candidate → approved 状态修改继续禁用。</p>
                 </div>
-                <el-button disabled>等待资格门禁</el-button>
+                <el-button disabled>前往知识候选审批</el-button>
+              </template>
+              <template
+                v-else-if="nextStatus === 'deprecated' && selectedSopSummary?.playbookVersion != null"
+              >
+                <div>
+                  <strong>版本退役只走原审核记录</strong>
+                  <p v-if="selectedSopSummary.reviewId">
+                    当前为 Playbook v{{ selectedSopSummary.playbookVersion }}；退役需精确匹配审核版本并记录原因。
+                  </p>
+                  <p v-else>
+                    这是迁移生成的 LEGACY 版本；可携精确 Playbook 版本和原因执行一次受审计退役，也可注册新的人工 source 走版本替代。
+                  </p>
+                </div>
+                <el-button
+                  v-if="selectedSopSummary.reviewId"
+                  type="danger"
+                  plain
+                  @click="openReviewForSelectedVersion"
+                >前往审核记录退役</el-button>
+                <el-button
+                  v-else-if="selectedSopSummary.sourceOrigin === 'LEGACY'"
+                  type="danger"
+                  plain
+                  :loading="statusUpdating"
+                  @click="deprecateLegacyVersion"
+                >退役迁移版本</el-button>
+                <el-button v-else disabled>缺少可审计来源</el-button>
               </template>
               <template v-else-if="nextStatus === 'deprecated'">
                 <div>
@@ -413,7 +440,11 @@
             <section class="qualification-card">
               <div class="section-title">
                 <span>资格门禁</span>
-                <el-tag type="danger" size="small" effect="plain">
+                <el-tag
+                  :type="selectedReview.approvalEligibility === 'ELIGIBLE_FOR_APPROVAL' ? 'success' : 'danger'"
+                  size="small"
+                  effect="plain"
+                >
                   {{ eligibilityLabel(selectedReview.approvalEligibility) }}
                 </el-tag>
               </div>
@@ -542,10 +573,13 @@
               <div>
                 <strong v-if="selectedReview.reviewStatus === 'CANDIDATE'">开始独立审阅</strong>
                 <strong v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'">记录审阅决策</strong>
+                <strong v-else-if="selectedReview.reviewStatus === 'APPROVED'">退役当前权威版本</strong>
                 <strong v-else>审阅决策已固化</strong>
                 <p v-if="selectedReview.reviewStatus === 'CANDIDATE'">将当前校验、参考解法与模型版本冻结进审核台账；不会晋升知识。</p>
-                <p v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'">拒绝会对精确版本做乐观锁校验；并发变更后必须重新加载。</p>
-                <p v-else>已拒绝候选不能原地重开；修正后应产生新的 source record。</p>
+                <p v-else-if="selectedReview.reviewStatus === 'IN_REVIEW' && selectedReview.approvalEligibility === 'ELIGIBLE_FOR_APPROVAL'">批准时服务端会重读资格，并以开始审阅时冻结的旧权威版本做并发校验；成功后创建新版本。</p>
+                <p v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'">当前仍有资格缺口；可以拒绝，但不能由人工按钮证明缺失的 owner、回放或 outcome。</p>
+                <p v-else-if="selectedReview.reviewStatus === 'APPROVED'">只有该审核创建的版本仍占有 selector 时才能退役；服务端会校验精确 review 版本并保留审计原因。</p>
+                <p v-else>决策不能原地重开；修正后应产生新的 source record。</p>
               </div>
               <div class="review-action-buttons">
                 <el-button
@@ -561,7 +595,20 @@
                   :loading="reviewDecisionLoading === `reject:${selectedReview.key}`"
                   @click="rejectReview(selectedReview)"
                 >拒绝候选</el-button>
-                <el-button disabled>批准不可用</el-button>
+                <el-button
+                  v-else-if="selectedReview.reviewStatus === 'APPROVED'"
+                  type="danger"
+                  plain
+                  :loading="reviewDecisionLoading === `deprecate:${selectedReview.key}`"
+                  @click="deprecateReview(selectedReview)"
+                >退役当前版本</el-button>
+                <el-button
+                  v-if="selectedReview.reviewStatus === 'IN_REVIEW'"
+                  type="success"
+                  :disabled="selectedReview.approvalEligibility !== 'ELIGIBLE_FOR_APPROVAL'"
+                  :loading="reviewDecisionLoading === `approve:${selectedReview.key}`"
+                  @click="approveReview(selectedReview)"
+                >批准并创建新版本</el-button>
               </div>
             </div>
           </div>
@@ -578,7 +625,7 @@
     >
       <el-alert type="info" :closable="false" class="register-note">
         <template #title>
-          只接受单个 JSON 对象，并强制以 <code>candidate + verified=false</code> 注册。路由键冲突会拒绝覆盖。
+          只接受单个 JSON 对象，并强制以 <code>candidate + verified=false</code> 注册。sopId 冲突会拒绝覆盖；同 selector 的新 source 仍须重新审核并创建新版本。
         </template>
       </el-alert>
       <el-input
@@ -698,6 +745,9 @@ let manualDetailRequest = 0
 const nextStatus = computed(() => selectedSop.value
   ? nextSopStatus(selectedSop.value.status)
   : null)
+const selectedSopSummary = computed(() => rows.value.find(
+  (row) => row.routeKey === selectedRouteKey.value,
+) ?? null)
 
 const knowledgeRows = computed(() => buildKnowledgeReviewRows(reviewInbox.value))
 const filteredKnowledgeRows = computed(() => filterKnowledgeReviewRows(
@@ -817,10 +867,7 @@ async function selectReview(row: KnowledgeReviewRow) {
   }
   manualDetailLoading.value = true
   try {
-    const { data } = await troubleshootingApi.getSop(
-      row.source.summary.system,
-      row.source.summary.errorCode,
-    )
+    const { data } = await troubleshootingApi.getSopById(row.source.summary.sopId)
     if (request === manualDetailRequest) selectedManualSop.value = data
   } finally {
     if (request === manualDetailRequest) manualDetailLoading.value = false
@@ -911,6 +958,107 @@ async function rejectReview(row: KnowledgeReviewRow) {
   }
 }
 
+async function approveReview(row: KnowledgeReviewRow) {
+  if (row.reviewStatus !== 'IN_REVIEW'
+    || row.reviewVersion < 1
+    || row.approvalEligibility !== 'ELIGIBLE_FOR_APPROVAL') return
+  const reason = await askReviewReason(
+    `批准 ${row.selector} / review v${row.reviewVersion}`,
+    '例：服务端资格已通过，确认以当前候选创建新的权威版本',
+    '批准并创建新版本',
+  )
+  if (!reason) return
+  reviewDecisionLoading.value = `approve:${row.key}`
+  try {
+    const { data } = await troubleshootingApi.approveKnowledgeReview(
+      row.origin,
+      row.recordId,
+      { expectedVersion: row.reviewVersion, reason },
+    )
+    upsertReviewState(data.review)
+    reviewUnavailable.value = false
+    if (selectedRouteKey.value === data.approvedVersion.selectorKey) {
+      selectedSop.value = data.approvedVersion.playbook
+    }
+    ElMessage.success(`已创建 Playbook v${data.approvedVersion.playbookVersion}`)
+    await loadList()
+  } finally {
+    reviewDecisionLoading.value = null
+  }
+}
+
+async function deprecateReview(row: KnowledgeReviewRow) {
+  if (row.reviewStatus !== 'APPROVED' || row.reviewVersion < 2) return
+  const reason = await askReviewReason(
+    `退役 ${row.selector} / review v${row.reviewVersion}`,
+    '例：固定反例回放证明该版本会产生错误命中',
+    '确认退役当前版本',
+  )
+  if (!reason) return
+  reviewDecisionLoading.value = `deprecate:${row.key}`
+  try {
+    const { data } = await troubleshootingApi.deprecateKnowledgeReview(
+      row.origin,
+      row.recordId,
+      { expectedVersion: row.reviewVersion, reason },
+    )
+    upsertReviewState(data.review)
+    reviewUnavailable.value = false
+    if (selectedRouteKey.value === data.deprecatedVersion.selectorKey) {
+      selectedSop.value = data.deprecatedVersion.playbook
+    }
+    ElMessage.success(`Playbook v${data.deprecatedVersion.playbookVersion} 已退出命中路`)
+    await loadList()
+  } finally {
+    reviewDecisionLoading.value = null
+  }
+}
+
+async function openReviewForSelectedVersion() {
+  const summary = selectedSopSummary.value
+  if (!summary?.reviewId
+    || !summary.sourceOrigin
+    || summary.sourceOrigin === 'LEGACY'
+    || !summary.sourceRecordId) return
+  activeDesk.value = 'review'
+  originFilter.value = ''
+  reviewQuery.value = ''
+  await loadReviewInbox()
+  const row = knowledgeRows.value.find((candidate) =>
+    candidate.origin === summary.sourceOrigin
+      && candidate.recordId === summary.sourceRecordId)
+  if (!row) {
+    ElMessage.warning('原审核来源已不在当前候选读取范围，请刷新后核对审计记录')
+    return
+  }
+  await selectReview(row)
+}
+
+async function deprecateLegacyVersion() {
+  const summary = selectedSopSummary.value
+  if (summary?.sourceOrigin !== 'LEGACY'
+    || summary.playbookVersion == null
+    || !summary.sopId) return
+  const reason = await askReviewReason(
+    `退役迁移 Playbook v${summary.playbookVersion}`,
+    '例：迁移规则已被固定反例证明不再安全',
+    '确认退役迁移版本',
+  )
+  if (!reason) return
+  statusUpdating.value = true
+  try {
+    const { data } = await troubleshootingApi.deprecateLegacyPlaybook(
+      summary.sopId,
+      { expectedPlaybookVersion: summary.playbookVersion, reason },
+    )
+    selectedSop.value = data.playbook
+    await loadList()
+    ElMessage.success(`迁移 Playbook v${data.playbookVersion} 已退出命中路`)
+  } finally {
+    statusUpdating.value = false
+  }
+}
+
 async function reload() {
   if (activeDesk.value === 'review') {
     await loadReviewInbox()
@@ -955,6 +1103,10 @@ async function advanceStatus() {
   const sop = selectedSop.value
   const target = nextStatus.value
   if (!sop || target !== 'deprecated') return
+  if (selectedSopSummary.value?.playbookVersion != null) {
+    ElMessage.warning('版本化 Playbook 必须从原审核记录退役')
+    return
+  }
   const title = `标记 ${sop.system}:${sop.errorCode} 为过期？`
   const message = '过期后，该版本立即退出命中路且不能恢复；替代版本必须通过新的版本化晋升合同。'
   try {

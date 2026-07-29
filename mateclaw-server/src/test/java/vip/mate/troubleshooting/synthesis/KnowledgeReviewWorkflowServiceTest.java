@@ -4,16 +4,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.engine.Criterion;
+import vip.mate.troubleshooting.model.AnomalyCriterion;
+import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.model.DiagnosisRule;
+import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeReviewEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeReviewMapper;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -65,6 +74,9 @@ class KnowledgeReviewWorkflowServiceTest {
         assertThat(inserted.getValue().getSourceRecordId()).isEqualTo("record-1");
         assertThat(inserted.getValue().getStatus()).isEqualTo("IN_REVIEW");
         assertThat(inserted.getValue().getVersion()).isEqualTo(1);
+        assertThat(inserted.getValue().getActiveBaselineKnown()).isTrue();
+        assertThat(inserted.getValue().getBasePlaybookId()).isNull();
+        assertThat(inserted.getValue().getBasePlaybookVersion()).isNull();
         assertThat(inserted.getValue().getSnapshotJson())
                 .contains("model-config-v7")
                 .doesNotContain("searchTerm", "rawLog", "credential");
@@ -245,11 +257,273 @@ class KnowledgeReviewWorkflowServiceTest {
                 .isEqualTo(KnowledgeQualificationPhase.UNKNOWN);
     }
 
+    @Test
+    void approvalRechecksCurrentEligibilityAndCreatesANewPlaybookVersion() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        KnowledgeReviewSourceReader sources = mock(KnowledgeReviewSourceReader.class);
+        KnowledgePromotionMaterialReader materials =
+                mock(KnowledgePromotionMaterialReader.class);
+        TroubleshootingPlaybookVersionService versions =
+                mock(TroubleshootingPlaybookVersionService.class);
+        TroubleshootingKnowledgeReviewEntity current = persisted("IN_REVIEW", 1);
+        current.setSelectorKey("csdp:903001");
+        current.setActiveBaselineKnown(true);
+        current.setBasePlaybookId("playbook-old");
+        current.setBasePlaybookVersion(3);
+        when(mapper.findBySource(7L, "EVIDENCE_DERIVED", "record-1"))
+                .thenReturn(current);
+        KnowledgeReviewSource eligible = eligibleSource();
+        when(sources.find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"))
+                .thenReturn(Optional.of(eligible));
+        KnowledgePromotionMaterial material = new KnowledgePromotionMaterial(
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                "csdp:903001",
+                candidateSop());
+        when(materials.find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"))
+                .thenReturn(Optional.of(material));
+        ApprovedPlaybookVersion promoted = new ApprovedPlaybookVersion(
+                "playbook-new", 4, "csdp:903001", "APPROVED",
+                "EVIDENCE_DERIVED", "record-1", "review-1", 1,
+                "reviewer-b", "固定回放与 owner 证明完整", eligible.snapshot(),
+                approvedSop("playbook-new"),
+                java.time.Instant.parse("2026-07-29T10:05:00Z"),
+                java.time.Instant.parse("2026-07-29T10:05:00Z"));
+        when(versions.promote(
+                eq(7L), eq(material), eq("review-1"), eq(1), eq(true),
+                eq("playbook-old"), eq(3), eq("reviewer-b"),
+                eq("固定回放与 owner 证明完整"), eq(eligible.snapshot())))
+                .thenReturn(promoted);
+        when(mapper.transition(
+                eq(7L), eq("review-1"), eq("IN_REVIEW"), eq("APPROVED"),
+                eq(1), eq("reviewer-b"), eq("固定回放与 owner 证明完整"),
+                any(LocalDateTime.class)))
+                .thenReturn(1);
+
+        KnowledgeReviewApproval approval = service(
+                mapper, sources, materials, versions).approve(
+                7L,
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                1,
+                "reviewer-b",
+                "固定回放与 owner 证明完整");
+
+        assertThat(approval.review().status())
+                .isEqualTo(KnowledgeReviewStatus.APPROVED);
+        assertThat(approval.review().version()).isEqualTo(2);
+        assertThat(approval.approvedVersion()).isEqualTo(promoted);
+        verify(sources).find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1");
+        verify(materials).find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1");
+    }
+
+    @Test
+    void replacementApprovalDeprecatesThePriorReviewInTheSameWorkflow() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        KnowledgeReviewSourceReader sources = mock(KnowledgeReviewSourceReader.class);
+        KnowledgePromotionMaterialReader materials =
+                mock(KnowledgePromotionMaterialReader.class);
+        TroubleshootingPlaybookVersionService versions =
+                mock(TroubleshootingPlaybookVersionService.class);
+        TroubleshootingKnowledgeReviewEntity current = persisted("IN_REVIEW", 1);
+        current.setSelectorKey("csdp:903001");
+        current.setActiveBaselineKnown(true);
+        current.setBasePlaybookId("playbook-old");
+        current.setBasePlaybookVersion(3);
+        when(mapper.findBySource(7L, "EVIDENCE_DERIVED", "record-1"))
+                .thenReturn(current);
+        KnowledgeReviewSource eligible = eligibleSource();
+        when(sources.find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"))
+                .thenReturn(Optional.of(eligible));
+        KnowledgePromotionMaterial material = new KnowledgePromotionMaterial(
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                "csdp:903001",
+                candidateSop());
+        when(materials.find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"))
+                .thenReturn(Optional.of(material));
+        ApprovedPlaybookVersion prior = new ApprovedPlaybookVersion(
+                "playbook-old", 3, "csdp:903001", "APPROVED",
+                "MANUAL", "sop-old", "review-old", 1,
+                "reviewer-a", "首版资格通过", eligible.snapshot(),
+                approvedSop("playbook-old"),
+                java.time.Instant.parse("2026-07-29T09:00:00Z"),
+                java.time.Instant.parse("2026-07-29T09:00:00Z"));
+        ApprovedPlaybookVersion promoted = new ApprovedPlaybookVersion(
+                "playbook-new", 4, "csdp:903001", "APPROVED",
+                "EVIDENCE_DERIVED", "record-1", "review-1", 1,
+                "reviewer-b", "替代版本回放通过", eligible.snapshot(),
+                approvedSop("playbook-new"),
+                java.time.Instant.parse("2026-07-29T10:05:00Z"),
+                java.time.Instant.parse("2026-07-29T10:05:00Z"));
+        when(versions.findCurrent(7L, "csdp:903001"))
+                .thenReturn(Optional.of(prior));
+        when(versions.promote(
+                eq(7L), eq(material), eq("review-1"), eq(1), eq(true),
+                eq("playbook-old"), eq(3), eq("reviewer-b"),
+                eq("替代版本回放通过"), eq(eligible.snapshot())))
+                .thenReturn(promoted);
+        when(mapper.transition(
+                eq(7L), eq("review-old"), eq("APPROVED"), eq("DEPRECATED"),
+                eq(2), eq("reviewer-b"),
+                eq("superseded by approved review review-1"),
+                any(LocalDateTime.class)))
+                .thenReturn(1);
+        when(mapper.transition(
+                eq(7L), eq("review-1"), eq("IN_REVIEW"), eq("APPROVED"),
+                eq(1), eq("reviewer-b"), eq("替代版本回放通过"),
+                any(LocalDateTime.class)))
+                .thenReturn(1);
+
+        KnowledgeReviewApproval approval = service(
+                mapper, sources, materials, versions).approve(
+                7L,
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                1,
+                "reviewer-b",
+                "替代版本回放通过");
+
+        assertThat(approval.approvedVersion()).isEqualTo(promoted);
+        verify(mapper).transition(
+                eq(7L), eq("review-old"), eq("APPROVED"), eq("DEPRECATED"),
+                eq(2), eq("reviewer-b"),
+                eq("superseded by approved review review-1"),
+                any(LocalDateTime.class));
+    }
+
+    @Test
+    void ineligibleCurrentSourceCannotBeApprovedEvenWhenTheFrozenReviewWasStarted() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        KnowledgeReviewSourceReader sources = mock(KnowledgeReviewSourceReader.class);
+        KnowledgePromotionMaterialReader materials =
+                mock(KnowledgePromotionMaterialReader.class);
+        TroubleshootingPlaybookVersionService versions =
+                mock(TroubleshootingPlaybookVersionService.class);
+        TroubleshootingKnowledgeReviewEntity current = persisted("IN_REVIEW", 1);
+        current.setActiveBaselineKnown(true);
+        when(mapper.findBySource(7L, "EVIDENCE_DERIVED", "record-1"))
+                .thenReturn(current);
+        when(sources.find(7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"))
+                .thenReturn(Optional.of(source()));
+
+        assertThatThrownBy(() -> service(
+                mapper, sources, materials, versions).approve(
+                7L,
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                1,
+                "reviewer-b",
+                "尝试批准"))
+                .isInstanceOf(MateClawException.class)
+                .extracting(error -> ((MateClawException) error).getCode())
+                .isEqualTo(409);
+
+        verify(materials, never()).find(anyLong(), any(), anyString());
+        verify(versions, never()).promote(
+                anyLong(), any(), anyString(), anyInt(), anyBoolean(),
+                any(), any(), anyString(), anyString(), any());
+        verify(mapper, never()).transition(
+                anyLong(), anyString(), anyString(), anyString(),
+                anyInt(), anyString(), anyString(), any(LocalDateTime.class));
+    }
+
+    @Test
+    void deprecationRetiresTheExactApprovedReviewAndItsActiveVersion() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        KnowledgeReviewSourceReader sources = mock(KnowledgeReviewSourceReader.class);
+        KnowledgePromotionMaterialReader materials =
+                mock(KnowledgePromotionMaterialReader.class);
+        TroubleshootingPlaybookVersionService versions =
+                mock(TroubleshootingPlaybookVersionService.class);
+        TroubleshootingKnowledgeReviewEntity current = persisted("APPROVED", 2);
+        when(mapper.findBySource(7L, "EVIDENCE_DERIVED", "record-1"))
+                .thenReturn(current);
+        ApprovedPlaybookVersion retired = new ApprovedPlaybookVersion(
+                "playbook-1", 1, "csdp:scenario:message_send_failed", "DEPRECATED",
+                "EVIDENCE_DERIVED", "record-1", "review-1", 1,
+                "reviewer-b", "资格通过", source().snapshot(),
+                approvedSop("playbook-1"),
+                java.time.Instant.parse("2026-07-29T10:00:00Z"),
+                java.time.Instant.parse("2026-07-29T10:10:00Z"));
+        when(versions.deprecateByReview(
+                7L, "review-1", "reviewer-c", "规则已被新故障样本否定"))
+                .thenReturn(retired);
+        when(mapper.transition(
+                eq(7L), eq("review-1"), eq("APPROVED"), eq("DEPRECATED"),
+                eq(2), eq("reviewer-c"), eq("规则已被新故障样本否定"),
+                any(LocalDateTime.class)))
+                .thenReturn(1);
+
+        KnowledgeReviewDeprecation result = service(
+                mapper, sources, materials, versions).deprecate(
+                7L,
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                2,
+                "reviewer-c",
+                "规则已被新故障样本否定");
+
+        assertThat(result.review().status())
+                .isEqualTo(KnowledgeReviewStatus.DEPRECATED);
+        assertThat(result.review().version()).isEqualTo(3);
+        assertThat(result.deprecatedVersion()).isEqualTo(retired);
+    }
+
+    @Test
+    void legacyRetirementKeepsActorAndReasonServerAudited() {
+        TroubleshootingPlaybookVersionService versions =
+                mock(TroubleshootingPlaybookVersionService.class);
+        ApprovedPlaybookVersion retired = new ApprovedPlaybookVersion(
+                "legacy-approved", 1, "csdp:903001", "DEPRECATED",
+                "LEGACY", "legacy-approved", null, null,
+                "legacy-migration", "V186 backfill", null,
+                "reviewer-c", "旧规则已不再安全",
+                java.time.Instant.parse("2026-07-29T10:10:00Z"),
+                sop("legacy-approved", "deprecated", false),
+                java.time.Instant.parse("2026-07-29T10:00:00Z"),
+                java.time.Instant.parse("2026-07-29T10:10:00Z"));
+        when(versions.deprecateLegacy(
+                7L, "legacy-approved", 1,
+                "reviewer-c", "旧规则已不再安全"))
+                .thenReturn(retired);
+
+        ApprovedPlaybookVersion result = service(
+                mock(TroubleshootingKnowledgeReviewMapper.class),
+                mock(KnowledgeReviewSourceReader.class),
+                mock(KnowledgePromotionMaterialReader.class),
+                versions).deprecateLegacy(
+                7L,
+                "legacy-approved",
+                1,
+                "reviewer-c",
+                "旧规则已不再安全");
+
+        assertThat(result).isEqualTo(retired);
+    }
+
     private KnowledgeReviewWorkflowService service(
             TroubleshootingKnowledgeReviewMapper mapper,
             KnowledgeReviewSourceReader sources) {
+        return service(
+                mapper,
+                sources,
+                mock(KnowledgePromotionMaterialReader.class),
+                mock(TroubleshootingPlaybookVersionService.class));
+    }
+
+    private KnowledgeReviewWorkflowService service(
+            TroubleshootingKnowledgeReviewMapper mapper,
+            KnowledgeReviewSourceReader sources,
+            KnowledgePromotionMaterialReader materials,
+            TroubleshootingPlaybookVersionService versions) {
         return new KnowledgeReviewWorkflowService(
-                mapper, sources, new ObjectMapper().findAndRegisterModules());
+                mapper, sources, materials, versions,
+                new ObjectMapper().findAndRegisterModules());
     }
 
     private KnowledgeReviewSource source() {
@@ -271,6 +545,56 @@ class KnowledgeReviewWorkflowServiceTest {
                 "record-1",
                 "csdp:scenario:message_send_failed",
                 snapshot);
+    }
+
+    private KnowledgeReviewSource eligibleSource() {
+        return new KnowledgeReviewSource(
+                KnowledgeOrigin.EVIDENCE_DERIVED,
+                "record-1",
+                "csdp:903001",
+                new KnowledgeReviewSnapshot(
+                        "VALID",
+                        KnowledgeQualificationPhase.CALIBRATION,
+                        List.of(),
+                        source().snapshot().referenceComparison(),
+                        "model-config-v7",
+                        "ELIGIBLE_FOR_APPROVAL",
+                        List.of(),
+                        false));
+    }
+
+    private SopEntry candidateSop() {
+        return sop("candidate-source", "candidate", false);
+    }
+
+    private SopEntry approvedSop(String sopId) {
+        return sop(sopId, "approved", true);
+    }
+
+    private SopEntry sop(String sopId, String status, boolean verified) {
+        return new SopEntry(
+                sopId,
+                SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP",
+                "903001",
+                "order-svc",
+                "订单服务 Mongo 连接池耗尽",
+                "连接池打满",
+                "database",
+                "DBA 组",
+                status,
+                verified,
+                List.of(new EvidenceRequest(
+                        "EV-1", "log_count", "确认发生",
+                        Map.of("service", "order-svc"), "-15m", true)),
+                List.of(new AnomalyCriterion(
+                        "error_present", "EV-1", "错误码日志出现",
+                        new Criterion.NumericGte("count", 1))),
+                List.of(new DiagnosisRule(
+                        "R-a", List.of("error_present"),
+                        "Mongo 连接池打满", "连接可用数归零",
+                        Confidence.HIGH, false)),
+                List.of());
     }
 
     private TroubleshootingKnowledgeReviewEntity persisted(String status, int version) {

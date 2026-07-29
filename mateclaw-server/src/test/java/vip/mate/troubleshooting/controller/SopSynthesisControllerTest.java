@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.service.SopSummary;
@@ -19,12 +20,15 @@ import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInboxService;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewQualificationPolicy;
 import vip.mate.troubleshooting.synthesis.KnowledgeQualificationPhase;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisRequest;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewSnapshot;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewApproval;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewDeprecation;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewStatus;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
@@ -159,7 +163,7 @@ class SopSynthesisControllerTest {
                 .andExpect(jsonPath("$.data.reviewStates[0].status")
                         .value("IN_REVIEW"))
                 .andExpect(jsonPath("$.data.capabilityLimits[0]")
-                        .value("REVIEW_START_AND_REJECT_ONLY"));
+                        .value("APPROVAL_IS_SERVER_GATED"));
 
         verify(inboxService).read(7L, 12);
     }
@@ -185,6 +189,57 @@ class SopSynthesisControllerTest {
                 inReview.selectorKey(), KnowledgeReviewStatus.REJECTED,
                 "reviewer-a", "缺少负例回放", inReview.snapshot(), 2,
                 inReview.createdAt(), Instant.parse("2026-07-20T09:25:00Z"));
+        KnowledgeReviewState approvedState = new KnowledgeReviewState(
+                inReview.reviewId(), inReview.origin(), inReview.sourceRecordId(),
+                inReview.selectorKey(), KnowledgeReviewStatus.APPROVED,
+                "reviewer-a", "资格与固定回放均通过", inReview.snapshot(), 2,
+                inReview.createdAt(), Instant.parse("2026-07-20T09:26:00Z"));
+        SopEntry approvedSop = new SopEntry(
+                "playbook-v2", SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP", "903001", "order-svc", "已审核 Playbook",
+                "连接池耗尽", "database", "DBA 组", "approved", true,
+                List.of(), List.of(), List.of(), List.of());
+        KnowledgeReviewApproval approved = new KnowledgeReviewApproval(
+                approvedState,
+                new ApprovedPlaybookVersion(
+                        "playbook-v2", 2, "csdp:903001", "APPROVED",
+                        "OUTCOME_BACKED", "candidate-outcome-001", "review-1", 1,
+                        "reviewer-a", "资格与固定回放均通过", inReview.snapshot(),
+                        approvedSop,
+                        Instant.parse("2026-07-20T09:26:00Z"),
+                        Instant.parse("2026-07-20T09:26:00Z")));
+        KnowledgeReviewState deprecatedState = new KnowledgeReviewState(
+                approvedState.reviewId(), approvedState.origin(),
+                approvedState.sourceRecordId(), approvedState.selectorKey(),
+                KnowledgeReviewStatus.DEPRECATED,
+                "reviewer-a", "该版本已被回放反例否定", approvedState.snapshot(), 3,
+                approvedState.createdAt(), Instant.parse("2026-07-20T09:27:00Z"));
+        ApprovedPlaybookVersion deprecatedVersion = new ApprovedPlaybookVersion(
+                "playbook-v2", 2, "csdp:903001", "DEPRECATED",
+                "OUTCOME_BACKED", "candidate-outcome-001", "review-1", 1,
+                "reviewer-a", "资格与固定回放均通过", inReview.snapshot(),
+                new SopEntry(
+                        "playbook-v2", SopEntry.CURRENT_CONTRACT_VERSION,
+                        "CSDP", "903001", "order-svc", "已审核 Playbook",
+                        "连接池耗尽", "database", "DBA 组", "deprecated", false,
+                        List.of(), List.of(), List.of(), List.of()),
+                Instant.parse("2026-07-20T09:26:00Z"),
+                Instant.parse("2026-07-20T09:27:00Z"));
+        KnowledgeReviewDeprecation deprecated = new KnowledgeReviewDeprecation(
+                deprecatedState, deprecatedVersion);
+        ApprovedPlaybookVersion legacyRetired = new ApprovedPlaybookVersion(
+                "legacy-approved", 1, "csdp:900001", "DEPRECATED",
+                "LEGACY", "legacy-approved", null, null,
+                "legacy-migration", "V186 backfill", null,
+                "reviewer-a", "迁移规则已失效",
+                Instant.parse("2026-07-20T09:28:00Z"),
+                new SopEntry(
+                        "legacy-approved", SopEntry.CURRENT_CONTRACT_VERSION,
+                        "CSDP", "900001", "legacy-svc", "迁移 Playbook",
+                        "旧规则", "legacy", "DBA 组", "deprecated", false,
+                        List.of(), List.of(), List.of(), List.of()),
+                Instant.parse("2026-07-20T09:00:00Z"),
+                Instant.parse("2026-07-20T09:28:00Z"));
         when(reviews.start(
                 7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 0,
                 "reviewer-a", "核对关闭结果"))
@@ -193,6 +248,18 @@ class SopSynthesisControllerTest {
                 7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 1,
                 "reviewer-a", "缺少负例回放"))
                 .thenReturn(rejected);
+        when(reviews.approve(
+                7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 1,
+                "reviewer-a", "资格与固定回放均通过"))
+                .thenReturn(approved);
+        when(reviews.deprecate(
+                7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 2,
+                "reviewer-a", "该版本已被回放反例否定"))
+                .thenReturn(deprecated);
+        when(reviews.deprecateLegacy(
+                7L, "legacy-approved", 1,
+                "reviewer-a", "迁移规则已失效"))
+                .thenReturn(legacyRetired);
         SecurityContextHolder.getContext().setAuthentication(
                 new TestingAuthenticationToken("reviewer-a", "n/a", "ROLE_USER"));
         try {
@@ -218,6 +285,50 @@ class SopSynthesisControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("REJECTED"))
                     .andExpect(jsonPath("$.data.version").value(2));
+
+            mvc.perform(post("/api/v1/troubleshooting/sops/review-inbox/"
+                            + "OUTCOME_BACKED/candidate-outcome-001/approve")
+                            .header("X-Workspace-Id", "7")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"expectedVersion":1,"reason":"资格与固定回放均通过"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.review.status").value("APPROVED"))
+                    .andExpect(jsonPath("$.data.review.version").value(2))
+                    .andExpect(jsonPath("$.data.approvedVersion.playbookVersion")
+                            .value(2))
+                    .andExpect(jsonPath("$.data.approvedVersion.playbook.status")
+                            .value("approved"));
+
+            mvc.perform(post("/api/v1/troubleshooting/sops/review-inbox/"
+                            + "OUTCOME_BACKED/candidate-outcome-001/deprecate")
+                            .header("X-Workspace-Id", "7")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"expectedVersion":2,"reason":"该版本已被回放反例否定"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.review.status")
+                            .value("DEPRECATED"))
+                    .andExpect(jsonPath("$.data.review.version").value(3))
+                    .andExpect(jsonPath("$.data.deprecatedVersion.status")
+                            .value("DEPRECATED"))
+                    .andExpect(jsonPath("$.data.deprecatedVersion.playbook.status")
+                            .value("deprecated"));
+
+            mvc.perform(post("/api/v1/troubleshooting/sops/versions/"
+                            + "legacy-approved/deprecate")
+                            .header("X-Workspace-Id", "7")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"expectedPlaybookVersion":1,"reason":"迁移规则已失效"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DEPRECATED"))
+                    .andExpect(jsonPath("$.data.deprecatedBy").value("reviewer-a"))
+                    .andExpect(jsonPath("$.data.deprecationReason")
+                            .value("迁移规则已失效"));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -228,6 +339,15 @@ class SopSynthesisControllerTest {
         verify(reviews).reject(
                 7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 1,
                 "reviewer-a", "缺少负例回放");
+        verify(reviews).approve(
+                7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 1,
+                "reviewer-a", "资格与固定回放均通过");
+        verify(reviews).deprecate(
+                7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001", 2,
+                "reviewer-a", "该版本已被回放反例否定");
+        verify(reviews).deprecateLegacy(
+                7L, "legacy-approved", 1,
+                "reviewer-a", "迁移规则已失效");
     }
 
     private KnowledgeReviewState reviewState() {

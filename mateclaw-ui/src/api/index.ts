@@ -1651,6 +1651,11 @@ export interface SopSummary {
   operational: boolean
   createTime: string
   updateTime: string
+  playbookVersion?: number | null
+  sourceOrigin?: KnowledgeOrigin | 'LEGACY' | null
+  sourceRecordId?: string | null
+  reviewId?: string | null
+  reviewVersion?: number | null
 }
 
 export type KnowledgeOrigin = 'EVIDENCE_DERIVED' | 'OUTCOME_BACKED' | 'MANUAL'
@@ -1803,6 +1808,36 @@ export interface KnowledgeReviewSourceState {
 export interface KnowledgeReviewDecisionRequest {
   expectedVersion: number
   reason: string
+}
+
+export interface ApprovedPlaybookVersion {
+  playbookId: string
+  playbookVersion: number
+  selectorKey: string
+  status: 'APPROVED' | 'DEPRECATED'
+  sourceOrigin: KnowledgeOrigin | 'LEGACY'
+  sourceRecordId: string
+  reviewId: string | null
+  reviewVersion: number | null
+  approvedBy: string
+  approvalReason: string
+  approvalSnapshot: KnowledgeReviewSnapshot | null
+  deprecatedBy?: string | null
+  deprecationReason?: string | null
+  deprecatedAt?: string | null
+  playbook: SopEntry
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeReviewApproval {
+  review: KnowledgeReviewState
+  approvedVersion: ApprovedPlaybookVersion
+}
+
+export interface KnowledgeReviewDeprecation {
+  review: KnowledgeReviewState
+  deprecatedVersion: ApprovedPlaybookVersion
 }
 
 /** Knowledge governance projection; start/reject are separate optimistic commands. */
@@ -2701,7 +2736,7 @@ export const troubleshootingApi = {
     data,
   ),
 
-  /** Records rejection for the exact IN_REVIEW version; approval remains unavailable. */
+  /** Records rejection for the exact IN_REVIEW version. */
   rejectKnowledgeReview: (
     origin: KnowledgeOrigin,
     sourceRecordId: string,
@@ -2712,16 +2747,51 @@ export const troubleshootingApi = {
     data,
   ),
 
+  /** Server-gated approval that always creates a new immutable Playbook version. */
+  approveKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewApproval>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/approve`,
+    data,
+  ),
+
+  /** Retires the exact active version created by an approved review. */
+  deprecateKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewDeprecation>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/deprecate`,
+    data,
+  ),
+
+  /** Audited retirement for a V186 legacy authority without a review row. */
+  deprecateLegacyPlaybook: (
+    playbookId: string,
+    data: { expectedPlaybookVersion: number; reason: string },
+  ) => http.post<ApprovedPlaybookVersion>(
+    `/troubleshooting/sops/versions/${encodeURIComponent(playbookId)}/deprecate`,
+    data,
+  ),
+
   getSop: (system: string, errorCode: string) =>
     http.get<SopEntry>(
       `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}`,
     ),
 
+  /** Exact manual source lookup; does not resolve to the active selector version. */
+  getSopById: (sopId: string) =>
+    http.get<SopEntry>(`/troubleshooting/sops/by-id/${encodeURIComponent(sopId)}`),
+
   /** Create-only: the server accepts only candidate + verified=false. */
   registerSop: (data: SopEntry) =>
     http.post<SopEntry>('/troubleshooting/sops', data),
 
-  /** Compatibility transition: only retires an already approved version. */
+  /** Compatibility transition: only retires a non-versioned approved row. */
   updateSopStatus: (system: string, errorCode: string, status: 'deprecated') =>
     http.post<SopEntry>(
       `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}/status`,
