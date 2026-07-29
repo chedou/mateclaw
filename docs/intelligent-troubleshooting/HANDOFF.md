@@ -88,6 +88,12 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
   `log_search → log_trace_bundle`；Router 先限定允许源，因此不会回退 Replay。报告仅含匹配数、
   PS ID、trace 节点数、绑定引用与时间戳，不含原始日志、DQL 或凭据，且明确不关闭 `fixtureMode`。
+- **P2 真实 Evidence Spine 预览（2026-07-29）**：同一正式工作台现可继续触发
+  Guance-only `log_search → log_trace_bundle → contrast_sample → deterministic compress`。
+  它直接复用在线 Diagnosis 和 SOP 学习共享的 `EvidenceSpineOrchestrator`，只投影有界调用链、
+  异常数、对照比率、结构化引用与应用侧总耗时；不返回原始行/日志正文/DQL，不调模型、
+  不创建 candidate、不回退 Replay。对照缺失只降级为 `CORE_CHAIN_OBSERVED`；单条预览不代表
+  T7/T8 已通过，也不会自动关闭 `fixtureMode`。
 - 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
 - **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
   （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
@@ -428,6 +434,25 @@ P2 正式准入阶梯与真源耗时证据（2026-07-29）已通过代码级验�
 - 正式、Playbook、legacy 三个前端路由均返回 200；未登录访问后端 Diagnosis 列表返回预期 401。
   当前本地后端 PID `32933` 监听 `18088`，前端 PID `92308` 监听 `5173`；本增量未放开生产写、
   Guance 真源、Recorded Replay 或 fixture 边界。
+
+P2 正式工作台完整 Guance Evidence Spine 预览（2026-07-29）已通过：
+
+- 新增管理员只读入口 `POST /api/v1/troubleshooting/evidence/guance/spine/preview`，固定复用唯一
+  `EvidenceSpineOrchestrator` 和 Guance-only 允许源，执行
+  `log_search → log_trace_bundle → contrast_sample → deterministic compress`；没有 Replay 回退、
+  模型调用、candidate 创建、证据持久化或生产写。
+- 返回合同强制固定三步、固定 evidence reference、依赖顺序与 stage 一致；完整阶段的对照比例必须能由
+  failure/success 样本计数按六位小数确定性复算。审查发现的一处不变量缺口已补负向测试并关闭；
+  Standards / Spec 双轴最终均 PASS，无剩余 P0/P1/P2。
+- 排障域 + Skill Manifest 后端 `343` 个测试全通过；前端 `16` 个测试文件 / `126` 个测试全通过，
+  `vue-tsc --noEmit` 与改动文件 ESLint 通过；直接 Vite 生产构建完成 `6271` 个模块转换。
+  `npm run build` 仍只因本节前文记录的缺失基线前置脚本而在 Vite 前停止。
+- 最终工作树后端已重启，PID `92267` 监听 `18088`，前端 PID `92308` 监听 `5173`；正式、Playbook、
+  legacy 三个路由均返回 200，新管理员入口未登录访问返回预期 401。
+- 登录态浏览器检查正式页、Playbook 与 legacy 均为 0 console error。默认 Guance 仍显示适配器未启用，
+  T6/T7/T8 fail closed，`打开真源验收` 保持禁用并明确 `fixtureMode` 不会自动关闭；没有伪造真实
+  T7/T8 运行结果。单条预览只是采集真实 T8 样本的工具，下一主攻仍是 owner 配置 T7 真字段并累积
+  20–30 条 T8 历史样本。
 
 后端定向测试命令：
 

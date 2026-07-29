@@ -14,6 +14,8 @@ import vip.mate.troubleshooting.evidence.EvidenceSourceHealth;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadinessService;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationReport;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
@@ -31,6 +33,7 @@ public class EvidenceSourceController {
     private final EvidenceSourceRouter router;
     private final GuanceEvidenceReadinessService readinessService;
     private final GuanceEvidenceValidationService validationService;
+    private final GuanceEvidenceSpinePreviewService spinePreviewService;
 
     /** Does not probe or query a source; returns its current fail-closed readiness snapshot. */
     @GetMapping("/sources")
@@ -63,6 +66,25 @@ public class EvidenceSourceController {
             @Valid @RequestBody GuanceEvidenceValidationRequest request,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(validationService.validate(
+                resolveWorkspace(workspaceId),
+                request.system(),
+                request.service(),
+                request.searchTerm(),
+                request.window(),
+                request.occurredAt()));
+    }
+
+    /**
+     * Runs the shared three-stage Evidence Spine against Guance only and returns
+     * a bounded deterministic projection. It never persists evidence, creates a
+     * candidate, or changes the fixture/T7/T8 acceptance state.
+     */
+    @PostMapping("/guance/spine/preview")
+    @RequireWorkspaceRole("admin")
+    public R<GuanceEvidenceSpinePreview> previewGuanceSpine(
+            @Valid @RequestBody GuanceEvidenceValidationRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(spinePreviewService.preview(
                 resolveWorkspace(workspaceId),
                 request.system(),
                 request.service(),

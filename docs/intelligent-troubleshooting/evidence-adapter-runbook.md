@@ -190,7 +190,35 @@ GET /api/v1/troubleshooting/evidence/sources
    workspace→system/service→观测资产/binding 值（默认授权表为空，不能只依赖前端传值）。
 8. owner 审核绑定和阈值后，再设计 per-binding verification 状态；只有 T7/T8 完成后才讨论关闭 `fixtureMode`。
 
-## 7. 回归命令
+## 7. 正式工作台的完整真源预览
+
+T7 两步读链通过后，workspace admin 可在同一“Guance 真源验收”对话框中执行
+“完整 Evidence Spine”，或调用：
+
+```http
+POST /api/v1/troubleshooting/evidence/guance/spine/preview
+X-Workspace-Id: 1
+Content-Type: application/json
+
+{
+  "system": "CSDP",
+  "service": "csdp-session-service",
+  "searchTerm": "message_send_failed",
+  "window": "-15m",
+  "occurredAt": "2026-07-20T09:13:00Z"
+}
+```
+
+该接口使用与在线诊断/合成预览相同的 `EvidenceSpineOrchestrator`，但在 Router 调用前把平台
+硬限为 `guance`。返回值只含 match count、PS ID、trace 节点数、服务跳序、异常数、
+失败/成功对照比率、证据引用、时间戳与应用侧总耗时；不含原始 trace rows、日志正文、
+DQL、搜索键或凭据。`contrast_sample` 缺失时返回 `CORE_CHAIN_OBSERVED`，不丢弃核心链路，
+但继续锁定校准期。
+
+这是实际累积 T8 单条样本的采集工具，不是“单次成功即通过 T8”的快捷开关。
+20–30 条真实样本、人工参考结论/outcome 和整体 p50/p95 仍需按 TODO T8 完成。
+
+## 8. 回归命令
 
 ```bash
 JAVA_HOME=<JDK21> mvn -pl mateclaw-server -am \

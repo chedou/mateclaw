@@ -2070,6 +2070,51 @@ export interface GuanceEvidenceValidationReport {
   warnings: string[]
 }
 
+export type GuanceSpinePreviewStage =
+  | 'BLOCKED'
+  | 'CORE_CHAIN_OBSERVED'
+  | 'FULL_SPINE_OBSERVED'
+export type GuanceSpinePreviewStepStatus =
+  | 'NOT_RUN'
+  | 'MISSING'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceSpinePreviewStep {
+  signalKind: string
+  status: GuanceSpinePreviewStepStatus
+  evidenceRef: string
+  collectedAt: string | null
+}
+
+export interface GuanceSpineContrast {
+  available: boolean
+  failureSampleCount: number
+  failureMatchCount: number
+  successSampleCount: number
+  successMatchCount: number
+  failureRate: number
+  successRate: number
+  rateDelta: number
+}
+
+/** Guance-only, model-free and secret-free projection of the shared Evidence Spine. */
+export interface GuanceEvidenceSpinePreview {
+  stage: GuanceSpinePreviewStage
+  readiness: GuanceEvidenceReadiness
+  matchCount: number | null
+  psId: string | null
+  traceEntries: number | null
+  serviceSequence: string[]
+  anomalyCount: number
+  traceElapsedMs: number | null
+  contrast: GuanceSpineContrast
+  sourceRequestCount: number
+  totalDurationMs: number
+  steps: GuanceSpinePreviewStep[]
+  completedAt: string
+  warnings: string[]
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: IncidentReportRequest) =>
@@ -2098,6 +2143,11 @@ export const troubleshootingApi = {
   /** Admin-only Guance chain; one run does not by itself complete T7 or T8. */
   validateGuanceEvidence: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceValidationReport>(
     '/troubleshooting/evidence/guance/validate', data,
+  ),
+
+  /** Runs the shared three-stage spine against Guance only; never falls back to Replay. */
+  previewGuanceEvidenceSpine: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceSpinePreview>(
+    '/troubleshooting/evidence/guance/spine/preview', data,
   ),
 
   /** Runs the meeting-case evidence lane without invoking a model or writing a candidate. */

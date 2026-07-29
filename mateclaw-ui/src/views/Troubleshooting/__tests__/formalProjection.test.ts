@@ -7,6 +7,7 @@ import {
   guanceAcceptanceProgress,
   guanceReadinessLabel,
   guanceSignalLabel,
+  guanceSpinePreviewLabel,
   guanceValidationLabel,
   impactMetrics,
   investigationLabel,
@@ -77,6 +78,9 @@ describe('formal troubleshooting projection formatting', () => {
     expect(guanceSignalLabel('INVALID_BINDING')).toBe('绑定无效')
     expect(guanceValidationLabel('CANONICAL_CHAIN_OBSERVED'))
       .toBe('单次规范化读链通过（待 T7 字段验收）')
+    expect(guanceSpinePreviewLabel('FULL_SPINE_OBSERVED'))
+      .toBe('完整 Evidence Spine 已观测（待 T7/T8 验收）')
+    expect(guanceSpinePreviewLabel('CORE_CHAIN_OBSERVED')).toContain('成功样本对照缺失')
   })
 
   it('keeps T6 authorization, T7 field verification, and T8 samples as separate gates', () => {

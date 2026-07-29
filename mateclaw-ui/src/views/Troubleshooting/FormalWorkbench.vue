@@ -286,13 +286,23 @@
                     </span>
                     <small>{{ guanceValidation.warnings[0] }}</small>
                   </div>
+                  <div v-if="guanceSpinePreview" class="validation-result spine-preview-result" :class="guanceSpinePreview.stage === 'FULL_SPINE_OBSERVED' ? 'passed' : 'blocked'">
+                    <b>{{ guanceSpinePreviewLabel(guanceSpinePreview.stage) }}</b>
+                    <span v-if="guanceSpinePreview.stage !== 'BLOCKED'">
+                      {{ guanceSpinePreview.serviceSequence.join(' → ') }} · {{ guanceSpinePreview.anomalyCount }} 个异常点 · {{ guanceSpinePreview.totalDurationMs }} ms
+                    </span>
+                    <span v-if="guanceSpinePreview.contrast.available">
+                      失败 {{ percent(guanceSpinePreview.contrast.failureRate) }} ↔ 成功 {{ percent(guanceSpinePreview.contrast.successRate) }}
+                    </span>
+                    <small>{{ guanceSpinePreview.warnings[0] }}</small>
+                  </div>
                   <el-button
                     v-if="canManageTroubleshooting"
                     size="small"
                     plain
                     :disabled="!canValidateGuance"
                     @click="openGuanceValidation"
-                  >执行单次只读验证</el-button>
+                  >打开真源验收</el-button>
                   <small class="gate-note">成功只证明一次读链可用；T7 负责真字段验收，T8 才建立 20–30 条历史样本，fixtureMode 不会自动关闭。</small>
                 </template>
                 <p v-else class="empty-evidence">{{ readinessError || '正在检查当前 Workspace 的真源绑定…' }}</p>
@@ -383,8 +393,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="guanceValidationOpen" title="Guance 单次只读验证" width="520px">
-      <el-alert type="warning" :closable="false" class="dialog-alert">该操作只读取真实观测数据，不持久化原始日志，不回退到 Recorded Replay；一次成功仍需 T7 owner 字段验收，也不等于 T8 样本基线完成。</el-alert>
+    <el-dialog v-model="guanceValidationOpen" title="Guance 真源验收" width="min(620px, calc(100vw - 32px))">
+      <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
       <el-form label-position="top">
         <div class="validation-scope">
           <span>Workspace 资产</span>
@@ -413,14 +423,38 @@
         <p>端到端 {{ guanceValidation.totalDurationMs }} ms</p>
         <small v-for="warning in guanceValidation.warnings" :key="warning">{{ warning }}</small>
       </div>
+      <div v-if="guanceSpinePreview" class="dialog-validation-result spine-dialog-result">
+        <b>{{ guanceSpinePreviewLabel(guanceSpinePreview.stage) }}</b>
+        <ul>
+          <li v-for="step in guanceSpinePreview.steps" :key="step.signalKind">
+            <code>{{ step.signalKind }}</code>
+            <span>{{ spineStepStatusLabel(step.status) }}</span>
+            <time>{{ step.collectedAt ? shortTime(step.collectedAt).slice(11) : '未执行' }}</time>
+          </li>
+        </ul>
+        <div v-if="guanceSpinePreview.stage !== 'BLOCKED'" class="spine-facts">
+          <p><span>调用链骨架</span><b>{{ guanceSpinePreview.serviceSequence.join(' → ') }}</b></p>
+          <p><span>核心样本</span><b>{{ guanceSpinePreview.matchCount }} 条命中 · {{ guanceSpinePreview.traceEntries }} 个节点 · {{ guanceSpinePreview.anomalyCount }} 个异常点</b></p>
+          <p v-if="guanceSpinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ guanceSpinePreview.contrast.failureMatchCount }}/{{ guanceSpinePreview.contrast.failureSampleCount }}（{{ percent(guanceSpinePreview.contrast.failureRate) }}） ↔ {{ guanceSpinePreview.contrast.successMatchCount }}/{{ guanceSpinePreview.contrast.successSampleCount }}（{{ percent(guanceSpinePreview.contrast.successRate) }}）</b></p>
+          <p v-else><span>失败 ↔ 成功对照</span><b>未取得，继续校准期</b></p>
+          <p><span>应用侧总耗时</span><b>{{ guanceSpinePreview.totalDurationMs }} ms</b></p>
+        </div>
+        <small v-for="warning in guanceSpinePreview.warnings" :key="warning">{{ warning }}</small>
+      </div>
       <template #footer>
         <el-button @click="guanceValidationOpen = false">关闭</el-button>
         <el-button
-          type="primary"
+          plain
           :loading="validationLoading"
           :disabled="!guanceValidationForm.searchTerm"
           @click="validateGuance"
-        >开始只读验证</el-button>
+        >T7 两步读链</el-button>
+        <el-button
+          type="primary"
+          :loading="spinePreviewLoading"
+          :disabled="!guanceValidationForm.searchTerm"
+          @click="previewGuanceSpine"
+        >完整 Evidence Spine</el-button>
       </template>
     </el-dialog>
 
@@ -490,9 +524,11 @@ import {
   type EvidenceStepTone,
   type EvidenceStepKind,
   type GuanceEvidenceReadiness,
+  type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
   type GuanceReadinessStatus,
   type GuanceSignalStatus,
+  type GuanceSpinePreviewStepStatus,
   type RecommendedAction,
   type StoredDiagnosis,
 } from '@/api'
@@ -502,6 +538,7 @@ import {
   guanceAcceptanceProgress,
   guanceReadinessLabel,
   guanceSignalLabel,
+  guanceSpinePreviewLabel,
   guanceValidationLabel,
   impactMetrics,
   investigationLabel,
@@ -543,8 +580,10 @@ const actionLoading = ref(false)
 const incidentReportLoading = ref(false)
 const readinessLoading = ref(false)
 const validationLoading = ref(false)
+const spinePreviewLoading = ref(false)
 const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
 const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
+const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
 const readinessError = ref('')
 let selectionVersion = 0
 
@@ -612,6 +651,12 @@ function acceptanceStateLabel(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUI
   if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
   return '阻断'
 }
+function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
+  if (value === 'CANONICAL_RESULT_OBSERVED') return '规范化证据已观测'
+  if (value === 'MISSING') return '证据缺失 / 来源不可用'
+  return '未执行'
+}
+function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 function shortTime(value?: string | null) { return value ? value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19) : '—' }
 function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   return kind === 'CRITERION' ? '判据' : shortTime(value).slice(11)
@@ -681,6 +726,7 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
   detailLoading.value = true
   guanceValidationOpen.value = false
   validationLoading.value = false
+  spinePreviewLoading.value = false
   try {
     const [projectionResponse, diagnosisResponse] = await Promise.all([
       troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
@@ -689,6 +735,7 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     projection.value = projectionResponse.data
     current.value = diagnosisResponse.data
     guanceValidation.value = null
+    guanceSpinePreview.value = null
     guanceReadiness.value = null
     readinessError.value = ''
     if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
@@ -730,6 +777,7 @@ function openGuanceValidation() {
   guanceValidationForm.window = '-15m'
   guanceValidationForm.occurredAt = incident.occurredAt
   guanceValidation.value = null
+  guanceSpinePreview.value = null
   guanceValidationOpen.value = true
 }
 
@@ -756,6 +804,34 @@ async function validateGuance() {
     ElMessage.error(`Guance 只读验证失败：${errorText(error)}`)
   } finally {
     if (version === selectionVersion) validationLoading.value = false
+  }
+}
+
+async function previewGuanceSpine() {
+  const version = selectionVersion
+  const request = { ...guanceValidationForm }
+  spinePreviewLoading.value = true
+  try {
+    const response = await troubleshootingApi.previewGuanceEvidenceSpine(request)
+    const incident = current.value?.diagnosis.incident
+    if (version !== selectionVersion
+      || !incident
+      || incident.system !== request.system
+      || incident.service !== request.service) return
+    guanceSpinePreview.value = response.data
+    guanceReadiness.value = response.data.readiness
+    if (response.data.stage === 'FULL_SPINE_OBSERVED') {
+      ElMessage.success('真实三段 Evidence Spine 已观测；待 owner 完成 T7/T8 验收')
+    } else if (response.data.stage === 'CORE_CHAIN_OBSERVED') {
+      ElMessage.warning('核心链路可压缩，但成功样本对照缺失，继续校准期')
+    } else {
+      ElMessage.warning('真实 Evidence Spine 被就绪门或规范化合同阻断')
+    }
+  } catch (error) {
+    if (version !== selectionVersion) return
+    ElMessage.error(`Guance Evidence Spine 验证失败：${errorText(error)}`)
+  } finally {
+    if (version === selectionVersion) spinePreviewLoading.value = false
   }
 }
 
@@ -913,6 +989,7 @@ onMounted(() => loadList(true))
 .signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid #edf0f5; } .signal-readiness-list code { font-size:9.5px; } .signal-readiness-list span { font-size:9px; } .signal-readiness-list small { grid-column:1/-1; color:#98a2b3; font-size:8.5px; word-break:break-all; }
 .source-blocker { margin:7px 0; padding:7px 8px; border-radius:5px; color:#7a271a; background:#fff2f0; font-size:9.5px; line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:9px; line-height:1.55; }
 .validation-result { margin:9px 0; padding:9px; border-radius:7px; font-size:9.5px; } .validation-result.passed { color:#067647; background:#ecfdf3; } .validation-result.blocked { color:#b54708; background:#fffaeb; } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
+.spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
 .validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; background:#f8f9fc; } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:10px; } .validation-scope code { margin-top:5px; color:var(--blue); font-size:11px; }
 .incident-form-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 14px; }
 .incident-route-preview { margin:4px 0 12px; padding:12px 13px; border:1px solid #b2ccff; border-radius:8px; background:#f5f8ff; }
@@ -923,8 +1000,12 @@ onMounted(() => loadList(true))
 .incident-route-preview.bounded_discovery>b { color:var(--amber); }
 .incident-rehearsal { margin-top:2px; }
 .dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfe; } .dialog-validation-result>b { font-size:12px; } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:10px; } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:#344054; font-family:var(--mc-mono,monospace); font-size:9px; white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:#344054; font-size:10px; font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:9.5px; line-height:1.5; }
+.spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:7px; background:#f5f8ff; }
+.spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:10px; line-height:1.5; }
+.spine-facts span { color:var(--muted); }
+.spine-facts b { color:#344054; overflow-wrap:anywhere; }
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; } .action-card.write { border-color:#f2c4bf; } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:8.5px; }
 .action-card>b { display:block; margin-top:7px; font-size:11.5px; } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:10px; line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:10.5px; }
 @media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:18px 12px 36px}.work-head{align-items:flex-start;flex-direction:column}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:18px 12px 36px}.work-head{align-items:flex-start;flex-direction:column}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
 </style>

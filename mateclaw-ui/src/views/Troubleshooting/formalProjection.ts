@@ -4,6 +4,7 @@ import type {
   GuanceEvidenceReadiness,
   GuanceReadinessStatus,
   GuanceSignalStatus,
+  GuanceSpinePreviewStage,
   GuanceValidationStage,
   InvestigationMode,
   RouteAuthority,
@@ -56,6 +57,12 @@ const GUANCE_VALIDATION_LABEL: Record<GuanceValidationStage, string> = {
   CANONICAL_CHAIN_OBSERVED: '单次规范化读链通过（待 T7 字段验收）',
 }
 
+const GUANCE_SPINE_PREVIEW_LABEL: Record<GuanceSpinePreviewStage, string> = {
+  BLOCKED: '真实 Evidence Spine 未形成',
+  CORE_CHAIN_OBSERVED: '核心调用链已观测，成功样本对照缺失',
+  FULL_SPINE_OBSERVED: '完整 Evidence Spine 已观测（待 T7/T8 验收）',
+}
+
 export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED'
 
 export interface GuanceAcceptanceStage {
@@ -97,6 +104,10 @@ export function guanceSignalLabel(value: GuanceSignalStatus) {
 
 export function guanceValidationLabel(value: GuanceValidationStage) {
   return GUANCE_VALIDATION_LABEL[value]
+}
+
+export function guanceSpinePreviewLabel(value: GuanceSpinePreviewStage) {
+  return GUANCE_SPINE_PREVIEW_LABEL[value]
 }
 
 /**
