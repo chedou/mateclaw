@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewSnapshot;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewSourceKey;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewStatus;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -133,7 +135,8 @@ class SopSynthesisControllerTest {
                         "session-svc", "candidate", false, false,
                         java.time.LocalDateTime.parse("2026-07-20T09:10:00"),
                         java.time.LocalDateTime.parse("2026-07-20T09:10:00"))));
-        when(reviews.list(7L, 12)).thenReturn(List.of(reviewState()));
+        when(reviews.listForSources(eq(7L), anyList()))
+                .thenReturn(List.of(reviewState()));
 
         mvc.perform(get("/api/v1/troubleshooting/sops/review-inbox")
                         .header("X-Workspace-Id", "7")
@@ -154,7 +157,15 @@ class SopSynthesisControllerTest {
         verify(candidateReader).list(7L, 12);
         verify(persistence).listKnowledgeCandidates(7L, 12);
         verify(sopPersistence).list(7L, "candidate", null, 12);
-        verify(reviews).list(7L, 12);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<KnowledgeReviewSourceKey>> sourceKeys =
+                ArgumentCaptor.forClass(List.class);
+        verify(reviews).listForSources(eq(7L), sourceKeys.capture());
+        assertThat(sourceKeys.getValue()).containsExactly(
+                new KnowledgeReviewSourceKey(
+                        KnowledgeOrigin.OUTCOME_BACKED, "candidate-outcome-001"),
+                new KnowledgeReviewSourceKey(
+                        KnowledgeOrigin.MANUAL, "manual-sop-001"));
     }
 
     @Test

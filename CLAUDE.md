@@ -27,6 +27,10 @@ V184 增加当前 Guance binding 的不可变 T7 owner 验收：只有 Workspace
 验收只保存查询模板/字段映射/端点/路由的 SHA-256 配置指纹、结构计数、PS ID 哈希、耗时和审计主体，
 不保存搜索键、PS ID 原文、DQL、凭据或日志。绑定配置变化后旧验收自动过期；Guance T8 采集与基线复跑
 都在任何源调用前强制要求当前指纹已验收。默认环境仍没有真实验收记录，不能将该接缝写成 T7 已通过。
+V185 新增 workspace 隔离的知识审核台账：正式 Review Inbox 按当前三类来源的精确来源键加载状态，
+无记录为 `CANDIDATE/v0`，可开始审阅为 `IN_REVIEW/v1`、按乐观版本拒绝为 `REJECTED/v2`，并冻结
+脱敏的来源快照、服务端登录主体和理由。旧 candidate 直升 approved 已 fail closed；分来源资格计算、
+新版本替换以及 `APPROVED / DEPRECATED` 后半状态机仍未完成。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
 有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
 不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确

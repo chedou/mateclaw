@@ -14,6 +14,8 @@ import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeReviewMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,7 +30,7 @@ import java.util.UUID;
 @Service
 public class KnowledgeReviewWorkflowService {
 
-    private static final int MAX_PAGE_SIZE = 500;
+    private static final int SOURCE_QUERY_BATCH_SIZE = 200;
     private static final int MAX_ACTOR_LENGTH = 192;
     private static final int MAX_REASON_LENGTH = 1000;
 
@@ -172,11 +174,34 @@ public class KnowledgeReviewWorkflowService {
                 now.toInstant(ZoneOffset.UTC));
     }
 
-    public List<KnowledgeReviewState> list(long workspaceId, int limit) {
+    /**
+     * Reads states for the exact source rows rendered by the Inbox.
+     *
+     * <p>A global "latest N reviews" slice is incorrect here: an older source
+     * can still be on the current page, and dropping its state would make the
+     * UI falsely fall back to CANDIDATE/v0. Batching keeps the join bounded
+     * without sacrificing exactness.</p>
+     */
+    public List<KnowledgeReviewState> listForSources(
+            long workspaceId,
+            List<KnowledgeReviewSourceKey> sourceKeys) {
         validateWorkspace(workspaceId);
-        int capped = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
-        return mapper.listByWorkspace(workspaceId, capped).stream()
+        if (sourceKeys == null || sourceKeys.isEmpty()) {
+            return List.of();
+        }
+        List<KnowledgeReviewSourceKey> distinct = sourceKeys.stream()
+                .distinct()
+                .toList();
+        List<TroubleshootingKnowledgeReviewEntity> rows = new ArrayList<>();
+        for (int start = 0; start < distinct.size(); start += SOURCE_QUERY_BATCH_SIZE) {
+            int end = Math.min(start + SOURCE_QUERY_BATCH_SIZE, distinct.size());
+            rows.addAll(mapper.listBySources(
+                    workspaceId,
+                    List.copyOf(distinct.subList(start, end))));
+        }
+        return rows.stream()
                 .map(this::read)
+                .sorted(Comparator.comparing(KnowledgeReviewState::updatedAt).reversed())
                 .toList();
     }
 

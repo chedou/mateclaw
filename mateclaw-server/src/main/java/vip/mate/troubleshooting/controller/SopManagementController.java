@@ -25,13 +25,16 @@ import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewSourceKey;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
 import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
+import vip.mate.troubleshooting.synthesis.PlaybookKnowledgeRecord;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -112,12 +115,25 @@ public class SopManagementController {
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         long resolvedWorkspace = resolveWorkspace(workspaceId);
         int resolvedLimit = limit == null ? DEFAULT_PAGE_SIZE : limit;
+        List<PlaybookKnowledgeRecord> evidenceDerived =
+                candidateReader.list(resolvedWorkspace, resolvedLimit);
+        List<KnowledgeCandidate> outcomeBacked =
+                persistence.listKnowledgeCandidates(resolvedWorkspace, resolvedLimit);
+        List<SopSummary> manual = sopPersistence.list(
+                resolvedWorkspace, "candidate", null, resolvedLimit);
+        List<KnowledgeReviewSourceKey> sourceKeys = new ArrayList<>(
+                evidenceDerived.size() + outcomeBacked.size() + manual.size());
+        evidenceDerived.forEach(record -> sourceKeys.add(new KnowledgeReviewSourceKey(
+                KnowledgeOrigin.EVIDENCE_DERIVED, record.recordId())));
+        outcomeBacked.forEach(candidate -> sourceKeys.add(new KnowledgeReviewSourceKey(
+                KnowledgeOrigin.OUTCOME_BACKED, candidate.candidateId())));
+        manual.forEach(sop -> sourceKeys.add(new KnowledgeReviewSourceKey(
+                KnowledgeOrigin.MANUAL, sop.sopId())));
         return R.ok(new KnowledgeReviewInbox(
-                candidateReader.list(resolvedWorkspace, resolvedLimit),
-                persistence.listKnowledgeCandidates(resolvedWorkspace, resolvedLimit),
-                sopPersistence.list(
-                        resolvedWorkspace, "candidate", null, resolvedLimit),
-                reviewWorkflow.list(resolvedWorkspace, resolvedLimit),
+                evidenceDerived,
+                outcomeBacked,
+                manual,
+                reviewWorkflow.listForSources(resolvedWorkspace, sourceKeys),
                 KnowledgeReviewInbox.CURRENT_CAPABILITY_LIMITS));
     }
 

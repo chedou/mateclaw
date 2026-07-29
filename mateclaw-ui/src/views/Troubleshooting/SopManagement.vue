@@ -817,7 +817,7 @@ async function askReviewReason(
 ) {
   try {
     const result = await ElMessageBox.prompt(
-      '请写明本次审阅的事实依据或决策原因。审核人将从当前登录账号记录，不能在这里代填。',
+      '请写明本次审阅的事实依据或决策原因。审核人将从当前登录账号记录；请勿粘贴凭据、DQL、原始日志或堆栈。',
       title,
       {
         confirmButtonText,

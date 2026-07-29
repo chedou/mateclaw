@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeReviewEntity;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewSourceKey;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,18 +31,25 @@ public interface TroubleshootingKnowledgeReviewMapper
             @Param("sourceRecordId") String sourceRecordId);
 
     @Select("""
+            <script>
             SELECT id, workspace_id, review_id, origin, source_record_id,
                    selector_key, status, reviewer, reason, snapshot_json,
                    version, deleted, create_time, update_time
               FROM mate_troubleshooting_knowledge_review
              WHERE workspace_id = #{workspaceId}
+               AND (
+                 <foreach collection="sources" item="source" separator=" OR ">
+                   (origin = #{source.origin}
+                    AND source_record_id = #{source.sourceRecordId})
+                 </foreach>
+               )
                AND deleted = 0
              ORDER BY update_time DESC, id DESC
-             LIMIT #{limit}
+            </script>
             """)
-    List<TroubleshootingKnowledgeReviewEntity> listByWorkspace(
+    List<TroubleshootingKnowledgeReviewEntity> listBySources(
             @Param("workspaceId") long workspaceId,
-            @Param("limit") int limit);
+            @Param("sources") List<KnowledgeReviewSourceKey> sources);
 
     @Update("""
             UPDATE mate_troubleshooting_knowledge_review

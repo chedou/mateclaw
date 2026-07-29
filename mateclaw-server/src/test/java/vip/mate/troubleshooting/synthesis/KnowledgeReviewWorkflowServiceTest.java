@@ -184,6 +184,36 @@ class KnowledgeReviewWorkflowServiceTest {
                 anyInt(), anyString(), anyString(), any(LocalDateTime.class));
     }
 
+    @Test
+    void listsReviewStatesForTheExactInboxSourcesInsteadOfARecentGlobalSlice() {
+        TroubleshootingKnowledgeReviewMapper mapper =
+                mock(TroubleshootingKnowledgeReviewMapper.class);
+        KnowledgeReviewSourceReader sources = mock(KnowledgeReviewSourceReader.class);
+        KnowledgeReviewWorkflowService service = service(mapper, sources);
+        TroubleshootingKnowledgeReviewEntity outcome = persisted("IN_REVIEW", 1);
+        outcome.setOrigin("OUTCOME_BACKED");
+        outcome.setSourceRecordId("candidate-1");
+        when(mapper.listBySources(eq(7L), any()))
+                .thenReturn(List.of(outcome));
+        List<KnowledgeReviewSourceKey> requested = List.of(
+                new KnowledgeReviewSourceKey(
+                        KnowledgeOrigin.EVIDENCE_DERIVED, "record-1"),
+                new KnowledgeReviewSourceKey(
+                        KnowledgeOrigin.OUTCOME_BACKED, "candidate-1"),
+                new KnowledgeReviewSourceKey(
+                        KnowledgeOrigin.MANUAL, "sop-1"));
+
+        List<KnowledgeReviewState> states = service.listForSources(7L, requested);
+
+        assertThat(states).extracting(KnowledgeReviewState::sourceRecordId)
+                .containsExactly("candidate-1");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<KnowledgeReviewSourceKey>> keys =
+                ArgumentCaptor.forClass(List.class);
+        verify(mapper).listBySources(eq(7L), keys.capture());
+        assertThat(keys.getValue()).containsExactlyElementsOf(requested);
+    }
+
     private KnowledgeReviewWorkflowService service(
             TroubleshootingKnowledgeReviewMapper mapper,
             KnowledgeReviewSourceReader sources) {

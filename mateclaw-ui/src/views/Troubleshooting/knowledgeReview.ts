@@ -67,7 +67,7 @@ const REASON_LABELS: Record<string, string> = {
 
 export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): KnowledgeReviewRow[] {
   const reviewStates = new Map(
-    inbox.reviewStates.map((state) => [
+    (inbox.reviewStates ?? []).map((state) => [
       `${state.origin}:${state.sourceRecordId}`,
       state,
     ]),
