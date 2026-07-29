@@ -1,8 +1,12 @@
 package vip.mate.troubleshooting.controller;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +23,9 @@ import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
+import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
 import vip.mate.troubleshooting.synthesis.PlaybookCandidateReader;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
@@ -53,6 +60,7 @@ public class SopManagementController {
     private final TroubleshootingPersistenceService persistence;
     private final SopSynthesisService synthesisService;
     private final PlaybookCandidateReader candidateReader;
+    private final KnowledgeReviewWorkflowService reviewWorkflow;
 
     /**
      * Previews the first three learning-loop stages without invoking a model or
@@ -92,10 +100,10 @@ public class SopManagementController {
     /**
      * Unifies the three persisted candidate lanes for the knowledge review desk.
      *
-     * <p>The response is intentionally read-only. The current evidence-derived
-     * records are fixture-confined and not eligible, while outcome-backed and
-     * legacy manual rows do not yet own an independent KnowledgeRecord review
-     * state. None may be promoted by this endpoint.</p>
+     * <p>The response joins source records with their independent review
+     * states. Absence from {@code reviewStates} means CANDIDATE/v0. Publication
+     * state is never reused as review state, and this endpoint cannot promote a
+     * candidate.</p>
      */
     @GetMapping("/review-inbox")
     @RequireWorkspaceRole("admin")
@@ -109,7 +117,47 @@ public class SopManagementController {
                 persistence.listKnowledgeCandidates(resolvedWorkspace, resolvedLimit),
                 sopPersistence.list(
                         resolvedWorkspace, "candidate", null, resolvedLimit),
+                reviewWorkflow.list(resolvedWorkspace, resolvedLimit),
                 KnowledgeReviewInbox.CURRENT_CAPABILITY_LIMITS));
+    }
+
+    /** Starts an audited review from the virtual CANDIDATE/v0 state. */
+    @PostMapping("/review-inbox/{origin}/{sourceRecordId}/start")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeReviewState> startReview(
+            @PathVariable KnowledgeOrigin origin,
+            @PathVariable String sourceRecordId,
+            @Valid @RequestBody ReviewDecision request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(reviewWorkflow.start(
+                resolveWorkspace(workspaceId),
+                origin,
+                sourceRecordId,
+                request.expectedVersion(),
+                currentActor(),
+                request.reason()));
+    }
+
+    /**
+     * Records a rejection against the exact IN_REVIEW version.
+     *
+     * <p>There is deliberately no sibling approval route. Approval remains
+     * fail-closed until origin eligibility and versioned promotion exist.</p>
+     */
+    @PostMapping("/review-inbox/{origin}/{sourceRecordId}/reject")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeReviewState> rejectReview(
+            @PathVariable KnowledgeOrigin origin,
+            @PathVariable String sourceRecordId,
+            @Valid @RequestBody ReviewDecision request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(reviewWorkflow.reject(
+                resolveWorkspace(workspaceId),
+                origin,
+                sourceRecordId,
+                request.expectedVersion(),
+                currentActor(),
+                request.reason()));
     }
 
     /**
@@ -195,7 +243,26 @@ public class SopManagementController {
     /** Compatibility status command; only {@code deprecated} is accepted. */
     public record StatusChange(@NotBlank String status) {}
 
+    /** The actor is server-derived; callers only provide concurrency and rationale. */
+    public record ReviewDecision(
+            @Min(0) int expectedVersion,
+            @NotBlank @Size(max = 1000) String reason) {}
+
     private long resolveWorkspace(Long workspaceId) {
         return workspaceId == null ? DEFAULT_WORKSPACE_ID : workspaceId;
+    }
+
+    private String currentActor() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new MateClawException(
+                    "err.troubleshooting.actor_required",
+                    401,
+                    "knowledge review changes require an authenticated operator");
+        }
+        return authentication.getName();
     }
 }

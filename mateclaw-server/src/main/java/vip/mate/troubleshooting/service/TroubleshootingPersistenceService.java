@@ -244,6 +244,36 @@ public class TroubleshootingPersistenceService {
         return candidates;
     }
 
+    /** Finds one outcome-backed candidate without scanning or crossing workspaces. */
+    public KnowledgeCandidate findKnowledgeCandidate(long workspaceId, String candidateId) {
+        validateWorkspace(workspaceId);
+        if (candidateId == null || candidateId.isBlank()) {
+            throw new IllegalArgumentException("candidateId must not be blank");
+        }
+        TroubleshootingKnowledgeOutboxEntity row = outboxMapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingKnowledgeOutboxEntity>()
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getCandidateId,
+                                candidateId.trim())
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getDeleted, 0));
+        if (row == null) {
+            return null;
+        }
+        try {
+            KnowledgeCandidate candidate = objectMapper.readValue(
+                    row.getPayloadJson(), KnowledgeCandidate.class);
+            if (!candidate.candidateId().equals(candidateId.trim())) {
+                throw new MateClawException(
+                        "err.troubleshooting.knowledge_candidate_identity",
+                        500,
+                        "knowledge candidate payload does not match its indexed identity");
+            }
+            return candidate;
+        } catch (JsonProcessingException error) {
+            throw serializationError("deserialize knowledge candidate", error);
+        }
+    }
+
     private void updateAggregate(long workspaceId, Diagnosis diagnosis, int expectedVersion) {
         validateWorkspace(workspaceId);
         if (expectedVersion < 0) {

@@ -37,7 +37,7 @@ public class MybatisPlaybookCandidateStore
         if (workspaceId <= 0 || candidate == null) {
             throw new IllegalArgumentException("workspaceId and candidate are required");
         }
-        TroubleshootingPlaybookCandidateEntity existing = find(
+        TroubleshootingPlaybookCandidateEntity existing = findByGenerationKey(
                 workspaceId, candidate.draft().generationKey());
         if (existing != null) {
             return new StoredCandidate(read(existing), false);
@@ -47,7 +47,7 @@ public class MybatisPlaybookCandidateStore
             mapper.insert(entity);
             return new StoredCandidate(candidate, true);
         } catch (DataIntegrityViolationException raced) {
-            existing = find(workspaceId, candidate.draft().generationKey());
+            existing = findByGenerationKey(workspaceId, candidate.draft().generationKey());
             if (existing == null) {
                 throw raced;
             }
@@ -71,6 +71,22 @@ public class MybatisPlaybookCandidateStore
                 .stream()
                 .map(this::read)
                 .toList();
+    }
+
+    @Override
+    public PlaybookKnowledgeRecord find(long workspaceId, String recordId) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
+        if (recordId == null || recordId.isBlank()) {
+            throw new IllegalArgumentException("recordId must not be blank");
+        }
+        TroubleshootingPlaybookCandidateEntity entity = mapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingPlaybookCandidateEntity>()
+                        .eq(TroubleshootingPlaybookCandidateEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingPlaybookCandidateEntity::getRecordId, recordId.trim())
+                        .eq(TroubleshootingPlaybookCandidateEntity::getDeleted, 0));
+        return entity == null ? null : read(entity);
     }
 
     private TroubleshootingPlaybookCandidateEntity entity(
@@ -98,7 +114,9 @@ public class MybatisPlaybookCandidateStore
         return entity;
     }
 
-    private TroubleshootingPlaybookCandidateEntity find(long workspaceId, String generationKey) {
+    private TroubleshootingPlaybookCandidateEntity findByGenerationKey(
+            long workspaceId,
+            String generationKey) {
         return mapper.selectOne(
                 new LambdaQueryWrapper<TroubleshootingPlaybookCandidateEntity>()
                         .eq(TroubleshootingPlaybookCandidateEntity::getWorkspaceId, workspaceId)

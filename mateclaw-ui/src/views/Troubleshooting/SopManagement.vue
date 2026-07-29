@@ -9,7 +9,7 @@
         <span class="divider">/</span>
         <div>
           <h1>Playbook 与知识治理</h1>
-          <p>已批准 Playbook 驱动确定性命中；三类候选统一进入只读审阅台账。</p>
+          <p>已批准 Playbook 驱动确定性命中；三类候选共用独立、可审计的审核流程。</p>
         </div>
       </div>
       <div class="top-actions">
@@ -95,7 +95,7 @@
         />
         <span class="registry-count">{{ filteredKnowledgeRows.length }} 条候选</span>
         <div class="lifecycle review-lifecycle" aria-label="知识审核生命周期">
-          <span>candidate</span><i>→</i><span>qualification gate</span><i>→</i><span>new version</span>
+          <span>candidate</span><i>→</i><span>in review</span><i>→</i><span>approved / rejected</span><i>→</i><span>deprecated</span>
         </div>
       </template>
     </section>
@@ -342,12 +342,12 @@
 
             <el-alert
               v-if="!selectedReview.reviewStatePersisted"
-              type="warning"
+              type="info"
               :closable="false"
-              title="该来源尚未迁移到独立 KnowledgeRecord 审核合同；页面只呈现事实，不推断审核状态。"
+              title="独立审核尚未开始；当前为 CANDIDATE / v0。"
             />
             <el-alert
-              v-else-if="selectedReview.fixtureMode"
+              v-if="selectedReview.fixtureMode"
               type="info"
               :closable="false"
               title="该证据草稿仍带 fixture 标记，只能用于校准与审阅，不能晋升为生产 Playbook。"
@@ -355,12 +355,58 @@
 
             <dl class="metadata review-metadata">
               <div><dt>origin</dt><dd class="mono">{{ selectedReview.origin }}</dd></div>
-              <div><dt>review</dt><dd class="mono">{{ selectedReview.reviewStatus || 'NOT_AVAILABLE' }}</dd></div>
+              <div><dt>review</dt><dd class="mono">{{ selectedReview.reviewStatus }} / v{{ selectedReview.reviewVersion }}</dd></div>
               <div><dt>validation</dt><dd class="mono">{{ selectedReview.validationStatus }}</dd></div>
               <div><dt>eligibility</dt><dd class="mono">{{ selectedReview.approvalEligibility }}</dd></div>
               <div><dt>service</dt><dd>{{ selectedReview.service || '合同未提供' }}</dd></div>
               <div><dt>source</dt><dd class="mono">{{ selectedReview.sourceRef }}</dd></div>
             </dl>
+
+            <section v-if="selectedReview.reviewState" class="candidate-detail-card review-audit-card">
+              <div class="section-title">
+                <span>审核台账</span>
+                <el-tag
+                  :type="selectedReview.reviewStatus === 'REJECTED' ? 'danger' : 'primary'"
+                  size="small"
+                  effect="plain"
+                >{{ reviewStatusLabel(selectedReview.reviewStatus) }} · v{{ selectedReview.reviewVersion }}</el-tag>
+              </div>
+              <dl class="compact-facts">
+                <div><dt>reviewer</dt><dd>{{ selectedReview.reviewer }}</dd></div>
+                <div><dt>updated</dt><dd class="mono">{{ formatTime(selectedReview.reviewState.updatedAt) }}</dd></div>
+                <div><dt>snapshot validation</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.validationStatus }}</dd></div>
+                <div><dt>model config</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.modelConfigVersion || 'NOT_APPLICABLE' }}</dd></div>
+                <div><dt>reference</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.referenceComparison?.referenceId || 'NOT_APPLICABLE' }}</dd></div>
+                <div><dt>fixture</dt><dd class="mono">{{ selectedReview.reviewState.snapshot.fixtureMode ?? 'UNKNOWN' }}</dd></div>
+              </dl>
+              <div class="audit-reason">
+                <span>审核理由</span>
+                <p>{{ selectedReview.reviewReason }}</p>
+              </div>
+              <ul
+                v-if="selectedReview.reviewState.snapshot.validationErrors.length"
+                class="reference-issues"
+              >
+                <li
+                  v-for="issue in selectedReview.reviewState.snapshot.validationErrors"
+                  :key="issue.code + ':' + issue.fieldPath"
+                  class="danger"
+                >
+                  <strong>{{ issue.code }} · {{ issue.fieldPath }}</strong>
+                  <code>{{ issue.message }}</code>
+                </li>
+              </ul>
+              <ul v-if="selectedReviewSnapshotIssues.length" class="reference-issues">
+                <li
+                  v-for="issue in selectedReviewSnapshotIssues"
+                  :key="issue.code"
+                  :class="{ danger: issue.danger }"
+                >
+                  <strong>{{ issue.label }}</strong>
+                  <code>{{ issue.items.join(' · ') }}</code>
+                </li>
+              </ul>
+            </section>
 
             <section class="qualification-card">
               <div class="section-title">
@@ -479,10 +525,29 @@
 
             <div class="review-action locked-review-action">
               <div>
-                <strong>只读审阅，不执行晋升</strong>
-                <p>只有资格计算、固定回放、乐观锁和 selector 唯一 active 版本全部落地后，才开放审核决策。</p>
+                <strong v-if="selectedReview.reviewStatus === 'CANDIDATE'">开始独立审阅</strong>
+                <strong v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'">记录审阅决策</strong>
+                <strong v-else>审阅决策已固化</strong>
+                <p v-if="selectedReview.reviewStatus === 'CANDIDATE'">将当前校验、参考解法与模型版本冻结进审核台账；不会晋升知识。</p>
+                <p v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'">拒绝会对精确版本做乐观锁校验；并发变更后必须重新加载。</p>
+                <p v-else>已拒绝候选不能原地重开；修正后应产生新的 source record。</p>
               </div>
-              <el-button disabled>批准不可用</el-button>
+              <div class="review-action-buttons">
+                <el-button
+                  v-if="selectedReview.reviewStatus === 'CANDIDATE'"
+                  type="primary"
+                  :loading="reviewDecisionLoading === `start:${selectedReview.key}`"
+                  @click="startReview(selectedReview)"
+                >开始审阅</el-button>
+                <el-button
+                  v-else-if="selectedReview.reviewStatus === 'IN_REVIEW'"
+                  type="danger"
+                  plain
+                  :loading="reviewDecisionLoading === `reject:${selectedReview.key}`"
+                  @click="rejectReview(selectedReview)"
+                >拒绝候选</el-button>
+                <el-button disabled>批准不可用</el-button>
+              </div>
             </div>
           </div>
         </Transition>
@@ -543,6 +608,7 @@ import {
   troubleshootingApi,
   type KnowledgeOrigin,
   type KnowledgeReviewInbox,
+  type KnowledgeReviewState,
   type SopEntry,
   type SopStatus,
   type SopSummary,
@@ -599,10 +665,12 @@ const reviewInbox = ref<KnowledgeReviewInbox>({
   evidenceDerived: [],
   outcomeBacked: [],
   manual: [],
+  reviewStates: [],
   capabilityLimits: [],
 })
 const reviewLoading = ref(false)
 const reviewUnavailable = ref(false)
+const reviewDecisionLoading = ref<string | null>(null)
 const originFilter = ref<'' | KnowledgeOrigin>('')
 const reviewQuery = ref('')
 const selectedReviewKey = ref<string | null>(null)
@@ -633,6 +701,10 @@ const selectedOutcomeCandidate = computed(() => selectedReview.value?.source.kin
 const selectedComparisonIssues = computed(() => selectedEvidenceRecord.value
   ? referenceComparisonIssues(selectedEvidenceRecord.value.referenceComparison)
   : [])
+const selectedReviewSnapshotIssues = computed(() => {
+  const comparison = selectedReview.value?.reviewState?.snapshot.referenceComparison
+  return comparison ? referenceComparisonIssues(comparison) : []
+})
 
 const prettyContract = computed(() => selectedSop.value
   ? JSON.stringify(selectedSop.value, null, 2)
@@ -687,7 +759,7 @@ async function loadReviewInbox() {
   try {
     const { data } = await troubleshootingApi.knowledgeReviewInbox({ limit: 200 })
     reviewInbox.value = data ?? {
-      evidenceDerived: [], outcomeBacked: [], manual: [], capabilityLimits: [],
+      evidenceDerived: [], outcomeBacked: [], manual: [], reviewStates: [], capabilityLimits: [],
     }
     reviewUnavailable.value = false
     const retained = knowledgeRows.value.find((row) => row.key === selectedReviewKey.value)
@@ -735,6 +807,90 @@ async function selectReview(row: KnowledgeReviewRow) {
     if (request === manualDetailRequest) selectedManualSop.value = data
   } finally {
     if (request === manualDetailRequest) manualDetailLoading.value = false
+  }
+}
+
+async function askReviewReason(
+  title: string,
+  placeholder: string,
+  confirmButtonText: string,
+) {
+  try {
+    const result = await ElMessageBox.prompt(
+      '请写明本次审阅的事实依据或决策原因。审核人将从当前登录账号记录，不能在这里代填。',
+      title,
+      {
+        confirmButtonText,
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: placeholder,
+        inputValidator: (value) => {
+          const length = value.trim().length
+          if (!length) return '请填写审阅理由'
+          if (length > 1000) return '审阅理由不能超过 1000 字'
+          return true
+        },
+      },
+    )
+    return result.value.trim()
+  } catch {
+    return null
+  }
+}
+
+function upsertReviewState(state: KnowledgeReviewState) {
+  const index = reviewInbox.value.reviewStates.findIndex((item) =>
+    item.origin === state.origin && item.sourceRecordId === state.sourceRecordId)
+  if (index < 0) {
+    reviewInbox.value.reviewStates = [state, ...reviewInbox.value.reviewStates]
+    return
+  }
+  reviewInbox.value.reviewStates.splice(index, 1, state)
+}
+
+async function startReview(row: KnowledgeReviewRow) {
+  if (row.reviewStatus !== 'CANDIDATE' || row.reviewVersion !== 0) return
+  const reason = await askReviewReason(
+    `开始审阅 ${row.selector}`,
+    '例：核对固定回放、证据引用和参考解法',
+    '开始审阅',
+  )
+  if (!reason) return
+  reviewDecisionLoading.value = `start:${row.key}`
+  try {
+    const { data } = await troubleshootingApi.startKnowledgeReview(
+      row.origin,
+      row.recordId,
+      { expectedVersion: 0, reason },
+    )
+    upsertReviewState(data)
+    reviewUnavailable.value = false
+    ElMessage.success('已进入审阅中，校验与模型事实已冻结')
+  } finally {
+    reviewDecisionLoading.value = null
+  }
+}
+
+async function rejectReview(row: KnowledgeReviewRow) {
+  if (row.reviewStatus !== 'IN_REVIEW' || row.reviewVersion < 1) return
+  const reason = await askReviewReason(
+    `拒绝 ${row.selector} / v${row.reviewVersion}`,
+    '例：缺少负例回放，引用无法支持结论',
+    '记录拒绝',
+  )
+  if (!reason) return
+  reviewDecisionLoading.value = `reject:${row.key}`
+  try {
+    const { data } = await troubleshootingApi.rejectKnowledgeReview(
+      row.origin,
+      row.recordId,
+      { expectedVersion: row.reviewVersion, reason },
+    )
+    upsertReviewState(data)
+    reviewUnavailable.value = false
+    ElMessage.success('已记录拒绝决策')
+  } finally {
+    reviewDecisionLoading.value = null
   }
 }
 
@@ -843,8 +999,7 @@ function originTagType(origin: KnowledgeOrigin): 'primary' | 'success' | 'warnin
   return 'warning'
 }
 
-function reviewStatusLabel(status: string | null) {
-  if (!status) return '尚无审核合同'
+function reviewStatusLabel(status: string) {
   const labels: Record<string, string> = {
     DRAFT: '草稿', CANDIDATE: '候选', IN_REVIEW: '审阅中',
     APPROVED: '已批准', REJECTED: '已拒绝', DEPRECATED: '已过期',
@@ -1117,6 +1272,14 @@ onMounted(() => Promise.all([loadList(), loadReviewInbox()]))
 .capability-boundary ul { margin: 6px 0 0; padding-left: 17px; }
 .capability-boundary li { margin: 3px 0; color: var(--el-text-color-regular); font-size: 10.5px; line-height: 1.55; }
 .locked-review-action { align-items: flex-end; }
+.review-action-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.review-audit-card {
+  padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--ts-signal) 30%, var(--el-border-color-lighter));
+  border-radius: 7px; background: color-mix(in srgb, var(--ts-signal) 4%, var(--el-bg-color));
+}
+.audit-reason { margin-top: 10px; padding: 9px 10px; border-left: 2px solid var(--ts-signal); background: var(--el-bg-color); }
+.audit-reason span { color: var(--el-text-color-secondary); font: 9.5px var(--mc-mono, monospace); }
+.audit-reason p { margin: 4px 0 0; color: var(--el-text-color-primary); font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; }
 .register-note { margin-bottom: 12px; }
 .register-note code, .validation code { font-family: var(--mc-mono, monospace); }
 .json-input :deep(textarea) { font-family: var(--mc-mono, monospace); font-size: 11px; line-height: 1.55; }

@@ -178,6 +178,37 @@ class MybatisPlaybookCandidateStoreTest {
                 .contains(7L, 0);
     }
 
+    @Test
+    void findsOneReviewCandidateByWorkspaceAndStableRecordId() throws Exception {
+        TroubleshootingPlaybookCandidateMapper mapper =
+                mock(TroubleshootingPlaybookCandidateMapper.class);
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        PlaybookKnowledgeRecord candidate = candidate();
+        TroubleshootingPlaybookCandidateEntity row =
+                new TroubleshootingPlaybookCandidateEntity();
+        row.setWorkspaceId(7L);
+        row.setRecordId(candidate.recordId());
+        row.setAggregateJson(objectMapper.writeValueAsString(candidate));
+        row.setDeleted(0);
+        when(mapper.selectOne(any())).thenReturn(row);
+        MybatisPlaybookCandidateStore store = new MybatisPlaybookCandidateStore(
+                mapper, objectMapper);
+
+        PlaybookKnowledgeRecord found = store.find(7L, candidate.recordId());
+
+        assertThat(found).isEqualTo(candidate);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<TroubleshootingPlaybookCandidateEntity>> query =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(mapper).selectOne(query.capture());
+        assertThat(query.getValue().getCustomSqlSegment())
+                .contains("workspace_id")
+                .contains("record_id")
+                .contains("deleted");
+        assertThat(query.getValue().getParamNameValuePairs().values())
+                .contains(7L, candidate.recordId(), 0);
+    }
+
     private PlaybookKnowledgeRecord candidate() {
         PlaybookDraft draft = new PlaybookDraft(
                 "draft-012345678901234567890123",

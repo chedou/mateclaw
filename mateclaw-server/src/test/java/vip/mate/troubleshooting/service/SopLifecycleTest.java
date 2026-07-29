@@ -8,6 +8,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -159,6 +161,30 @@ class SopLifecycleTest {
         assertThat(all).hasSize(1);
         assertThat(all.getFirst().operational()).isTrue();
         assertThat(all.getFirst().routeKey()).isEqualTo("csdp:903001");
+    }
+
+    @Test
+    void findsOneManualCandidateByWorkspaceAndStableSopId() throws Exception {
+        TroubleshootingSopMapper mapper = mock(TroubleshootingSopMapper.class);
+        SopEntry source = sop("candidate", false);
+        TroubleshootingSopEntity entity = new TroubleshootingSopEntity();
+        entity.setWorkspaceId(WORKSPACE_ID);
+        entity.setSopId(source.sopId());
+        entity.setAggregateJson(objectMapper.writeValueAsString(source));
+        entity.setDeleted(0);
+        when(mapper.selectOne(any())).thenReturn(entity);
+        TroubleshootingSopPersistenceService direct =
+                new TroubleshootingSopPersistenceService(mapper, objectMapper);
+
+        SopEntry found = direct.findBySopId(WORKSPACE_ID, source.sopId());
+
+        assertThat(found).isEqualTo(source);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<AbstractWrapper<TroubleshootingSopEntity, ?, ?>> query =
+                ArgumentCaptor.forClass(AbstractWrapper.class);
+        verify(mapper).selectOne(query.capture());
+        assertThat(bound(query.getValue()).values())
+                .contains(WORKSPACE_ID, source.sopId(), 0);
     }
 
     // ---------- fixtures ----------

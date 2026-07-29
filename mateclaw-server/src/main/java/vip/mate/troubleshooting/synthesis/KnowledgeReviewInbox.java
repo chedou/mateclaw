@@ -9,18 +9,19 @@ import java.util.List;
  * Read model for the three knowledge lanes that already persist candidates.
  *
  * <p>This is deliberately not a promotion command. Evidence-derived records
- * already own review and qualification fields. Outcome-backed records still
- * use the closure publication contract, so the UI must present that missing
- * review state instead of inventing an approval.</p>
+ * already own generation and qualification fields. {@code reviewStates} is an
+ * independent audit ledger shared by all three origins; missing state means a
+ * virtual CANDIDATE/v0 rather than a hidden publication decision.</p>
  */
 public record KnowledgeReviewInbox(
         List<PlaybookKnowledgeRecord> evidenceDerived,
         List<KnowledgeCandidate> outcomeBacked,
         List<SopSummary> manual,
+        List<KnowledgeReviewState> reviewStates,
         List<String> capabilityLimits) {
 
     public static final List<String> CURRENT_CAPABILITY_LIMITS = List.of(
-            "REVIEW_DECISIONS_NOT_IMPLEMENTED",
+            "REVIEW_START_AND_REJECT_ONLY",
             "APPROVAL_REQUIRES_ELIGIBILITY_GATE",
             "PROMOTION_MUST_CREATE_NEW_VERSION");
 
@@ -30,6 +31,8 @@ public record KnowledgeReviewInbox(
         outcomeBacked = List.copyOf(
                 outcomeBacked == null ? List.of() : outcomeBacked);
         manual = List.copyOf(manual == null ? List.of() : manual);
+        reviewStates = List.copyOf(
+                reviewStates == null ? List.of() : reviewStates);
         capabilityLimits = List.copyOf(
                 capabilityLimits == null ? List.of() : capabilityLimits);
     }

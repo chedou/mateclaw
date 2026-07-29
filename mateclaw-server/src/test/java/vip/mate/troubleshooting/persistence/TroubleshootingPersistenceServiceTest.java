@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.persistence;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -233,6 +234,33 @@ class TroubleshootingPersistenceServiceTest {
 
         assertEquals(409, error.getCode());
         verify(outboxMapper, never()).insert(any(TroubleshootingKnowledgeOutboxEntity.class));
+    }
+
+    @Test
+    void findsOneOutcomeCandidateByWorkspaceAndStableCandidateId() throws Exception {
+        KnowledgeCandidate candidate = candidate();
+        TroubleshootingKnowledgeOutboxEntity row =
+                new TroubleshootingKnowledgeOutboxEntity();
+        row.setWorkspaceId(7L);
+        row.setCandidateId(candidate.candidateId());
+        row.setPayloadJson(objectMapper.writeValueAsString(candidate));
+        row.setDeleted(0);
+        when(outboxMapper.selectOne(any())).thenReturn(row);
+
+        KnowledgeCandidate found = service.findKnowledgeCandidate(
+                7L, candidate.candidateId());
+
+        assertEquals(candidate, found);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<TroubleshootingKnowledgeOutboxEntity>> query =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(outboxMapper).selectOne(query.capture());
+        String sql = query.getValue().getCustomSqlSegment().toLowerCase();
+        assertTrue(sql.contains("workspace"), sql);
+        assertTrue(sql.contains("candidate"), sql);
+        assertTrue(sql.contains("deleted"), sql);
+        assertTrue(query.getValue().getParamNameValuePairs().values()
+                .containsAll(List.of(7L, candidate.candidateId(), 0)));
     }
 
     @Test

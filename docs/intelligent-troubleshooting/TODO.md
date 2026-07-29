@@ -53,7 +53,8 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
 - [x] `DeterministicLogTraceCompressor`，模型前产出有界调用链骨架。
 - [x] `SopSynthesisService.preview()`，fixture scope 内可到 `READY_FOR_MODEL`。
 - [x] Diagnosis 处置闭环：确认、转派、批准不执行、外部 outcome、恢复验证、关闭。
-- [x] KnowledgeCandidate + Outbox 发布语义；审核语义尚未实现。
+- [x] KnowledgeCandidate + Outbox 只表达发布语义；独立审核台账已支持
+      `CANDIDATE/v0 → IN_REVIEW/v1 → REJECTED/v2`，不复用 Outbox status。
 - [x] Vue 排障工作台和三套只读体验原型。
 
 ## 3. P0 · 架构和体验校准
@@ -344,18 +345,22 @@ Challenger 影子运行和两者对比仍未实现。
 
 ### T14 · Review status 与版本替换
 
-- [x] 正式 `/troubleshooting/sops` 增加统一、只读的 Knowledge Review Inbox；服务端按 workspace
+- [x] 正式 `/troubleshooting/sops` 增加统一 Knowledge Review Inbox；服务端按 workspace
       同时读取 `EVIDENCE_DERIVED` PlaybookKnowledgeRecord、`OUTCOME_BACKED` 关闭候选与
       `MANUAL` 注册候选，页面展示来源、审核/校验状态、晋升资格、缺失条件、证据引用、模型与参考解法。
-      关闭候选和旧人工候选没有独立审核合同，必须显式显示 `NOT_EVALUATED / NOT_ELIGIBLE`，不得由前端
-      猜成已审核。旧式 candidate → approved 按钮已从正式页面撤下；本项只补审阅台账，不代表下面的
-      状态机、资格计算或版本替换完成（2026-07-29）。
+      未开始独立审核时统一投影为 `CANDIDATE/v0`；关闭候选和旧人工候选的来源校验仍显式为
+      `NOT_EVALUATED / NOT_ELIGIBLE`，不得由前端猜成已校验。旧式 candidate → approved 按钮已撤下。
 - [x] 旧 `POST /sops/{system}/{errorCode}/status` 已拒绝 `candidate → approved`，只允许既有
       approved 版本退役为 deprecated；页面隐藏按钮不再是唯一防线，资格与新版本晋升合同完成前服务端
       保持 fail closed（2026-07-29）。
 - [ ] 新建/扩展审核状态：DRAFT → CANDIDATE → IN_REVIEW → APPROVED/REJECTED → DEPRECATED。
+  - [x] H2/MySQL/Kingbase V185 独立审核台账；无记录为 `CANDIDATE/v0`，可开始为
+        `IN_REVIEW/v1`，可按精确版本拒绝为 `REJECTED/v2`。重试幂等，并发旧版本 409；
+        审核人只从登录主体取得，reason 禁止凭据、DQL、原始日志和堆栈。
+  - [ ] `APPROVED / DEPRECATED` 仍等资格 Gate 与新版本替换命令完成后开放。
 - [ ] EVIDENCE_DERIVED / OUTCOME_BACKED / MANUAL 分别按 v4 的最低证据计算晋升资格。
-- [ ] 审核记录 reviewer、reason、validation summary、reference comparison 和模型版本。
+- [x] 审核记录 reviewer、reason，并在开始审阅时冻结 validation summary、
+      reference comparison、模型版本、fixture 与当时的资格缺口（2026-07-29）。
 - [ ] approved 永远创建新版本；乐观锁 + selector active-approved 唯一约束防并发双权威。
 - [ ] 定义 `AdversarialEvalReport`：反证、缺证据、危险动作、权威违规、未解决分歧和成本。
 - [ ] Challenger 首期只读冻结 EvidenceBundle；缺证据只返回 EvidenceGap，由 Loop Control 决定是否补证。

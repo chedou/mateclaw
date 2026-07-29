@@ -6,4 +6,6 @@ import java.util.List;
 public interface PlaybookCandidateReader {
 
     List<PlaybookKnowledgeRecord> list(long workspaceId, int limit);
+
+    PlaybookKnowledgeRecord find(long workspaceId, String recordId);
 }

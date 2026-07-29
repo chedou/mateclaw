@@ -3,6 +3,7 @@ import type {
   KnowledgeCandidate,
   KnowledgeOrigin,
   KnowledgeReviewInbox,
+  KnowledgeReviewState,
   KnowledgeReviewStatus,
   KnowledgeValidationStatus,
   PlaybookKnowledgeRecord,
@@ -19,7 +20,10 @@ export interface KnowledgeReviewRow {
   key: string
   recordId: string
   origin: KnowledgeOrigin
-  reviewStatus: KnowledgeReviewStatus | null
+  reviewStatus: KnowledgeReviewStatus
+  reviewVersion: number
+  reviewer: string
+  reviewReason: string
   validationStatus: KnowledgeValidationStatus
   approvalEligibility: KnowledgeApprovalEligibility
   eligibilityReasons: string[]
@@ -33,6 +37,7 @@ export interface KnowledgeReviewRow {
   createdAt: string
   fixtureMode: boolean | null
   reviewStatePersisted: boolean
+  reviewState: KnowledgeReviewState | null
   source: KnowledgeReviewSource
 }
 
@@ -47,20 +52,26 @@ const REASON_LABELS: Record<string, string> = {
   P1_CALIBRATION_PERIOD: '当前工作区仍处于 P1–P2 校准期，需要人工参考解法和固定回放。',
   CONTRAST_UNAVAILABLE: '成功样本对照尚不可用，不能进入运行期资格档。',
   REFERENCE_SOLUTION_DELTA: '草稿与人工参考解法仍有必需意图或证据差异。',
-  REVIEW_CONTRACT_NOT_MIGRATED: '该关闭案例候选尚未迁移到独立审核状态合同。',
+  OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED: '关闭结果候选的 outcome、恢复验证与回放资格门禁尚未实现。',
   OUTCOME_VERIFICATION_NOT_PROJECTED: '当前候选合同不足以独立证明 outcome 与恢复验证条件。',
   POSITIVE_REPLAY_REQUIRED: '尚缺固定正例回放结果。',
   OWNER_REQUIRED: '尚未指定对该 selector 负责的 owner。',
   CITATIONS_REQUIRED: '候选没有可审计的证据引用。',
-  MANUAL_REVIEW_CONTRACT_NOT_MIGRATED: '人工 SOP 候选尚未迁移到版本化 KnowledgeRecord 审核合同。',
+  MANUAL_ELIGIBILITY_GATE_NOT_IMPLEMENTED: '人工候选的 owner、selector 唯一性、合同校验与回放资格门禁尚未实现。',
   POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED: '人工候选尚缺固定正例与负例回放。',
   OWNER_AND_CONTRACT_VALIDATION_REQUIRED: '需要核对 owner 与完整合同校验结果。',
-  REVIEW_DECISIONS_NOT_IMPLEMENTED: '当前只开放审阅台账，尚未实现独立审核决策。',
+  REVIEW_START_AND_REJECT_ONLY: '当前只开放开始审阅和拒绝；批准决策仍保持关闭。',
   APPROVAL_REQUIRES_ELIGIBILITY_GATE: '批准必须通过来源对应的资格门禁，不能由按钮绕过。',
   PROMOTION_MUST_CREATE_NEW_VERSION: '晋升必须创建新版本，并显式替代旧的 approved 版本。',
 }
 
 export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): KnowledgeReviewRow[] {
+  const reviewStates = new Map(
+    inbox.reviewStates.map((state) => [
+      `${state.origin}:${state.sourceRecordId}`,
+      state,
+    ]),
+  )
   const evidenceDerived = inbox.evidenceDerived.map((record): KnowledgeReviewRow => {
     const selectorValue = record.draft.proposedSelector.errorCode
       ?? record.draft.proposedSelector.scenarioKey
@@ -69,7 +80,10 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
       key: `EVIDENCE_DERIVED:${record.recordId}`,
       recordId: record.recordId,
       origin: 'EVIDENCE_DERIVED',
-      reviewStatus: record.reviewStatus,
+      reviewStatus: 'CANDIDATE',
+      reviewVersion: 0,
+      reviewer: '',
+      reviewReason: '',
       validationStatus: record.validationStatus,
       approvalEligibility: record.approvalEligibility,
       eligibilityReasons: [...record.eligibilityReasons],
@@ -82,14 +96,15 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
       evidenceRefs: [...record.draft.evidenceCitations],
       createdAt: record.createdAt,
       fixtureMode: record.fixtureMode,
-      reviewStatePersisted: true,
+      reviewStatePersisted: false,
+      reviewState: null,
       source: { kind: 'EVIDENCE_DERIVED', record },
     }
   })
 
   const outcomeBacked = inbox.outcomeBacked.map((candidate): KnowledgeReviewRow => {
     const reasons = [
-      'REVIEW_CONTRACT_NOT_MIGRATED',
+      'OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED',
       'OUTCOME_VERIFICATION_NOT_PROJECTED',
       'POSITIVE_REPLAY_REQUIRED',
       'OWNER_REQUIRED',
@@ -99,7 +114,10 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
       key: `OUTCOME_BACKED:${candidate.candidateId}`,
       recordId: candidate.candidateId,
       origin: 'OUTCOME_BACKED',
-      reviewStatus: null,
+      reviewStatus: 'CANDIDATE',
+      reviewVersion: 0,
+      reviewer: '',
+      reviewReason: '',
       validationStatus: 'NOT_EVALUATED',
       approvalEligibility: 'NOT_ELIGIBLE',
       eligibilityReasons: reasons,
@@ -115,6 +133,7 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
       createdAt: candidate.createdAt,
       fixtureMode: null,
       reviewStatePersisted: false,
+      reviewState: null,
       source: { kind: 'OUTCOME_BACKED', candidate },
     }
   })
@@ -123,11 +142,14 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
     key: `MANUAL:${summary.sopId}`,
     recordId: summary.sopId,
     origin: 'MANUAL',
-    reviewStatus: null,
+    reviewStatus: 'CANDIDATE',
+    reviewVersion: 0,
+    reviewer: '',
+    reviewReason: '',
     validationStatus: 'NOT_EVALUATED',
     approvalEligibility: 'NOT_ELIGIBLE',
     eligibilityReasons: [
-      'MANUAL_REVIEW_CONTRACT_NOT_MIGRATED',
+      'MANUAL_ELIGIBILITY_GATE_NOT_IMPLEMENTED',
       'POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED',
       'OWNER_AND_CONTRACT_VALIDATION_REQUIRED',
     ],
@@ -141,10 +163,24 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
     createdAt: summary.createTime,
     fixtureMode: null,
     reviewStatePersisted: false,
+    reviewState: null,
     source: { kind: 'MANUAL', summary },
   }))
 
   return [...evidenceDerived, ...outcomeBacked, ...manual]
+    .map((row): KnowledgeReviewRow => {
+      const state = reviewStates.get(row.key)
+      if (!state) return row
+      return {
+        ...row,
+        reviewStatus: state.status,
+        reviewVersion: state.version,
+        reviewer: state.reviewer,
+        reviewReason: state.reason,
+        reviewStatePersisted: true,
+        reviewState: state,
+      }
+    })
     .sort((left, right) => timestamp(right.createdAt) - timestamp(left.createdAt))
 }
 

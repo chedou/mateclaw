@@ -84,14 +84,35 @@ const inbox: KnowledgeReviewInbox = {
     createTime: '2026-07-20T09:10:00Z',
     updateTime: '2026-07-20T09:10:00Z',
   }],
+  reviewStates: [{
+    reviewId: 'review-outcome-001',
+    origin: 'OUTCOME_BACKED',
+    sourceRecordId: 'candidate-outcome-001',
+    selectorKey: 'csdp:903001',
+    status: 'IN_REVIEW',
+    reviewer: 'reviewer-a',
+    reason: '核对关闭结果与证据引用',
+    snapshot: {
+      validationStatus: 'NOT_EVALUATED',
+      validationErrors: [],
+      referenceComparison: null,
+      modelConfigVersion: null,
+      approvalEligibility: 'NOT_ELIGIBLE',
+      eligibilityReasons: ['OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED'],
+      fixtureMode: null,
+    },
+    version: 1,
+    createdAt: '2026-07-20T09:21:00Z',
+    updatedAt: '2026-07-20T09:21:00Z',
+  }],
   capabilityLimits: [
-    'REVIEW_DECISIONS_NOT_IMPLEMENTED',
+    'REVIEW_START_AND_REJECT_ONLY',
     'APPROVAL_REQUIRES_ELIGIBILITY_GATE',
   ],
 }
 
 describe('knowledge review projection', () => {
-  it('merges all three persisted lanes without inventing review state', () => {
+  it('overlays persisted review decisions and keeps untouched sources at candidate v0', () => {
     const rows = buildKnowledgeReviewRows(inbox)
 
     expect(rows.map((row) => row.key)).toEqual([
@@ -101,25 +122,31 @@ describe('knowledge review projection', () => {
     ])
     expect(rows[0]).toMatchObject({
       origin: 'OUTCOME_BACKED',
-      reviewStatus: null,
+      reviewStatus: 'IN_REVIEW',
+      reviewVersion: 1,
+      reviewer: 'reviewer-a',
       validationStatus: 'NOT_EVALUATED',
       approvalEligibility: 'NOT_ELIGIBLE',
-      reviewStatePersisted: false,
+      reviewStatePersisted: true,
       selector: 'CSDP:903001',
     })
-    expect(rows[0].eligibilityReasons).toContain('REVIEW_CONTRACT_NOT_MIGRATED')
+    expect(rows[0].reviewState?.reason).toContain('核对关闭结果')
+    expect(rows[0].eligibilityReasons).toContain('OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED')
     expect(rows[1]).toMatchObject({
       origin: 'EVIDENCE_DERIVED',
+      reviewStatus: 'CANDIDATE',
+      reviewVersion: 0,
       validationStatus: 'VALID',
       fixtureMode: true,
-      reviewStatePersisted: true,
+      reviewStatePersisted: false,
     })
     expect(rows[1].eligibilityReasons).toEqual([
       'P1_CALIBRATION_PERIOD', 'CONTRAST_UNAVAILABLE',
     ])
     expect(rows[2]).toMatchObject({
       origin: 'MANUAL',
-      reviewStatus: null,
+      reviewStatus: 'CANDIDATE',
+      reviewVersion: 0,
       validationStatus: 'NOT_EVALUATED',
       reviewStatePersisted: false,
       selector: 'CSDP:903002',
@@ -141,7 +168,8 @@ describe('knowledge review projection', () => {
 
   it('renders machine reasons as explicit Chinese gate conditions', () => {
     expect(reviewReasonLabel('P1_CALIBRATION_PERIOD')).toContain('校准期')
-    expect(reviewReasonLabel('REVIEW_CONTRACT_NOT_MIGRATED')).toContain('独立审核状态')
+    expect(reviewReasonLabel('REVIEW_START_AND_REJECT_ONLY')).toContain('开始审阅和拒绝')
+    expect(reviewReasonLabel('OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED')).toContain('关闭结果')
     expect(reviewReasonLabel('UNKNOWN_FUTURE_REASON')).toBe('UNKNOWN_FUTURE_REASON')
   })
 

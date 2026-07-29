@@ -428,6 +428,47 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V185CreatesAWorkspaceScopedOptimisticKnowledgeReviewLedger()
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v185;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/"
+                            + "V185__troubleshooting_knowledge_review.sql");
+
+            Set<String> tables = tables(connection.getMetaData());
+            assertTrue(tables.contains(
+                    "mate_troubleshooting_knowledge_review"));
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_knowledge_review");
+            assertTrue(columns.contains("review_id"));
+            assertTrue(columns.contains("origin"));
+            assertTrue(columns.contains("source_record_id"));
+            assertTrue(columns.contains("selector_key"));
+            assertTrue(columns.contains("status"));
+            assertTrue(columns.contains("reviewer"));
+            assertTrue(columns.contains("reason"));
+            assertTrue(columns.contains("snapshot_json"));
+            assertTrue(columns.contains("version"));
+            assertFalse(columns.contains("search_term"));
+            assertFalse(columns.contains("dql"));
+            assertFalse(columns.contains("credential"));
+            assertFalse(columns.contains("raw_log"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_knowledge_review_id"));
+            assertEquals(1, countIndexes(
+                    connection, "uk_ts_knowledge_review_source"));
+            assertEquals(1, countIndexes(
+                    connection, "idx_ts_knowledge_review_status"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

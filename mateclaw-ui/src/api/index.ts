@@ -1767,11 +1767,41 @@ export interface KnowledgeCandidate {
   createdAt: string
 }
 
-/** Read-only knowledge governance projection; this endpoint cannot promote a candidate. */
+export interface KnowledgeReviewSnapshot {
+  validationStatus: KnowledgeValidationStatus
+  validationErrors: PlaybookDraft['validationErrors']
+  referenceComparison: ReferenceSolutionComparison | null
+  modelConfigVersion: string | null
+  approvalEligibility: KnowledgeApprovalEligibility
+  eligibilityReasons: string[]
+  fixtureMode: boolean | null
+}
+
+export interface KnowledgeReviewState {
+  reviewId: string
+  origin: KnowledgeOrigin
+  sourceRecordId: string
+  selectorKey: string | null
+  status: KnowledgeReviewStatus
+  reviewer: string
+  reason: string
+  snapshot: KnowledgeReviewSnapshot
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeReviewDecisionRequest {
+  expectedVersion: number
+  reason: string
+}
+
+/** Knowledge governance projection; start/reject are separate optimistic commands. */
 export interface KnowledgeReviewInbox {
   evidenceDerived: PlaybookKnowledgeRecord[]
   outcomeBacked: KnowledgeCandidate[]
   manual: SopSummary[]
+  reviewStates: KnowledgeReviewState[]
   capabilityLimits: string[]
 }
 
@@ -2646,9 +2676,31 @@ export const troubleshootingApi = {
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
 
-  /** Both persisted candidate lanes, with no review or promotion side effect. */
+  /** Three source lanes plus their independent review states; no promotion side effect. */
   knowledgeReviewInbox: (params?: { limit?: number }) =>
     http.get<KnowledgeReviewInbox>('/troubleshooting/sops/review-inbox', { params }),
+
+  /** Starts optimistic review from the virtual CANDIDATE/v0 state. */
+  startKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewState>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/start`,
+    data,
+  ),
+
+  /** Records rejection for the exact IN_REVIEW version; approval remains unavailable. */
+  rejectKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewState>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/reject`,
+    data,
+  ),
 
   getSop: (system: string, errorCode: string) =>
     http.get<SopEntry>(

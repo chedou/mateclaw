@@ -158,9 +158,26 @@ public class TroubleshootingSopPersistenceService {
     public SopEntry find(long workspaceId, String system, String errorCode) {
         String routeKey = system.trim().toLowerCase(Locale.ROOT) + ":" + errorCode.trim();
         TroubleshootingSopEntity entity = findEntity(workspaceId, routeKey);
-        if (entity == null) {
-            return null;
+        return entity == null ? null : read(entity);
+    }
+
+    /** Finds a manual candidate by stable source ID inside one workspace. */
+    public SopEntry findBySopId(long workspaceId, String sopId) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
         }
+        if (sopId == null || sopId.isBlank()) {
+            throw new IllegalArgumentException("sopId must not be blank");
+        }
+        TroubleshootingSopEntity entity = mapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingSopEntity>()
+                        .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getSopId, sopId.trim())
+                        .eq(TroubleshootingSopEntity::getDeleted, 0));
+        return entity == null ? null : read(entity);
+    }
+
+    private SopEntry read(TroubleshootingSopEntity entity) {
         try {
             return objectMapper.readValue(entity.getAggregateJson(), SopEntry.class);
         } catch (JsonProcessingException error) {
