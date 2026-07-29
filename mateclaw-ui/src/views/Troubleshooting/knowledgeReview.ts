@@ -50,12 +50,26 @@ export interface ReferenceComparisonIssue {
   danger: boolean
 }
 
+const LEGACY_OUTCOME_CONTRACT = 'knowledge-candidate.v1'
+
+export function missingKnowledgeOwnerLabel(candidate: KnowledgeCandidate): string {
+  return candidate.contractVersion === LEGACY_OUTCOME_CONTRACT
+    ? '未冻结（历史 v1 候选）'
+    : '未冻结（当前合同缺口）'
+}
+
+export function missingOutcomeProofLabel(candidate: KnowledgeCandidate): string {
+  return candidate.contractVersion === LEGACY_OUTCOME_CONTRACT
+    ? 'LEGACY_NOT_PROJECTED'
+    : 'CURRENT_CONTRACT_INVALID'
+}
+
 const REASON_LABELS: Record<string, string> = {
   P1_CALIBRATION_PERIOD: '当前工作区仍处于 P1–P2 校准期，需要人工参考解法和固定回放。',
   CONTRAST_UNAVAILABLE: '成功样本对照尚不可用，不能进入运行期资格档。',
   REFERENCE_SOLUTION_DELTA: '草稿与人工参考解法仍有必需意图或证据差异。',
   OUTCOME_ELIGIBILITY_GATE_NOT_IMPLEMENTED: '关闭结果候选的 outcome、恢复验证与回放资格门禁尚未实现。',
-  OUTCOME_VERIFICATION_NOT_PROJECTED: '当前关闭结果候选合同不足以独立证明 outcome 与恢复验证条件。',
+  OUTCOME_VERIFICATION_NOT_PROJECTED: '历史 v1 关闭结果候选没有冻结服务端 outcome 与恢复验证证明。',
   POSITIVE_REPLAY_REQUIRED: '尚缺固定正例回放结果。',
   OWNER_REQUIRED: '尚未指定对该 selector 负责的 owner。',
   VERSIONED_SELECTOR_UNIQUENESS_REQUIRED: '尚未建立可版本替换的 selector 单 active-approved 唯一性证明。',

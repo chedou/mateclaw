@@ -124,11 +124,34 @@ class KnowledgeReviewQualificationPolicyTest {
 
     private KnowledgeCandidate outcomeCandidate() {
         return new KnowledgeCandidate(
-                "candidate-1", KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                "candidate-1", KnowledgeCandidate.LEGACY_CONTRACT_VERSION,
                 "diag-1", "case-1", "run-1", "CSDP", "903001",
                 "csdp:903001", "连接池耗尽", List.of("LOG-1"),
                 List.of(), List.of(), "人工扩容后恢复", null, "closer-a",
                 Instant.parse("2026-07-29T10:00:00Z"));
+    }
+
+    @Test
+    void outcomeQualificationCreditsOnlyTheFrozenServerOwnedClosureProof() {
+        Instant closedAt = Instant.parse("2026-07-29T10:00:00Z");
+        KnowledgeCandidate candidate = new KnowledgeCandidate(
+                "candidate-2", KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                "diag-2", "case-2", "run-2", "CSDP", "903001",
+                "csdp:903001", "连接池耗尽", List.of("LOG-1"),
+                List.of(), List.of(), "人工扩容后恢复", null, "closer-a",
+                closedAt,
+                new KnowledgeCandidate.OutcomeProof(
+                        vip.mate.troubleshooting.model.ClosureOutcome.RECOVERED,
+                        true,
+                        "closer-a",
+                        closedAt),
+                "订单平台组");
+
+        KnowledgeReviewSource source = policy.outcome(candidate);
+
+        assertThat(source.snapshot().eligibilityReasons())
+                .doesNotContain("OUTCOME_VERIFICATION_NOT_PROJECTED")
+                .containsExactly("POSITIVE_REPLAY_REQUIRED");
     }
 
     private SopEntry manualSop() {

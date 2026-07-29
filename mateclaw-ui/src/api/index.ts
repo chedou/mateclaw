@@ -1770,6 +1770,15 @@ export interface KnowledgeCandidate {
   feedback: string | null
   createdBy: string
   createdAt: string
+  /** Missing only on legacy knowledge-candidate.v1 outbox rows. */
+  outcomeProof?: {
+    outcome: ClosureOutcome
+    recoveryVerified: boolean
+    registeredBy: string
+    registeredAt: string
+  } | null
+  /** Frozen from the Playbook used by the source Diagnosis; never inferred from transfer. */
+  ownerTeam?: string | null
 }
 
 export interface KnowledgeReviewSnapshot {
@@ -2026,10 +2035,12 @@ export interface Diagnosis {
   recommendedActions: RecommendedAction[]
   pendingWrites: RecommendedAction[]
   routeToTeam: string | null
+  /** Frozen Playbook owner; absent on Diagnosis contracts before 1.7. */
+  sourcePlaybookOwner?: string | null
   transfers: unknown[]
   actionOutcomes: unknown[]
   closure: ClosureRecord | null
-  knowledgeCandidates: unknown[]
+  knowledgeCandidates: KnowledgeCandidate[]
   timeline: TimelineEvent[]
   /** D14 timing snapshot; legacy 1.3/1.4 rows carry all-null values. */
   timings: NorthStarTimings

@@ -535,6 +535,10 @@
                 </p>
                 <dl class="compact-facts">
                   <div><dt>case / run</dt><dd class="mono">{{ selectedOutcomeCandidate.sourceCaseId }} / {{ selectedOutcomeCandidate.sourceRunId }}</dd></div>
+                  <div><dt>knowledge owner</dt><dd>{{ selectedOutcomeCandidate.ownerTeam || missingKnowledgeOwnerLabel(selectedOutcomeCandidate) }}</dd></div>
+                  <div><dt>outcome proof</dt><dd class="mono">{{ selectedOutcomeCandidate.outcomeProof?.outcome || missingOutcomeProofLabel(selectedOutcomeCandidate) }}</dd></div>
+                  <div><dt>recovery verified</dt><dd class="mono">{{ selectedOutcomeCandidate.outcomeProof?.recoveryVerified ?? missingOutcomeProofLabel(selectedOutcomeCandidate) }}</dd></div>
+                  <div><dt>outcome registered</dt><dd class="mono">{{ selectedOutcomeCandidate.outcomeProof ? formatTime(selectedOutcomeCandidate.outcomeProof.registeredAt) : missingOutcomeProofLabel(selectedOutcomeCandidate) }}</dd></div>
                   <div><dt>created by</dt><dd>{{ selectedOutcomeCandidate.createdBy }}</dd></div>
                   <div><dt>recommended actions</dt><dd>{{ selectedOutcomeCandidate.recommendedActions.length }}</dd></div>
                   <div><dt>recorded outcomes</dt><dd>{{ selectedOutcomeCandidate.actionOutcomes.length }}</dd></div>
@@ -679,6 +683,8 @@ import { nextSopStatus, parseCandidateSopJson } from './sopRegistry'
 import {
   buildKnowledgeReviewRows,
   filterKnowledgeReviewRows,
+  missingKnowledgeOwnerLabel,
+  missingOutcomeProofLabel,
   referenceComparisonIssues,
   reviewReasonLabel,
   type KnowledgeReviewRow,

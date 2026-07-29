@@ -172,15 +172,16 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   开始时的 validation/reference/model/fixture 快照；reason 拒绝凭据、DQL、原始日志和堆栈。Inbox 还为每个精确
   来源返回服务端当前资格投影：证据型显式处于默认 `CALIBRATION` 档并核对
   validation/reference/citation/fixture，candidate 生成本身不计作正例回放；人工型对完整 SOP 合同执行
-  evidence request→criterion→rule 交叉引用校验；关闭型显式暴露
-  当前候选合同仍缺 ClosureRecord/恢复验证、正例回放和 owner；前端不再自行拼资格原因。旧式
+  evidence request→criterion→rule 交叉引用校验；关闭型逐项暴露服务端可证明事实与缺口，前端不再自行拼资格原因。旧式
   candidate → approved 通用按钮继续关闭；旧 `POST /sops/{system}/{errorCode}/status` 也已 fail closed
   拒绝 `approved`，且不能退役 V186 版本化权威。有 review 的版本必须从原审核记录提交精确 review version
   与 reason；V186 回填且没有 review 的 LEGACY 权威另有精确 playbookVersion + 服务端 actor/reason 的
   审计退役命令。MANUAL source 现在以 `sopId` 唯一，不同不可变 source 可共享 selector，用于首版后的
   人工替代；H2/MySQL/Kingbase 的 nullable `active_selector_key` 唯一约束继续保证每个 selector 最多一个
   active approved。正式命中路径只返回 operational 权威，最新版本为 `DEPRECATED` 时直接 route miss，
-  不回落复活 legacy 行；治理详情独立读取最新历史版本。当前真实回放/owner/outcome 证明、数据驱动的
+  不回落复活 legacy 行；治理详情独立读取最新历史版本。Diagnosis 1.7 现冻结来源 Playbook owner，
+  `knowledge-candidate.v2` 与关闭事务同时冻结 outcome、恢复验证、actor 和时间；历史 v1 候选继续显示
+  `OUTCOME_VERIFICATION_NOT_PROJECTED / OWNER_REQUIRED`。当前真实精确候选回放、数据驱动的
   `RUNTIME` 档切换尚未接入 Gate，因此现有三类真实来源仍保持 `NOT_ELIGIBLE`；版本命令可用不等于已有
   候选可以晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的可执行 promotion material 也继续 fail closed，
   直到各自的 server-owned Playbook 合同与证明接入。
@@ -613,9 +614,10 @@ T14 版本化知识晋升与审计退役（2026-07-30）已实现，真实来源
 - 确定性命中只读取 operational authority；最新版本已退役时直接 route miss，不回落复活 legacy source。
   治理页另读最新历史版本，展示来源、Playbook/review version 与退役审计。批准/退役后详情立即采用服务端
   响应，不再残留旧状态。
-- 当前 OUTCOME_BACKED 候选在正式页仍明确显示
-  `OUTCOME_VERIFICATION_NOT_PROJECTED / POSITIVE_REPLAY_REQUIRED / OWNER_REQUIRED`，只有“开始审阅”而没有
-  批准入口；现有三类来源都没有因命令落地而被伪装成可晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的
+- 历史 `knowledge-candidate.v1` 在正式页仍明确显示
+  `OUTCOME_VERIFICATION_NOT_PROJECTED / POSITIVE_REPLAY_REQUIRED / OWNER_REQUIRED`；新生成的 v2 候选会消除
+  已由关闭事务证明的 outcome/owner 缺口，但仍保留 `POSITIVE_REPLAY_REQUIRED`，因此没有因命令落地而被
+  伪装成可晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的
   server-owned promotion material、真实 T7 owner 验收和 20–30 条 T8 样本仍待接入。
 - 浏览器首轮验收发现 version mapper 的共享列片段把 `SELECT` 拼成 `SELECTid`，真实详情接口返回 500；
   已补 H2/MyBatis 集成测试覆盖 active/current/review/playbook/latest 五条查询并修复。最终排障域 + Skill
@@ -626,6 +628,26 @@ T14 版本化知识晋升与审计退役（2026-07-30）已实现，真实来源
   `/troubleshooting/legacy` 均为 0 console error；T8 台账诚实保持 `0 / 20` 且显示“暂无可测样本”。
   下一主攻仍是 owner 完成 T7 真配置/验收、积累并评审真实 T8 样本，再接 Challenger 与 Loop；本增量
   没有放开生产写或 hit-path LLM。
+
+T14 关闭候选事实投影（2026-07-30）已实现，精确候选回放仍未完成：
+
+- Diagnosis 合同升级为 1.7，确定性命中时把来源 Playbook 的 owner 冻结到聚合；人工转派继续只修改
+  `routeToTeam`，不能反向篡改知识 owner。1.3–1.6 旧聚合保持可读，缺失 owner 时不补猜。
+- `knowledge-candidate.v2` 与 ClosureRecord 在同一个纯状态转换和数据库事务中生成，冻结 outcome、
+  `recoveryVerified`、actor 与时间；候选 proof 必须与 createdBy/createdAt 一致。历史 v1 Outbox 载荷仍可读取，
+  但资格策略继续返回 `OUTCOME_VERIFICATION_NOT_PROJECTED`。
+- 新 OUTCOME_BACKED 候选的审核详情展示知识 owner、outcome proof、恢复验证和登记时间；服务端资格策略
+  只消除已被合同证明的缺口，`POSITIVE_REPLAY_REQUIRED` 仍然阻止批准。不得拿 candidate-free 的 T8
+  `BaselineEvaluationRun` 冒充精确候选回放。
+- 候选版本边界现在是硬约束：仅接受 v1/v2，v1 携带 proof/owner、v2 缺少 proof、未知版本都在
+  合同边界直接拒绝；资格策略显式按版本投影。前端 Diagnosis 1.7 已类型化
+  `sourcePlaybookOwner / knowledgeCandidates`，治理页区分“历史 v1 未投影”与“当前合同缺口”。
+- Standards / Spec 双轴最终复审均 PASS，无剩余 P0/P1/P2。排障域 + Skill Manifest 后端 `491`
+  个测试、前端 `18` 个测试文件 / `141` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、
+  `git diff --check` 与直接 Vite 生产构建通过，构建完成 `6276` 个模块转换。
+- 后端 PID `45297` 以 schema V186 监听 `18088`，前端 PID `92308` 监听 `5173`。登录态真实页面验证
+  `/troubleshooting`、`/troubleshooting/sops`、`/troubleshooting/legacy` 都正常且各自 0 console error；
+  现存 v1 关闭候选正确显示历史 proof/owner 缺口和 `POSITIVE_REPLAY_REQUIRED`，未被伪装成可晋升。
 
 后端定向测试命令：
 

@@ -366,9 +366,12 @@ Challenger 影子运行和两者对比仍未实现。
   - [x] 当前来源事实已由统一服务端策略计算并随 Inbox 返回：证据型显式处于默认
         `CALIBRATION` 档并核对 validation/reference/citation/fixture，不把 candidate 生成当正例回放；
         人工型核对 owner 与证据请求→判据→规则交叉引用；关闭型不再用
-        “尚未实现”占位，而是明确列出候选合同缺少 ClosureRecord/恢复验证、正例回放和 owner；
-        前端只消费该投影，缺失时 fail closed（2026-07-29）。
-  - [ ] 将真实 T8 正/负例或弃权回放、知识 owner、关闭 Diagnosis 的 outcome/恢复验证接入 Gate；
+        “尚未实现”占位，而是逐项列出可证明事实与缺口；前端只消费该投影，缺失时 fail closed（2026-07-29）。
+  - [x] Diagnosis 1.7 在确定性命中时冻结来源 Playbook owner（与后续人工 `routeToTeam` 分离）；
+        `knowledge-candidate.v2` 在同一个关闭事务中冻结 outcome、恢复验证、actor 与时间。新关闭候选可由服务端
+        消除 `OUTCOME_VERIFICATION_NOT_PROJECTED / OWNER_REQUIRED`，历史 v1 行继续 fail closed。候选合同仅接受
+        v1/v2：v1 不得携带 proof/owner，v2 缺少服务端关闭 proof 直接拒绝（2026-07-30）。
+  - [ ] 将真实 T8 正/负例或弃权回放接入精确候选 Gate；
         selector 单 active-approved 已由 V186 数据库唯一约束关闭，以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
         切换，条件全部可由服务端证明后才允许返回 `ELIGIBLE_FOR_APPROVAL`。
 - [x] 审核记录 reviewer、reason，并在开始审阅时冻结 validation summary、

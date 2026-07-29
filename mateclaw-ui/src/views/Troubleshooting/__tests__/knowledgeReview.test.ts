@@ -3,6 +3,8 @@ import type { KnowledgeReviewInbox } from '@/api'
 import {
   buildKnowledgeReviewRows,
   filterKnowledgeReviewRows,
+  missingKnowledgeOwnerLabel,
+  missingOutcomeProofLabel,
   referenceComparisonIssues,
   reviewReasonLabel,
 } from '../knowledgeReview'
@@ -255,6 +257,19 @@ describe('knowledge review projection', () => {
     expect(reviewReasonLabel('OUTCOME_VERIFICATION_NOT_PROJECTED')).toContain('关闭结果')
     expect(reviewReasonLabel('VERSIONED_SELECTOR_UNIQUENESS_REQUIRED')).toContain('selector')
     expect(reviewReasonLabel('UNKNOWN_FUTURE_REASON')).toBe('UNKNOWN_FUTURE_REASON')
+  })
+
+  it('distinguishes legacy projection gaps from an invalid current candidate', () => {
+    const legacy = inbox.outcomeBacked[0]
+    const current = {
+      ...legacy,
+      contractVersion: 'knowledge-candidate.v2',
+    }
+
+    expect(missingKnowledgeOwnerLabel(legacy)).toContain('历史 v1')
+    expect(missingOutcomeProofLabel(legacy)).toBe('LEGACY_NOT_PROJECTED')
+    expect(missingKnowledgeOwnerLabel(current)).toContain('当前合同缺口')
+    expect(missingOutcomeProofLabel(current)).toBe('CURRENT_CONTRACT_INVALID')
   })
 
   it('does not collapse structured reference failures into a coverage score', () => {

@@ -143,7 +143,7 @@ class DefaultKnowledgeReviewSourceReaderTest {
 
     private KnowledgeCandidate outcomeCandidate() {
         return new KnowledgeCandidate(
-                "candidate-1", KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                "candidate-1", KnowledgeCandidate.LEGACY_CONTRACT_VERSION,
                 "diag-1", "case-1", "run-1", "CSDP", "903001",
                 "csdp:903001", "连接池耗尽", List.of("LOG-1"),
                 List.of(), List.of(), "人工扩容后恢复", null, "owner-a",

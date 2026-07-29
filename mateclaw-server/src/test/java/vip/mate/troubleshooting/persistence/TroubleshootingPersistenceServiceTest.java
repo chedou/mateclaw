@@ -214,7 +214,9 @@ class TroubleshootingPersistenceServiceTest {
                 ArgumentCaptor.forClass(TroubleshootingKnowledgeOutboxEntity.class);
         verify(outboxMapper).insert(outbox.capture());
         assertEquals("publication-candidate-1", outbox.getValue().getPublicationId());
-        assertEquals("knowledge-candidate.v1", outbox.getValue().getContractVersion());
+        assertEquals(
+                KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                outbox.getValue().getContractVersion());
         assertEquals(7L, outbox.getValue().getWorkspaceId());
         assertEquals(KnowledgePublicationStatus.PENDING, outbox.getValue().getStatus());
         assertTrue(outbox.getValue().getPayloadJson().contains("candidate-1"));
@@ -400,7 +402,13 @@ class TroubleshootingPersistenceServiceTest {
                 "resolved",
                 null,
                 "on-call",
-                Instant.parse("2026-07-25T02:00:00Z"));
+                Instant.parse("2026-07-25T02:00:00Z"),
+                new KnowledgeCandidate.OutcomeProof(
+                        ClosureOutcome.UNRESOLVED,
+                        false,
+                        "on-call",
+                        Instant.parse("2026-07-25T02:00:00Z")),
+                null);
     }
 
     private Diagnosis diagnosisWithCandidate(KnowledgeCandidate candidate) {

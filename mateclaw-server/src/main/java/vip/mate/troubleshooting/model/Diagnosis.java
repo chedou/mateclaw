@@ -26,6 +26,7 @@ public record Diagnosis(
         boolean abstained,
         String sopKey,
         String sopTitle,
+        String sourcePlaybookOwner,
         List<EvidenceResult> evidence,
         List<String> evidenceCitations,
         List<String> triggeredSignals,
@@ -43,9 +44,9 @@ public record Diagnosis(
         boolean writeExecutionEnabled,
         List<String> warnings) {
 
-    public static final String CURRENT_CONTRACT_VERSION = "1.6";
+    public static final String CURRENT_CONTRACT_VERSION = "1.7";
     private static final Set<String> SUPPORTED_CONTRACT_VERSIONS =
-            Set.of("1.3", "1.4", "1.5", CURRENT_CONTRACT_VERSION);
+            Set.of("1.3", "1.4", "1.5", "1.6", CURRENT_CONTRACT_VERSION);
 
     public Diagnosis {
         diagnosisId = required(diagnosisId, "diagnosisId");
@@ -86,6 +87,9 @@ public record Diagnosis(
         }
         summary = summary == null ? "" : summary;
         rootCause = rootCause == null ? "" : rootCause;
+        sourcePlaybookOwner = sourcePlaybookOwner == null
+                || sourcePlaybookOwner.isBlank()
+                ? null : sourcePlaybookOwner.trim();
         evidence = immutable(evidence);
         evidenceCitations = immutable(evidenceCitations);
         triggeredSignals = immutable(triggeredSignals);
@@ -252,6 +256,65 @@ public record Diagnosis(
             boolean fixtureMode,
             List<String> warnings,
             List<TimelineEvent> timeline) {
+        return initial(
+                diagnosisId,
+                caseId,
+                runId,
+                incident,
+                routeMode,
+                investigationMode,
+                routeAuthority,
+                conclusionType,
+                timings,
+                status,
+                summary,
+                rootCause,
+                confidence,
+                abstained,
+                sopKey,
+                sopTitle,
+                null,
+                evidence,
+                triggeredSignals,
+                recommendedActions,
+                routeToTeam,
+                rehearsal,
+                fixtureMode,
+                warnings,
+                timeline);
+    }
+
+    /**
+     * Creates a diagnosis and freezes the owner of the Playbook version used
+     * for this run. This is intentionally separate from {@code routeToTeam},
+     * which can later change through human transfer.
+     */
+    public static Diagnosis initial(
+            String diagnosisId,
+            String caseId,
+            String runId,
+            IncidentContext incident,
+            RouteMode routeMode,
+            InvestigationMode investigationMode,
+            RouteAuthority routeAuthority,
+            ConclusionType conclusionType,
+            NorthStarTimings timings,
+            DiagnosisStatus status,
+            String summary,
+            String rootCause,
+            Confidence confidence,
+            boolean abstained,
+            String sopKey,
+            String sopTitle,
+            String sourcePlaybookOwner,
+            List<EvidenceResult> evidence,
+            List<String> triggeredSignals,
+            List<RecommendedAction> recommendedActions,
+            String routeToTeam,
+            boolean rehearsal,
+            boolean fixtureMode,
+            List<String> warnings,
+            List<TimelineEvent> timeline) {
         if (status != DiagnosisStatus.READY_FOR_HUMAN
                 && status != DiagnosisStatus.NEEDS_INVESTIGATION) {
             throw new IllegalArgumentException("initial diagnosis must start before human confirmation");
@@ -277,6 +340,7 @@ public record Diagnosis(
                 abstained,
                 sopKey,
                 sopTitle,
+                sourcePlaybookOwner,
                 evidence,
                 List.of(),
                 triggeredSignals,
@@ -324,6 +388,7 @@ public record Diagnosis(
                 draft.hypothesis(),
                 draft.confidence(),
                 draft.abstained(),
+                null,
                 null,
                 null,
                 draft.evidence(),
@@ -468,7 +533,8 @@ public record Diagnosis(
                 diagnosisId, contractVersion, caseId, runId, incident, routeMode,
                 investigationMode, routeAuthority, conclusionType,
                 newStatus, summary, rootCause, confidence, abstained,
-                sopKey, sopTitle, evidence, evidenceCitations, triggeredSignals, newActions,
+                sopKey, sopTitle, sourcePlaybookOwner, evidence, evidenceCitations,
+                triggeredSignals, newActions,
                 newPendingWrites, newRouteToTeam, newTransfers, newActionOutcomes,
                 newClosure, newKnowledgeCandidates, newTimeline, nextTimings, rehearsal,
                 fixtureMode, false, warnings);

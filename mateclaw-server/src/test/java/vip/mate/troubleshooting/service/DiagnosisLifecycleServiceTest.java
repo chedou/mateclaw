@@ -142,6 +142,13 @@ class DiagnosisLifecycleServiceTest {
 
         assertThat(saved.getValue().knowledgeCandidates()).hasSize(1);
         assertThat(candidate.getValue().sourceDiagnosisId()).isEqualTo(DIAGNOSIS_ID);
+        assertThat(candidate.getValue().outcomeProof()).isNotNull();
+        assertThat(candidate.getValue().outcomeProof().outcome())
+                .isEqualTo(ClosureOutcome.TRANSFERRED_OUT);
+        assertThat(candidate.getValue().outcomeProof().recoveryVerified()).isFalse();
+        assertThat(candidate.getValue().outcomeProof().registeredBy()).isEqualTo(ACTOR);
+        assertThat(candidate.getValue().outcomeProof().registeredAt())
+                .isEqualTo(saved.getValue().closure().closedAt());
         assertThat(saved.getValue().closure().knowledgeCandidateId())
                 .as("the closure must point at the candidate this transition produced")
                 .isEqualTo(candidate.getValue().candidateId());

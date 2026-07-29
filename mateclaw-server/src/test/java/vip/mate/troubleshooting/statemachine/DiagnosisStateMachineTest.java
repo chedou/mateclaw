@@ -75,6 +75,7 @@ class DiagnosisStateMachineTest {
         assertEquals(DiagnosisStatus.CLOSED, diagnosis.status());
         assertTrue(diagnosis.closure().recoveryVerified());
         assertEquals(1, diagnosis.knowledgeCandidates().size());
+        assertEquals("DBA 值班", diagnosis.knowledgeCandidates().getFirst().ownerTeam());
         assertFalse(diagnosis.writeExecutionEnabled());
         assertEquals(ExecutionStatus.BLOCKED,
                 action(diagnosis, "restart-mongodb").executionStatus());
@@ -253,6 +254,7 @@ class DiagnosisStateMachineTest {
                 false,
                 "csdp:903001",
                 "MongoDB 连接异常取证与处置",
+                "DBA 值班",
                 List.of(evidence),
                 List.of("conn_saturated"),
                 List.of(readonly, write),

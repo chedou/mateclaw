@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,8 +18,8 @@ class DiagnosisContractTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void currentContractIsVersion16ForStructuredIncidentImpact() {
-        assertEquals("1.6", Diagnosis.CURRENT_CONTRACT_VERSION);
+    void currentContractIsVersion17ForFrozenPlaybookOwnership() {
+        assertEquals("1.7", Diagnosis.CURRENT_CONTRACT_VERSION);
     }
 
     @Test
@@ -123,6 +124,18 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
         assertEquals(ConclusionType.LOCATED, restored.conclusionType());
         assertEquals(timings, restored.timings());
+    }
+
+    @Test
+    void version16PayloadWithoutFrozenPlaybookOwnerRemainsReadable() throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.6");
+        payload.remove("sourcePlaybookOwner");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.6", restored.contractVersion());
+        assertNull(restored.sourcePlaybookOwner());
     }
 
     @Test

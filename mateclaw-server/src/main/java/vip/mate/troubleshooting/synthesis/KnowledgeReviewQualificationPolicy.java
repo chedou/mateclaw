@@ -71,12 +71,22 @@ public final class KnowledgeReviewQualificationPolicy {
             throw new IllegalArgumentException("outcome-backed candidate is required");
         }
         List<String> reasons = new ArrayList<>();
-        // KnowledgeCandidate v1 is only the closure sediment. It does not carry
-        // the authoritative ClosureRecord needed to prove outcome and
-        // recovery-verification applicability at the promotion boundary.
-        reasons.add("OUTCOME_VERIFICATION_NOT_PROJECTED");
+        // v1 rows have no authoritative closure projection. New v2 rows freeze
+        // this proof in the same transition that closes the Diagnosis; a
+        // reviewer-supplied flag is never accepted here.
+        if (KnowledgeCandidate.LEGACY_CONTRACT_VERSION.equals(
+                candidate.contractVersion())) {
+            reasons.add("OUTCOME_VERIFICATION_NOT_PROJECTED");
+        } else if (candidate.outcomeProof() == null) {
+            // The v2 record constructor rejects this state. Keep the
+            // qualification projection fail closed if a future persistence
+            // adapter ever bypasses that boundary.
+            reasons.add("OUTCOME_VERIFICATION_NOT_PROJECTED");
+        }
         reasons.add("POSITIVE_REPLAY_REQUIRED");
-        reasons.add("OWNER_REQUIRED");
+        if (candidate.ownerTeam() == null || candidate.ownerTeam().isBlank()) {
+            reasons.add("OWNER_REQUIRED");
+        }
         if (candidate.evidenceIds().isEmpty()) {
             reasons.add("CITATIONS_REQUIRED");
         }

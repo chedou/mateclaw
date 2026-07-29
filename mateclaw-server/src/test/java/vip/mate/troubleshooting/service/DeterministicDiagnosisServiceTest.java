@@ -90,6 +90,7 @@ class DeterministicDiagnosisServiceTest {
                 diagnosis.pendingWrites().getFirst().executionStatus());
         assertEquals(3, diagnosis.timeline().size());
         assertEquals(ConclusionType.LOCATED, diagnosis.conclusionType());
+        assertEquals("DBA 值班", diagnosis.sourcePlaybookOwner());
         assertEquals(
                 NorthStarTimings.concluded(RECEIVED_AT, READY_AT, CONCLUSION_AT),
                 diagnosis.timings());

@@ -31,11 +31,13 @@ V185 新增 workspace 隔离的知识审核台账：正式 Review Inbox 按当�
 无记录为 `CANDIDATE/v0`，可开始审阅为 `IN_REVIEW/v1`、按乐观版本拒绝为 `REJECTED/v2`，并冻结
 脱敏的来源快照、服务端登录主体和理由。Review Inbox 现同时返回每条来源的服务端当前资格投影：
 `EVIDENCE_DERIVED` 显式处于默认 `CALIBRATION` 档，从 draft 校验、参考比较、引用与 fixture 计算缺口，
-且不会把 candidate 生成成功冒充正例回放；`MANUAL` 对完整 SOP 合同执行证据请求/判据/规则交叉引用校验，
-同时保留版本化 selector 唯一性证明缺口；`OUTCOME_BACKED` 明确暴露当前候选合同尚不能证明
-ClosureRecord / 恢复验证。浏览器不再自行拼装来源资格。旧 candidate 直升 approved 已 fail closed；
-真实回放/owner/outcome 证明、数据驱动的 `RUNTIME` 档切换、新版本替换以及
-`APPROVED / DEPRECATED` 后半状态机仍未完成。
+且不会把 candidate 生成成功冒充正例回放；`MANUAL` 对完整 SOP 合同执行证据请求/判据/规则交叉引用校验；
+浏览器不再自行拼装来源资格。V186 已增加不可变 Playbook version store、审核时冻结 baseline、
+单 active selector 数据库唯一约束，以及服务端门禁的 `APPROVED / DEPRECATED` 新版本替换和审计退役。
+Diagnosis 1.7 在确定性命中时冻结来源 Playbook owner，`knowledge-candidate.v2` 与关闭事务同时冻结
+outcome、恢复验证、actor 和时间。合同只接受 v1/v2：v1 不得携带 proof/owner，v2 必须携带与
+createdBy/createdAt 一致的服务端关闭 proof；历史 v1 候选继续 fail closed。真实精确候选回放和数据驱动的
+`RUNTIME` 档切换仍未完成，现有来源不能因版本命令可用而被视为可晋升。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
 有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
 不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确
@@ -62,8 +64,8 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 `ts.` 飞书 card kind。另含推导投影、SOP 管理 API，以及 P3 的 `EvidenceSourceRouter`、
 `GuanceEvidenceAdapter`、`RecordedReplayAdapter`、脱敏 903001 回放样本与源状态 API。P4 新增
 `TroubleshootingEvidenceTool`、服务端会话隔离、调用级硬工具白名单、证据引用校验和未命中路 Vue 展示；
-`Diagnosis` 1.6 在 1.5 的调查路径/D14 事实之上增加结构化 `IncidentImpact`，继续兼容
-1.3–1.5 的字符串影响与存量 JSON；精确人数必须带观测时间，且只有所有引用均为本次 canonical
+`Diagnosis` 1.7 在 1.6 的结构化 `IncidentImpact` 之上冻结来源 Playbook owner，继续兼容
+1.3–1.6 的存量 JSON；精确人数必须带观测时间，且只有所有引用均为本次 canonical
 `incident_impact`、彼此无矛盾并逐项复算声明值时，人数和非 UNKNOWN 扩散范围才进入正式投影。另有
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的

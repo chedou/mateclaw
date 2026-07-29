@@ -83,6 +83,7 @@ public final class DiagnosisStateMachine {
                 draft.abstained(),
                 draft.sop().routingKey(),
                 draft.sop().title(),
+                draft.sop().ownerTeam(),
                 draft.evidence(),
                 draft.triggeredSignals(),
                 draft.recommendedActions(),
@@ -261,17 +262,21 @@ public final class DiagnosisStateMachine {
             requireSuccessfulVerifiedOutcomes(diagnosis);
         }
 
-        KnowledgeCandidate candidate = createKnowledgeCandidate
-                ? candidate(diagnosis, summary, sopFeedback, actor)
+        String candidateId = createKnowledgeCandidate
+                ? identifiers.next("candidate")
                 : null;
+        Instant closedAt = clock.instant();
         ClosureRecord closure = new ClosureRecord(
                 outcome,
                 summary,
                 recoveryVerified,
                 sopFeedback,
-                candidate == null ? null : candidate.candidateId(),
+                candidateId,
                 actor,
-                clock.instant());
+                closedAt);
+        KnowledgeCandidate candidate = createKnowledgeCandidate
+                ? candidate(diagnosis, summary, sopFeedback, actor, candidateId, closure)
+                : null;
         List<KnowledgeCandidate> candidates = candidate == null
                 ? diagnosis.knowledgeCandidates()
                 : append(diagnosis.knowledgeCandidates(), candidate);
@@ -328,9 +333,11 @@ public final class DiagnosisStateMachine {
             Diagnosis diagnosis,
             String summary,
             String feedback,
-            String actor) {
+            String actor,
+            String candidateId,
+            ClosureRecord closure) {
         return new KnowledgeCandidate(
-                identifiers.next("candidate"),
+                candidateId,
                 KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
                 diagnosis.diagnosisId(),
                 diagnosis.caseId(),
@@ -345,7 +352,9 @@ public final class DiagnosisStateMachine {
                 summary,
                 feedback,
                 actor,
-                clock.instant());
+                closure.closedAt(),
+                KnowledgeCandidate.OutcomeProof.from(closure),
+                diagnosis.sourcePlaybookOwner());
     }
 
     private RecommendedAction action(Diagnosis diagnosis, String actionId) {

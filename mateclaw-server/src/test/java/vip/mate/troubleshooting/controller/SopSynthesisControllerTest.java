@@ -123,7 +123,7 @@ class SopSynthesisControllerTest {
                 .build();
         KnowledgeCandidate outcomeBacked = new KnowledgeCandidate(
                 "candidate-outcome-001",
-                KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                KnowledgeCandidate.LEGACY_CONTRACT_VERSION,
                 "diag-001", "case-001", "run-001",
                 "CSDP", "903001", "csdp:903001",
                 "Mongo connection pool exhausted",
