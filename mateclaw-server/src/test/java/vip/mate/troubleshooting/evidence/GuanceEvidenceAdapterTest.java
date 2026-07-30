@@ -204,6 +204,77 @@ class GuanceEvidenceAdapterTest {
                 .isEqualTo(NOW.minus(Duration.ofMinutes(15)).toEpochMilli());
         assertThat(query.path("query").path("timeRange").path(1).asLong())
                 .isEqualTo(NOW.toEpochMilli());
+        assertThat(query.path("query").has("maxPointCount")).isFalse();
+    }
+
+    @Test
+    void postsTheCloudDialEnvelopeAndNormalizesTheCspProbe() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {
+                    "data": [{
+                      "series": [{
+                        "columns": ["time", "status_code", "url", "name"],
+                        "values": [
+                          [1753434723000, 200, "https://csdp-applet.sangfor.com", "客服数字化平台-首页-可用性监控"],
+                          [1753434123000, 503, "https://csdp-applet.sangfor.com", "客服数字化平台-首页-可用性监控"]
+                        ]
+                      }]
+                    }]
+                  }
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "D",
+                "CSP PRM 小程序拨测状态",
+                "D::http_dial_testing:(`status_code`, `url`, `name`) "
+                        + "{ `name` = '客服数字化平台-首页-可用性监控' }",
+                Map.of(
+                        "url", "target_url",
+                        "name", "probe_name"),
+                20);
+        binding.setQueryOptions(cloudDialQueryOptions());
+        EvidenceProperties.Guance config = guanceConfig("synthetic_probe", binding);
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID,
+                "csp-deployment",
+                "csp-prm-miniapp",
+                Map.of("synthetic_probe", "synthetic_probe"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-CLOUD-DIAL-1", "synthetic_probe", "read the approved CloudDial task",
+                Map.of(), "-5m", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incident("csp-deployment", "csp-prm-miniapp"));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.namespace()).isEqualTo("D");
+        assertThat(result.source()).isEqualTo("guance:synthetic_probe");
+        assertThat(result.query()).isEmpty();
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "status_code", 200,
+                "target_url", "https://csdp-applet.sangfor.com",
+                "probe_name", "客服数字化平台-首页-可用性监控"));
+
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("q").asText()).isEqualTo(
+                "D::http_dial_testing:(`status_code`, `url`, `name`) "
+                        + "{ `name` = '客服数字化平台-首页-可用性监控' }");
+        assertThat(query.path("_funcList").isArray()).isTrue();
+        assertThat(query.path("funcList").isArray()).isTrue();
+        assertThat(query.path("maxPointCount").asInt()).isEqualTo(720);
+        assertThat(query.path("interval").asInt()).isEqualTo(10);
+        assertThat(query.path("align_time").asBoolean()).isTrue();
+        assertThat(query.path("sorder_by").isArray()).isTrue();
+        assertThat(query.path("slimit").asInt()).isEqualTo(20);
+        assertThat(query.path("disable_sampling").asBoolean()).isFalse();
+        assertThat(query.path("tz").asText()).isEqualTo("Asia/Shanghai");
+        assertThat(transport.body).doesNotContain("secret-key");
     }
 
     @Test
@@ -416,6 +487,23 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void rejectsInvalidPerBindingQueryOptionsBeforeSendingARequest() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        EvidenceProperties.QueryOptions options = new EvidenceProperties.QueryOptions();
+        options.setTimeZone("not-a-time-zone");
+        config.getBindings().get("log_count").setQueryOptions(options);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
     void refusesToSendTheApiKeyOverPlainHttpByDefault() {
         CapturingTransport transport = new CapturingTransport(200, "{}");
         EvidenceProperties.Guance config = guanceConfig();
@@ -536,6 +624,17 @@ class GuanceEvidenceAdapterTest {
         binding.setFieldAliases(aliases);
         binding.setMaxRows(maxRows);
         return binding;
+    }
+
+    private EvidenceProperties.QueryOptions cloudDialQueryOptions() {
+        EvidenceProperties.QueryOptions options = new EvidenceProperties.QueryOptions();
+        options.setMaxPointCount(720);
+        options.setInterval(10);
+        options.setAlignTime(true);
+        options.setSeriesLimit(20);
+        options.setDisableSampling(false);
+        options.setTimeZone("Asia/Shanghai");
+        return options;
     }
 
     private EvidenceProperties.AssetBinding assetBinding(

@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-07-29
+> 更新时间：2026-07-30
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -184,8 +184,13 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 
 2026-07-29：`workspaceId` 已贯穿唯一 Evidence Router/Adapter 脊柱；Guance 只有命中唯一、精确的
 `asset-bindings[workspaceId,system,service].signal-bindings[signalKind]` 后才会读取运行时 API Key 并发请求。
-默认授权表为空，重复/缺失/大小写归一后歧义均在 transport 前返回 `MISSING`。这只完成授权机制，**不代表**
+重复/缺失/大小写归一后歧义均在 transport 前返回 `MISSING`。这只完成授权机制，**不代表**
 任何真实资产、measurement、字段或阈值已经通过 T7。
+
+2026-07-30：首个试点已写入默认不激活的 `csp-clouddial-pilot` Profile，激活时必须提供精确授权
+`${MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID} / csp-deployment / csp-prm-miniapp / synthetic_probe`，
+并把 `D::http_dial_testing` 标准请求外层、任务名、列映射写入 Guance Adapter 与配置。开关、API Key 和
+明文 HTTP 许可仍全部 fail closed；尚未发起真实请求。
 单次验证报告只保留匹配数、PS ID、trace 节点数、证据引用和时间戳；不保留原始行、
 查询文本或凭据。验证报告现同时返回每个 Guance 核心信号与端到端的应用侧 round-trip 耗时，
 作为后续 T8“取证时延”的同口径输入；它不冒充 Guance 服务端 DQL 执行耗时，后者仍需 owner
@@ -200,6 +205,8 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       Guance-only 两步读链后，才保存 V184 秘密无关验收记录；Guance T8 采集与基线复跑都在 Router
       调用前强制校验当前指纹。该接缝不代表下面任何真实核实项已完成。
 - [ ] 核实真实 measurement、字段名、索引、PS ID、时间戳单位、时间窗和 DQL 延迟。
+- [ ] 用旋转后的 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
+      先获取 HTTPS 端点或受控 TLS 代理，不得对 `.prd` 明文 HTTP 开启 insecure 传输，不得提交 Key。
 - [ ] 用会议案例跑真实 `log_search → log_trace_bundle`，确认同一 PS ID 全链路。
 - [ ] 核实 903001 的字段/阈值与三处历史 route key 冲突；这只阻塞错误码竖线，不阻塞 P1 fixture。
 - [ ] 真实源未验收前 `fixtureMode` 不得改为 false。

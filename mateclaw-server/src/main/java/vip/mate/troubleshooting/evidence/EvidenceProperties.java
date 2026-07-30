@@ -65,12 +65,25 @@ public class EvidenceProperties {
         private String namespace = "UNKNOWN";
         private String summary = "";
         private String queryTemplate;
+        private QueryOptions queryOptions;
 
         /** Maximum accepted rows; Guance receives one extra overflow sentinel row. */
         private int maxRows = 200;
 
         /** Maps a source column name to the canonical field consumed by criteria. */
         private Map<String, String> fieldAliases = new LinkedHashMap<>();
+    }
+
+    /** Optional Guance query envelope fields owned by one concrete binding. */
+    @Getter
+    @Setter
+    public static class QueryOptions {
+        private int maxPointCount = 720;
+        private int interval = 10;
+        private boolean alignTime = true;
+        private int seriesLimit = 20;
+        private boolean disableSampling;
+        private String timeZone = "Asia/Shanghai";
     }
 
     @Getter

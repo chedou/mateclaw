@@ -82,7 +82,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - `EvidenceSourceRouter`，Guance 与 Recorded Replay 两个 Adapter，canonical schema 和脱敏。
 - **P2 T6 租户授权边界（2026-07-29）**：`workspaceId` 已贯穿 Intake、Agent 会话、SOP 合成、
   Router 和 Adapter；Guance 必须由唯一的 `workspace/system/service + signalKind → concrete binding`
-  映射显式放行，映射缺失或歧义时在使用 API Key、发 HTTP 前 fail closed。默认 `asset-bindings=[]`。
+  映射显式放行，映射缺失或歧义时在使用 API Key、发 HTTP 前 fail closed。
+- **CSP CloudDial 试点绑定（2026-07-30）**：已为
+  `${MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID} / csp-deployment / csp-prm-miniapp / synthetic_probe`
+  新增默认不激活的 `csp-clouddial-pilot` Profile，只在操作员提供必填 workspace ID 后加载唯一资产授权，
+  并按部署快照绑定 `D::http_dial_testing` 任务
+  `客服数字化平台-首页-可用性监控`。Guance 仍默认关闭，API Key 仍只允许从环境注入，
+  `.prd` 明文 HTTP 端点继续 fail closed，需 HTTPS/受控 TLS 代理后才可真跑；尚未真实调用，不代表 T7/T8 通过。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
@@ -218,8 +224,9 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ### 尚未完成
 
-- 真实 Guance 资产授权值尚未由 owner 配置，measurement/字段/PS ID/阈值也未完成内网验证；
-  `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 配置和真实返回，
+- 除 CSP CloudDial 试点外，其他真实 Guance 资产授权值尚未由 owner 配置；试点的
+  measurement/字段/返回结构也尚未用新密钥完成内网验证，其他场景的 PS ID/阈值同样未验证；
+  `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 验收和真实返回，
   不得将“入口已实现”改写为“T7 已通过”。
 - V184 已把 T7 owner 决策做成可留痕且配置变化自动失效的门禁，但本地没有真实 Guance 返回，
   当前不存在 `ACCEPTED` 记录；这仍是“验收装置已实现”，不是“owner 已验收”。

@@ -1,0 +1,41 @@
+spring:
+  config:
+    activate:
+      on-profile: csp-clouddial-pilot
+
+# Explicit, inactive-by-default configuration for the first CSP CloudDial SOP.
+# Activating this profile also requires a real workspace ID. Credentials remain
+# owned by MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY and never belong in this file.
+mateclaw:
+  troubleshooting:
+    evidence:
+      routes:
+        csp-deployment:
+          synthetic_probe: [guance]
+      guance:
+        # The supplied endpoint is recorded here, but the adapter intentionally
+        # rejects its plaintext HTTP transport. A production run must override
+        # this with an approved HTTPS endpoint or controlled TLS proxy.
+        base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:http://df-openapi.prd.sangfor.com}
+        asset-bindings:
+          - workspace-id: ${MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID}
+            system: csp-deployment
+            service: csp-prm-miniapp
+            signal-bindings:
+              synthetic_probe: csp-prm-miniapp-synthetic-probe
+        bindings:
+          csp-prm-miniapp-synthetic-probe:
+            namespace: D
+            summary: CSP PRM 小程序拨测状态
+            max-rows: 20
+            query-template: "D::http_dial_testing:(`status_code`, `url`, `name`) { `name` = '客服数字化平台-首页-可用性监控' }"
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            field-aliases:
+              url: target_url
+              name: probe_name

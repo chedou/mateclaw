@@ -15,6 +15,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -37,6 +38,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
     private static final Pattern WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
     private static final int MAX_BOUND_ROWS = 500;
+    private static final int MAX_POINT_COUNT = 10_000;
+    private static final int MAX_INTERVAL_SECONDS = 86_400;
 
     private final EvidenceProperties.Guance config;
     private final ObjectMapper objectMapper;
@@ -363,7 +366,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 || binding == null
                 || !present(binding.getQueryTemplate())
                 || binding.getMaxRows() < 1
-                || binding.getMaxRows() > MAX_BOUND_ROWS) {
+                || binding.getMaxRows() > MAX_BOUND_ROWS
+                || !validQueryOptions(binding.getQueryOptions())) {
             return false;
         }
         Set<String> canonicalFields = CanonicalEvidenceSchema.fields(signalKind);
@@ -380,12 +384,52 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             EvidenceProperties.Binding binding) throws Exception {
         Map<String, Object> querySpec = new LinkedHashMap<>();
         querySpec.put("q", query);
-        querySpec.put("timeRange", List.of(window.start().toEpochMilli(), window.end().toEpochMilli()));
+        addQueryOptions(querySpec, binding.getQueryOptions());
+        querySpec.put("timeRange", List.of(
+                window.start().toEpochMilli(), window.end().toEpochMilli()));
         querySpec.put("limit", binding.getMaxRows() + 1);
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("qtype", "dql");
         item.put("query", querySpec);
         return objectMapper.writeValueAsString(Map.of("queries", List.of(item)));
+    }
+
+    private void addQueryOptions(
+            Map<String, Object> querySpec,
+            EvidenceProperties.QueryOptions options) {
+        if (options == null) {
+            return;
+        }
+        querySpec.put("_funcList", List.of());
+        querySpec.put("funcList", List.of());
+        querySpec.put("maxPointCount", options.getMaxPointCount());
+        querySpec.put("interval", options.getInterval());
+        querySpec.put("align_time", options.isAlignTime());
+        querySpec.put("sorder_by", List.of());
+        querySpec.put("slimit", options.getSeriesLimit());
+        querySpec.put("disable_sampling", options.isDisableSampling());
+        querySpec.put("tz", options.getTimeZone().trim());
+    }
+
+    private boolean validQueryOptions(EvidenceProperties.QueryOptions options) {
+        if (options == null) {
+            return true;
+        }
+        if (options.getMaxPointCount() < 1
+                || options.getMaxPointCount() > MAX_POINT_COUNT
+                || options.getInterval() < 1
+                || options.getInterval() > MAX_INTERVAL_SECONDS
+                || options.getSeriesLimit() < 1
+                || options.getSeriesLimit() > MAX_BOUND_ROWS
+                || !present(options.getTimeZone())) {
+            return false;
+        }
+        try {
+            ZoneId.of(options.getTimeZone().trim());
+            return true;
+        } catch (RuntimeException invalidTimeZone) {
+            return false;
+        }
     }
 
     private String render(

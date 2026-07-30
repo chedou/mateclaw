@@ -193,9 +193,8 @@ mateclaw:
         allow-insecure-http: ${MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP:false}
         query-path: /api/v1/df/query_data_v1
         timeout: 5s
-        # Empty by default. enabled + API key + query bindings are insufficient:
-        # every live query also needs one exact workspace/system/service entry
-        # that maps the semantic signal to a concrete binding name.
+        # Empty by default. A real query requires an explicitly activated
+        # deployment profile with one exact workspace/system/service mapping.
         asset-bindings: []
         # Draft bindings only. Measurement names and canonical aliases remain
         # unverified until T7 is completed against the CSDP intranet workspace.

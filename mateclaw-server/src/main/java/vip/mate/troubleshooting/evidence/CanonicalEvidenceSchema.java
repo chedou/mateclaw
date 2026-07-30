@@ -24,6 +24,10 @@ public final class CanonicalEvidenceSchema {
             withPsId(LOG_ENTRY_FIELDS);
 
     private static final Map<String, SignalSchema> SCHEMAS = Map.of(
+            "synthetic_probe", scalar(Map.of(
+                    "status_code", FieldType.NUMBER,
+                    "target_url", FieldType.STRING,
+                    "probe_name", FieldType.STRING)),
             "log_count", scalar(Map.of(
                     "count", FieldType.NUMBER,
                     "trace_id", FieldType.STRING)),

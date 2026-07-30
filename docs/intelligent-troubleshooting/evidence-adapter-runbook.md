@@ -1,8 +1,9 @@
 # P3 证据源适配器运行说明
 
-> 状态（2026-07-29）：**工程链路与 T6 显式租户授权门已实现；P6 前置的
+> 状态（2026-07-30）：**工程链路与 T6 显式租户授权门已实现；P6 前置的
 > `log_search` / `log_trace_bundle` 已具备 schema、路由、Guance 草案绑定与脱敏回放。
-> 真实资产授权值及所有观测云绑定仍未由 owner 配置、内网核实。**
+> 首个 `csp-deployment / csp-prm-miniapp / synthetic_probe` 已按部署快照写入默认不激活的试点 Profile，含精确资产授权和
+> CloudDial DQL 绑定，但尚未用新密钥完成内网真实查询。**
 > 因此 `fixtureMode` 仍为 `true`，默认数据源均关闭，不能把当前结果表述为“真实取证已验证”。
 
 ## 1. 已落地的链路
@@ -56,18 +57,33 @@ route miss
   `guance → recorded-replay`；
 - `default-sources: []`：其他系统没有显式路由时不会猜数据源；
 - Guance 与 replay 都默认 `enabled=false`；
-- `guance.asset-bindings: []` 默认空；只配置开关、Base URL、API Key 和查询模板仍不能发起 Guance 请求；
-- Guance 的五个查询模板是**未核实草案**，measurement、返回列和阈值都要经过 T7。
+- `guance.asset-bindings: []` 默认仍为空，没有默认 workspace 或默认资产授权；
+- 试点配置单独放在 `mateclaw-server/src/main/resources/application-csp-clouddial-pilot.yml`，
+  只有显式激活 `csp-clouddial-pilot` Profile 并提供 workspace ID 后才会加载；
+- 该 Profile 增加 `routes.csp-deployment.synthetic_probe: [guance]`，不会回退到伪造的健康数据；
+- `csp-prm-miniapp-synthetic-probe` 绑定使用 `D::http_dial_testing`，任务名为
+  `客服数字化平台-首页-可用性监控`；它来自本次部署快照，真实返回列仍需 T7 核实；
+- curl 中的 `maxPointCount/interval/align_time/slimit/disable_sampling/tz` 作为该 binding 的
+  `query-options` 保存；它们不会改变其他日志、指标或调用链 binding 的报文；
+- 其他 CSDP 查询模板仍是**未核实草案**，measurement、返回列和阈值都要经过 T7。
 
 启用观测云前，在部署环境设置：
 
 ```bash
+SPRING_PROFILES_ACTIVE=csp-clouddial-pilot
+MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID=<运行该 SOP 的 MateClaw workspace id>
 MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED=true
-MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL=https://<实际观测云地址>
+MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL=https://<已批准的 Guance HTTPS 端点或 TLS 代理>
 MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统注入>
 ```
 
-同时必须在部署侧的外部配置中登记精确授权（以下仅示意，binding 名仍需 T7 核实）：
+如部署已有其他 Spring Profile，应将 `csp-clouddial-pilot` 追加到原列表，不要覆盖数据库等现有 Profile。
+用户提供的 `http://df-openapi.prd.sangfor.com` 已记录在试点配置中，但因为它是 `.prd` 明文 HTTP，
+当前安全门会故意拒绝携 Key 访问。在取得 HTTPS 端点或受控 TLS 代理之前，不得为该生产地址开启 insecure HTTP。
+
+已经在聊天、工单或日志中出现过的 Key 必须先作废并换新，不得用于本次真实联调。
+
+其他场景仍必须在部署侧的外部配置中登记精确授权（以下仅示意，binding 名仍需 T7 核实）：
 
 ```yaml
 mateclaw.troubleshooting.evidence.guance:
@@ -105,6 +121,7 @@ MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 
 | `signalKind` | `EvidenceResult.observed` 字段 |
 |---|---|
+| `synthetic_probe` | `status_code`, `target_url`, `probe_name` |
 | `log_count` | `count`, `trace_id` |
 | `log_search` | `match_count`, `ps_id`, `sample_message` |
 | `log_trace_bundle` | `ps_id`, `entries[]`；条目必含 `timestamp`, `service`, `level`, `message`，可含 `duration_ms` |

@@ -23,6 +23,10 @@ class GuanceBindingFingerprintServiceTest {
         GuanceBindingFingerprintService.Snapshot afterCredentialRotation =
                 service.current(7L, "csdp", "SESSION-SVC").orElseThrow();
         properties.getGuance().getBindings().get("search-binding")
+                .getQueryOptions().setInterval(11);
+        GuanceBindingFingerprintService.Snapshot afterQueryOptionsChange =
+                service.current(7L, "CSDP", "session-svc").orElseThrow();
+        properties.getGuance().getBindings().get("search-binding")
                 .setQueryTemplate("L::other_measurement:(message=@search)");
         GuanceBindingFingerprintService.Snapshot afterQueryChange =
                 service.current(7L, "CSDP", "session-svc").orElseThrow();
@@ -32,8 +36,10 @@ class GuanceBindingFingerprintServiceTest {
         assertThat(afterCredentialRotation.scopeKey()).isEqualTo(first.scopeKey());
         assertThat(afterCredentialRotation.bindingFingerprint())
                 .isEqualTo(first.bindingFingerprint());
-        assertThat(afterQueryChange.bindingFingerprint())
+        assertThat(afterQueryOptionsChange.bindingFingerprint())
                 .isNotEqualTo(first.bindingFingerprint());
+        assertThat(afterQueryChange.bindingFingerprint())
+                .isNotEqualTo(afterQueryOptionsChange.bindingFingerprint());
         assertThat(first.toString())
                 .doesNotContain("runtime-secret", "L::logs", "message=@search");
     }
@@ -78,6 +84,7 @@ class GuanceBindingFingerprintServiceTest {
         search.setNamespace("logs");
         search.setQueryTemplate("L::logs:(message=@search)");
         search.setMaxRows(200);
+        search.setQueryOptions(new EvidenceProperties.QueryOptions());
         search.setFieldAliases(new LinkedHashMap<>(Map.of(
                 "message", "message",
                 "psid", "ps_id")));

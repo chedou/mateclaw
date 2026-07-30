@@ -123,6 +123,22 @@ public class GuanceBindingFingerprintService {
                     digest.add("binding.namespace", trim(binding.getNamespace()));
                     digest.add("binding.maxRows", Integer.toString(binding.getMaxRows()));
                     digest.add("binding.queryTemplate", trim(binding.getQueryTemplate()));
+                    EvidenceProperties.QueryOptions queryOptions =
+                            binding.getQueryOptions();
+                    if (queryOptions != null) {
+                        digest.add("binding.query.maxPointCount",
+                                Integer.toString(queryOptions.getMaxPointCount()));
+                        digest.add("binding.query.interval",
+                                Integer.toString(queryOptions.getInterval()));
+                        digest.add("binding.query.alignTime",
+                                Boolean.toString(queryOptions.isAlignTime()));
+                        digest.add("binding.query.seriesLimit",
+                                Integer.toString(queryOptions.getSeriesLimit()));
+                        digest.add("binding.query.disableSampling",
+                                Boolean.toString(queryOptions.isDisableSampling()));
+                        digest.add("binding.query.timeZone",
+                                trim(queryOptions.getTimeZone()));
+                    }
                     Map<String, String> aliases = binding.getFieldAliases() == null
                             ? Map.of()
                             : binding.getFieldAliases();

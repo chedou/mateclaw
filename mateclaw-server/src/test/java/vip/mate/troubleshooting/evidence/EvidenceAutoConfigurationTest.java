@@ -2,7 +2,10 @@ package vip.mate.troubleshooting.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,6 +94,88 @@ class EvidenceAutoConfigurationTest {
                     assertThat(health.verified()).isFalse();
                     assertThat(health.detail()).contains("authorized", "not live-verified");
                     assertThat(health.toString()).doesNotContain("runtime-secret");
+                });
+    }
+
+    @Test
+    void keepsBundledAssetAuthorizationEmptyWithoutAnExplicitPilotProfile() {
+        contextRunner
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withPropertyValues(
+                        "spring.profiles.active=",
+                        "mateclaw.troubleshooting.evidence.guance.enabled=false",
+                        "mateclaw.troubleshooting.evidence.guance.api-key=")
+                .run(context -> {
+                    EvidenceProperties properties = context.getBean(EvidenceProperties.class);
+
+                    assertThat(properties.getGuance().getAssetBindings()).isEmpty();
+                    assertThat(properties.getRoutes()).doesNotContainKey("csp-deployment");
+                });
+    }
+
+    @Test
+    void rejectsThePilotProfileWithoutAnExplicitWorkspaceId() {
+        contextRunner
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withPropertyValues(
+                        "spring.profiles.active=csp-clouddial-pilot",
+                        "MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID=")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void bindsTheBundledCspCloudDialPilotWithoutEnablingItsCredential() {
+        contextRunner
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withPropertyValues(
+                        "spring.profiles.active=csp-clouddial-pilot",
+                        "MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID=1",
+                        "mateclaw.troubleshooting.evidence.guance.enabled=false",
+                        "mateclaw.troubleshooting.evidence.guance.api-key=",
+                        "mateclaw.troubleshooting.evidence.guance.allow-insecure-http=false")
+                .run(context -> {
+                    EvidenceProperties properties = context.getBean(EvidenceProperties.class);
+
+                    assertThat(properties.getRoutes())
+                            .containsKey("csp-deployment");
+                    assertThat(properties.getRoutes().get("csp-deployment"))
+                            .containsEntry("synthetic_probe", List.of("guance"));
+
+                    EvidenceProperties.Guance guance = properties.getGuance();
+                    assertThat(guance.isEnabled()).isFalse();
+                    assertThat(guance.isAllowInsecureHttp()).isFalse();
+                    assertThat(guance.getApiKey()).isBlank();
+                    assertThat(guance.getBaseUrl())
+                            .isEqualTo("http://df-openapi.prd.sangfor.com");
+                    assertThat(guance.getAssetBindings()).singleElement()
+                            .satisfies(asset -> {
+                                assertThat(asset.getWorkspaceId()).isEqualTo(1L);
+                                assertThat(asset.getSystem()).isEqualTo("csp-deployment");
+                                assertThat(asset.getService()).isEqualTo("csp-prm-miniapp");
+                                assertThat(asset.getSignalBindings()).containsEntry(
+                                        "synthetic_probe",
+                                        "csp-prm-miniapp-synthetic-probe");
+                            });
+
+                    assertThat(guance.getBindings())
+                            .containsKey("csp-prm-miniapp-synthetic-probe");
+                    EvidenceProperties.Binding binding = guance.getBindings()
+                            .get("csp-prm-miniapp-synthetic-probe");
+                    assertThat(binding.getNamespace()).isEqualTo("D");
+                    assertThat(binding.getMaxRows()).isEqualTo(20);
+                    assertThat(binding.getQueryTemplate())
+                            .contains("http_dial_testing", "客服数字化平台-首页-可用性监控");
+                    assertThat(binding.getQueryOptions()).satisfies(options -> {
+                        assertThat(options.getMaxPointCount()).isEqualTo(720);
+                        assertThat(options.getInterval()).isEqualTo(10);
+                        assertThat(options.isAlignTime()).isTrue();
+                        assertThat(options.getSeriesLimit()).isEqualTo(20);
+                        assertThat(options.isDisableSampling()).isFalse();
+                        assertThat(options.getTimeZone()).isEqualTo("Asia/Shanghai");
+                    });
+                    assertThat(binding.getFieldAliases())
+                            .containsEntry("url", "target_url")
+                            .containsEntry("name", "probe_name");
                 });
     }
 }
