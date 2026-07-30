@@ -54,8 +54,8 @@ export const WORKBENCH_TROUBLESHOOTING_SCENARIOS: ReadonlyArray<TroubleshootingS
   {
     command: 'deployment',
     label: TROUBLESHOOTING_UI_LABELS.deploymentTopology,
-    description: '上传部署拓扑快照，批量读取观测云拨测结果，分析异常节点与关联网络链路。',
-    outcome: '只读专项分析',
+    description: '在已建立的 Diagnosis 内选择 Workspace 拓扑资产，批量读取观测云拨测，将安全结果写入排障详情。',
+    outcome: '写入 Diagnosis 证据',
     manageOnly: true,
   },
 ]

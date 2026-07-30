@@ -2456,10 +2456,10 @@ export interface DeploymentTopologyNodeObservation {
 export interface DeploymentTopologySuspectLink {
   source: string
   target: string
-  reason: 'ADJACENT_TO_FAILED_PROBE'
+  reason: string
 }
 
-/** Live-read result only. It never contains an API key, DQL, or raw Guance rows. */
+/** Safe read result. It never contains an API key, DQL, or raw Guance rows. */
 export interface DeploymentTopologySopResult {
   schemaVersion: string
   system: string
@@ -2474,7 +2474,20 @@ export interface DeploymentTopologySopResult {
   warnings: string[]
   completedAt: string
   modelCalled: false
-  persisted: false
+  persisted: boolean
+}
+
+/** Immutable topology evidence run owned by one troubleshooting Diagnosis. */
+export interface TopologyProbeEvidenceRun {
+  runId: string
+  diagnosisId: string
+  topologyId: string
+  scenarioKey: 'deployment_topology_probe'
+  toolKey: 'topology_synthetic_probe'
+  result: DeploymentTopologySopResult
+  startedAt: string
+  completedAt: string
+  actorRef: string
 }
 
 export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
@@ -2794,6 +2807,20 @@ export const troubleshootingApi = {
   analyzeImportedDeploymentTopology: (topologyId: string) =>
     http.post<DeploymentTopologySopResult>(
       `/troubleshooting/sops/deployment-topology/topologies/${encodeURIComponent(topologyId)}/analyze`,
+    ),
+
+  /** Runs the topology scenario and persists only its safe projection under one Diagnosis. */
+  runDiagnosisTopologyProbe: (diagnosisId: string, topologyId: string) =>
+    http.post<TopologyProbeEvidenceRun>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/topology-probe-runs`,
+      { topologyId },
+    ),
+
+  /** Lists immutable topology evidence runs already attached to one Diagnosis. */
+  diagnosisTopologyProbeRuns: (diagnosisId: string, limit = 50) =>
+    http.get<TopologyProbeEvidenceRun[]>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/topology-probe-runs`,
+      { params: { limit } },
     ),
 
   /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */

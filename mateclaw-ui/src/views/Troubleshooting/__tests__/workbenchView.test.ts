@@ -75,7 +75,11 @@ describe('troubleshooting workbench view mode', () => {
   it('treats deployment topology analysis as a troubleshooting scenario', () => {
     expect(WORKBENCH_TROUBLESHOOTING_SCENARIOS).toEqual([
       expect.objectContaining({ command: 'incident', label: '通用事件排障' }),
-      expect.objectContaining({ command: 'deployment', label: '部署拓扑拨测分析' }),
+      expect.objectContaining({
+        command: 'deployment',
+        label: '部署拓扑拨测分析',
+        outcome: '写入 Diagnosis 证据',
+      }),
     ])
   })
 

@@ -3,7 +3,7 @@ package vip.mate.troubleshooting.deployment;
 import java.time.Instant;
 import java.util.List;
 
-/** Secret-free, non-persistent result of one deployment-topology probe analysis. */
+/** Secret-free result of one deployment-topology probe analysis. */
 public record DeploymentTopologySopResult(
         String schemaVersion,
         String system,

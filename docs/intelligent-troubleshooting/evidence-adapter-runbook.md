@@ -120,18 +120,23 @@ MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 `csdp-session-service / 会话消息发送失败 / synthetic-ps-message-send-001`。回放键允许
 `errorCode` 缺省，二者都只用于回归合同，不代表生产事实。
 
-### 2.1 部署图拨测 SOP 触发入口
+### 2.1 部署拓扑拨测场景与 Tool 触发入口
 
-管理员可在正式 `/troubleshooting` 工作台点击“部署图拨测 SOP”，上传
-`chain-board.runtime-topology-snapshot` JSON；对应接口为：
+管理员可在正式 `/troubleshooting` 工作台的“发起排障”中选择“部署拓扑拨测分析”，绑定一个尚未关闭的
+Diagnosis，再从 Workspace 共享拓扑图库选择已导入资产，或导入新的
+`chain-board.runtime-topology-snapshot` JSON。正式场景接口为：
 
 ```http
-POST /api/v1/troubleshooting/sops/deployment-topology/analyze
+POST /api/v1/troubleshooting/diagnoses/{diagnosisId}/topology-probe-runs
 X-Workspace-Id: <当前 MateClaw workspace id>
 Content-Type: application/json
 
-{"snapshot": <部署图运行时快照>}
+{"topologyId": "<Workspace 拓扑资产 ID>"}
 ```
+
+历史运行通过同一路径 `GET` 查询，并按 Workspace 与 Diagnosis 双重隔离。原有
+`/api/v1/troubleshooting/sops/deployment-topology/**/analyze` 只保留为兼容与资产预览入口，不代表新的
+诊断主链。
 
 服务端对输入执行 512 KiB、100 节点、300 链路、最多 32 个可执行拨测的上限与秘密字段检查，逐个解析节点。只有同时包含
 `url` 与 `guance_url` 的节点会生成 `synthetic_probe` 请求；`guance_url` 只提供拨测任务身份和最多 24 小时的
@@ -140,10 +145,12 @@ Content-Type: application/json
 `UNAVAILABLE`，已完成节点的证据仍返回。当前样例识别 21 个节点、27 条链路、1 个可执行拨测。
 
 响应只投影节点覆盖、HTTP 状态、canonical 目标/任务身份、证据引用和与失败节点相邻的拓扑提示；相邻链路
-不等于已证明的故障 hop 或根因。入口不调用模型、不持久化结果，不返回 API Key、DQL 或原始响应，也不会把
-未配置拨测的节点描述为健康。一次成功运行仍只是当前部署快照的只读观测，不代表 T7/T8 已通过。
-该入口是部署图 `synthetic_probe` 的首个专项 SOP，不替代错误码、场景 Playbook、开放探索或其他证据能力；
-通用 `ReadOnlyEvidenceToolRegistry` 仍按架构计划在真实 Tool 合同稳定后实现，本次不提前伪造空注册平台。
+不等于已证明的故障 hop 或根因。`topology_synthetic_probe` Tool 不调用模型；正式 Diagnosis 场景只持久化
+脱敏安全投影及证据引用，不返回或落库 API Key、DQL、原始响应。兼容预览入口仍不持久化结果。两条入口都不会
+把未配置拨测的节点描述为健康。一次成功运行仍只是当前部署快照的只读观测，不代表 T7/T8 已通过。
+该能力是 `deployment_topology_probe` 场景 Playbook 的首个只读 Tool，不替代错误码、其他场景 Playbook、
+开放探索或证据能力；Guance CloudDial 只是首个 Adapter。通用 Tool Registry 仍在更多真实 Tool 合同稳定后
+按统一 SPI 演进，本次不提前伪造空注册平台。
 
 ## 3. canonical 字段
 

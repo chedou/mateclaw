@@ -8,7 +8,7 @@
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，v4 现为 **v4.3** / 蓝图 v0.16）
+> 第一性原理评价与修订：`architecture-critique-v4.md`（用户已认可，现行为 **v4.4** / 蓝图 v0.18）
 >
 > 已选定的投影合同：`projection-contracts.md`（服务经理 + 开发两个受众；企微独立 UI 投影原型暂缓，通道 P3 T9 与 T10 纯文本闭环已落地）
 >
@@ -181,6 +181,9 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       完整 lookup identity；关闭后重开不得复用旧响应。
 - [x] 增加管理员触发的 Guance-only `log_search → log_trace_bundle` 单次只读验证；
       在 Router 调用前限制允许源，不得回退 Recorded Replay。
+- [x] 将部署拓扑拨测从独立分析能力归位为 `deployment_topology_probe` Diagnosis 场景：拓扑快照作为
+      Workspace 资产，`topology_synthetic_probe` 作为只读 Tool，Guance CloudDial 作为首个 Adapter；
+      选定资产和脱敏结果均写入同一 Diagnosis Evidence Spine，详情页可查看不可变运行历史（V188）。
 
 2026-07-29：`workspaceId` 已贯穿唯一 Evidence Router/Adapter 脊柱；Guance 只有命中唯一、精确的
 `asset-bindings[workspaceId,system,service].signal-bindings[signalKind]` 后才会读取运行时 API Key 并发请求。
@@ -494,8 +497,9 @@ Challenger 影子运行和两者对比仍未实现。
 
 ## 11. 推荐接手顺序
 
-1. 先读现行录音基线、v4.3、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
-2. 主攻 P2 真实 Guance 授权、measurement/字段/阈值核实和 20–30 条影子样本。
+1. 先读现行录音基线、v4.4、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
+2. 主攻 P2 真实 Guance measurement/字段/阈值核实和 20–30 条影子样本；当前 CloudDial 请求已到达真源，
+   但样例查询尚未返回 series，必须保持 `INSUFFICIENT_EVIDENCE`，不得伪造健康结论。
 3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。
 4. P3 纯文本闭环已收口；交互卡片仍是需单独平台评审的后续项，不阻塞 P2 真实数据验证。
    不新建入站，不把 `BusinessSummary` 伪装成 tool-guard `ApprovalNotice`。

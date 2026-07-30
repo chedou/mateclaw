@@ -210,6 +210,86 @@
           </div>
         </section>
 
+        <section class="topology-evidence-card">
+          <div class="topology-evidence-head">
+            <div>
+              <span class="section-label">场景证据 · deployment_topology_probe</span>
+              <h3>部署拓扑拨测</h3>
+              <p>选择 Workspace 已导入拓扑，经 <code>topology_synthetic_probe</code> 只读取证，结果归属当前 Diagnosis。</p>
+            </div>
+            <el-button
+              v-if="canManageTroubleshooting"
+              type="primary"
+              plain
+              :disabled="current.diagnosis.status === 'CLOSED'"
+              @click="deploymentTopologyOpen = true"
+            >选择拓扑并运行</el-button>
+          </div>
+          <div v-if="latestTopologyProbeRun" class="topology-evidence-result">
+            <div>
+              <span>最新运行</span>
+              <b>{{ deploymentAnalysisLabel(latestTopologyProbeRun.result.status) }}</b>
+              <small>{{ shortTime(latestTopologyProbeRun.completedAt) }} · {{ latestTopologyProbeRun.actorRef }}</small>
+            </div>
+            <dl>
+              <div><dt>已配置</dt><dd>{{ latestTopologyProbeRun.result.summary.configuredProbeNodes }}</dd></div>
+              <div><dt>已观测</dt><dd>{{ latestTopologyProbeRun.result.summary.observedProbeNodes }}</dd></div>
+              <div class="failed"><dt>失败</dt><dd>{{ latestTopologyProbeRun.result.summary.failingProbeNodes }}</dd></div>
+              <div><dt>不可用</dt><dd>{{ latestTopologyProbeRun.result.summary.unavailableProbeNodes }}</dd></div>
+            </dl>
+            <div v-if="latestTopologyProbeRun.result.suspectLinks.length" class="topology-link-hints">
+              <span>需核查相邻链路</span>
+              <code v-for="link in latestTopologyProbeRun.result.suspectLinks" :key="`${link.source}-${link.target}`">
+                {{ link.source }} → {{ link.target }}
+              </code>
+            </div>
+            <div v-if="latestTopologyProbeRun.result.observations.length" class="topology-observations">
+              <span>节点观测</span>
+              <div v-for="observation in latestTopologyProbeRun.result.observations" :key="observation.nodeKey">
+                <b>{{ observation.label }}</b>
+                <code>{{ observation.nodeKey }}</code>
+                <em>{{ observationStatusLabel(observation.status) }}</em>
+                <small v-if="observation.statusCode">HTTP {{ observation.statusCode }}</small>
+              </div>
+            </div>
+            <small class="topology-history-count">已保留 {{ topologyProbeRuns.length }} 次安全证据运行；异常节点和相邻链路是核查提示，不等于根因。</small>
+            <details class="topology-run-history">
+              <summary>查看运行历史（{{ topologyProbeRuns.length }}）</summary>
+              <ol>
+                <li v-for="run in topologyProbeRuns" :key="run.runId">
+                  <header>
+                    <div>
+                      <b>{{ deploymentAnalysisLabel(run.result.status) }}</b>
+                      <small>{{ shortTime(run.completedAt) }} · {{ run.actorRef }}</small>
+                    </div>
+                    <code>{{ run.topologyId }}</code>
+                  </header>
+                  <p>
+                    已观测 {{ run.result.summary.observedProbeNodes }} / 已配置 {{ run.result.summary.configuredProbeNodes }}；
+                    失败 {{ run.result.summary.failingProbeNodes }}；不可用 {{ run.result.summary.unavailableProbeNodes }}
+                  </p>
+                  <p v-if="run.result.suspectLinks.length" class="history-links">
+                    核查链路：{{ run.result.suspectLinks.map(link => `${link.source} → ${link.target}`).join('、') }}
+                  </p>
+                  <p v-if="run.result.warnings.length" class="history-warning">
+                    {{ run.result.warnings.join('；') }}
+                  </p>
+                  <ul v-if="run.result.observations.length" class="history-observations">
+                    <li v-for="observation in run.result.observations" :key="observation.nodeKey">
+                      <b>{{ observation.label }}</b>
+                      <code>{{ observation.nodeKey }}</code>
+                      <span>{{ observationStatusLabel(observation.status) }}</span>
+                      <small v-if="observation.statusCode">HTTP {{ observation.statusCode }}</small>
+                      <small>{{ observation.evidenceRef }}</small>
+                    </li>
+                  </ul>
+                </li>
+              </ol>
+            </details>
+          </div>
+          <div v-else class="empty-evidence">当前 Diagnosis 还没有部署拓扑拨测证据。</div>
+        </section>
+
         <details class="developer-fold">
           <summary>
             <span class="fold-caret" />
@@ -461,7 +541,11 @@
       @start-validation="startGuanceValidationFromOnboarding"
     />
 
-    <DeploymentTopologySopDialog v-model="deploymentTopologyOpen" />
+    <DeploymentTopologySopDialog
+      v-model="deploymentTopologyOpen"
+      :diagnosis-id="business?.diagnosisId"
+      @completed="handleTopologyProbeCompleted"
+    />
 
     <el-dialog v-model="guanceValidationOpen" :title="TROUBLESHOOTING_UI_LABELS.guanceValidation" width="min(620px, calc(100vw - 32px))">
       <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
@@ -679,6 +763,7 @@ import {
   type RecommendedAction,
   type RecordedReplayEvaluationCapability,
   type StoredDiagnosis,
+  type TopologyProbeEvidenceRun,
 } from '@/api'
 import {
   canStartGuanceValidation,
@@ -705,6 +790,7 @@ import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPr
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
+import { deploymentAnalysisLabel, observationStatusLabel } from './deploymentTopologySop'
 import DiagnosisListView from './DiagnosisListView.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
@@ -757,6 +843,7 @@ const rows = ref<DiagnosisSummary[]>([])
 const selectedId = ref<string | null>(null)
 const current = ref<StoredDiagnosis | null>(null)
 const projection = ref<DiagnosisExperienceProjection | null>(null)
+const topologyProbeRuns = ref<TopologyProbeEvidenceRun[]>([])
 const statusFilter = ref<DiagnosisStatus | ''>('')
 const viewMode = ref<WorkbenchViewMode>(resolveWorkbenchView(route.query.view, route.query.diagnosisId))
 const listLoading = ref(false)
@@ -785,6 +872,7 @@ let guanceValidationSessionVersion = 0
 const business = computed(() => projection.value?.businessSummary ?? null)
 const developer = computed(() => projection.value?.developerEvidence ?? null)
 const closure = computed(() => current.value?.diagnosis.closure ?? null)
+const latestTopologyProbeRun = computed(() => topologyProbeRuns.value[0] ?? null)
 const impactMetricList = computed(() => {
   const impact = business.value?.impact
   return impact ? impactMetrics(impact.affectedCustomers, impact.affectedUsers) : []
@@ -1008,8 +1096,21 @@ function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
   if (command === 'incident' && canOperateTroubleshooting.value) {
     incidentReportOpen.value = true
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
+    if (!current.value?.diagnosis.diagnosisId) {
+      ElMessage.info('部署拓扑拨测是 Diagnosis 内的场景证据；请先创建或打开一条排障记录。')
+      return
+    }
+    if (current.value.diagnosis.status === 'CLOSED') {
+      ElMessage.warning('已关闭 Diagnosis 不再接收新的拓扑拨测证据。')
+      return
+    }
     deploymentTopologyOpen.value = true
   }
+}
+
+function handleTopologyProbeCompleted(run: TopologyProbeEvidenceRun) {
+  topologyProbeRuns.value = [run, ...topologyProbeRuns.value
+    .filter(item => item.runId !== run.runId)]
 }
 
 async function reportIncident() {
@@ -1079,12 +1180,15 @@ async function selectDiagnosis(
   guanceValidationOrigin.value = null
   guanceDiagnosisLookup.value = null
   try {
-    const [projectionResponse, diagnosisResponse] = await Promise.all([
-      troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
+    const [projectionResponse, diagnosisResponse, topologyRunsResponse] = await Promise.all([
+      troubleshootingApi.projection(diagnosisId),
+      troubleshootingApi.get(diagnosisId),
+      troubleshootingApi.diagnosisTopologyProbeRuns(diagnosisId),
     ])
     if (version !== selectionVersion) return
     projection.value = projectionResponse.data
     current.value = diagnosisResponse.data
+    topologyProbeRuns.value = topologyRunsResponse.data
     guanceValidation.value = null
     guanceSpinePreview.value = null
     guanceReadiness.value = null
@@ -1104,6 +1208,7 @@ async function selectDiagnosis(
     if (version !== selectionVersion) return
     projection.value = null
     current.value = null
+    topologyProbeRuns.value = []
     ElMessage.error(`加载诊断投影失败：${errorText(error)}`)
   } finally { if (version === selectionVersion) detailLoading.value = false }
 }
@@ -1477,6 +1582,37 @@ onMounted(() => loadList(isDiagnosisViewMode(viewMode.value)))
 .contrast-row>span { color:var(--muted); } .contrast-row em { color:#98a2b3; font-style:normal; } .contrast-row .baseline { color:var(--green); } .contrast-row small { flex-basis:100%; color:var(--muted); } .contrast-row.unavailable { color:var(--amber); background:#fffaeb; }
 .draft-state { padding:2px 7px; border-radius:5px; color:#6941c6; background:#f4f3ff; font-size:9px; font-weight:750; } .draft-summary ol { margin:14px 0 9px; padding-left:20px; color:#344054; font-size:11.5px; line-height:1.6; } .draft-summary>small { color:var(--muted); font-size:10px; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--line); } .lifecycle-bar>span { margin-left:5px; color:var(--muted); font-size:10.5px; }
+.topology-evidence-card { max-width:1320px; margin:14px auto 0; padding:18px 20px; border:1px solid #b7dfcd; border-radius:14px; background:#f7fcf9; box-shadow:0 8px 28px rgba(21,37,68,.025); }
+.topology-evidence-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
+.topology-evidence-head h3 { margin:5px 0; font-size:16px; }
+.topology-evidence-head p { margin:0; color:var(--muted); font-size:11px; line-height:1.6; }
+.topology-evidence-head code { color:#067647; }
+.topology-evidence-result { display:grid; grid-template-columns:minmax(190px,.8fr) minmax(340px,1.4fr); gap:14px 22px; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid #d4ebe0; }
+.topology-evidence-result>div:first-child span,.topology-evidence-result>div:first-child b,.topology-evidence-result>div:first-child small { display:block; }
+.topology-evidence-result>div:first-child span { color:var(--muted); font-size:9.5px; }
+.topology-evidence-result>div:first-child b { margin-top:4px; font-size:13px; }
+.topology-evidence-result>div:first-child small { margin-top:4px; color:var(--muted); font-size:9px; }
+.topology-evidence-result dl { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:0; }
+.topology-evidence-result dl>div { padding:9px; border:1px solid #d4ebe0; border-radius:8px; background:#fff; }
+.topology-evidence-result dt { color:var(--muted); font-size:9px; }
+.topology-evidence-result dd { margin:3px 0 0; color:#067647; font-size:17px; font-weight:800; }
+.topology-evidence-result .failed dd { color:var(--red); }
+.topology-link-hints { grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:7px; color:#912018; font-size:9.5px; }
+.topology-link-hints code { padding:3px 6px; border-radius:5px; background:#fff1f0; }
+.topology-observations { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:7px; align-items:center; color:var(--muted); font-size:9.5px; }
+.topology-observations>div { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid #d4ebe0; border-radius:7px; background:#fff; }
+.topology-observations b { color:var(--ink); }.topology-observations code { color:#475467; }.topology-observations em { color:#067647; font-style:normal; font-weight:700; }.topology-observations small { color:var(--muted); }
+.topology-history-count { grid-column:1/-1; color:var(--muted); font-size:9.5px; }
+.topology-run-history { grid-column:1/-1; overflow:hidden; border:1px solid #d4ebe0; border-radius:9px; background:#fff; }
+.topology-run-history summary { padding:9px 11px; color:#067647; cursor:pointer; font-size:10px; font-weight:750; }
+.topology-run-history ol { display:grid; gap:8px; margin:0; padding:0 10px 10px; list-style:none; }
+.topology-run-history li { padding:10px; border:1px solid #e4efe9; border-radius:8px; background:#fbfefc; }
+.topology-run-history header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.topology-run-history header b,.topology-run-history header small { display:block; }.topology-run-history header small { margin-top:3px; color:var(--muted); font-size:8.5px; }.topology-run-history header code { color:#475467; font-size:8.5px; }
+.topology-run-history p { margin:7px 0 0; color:#475467; font-size:9px; line-height:1.55; }.topology-run-history .history-links { color:#912018; }.topology-run-history .history-warning { color:#b54708; }
+.topology-run-history .history-observations { display:grid; gap:5px; margin:8px 0 0; padding:0; list-style:none; }
+.topology-run-history .history-observations li { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 7px; border:0; border-radius:6px; background:#f2f8f5; color:#475467; font-size:8.5px; }
+.topology-run-history .history-observations b { color:var(--ink); }.topology-run-history .history-observations code { color:#475467; }.topology-run-history .history-observations span { color:#067647; font-weight:700; }.topology-run-history .history-observations small { color:var(--muted); }
 .developer-fold { margin-top:14px; overflow:hidden; } .developer-fold>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; list-style:none; cursor:pointer; user-select:none; }
 .developer-fold>summary::-webkit-details-marker { display:none; } .developer-fold>summary>div b,.developer-fold>summary>div small { display:block; } .developer-fold>summary>div b { font-size:13.5px; } .developer-fold>summary>div small { margin-top:3px; color:var(--muted); font-size:10.5px; }
 .developer-fold>summary>span:last-child { margin-left:auto; color:var(--muted); font-size:10.5px; } .fold-caret { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:6px solid #98a2b3; transition:transform .18s; } .developer-fold[open] .fold-caret { transform:rotate(90deg); }
@@ -1519,5 +1655,5 @@ onMounted(() => loadList(isDiagnosisViewMode(viewMode.value)))
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; } .action-card.write { border-color:#f2c4bf; } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:8.5px; }
 .action-card>b { display:block; margin-top:7px; font-size:11.5px; } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:10px; line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:10.5px; }
 @media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:18px 12px 36px}.work-head{align-items:flex-start;flex-direction:column}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:18px 12px 36px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
 </style>

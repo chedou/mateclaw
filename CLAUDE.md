@@ -15,8 +15,9 @@ API 只返回计数、PS ID、节点数和绑定状态，不返回 DQL、密钥�
 `chain-board.runtime-topology-snapshot` 导入为不可变共享资产；完全相同的快照幂等复用，同名不同内容
 拒绝覆盖。服务端只对同时具备 `url + guance_url` 的节点，经唯一
 `EvidenceSourceRouter` 批量执行 Guance-only `synthetic_probe`。上传 URL 只提供任务身份/时间窗，不能控制
-API 主机或 DQL；只持久化通过凭据形态校验的拓扑快照和导入审计元数据，分析结果仍不持久化、不调模型、
-不返回原始响应/凭据，也不把未覆盖节点判为健康。页面提供服务端校验过的可下载导入案例。当前样例为
+API 主机或 DQL；通过 Diagnosis 场景入口执行后，只持久化安全的 `TopologyProbeEvidenceRun` 投影并关联
+同一 Diagnosis，不调模型、不返回或落库原始响应/DQL/凭据，也不把未覆盖节点判为健康；关闭中的迟到结果
+同样拒绝写入。页面提供服务端校验过的可下载导入案例。当前样例为
 21 节点、27 链路、1 个可执行拨测；批量边界为 32 个拨测、8 路并发和 25 秒总预算，超时只降级相应节点。
 真实 HTTP 返回仍待操作员本地触发核实，不代表 T7/T8 通过。该专项入口不替代其他 SOP/证据能力；通用
 `ReadOnlyEvidenceToolRegistry` 仍须等真实 Tool 合同稳定后实现。
@@ -91,7 +92,7 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
 
 0. **`docs/intelligent-troubleshooting/recording-product-baseline.md`** —— **现行产品事实**：
    2026-07-27 录音 F1–F11，明确核心差异化、首个案例、企微入口和能力边界。
-1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.3）**：
+1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.4）**：
    证据脊柱、在线诊断/知识生产双闭环、ERROR_CODE/SCENARIO/OPEN_DISCOVERY 三种调查路径和分阶段实施。
    **§9 是红线的唯一权威清单**，其余文档只引用不复述；**§7.4 是通道复用（D17）**。
 2. **`docs/intelligent-troubleshooting/architecture-review-v4.md`** —— **架构师评审**：
@@ -100,12 +101,13 @@ fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
    （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
 2.6 **`docs/intelligent-troubleshooting/projection-contracts.md`** —— **已选定的两个投影合同**：
    BusinessSummary / DeveloperEvidenceView / NorthStarTimings，含服务端不变量与通道消费方式。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.16**：
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.18**：
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
-   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.16 图形不变，
+   v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.17 保留当时图形，
    v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 READY 异步调查、幂等 Diagnosis、
    workspace-aware leader 投递/平台 ACK、BusinessSummary 与正式工作台深链实现状态；v0.16
-   记录 V180 关闭结果持久化原路通知与正式页最终处置卡；RFC 仍为 v4.3。
+   记录 V180 关闭结果持久化原路通知与正式页最终处置卡；v0.18 把部署拓扑拨测收回统一
+   Evidence Spine，明确资产 / 场景 / Tool / Adapter / Diagnosis 证据五层边界；RFC 为 v4.4。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。

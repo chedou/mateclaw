@@ -5,8 +5,15 @@
     width="min(920px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="topology-alert">
-      导入的拓扑快照会保存为当前 Workspace 的共享资产；拨测分析仍只读，不保存分析结果、原始响应、DQL
-      或凭据，也不把未覆盖节点描述成健康。
+      导入的拓扑快照是当前 Workspace 的共享资产；拨测作为只读场景 Tool 执行，仅将安全投影保存到当前 Diagnosis。
+      原始响应、DQL 和凭据不落库，未覆盖节点也不会被描述成健康。
+    </el-alert>
+
+    <div v-if="diagnosisId" class="diagnosis-binding">
+      <span>证据归属</span><code>{{ diagnosisId }}</code>
+    </div>
+    <el-alert v-else type="error" :closable="false" class="topology-alert">
+      请先创建或打开一条 Diagnosis，再运行部署拓扑拨测。
     </el-alert>
 
     <section class="topology-library">
@@ -167,9 +174,9 @@
       <el-button
         type="primary"
         :loading="running"
-        :disabled="!selectedTopology || !selectedTopology.configuredProbeNodes"
+        :disabled="!diagnosisId || !selectedTopology || !selectedTopology.configuredProbeNodes"
         @click="run"
-      >运行只读拨测 SOP</el-button>
+      >运行并写入 Diagnosis 证据</el-button>
     </template>
   </el-dialog>
 </template>
@@ -181,6 +188,7 @@ import {
   troubleshootingApi,
   type DeploymentTopologyAssetSummary,
   type DeploymentTopologySopResult,
+  type TopologyProbeEvidenceRun,
 } from '@/api'
 import {
   deploymentAnalysisLabel,
@@ -194,8 +202,11 @@ import {
 } from './deploymentTopologySop'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
-const props = defineProps<{ modelValue: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+const props = defineProps<{ modelValue: boolean; diagnosisId?: string }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  completed: [run: TopologyProbeEvidenceRun]
+}>()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -342,19 +353,21 @@ async function importTopology() {
 }
 
 async function run() {
-  if (!selectedTopology.value?.configuredProbeNodes) return
+  if (!props.diagnosisId || !selectedTopology.value?.configuredProbeNodes) return
   const version = ++runVersion
   running.value = true
   result.value = null
   try {
-    const response = await troubleshootingApi.analyzeImportedDeploymentTopology(
+    const response = await troubleshootingApi.runDiagnosisTopologyProbe(
+      props.diagnosisId,
       selectedTopology.value.topologyId,
     )
     if (version !== runVersion || !visible.value) return
-    result.value = response.data
-    if (response.data.status === 'NETWORK_PROBLEM_DETECTED') {
+    result.value = response.data.result
+    emit('completed', response.data)
+    if (response.data.result.status === 'NETWORK_PROBLEM_DETECTED') {
       ElMessage.warning('部署图拨测发现失败节点，请结合相邻链路继续核查')
-    } else if (response.data.status === 'NO_PROBLEM_OBSERVED') {
+    } else if (response.data.result.status === 'NO_PROBLEM_OBSERVED') {
       ElMessage.success('全部已配置拨测均返回可达状态')
     } else {
       ElMessage.info('拨测已完成，但覆盖或证据不足，未宣称整张网络健康')
@@ -388,6 +401,8 @@ function shortTime(value: string) {
 
 <style scoped>
 .topology-alert { margin-bottom: 16px; line-height: 1.6; }
+.diagnosis-binding { display: flex; align-items: center; gap: 10px; margin: -4px 0 14px; padding: 9px 12px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 12px; }
+.diagnosis-binding code { font-weight: 700; }
 .topology-library { padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: #f8fafc; }
 .library-head,
 .import-panel>header,

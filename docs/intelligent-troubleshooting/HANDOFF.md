@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-07-29
+> 更新时间：2026-07-30
 >
 > 仓库：`webonne/mateclaw`
 >
@@ -10,7 +10,7 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.3 / 蓝图 v0.16**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.4 / 蓝图 v0.18**
 
 ## 1. 一句话
 
@@ -51,6 +51,7 @@ MateClaw 智能排障的中心是一条“报障上下文 → 只读取证 → �
 | **D15** | 证据合成必须取成功样本对照；缺失只降级不失败，且锁定校准期档 |
 | **D16** | 未被真实失败检验过的设计分支标 `PENDING-EVIDENCE`，不得据以新增实现、接口或表结构 |
 | **D17** | 通道一律复用平台现有 `ChannelAdapter` / `ChannelMessageRouter`，不新建入站；`CardKind` 只路由模板卡片事件，不能冒充普通 @ 消息 Intake；诊断卡片不得复用 tool-guard 的 `ApprovalNotice` 形状（v4 §7.4） |
+| **D18** | 部署拓扑快照是 Workspace 资产，`deployment_topology_probe` 是 Diagnosis 内场景，`topology_synthetic_probe` 是可插拔只读 Tool，Guance CloudDial 只是首个 Adapter；安全结果回到同一 Evidence Spine，不建第二套诊断链路 |
 
 修改 D4、D5/D5′、D9 必须单独 RFC 并由用户明确确认。
 D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之前，不得据其新增实现。
@@ -58,10 +59,11 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.16：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
+蓝图已升级到 v0.18：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
 v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 T10 前半段的持久化异步调查、
 幂等 Diagnosis、纯文本 BusinessSummary 与正式工作台深链，v0.16 记录 Diagnosis 关闭 outcome 的
-持久化原路 @ 通知与正式工作台最终处置卡。这些版本均不扩大
+持久化原路 @ 通知与正式工作台最终处置卡；v0.17 冻结部署拓扑独立结果的中间态，v0.18 将其修正为
+Workspace 资产 + Diagnosis 场景 + 可插拔只读 Tool + 来源 Adapter + 同一证据详情。这些版本均不扩大
 P1：P2 才在历史样本上影子运行 Evidence Challenger /
 Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
@@ -90,8 +92,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `客服数字化平台-首页-可用性监控`。Guance 仍默认关闭，API Key 仍只允许从环境注入，
   明文 HTTP 默认 fail closed；仅本地进程可在操作员明确授权后临时开启，正式部署仍必须关闭并迁移到
   HTTPS/受控 TLS 代理。尚未由自动化真实调用，不代表 T7/T8 通过。
-- **部署图拨测 SOP 真实触发入口（2026-07-30）**：正式 `/troubleshooting` 以面向用户的
-  “部署拓扑拨测分析”场景承载该专项 SOP，
+- **部署拓扑拨测场景真实触发入口（2026-07-30）**：正式 `/troubleshooting` 以面向用户的
+  “部署拓扑拨测分析”承载 `deployment_topology_probe` 场景 Playbook，
   管理员可从 Workspace 共享拓扑图库选择既有资产，也可导入新的
   `chain-board.runtime-topology-snapshot`。V187 只保存通过 512 KiB、节点/链路/拨测数量、凭据形态和
   URL 元数据校验的不可变快照及导入人/时间；同快照幂等复用，同名不同内容拒绝覆盖，最多 100 份，
@@ -102,10 +104,12 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `lak / activeName / cols / viewType` 只按已知展示参数校验后忽略，不参与执行、指纹或持久化；`dql` 等未知参数仍拒绝。
   当前样例为 21 节点、27 链路、1 个可执行
   拨测。最多 32 个可执行拨测以 8 路并发共享 25 秒总预算，超时节点降级为 `UNAVAILABLE`，已完成结果保留。
-  分析结果不调模型、不落库、不返回原始响应/DQL/凭据；未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
+  独立兼容接口仍不调模型、不落库；正式 Diagnosis 场景入口只持久化脱敏后的安全结果投影，不返回或落库
+  原始响应/DQL/凭据。未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
 - **能力命名与场景入口统一（2026-07-30）**：正式工作台主按钮统一为“发起排障”，先选择
-  “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者复用现有 Guance
-  只读拓扑分析接口，当前不伪装成 Diagnosis，分析结果不落库。部署拓扑入口已从“更多能力”移出；该菜单只保留
+  “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者必须绑定已有
+  Diagnosis，并通过 `topology_synthetic_probe` 只读工具运行；安全结果写入 V188 不可变运行记录并在同一
+  排障详情展示。部署拓扑入口已从“更多能力”移出；该菜单只保留
   “排障规则库 / 无码场景预演 / 观测云接入与验收 / 诊断效果评估”四个低频治理与校准入口。内部
   Playbook、P2、T7、T8 合同名称不变，改动只作用于用户界面信息架构。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
@@ -763,6 +767,15 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   前端 PID `92308` 继续监听 `5173`。登录态应用内浏览器确认空图库、既有拓扑选择器、导入名称与 JSON
   入口、三步案例、可展开示例 JSON 均正常，控制台 0 error；验收没有实际导入快照、下载文件或运行拨测，
   因此没有新增共享资产、调用外部 Guance、创建 Diagnosis 或改变 T7/T8 状态。
+- 部署拓扑拨测归位 Diagnosis 场景后，后端排障域 + Skill Manifest `535` 个测试、前端 `22` 个测试文件 /
+  `164` 个测试全部通过；`vue-tsc --noEmit` 与直接 Vite 生产构建通过，构建完成 `6297` 个模块转换。
+  V188 为 `deployment_topology_probe` 保存不可变的脱敏 Tool 运行记录；正式详情页已实测选择 Workspace 共享
+  拓扑、运行 `topology_synthetic_probe`、展示节点观测，并展开三次历史的资产、状态、摘要、警告、节点状态和
+  安全证据引用；刷新后仍保留。最终一次在修复后的 admin POST 与短事务锁路径上真实执行并成功落入历史。
+  POST 继续要求 Workspace admin；最终写入在短事务内锁定 Diagnosis，使关闭状态与证据 append 不存在检查后竞态。
+  当前本地真源请求返回 HTTP 200，
+  但 `series` 为空，因此 Router 诚实投影为 `UNAVAILABLE`，Diagnosis 保持
+  `INSUFFICIENT_EVIDENCE`，没有把无数据误写为网络健康，也没有落库 API Key、DQL 或原始响应。
 
 后端定向测试命令：
 
@@ -783,8 +796,8 @@ mvn -pl mateclaw-server -am \
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
-5. P2 T6 授权机制、真源验证接缝和部署图拨测 SOP 入口已完成；下一主攻是由 owner 在本地联调进程
-   运行样例部署图，核对首个 `synthetic_probe` 的真实 canonical 返回，再用正式工作台的“P2 真源门”
+5. P2 T6 授权机制、真源验证接缝和部署拓扑拨测场景入口已完成；下一主攻是由 owner 核对当前空
+   `series` 的任务时间窗与真实数据，再取得首个 `synthetic_probe` canonical 返回，并用正式工作台的“P2 真源门”
    完成 T7 字段核实和 20–30 条 T8 影子样本。
 6. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 

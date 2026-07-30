@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.repository;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 
@@ -10,6 +11,25 @@ import java.time.LocalDateTime;
 
 @Mapper
 public interface TroubleshootingDiagnosisMapper extends BaseMapper<TroubleshootingDiagnosisEntity> {
+
+    /**
+     * Locks one Diagnosis while a dependent immutable record is appended.
+     *
+     * <p>The lock is intentionally acquired only after external evidence
+     * collection has completed, so a slow read-only adapter never holds the
+     * case lifecycle transaction open.</p>
+     */
+    @Select("""
+            SELECT status
+              FROM mate_troubleshooting_diagnosis
+             WHERE workspace_id = #{workspaceId}
+               AND diagnosis_id = #{diagnosisId}
+               AND deleted = 0
+             FOR UPDATE
+            """)
+    String lockStatusForDependentAppend(
+            @Param("workspaceId") long workspaceId,
+            @Param("diagnosisId") String diagnosisId);
 
     /** Schedules only channel-origin diagnoses; direct Web/API cases have no route. */
     @Update("""
