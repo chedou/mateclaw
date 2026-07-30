@@ -13,9 +13,10 @@ mateclaw:
         csp-deployment:
           synthetic_probe: [guance]
       guance:
-        # The supplied endpoint is recorded here, but the adapter intentionally
-        # rejects its plaintext HTTP transport. A production run must override
-        # this with an approved HTTPS endpoint or controlled TLS proxy.
+        # The supplied endpoint is HTTP. It remains blocked by default and may
+        # only be enabled for an explicitly approved local pilot through
+        # MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true. Production
+        # must use an approved HTTPS endpoint or controlled TLS proxy.
         base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:http://df-openapi.prd.sangfor.com}
         asset-bindings:
           - workspace-id: ${MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID}
