@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  deploymentTopologyOptionLabel,
   deploymentAnalysisLabel,
   inspectDeploymentTopologySnapshot,
   observationStatusLabel,
@@ -75,5 +76,21 @@ describe('deployment topology SOP entry', () => {
     expect(deploymentAnalysisLabel('NO_PROBLEM_OBSERVED')).toContain('已覆盖拨测未发现异常')
     expect(observationStatusLabel('IDENTITY_MISMATCH')).toBe('证据身份不匹配')
     expect(observationStatusLabel('UNAVAILABLE')).toBe('证据不可用')
+  })
+
+  it('makes imported workspace topologies understandable in the selector', () => {
+    expect(deploymentTopologyOptionLabel({
+      topologyId: 'topology-shared',
+      name: '马来西亚生产拓扑',
+      system: 'csp-deployment',
+      systemLabel: 'CSP 部署架构',
+      schemaVersion: '1.0',
+      exportedAt: '2026-07-30T07:00:43.589Z',
+      nodeCount: 21,
+      linkCount: 27,
+      configuredProbeNodes: 1,
+      importedBy: 'alice',
+      importedAt: '2026-07-30T10:00:00Z',
+    })).toBe('马来西亚生产拓扑 · CSP 部署架构 · 21 节点 / 1 拨测')
   })
 })

@@ -92,15 +92,18 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   HTTPS/受控 TLS 代理。尚未由自动化真实调用，不代表 T7/T8 通过。
 - **部署图拨测 SOP 真实触发入口（2026-07-30）**：正式 `/troubleshooting` 以面向用户的
   “部署拓扑拨测分析”场景承载该专项 SOP，
-  管理员上传 `chain-board.runtime-topology-snapshot` 后调用
-  `POST /api/v1/troubleshooting/sops/deployment-topology/analyze`。服务端有界解析所有节点，仅对同时具有
+  管理员可从 Workspace 共享拓扑图库选择既有资产，也可导入新的
+  `chain-board.runtime-topology-snapshot`。V187 只保存通过 512 KiB、节点/链路/拨测数量、凭据形态和
+  URL 元数据校验的不可变快照及导入人/时间；同快照幂等复用，同名不同内容拒绝覆盖，最多 100 份，
+  其他 Workspace 不可见。页面内提供服务端校验过的下载案例和三步导入说明。选定资产后调用
+  `POST /api/v1/troubleshooting/sops/deployment-topology/topologies/{topologyId}/analyze`。服务端有界解析所有节点，仅对同时具有
   `url + guance_url` 的节点经现有 `EvidenceSourceRouter` 执行 Guance-only `synthetic_probe`；上传的
   `guance_url` 只提供任务身份/时间窗，不能控制 API 主机或 DQL。当前样例为 21 节点、27 链路、1 个可执行
   拨测。最多 32 个可执行拨测以 8 路并发共享 25 秒总预算，超时节点降级为 `UNAVAILABLE`，已完成结果保留。
-  结果不调模型、不落库、不返回原始响应/DQL/凭据；未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
+  分析结果不调模型、不落库、不返回原始响应/DQL/凭据；未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
 - **能力命名与场景入口统一（2026-07-30）**：正式工作台主按钮统一为“发起排障”，先选择
   “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者复用现有 Guance
-  只读拓扑分析接口，当前不伪装成 Diagnosis、不落库。部署拓扑入口已从“更多能力”移出；该菜单只保留
+  只读拓扑分析接口，当前不伪装成 Diagnosis，分析结果不落库。部署拓扑入口已从“更多能力”移出；该菜单只保留
   “排障规则库 / 无码场景预演 / 观测云接入与验收 / 诊断效果评估”四个低频治理与校准入口。内部
   Playbook、P2、T7、T8 合同名称不变，改动只作用于用户界面信息架构。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
@@ -752,6 +755,12 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   既有 JSON 上传和只读分析界面；排障规则库、无码场景预演、观测云接入与验收、诊断效果评估的页面或
   弹窗标题均一致，控制台 0 error。验收没有上传快照或运行拨测，因此没有调用外部 Guance，也没有创建
   Diagnosis 或改变 T7/T8 状态。
+- Workspace 共享拓扑图库增量完成后，排障域 + Skill Manifest 后端 `526` 个测试、前端 `22` 个测试文件 /
+  `164` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建均
+  通过，构建完成 `6297` 个模块转换。后端 PID `82173` 启动时已将本地 H2 从 V186 成功迁移至 V187，
+  前端 PID `92308` 继续监听 `5173`。登录态应用内浏览器确认空图库、既有拓扑选择器、导入名称与 JSON
+  入口、三步案例、可展开示例 JSON 均正常，控制台 0 error；验收没有实际导入快照、下载文件或运行拨测，
+  因此没有新增共享资产、调用外部 Guance、创建 Diagnosis 或改变 T7/T8 状态。
 
 后端定向测试命令：
 

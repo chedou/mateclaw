@@ -2402,6 +2402,25 @@ export type DeploymentTopologyAnalysisStatus =
   | 'NETWORK_PROBLEM_DETECTED'
   | 'NO_PROBLEM_OBSERVED'
 
+export interface DeploymentTopologyAssetSummary {
+  topologyId: string
+  name: string
+  system: string
+  systemLabel: string
+  schemaVersion: string
+  exportedAt: string
+  nodeCount: number
+  linkCount: number
+  configuredProbeNodes: number
+  importedBy: string
+  importedAt: string
+}
+
+export interface DeploymentTopologyImportResult {
+  topology: DeploymentTopologyAssetSummary
+  created: boolean
+}
+
 export type DeploymentTopologyObservationStatus =
   | 'HEALTHY'
   | 'FAILED'
@@ -2753,6 +2772,28 @@ export const troubleshootingApi = {
   analyzeDeploymentTopology: (snapshot: Record<string, unknown>) =>
     http.post<DeploymentTopologySopResult>(
       '/troubleshooting/sops/deployment-topology/analyze', { snapshot },
+    ),
+
+  /** Lists immutable, workspace-shared deployment topology snapshots. */
+  listDeploymentTopologies: () => http.get<DeploymentTopologyAssetSummary[]>(
+    '/troubleshooting/sops/deployment-topology/topologies',
+  ),
+
+  /** Validates and imports one topology for reuse by workspace administrators. */
+  importDeploymentTopology: (data: { name: string; snapshot: Record<string, unknown> }) =>
+    http.post<DeploymentTopologyImportResult>(
+      '/troubleshooting/sops/deployment-topology/topologies', data,
+    ),
+
+  /** Downloads a valid, secret-free topology example. */
+  deploymentTopologyExample: () => http.get<Record<string, unknown>>(
+    '/troubleshooting/sops/deployment-topology/example',
+  ),
+
+  /** Analyzes the exact stored topology server-side without resubmitting its snapshot. */
+  analyzeImportedDeploymentTopology: (topologyId: string) =>
+    http.post<DeploymentTopologySopResult>(
+      `/troubleshooting/sops/deployment-topology/topologies/${encodeURIComponent(topologyId)}/analyze`,
     ),
 
   /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */

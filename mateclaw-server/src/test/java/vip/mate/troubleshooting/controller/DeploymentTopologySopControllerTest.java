@@ -5,10 +5,15 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import vip.mate.troubleshooting.deployment.DeploymentTopologySopResult;
 import vip.mate.troubleshooting.deployment.DeploymentTopologySopService;
+import vip.mate.troubleshooting.deployment.DeploymentTopologyAssetSummary;
+import vip.mate.troubleshooting.deployment.DeploymentTopologyImportResult;
+import vip.mate.troubleshooting.deployment.DeploymentTopologyLibraryService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.time.Instant;
@@ -17,9 +22,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -42,7 +49,8 @@ class DeploymentTopologySopControllerTest {
     @Test
     void acceptsASecretFreeSnapshotAndReturnsOnlyTheBoundedAnalysisProjection() throws Exception {
         DeploymentTopologySopService service = mock(DeploymentTopologySopService.class);
-        DeploymentTopologySopController controller = new DeploymentTopologySopController(service);
+        DeploymentTopologyLibraryService library = mock(DeploymentTopologyLibraryService.class);
+        DeploymentTopologySopController controller = new DeploymentTopologySopController(service, library);
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -74,6 +82,83 @@ class DeploymentTopologySopControllerTest {
                 .andExpect(jsonPath("$.data.query").doesNotExist());
 
         verify(service).analyze(anyLong(), any());
+    }
+
+    @Test
+    void exposesTheSharedTopologyLibraryAndDownloadableExampleBehindTheAdminGate()
+            throws Exception {
+        DeploymentTopologySopService analysis = mock(DeploymentTopologySopService.class);
+        DeploymentTopologyLibraryService library = mock(DeploymentTopologyLibraryService.class);
+        DeploymentTopologySopController controller = new DeploymentTopologySopController(
+                analysis, library);
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(mapper))
+                .build();
+        when(library.list(7L, 100)).thenReturn(List.of(new DeploymentTopologyAssetSummary(
+                "topology-shared", "共享拓扑", "csp-deployment", "CSP 部署架构",
+                "1.0", Instant.parse("2026-07-30T07:00:43.589Z"),
+                21, 27, 1, "alice", Instant.parse("2026-07-30T10:00:00Z"))));
+        when(library.example()).thenReturn((com.fasterxml.jackson.databind.node.ObjectNode)
+                mapper.readTree("""
+                        {"schemaVersion":"1.0","kind":"chain-board.runtime-topology-snapshot"}
+                        """));
+
+        mvc.perform(get("/api/v1/troubleshooting/sops/deployment-topology/topologies")
+                        .header("X-Workspace-Id", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].topologyId").value("topology-shared"))
+                .andExpect(jsonPath("$.data[0].snapshotJson").doesNotExist());
+
+        mvc.perform(get("/api/v1/troubleshooting/sops/deployment-topology/example"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.kind")
+                        .value("chain-board.runtime-topology-snapshot"));
+
+        assertThat(DeploymentTopologySopController.class
+                .getDeclaredMethod("listTopologies", Long.class)
+                .getAnnotation(RequireWorkspaceRole.class).value()).isEqualTo("admin");
+        assertThat(DeploymentTopologySopController.class
+                .getDeclaredMethod("importTopology", DeploymentTopologyImportRequest.class, Long.class)
+                .getAnnotation(RequireWorkspaceRole.class).value()).isEqualTo("admin");
+        assertThat(DeploymentTopologySopController.class
+                .getDeclaredMethod("analyzeImported", String.class, Long.class)
+                .getAnnotation(RequireWorkspaceRole.class).value()).isEqualTo("admin");
+    }
+
+    @Test
+    void derivesTheImporterFromTheAuthenticatedServerPrincipal() throws Exception {
+        DeploymentTopologySopService analysis = mock(DeploymentTopologySopService.class);
+        DeploymentTopologyLibraryService library = mock(DeploymentTopologyLibraryService.class);
+        DeploymentTopologySopController controller = new DeploymentTopologySopController(
+                analysis, library);
+        ObjectMapper mapper = new ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode snapshot = mapper.readTree("""
+                {
+                  "schemaVersion": "1.0",
+                  "kind": "chain-board.runtime-topology-snapshot",
+                  "system": {"code": "csp-deployment"},
+                  "topology": {"nodes": [], "links": []}
+                }
+                """);
+        DeploymentTopologyAssetSummary summary = new DeploymentTopologyAssetSummary(
+                "topology-shared", "共享拓扑", "csp-deployment", "CSP 部署架构",
+                "1.0", Instant.parse("2026-07-30T07:00:43.589Z"),
+                0, 0, 0, "alice", Instant.parse("2026-07-30T10:00:00Z"));
+        when(library.importTopology(eq(7L), eq("共享拓扑"), any(), eq("alice")))
+                .thenReturn(new DeploymentTopologyImportResult(summary, true));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of()));
+        try {
+            controller.importTopology(
+                    new DeploymentTopologyImportRequest("共享拓扑", snapshot), 7L);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        verify(library).importTopology(7L, "共享拓扑", snapshot, "alice");
     }
 
     private DeploymentTopologySopResult result() {

@@ -2,38 +2,110 @@
   <el-dialog
     v-model="visible"
     :title="TROUBLESHOOTING_UI_LABELS.deploymentTopology"
-    width="min(900px, calc(100vw - 32px))"
+    width="min(920px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="topology-alert">
-      入口会解析部署图中每个节点的拨测元数据，并通过服务端已授权的 Guance Adapter 批量只读查询。
-      上传链接不能控制 API 主机或 DQL；本次不调用模型、不保存原始响应，也不把未覆盖节点描述成健康。
+      导入的拓扑快照会保存为当前 Workspace 的共享资产；拨测分析仍只读，不保存分析结果、原始响应、DQL
+      或凭据，也不把未覆盖节点描述成健康。
     </el-alert>
 
-    <label class="snapshot-picker" :class="{ loaded: snapshotPreview }">
-      <input
-        ref="fileInput"
-        type="file"
-        accept=".json,application/json"
-        @change="selectSnapshot"
+    <section class="topology-library">
+      <header class="library-head">
+        <div>
+          <span>Workspace 共享拓扑</span>
+          <b>选择已经导入的拓扑</b>
+          <small>同一 Workspace 的管理员导入后，其他管理员无需重复上传即可直接使用。</small>
+        </div>
+        <el-button plain @click="importOpen = !importOpen">
+          {{ importOpen ? '收起导入' : '导入新拓扑' }}
+        </el-button>
+      </header>
+
+      <el-select
+        v-model="selectedTopologyId"
+        class="topology-selector"
+        placeholder="选择一个共享拓扑"
+        filterable
+        :loading="libraryLoading"
       >
-      <span>{{ snapshotFileName || '选择部署图运行时快照 JSON' }}</span>
-      <small>最大 512 KiB · 最多 32 个拨测 · chain-board.runtime-topology-snapshot</small>
-    </label>
+        <el-option
+          v-for="topology in topologies"
+          :key="topology.topologyId"
+          :label="deploymentTopologyOptionLabel(topology)"
+          :value="topology.topologyId"
+        />
+      </el-select>
+
+      <div v-if="!libraryLoading && !topologies.length" class="library-empty">
+        <div><b>当前 Workspace 还没有共享拓扑</b><span>先参考下方案例准备 JSON，再由管理员导入。</span></div>
+        <el-button type="primary" plain @click="importOpen = true">导入第一个拓扑</el-button>
+      </div>
+    </section>
 
     <p v-if="loadError" class="topology-error">{{ loadError }}</p>
 
-    <section v-if="snapshotPreview" class="snapshot-preview">
+    <section v-if="selectedTopology" class="snapshot-preview">
       <div>
-        <span>已识别系统</span>
-        <b>{{ snapshotPreview.systemLabel }}</b>
-        <code>{{ snapshotPreview.system }} · schema {{ snapshotPreview.schemaVersion }}</code>
+        <span>{{ selectedTopology.name }}</span>
+        <b>{{ selectedTopology.systemLabel }}</b>
+        <code>{{ selectedTopology.system }} · schema {{ selectedTopology.schemaVersion }}</code>
+        <small>{{ selectedTopology.importedBy }} 导入于 {{ shortTime(selectedTopology.importedAt) }}</small>
       </div>
       <dl>
-        <div><dt>节点</dt><dd>{{ snapshotPreview.nodeCount }}</dd></div>
-        <div><dt>链路</dt><dd>{{ snapshotPreview.linkCount }}</dd></div>
-        <div><dt>可执行拨测</dt><dd>{{ snapshotPreview.configuredProbeNodes }}</dd></div>
-        <div><dt>未覆盖节点</dt><dd>{{ snapshotPreview.unconfiguredNodeCount }}</dd></div>
+        <div><dt>节点</dt><dd>{{ selectedTopology.nodeCount }}</dd></div>
+        <div><dt>链路</dt><dd>{{ selectedTopology.linkCount }}</dd></div>
+        <div><dt>可执行拨测</dt><dd>{{ selectedTopology.configuredProbeNodes }}</dd></div>
+        <div><dt>未覆盖节点</dt><dd>{{ selectedTopology.nodeCount - selectedTopology.configuredProbeNodes }}</dd></div>
       </dl>
+    </section>
+
+    <section v-if="importOpen" class="import-panel">
+      <header>
+        <div><span>导入到共享图库</span><b>拓扑一经导入保持不可变</b></div>
+        <small>同名拓扑不会被覆盖；内容变更时请使用新名称导入。</small>
+      </header>
+      <el-input
+        v-model="importName"
+        maxlength="128"
+        show-word-limit
+        placeholder="给团队一个容易识别的名称，例如：马来西亚生产拓扑"
+      />
+      <label class="snapshot-picker" :class="{ loaded: importPreview }">
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".json,application/json"
+          @change="selectSnapshot"
+        >
+        <span>{{ importFileName || '选择部署图运行时快照 JSON' }}</span>
+        <small>最大 512 KiB · 最多 100 节点 / 300 链路 / 32 个拨测</small>
+      </label>
+      <div v-if="importPreview" class="import-preview-line">
+        <b>{{ importPreview.systemLabel }}</b>
+        <span>{{ importPreview.nodeCount }} 节点 · {{ importPreview.linkCount }} 链路 · {{ importPreview.configuredProbeNodes }} 拨测</span>
+      </div>
+      <el-button
+        type="primary"
+        :loading="importing"
+        :disabled="!importSnapshot || !importPreview || !importName.trim()"
+        @click="importTopology"
+      >导入并选中</el-button>
+    </section>
+
+    <section class="example-guide">
+      <header>
+        <div><span>第一次导入案例</span><b>照着这个例子准备拓扑 JSON</b></div>
+        <el-button text :loading="exampleLoading" @click="downloadExample">下载示例 JSON</el-button>
+      </header>
+      <ol>
+        <li><b>系统信息</b><span>填写 schemaVersion、kind、exportedAt 和 system。</span></li>
+        <li><b>网络元点</b><span>在 topology.nodes 中填写 key、label、type；需要拨测的节点同时填写 url 与 guance_url。</span></li>
+        <li><b>网络关系</b><span>在 topology.links 中用 source / target 连接已声明的节点。</span></li>
+      </ol>
+      <details v-if="exampleJson">
+        <summary>查看案例内容</summary>
+        <pre>{{ exampleJson }}</pre>
+      </details>
     </section>
 
     <section v-if="result" class="topology-result">
@@ -95,7 +167,7 @@
       <el-button
         type="primary"
         :loading="running"
-        :disabled="!snapshot || !snapshotPreview?.configuredProbeNodes"
+        :disabled="!selectedTopology || !selectedTopology.configuredProbeNodes"
         @click="run"
       >运行只读拨测 SOP</el-button>
     </template>
@@ -107,11 +179,13 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   troubleshootingApi,
+  type DeploymentTopologyAssetSummary,
   type DeploymentTopologySopResult,
 } from '@/api'
 import {
   deploymentAnalysisLabel,
   deploymentAnalysisTone,
+  deploymentTopologyOptionLabel,
   inspectDeploymentTopologySnapshot,
   MAX_DEPLOYMENT_SNAPSHOT_BYTES,
   observationStatusLabel,
@@ -128,32 +202,95 @@ const visible = computed({
   set: (value: boolean) => emit('update:modelValue', value),
 })
 const fileInput = ref<HTMLInputElement | null>(null)
-const snapshot = ref<Record<string, unknown> | null>(null)
-const snapshotPreview = ref<DeploymentTopologySnapshotPreview | null>(null)
-const snapshotFileName = ref('')
+const topologies = ref<DeploymentTopologyAssetSummary[]>([])
+const selectedTopologyId = ref('')
+const selectedTopology = computed(() => topologies.value.find(
+  topology => topology.topologyId === selectedTopologyId.value,
+) || null)
+const libraryLoading = ref(false)
+const importOpen = ref(false)
+const importName = ref('')
+const importSnapshot = ref<Record<string, unknown> | null>(null)
+const importPreview = ref<DeploymentTopologySnapshotPreview | null>(null)
+const importFileName = ref('')
+const importing = ref(false)
+const example = ref<Record<string, unknown> | null>(null)
+const exampleLoading = ref(false)
+const exampleJson = computed(() => example.value ? JSON.stringify(example.value, null, 2) : '')
 const loadError = ref('')
 const running = ref(false)
 const result = ref<DeploymentTopologySopResult | null>(null)
 let runVersion = 0
+let sessionVersion = 0
 
 watch(visible, (open) => {
   runVersion += 1
+  const version = ++sessionVersion
   running.value = false
-  if (!open) return
-  snapshot.value = null
-  snapshotPreview.value = null
-  snapshotFileName.value = ''
+  importing.value = false
   loadError.value = ''
   result.value = null
-  if (fileInput.value) fileInput.value.value = ''
+  if (!open) return
+  resetImport()
+  void loadTopologyLibrary(version)
+  void loadExample(version)
 })
+
+watch(selectedTopologyId, () => {
+  runVersion += 1
+  running.value = false
+  result.value = null
+})
+
+async function loadTopologyLibrary(version = sessionVersion, preferredId = '') {
+  libraryLoading.value = true
+  try {
+    const response = await troubleshootingApi.listDeploymentTopologies()
+    if (version !== sessionVersion || !visible.value) return
+    topologies.value = response.data
+    const nextId = preferredId || selectedTopologyId.value
+    selectedTopologyId.value = response.data.some(item => item.topologyId === nextId)
+      ? nextId
+      : response.data[0]?.topologyId || ''
+  } catch (error) {
+    if (version !== sessionVersion || !visible.value) return
+    topologies.value = []
+    selectedTopologyId.value = ''
+    ElMessage.error(`共享拓扑加载失败：${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    if (version === sessionVersion) libraryLoading.value = false
+  }
+}
+
+async function loadExample(version = sessionVersion) {
+  if (example.value) return
+  exampleLoading.value = true
+  try {
+    const response = await troubleshootingApi.deploymentTopologyExample()
+    if (version !== sessionVersion || !visible.value) return
+    example.value = response.data
+  } catch (error) {
+    if (version !== sessionVersion || !visible.value) return
+    ElMessage.error(`导入案例加载失败：${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    if (version === sessionVersion) exampleLoading.value = false
+  }
+}
+
+function resetImport() {
+  importName.value = ''
+  importSnapshot.value = null
+  importPreview.value = null
+  importFileName.value = ''
+  if (fileInput.value) fileInput.value.value = ''
+}
 
 async function selectSnapshot(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  snapshot.value = null
-  snapshotPreview.value = null
-  snapshotFileName.value = ''
+  importSnapshot.value = null
+  importPreview.value = null
+  importFileName.value = ''
   loadError.value = ''
   result.value = null
   if (!file) return
@@ -165,9 +302,12 @@ async function selectSnapshot(event: Event) {
   try {
     const parsed: unknown = JSON.parse(await file.text())
     const preview = inspectDeploymentTopologySnapshot(parsed)
-    snapshot.value = parsed as Record<string, unknown>
-    snapshotPreview.value = preview
-    snapshotFileName.value = file.name
+    importSnapshot.value = parsed as Record<string, unknown>
+    importPreview.value = preview
+    importFileName.value = file.name
+    if (!importName.value.trim()) {
+      importName.value = file.name.replace(/\.json$/i, '').slice(0, 128)
+    }
     if (!preview.configuredProbeNodes) {
       loadError.value = '快照中没有同时配置 url 与 guance_url 的节点，当前没有可执行拨测。'
     }
@@ -177,13 +317,39 @@ async function selectSnapshot(event: Event) {
   }
 }
 
+async function importTopology() {
+  if (!importSnapshot.value || !importPreview.value || !importName.value.trim()) return
+  const version = sessionVersion
+  importing.value = true
+  loadError.value = ''
+  try {
+    const response = await troubleshootingApi.importDeploymentTopology({
+      name: importName.value.trim(),
+      snapshot: importSnapshot.value,
+    })
+    if (version !== sessionVersion || !visible.value) return
+    await loadTopologyLibrary(version, response.data.topology.topologyId)
+    if (version !== sessionVersion || !visible.value) return
+    importOpen.value = false
+    resetImport()
+    ElMessage.success(response.data.created ? '拓扑已导入共享图库' : '该拓扑已存在，已为你选中')
+  } catch (error) {
+    if (version !== sessionVersion || !visible.value) return
+    loadError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (version === sessionVersion) importing.value = false
+  }
+}
+
 async function run() {
-  if (!snapshot.value || !snapshotPreview.value?.configuredProbeNodes) return
+  if (!selectedTopology.value?.configuredProbeNodes) return
   const version = ++runVersion
   running.value = true
   result.value = null
   try {
-    const response = await troubleshootingApi.analyzeDeploymentTopology(snapshot.value)
+    const response = await troubleshootingApi.analyzeImportedDeploymentTopology(
+      selectedTopology.value.topologyId,
+    )
     if (version !== runVersion || !visible.value) return
     result.value = response.data
     if (response.data.status === 'NETWORK_PROBLEM_DETECTED') {
@@ -201,6 +367,20 @@ async function run() {
   }
 }
 
+async function downloadExample() {
+  if (!example.value) await loadExample()
+  if (!example.value) return
+  const blob = new Blob([JSON.stringify(example.value, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = 'deployment-topology-example.json'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 function shortTime(value: string) {
   return value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19)
 }
@@ -208,6 +388,33 @@ function shortTime(value: string) {
 
 <style scoped>
 .topology-alert { margin-bottom: 16px; line-height: 1.6; }
+.topology-library { padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: #f8fafc; }
+.library-head,
+.import-panel>header,
+.example-guide>header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.library-head>div,
+.import-panel>header>div,
+.example-guide>header>div { display: grid; gap: 4px; }
+.library-head span,
+.import-panel header span,
+.example-guide header span { color: var(--el-color-primary); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.library-head small,
+.import-panel header small { color: var(--el-text-color-secondary); line-height: 1.5; }
+.topology-selector { width: 100%; margin-top: 14px; }
+.library-empty { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 12px; border-radius: 8px; background: #fff; }
+.library-empty>div { display: grid; gap: 4px; }
+.library-empty span { color: var(--el-text-color-secondary); font-size: 12px; }
+.import-panel { display: grid; gap: 12px; margin-top: 14px; padding: 16px; border: 1px solid #cbd5e1; border-radius: 12px; }
+.import-preview-line { display: flex; justify-content: space-between; gap: 12px; color: var(--el-text-color-secondary); font-size: 12px; }
+.import-panel>.el-button { justify-self: end; }
+.example-guide { margin-top: 14px; padding: 16px; border: 1px solid #dbe4ff; border-radius: 12px; background: #f6f8ff; }
+.example-guide ol { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; counter-reset: guide; }
+.example-guide li { display: grid; gap: 4px; padding: 10px; border-radius: 8px; background: #fff; counter-increment: guide; }
+.example-guide li b::before { content: '0' counter(guide) ' '; color: var(--el-color-primary); }
+.example-guide li span { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.5; }
+.example-guide details { margin-top: 12px; }
+.example-guide summary { cursor: pointer; color: var(--el-color-primary); font-size: 12px; font-weight: 700; }
+.example-guide pre { max-height: 260px; margin: 10px 0 0; padding: 12px; overflow: auto; border-radius: 8px; color: #dce7ff; background: #172033; font-size: 10px; line-height: 1.6; }
 .snapshot-picker { display: grid; gap: 5px; padding: 18px; border: 1px dashed var(--el-border-color); border-radius: 10px; background: var(--el-fill-color-lighter); cursor: pointer; transition: border-color .2s, background .2s; }
 .snapshot-picker:hover,
 .snapshot-picker.loaded { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
@@ -217,6 +424,7 @@ function shortTime(value: string) {
 .topology-error { margin: 10px 0 0; color: var(--el-color-danger); font-size: 12px; }
 .snapshot-preview { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 18px; margin-top: 16px; padding: 15px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; }
 .snapshot-preview>div { display: grid; gap: 5px; }
+.snapshot-preview>div small { color: var(--el-text-color-secondary); font-size: 11px; }
 .snapshot-preview span,
 .topology-result header span { color: var(--el-text-color-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .snapshot-preview code { color: var(--el-color-primary); font-size: 11px; }
@@ -254,6 +462,12 @@ function shortTime(value: string) {
 .unconfigured-nodes code { display: block; margin-top: 8px; line-height: 1.7; overflow-wrap: anywhere; }
 .result-warnings { margin: 12px 0 0; padding-left: 18px; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.6; }
 @media (max-width: 720px) {
+  .library-head,
+  .import-panel>header,
+  .example-guide>header,
+  .library-empty,
+  .import-preview-line { align-items: stretch; flex-direction: column; }
+  .example-guide ol { grid-template-columns: 1fr; }
   .snapshot-preview { grid-template-columns: 1fr; }
   .snapshot-preview dl { grid-template-columns: repeat(2, 1fr); }
   .result-metrics { grid-template-columns: repeat(2, 1fr); }

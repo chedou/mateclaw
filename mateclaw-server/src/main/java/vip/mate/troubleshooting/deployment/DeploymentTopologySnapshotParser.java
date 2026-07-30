@@ -172,10 +172,19 @@ public final class DeploymentTopologySnapshotParser {
     private ProbeMetadata parseProbe(String nodeKey, String targetUrl, String explorerUrl) {
         String canonicalTarget = canonicalHttpUrl(targetUrl, "node " + nodeKey + " url");
         URI explorer = uri(explorerUrl, "node " + nodeKey + " guance_url");
-        if (!httpScheme(explorer.getScheme()) || explorer.getHost() == null) {
-            throw badRequest("node " + nodeKey + " guance_url must be an HTTP(S) URL");
+        if (!httpScheme(explorer.getScheme())
+                || explorer.getHost() == null
+                || explorer.getUserInfo() != null
+                || explorer.getRawFragment() != null) {
+            throw badRequest("node " + nodeKey
+                    + " guance_url must be an HTTP(S) URL without user info or fragment");
         }
         Map<String, List<String>> params = queryParameters(explorer, nodeKey);
+        Set<String> supportedParameters = Set.of("viewer_source", "w", "query", "time");
+        if (!params.keySet().equals(supportedParameters)) {
+            throw badRequest("node " + nodeKey
+                    + " guance_url contains unsupported query parameters");
+        }
         if (!"http_dial_testing".equals(singleParameter(params, "viewer_source", nodeKey))) {
             throw badRequest("node " + nodeKey + " guance_url has an unsupported viewer_source");
         }

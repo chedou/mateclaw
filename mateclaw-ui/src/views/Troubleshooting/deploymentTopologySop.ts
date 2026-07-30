@@ -1,5 +1,6 @@
 import type {
   DeploymentTopologyAnalysisStatus,
+  DeploymentTopologyAssetSummary,
   DeploymentTopologyObservationStatus,
 } from '@/api'
 
@@ -80,6 +81,12 @@ export function inspectDeploymentTopologySnapshot(
     configuredProbeNodes,
     unconfiguredNodeCount: topology.nodes.length - configuredProbeNodes,
   }
+}
+
+export function deploymentTopologyOptionLabel(
+  topology: DeploymentTopologyAssetSummary,
+): string {
+  return `${topology.name} · ${topology.systemLabel} · ${topology.nodeCount} 节点 / ${topology.configuredProbeNodes} 拨测`
 }
 
 export function deploymentAnalysisLabel(status: DeploymentTopologyAnalysisStatus): string {

@@ -11,10 +11,12 @@ workspace/system/service/信号到 Guance concrete binding 的显式 fail-closed
 P2 真源验证接缝已增加 workspace 级就绪投影、管理员手工触发的 Guance-only
 `log_search → log_trace_bundle` 单次只读验证，以及正式工作台的“P2 真源门”；
 API 只返回计数、PS ID、节点数和绑定状态，不返回 DQL、密钥或原始日志，也绝不回退 Replay。
-正式工作台另有管理员“部署图拨测 SOP”：上传有界
-`chain-board.runtime-topology-snapshot` 后，服务端只对同时具备 `url + guance_url` 的节点，经唯一
+正式工作台另有管理员“部署拓扑拨测分析”：可从 Workspace 共享拓扑图库选择既有快照，或把有界
+`chain-board.runtime-topology-snapshot` 导入为不可变共享资产；完全相同的快照幂等复用，同名不同内容
+拒绝覆盖。服务端只对同时具备 `url + guance_url` 的节点，经唯一
 `EvidenceSourceRouter` 批量执行 Guance-only `synthetic_probe`。上传 URL 只提供任务身份/时间窗，不能控制
-API 主机或 DQL；响应不调模型、不持久化、不返回原始响应/凭据，也不把未覆盖节点判为健康。当前样例为
+API 主机或 DQL；只持久化通过凭据形态校验的拓扑快照和导入审计元数据，分析结果仍不持久化、不调模型、
+不返回原始响应/凭据，也不把未覆盖节点判为健康。页面提供服务端校验过的可下载导入案例。当前样例为
 21 节点、27 链路、1 个可执行拨测；批量边界为 32 个拨测、8 路并发和 25 秒总预算，超时只降级相应节点。
 真实 HTTP 返回仍待操作员本地触发核实，不代表 T7/T8 通过。该专项入口不替代其他 SOP/证据能力；通用
 `ReadOnlyEvidenceToolRegistry` 仍须等真实 Tool 合同稳定后实现。
