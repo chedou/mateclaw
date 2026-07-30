@@ -21,20 +21,20 @@
 </template>
 
 <script setup lang="ts">
-import type { WorkbenchViewMode } from './workbenchView'
+import type { WorkbenchViewSwitchMode } from './workbenchView'
 
 const props = withDefaults(defineProps<{
-  mode: WorkbenchViewMode
+  mode: WorkbenchViewSwitchMode
   compact?: boolean
 }>(), {
   compact: false,
 })
 
 const emit = defineEmits<{
-  change: [mode: WorkbenchViewMode]
+  change: [mode: WorkbenchViewSwitchMode]
 }>()
 
-function select(mode: WorkbenchViewMode) {
+function select(mode: WorkbenchViewSwitchMode) {
   if (mode !== props.mode) emit('change', mode)
 }
 </script>

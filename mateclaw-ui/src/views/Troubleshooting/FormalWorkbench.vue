@@ -1,5 +1,11 @@
 <template>
-  <div class="formal-workbench" :class="{ 'traditional-list-mode': viewMode === 'LIST' }">
+  <div
+    class="formal-workbench"
+    :class="{
+      'traditional-list-mode': viewMode === 'LIST',
+      'full-detail-mode': viewMode === 'DETAIL',
+    }"
+  >
     <DiagnosisListView
       v-if="viewMode === 'LIST'"
       v-model:status-filter="statusFilter"
@@ -16,12 +22,12 @@
     />
 
     <template v-else>
-    <aside class="queue-panel">
+    <aside v-if="shouldShowQueuePanel(viewMode)" class="queue-panel">
       <header class="queue-head">
         <div><span class="eyebrow">MateClaw</span><h2>排障队列</h2></div>
         <div class="queue-head-actions">
           <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
-          <WorkbenchViewSwitch :mode="viewMode" compact @change="switchWorkbenchView" />
+          <WorkbenchViewSwitch mode="QUEUE" compact @change="switchWorkbenchView" />
         </div>
       </header>
       <div class="queue-tools">
@@ -103,6 +109,12 @@
             <h1>{{ business.problem }}</h1>
           </div>
           <div class="work-head-actions">
+            <el-button
+              v-if="viewMode === 'DETAIL'"
+              size="small"
+              plain
+              @click="switchWorkbenchView('LIST')"
+            >返回排障列表</el-button>
             <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
             <el-button v-if="canManageTroubleshooting" size="small" plain @click="openEvaluationLedger">T8 样本台账</el-button>
             <el-button size="small" plain @click="openLegacy">打开旧版处置台</el-button>
@@ -704,13 +716,18 @@ import {
 } from './evaluationSamples'
 import {
   WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
+  diagnosisSelectionMode,
   diagnosisStatusLabel as statusLabel,
   diagnosisStatusTone as statusTone,
   formatWorkbenchTime as shortTime,
+  isDiagnosisViewMode,
   resolveWorkbenchView,
+  shouldShowQueuePanel,
   workbenchViewQuery,
   type WorkbenchCapabilityCommand,
+  type WorkbenchDiagnosisViewMode,
   type WorkbenchViewMode,
+  type WorkbenchViewSwitchMode,
 } from './workbenchView'
 
 const BLAST_RADIUS_LABEL: Record<BlastRadius, string> = {
@@ -889,7 +906,7 @@ async function replaceWorkbenchRoute(mode: WorkbenchViewMode, diagnosisId?: stri
   await router.replace({ query })
 }
 
-async function switchWorkbenchView(mode: WorkbenchViewMode) {
+async function switchWorkbenchView(mode: WorkbenchViewSwitchMode) {
   viewMode.value = mode
   if (mode === 'LIST') {
     await replaceWorkbenchRoute('LIST')
@@ -901,14 +918,14 @@ async function switchWorkbenchView(mode: WorkbenchViewMode) {
     : null
   const target = queryDiagnosisId || selectedId.value || rows.value[0]?.diagnosisId
   if (target) {
-    await selectDiagnosis(target)
+    await selectDiagnosis(target, true, 'QUEUE')
   } else {
     await replaceWorkbenchRoute('QUEUE')
   }
 }
 
 async function openDiagnosisFromList(row: DiagnosisSummary) {
-  await selectDiagnosis(row.diagnosisId)
+  await selectDiagnosis(row.diagnosisId, true, 'DETAIL')
 }
 
 function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
@@ -1015,16 +1032,23 @@ async function loadList(autoSelect = true) {
     if (autoSelect && !selectedId.value) {
       const queryId = typeof route.query.diagnosisId === 'string' ? route.query.diagnosisId : null
       const target = queryId || rows.value[0]?.diagnosisId
-      if (target) await selectDiagnosis(target, !queryId)
+      if (target) {
+        const targetMode = diagnosisSelectionMode(viewMode.value)
+        await selectDiagnosis(target, !queryId, targetMode)
+      }
     }
   } catch (error) {
     ElMessage.error(`加载排障队列失败：${errorText(error)}`)
   } finally { listLoading.value = false }
 }
 
-async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
+async function selectDiagnosis(
+  diagnosisId: string,
+  updateQuery = true,
+  targetMode: WorkbenchDiagnosisViewMode = diagnosisSelectionMode(viewMode.value),
+) {
   const version = ++selectionVersion
-  viewMode.value = 'QUEUE'
+  viewMode.value = targetMode
   selectedId.value = diagnosisId
   detailLoading.value = true
   guanceOnboardingOpen.value = false
@@ -1050,8 +1074,9 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     guanceOwnerAcceptance.value = null
     replayCapability.value = null
     readinessError.value = ''
-    if (updateQuery && (route.query.diagnosisId !== diagnosisId || route.query.view !== 'queue')) {
-      await replaceWorkbenchRoute('QUEUE', diagnosisId)
+    const targetQuery = workbenchViewQuery(targetMode, diagnosisId)
+    if (updateQuery && (route.query.diagnosisId !== diagnosisId || route.query.view !== targetQuery.view)) {
+      await replaceWorkbenchRoute(targetMode, diagnosisId)
     }
     void loadGuanceReadiness(
       diagnosisResponse.data.diagnosis.incident.system,
@@ -1363,17 +1388,21 @@ watch(
   ([queryView, diagnosisId]) => {
     const nextMode = resolveWorkbenchView(queryView, diagnosisId)
     viewMode.value = nextMode
-    if (nextMode === 'QUEUE' && typeof diagnosisId === 'string' && diagnosisId && diagnosisId !== selectedId.value) {
-      void selectDiagnosis(diagnosisId, false)
+    if (isDiagnosisViewMode(nextMode)
+      && typeof diagnosisId === 'string'
+      && diagnosisId
+      && diagnosisId !== selectedId.value) {
+      void selectDiagnosis(diagnosisId, false, nextMode)
     }
   },
 )
-onMounted(() => loadList(viewMode.value === 'QUEUE'))
+onMounted(() => loadList(isDiagnosisViewMode(viewMode.value)))
 </script>
 
 <style scoped>
 .formal-workbench { --ink:#172033; --muted:#667085; --line:#e1e6ef; --soft:#f5f7fb; --blue:#2f5cf5; --green:#138a58; --amber:#b54708; --red:#d92d20; display:grid; grid-template-columns:264px minmax(0,1fr); height:100%; overflow:hidden; color:var(--ink); background:#f4f6fa; }
 .formal-workbench.traditional-list-mode { display:block; overflow-y:auto; }
+.formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); }
 .queue-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:#fff; border-right:1px solid var(--line); }
 .queue-head { display:flex; align-items:center; justify-content:space-between; padding:18px 16px 14px; border-bottom:1px solid var(--line); }
 .queue-head-actions { display:flex; align-items:flex-end; flex-direction:column; }
