@@ -106,12 +106,19 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   拨测。最多 32 个可执行拨测以 8 路并发共享 25 秒总预算，超时节点降级为 `UNAVAILABLE`，已完成结果保留。
   独立兼容接口仍不调模型、不落库；正式 Diagnosis 场景入口只持久化脱敏后的安全结果投影，不返回或落库
   原始响应/DQL/凭据。未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
-- **能力命名与场景入口统一（2026-07-30）**：正式工作台主按钮统一为“发起排障”，先选择
-  “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者必须绑定已有
-  Diagnosis，并通过 `topology_synthetic_probe` 只读工具运行；安全结果写入 V188 不可变运行记录并在同一
+- **能力命名与场景入口统一（2026-07-30，2026-07-31 补齐 Diagnosis 前置创建）**：正式工作台主按钮统一为“发起排障”，先选择
+  “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者由服务端先创建或复用
+  专属的 `SCENARIO_PLAYBOOK + EXPLICIT` Diagnosis，再通过 `topology_synthetic_probe` 只读工具运行；安全结果写入 V188 不可变运行记录并在同一
   排障详情展示。部署拓扑入口已从“更多能力”移出；该菜单只保留
   “排障规则库 / 无码场景预演 / 观测云接入与验收 / 诊断效果评估”四个低频治理与校准入口。内部
   Playbook、P2、T7、T8 合同名称不变，改动只作用于用户界面信息架构。
+- **部署拓扑场景 Diagnosis 门禁（2026-07-31）**：新增
+  `POST /api/v1/troubleshooting/scenarios/deployment-topology/diagnoses`，仅接收脱敏业务上下文；
+  `scenarioKey/toolKey/selector/PlaybookRef` 均由服务端持有。创建事务锁定当前 active-approved 版本，
+  同时核对 selector、operational 状态、SOP 身份及冻结 EvidenceRequest 中的
+  `synthetic_probe + deployment_topology + topology_synthetic_probe`；任一不匹配即 409，不创建弱权威 Diagnosis。
+  场景幂等键独立于普通事件和其他场景；创建成功但详情/能力投影加载失败时，前端明确提示
+  “Diagnosis 已创建”，不会误导用户重复提交。该增量不调模型、不执行拨测、不扩大生产写权限。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
@@ -776,6 +783,15 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   当前本地真源请求返回 HTTP 200，
   但 `series` 为空，因此 Router 诚实投影为 `UNAVAILABLE`，Diagnosis 保持
   `INSUFFICIENT_EVIDENCE`，没有把无数据误写为网络健康，也没有落库 API Key、DQL 或原始响应。
+- 部署拓扑受控 Scenario Diagnosis 入口完成后，后端排障域 + Skill Manifest `553` 个测试、前端
+  `23` 个测试文件 / `170` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、`git diff --check`
+  与直接 Vite 生产构建均通过，构建完成 `6298` 个模块转换。服务端在同一事务内按
+  `system:scenario:deployment_topology_probe` 锁定已审核启用的精确 Playbook，校验冻结的
+  `synthetic_probe + deployment_topology + topology_synthetic_probe` 证据合同，再创建或复用
+  `SCENARIO_PLAYBOOK` Diagnosis；浏览器不能指定 Playbook 版本、Tool Key 或查询参数，权威缺失或
+  合同不匹配时返回 409 fail-closed。登录态应用内浏览器已确认“发起排障”入口、受控表单、
+  `csdp:scenario:deployment_topology_probe` 权威选择器和提交按钮状态，控制台 0 error；验收没有提交
+  表单，因此没有新增 Diagnosis 或调用外部 Guance。Spec / Standards 双轴复审均 PASS，无提交阻断项。
 
 后端定向测试命令：
 

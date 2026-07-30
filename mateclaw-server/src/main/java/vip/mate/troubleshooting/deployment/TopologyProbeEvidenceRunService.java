@@ -31,7 +31,7 @@ import java.util.UUID;
 public class TopologyProbeEvidenceRunService {
 
     public static final String SCENARIO_KEY = DeploymentTopologyScenarioPolicy.SCENARIO_KEY;
-    public static final String TOOL_KEY = "topology_synthetic_probe";
+    public static final String TOOL_KEY = DeploymentTopologyScenarioPolicy.TOOL_KEY;
     private static final int MAX_LIST_LIMIT = 100;
 
     private final TroubleshootingPersistenceService persistence;

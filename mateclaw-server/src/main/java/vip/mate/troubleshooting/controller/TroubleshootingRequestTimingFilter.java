@@ -19,7 +19,9 @@ import java.time.Instant;
 public final class TroubleshootingRequestTimingFilter extends OncePerRequestFilter {
 
     static final String REPORTED_AT_ATTRIBUTE = "vip.mate.troubleshooting.reportedAt";
-    private static final String INCIDENT_REPORT_PATH = "/api/v1/troubleshooting/incidents";
+    private static final java.util.Set<String> TIMED_INTAKE_PATHS = java.util.Set.of(
+            "/api/v1/troubleshooting/incidents",
+            "/api/v1/troubleshooting/scenarios/deployment-topology/diagnoses");
 
     private final Clock clock;
 
@@ -33,9 +35,11 @@ public final class TroubleshootingRequestTimingFilter extends OncePerRequestFilt
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String expectedUri = request.getContextPath() + INCIDENT_REPORT_PATH;
-        return !"POST".equals(request.getMethod())
-                || !expectedUri.equals(request.getRequestURI());
+        if (!"POST".equals(request.getMethod())) {
+            return true;
+        }
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        return !TIMED_INTAKE_PATHS.contains(path);
     }
 
     @Override

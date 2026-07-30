@@ -66,6 +66,42 @@ public final class IncidentDeduplicationKey {
         return Optional.of(sha256(raw));
     }
 
+    /**
+     * Stable idempotency key for an explicitly selected scenario intake.
+     *
+     * <p>The scenario identity is part of the key on purpose. A symptom-only
+     * report and a user-selected Scenario Playbook are different routing
+     * authorities and must never collapse into the same Diagnosis.</p>
+     */
+    public static Optional<String> createForScenario(
+            IncidentContext incident,
+            String scenarioKey,
+            boolean rehearsal,
+            Instant receivedAt) {
+        if (incident == null) {
+            throw new IllegalArgumentException("incident must not be null");
+        }
+        if (scenarioKey == null || scenarioKey.isBlank()) {
+            throw new IllegalArgumentException("scenarioKey must not be blank");
+        }
+        if (rehearsal) {
+            return Optional.empty();
+        }
+        Instant basis = incident.occurredAt() == null
+                ? requireReceivedAt(receivedAt)
+                : incident.occurredAt();
+        long bucket = Math.floorDiv(basis.getEpochSecond(), BUCKET_SECONDS);
+        String traceId = incident.traceId() == null ? "" : incident.traceId().trim();
+        String raw = "scenario"
+                + "\u001f" + normalizeRouteField(incident.system())
+                + "\u001f" + normalizeRouteField(incident.service())
+                + "\u001f" + normalizeRouteField(scenarioKey)
+                + "\u001f" + normalizeSymptom(incident.title())
+                + "\u001f" + traceId
+                + "\u001f" + bucket;
+        return Optional.of(sha256(raw));
+    }
+
     private static String symptomDiscriminator(IncidentContext incident) {
         String symptom = normalizeSymptom(incident.title());
         String traceId = incident.traceId() == null ? "" : incident.traceId().trim();

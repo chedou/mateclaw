@@ -1620,6 +1620,16 @@ export interface IncidentReportRequest {
   rehearsal: boolean
 }
 
+/** Explicit topology-scenario intake; routing, Playbook and Tool keys are server-owned. */
+export interface CreateDeploymentTopologyScenarioRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  traceId?: string
+  rehearsal: boolean
+}
+
 /** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
 export interface SopEntry {
   sopId: string
@@ -2739,6 +2749,12 @@ export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
+
+  /** Creates the Diagnosis owner before any deployment-topology evidence Tool may run. */
+  createDeploymentTopologyScenario: (data: CreateDeploymentTopologyScenarioRequest) =>
+    http.post<StoredDiagnosis>(
+      '/troubleshooting/scenarios/deployment-topology/diagnoses', data,
+    ),
 
   list: (params?: { status?: string; system?: string; limit?: number }) =>
     http.get<DiagnosisSummary[]>('/troubleshooting/diagnoses', { params }),

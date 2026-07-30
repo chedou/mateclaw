@@ -43,4 +43,20 @@ class TroubleshootingRequestTimingFilterTest {
         assertThat(request.getAttribute(
                 TroubleshootingRequestTimingFilter.REPORTED_AT_ATTRIBUTE)).isNull();
     }
+
+    @Test
+    void capturesDeploymentTopologyScenarioArrival() throws Exception {
+        Instant arrivedAt = Instant.parse("2026-07-31T01:02:03Z");
+        TroubleshootingRequestTimingFilter filter = new TroubleshootingRequestTimingFilter(
+                Clock.fixed(arrivedAt, ZoneOffset.UTC));
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "POST", "/api/v1/troubleshooting/scenarios/deployment-topology/diagnoses");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (downstreamRequest, downstreamResponse) -> { });
+
+        assertThat(request.getAttribute(
+                TroubleshootingRequestTimingFilter.REPORTED_AT_ATTRIBUTE))
+                .isEqualTo(arrivedAt);
+    }
 }

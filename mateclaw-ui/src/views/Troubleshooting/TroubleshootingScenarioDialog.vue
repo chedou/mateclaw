@@ -25,7 +25,7 @@
       </button>
     </div>
     <el-alert type="info" :closable="false" class="scenario-boundary">
-      部署拓扑拨测当前复用既有 Guance 只读分析接口，结果不落为 Diagnosis，也不执行任何生产变更。
+      部署拓扑拨测会先创建或复用受控 Scenario Diagnosis；只读结果归属该 Diagnosis，且不执行任何生产变更。
     </el-alert>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>

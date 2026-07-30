@@ -14,15 +14,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
-import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ClosureOutcome;
+import vip.mate.troubleshooting.model.ConclusionType;
+import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
@@ -39,6 +43,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -110,6 +115,51 @@ class TroubleshootingPersistenceServiceTest {
         verify(diagnosisMapper).insert(entity.capture());
         assertNotNull(entity.getValue().getDedupKey());
         assertEquals(64, entity.getValue().getDedupKey().length());
+    }
+
+    @Test
+    void scenarioIntakeDoesNotReuseTheGenericSymptomDeduplicationNamespace() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        service.createOrGet(7L, symptomDiagnosis(false), receivedAt);
+        service.createOrGetForScenario(
+                7L,
+                scenarioDiagnosis(false),
+                "deployment_topology_probe",
+                receivedAt);
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entities =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper, org.mockito.Mockito.times(2)).insert(entities.capture());
+        assertNotEquals(
+                entities.getAllValues().get(0).getDedupKey(),
+                entities.getAllValues().get(1).getDedupKey());
+    }
+
+    @Test
+    void scenarioNamespaceRejectsDiagnosesFromAnotherInvestigationModeOrSelector() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        IllegalArgumentException wrongMode = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.createOrGetForScenario(
+                        7L,
+                        symptomDiagnosis(false),
+                        "deployment_topology_probe",
+                        receivedAt));
+        IllegalArgumentException wrongSelector = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.createOrGetForScenario(
+                        7L,
+                        scenarioDiagnosis(false),
+                        "slow_api",
+                        receivedAt));
+
+        assertTrue(wrongMode.getMessage().contains("SCENARIO_PLAYBOOK"));
+        assertTrue(wrongSelector.getMessage().contains("diagnosis selector"));
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
     }
 
     @Test
@@ -384,6 +434,52 @@ class TroubleshootingPersistenceServiceTest {
                 null,
                 rehearsal,
                 true,
+                List.of());
+    }
+
+    private Diagnosis scenarioDiagnosis(boolean rehearsal) {
+        IncidentContext incident = new IncidentContext(
+                "inc-symptom",
+                "CSDP",
+                "csdp-wechat",
+                null,
+                "会话消息发送失败",
+                "P2",
+                "待确认",
+                "trace-safe-1",
+                Instant.parse("2026-07-25T01:02:00Z"),
+                null,
+                "web:deployment-topology-scenario",
+                IncidentCompleteness.STRUCTURED,
+                null);
+        return Diagnosis.initial(
+                "diag-scenario",
+                "case-scenario",
+                "run-scenario",
+                incident,
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(
+                        Instant.parse("2026-07-25T01:02:00Z"),
+                        Instant.parse("2026-07-25T01:02:01Z"),
+                        Instant.parse("2026-07-25T01:02:01Z")),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "场景已创建",
+                "待取得拓扑证据",
+                Confidence.LOW,
+                true,
+                "csdp:scenario:deployment_topology_probe",
+                "部署拓扑拨测",
+                new PlaybookVersionRef("playbook-topology", 3),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                rehearsal,
+                true,
+                List.of(),
                 List.of());
     }
 

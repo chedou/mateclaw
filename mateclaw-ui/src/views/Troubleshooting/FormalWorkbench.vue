@@ -535,6 +535,81 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="deploymentTopologyScenarioOpen"
+      title="创建部署拓扑拨测 Diagnosis"
+      width="min(620px, calc(100vw - 32px))"
+    >
+      <el-alert type="info" :closable="false" class="dialog-alert">
+        先由服务端锁定已审核启用的部署拓扑 Scenario Playbook 并创建 Diagnosis；此时不调用模型、不执行拨测，也不提前判断网络根因。
+      </el-alert>
+      <el-form label-position="top" @submit.prevent="createDeploymentTopologyScenario">
+        <div class="incident-form-grid">
+          <el-form-item label="故障系统" required>
+            <el-input
+              v-model="deploymentTopologyScenarioForm.system"
+              maxlength="128"
+              placeholder="必须与已审核 Scenario Playbook 的系统一致"
+            />
+          </el-form-item>
+          <el-form-item label="故障服务" required>
+            <el-input
+              v-model="deploymentTopologyScenarioForm.service"
+              maxlength="128"
+              placeholder="例如 csp-prm-miniapp"
+            />
+          </el-form-item>
+          <el-form-item label="严重级别" required>
+            <el-select v-model="deploymentTopologyScenarioForm.severity" style="width: 100%">
+              <el-option label="P0 · 全局阻断" value="P0" />
+              <el-option label="P1 · 核心故障" value="P1" />
+              <el-option label="P2 · 一般故障" value="P2" />
+              <el-option label="P3 · 低优先级" value="P3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Trace / PS 线索（可选）">
+            <el-input
+              v-model="deploymentTopologyScenarioForm.traceId"
+              maxlength="128"
+              placeholder="只填写安全标识符"
+            />
+          </el-form-item>
+        </div>
+        <el-form-item label="故障现象" required>
+          <el-input
+            v-model="deploymentTopologyScenarioForm.title"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="描述需要通过部署拓扑拨测核查的用户可见现象"
+          />
+        </el-form-item>
+        <div class="incident-route-preview scenario">
+          <span>服务端权威选择器</span>
+          <b>{{ deploymentTopologySelector }}</b>
+          <p>浏览器不能指定 Playbook 版本、Tool Key 或查询参数；服务端找不到精确权威版本时会 fail-closed。</p>
+        </div>
+        <el-checkbox
+          v-model="deploymentTopologyScenarioForm.rehearsal"
+          class="incident-rehearsal"
+        >
+          演练记录（推荐；每次生成独立 Diagnosis）
+        </el-checkbox>
+        <p class="form-hint">关闭演练标记后，相同系统、服务与现象在五分钟窗口内会复用既有 Diagnosis。创建成功后再选择 Workspace 拓扑并执行只读拨测。</p>
+      </el-form>
+      <template #footer>
+        <el-button text @click="handleCapabilityCommand('playbooks')">查看排障规则库</el-button>
+        <el-button @click="deploymentTopologyScenarioOpen = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="deploymentTopologyScenarioLoading"
+          :disabled="!canSubmitDeploymentTopologyScenario"
+          @click="createDeploymentTopologyScenario"
+        >创建并选择拓扑</el-button>
+      </template>
+    </el-dialog>
+
     <GuanceOnboardingDialog
       v-model="guanceOnboardingOpen"
       :initial-request="guanceOnboardingInitialRequest"
@@ -787,6 +862,15 @@ import {
   formalIncidentRoutePreview,
   type FormalIncidentForm,
 } from './incidentReport'
+import {
+  buildDeploymentTopologyScenarioRequest,
+  deploymentTopologyScenarioLoadFailureMessage,
+  deploymentTopologyScenarioFormErrors,
+  deploymentTopologyScenarioProjectionLoaded,
+  deploymentTopologyScenarioSelector,
+  EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
+  type DeploymentTopologyScenarioForm,
+} from './deploymentTopologyScenario'
 import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
@@ -855,6 +939,7 @@ const listLoading = ref(false)
 const detailLoading = ref(false)
 const actionLoading = ref(false)
 const incidentReportLoading = ref(false)
+const deploymentTopologyScenarioLoading = ref(false)
 const readinessLoading = ref(false)
 const validationLoading = ref(false)
 const spinePreviewLoading = ref(false)
@@ -957,6 +1042,7 @@ const replayCaptureDisabledReason = computed(() => {
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
+const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
 const guanceValidationOpen = ref(false)
@@ -967,6 +1053,9 @@ const outcomeOpen = ref(false)
 const closeOpen = ref(false)
 const targetAction = ref<RecommendedAction | null>(null)
 const incidentReportForm = reactive<FormalIncidentForm>({ ...EMPTY_FORMAL_INCIDENT })
+const deploymentTopologyScenarioForm = reactive<DeploymentTopologyScenarioForm>({
+  ...EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
+})
 const transferForm = reactive({ targetTeam: '', note: '' })
 const approveForm = reactive({ reason: '' })
 const outcomeForm = reactive({ outcome: 'SUCCEEDED' as ActionOutcomeStatus, notes: '', recoveryVerified: false })
@@ -999,6 +1088,12 @@ const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentRep
 const incidentRoutePreview = computed(() => formalIncidentRoutePreview(incidentReportForm))
 const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
   && incidentReportErrors.value.length === 0)
+const deploymentTopologyScenarioErrors = computed(() =>
+  deploymentTopologyScenarioFormErrors(deploymentTopologyScenarioForm))
+const deploymentTopologySelector = computed(() =>
+  deploymentTopologyScenarioSelector(deploymentTopologyScenarioForm.system))
+const canSubmitDeploymentTopologyScenario = computed(() =>
+  canManageTroubleshooting.value && deploymentTopologyScenarioErrors.value.length === 0)
 const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && canAcceptGuanceOwner.value
   && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
@@ -1094,6 +1189,24 @@ function resetIncidentReportForm() {
   Object.assign(incidentReportForm, EMPTY_FORMAL_INCIDENT)
 }
 
+function resetDeploymentTopologyScenarioForm() {
+  Object.assign(deploymentTopologyScenarioForm, EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO)
+}
+
+function openDeploymentTopologyScenarioIntake() {
+  resetDeploymentTopologyScenarioForm()
+  const incident = current.value?.diagnosis.incident
+  if (incident) {
+    Object.assign(deploymentTopologyScenarioForm, {
+      system: incident.system,
+      service: incident.service,
+      title: incident.title || EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO.title,
+      traceId: incident.traceId || '',
+    })
+  }
+  deploymentTopologyScenarioOpen.value = true
+}
+
 function openTroubleshootingScenario() {
   if (!canOperateTroubleshooting.value && !canManageTroubleshooting.value) return
   scenarioLauncherOpen.value = true
@@ -1103,19 +1216,7 @@ function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
   if (command === 'incident' && canOperateTroubleshooting.value) {
     incidentReportOpen.value = true
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
-    if (!current.value?.diagnosis.diagnosisId) {
-      ElMessage.info('部署拓扑拨测是 Diagnosis 内的场景证据；请先创建或打开一条排障记录。')
-      return
-    }
-    if (current.value.diagnosis.status === 'CLOSED') {
-      ElMessage.warning('已关闭 Diagnosis 不再接收新的拓扑拨测证据。')
-      return
-    }
-    if (!deploymentTopologyRequired.value) {
-      ElMessage.info('当前 Diagnosis 未命中部署拓扑拨测 Scenario Playbook，无需执行该工具。')
-      return
-    }
-    deploymentTopologyOpen.value = true
+    openDeploymentTopologyScenarioIntake()
   }
 }
 
@@ -1150,6 +1251,62 @@ async function reportIncident() {
     ElMessage.error(`上报未创建：${errorText(error)} ${routeBoundary}`)
   } finally {
     incidentReportLoading.value = false
+  }
+}
+
+async function createDeploymentTopologyScenario() {
+  if (!canSubmitDeploymentTopologyScenario.value) {
+    if (deploymentTopologyScenarioErrors.value[0]) {
+      ElMessage.warning(deploymentTopologyScenarioErrors.value[0])
+    }
+    return
+  }
+  deploymentTopologyScenarioLoading.value = true
+  let stored: StoredDiagnosis
+  try {
+    const request = buildDeploymentTopologyScenarioRequest(
+      deploymentTopologyScenarioForm,
+    )
+    const response = await troubleshootingApi.createDeploymentTopologyScenario(request)
+    stored = response.data
+  } catch (error) {
+    ElMessage.error(
+      `场景未创建：${errorText(error)} 请先确认“排障规则库”中已审核启用 ${deploymentTopologySelector.value}。`,
+    )
+    return
+  } finally {
+    deploymentTopologyScenarioLoading.value = false
+  }
+
+  deploymentTopologyScenarioOpen.value = false
+  resetDeploymentTopologyScenarioForm()
+  statusFilter.value = ''
+  await loadList(false)
+  await selectDiagnosis(stored.diagnosis.diagnosisId)
+  const loadedDiagnosis = current.value
+  if (!loadedDiagnosis || !deploymentTopologyScenarioProjectionLoaded(
+    stored.diagnosis.diagnosisId,
+    loadedDiagnosis.diagnosis.diagnosisId,
+    Boolean(projection.value),
+  )) {
+    ElMessage.error(deploymentTopologyScenarioLoadFailureMessage(
+      stored.diagnosis.diagnosisId,
+    ))
+    return
+  }
+  if (!deploymentTopologyRequired.value) {
+    ElMessage.error('场景 Diagnosis 已创建，但服务端未确认部署拓扑拨测能力；已停止打开工具。')
+    return
+  }
+  if (loadedDiagnosis.diagnosis.status === 'CLOSED') {
+    ElMessage.warning('命中的既有 Diagnosis 已关闭，不能追加新的拓扑拨测证据。')
+    return
+  }
+  deploymentTopologyOpen.value = true
+  if (stored.created) {
+    ElMessage.success('部署拓扑场景已进入 Diagnosis 主链，请选择拓扑资产')
+  } else {
+    ElMessage.info('命中五分钟幂等窗口，已打开既有场景 Diagnosis')
   }
 }
 

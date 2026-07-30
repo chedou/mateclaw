@@ -73,6 +73,10 @@ class DeploymentTopologyScenarioPolicyTest {
         assertThat(policy.requiresProbe(WORKSPACE_ID, diagnosis)).isFalse();
 
         when(versions.findByRef(WORKSPACE_ID, PLAYBOOK_REF))
+                .thenReturn(Optional.of(version(topologyPlaybookWithWrongTool())));
+        assertThat(policy.requiresProbe(WORKSPACE_ID, diagnosis)).isFalse();
+
+        when(versions.findByRef(WORKSPACE_ID, PLAYBOOK_REF))
                 .thenReturn(Optional.of(version(otherScenarioPlaybook())));
         assertThat(policy.requiresProbe(WORKSPACE_ID, diagnosis)).isFalse();
     }
@@ -116,7 +120,25 @@ class DeploymentTopologyScenarioPolicyTest {
                 "approved", true,
                 List.of(new EvidenceRequest(
                         "EV-TOPOLOGY", "synthetic_probe", "执行部署拓扑拨测",
-                        Map.of("assetType", "deployment_topology"), "-15m", required)),
+                        Map.of(
+                                "assetType", "deployment_topology",
+                                "toolKey", "topology_synthetic_probe"),
+                        "-15m", required)),
+                List.of(), List.of(), List.of());
+    }
+
+    private SopEntry topologyPlaybookWithWrongTool() {
+        return new SopEntry(
+                PLAYBOOK_REF.playbookId(), "sop.v1", "CSDP",
+                "scenario:deployment_topology_probe", "csdp-network",
+                "部署拓扑拨测", "网络路径待核查", "network", "网络组",
+                "approved", true,
+                List.of(new EvidenceRequest(
+                        "EV-TOPOLOGY", "synthetic_probe", "执行部署拓扑拨测",
+                        Map.of(
+                                "assetType", "deployment_topology",
+                                "toolKey", "generic_probe"),
+                        "-15m", true)),
                 List.of(), List.of(), List.of());
     }
 
@@ -128,7 +150,10 @@ class DeploymentTopologyScenarioPolicyTest {
                 "approved", true,
                 List.of(new EvidenceRequest(
                         "EV-TOPOLOGY", "synthetic_probe", "执行部署拓扑拨测",
-                        Map.of("assetType", "deployment_topology"), "-15m", true)),
+                        Map.of(
+                                "assetType", "deployment_topology",
+                                "toolKey", "topology_synthetic_probe"),
+                        "-15m", true)),
                 List.of(), List.of(), List.of());
     }
 }

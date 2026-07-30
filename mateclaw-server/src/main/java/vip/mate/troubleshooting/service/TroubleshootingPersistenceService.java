@@ -10,8 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.ScenarioSelector;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
@@ -47,7 +49,13 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             Instant receivedAt) {
-        return createOrGet(workspaceId, diagnosis, receivedAt, null);
+        validateCreate(workspaceId, diagnosis);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                IncidentDeduplicationKey.create(
+                        diagnosis.incident(), diagnosis.rehearsal(), receivedAt),
+                null);
     }
 
     /**
@@ -63,21 +71,40 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             String intakeSessionId) {
+        validateCreate(workspaceId, diagnosis);
         if (intakeSessionId == null || intakeSessionId.isBlank()) {
             throw new IllegalArgumentException("intakeSessionId must not be blank");
         }
-        return createOrGet(workspaceId, diagnosis, null, intakeSessionId.trim());
+        return persistCreateOrGet(
+                workspaceId, diagnosis, Optional.empty(), intakeSessionId.trim());
     }
 
-    private StoredDiagnosis createOrGet(
+    /**
+     * Creates or reuses only a Diagnosis from the same explicit scenario path.
+     * The scenario discriminator prevents a generic symptom report, or another
+     * scenario, from becoming this tool run's evidence owner.
+     */
+    @Transactional
+    public StoredDiagnosis createOrGetForScenario(
             long workspaceId,
             Diagnosis diagnosis,
-            Instant receivedAt,
+            String scenarioKey,
+            Instant receivedAt) {
+        validateCreate(workspaceId, diagnosis);
+        validateScenarioIdentity(diagnosis, scenarioKey);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                IncidentDeduplicationKey.createForScenario(
+                        diagnosis.incident(), scenarioKey, diagnosis.rehearsal(), receivedAt),
+                null);
+    }
+
+    private StoredDiagnosis persistCreateOrGet(
+            long workspaceId,
+            Diagnosis diagnosis,
+            Optional<String> dedupKey,
             String intakeSessionId) {
-        validateWorkspace(workspaceId);
-        if (diagnosis == null) {
-            throw new IllegalArgumentException("diagnosis must not be null");
-        }
         if (intakeSessionId != null) {
             TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
                     workspaceId, intakeSessionId);
@@ -85,10 +112,6 @@ public class TroubleshootingPersistenceService {
                 return stored(existing, false);
             }
         }
-        Optional<String> dedupKey = intakeSessionId == null
-                ? IncidentDeduplicationKey.create(
-                        diagnosis.incident(), diagnosis.rehearsal(), receivedAt)
-                : Optional.empty();
         if (dedupKey.isPresent()) {
             TroubleshootingDiagnosisEntity existing = findByDedupKey(workspaceId, dedupKey.get());
             if (existing != null) {
@@ -118,6 +141,26 @@ public class TroubleshootingPersistenceService {
                 throw collision;
             }
             return stored(existing, false);
+        }
+    }
+
+    private void validateCreate(long workspaceId, Diagnosis diagnosis) {
+        validateWorkspace(workspaceId);
+        if (diagnosis == null) {
+            throw new IllegalArgumentException("diagnosis must not be null");
+        }
+    }
+
+    private void validateScenarioIdentity(Diagnosis diagnosis, String scenarioKey) {
+        if (diagnosis.investigationMode() != InvestigationMode.SCENARIO_PLAYBOOK) {
+            throw new IllegalArgumentException(
+                    "scenario persistence requires a SCENARIO_PLAYBOOK diagnosis");
+        }
+        String expectedSelector = new ScenarioSelector(
+                diagnosis.incident().system(), scenarioKey).routingKey();
+        if (!expectedSelector.equals(diagnosis.sopKey())) {
+            throw new IllegalArgumentException(
+                    "scenarioKey does not match the diagnosis selector: " + expectedSelector);
         }
     }
 

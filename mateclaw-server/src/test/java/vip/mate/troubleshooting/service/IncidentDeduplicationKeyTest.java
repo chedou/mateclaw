@@ -56,6 +56,33 @@ class IncidentDeduplicationKeyTest {
     void rehearsalsAreNeverDeduplicated() {
         assertTrue(IncidentDeduplicationKey.create(
                 incident("csdp", "903001", "csdp-wechat", null), true, Instant.now()).isEmpty());
+        assertTrue(IncidentDeduplicationKey.createForScenario(
+                incident("csdp", null, "csdp-wechat", null),
+                "deployment_topology_probe", true, Instant.now()).isEmpty());
+    }
+
+    @Test
+    void explicitScenariosHaveTheirOwnIdempotencyNamespace() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+        IncidentContext context = incident(
+                " CSDP ", null, " CSDP-WeChat ", null,
+                " 会话消息发送失败 ", " trace-1 ");
+
+        String generic = IncidentDeduplicationKey.create(
+                context, false, receivedAt).orElseThrow();
+        String topology = IncidentDeduplicationKey.createForScenario(
+                context, " deployment_topology_probe ", false, receivedAt).orElseThrow();
+        String equivalentTopology = IncidentDeduplicationKey.createForScenario(
+                incident("csdp", null, "csdp-wechat", null,
+                        "会话消息发送失败", "trace-1"),
+                "DEPLOYMENT_TOPOLOGY_PROBE", false,
+                Instant.parse("2026-07-25T01:00:01Z")).orElseThrow();
+        String anotherScenario = IncidentDeduplicationKey.createForScenario(
+                context, "slow_api", false, receivedAt).orElseThrow();
+
+        assertNotEquals(generic, topology);
+        assertEquals(topology, equivalentTopology);
+        assertNotEquals(topology, anotherScenario);
     }
 
     @Test

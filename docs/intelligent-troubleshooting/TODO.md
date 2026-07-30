@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-07-30
+> 更新时间：2026-07-31
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -184,6 +184,12 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 将部署拓扑拨测从独立分析能力归位为 `deployment_topology_probe` Diagnosis 场景：拓扑快照作为
       Workspace 资产，`topology_synthetic_probe` 作为只读 Tool，Guance CloudDial 作为首个 Adapter；
       选定资产和脱敏结果均写入同一 Diagnosis Evidence Spine，详情页可查看不可变运行历史（V188）。
+- [x] “发起排障 → 部署拓扑拨测分析”已能先由服务端创建/复用专属场景 Diagnosis：
+      浏览器只提交 system/service/现象/严重程度/可选 Trace，服务端固定
+      `deployment_topology_probe` 并在同一事务内锁定精确 active-approved Playbook。冻结版本必须显式要求
+      `assetType=deployment_topology + toolKey=topology_synthetic_probe`，否则 409 fail closed。新建 Diagnosis 保持
+      `INSUFFICIENT_EVIDENCE / LOW / NEEDS_INVESTIGATION`，不在拨测前输出根因或处置建议。
+      非演练重试使用包含 scenarioKey 的五分钟幂等命名空间，不会与普通无码事件或其他场景错误合并（2026-07-31）。
 
 2026-07-29：`workspaceId` 已贯穿唯一 Evidence Router/Adapter 脊柱；Guance 只有命中唯一、精确的
 `asset-bindings[workspaceId,system,service].signal-bindings[signalKind]` 后才会读取运行时 API Key 并发请求。

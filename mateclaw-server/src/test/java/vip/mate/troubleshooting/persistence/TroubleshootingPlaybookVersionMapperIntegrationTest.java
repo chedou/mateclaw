@@ -16,16 +16,19 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 import vip.mate.troubleshooting.repository.TroubleshootingPlaybookVersionMapper;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Executes every annotated V186 version lookup against a real H2 database. */
 class TroubleshootingPlaybookVersionMapperIntegrationTest {
 
     private JdbcDataSource dataSource;
     private SqlSession sqlSession;
+    private SqlSessionFactory sqlSessionFactory;
     private TroubleshootingPlaybookVersionMapper mapper;
 
     @BeforeEach
@@ -33,7 +36,7 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
         dataSource = new JdbcDataSource();
         dataSource.setURL(
                 "jdbc:h2:mem:ts-playbook-version-mapper-" + UUID.randomUUID()
-                        + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
+                        + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=250");
         dataSource.setUser("sa");
         dataSource.setPassword("");
         try (Connection connection = dataSource.getConnection()) {
@@ -65,9 +68,9 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
         configuration.setEnvironment(new Environment(
                 "test", new JdbcTransactionFactory(), dataSource));
         configuration.addMapper(TroubleshootingPlaybookVersionMapper.class);
-        SqlSessionFactory factory =
+        sqlSessionFactory =
                 new MybatisSqlSessionFactoryBuilder().build(configuration);
-        sqlSession = factory.openSession(true);
+        sqlSession = sqlSessionFactory.openSession(false);
         mapper = sqlSession.getMapper(TroubleshootingPlaybookVersionMapper.class);
     }
 
@@ -94,6 +97,37 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
                 .singleElement()
                 .extracting("playbookId")
                 .isEqualTo("playbook-1");
+    }
+
+    @Test
+    void activeAuthorityLockIsHeldUntilTheOwningTransactionEnds() throws Exception {
+        assertThat(mapper.lockActiveApprovedByPlaybookId(7L, "playbook-1"))
+                .isNotNull();
+
+        try (SqlSession concurrent = sqlSessionFactory.openSession(false)) {
+            assertThatThrownBy(() -> {
+                try (Statement statement = concurrent.getConnection().createStatement()) {
+                    statement.executeUpdate("""
+                            UPDATE mate_troubleshooting_playbook_version
+                            SET status = 'DEPRECATED'
+                            WHERE workspace_id = 7 AND playbook_id = 'playbook-1'
+                            """);
+                }
+            }).isInstanceOf(SQLException.class);
+        }
+
+        // A SELECT ... FOR UPDATE does not mark MyBatis dirty, so force the
+        // rollback to end the JDBC transaction and release its row lock.
+        sqlSession.rollback(true);
+        try (SqlSession concurrent = sqlSessionFactory.openSession(false);
+                Statement statement = concurrent.getConnection().createStatement()) {
+            assertThat(statement.executeUpdate("""
+                    UPDATE mate_troubleshooting_playbook_version
+                    SET status = 'DEPRECATED'
+                    WHERE workspace_id = 7 AND playbook_id = 'playbook-1'
+                    """)).isEqualTo(1);
+            concurrent.rollback();
+        }
     }
 
     private void executeMigration(Connection connection, String resourcePath) {

@@ -78,8 +78,8 @@ describe('troubleshooting workbench view mode', () => {
       expect.objectContaining({
         command: 'deployment',
         label: '部署拓扑拨测分析',
-        description: expect.stringContaining('仅在 Diagnosis 命中'),
-        outcome: '写入 Diagnosis 证据',
+        description: expect.stringContaining('显式创建受控 Scenario Diagnosis'),
+        outcome: '创建场景 Diagnosis',
       }),
     ])
   })
