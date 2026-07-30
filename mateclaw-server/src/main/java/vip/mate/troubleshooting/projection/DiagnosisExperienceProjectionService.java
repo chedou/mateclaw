@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.projection;
 
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.CriterionOutcome;
@@ -41,14 +42,17 @@ public class DiagnosisExperienceProjectionService {
     private final TroubleshootingPersistenceService persistence;
     private final DiagnosisDerivationService derivationService;
     private final CanonicalEvidenceViewProjector evidenceProjector;
+    private final DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
             DiagnosisDerivationService derivationService,
-            CanonicalEvidenceViewProjector evidenceProjector) {
+            CanonicalEvidenceViewProjector evidenceProjector,
+            DeploymentTopologyScenarioPolicy topologyScenarioPolicy) {
         this.persistence = persistence;
         this.derivationService = derivationService;
         this.evidenceProjector = evidenceProjector;
+        this.topologyScenarioPolicy = topologyScenarioPolicy;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -89,6 +93,7 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.investigationMode(),
                 authority,
                 playbookRef(diagnosis),
+                topologyScenarioPolicy.requiresProbe(workspaceId, diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
                 evidenceFacts.contrast(),

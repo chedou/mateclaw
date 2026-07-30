@@ -129,6 +129,7 @@ public record DiagnosisExperienceProjection(
             InvestigationMode investigationMode,
             RouteAuthority routeAuthority,
             String playbookRef,
+            boolean deploymentTopologyProbeRequired,
             CallChainView callChain,
             List<EvidenceStep> steps,
             ContrastView contrast,

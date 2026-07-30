@@ -4,9 +4,29 @@ import {
   deploymentAnalysisLabel,
   inspectDeploymentTopologySnapshot,
   observationStatusLabel,
+  shouldShowDeploymentTopologyProbe,
 } from '../deploymentTopologySop'
 
 describe('deployment topology SOP entry', () => {
+  it('shows the topology tool only for the selected diagnosis capability', () => {
+    expect(shouldShowDeploymentTopologyProbe({
+      diagnosisId: 'diag-topology',
+      deploymentTopologyProbeRequired: true,
+    }, 'diag-topology')).toBe(true)
+  })
+
+  it('hides stale or unavailable topology capabilities', () => {
+    expect(shouldShowDeploymentTopologyProbe({
+      diagnosisId: 'diag-previous',
+      deploymentTopologyProbeRequired: true,
+    }, 'diag-current')).toBe(false)
+    expect(shouldShowDeploymentTopologyProbe({
+      diagnosisId: 'diag-current',
+      deploymentTopologyProbeRequired: false,
+    }, 'diag-current')).toBe(false)
+    expect(shouldShowDeploymentTopologyProbe(null, 'diag-current')).toBe(false)
+  })
+
   it('counts only nodes with both a target URL and Guance probe metadata as configured', () => {
     const preview = inspectDeploymentTopologySnapshot({
       schemaVersion: '1.0',

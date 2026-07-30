@@ -30,12 +30,13 @@ import java.util.UUID;
 @Service
 public class TopologyProbeEvidenceRunService {
 
-    public static final String SCENARIO_KEY = "deployment_topology_probe";
+    public static final String SCENARIO_KEY = DeploymentTopologyScenarioPolicy.SCENARIO_KEY;
     public static final String TOOL_KEY = "topology_synthetic_probe";
     private static final int MAX_LIST_LIMIT = 100;
 
     private final TroubleshootingPersistenceService persistence;
     private final DeploymentTopologyLibraryService library;
+    private final DeploymentTopologyScenarioPolicy scenarioPolicy;
     private final TroubleshootingTopologyProbeRunMapper mapper;
     private final TopologyProbeEvidenceRunPersistenceService runPersistence;
     private final ObjectMapper objectMapper;
@@ -45,21 +46,31 @@ public class TopologyProbeEvidenceRunService {
     public TopologyProbeEvidenceRunService(
             TroubleshootingPersistenceService persistence,
             DeploymentTopologyLibraryService library,
+            DeploymentTopologyScenarioPolicy scenarioPolicy,
             TroubleshootingTopologyProbeRunMapper mapper,
             TopologyProbeEvidenceRunPersistenceService runPersistence,
             ObjectMapper objectMapper) {
-        this(persistence, library, mapper, runPersistence, objectMapper, Clock.systemUTC());
+        this(
+                persistence,
+                library,
+                scenarioPolicy,
+                mapper,
+                runPersistence,
+                objectMapper,
+                Clock.systemUTC());
     }
 
     TopologyProbeEvidenceRunService(
             TroubleshootingPersistenceService persistence,
             DeploymentTopologyLibraryService library,
+            DeploymentTopologyScenarioPolicy scenarioPolicy,
             TroubleshootingTopologyProbeRunMapper mapper,
             TopologyProbeEvidenceRunPersistenceService runPersistence,
             ObjectMapper objectMapper,
             Clock clock) {
         this.persistence = persistence;
         this.library = library;
+        this.scenarioPolicy = scenarioPolicy;
         this.mapper = mapper;
         this.runPersistence = runPersistence;
         this.objectMapper = objectMapper;
@@ -80,6 +91,12 @@ public class TopologyProbeEvidenceRunService {
                     "err.troubleshooting.topology_probe_diagnosis_closed",
                     409,
                     "closed diagnosis cannot accept new topology evidence");
+        }
+        if (!scenarioPolicy.requiresProbe(workspaceId, diagnosis)) {
+            throw new MateClawException(
+                    "err.troubleshooting.topology_probe_sop_not_matched",
+                    409,
+                    "diagnosis did not match the deployment topology probe scenario Playbook");
         }
 
         Instant startedAt = Instant.now(clock);

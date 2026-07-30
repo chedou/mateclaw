@@ -61,6 +61,8 @@ class TroubleshootingControllerProjectionTest {
                 .andExpect(jsonPath("$.data.businessSummary.timings.intakeCost").value("PT2S"))
                 .andExpect(jsonPath("$.data.businessSummary.timings.investigateCost").value("PT3S"))
                 .andExpect(jsonPath("$.data.developerEvidence.routeAuthority").value("EXPLICIT"))
+                .andExpect(jsonPath("$.data.developerEvidence.deploymentTopologyProbeRequired")
+                        .value(false))
                 .andExpect(jsonPath("$.data.developerEvidence.contrast.available").value(false));
 
         verify(projectionService).project(7L, "diag-1");
@@ -187,6 +189,7 @@ class TroubleshootingControllerProjectionTest {
                         InvestigationMode.ERROR_CODE_PLAYBOOK,
                         RouteAuthority.EXPLICIT,
                         "csdp:903001",
+                        false,
                         new DiagnosisExperienceProjection.CallChainView(
                                 null, List.of(), "未关联调用链", impact.blastRadius()),
                         List.of(),

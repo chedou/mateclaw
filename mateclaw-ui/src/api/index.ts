@@ -2213,6 +2213,7 @@ export interface DeveloperEvidenceView {
   investigationMode: InvestigationMode
   routeAuthority: RouteAuthority
   playbookRef: string | null
+  deploymentTopologyProbeRequired: boolean
   callChain: CallChainView
   steps: ProjectionEvidenceStep[]
   contrast: ContrastView

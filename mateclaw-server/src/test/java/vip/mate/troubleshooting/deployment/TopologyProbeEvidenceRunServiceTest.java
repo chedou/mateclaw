@@ -31,6 +31,8 @@ class TopologyProbeEvidenceRunServiceTest {
             mock(TroubleshootingPersistenceService.class);
     private final DeploymentTopologyLibraryService library =
             mock(DeploymentTopologyLibraryService.class);
+    private final DeploymentTopologyScenarioPolicy scenarioPolicy =
+            mock(DeploymentTopologyScenarioPolicy.class);
     private final TroubleshootingTopologyProbeRunMapper mapper =
             mock(TroubleshootingTopologyProbeRunMapper.class);
     private final TopologyProbeEvidenceRunPersistenceService runPersistence =
@@ -40,6 +42,7 @@ class TopologyProbeEvidenceRunServiceTest {
             new TopologyProbeEvidenceRunService(
                     persistence,
                     library,
+                    scenarioPolicy,
                     mapper,
                     runPersistence,
                     objectMapper,
@@ -49,6 +52,7 @@ class TopologyProbeEvidenceRunServiceTest {
     void persistsOneSafeEvidenceRunUnderTheExistingDiagnosis() {
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.status()).thenReturn(DiagnosisStatus.NEEDS_INVESTIGATION);
+        topologyScenario(diagnosis);
         when(persistence.get(7L, "diag-1"))
                 .thenReturn(new StoredDiagnosis(diagnosis, 2, false));
         when(library.analyze(7L, "topology-1")).thenReturn(result(false));
@@ -107,6 +111,7 @@ class TopologyProbeEvidenceRunServiceTest {
     void doesNotPersistWhenDiagnosisClosesDuringEvidenceCollection() {
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.status()).thenReturn(DiagnosisStatus.NEEDS_INVESTIGATION);
+        topologyScenario(diagnosis);
         when(persistence.get(7L, "diag-racing-close"))
                 .thenReturn(new StoredDiagnosis(diagnosis, 3, false));
         when(library.analyze(7L, "topology-1")).thenReturn(result(false));
@@ -131,6 +136,46 @@ class TopologyProbeEvidenceRunServiceTest {
                 org.mockito.ArgumentMatchers.eq(7L),
                 org.mockito.ArgumentMatchers.eq("diag-racing-close"),
                 org.mockito.ArgumentMatchers.any(TroubleshootingTopologyProbeRunEntity.class));
+    }
+
+    @Test
+    void refusesToRunWhenDiagnosisDidNotMatchTheTopologyScenarioPlaybook() {
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.status()).thenReturn(DiagnosisStatus.NEEDS_INVESTIGATION);
+        when(scenarioPolicy.requiresProbe(7L, diagnosis)).thenReturn(false);
+        when(persistence.get(7L, "diag-error-code"))
+                .thenReturn(new StoredDiagnosis(diagnosis, 2, false));
+
+        assertThatThrownBy(() -> service.run(
+                7L, "diag-error-code", "topology-1", "alice"))
+                .isInstanceOf(MateClawException.class)
+                .satisfies(error -> assertThat(((MateClawException) error).getCode())
+                        .isEqualTo(409))
+                .hasMessageContaining("did not match");
+
+        verify(library, never()).analyze(7L, "topology-1");
+        verify(runPersistence, never()).insertIfDiagnosisOpen(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(TroubleshootingTopologyProbeRunEntity.class));
+    }
+
+    @Test
+    void refusesToRunForADifferentScenarioPlaybook() {
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.status()).thenReturn(DiagnosisStatus.NEEDS_INVESTIGATION);
+        when(scenarioPolicy.requiresProbe(7L, diagnosis)).thenReturn(false);
+        when(persistence.get(7L, "diag-other-scenario"))
+                .thenReturn(new StoredDiagnosis(diagnosis, 2, false));
+
+        assertThatThrownBy(() -> service.run(
+                7L, "diag-other-scenario", "topology-1", "alice"))
+                .isInstanceOf(MateClawException.class)
+                .satisfies(error -> assertThat(((MateClawException) error).getCode())
+                        .isEqualTo(409))
+                .hasMessageContaining("did not match");
+
+        verify(library, never()).analyze(7L, "topology-1");
     }
 
     @Test
@@ -185,5 +230,9 @@ class TopologyProbeEvidenceRunServiceTest {
                 NOW,
                 false,
                 persisted);
+    }
+
+    private void topologyScenario(Diagnosis diagnosis) {
+        when(scenarioPolicy.requiresProbe(7L, diagnosis)).thenReturn(true);
     }
 }

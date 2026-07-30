@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
+import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
@@ -50,6 +51,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private DiagnosisDerivationService derivationService;
 
+    @Mock
+    private DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -57,7 +61,8 @@ class DiagnosisExperienceProjectionServiceTest {
         service = new DiagnosisExperienceProjectionService(
                 persistence,
                 derivationService,
-                new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()));
+                new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()),
+                topologyScenarioPolicy);
     }
 
     @Test
@@ -98,6 +103,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(RouteAuthority.EXPLICIT);
         assertThat(developer.playbookRef())
                 .isEqualTo("csdp:903001 · playbook-903001@v3");
+        assertThat(developer.deploymentTopologyProbeRequired()).isFalse();
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
         assertThat(developer.callChain().hops()).hasSize(1);
         assertThat(developer.callChain().hops().getFirst().service()).isEqualTo("mongo.find");
@@ -312,6 +318,21 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(InvestigationMode.SCENARIO_PLAYBOOK);
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.RULE_MATCHED);
+        assertThat(result.developerEvidence().deploymentTopologyProbeRequired()).isFalse();
+    }
+
+    @Test
+    void projectsTheServerResolvedTopologyToolRequirement() {
+        Diagnosis diagnosis = scenarioDiagnosis();
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+        when(topologyScenarioPolicy.requiresProbe(WORKSPACE_ID, diagnosis)).thenReturn(true);
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.developerEvidence().deploymentTopologyProbeRequired()).isTrue();
     }
 
     @Test

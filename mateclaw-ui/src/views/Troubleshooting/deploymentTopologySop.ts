@@ -1,4 +1,5 @@
 import type {
+  DeveloperEvidenceView,
   DeploymentTopologyAnalysisStatus,
   DeploymentTopologyAssetSummary,
   DeploymentTopologyObservationStatus,
@@ -6,6 +7,21 @@ import type {
 
 export const MAX_DEPLOYMENT_SNAPSHOT_BYTES = 512 * 1024
 export const MAX_DEPLOYMENT_PROBE_NODES = 32
+
+type DeploymentTopologyCapability = Pick<
+  DeveloperEvidenceView,
+  'diagnosisId' | 'deploymentTopologyProbeRequired'
+>
+
+/** Prevents a previous diagnosis's resolved capability from leaking during selection. */
+export function shouldShowDeploymentTopologyProbe(
+  capability: DeploymentTopologyCapability | null | undefined,
+  selectedDiagnosisId: string | null | undefined,
+): boolean {
+  return Boolean(selectedDiagnosisId
+    && capability?.diagnosisId === selectedDiagnosisId
+    && capability.deploymentTopologyProbeRequired)
+}
 
 export interface DeploymentTopologySnapshotPreview {
   schemaVersion: string

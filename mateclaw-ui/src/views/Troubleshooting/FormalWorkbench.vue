@@ -210,7 +210,7 @@
           </div>
         </section>
 
-        <section class="topology-evidence-card">
+        <section v-if="deploymentTopologyRequired" class="topology-evidence-card">
           <div class="topology-evidence-head">
             <div>
               <span class="section-label">场景证据 · deployment_topology_probe</span>
@@ -542,6 +542,7 @@
     />
 
     <DeploymentTopologySopDialog
+      v-if="deploymentTopologyRequired"
       v-model="deploymentTopologyOpen"
       :diagnosis-id="business?.diagnosisId"
       @completed="handleTopologyProbeCompleted"
@@ -790,7 +791,11 @@ import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPr
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
-import { deploymentAnalysisLabel, observationStatusLabel } from './deploymentTopologySop'
+import {
+  deploymentAnalysisLabel,
+  observationStatusLabel,
+  shouldShowDeploymentTopologyProbe,
+} from './deploymentTopologySop'
 import DiagnosisListView from './DiagnosisListView.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
@@ -872,6 +877,8 @@ let guanceValidationSessionVersion = 0
 const business = computed(() => projection.value?.businessSummary ?? null)
 const developer = computed(() => projection.value?.developerEvidence ?? null)
 const closure = computed(() => current.value?.diagnosis.closure ?? null)
+const deploymentTopologyRequired = computed(() =>
+  shouldShowDeploymentTopologyProbe(developer.value, selectedId.value))
 const latestTopologyProbeRun = computed(() => topologyProbeRuns.value[0] ?? null)
 const impactMetricList = computed(() => {
   const impact = business.value?.impact
@@ -1104,6 +1111,10 @@ function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
       ElMessage.warning('已关闭 Diagnosis 不再接收新的拓扑拨测证据。')
       return
     }
+    if (!deploymentTopologyRequired.value) {
+      ElMessage.info('当前 Diagnosis 未命中部署拓扑拨测 Scenario Playbook，无需执行该工具。')
+      return
+    }
     deploymentTopologyOpen.value = true
   }
 }
@@ -1171,6 +1182,8 @@ async function selectDiagnosis(
   detailLoading.value = true
   guanceOnboardingOpen.value = false
   guanceValidationOpen.value = false
+  deploymentTopologyOpen.value = false
+  topologyProbeRuns.value = []
   validationLoading.value = false
   spinePreviewLoading.value = false
   acceptanceLoading.value = false
@@ -1180,15 +1193,21 @@ async function selectDiagnosis(
   guanceValidationOrigin.value = null
   guanceDiagnosisLookup.value = null
   try {
-    const [projectionResponse, diagnosisResponse, topologyRunsResponse] = await Promise.all([
+    const [projectionResponse, diagnosisResponse] = await Promise.all([
       troubleshootingApi.projection(diagnosisId),
       troubleshootingApi.get(diagnosisId),
-      troubleshootingApi.diagnosisTopologyProbeRuns(diagnosisId),
     ])
+    if (version !== selectionVersion) return
+    const topologyRunsResponse = shouldShowDeploymentTopologyProbe(
+      projectionResponse.data.developerEvidence,
+      diagnosisId,
+    )
+      ? await troubleshootingApi.diagnosisTopologyProbeRuns(diagnosisId)
+      : null
     if (version !== selectionVersion) return
     projection.value = projectionResponse.data
     current.value = diagnosisResponse.data
-    topologyProbeRuns.value = topologyRunsResponse.data
+    topologyProbeRuns.value = topologyRunsResponse?.data ?? []
     guanceValidation.value = null
     guanceSpinePreview.value = null
     guanceReadiness.value = null
