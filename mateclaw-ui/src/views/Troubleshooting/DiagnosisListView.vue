@@ -9,11 +9,11 @@
       <div class="list-page-head-actions">
         <WorkbenchViewSwitch mode="LIST" @change="emit('switch-view')" />
         <el-button
-          v-if="canOperate"
+          v-if="canOperate || canManage"
           type="primary"
           :icon="Plus"
-          @click="emit('report')"
-        >上报事件</el-button>
+          @click="emit('launch')"
+        >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
         <WorkbenchCapabilityMenu
           v-if="canManage"
           @command="emit('capability-command', $event)"
@@ -81,9 +81,9 @@
       <div v-else class="traditional-list-empty">
         <div class="empty-mark">MC</div>
         <h2>还没有诊断记录</h2>
-        <p>从正式入口上报事件后，会通过既有 Incident API 进入同一条 Diagnosis 主链。</p>
-        <el-button v-if="canOperate" type="primary" plain @click="emit('report')">
-          上报第一个事件
+        <p>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
+        <el-button v-if="canOperate || canManage" type="primary" plain @click="emit('launch')">
+          {{ TROUBLESHOOTING_UI_LABELS.launch }}
         </el-button>
       </div>
     </div>
@@ -103,6 +103,7 @@ import type { DiagnosisStatus, DiagnosisSummary } from '@/api'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
+  TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES,
   diagnosisStatusLabel,
   diagnosisStatusTone,
@@ -121,7 +122,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:statusFilter': [value: DiagnosisStatus | '']
   refresh: []
-  report: []
+  launch: []
   'capability-command': [command: WorkbenchCapabilityCommand]
   'open-diagnosis': [row: DiagnosisSummary]
   'switch-view': []

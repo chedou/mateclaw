@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WORKBENCH_VIEW,
+  TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_CAPABILITY_ACTIONS,
+  WORKBENCH_TROUBLESHOOTING_SCENARIOS,
   diagnosisSelectionMode,
   isDiagnosisViewMode,
   resolveWorkbenchView,
@@ -58,8 +60,35 @@ describe('troubleshooting workbench view mode', () => {
 
   it('keeps the compact capability menu in one ordered registry', () => {
     const commands = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.command)
+    const labels = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.label)
 
-    expect(commands).toEqual(['playbooks', 'synthesis', 'guance', 'deployment', 'ledger'])
+    expect(commands).toEqual(['playbooks', 'synthesis', 'guance', 'ledger'])
+    expect(labels).toEqual([
+      '排障规则库',
+      '无码场景预演',
+      '观测云接入与验收',
+      '诊断效果评估',
+    ])
     expect(new Set(commands).size).toBe(commands.length)
+  })
+
+  it('treats deployment topology analysis as a troubleshooting scenario', () => {
+    expect(WORKBENCH_TROUBLESHOOTING_SCENARIOS).toEqual([
+      expect.objectContaining({ command: 'incident', label: '通用事件排障' }),
+      expect.objectContaining({ command: 'deployment', label: '部署拓扑拨测分析' }),
+    ])
+  })
+
+  it('keeps user-facing troubleshooting names in one canonical label table', () => {
+    expect(TROUBLESHOOTING_UI_LABELS).toMatchObject({
+      launch: '发起排障',
+      scenarioPicker: '选择排障场景',
+      incident: '通用事件排障',
+      rules: '排障规则库',
+      noCodePreview: '无码场景预演',
+      guanceOnboarding: '观测云接入与验收',
+      deploymentTopology: '部署拓扑拨测分析',
+      evaluation: '诊断效果评估',
+    })
   })
 })

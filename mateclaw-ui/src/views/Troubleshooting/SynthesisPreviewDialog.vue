@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="无错误码证据学习预览"
+    :title="TROUBLESHOOTING_UI_LABELS.noCodePreview"
     width="min(920px, calc(100vw - 32px))"
     destroy-on-close
     :teleported="false"
@@ -143,6 +143,7 @@ import {
   formatSynthesisRateDelta,
   normalizeSynthesisPreviewRequest,
 } from './synthesisPreview'
+import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()

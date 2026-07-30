@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="P2 Guance 真源接入"
+    :title="TROUBLESHOOTING_UI_LABELS.guanceOnboarding"
     width="min(760px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="onboarding-alert">
@@ -117,6 +117,7 @@ import {
   guanceSignalLabel,
 } from './formalProjection'
 import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 import {
   buildGuanceOnboardingGuide,
   guanceOnboardingScopeErrors,

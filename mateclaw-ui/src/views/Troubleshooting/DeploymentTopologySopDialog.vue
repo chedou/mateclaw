@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="部署图拨测 SOP"
+    :title="TROUBLESHOOTING_UI_LABELS.deploymentTopology"
     width="min(900px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="topology-alert">
@@ -118,6 +118,7 @@ import {
   observationTone,
   type DeploymentTopologySnapshotPreview,
 } from './deploymentTopologySop'
+import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -194,7 +195,7 @@ async function run() {
     }
   } catch (error) {
     if (version !== runVersion || !visible.value) return
-    ElMessage.error(`部署图拨测 SOP 未完成：${error instanceof Error ? error.message : String(error)}`)
+    ElMessage.error(`${TROUBLESHOOTING_UI_LABELS.deploymentTopology}未完成：${error instanceof Error ? error.message : String(error)}`)
   } finally {
     if (version === runVersion) running.value = false
   }

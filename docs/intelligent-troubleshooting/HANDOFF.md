@@ -90,13 +90,19 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `客服数字化平台-首页-可用性监控`。Guance 仍默认关闭，API Key 仍只允许从环境注入，
   明文 HTTP 默认 fail closed；仅本地进程可在操作员明确授权后临时开启，正式部署仍必须关闭并迁移到
   HTTPS/受控 TLS 代理。尚未由自动化真实调用，不代表 T7/T8 通过。
-- **部署图拨测 SOP 真实触发入口（2026-07-30）**：正式 `/troubleshooting` 队列新增“部署图拨测 SOP”，
+- **部署图拨测 SOP 真实触发入口（2026-07-30）**：正式 `/troubleshooting` 以面向用户的
+  “部署拓扑拨测分析”场景承载该专项 SOP，
   管理员上传 `chain-board.runtime-topology-snapshot` 后调用
   `POST /api/v1/troubleshooting/sops/deployment-topology/analyze`。服务端有界解析所有节点，仅对同时具有
   `url + guance_url` 的节点经现有 `EvidenceSourceRouter` 执行 Guance-only `synthetic_probe`；上传的
   `guance_url` 只提供任务身份/时间窗，不能控制 API 主机或 DQL。当前样例为 21 节点、27 链路、1 个可执行
   拨测。最多 32 个可执行拨测以 8 路并发共享 25 秒总预算，超时节点降级为 `UNAVAILABLE`，已完成结果保留。
   结果不调模型、不落库、不返回原始响应/DQL/凭据；未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
+- **能力命名与场景入口统一（2026-07-30）**：正式工作台主按钮统一为“发起排障”，先选择
+  “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者复用现有 Guance
+  只读拓扑分析接口，当前不伪装成 Diagnosis、不落库。部署拓扑入口已从“更多能力”移出；该菜单只保留
+  “排障规则库 / 无码场景预演 / 观测云接入与验收 / 诊断效果评估”四个低频治理与校准入口。内部
+  Playbook、P2、T7、T8 合同名称不变，改动只作用于用户界面信息架构。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
@@ -216,8 +222,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   无查询参数时默认进入全宽传统列表，用户可切换到紧凑队列；点击列表记录进入独立全宽
   `view=detail` 详情且不保留队列侧栏；主动进入 `view=queue`，或使用无 `view`、只携带
   `diagnosisId` 的历史兼容深链时，显示紧凑队列并直接打开对应处置详情。业务摘要默认展开、开发证据
-  默认折叠，并保留确认、转派、批准不执行、登记外部结果和关闭能力；低频管理入口统一收进“更多能力”
-  菜单。原工作台临时迁到
+  默认折叠，并保留确认、转派、批准不执行、登记外部结果和关闭能力；四个低频治理与校准入口收进
+  “更多能力”菜单，部署拓扑分析则进入“发起排障”的场景选择。原工作台临时迁到
   `/troubleshooting/legacy`，携同一个 `diagnosisId` 可直接回退。
 - **Diagnosis 1.5 运行时事实已落地（2026-07-29）**：显式持久化
   `investigationMode` / `routeAuthority` / `conclusionType` / `NorthStarTimings`，保持 1.3/1.4 JSON 兼容；
@@ -740,6 +746,12 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   应用内浏览器确认无参数默认列表、列表/队列切换、列表记录进入无队列侧栏的全宽详情、返回列表、无
   `view` 的 `diagnosisId` 历史深链和“更多能力”5 个入口均正常，控制台 0 error；该增量只改变队列与详情
   呈现，不改变真实 API、只读证据与禁止生产写入边界。
+- 能力命名与场景入口统一后，前端 `22` 个测试文件 / `163` 个测试全部通过；`vue-tsc --noEmit`、变更文件
+  ESLint、`git diff --check` 与直接 Vite 生产构建均通过，构建完成 `6297` 个模块转换。登录态应用内浏览器
+  确认“更多能力”只保留 4 个新名称，“发起排障”展示通用事件与部署拓扑两个场景，部署拓扑场景可进入
+  既有 JSON 上传和只读分析界面；排障规则库、无码场景预演、观测云接入与验收、诊断效果评估的页面或
+  弹窗标题均一致，控制台 0 error。验收没有上传快照或运行拨测，因此没有调用外部 Guance，也没有创建
+  Diagnosis 或改变 T7/T8 状态。
 
 后端定向测试命令：
 

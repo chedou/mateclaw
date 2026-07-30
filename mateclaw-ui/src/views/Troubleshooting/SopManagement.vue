@@ -8,7 +8,7 @@
         </button>
         <span class="divider">/</span>
         <div>
-          <h1>Playbook 与知识治理</h1>
+          <h1>{{ TROUBLESHOOTING_UI_LABELS.rules }}</h1>
           <p>已批准 Playbook 驱动确定性命中；三类候选共用独立、可审计的审核流程。</p>
         </div>
       </div>
@@ -19,7 +19,7 @@
           @click="reload"
         >刷新</el-button>
         <template v-if="activeDesk === 'registry'">
-          <el-button plain @click="synthesisOpen = true">无错误码证据预览</el-button>
+          <el-button plain @click="synthesisOpen = true">{{ TROUBLESHOOTING_UI_LABELS.noCodePreview }}</el-button>
           <el-button type="primary" :icon="Plus" @click="openRegister">注册候选</el-button>
         </template>
       </div>
@@ -691,6 +691,7 @@ import {
 } from './knowledgeReview'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import { isEvidenceSynthesisFocus } from './synthesisPreview'
+import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
 const STATUS_LABEL: Record<SopStatus, string> = {

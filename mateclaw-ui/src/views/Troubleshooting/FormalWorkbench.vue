@@ -14,7 +14,7 @@
       :can-operate="canOperateTroubleshooting"
       :can-manage="canManageTroubleshooting"
       @refresh="loadList(false)"
-      @report="openIncidentReport"
+      @launch="openTroubleshootingScenario"
       @capability-command="handleCapabilityCommand"
       @open-diagnosis="openDiagnosisFromList"
       @switch-view="switchWorkbenchView('QUEUE')"
@@ -36,13 +36,13 @@
         </el-select>
         <div class="queue-action-row">
           <el-button
-            v-if="canOperateTroubleshooting"
+            v-if="canOperateTroubleshooting || canManageTroubleshooting"
             size="small"
             type="primary"
             plain
             :icon="Plus"
-            @click="openIncidentReport"
-          >上报事件</el-button>
+            @click="openTroubleshootingScenario"
+          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
           <WorkbenchCapabilityMenu
             v-if="canManageTroubleshooting"
             size="small"
@@ -71,14 +71,14 @@
         </button>
         <div v-if="!listLoading && !rows.length" class="queue-empty">
           <b>还没有诊断记录</b>
-          <p>从正式入口上报事件后，会通过既有 Incident API 进入同一条 Diagnosis 主链。</p>
+          <p>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
           <el-button
-            v-if="canOperateTroubleshooting"
+            v-if="canOperateTroubleshooting || canManageTroubleshooting"
             size="small"
             type="primary"
             plain
-            @click="openIncidentReport"
-          >上报第一个事件</el-button>
+            @click="openTroubleshootingScenario"
+          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
           <code v-else>需要 operate:troubleshooting 权限</code>
         </div>
       </div>
@@ -94,12 +94,12 @@
         <h1>选择一条诊断开始排障</h1>
         <p>服务经理先看业务摘要；开发证据在同一页面按需展开。</p>
         <el-button
-          v-if="canOperateTroubleshooting"
+          v-if="canOperateTroubleshooting || canManageTroubleshooting"
           type="primary"
           plain
           :icon="Plus"
-          @click="openIncidentReport"
-        >上报排障事件</el-button>
+          @click="openTroubleshootingScenario"
+        >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
       </div>
 
       <template v-else>
@@ -116,7 +116,7 @@
               @click="switchWorkbenchView('LIST')"
             >返回排障列表</el-button>
             <el-button size="small" :icon="Refresh" text @click="reload">刷新</el-button>
-            <el-button v-if="canManageTroubleshooting" size="small" plain @click="openEvaluationLedger">T8 样本台账</el-button>
+            <el-button v-if="canManageTroubleshooting" size="small" plain @click="openEvaluationLedger">{{ TROUBLESHOOTING_UI_LABELS.evaluation }}</el-button>
             <el-button size="small" plain @click="openLegacy">打开旧版处置台</el-button>
           </div>
         </header>
@@ -286,7 +286,7 @@
             <aside class="developer-side">
               <section v-loading="readinessLoading" class="source-gate-card">
                 <div class="source-gate-head">
-                  <div><span class="section-label">P2 真源门</span><h3>Guance 只读证据适配器</h3></div>
+                  <div><span class="section-label">{{ TROUBLESHOOTING_UI_LABELS.guanceOnboarding }}</span><h3>Guance 只读证据适配器</h3></div>
                   <span v-if="guanceReadiness" class="source-gate-state" :class="readinessTone(guanceReadiness.status)">
                     {{ guanceReadinessLabel(guanceReadiness.status) }}
                   </span>
@@ -386,9 +386,16 @@
     </main>
     </template>
 
+    <TroubleshootingScenarioDialog
+      v-model="scenarioLauncherOpen"
+      :can-operate="canOperateTroubleshooting"
+      :can-manage="canManageTroubleshooting"
+      @select="startTroubleshootingScenario"
+    />
+
     <el-dialog
       v-model="incidentReportOpen"
-      title="上报排障事件"
+      :title="TROUBLESHOOTING_UI_LABELS.incident"
       width="min(620px, calc(100vw - 32px))"
     >
       <el-alert type="info" :closable="false" class="dialog-alert">
@@ -456,7 +463,7 @@
 
     <DeploymentTopologySopDialog v-model="deploymentTopologyOpen" />
 
-    <el-dialog v-model="guanceValidationOpen" title="Guance 真源验收" width="min(620px, calc(100vw - 32px))">
+    <el-dialog v-model="guanceValidationOpen" :title="TROUBLESHOOTING_UI_LABELS.guanceValidation" width="min(620px, calc(100vw - 32px))">
       <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
       <el-form label-position="top">
         <div class="validation-scope">
@@ -578,7 +585,7 @@
           type="success"
           plain
           @click="openEvaluationLedger"
-        >进入 T8 样本台账</el-button>
+        >进入{{ TROUBLESHOOTING_UI_LABELS.evaluation }}</el-button>
       </template>
     </el-dialog>
 
@@ -699,6 +706,7 @@ import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
+import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
@@ -715,6 +723,7 @@ import {
   suggestedEvaluationScenarioKey,
 } from './evaluationSamples'
 import {
+  TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
   diagnosisSelectionMode,
   diagnosisStatusLabel as statusLabel,
@@ -724,6 +733,7 @@ import {
   resolveWorkbenchView,
   shouldShowQueuePanel,
   workbenchViewQuery,
+  type TroubleshootingScenarioCommand,
   type WorkbenchCapabilityCommand,
   type WorkbenchDiagnosisViewMode,
   type WorkbenchViewMode,
@@ -850,6 +860,7 @@ const replayCaptureDisabledReason = computed(() => {
   return replayCapability.value?.reason || '服务端尚未确认 Replay 能力与 fixture 登记范围。'
 })
 
+const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
@@ -935,8 +946,6 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
     openSynthesisPreview()
   } else if (command === 'guance') {
     guanceOnboardingOpen.value = true
-  } else if (command === 'deployment') {
-    deploymentTopologyOpen.value = true
   } else if (command === 'ledger') {
     openEvaluationLedger()
   }
@@ -990,9 +999,17 @@ function resetIncidentReportForm() {
   Object.assign(incidentReportForm, EMPTY_FORMAL_INCIDENT)
 }
 
-function openIncidentReport() {
-  if (!canOperateTroubleshooting.value) return
-  incidentReportOpen.value = true
+function openTroubleshootingScenario() {
+  if (!canOperateTroubleshooting.value && !canManageTroubleshooting.value) return
+  scenarioLauncherOpen.value = true
+}
+
+function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
+  if (command === 'incident' && canOperateTroubleshooting.value) {
+    incidentReportOpen.value = true
+  } else if (command === 'deployment' && canManageTroubleshooting.value) {
+    deploymentTopologyOpen.value = true
+  }
 }
 
 async function reportIncident() {

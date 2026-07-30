@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="T8 历史样本台账"
+    :title="TROUBLESHOOTING_UI_LABELS.evaluation"
     width="min(980px, calc(100vw - 32px))"
     class="evaluation-ledger-dialog"
     @update:model-value="updateOpen"
@@ -297,6 +297,7 @@ import {
   evaluationSourceLabel,
   parseEvaluationIntentKeys,
 } from './evaluationSamples'
+import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

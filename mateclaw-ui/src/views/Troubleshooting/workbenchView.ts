@@ -3,7 +3,27 @@ import type { DiagnosisStatus } from '@/api'
 export type WorkbenchViewSwitchMode = 'LIST' | 'QUEUE'
 export type WorkbenchViewMode = WorkbenchViewSwitchMode | 'DETAIL'
 export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
-export type WorkbenchCapabilityCommand = 'playbooks' | 'synthesis' | 'guance' | 'deployment' | 'ledger'
+export type WorkbenchCapabilityCommand = 'playbooks' | 'synthesis' | 'guance' | 'ledger'
+export type TroubleshootingScenarioCommand = 'incident' | 'deployment'
+export type TroubleshootingScenarioDefinition = {
+  command: TroubleshootingScenarioCommand
+  label: string
+  description: string
+  outcome: string
+  manageOnly: boolean
+}
+
+export const TROUBLESHOOTING_UI_LABELS = {
+  launch: '发起排障',
+  scenarioPicker: '选择排障场景',
+  incident: '通用事件排障',
+  rules: '排障规则库',
+  noCodePreview: '无码场景预演',
+  guanceOnboarding: '观测云接入与验收',
+  guanceValidation: '观测云只读验收',
+  deploymentTopology: '部署拓扑拨测分析',
+  evaluation: '诊断效果评估',
+} as const
 
 export const WORKBENCH_DIAGNOSIS_STATUSES: DiagnosisStatus[] = [
   'READY_FOR_HUMAN',
@@ -17,11 +37,27 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
   command: WorkbenchCapabilityCommand
   label: string
 }> = [
-  { command: 'playbooks', label: 'Playbook 管理' },
-  { command: 'synthesis', label: '无码证据预览' },
-  { command: 'guance', label: 'P2 真源接入' },
-  { command: 'deployment', label: '部署图拨测 SOP' },
-  { command: 'ledger', label: 'T8 样本台账' },
+  { command: 'playbooks', label: TROUBLESHOOTING_UI_LABELS.rules },
+  { command: 'synthesis', label: TROUBLESHOOTING_UI_LABELS.noCodePreview },
+  { command: 'guance', label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding },
+  { command: 'ledger', label: TROUBLESHOOTING_UI_LABELS.evaluation },
+]
+
+export const WORKBENCH_TROUBLESHOOTING_SCENARIOS: ReadonlyArray<TroubleshootingScenarioDefinition> = [
+  {
+    command: 'incident',
+    label: TROUBLESHOOTING_UI_LABELS.incident,
+    description: '按系统、服务、故障现象与可选错误码发起调查，进入 Diagnosis 处置主链。',
+    outcome: '创建 Diagnosis',
+    manageOnly: false,
+  },
+  {
+    command: 'deployment',
+    label: TROUBLESHOOTING_UI_LABELS.deploymentTopology,
+    description: '上传部署拓扑快照，批量读取观测云拨测结果，分析异常节点与关联网络链路。',
+    outcome: '只读专项分析',
+    manageOnly: true,
+  },
 ]
 
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
