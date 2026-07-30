@@ -172,6 +172,13 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 未授权必须 fail closed，不能回退默认全局 API key/measurement。
 - [x] 密钥只来自运行时配置，不进领域表、日志、prompt 或页面。
 - [x] 正式工作台按 workspace/system/service 展示秘密无关的真源就绪投影。
+- [x] 正式工作台增加独立于当前 Diagnosis 的“P2 真源接入”向导：owner/admin 可选择安全的
+      system/service，取得只含 workspace 精确 ID、核心 binding 占位符与密钥系统环境变量名的外部配置
+      骨架，再复用既有 readiness/acceptance API 检查 T6→T7→T8 门禁。页面不接收 API Key、不把占位符
+      写回服务端；只有 readiness 进入 `READY_FOR_VALIDATION` 或 `CANONICAL_SIGNALS_OBSERVED` 才可转入
+      既有 T7 只读验收。向导作用域与当前 Diagnosis 的侧栏/T8 状态隔离（2026-07-30）。
+      异步响应必须继续匹配对话框 session、发起 origin，以及 system/service/searchTerm/window/occurredAt
+      完整 lookup identity；关闭后重开不得复用旧响应。
 - [x] 增加管理员触发的 Guance-only `log_search → log_trace_bundle` 单次只读验证；
       在 Router 调用前限制允许源，不得回退 Recorded Replay。
 

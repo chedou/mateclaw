@@ -24,6 +24,9 @@
           <el-button v-if="canManageTroubleshooting" size="small" text @click="openSynthesisPreview">
             无码证据预览
           </el-button>
+          <el-button v-if="canManageTroubleshooting" size="small" text @click="guanceOnboardingOpen = true">
+            P2 真源接入
+          </el-button>
           <el-button v-if="canManageTroubleshooting" size="small" text @click="openEvaluationLedger">
             T8 样本台账
           </el-button>
@@ -274,7 +277,7 @@
                     <li v-for="stage in guanceAcceptance.stages" :key="stage.code">
                       <span>{{ stage.code }}</span>
                       <div><b>{{ stage.title }}</b><small>{{ stage.detail }}</small></div>
-                      <strong :class="acceptanceTone(stage.state)">{{ acceptanceStateLabel(stage.state) }}</strong>
+                      <strong :class="acceptanceTone(stage.state)">{{ guanceAcceptanceStateLabel(stage.state) }}</strong>
                     </li>
                   </ol>
                   <div
@@ -420,6 +423,12 @@
       </template>
     </el-dialog>
 
+    <GuanceOnboardingDialog
+      v-model="guanceOnboardingOpen"
+      :initial-request="guanceOnboardingInitialRequest"
+      @start-validation="startGuanceValidationFromOnboarding"
+    />
+
     <el-dialog v-model="guanceValidationOpen" title="Guance 真源验收" width="min(620px, calc(100vw - 32px))">
       <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
       <el-form label-position="top">
@@ -442,32 +451,32 @@
           </el-select>
         </el-form-item>
       </el-form>
-      <div v-if="guanceValidation" class="dialog-validation-result">
-        <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
+      <div v-if="validationDialogReport" class="dialog-validation-result">
+        <b>{{ guanceValidationLabel(validationDialogReport.stage) }}</b>
         <ul>
-          <li v-for="step in guanceValidation.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span><time>{{ step.durationMs == null ? '未执行' : `${step.durationMs} ms` }}</time></li>
+          <li v-for="step in validationDialogReport.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span><time>{{ step.durationMs == null ? '未执行' : `${step.durationMs} ms` }}</time></li>
         </ul>
-        <p>端到端 {{ guanceValidation.totalDurationMs }} ms</p>
-        <small v-for="warning in guanceValidation.warnings" :key="warning">{{ warning }}</small>
+        <p>端到端 {{ validationDialogReport.totalDurationMs }} ms</p>
+        <small v-for="warning in validationDialogReport.warnings" :key="warning">{{ warning }}</small>
       </div>
       <div
-        v-if="guanceOwnerAcceptance"
+        v-if="validationDialogOwnerAcceptance"
         class="dialog-validation-result owner-acceptance-result"
-        :class="ownerAcceptanceTone(guanceOwnerAcceptance.status)"
+        :class="ownerAcceptanceTone(validationDialogOwnerAcceptance.status)"
       >
-        <b>{{ ownerAcceptanceStateLabel(guanceOwnerAcceptance.status) }}</b>
-        <p v-if="guanceOwnerAcceptance.acceptance">
-          {{ guanceOwnerAcceptance.acceptance.acceptedBy }} ·
-          {{ shortTime(guanceOwnerAcceptance.acceptance.acceptedAt) }}
+        <b>{{ ownerAcceptanceStateLabel(validationDialogOwnerAcceptance.status) }}</b>
+        <p v-if="validationDialogOwnerAcceptance.acceptance">
+          {{ validationDialogOwnerAcceptance.acceptance.acceptedBy }} ·
+          {{ shortTime(validationDialogOwnerAcceptance.acceptance.acceptedAt) }}
         </p>
         <small>
           当前配置指纹
-          <code>{{ shortFingerprint(guanceOwnerAcceptance.currentBindingFingerprint) }}</code>
+          <code>{{ shortFingerprint(validationDialogOwnerAcceptance.currentBindingFingerprint) }}</code>
         </small>
-        <small v-for="blocker in guanceOwnerAcceptance.blockers" :key="blocker">{{ blocker }}</small>
+        <small v-for="blocker in validationDialogOwnerAcceptance.blockers" :key="blocker">{{ blocker }}</small>
       </div>
       <div
-        v-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
+        v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
         class="t7-owner-checklist"
       >
         <b>T7 owner 字段核实清单</b>
@@ -495,26 +504,26 @@
         <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
       </div>
       <p
-        v-else-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED'"
+        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED'"
         class="source-blocker"
       >只有当前 Workspace owner 可以提交 T7 验收；admin 可以执行只读验证，但不能替 owner 解锁真实 T8。</p>
-      <div v-if="guanceSpinePreview" class="dialog-validation-result spine-dialog-result">
-        <b>{{ guanceSpinePreviewLabel(guanceSpinePreview.stage) }}</b>
+      <div v-if="validationDialogSpinePreview" class="dialog-validation-result spine-dialog-result">
+        <b>{{ guanceSpinePreviewLabel(validationDialogSpinePreview.stage) }}</b>
         <ul>
-          <li v-for="step in guanceSpinePreview.steps" :key="step.signalKind">
+          <li v-for="step in validationDialogSpinePreview.steps" :key="step.signalKind">
             <code>{{ step.signalKind }}</code>
             <span>{{ spineStepStatusLabel(step.status) }}</span>
             <time>{{ step.collectedAt ? shortTime(step.collectedAt).slice(11) : '未执行' }}</time>
           </li>
         </ul>
-        <div v-if="guanceSpinePreview.stage !== 'BLOCKED'" class="spine-facts">
-          <p><span>调用链骨架</span><b>{{ guanceSpinePreview.serviceSequence.join(' → ') }}</b></p>
-          <p><span>核心样本</span><b>{{ guanceSpinePreview.matchCount }} 条命中 · {{ guanceSpinePreview.traceEntries }} 个节点 · {{ guanceSpinePreview.anomalyCount }} 个异常点</b></p>
-          <p v-if="guanceSpinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ guanceSpinePreview.contrast.failureMatchCount }}/{{ guanceSpinePreview.contrast.failureSampleCount }}（{{ percent(guanceSpinePreview.contrast.failureRate) }}） ↔ {{ guanceSpinePreview.contrast.successMatchCount }}/{{ guanceSpinePreview.contrast.successSampleCount }}（{{ percent(guanceSpinePreview.contrast.successRate) }}）</b></p>
+        <div v-if="validationDialogSpinePreview.stage !== 'BLOCKED'" class="spine-facts">
+          <p><span>调用链骨架</span><b>{{ validationDialogSpinePreview.serviceSequence.join(' → ') }}</b></p>
+          <p><span>核心样本</span><b>{{ validationDialogSpinePreview.matchCount }} 条命中 · {{ validationDialogSpinePreview.traceEntries }} 个节点 · {{ validationDialogSpinePreview.anomalyCount }} 个异常点</b></p>
+          <p v-if="validationDialogSpinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ validationDialogSpinePreview.contrast.failureMatchCount }}/{{ validationDialogSpinePreview.contrast.failureSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.failureRate) }}） ↔ {{ validationDialogSpinePreview.contrast.successMatchCount }}/{{ validationDialogSpinePreview.contrast.successSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.successRate) }}）</b></p>
           <p v-else><span>失败 ↔ 成功对照</span><b>未取得，继续校准期</b></p>
-          <p><span>应用侧总耗时</span><b>{{ guanceSpinePreview.totalDurationMs }} ms</b></p>
+          <p><span>应用侧总耗时</span><b>{{ validationDialogSpinePreview.totalDurationMs }} ms</b></p>
         </div>
-        <small v-for="warning in guanceSpinePreview.warnings" :key="warning">{{ warning }}</small>
+        <small v-for="warning in validationDialogSpinePreview.warnings" :key="warning">{{ warning }}</small>
       </div>
       <template #footer>
         <el-button @click="guanceValidationOpen = false">关闭</el-button>
@@ -531,14 +540,14 @@
           @click="previewGuanceSpine"
         >完整 Evidence Spine</el-button>
         <el-button
-          v-if="guanceValidation?.stage === 'CANONICAL_CHAIN_OBSERVED' && guanceOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
+          v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
           type="success"
           :loading="acceptanceLoading"
           :disabled="!canAcceptGuance"
           @click="acceptGuance"
         >确认当前绑定 T7 验收</el-button>
         <el-button
-          v-if="guanceSpinePreview && guanceSpinePreview.stage !== 'BLOCKED'"
+          v-if="validationDialogSpinePreview && validationDialogSpinePreview.stage !== 'BLOCKED' && validationCanOpenCurrentEvaluationLedger"
           type="success"
           plain
           @click="openEvaluationLedger"
@@ -622,6 +631,7 @@ import {
   type DiagnosisExperienceProjection,
   type DiagnosisStatus,
   type DiagnosisSummary,
+  type EvidenceChainPreviewRequest,
   type EvidenceStepTone,
   type EvidenceStepKind,
   type GuanceEvidenceAcceptanceChecklist,
@@ -637,9 +647,11 @@ import {
   type StoredDiagnosis,
 } from '@/api'
 import {
+  canStartGuanceValidation,
   closureOutcomeLabel,
   conclusionLabel,
   guanceAcceptanceProgress,
+  guanceAcceptanceStateLabel,
   guanceReadinessLabel,
   guanceSignalLabel,
   guanceSpinePreviewLabel,
@@ -657,6 +669,15 @@ import {
 } from './incidentReport'
 import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
+import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
+import {
+  canAttachGuanceResultToDiagnosis,
+  isActiveGuanceValidationSession,
+  sameEvidenceChainLookup,
+  type GuanceOnboardingValidationPayload,
+  type GuanceValidationOrigin,
+  type GuanceValidationSessionSnapshot,
+} from './guanceOnboarding'
 import {
   type EvaluationSampleCaptureContext,
   replayEvaluationCaptureContext,
@@ -698,9 +719,15 @@ const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
 const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
 const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
 const guanceOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
+const guanceDiagnosisLookup = ref<EvidenceChainPreviewRequest | null>(null)
+const validationDialogReport = ref<GuanceEvidenceValidationReport | null>(null)
+const validationDialogSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
+const validationDialogOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
+const guanceValidationOrigin = ref<GuanceValidationOrigin | null>(null)
 const replayCapability = ref<RecordedReplayEvaluationCapability | null>(null)
 const readinessError = ref('')
 let selectionVersion = 0
+let guanceValidationSessionVersion = 0
 
 const business = computed(() => projection.value?.businessSummary ?? null)
 const developer = computed(() => projection.value?.developerEvidence ?? null)
@@ -714,20 +741,32 @@ const canTransfer = computed(() => canOperateTroubleshooting.value
 const canClose = computed(() => canTransfer.value)
 const canValidateGuance = computed(() => {
   const status = guanceReadiness.value?.status
-  return status === 'READY_FOR_VALIDATION' || status === 'CANONICAL_SIGNALS_OBSERVED'
+  return status ? canStartGuanceValidation(status) : false
 })
 const guanceAcceptance = computed(() => guanceReadiness.value
   ? guanceAcceptanceProgress(guanceReadiness.value, guanceOwnerAcceptance.value)
   : null)
+const currentDiagnosisEvidenceLookup = computed<EvidenceChainPreviewRequest | null>(() => {
+  const incident = current.value?.diagnosis.incident
+  if (!incident) return null
+  return {
+    system: incident.system,
+    service: incident.service,
+    searchTerm: incident.errorCode || '',
+    window: '-15m',
+    occurredAt: incident.occurredAt,
+  }
+})
 const evaluationCaptureContext = computed<EvaluationSampleCaptureContext | null>(() => {
   const diagnosis = current.value?.diagnosis
   const incident = diagnosis?.incident
   if (!diagnosis || !incident) return null
-  const formMatchesIncident = guanceValidationForm.system === incident.system
-    && guanceValidationForm.service === incident.service
-  const searchTerm = formMatchesIncident
-    ? guanceValidationForm.searchTerm.trim()
-    : (incident.errorCode || '').trim()
+  const currentLookup = currentDiagnosisEvidenceLookup.value
+  const frozenLookup = guanceDiagnosisLookup.value
+  const lookup = currentLookup && frozenLookup && sameEvidenceChainLookup(currentLookup, frozenLookup)
+    ? frozenLookup
+    : currentLookup
+  const searchTerm = lookup?.searchTerm.trim() || ''
   if (!searchTerm) return null
   return {
     diagnosisId: diagnosis.diagnosisId,
@@ -735,7 +774,7 @@ const evaluationCaptureContext = computed<EvaluationSampleCaptureContext | null>
     service: incident.service,
     scenarioKey: suggestedEvaluationScenarioKey(incident.errorCode),
     searchTerm,
-    window: formMatchesIncident ? guanceValidationForm.window : '-15m',
+    window: lookup?.window || '-15m',
   }
 })
 const replayEvaluationCaptureContextValue = computed(() => {
@@ -749,6 +788,8 @@ const replayEvaluationCaptureContextValue = computed(() => {
 })
 const canCaptureEvaluationSample = computed(() => canManageTroubleshooting.value
   && guanceOwnerAcceptance.value?.status === 'ACCEPTED'
+  && Boolean(guanceDiagnosisLookup.value)
+  && Boolean(evaluationCaptureContext.value)
   && Boolean(guanceSpinePreview.value)
   && guanceSpinePreview.value?.stage !== 'BLOCKED')
 const evaluationCaptureDisabledReason = computed(() => {
@@ -767,6 +808,7 @@ const replayCaptureDisabledReason = computed(() => {
 })
 
 const incidentReportOpen = ref(false)
+const guanceOnboardingOpen = ref(false)
 const guanceValidationOpen = ref(false)
 const evaluationLedgerOpen = ref(false)
 const transferOpen = ref(false)
@@ -780,6 +822,17 @@ const approveForm = reactive({ reason: '' })
 const outcomeForm = reactive({ outcome: 'SUCCEEDED' as ActionOutcomeStatus, notes: '', recoveryVerified: false })
 const closeForm = reactive({ outcome: 'RECOVERED' as ClosureOutcome, summary: '', recoveryVerified: false, sopFeedback: '', createKnowledgeCandidate: true })
 const guanceValidationForm = reactive({ system: '', service: '', searchTerm: '', window: '-15m', occurredAt: null as string | null })
+const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() => {
+  return currentDiagnosisEvidenceLookup.value || {
+    system: 'CSDP',
+    service: 'csdp-session-service',
+    searchTerm: 'message_send_failed',
+    window: '-15m',
+    occurredAt: null,
+  }
+})
+const validationCanOpenCurrentEvaluationLedger = computed(() =>
+  isCurrentDiagnosisValidationRequest(guanceValidationForm))
 const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
   measurementAndFieldsVerified: false,
   indexVerified: false,
@@ -798,7 +851,7 @@ const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
   && incidentReportErrors.value.length === 0)
 const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && canAcceptGuanceOwner.value
-  && guanceValidation.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
+  && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
 
 function statusLabel(status: DiagnosisStatus) { return STATUS_LABEL[status] }
@@ -811,7 +864,7 @@ function statusTone(status: DiagnosisStatus) {
 function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
 function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
 function readinessTone(value: GuanceReadinessStatus) {
-  if (value === 'CANONICAL_SIGNALS_OBSERVED' || value === 'READY_FOR_VALIDATION') return 'active'
+  if (canStartGuanceValidation(value)) return 'active'
   return 'warning'
 }
 function signalTone(value: GuanceSignalStatus) {
@@ -823,11 +876,6 @@ function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') 
   if (value === 'READY') return 'success'
   if (value === 'OWNER_EVIDENCE_REQUIRED') return 'active'
   return 'warning'
-}
-function acceptanceStateLabel(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
-  if (value === 'READY') return '就绪'
-  if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
-  return '阻断'
 }
 function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
   if (value === 'ACCEPTED') return '当前绑定已验收'
@@ -915,10 +963,16 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
   const version = ++selectionVersion
   selectedId.value = diagnosisId
   detailLoading.value = true
+  guanceOnboardingOpen.value = false
   guanceValidationOpen.value = false
   validationLoading.value = false
   spinePreviewLoading.value = false
   acceptanceLoading.value = false
+  validationDialogReport.value = null
+  validationDialogSpinePreview.value = null
+  validationDialogOwnerAcceptance.value = null
+  guanceValidationOrigin.value = null
+  guanceDiagnosisLookup.value = null
   try {
     const [projectionResponse, diagnosisResponse] = await Promise.all([
       troubleshootingApi.projection(diagnosisId), troubleshootingApi.get(diagnosisId),
@@ -968,17 +1022,71 @@ async function loadGuanceReadiness(system: string, service: string, version = se
 }
 
 function openGuanceValidation() {
-  const incident = current.value?.diagnosis.incident
-  if (!incident || !canValidateGuance.value) return
-  guanceValidationForm.system = incident.system
-  guanceValidationForm.service = incident.service
-  guanceValidationForm.searchTerm = incident.errorCode || ''
-  guanceValidationForm.window = '-15m'
-  guanceValidationForm.occurredAt = incident.occurredAt
+  const request = currentDiagnosisEvidenceLookup.value
+  if (!request || !canValidateGuance.value) return
   guanceValidation.value = null
   guanceSpinePreview.value = null
+  guanceDiagnosisLookup.value = null
+  openGuanceValidationDialog(request, guanceOwnerAcceptance.value, 'DIAGNOSIS')
+}
+
+function openGuanceValidationDialog(
+  request: EvidenceChainPreviewRequest,
+  ownerAcceptance: GuanceEvidenceAcceptanceView | null,
+  origin: GuanceValidationOrigin,
+) {
+  guanceValidationSessionVersion += 1
+  Object.assign(guanceValidationForm, request)
+  validationDialogReport.value = null
+  validationDialogSpinePreview.value = null
+  validationDialogOwnerAcceptance.value = ownerAcceptance
+  guanceValidationOrigin.value = origin
+  validationLoading.value = false
+  spinePreviewLoading.value = false
+  acceptanceLoading.value = false
   Object.assign(guanceAcceptanceChecklist, EMPTY_T7_CHECKLIST)
   guanceValidationOpen.value = true
+}
+
+function startGuanceValidationFromOnboarding(payload: GuanceOnboardingValidationPayload) {
+  guanceOnboardingOpen.value = false
+  openGuanceValidationDialog(payload.request, payload.ownerAcceptance, 'ONBOARDING')
+}
+
+function isCurrentDiagnosisValidationRequest(request: EvidenceChainPreviewRequest) {
+  return canAttachGuanceResultToDiagnosis(
+    guanceValidationOrigin.value,
+    currentDiagnosisEvidenceLookup.value,
+    request,
+  )
+}
+
+function captureGuanceValidationSession(): GuanceValidationSessionSnapshot {
+  return {
+    sessionVersion: guanceValidationSessionVersion,
+    origin: guanceValidationOrigin.value,
+    request: { ...guanceValidationForm },
+  }
+}
+
+function isActiveGuanceValidationRequest(
+  version: number,
+  requested: GuanceValidationSessionSnapshot,
+) {
+  return version === selectionVersion && isActiveGuanceValidationSession(
+    requested,
+    captureGuanceValidationSession(),
+    guanceValidationOpen.value,
+  )
+}
+
+function isCurrentGuanceValidationGeneration(
+  version: number,
+  requested: GuanceValidationSessionSnapshot,
+) {
+  return version === selectionVersion
+    && requested.sessionVersion === guanceValidationSessionVersion
+    && requested.origin === guanceValidationOrigin.value
 }
 
 async function openEvaluationLedger() {
@@ -1021,68 +1129,79 @@ async function openDiagnosisFromLedger(diagnosisId: string) {
 
 async function validateGuance() {
   const version = selectionVersion
-  const request = { ...guanceValidationForm }
+  const session = captureGuanceValidationSession()
+  const request = session.request
   validationLoading.value = true
   try {
     const response = await troubleshootingApi.validateGuanceEvidence(request)
-    const incident = current.value?.diagnosis.incident
-    if (version !== selectionVersion
-      || !incident
-      || incident.system !== request.system
-      || incident.service !== request.service) return
-    guanceValidation.value = response.data
-    guanceReadiness.value = response.data.readiness
+    if (!isActiveGuanceValidationRequest(version, session)) return
+    validationDialogReport.value = response.data
+    if (canAttachGuanceResultToDiagnosis(
+      session.origin,
+      currentDiagnosisEvidenceLookup.value,
+      request,
+    )) {
+      guanceValidation.value = response.data
+      guanceReadiness.value = response.data.readiness
+    }
     if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
       ElMessage.success('单次规范化读链已观测；待 T7 owner 字段验收，fixtureMode 保持开启')
     } else {
       ElMessage.warning('真源验证被就绪门或规范化合同阻断')
     }
   } catch (error) {
-    if (version !== selectionVersion) return
+    if (!isActiveGuanceValidationRequest(version, session)) return
     ElMessage.error(`Guance 只读验证失败：${errorText(error)}`)
   } finally {
-    if (version === selectionVersion) validationLoading.value = false
+    if (isCurrentGuanceValidationGeneration(version, session)) validationLoading.value = false
   }
 }
 
 async function acceptGuance() {
   if (!canAcceptGuance.value) return
   const version = selectionVersion
+  const session = captureGuanceValidationSession()
   const request = {
-    ...guanceValidationForm,
+    ...session.request,
     checklist: { ...guanceAcceptanceChecklist },
   }
   acceptanceLoading.value = true
   try {
     const response = await troubleshootingApi.acceptGuanceEvidence(request)
-    const incident = current.value?.diagnosis.incident
-    if (version !== selectionVersion
-      || !incident
-      || incident.system !== request.system
-      || incident.service !== request.service) return
-    guanceOwnerAcceptance.value = response.data
+    if (!isActiveGuanceValidationRequest(version, session)) return
+    validationDialogOwnerAcceptance.value = response.data
+    if (canAttachGuanceResultToDiagnosis(
+      session.origin,
+      currentDiagnosisEvidenceLookup.value,
+      request,
+    )) guanceOwnerAcceptance.value = response.data
     ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
   } catch (error) {
-    if (version !== selectionVersion) return
+    if (!isActiveGuanceValidationRequest(version, session)) return
     ElMessage.error(`T7 owner 验收未记录：${errorText(error)}`)
   } finally {
-    if (version === selectionVersion) acceptanceLoading.value = false
+    if (isCurrentGuanceValidationGeneration(version, session)) acceptanceLoading.value = false
   }
 }
 
 async function previewGuanceSpine() {
   const version = selectionVersion
-  const request = { ...guanceValidationForm }
+  const session = captureGuanceValidationSession()
+  const request = session.request
   spinePreviewLoading.value = true
   try {
     const response = await troubleshootingApi.previewGuanceEvidenceSpine(request)
-    const incident = current.value?.diagnosis.incident
-    if (version !== selectionVersion
-      || !incident
-      || incident.system !== request.system
-      || incident.service !== request.service) return
-    guanceSpinePreview.value = response.data
-    guanceReadiness.value = response.data.readiness
+    if (!isActiveGuanceValidationRequest(version, session)) return
+    validationDialogSpinePreview.value = response.data
+    if (canAttachGuanceResultToDiagnosis(
+      session.origin,
+      currentDiagnosisEvidenceLookup.value,
+      request,
+    )) {
+      guanceSpinePreview.value = response.data
+      guanceReadiness.value = response.data.readiness
+      guanceDiagnosisLookup.value = { ...request }
+    }
     if (response.data.stage === 'FULL_SPINE_OBSERVED') {
       ElMessage.success('真实三段 Evidence Spine 已观测；待 owner 完成 T7/T8 验收')
     } else if (response.data.stage === 'CORE_CHAIN_OBSERVED') {
@@ -1091,10 +1210,10 @@ async function previewGuanceSpine() {
       ElMessage.warning('真实 Evidence Spine 被就绪门或规范化合同阻断')
     }
   } catch (error) {
-    if (version !== selectionVersion) return
+    if (!isActiveGuanceValidationRequest(version, session)) return
     ElMessage.error(`Guance Evidence Spine 验证失败：${errorText(error)}`)
   } finally {
-    if (version === selectionVersion) spinePreviewLoading.value = false
+    if (isCurrentGuanceValidationGeneration(version, session)) spinePreviewLoading.value = false
   }
 }
 

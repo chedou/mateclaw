@@ -66,6 +66,16 @@ const GUANCE_SPINE_PREVIEW_LABEL: Record<GuanceSpinePreviewStage, string> = {
 
 export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED'
 
+export function canStartGuanceValidation(value: GuanceReadinessStatus) {
+  return value === 'READY_FOR_VALIDATION' || value === 'CANONICAL_SIGNALS_OBSERVED'
+}
+
+export function guanceAcceptanceStateLabel(value: GuanceAcceptanceState) {
+  if (value === 'READY') return '就绪'
+  if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
+  return '阻断'
+}
+
 export interface GuanceAcceptanceStage {
   code: 'T6' | 'T7' | 'T8'
   state: GuanceAcceptanceState
@@ -126,8 +136,7 @@ export function guanceAcceptanceProgress(
         || signal.status === 'CANONICAL_RESULT_OBSERVED')),
   )
   const sourceAuthorized = readiness.uniqueAssetAuthorized && coreSignalsAuthorized
-  const sourceReady = status === 'READY_FOR_VALIDATION'
-    || status === 'CANONICAL_SIGNALS_OBSERVED'
+  const sourceReady = canStartGuanceValidation(status)
   const coreSignalsObserved = status === 'CANONICAL_SIGNALS_OBSERVED'
   const ownerAccepted = ownerAcceptance?.status === 'ACCEPTED'
   const ownerAcceptanceStale = ownerAcceptance?.status === 'STALE'

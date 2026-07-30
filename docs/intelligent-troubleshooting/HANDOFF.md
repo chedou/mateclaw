@@ -88,6 +88,11 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
   `log_search → log_trace_bundle`；Router 先限定允许源，因此不会回退 Replay。报告仅含匹配数、
   PS ID、trace 节点数、绑定引用与时间戳，不含原始日志、DQL 或凭据，且明确不关闭 `fixtureMode`。
+- **P2 真源接入向导（2026-07-30）**：正式队列新增“P2 真源接入”。向导不依赖先存在匹配
+  Diagnosis，可编辑安全的 system/service/search key，生成不含凭据、不会自动落库的外部配置骨架，
+  并复用既有 readiness/acceptance API 展示 T6→T7→T8。只有既有 readiness 门就绪才可进入原 T7
+  只读验收；向导临时验证结果与当前 Diagnosis 侧栏状态隔离，非当前作用域也不会出现进入 T8 台账入口。
+  异步结果必须继续匹配同一对话框 session、发起 origin 与完整 lookup identity，关闭/重开不能借用旧响应。
 - **P2 真实 Evidence Spine 预览（2026-07-29）**：同一正式工作台现可继续触发
   Guance-only `log_search → log_trace_bundle → contrast_sample → deterministic compress`。
   它直接复用在线 Diagnosis 和 SOP 学习共享的 `EvidenceSpineOrchestrator`，只投影有界调用链、
@@ -427,6 +432,21 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
   `/troubleshooting/legacy` 都正常，正式页、治理页与 legacy 页均为 `0` console error。
 - 本增量只提升已实现 P1 证据能力在正式产品中的可发现性；真实 T7/T8、
   无码 Scenario/Open Discovery 和 Challenger/Loop 状态不变。
+
+正式工作台 P2 真源接入向导（2026-07-30）已通过：
+
+- 正式 `/troubleshooting` 队列可打开独立向导；浏览器分别验证当前 Diagnosis 的
+  `CSDP/order-svc` 和独立会议作用域 `CSDP/csdp-session-service`。配置骨架只含精确 workspace ID、
+  `log_search` / `log_trace_bundle` 占位符与 secret-manager 环境变量占位，不接收或显示真实凭据。
+- 修改 system/service 后旧 readiness 立即失效，必须显式重新检查；本地默认 Guance 关闭时，T6/T7/T8
+  依真实服务端状态全部阻断，“进入 T7 只读验收”保持禁用，没有用前端状态伪造准入。
+- 前端 `20` 个测试文件 / `150` 个测试、`vue-tsc --noEmit`、定向 ESLint 与直接 Vite 生产构建通过，
+  构建完成 `6281` 个模块转换；仓库既有 `npm run build` 仍因缺失
+  `../scripts/check-snowflake-precision.sh` 前置脚本失败，本增量未扩大范围修改该基础设施。
+- 登录态 Playwright 验收中正式页为 `0` console error；legacy 页面仍能读取同一 Diagnosis，但该存量
+  v1.4 记录调用 `/derivation` 返回既有 `409 Conflict`，因此本轮不宣称 legacy 为零错误。
+- 本增量没有新增后端 API、领域表、Guance transport、Scenario 运行时、candidate 或生产写能力；
+  真实资产 binding、T7 owner 核实与 T8 20–30 条样本仍待内网 owner 完成。
 
 在线 Diagnosis 共享 Evidence Spine（2026-07-29）已通过代码级验证：
 
