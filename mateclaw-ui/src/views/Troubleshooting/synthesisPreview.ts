@@ -21,6 +21,14 @@ export const EVIDENCE_WINDOW_OPTIONS = [
   { label: '前 1 小时', value: '-1h' },
 ] as const
 
+export const EVIDENCE_SYNTHESIS_FOCUS = 'evidence-synthesis'
+
+export function isEvidenceSynthesisFocus(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value.includes(EVIDENCE_SYNTHESIS_FOCUS)
+    : value === EVIDENCE_SYNTHESIS_FOCUS
+}
+
 /** Keeps the architecture's fixed Evidence Spine order visible in the formal UI. */
 export function buildSynthesisEvidenceSteps(
   preview: SopSynthesisPreview,

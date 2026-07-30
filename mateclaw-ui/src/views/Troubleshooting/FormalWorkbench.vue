@@ -21,6 +21,9 @@
           <el-button v-if="canManageTroubleshooting" size="small" text @click="router.push('/troubleshooting/sops')">
             Playbook 管理
           </el-button>
+          <el-button v-if="canManageTroubleshooting" size="small" text @click="openSynthesisPreview">
+            无码证据预览
+          </el-button>
           <el-button v-if="canManageTroubleshooting" size="small" text @click="openEvaluationLedger">
             T8 样本台账
           </el-button>
@@ -652,7 +655,7 @@ import {
   formalIncidentRoutePreview,
   type FormalIncidentForm,
 } from './incidentReport'
-import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import {
   type EvaluationSampleCaptureContext,
@@ -1099,6 +1102,12 @@ async function reload() {
   await Promise.all([loadList(false), selectedId.value ? selectDiagnosis(selectedId.value, false) : Promise.resolve()])
 }
 function openLegacy() { router.push({ path: '/troubleshooting/legacy', query: selectedId.value ? { diagnosisId: selectedId.value } : {} }) }
+function openSynthesisPreview() {
+  router.push({
+    path: '/troubleshooting/sops',
+    query: { focus: EVIDENCE_SYNTHESIS_FOCUS },
+  })
+}
 async function applyLifecycle(operation: () => Promise<unknown>, message: string) {
   if (!canOperateTroubleshooting.value) {
     ElMessage.error('当前 Workspace 缺少 operate:troubleshooting 权限')

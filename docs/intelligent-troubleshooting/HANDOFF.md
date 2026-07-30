@@ -416,6 +416,18 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
 - 本地运行时只为验证显式启用了 Recorded Replay；默认配置仍为关闭。本次预览交互与 API 均未调用模型、
   创建 candidate、执行审核/晋升或扩大任何生产写边界；T7/T8 状态不变。
 
+正式工作台无码证据深链（2026-07-30）已通过：
+
+- `/troubleshooting` 队列直接提供“无码证据预览”；点击后精确进入
+  `/troubleshooting/sops?focus=evidence-synthesis`，并自动打开已有 `SynthesisPreviewDialog`。
+- 该深链复用同一 synthesis preview API 和 Evidence Spine，不新建第二页、第二 API、
+  Scenario 运行时或 candidate 通道；弹窗仍明示“不调用模型、不创建 candidate”。
+- 前端 `19` 个测试文件 / `143` 个测试、`vue-tsc --noEmit`、直接 Vite 生产构建与
+  `git diff --check` 全通过。登录态 Playwright 验收确认正式深链、自动弹窗和
+  `/troubleshooting/legacy` 都正常，正式页、治理页与 legacy 页均为 `0` console error。
+- 本增量只提升已实现 P1 证据能力在正式产品中的可发现性；真实 T7/T8、
+  无码 Scenario/Open Discovery 和 Challenger/Loop 状态不变。
+
 在线 Diagnosis 共享 Evidence Spine（2026-07-29）已通过代码级验证：
 
 - 后端排障域 + Skill Manifest 共 `332` 个测试全通过；新增覆盖同一编排器的三段依赖目标、PS ID 一致性、

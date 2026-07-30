@@ -666,7 +666,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -690,6 +690,7 @@ import {
   type KnowledgeReviewRow,
 } from './knowledgeReview'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
+import { isEvidenceSynthesisFocus } from './synthesisPreview'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
 const STATUS_LABEL: Record<SopStatus, string> = {
@@ -716,6 +717,7 @@ const EMPTY_TEMPLATE = JSON.stringify({
 }, null, 2)
 
 const router = useRouter()
+const route = useRoute()
 const activeDesk = ref<'registry' | 'review'>('registry')
 const rows = ref<SopSummary[]>([])
 const selectedSop = ref<SopEntry | null>(null)
@@ -726,7 +728,7 @@ const listLoading = ref(false)
 const detailLoading = ref(false)
 const statusUpdating = ref(false)
 const registerOpen = ref(false)
-const synthesisOpen = ref(false)
+const synthesisOpen = ref(isEvidenceSynthesisFocus(route.query.focus))
 const registering = ref(false)
 const registerJson = ref(EMPTY_TEMPLATE)
 const reviewInbox = ref<KnowledgeReviewInbox>({

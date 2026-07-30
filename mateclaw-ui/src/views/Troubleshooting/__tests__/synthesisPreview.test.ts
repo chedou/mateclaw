@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SopSynthesisPreview } from '@/api'
 import {
+  EVIDENCE_SYNTHESIS_FOCUS,
   buildSynthesisEvidenceSteps,
   formatSynthesisRate,
   formatSynthesisRateDelta,
+  isEvidenceSynthesisFocus,
   normalizeSynthesisPreviewRequest,
 } from '../synthesisPreview'
 
@@ -71,6 +73,14 @@ const preview: SopSynthesisPreview = {
 }
 
 describe('formal synthesis preview formatting', () => {
+  it('recognizes only the explicit no-code evidence preview focus', () => {
+    expect(EVIDENCE_SYNTHESIS_FOCUS).toBe('evidence-synthesis')
+    expect(isEvidenceSynthesisFocus('evidence-synthesis')).toBe(true)
+    expect(isEvidenceSynthesisFocus(['other', 'evidence-synthesis'])).toBe(true)
+    expect(isEvidenceSynthesisFocus('review')).toBe(false)
+    expect(isEvidenceSynthesisFocus(undefined)).toBe(false)
+  })
+
   it('keeps all three Evidence Spine steps visible when contrast is unavailable', () => {
     expect(buildSynthesisEvidenceSteps(preview)).toEqual([
       expect.objectContaining({ signalKind: 'log_search', queryId: 'SYNTH-LOG-SEARCH' }),

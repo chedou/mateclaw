@@ -160,6 +160,9 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
       失败/成功样本差异；对照缺失时保持不可用状态，不伪造测量值。
 - [x] 该入口由服务端硬限制为 Recorded Replay，默认数据源仍关闭；不调用模型、不创建 candidate、
       不提供审核、晋升或生产写操作。
+- [x] 正式 `/troubleshooting` 队列增加“无码证据预览”深链；只跳转到
+      `/troubleshooting/sops?focus=evidence-synthesis` 并自动打开上述同一只读入口，不新建 API、
+      页面、Scenario 运行时或 candidate 通道（2026-07-30）。
 
 ## 5. P2 · 接真实 Guance 和影子评估
 
