@@ -88,7 +88,15 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   新增默认不激活的 `csp-clouddial-pilot` Profile，只在操作员提供必填 workspace ID 后加载唯一资产授权，
   并按部署快照绑定 `D::http_dial_testing` 任务
   `客服数字化平台-首页-可用性监控`。Guance 仍默认关闭，API Key 仍只允许从环境注入，
-  `.prd` 明文 HTTP 端点继续 fail closed，需 HTTPS/受控 TLS 代理后才可真跑；尚未真实调用，不代表 T7/T8 通过。
+  明文 HTTP 默认 fail closed；仅本地进程可在操作员明确授权后临时开启，正式部署仍必须关闭并迁移到
+  HTTPS/受控 TLS 代理。尚未由自动化真实调用，不代表 T7/T8 通过。
+- **部署图拨测 SOP 真实触发入口（2026-07-30）**：正式 `/troubleshooting` 队列新增“部署图拨测 SOP”，
+  管理员上传 `chain-board.runtime-topology-snapshot` 后调用
+  `POST /api/v1/troubleshooting/sops/deployment-topology/analyze`。服务端有界解析所有节点，仅对同时具有
+  `url + guance_url` 的节点经现有 `EvidenceSourceRouter` 执行 Guance-only `synthetic_probe`；上传的
+  `guance_url` 只提供任务身份/时间窗，不能控制 API 主机或 DQL。当前样例为 21 节点、27 链路、1 个可执行
+  拨测。最多 32 个可执行拨测以 8 路并发共享 25 秒总预算，超时节点降级为 `UNAVAILABLE`，已完成结果保留。
+  结果不调模型、不落库、不返回原始响应/DQL/凭据；未覆盖节点不宣称健康，失败节点相邻链路只作核查提示。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
@@ -717,6 +725,12 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   正式工作台与 1.8 确定性主链一致，不代表 T7/T8、无码场景路或真实观测已经通过。
 - Standards / Spec 双轴最终复审均 PASS；并发权威替换、存量兼容写入旁路、失败态伪空合同、重复编排、
   来源版本命名和残留非锁定 service 查询入口均已关闭，最终代码范围无剩余 P0–P3。
+- 部署图拨测 SOP 增量完成后，排障域 + Skill Manifest 后端 `515` 个测试、前端 `21` 个测试文件 /
+  `153` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建
+  均通过。后端 PID `27460` 监听 `18088` 且 health 为 UP，前端 PID `92308` 监听 `5173`。登录态应用内
+  浏览器已加载真实样例部署图并确认 `21` 节点 / `27` 链路 / `1` 个可执行拨测 / `20` 个未配置节点，
+  控制台 0 error；自动化没有点击“运行只读拨测 SOP”，因此没有向外部 Guance 发送 API Key，也不把
+  此次入口验收表述为真实 canonical 返回或 T7/T8 通过。
 
 后端定向测试命令：
 
@@ -737,8 +751,9 @@ mvn -pl mateclaw-server -am \
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
-5. P2 T6 授权机制和真源验证接缝已完成；下一主攻是由 owner 在运行时配置真实资产映射，
-   用正式工作台的“P2 真源门”跑通首个会议案例，再完成 T7 字段核实和 20–30 条 T8 影子样本。
+5. P2 T6 授权机制、真源验证接缝和部署图拨测 SOP 入口已完成；下一主攻是由 owner 在本地联调进程
+   运行样例部署图，核对首个 `synthetic_probe` 的真实 canonical 返回，再用正式工作台的“P2 真源门”
+   完成 T7 字段核实和 20–30 条 T8 影子样本。
 6. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 
 ## 10. 不要做

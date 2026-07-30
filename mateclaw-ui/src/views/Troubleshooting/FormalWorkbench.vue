@@ -27,6 +27,9 @@
           <el-button v-if="canManageTroubleshooting" size="small" text @click="guanceOnboardingOpen = true">
             P2 真源接入
           </el-button>
+          <el-button v-if="canManageTroubleshooting" size="small" text @click="deploymentTopologyOpen = true">
+            部署图拨测 SOP
+          </el-button>
           <el-button v-if="canManageTroubleshooting" size="small" text @click="openEvaluationLedger">
             T8 样本台账
           </el-button>
@@ -429,6 +432,8 @@
       @start-validation="startGuanceValidationFromOnboarding"
     />
 
+    <DeploymentTopologySopDialog v-model="deploymentTopologyOpen" />
+
     <el-dialog v-model="guanceValidationOpen" title="Guance 真源验收" width="min(620px, calc(100vw - 32px))">
       <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
       <el-form label-position="top">
@@ -670,6 +675,7 @@ import {
 import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
+import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import {
   canAttachGuanceResultToDiagnosis,
   isActiveGuanceValidationSession,
@@ -809,6 +815,7 @@ const replayCaptureDisabledReason = computed(() => {
 
 const incidentReportOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
+const deploymentTopologyOpen = ref(false)
 const guanceValidationOpen = ref(false)
 const evaluationLedgerOpen = ref(false)
 const transferOpen = ref(false)

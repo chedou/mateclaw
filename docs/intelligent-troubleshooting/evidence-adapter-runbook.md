@@ -3,7 +3,7 @@
 > 状态（2026-07-30）：**工程链路与 T6 显式租户授权门已实现；P6 前置的
 > `log_search` / `log_trace_bundle` 已具备 schema、路由、Guance 草案绑定与脱敏回放。
 > 首个 `csp-deployment / csp-prm-miniapp / synthetic_probe` 已按部署快照写入默认不激活的试点 Profile，含精确资产授权和
-> CloudDial DQL 绑定，但尚未用新密钥完成内网真实查询。**
+> CloudDial DQL 绑定，并已接入正式工作台的部署图批量触发入口，但尚未用新密钥完成内网真实查询。**
 > 因此 `fixtureMode` 仍为 `true`，默认数据源均关闭，不能把当前结果表述为“真实取证已验证”。
 
 ## 1. 已落地的链路
@@ -78,8 +78,10 @@ MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统注入>
 ```
 
 如部署已有其他 Spring Profile，应将 `csp-clouddial-pilot` 追加到原列表，不要覆盖数据库等现有 Profile。
-用户提供的 `http://df-openapi.prd.sangfor.com` 已记录在试点配置中，但因为它是 `.prd` 明文 HTTP，
-当前安全门会故意拒绝携 Key 访问。在取得 HTTPS 端点或受控 TLS 代理之前，不得为该生产地址开启 insecure HTTP。
+用户提供的 `http://df-openapi.prd.sangfor.com` 已记录在试点配置中。该端点使用明文 HTTP，系统默认会拒绝携 Key 访问；
+仅在本地联调进程中、获得操作员本次明确授权后，才可临时设置
+`MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`。该例外不改变正式部署策略：生产进程不得开启，
+后续仍应切换到 HTTPS 端点或受控 TLS 代理。
 
 已经在聊天、工单或日志中出现过的 Key 必须先作废并换新，不得用于本次真实联调。
 
@@ -100,7 +102,8 @@ mateclaw.troubleshooting.evidence.guance:
 首尾空格后出现歧义，也会 fail closed。授权关系可进外部运行配置；API Key 仍只能由密钥系统注入。
 
 默认拒绝通过明文 HTTP 发送 API Key。只有可信且隔离、确实没有 TLS 的测试网才可临时设置
-`MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`，生产环境不得开启。
+`MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`；本次 `.prd` 主机的本地联调属于操作员显式批准的
+一次性例外，不得写入仓库配置、不得继承到生产进程，联调结束后应关闭。生产环境不得开启。
 
 不要把 API Key 写入 YAML、日志、故障原文或 replay JSON。适配器按观测云 Open API 要求把它放入
 `DF-API-KEY` 请求头，并调用 `POST /api/v1/df/query_data_v1`。参考：
@@ -116,6 +119,31 @@ MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 随仓样本包含合成的 `order-svc / 903001 / synthetic-trace-903001`，以及无错误码的
 `csdp-session-service / 会话消息发送失败 / synthetic-ps-message-send-001`。回放键允许
 `errorCode` 缺省，二者都只用于回归合同，不代表生产事实。
+
+### 2.1 部署图拨测 SOP 触发入口
+
+管理员可在正式 `/troubleshooting` 工作台点击“部署图拨测 SOP”，上传
+`chain-board.runtime-topology-snapshot` JSON；对应接口为：
+
+```http
+POST /api/v1/troubleshooting/sops/deployment-topology/analyze
+X-Workspace-Id: <当前 MateClaw workspace id>
+Content-Type: application/json
+
+{"snapshot": <部署图运行时快照>}
+```
+
+服务端对输入执行 512 KiB、100 节点、300 链路、最多 32 个可执行拨测的上限与秘密字段检查，逐个解析节点。只有同时包含
+`url` 与 `guance_url` 的节点会生成 `synthetic_probe` 请求；`guance_url` 只提供拨测任务身份和最多 24 小时的
+窗口，不能控制 Guance API 主机或 DQL。每个请求均通过唯一的 `EvidenceSourceRouter`，并把允许源硬限制为
+`guance`，不会回退 Recorded Replay。批量执行最多 8 路并发、共享 25 秒总预算；超时节点降级为
+`UNAVAILABLE`，已完成节点的证据仍返回。当前样例识别 21 个节点、27 条链路、1 个可执行拨测。
+
+响应只投影节点覆盖、HTTP 状态、canonical 目标/任务身份、证据引用和与失败节点相邻的拓扑提示；相邻链路
+不等于已证明的故障 hop 或根因。入口不调用模型、不持久化结果，不返回 API Key、DQL 或原始响应，也不会把
+未配置拨测的节点描述为健康。一次成功运行仍只是当前部署快照的只读观测，不代表 T7/T8 已通过。
+该入口是部署图 `synthetic_probe` 的首个专项 SOP，不替代错误码、场景 Playbook、开放探索或其他证据能力；
+通用 `ReadOnlyEvidenceToolRegistry` 仍按架构计划在真实 Tool 合同稳定后实现，本次不提前伪造空注册平台。
 
 ## 3. canonical 字段
 

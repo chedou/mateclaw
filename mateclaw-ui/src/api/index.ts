@@ -2395,6 +2395,69 @@ export interface GuanceEvidenceSpinePreview {
   warnings: string[]
 }
 
+export type DeploymentTopologyAnalysisStatus =
+  | 'NO_PROBES_CONFIGURED'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'PARTIAL_OBSERVATION'
+  | 'NETWORK_PROBLEM_DETECTED'
+  | 'NO_PROBLEM_OBSERVED'
+
+export type DeploymentTopologyObservationStatus =
+  | 'HEALTHY'
+  | 'FAILED'
+  | 'UNAVAILABLE'
+  | 'IDENTITY_MISMATCH'
+
+export interface DeploymentTopologySopSummary {
+  nodeCount: number
+  linkCount: number
+  configuredProbeNodes: number
+  observedProbeNodes: number
+  healthyProbeNodes: number
+  failingProbeNodes: number
+  unavailableProbeNodes: number
+}
+
+export interface DeploymentTopologyNodeObservation {
+  nodeKey: string
+  label: string
+  type: string
+  targetUrl: string
+  probeName: string
+  window: string
+  status: DeploymentTopologyObservationStatus
+  statusCode: number | null
+  observedTargetUrl: string
+  observedProbeName: string
+  evidenceRef: string
+  detail: string
+  collectedAt: string | null
+}
+
+export interface DeploymentTopologySuspectLink {
+  source: string
+  target: string
+  reason: 'ADJACENT_TO_FAILED_PROBE'
+}
+
+/** Live-read result only. It never contains an API key, DQL, or raw Guance rows. */
+export interface DeploymentTopologySopResult {
+  schemaVersion: string
+  system: string
+  systemLabel: string
+  snapshotExportedAt: string
+  signalKind: 'synthetic_probe'
+  status: DeploymentTopologyAnalysisStatus
+  summary: DeploymentTopologySopSummary
+  observations: DeploymentTopologyNodeObservation[]
+  suspectLinks: DeploymentTopologySuspectLink[]
+  unconfiguredNodeKeys: string[]
+  warnings: string[]
+  completedAt: string
+  modelCalled: false
+  persisted: false
+}
+
 export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
 export type EvaluationSampleReferenceStatus = 'EVIDENCE_CAPTURED' | 'READY_FOR_EVALUATION'
 export type EvaluationExpectedDisposition = 'DRAFT' | 'ABSTAIN'
@@ -2685,6 +2748,12 @@ export const troubleshootingApi = {
   previewGuanceEvidenceSpine: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceSpinePreview>(
     '/troubleshooting/evidence/guance/spine/preview', data,
   ),
+
+  /** Parses a deployment snapshot and runs only its server-authorized Guance probes. */
+  analyzeDeploymentTopology: (snapshot: Record<string, unknown>) =>
+    http.post<DeploymentTopologySopResult>(
+      '/troubleshooting/sops/deployment-topology/analyze', { snapshot },
+    ),
 
   /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */
   captureGuanceEvaluationSample: (data: CaptureEvaluationSampleRequest) =>

@@ -190,7 +190,12 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 2026-07-30：首个试点已写入默认不激活的 `csp-clouddial-pilot` Profile，激活时必须提供精确授权
 `${MATECLAW_TROUBLESHOOTING_CSP_WORKSPACE_ID} / csp-deployment / csp-prm-miniapp / synthetic_probe`，
 并把 `D::http_dial_testing` 标准请求外层、任务名、列映射写入 Guance Adapter 与配置。开关、API Key 和
-明文 HTTP 许可仍全部 fail closed；尚未发起真实请求。
+明文 HTTP 许可默认仍 fail closed；仅本地联调可在操作员明确授权后临时设置
+`MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`，正式部署仍禁止。正式工作台已增加管理员
+“部署图拨测 SOP”入口与 `/api/v1/troubleshooting/sops/deployment-topology/analyze`：上传快照后解析所有节点，
+只把同时具备 `url + guance_url` 的节点经既有 Router/Guance Adapter 批量查询。本次样例为 21 节点、
+27 链路、1 个可执行拨测；其他 20 个节点保持未覆盖。入口最多接受 32 个可执行拨测，以 8 路并发共享
+25 秒总预算，超时节点只记 `UNAVAILABLE` 并保留已完成结果。尚未由自动化发起携 Key 的真实 HTTP 请求。
 单次验证报告只保留匹配数、PS ID、trace 节点数、证据引用和时间戳；不保留原始行、
 查询文本或凭据。验证报告现同时返回每个 Guance 核心信号与端到端的应用侧 round-trip 耗时，
 作为后续 T8“取证时延”的同口径输入；它不冒充 Guance 服务端 DQL 执行耗时，后者仍需 owner
@@ -206,7 +211,8 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       调用前强制校验当前指纹。该接缝不代表下面任何真实核实项已完成。
 - [ ] 核实真实 measurement、字段名、索引、PS ID、时间戳单位、时间窗和 DQL 延迟。
 - [ ] 用旋转后的 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
-      先获取 HTTPS 端点或受控 TLS 代理，不得对 `.prd` 明文 HTTP 开启 insecure 传输，不得提交 Key。
+      本地联调可按本次操作员明确授权临时开启 insecure HTTP，完成后立即关闭；正式部署仍须使用 HTTPS
+      端点或受控 TLS 代理，不得提交 Key。
 - [ ] 用会议案例跑真实 `log_search → log_trace_bundle`，确认同一 PS ID 全链路。
 - [ ] 核实 903001 的字段/阈值与三处历史 route key 冲突；这只阻塞错误码竖线，不阻塞 P1 fixture。
 - [ ] 真实源未验收前 `fixtureMode` 不得改为 false。
