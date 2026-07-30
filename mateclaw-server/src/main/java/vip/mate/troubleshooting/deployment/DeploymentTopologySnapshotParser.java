@@ -38,6 +38,20 @@ public final class DeploymentTopologySnapshotParser {
     private static final Pattern WINDOW = Pattern.compile("([1-9][0-9]{0,3})([smhd])");
     private static final int MAX_SNAPSHOT_BYTES = 512 * 1024;
     private static final int MAX_TEXT = 256;
+    private static final Set<String> REQUIRED_GUANCE_QUERY_PARAMETERS =
+            Set.of("viewer_source", "w", "query", "time");
+    private static final Set<String> OPTIONAL_GUANCE_PRESENTATION_PARAMETERS =
+            Set.of("lak", "activeName", "cols", "viewType");
+    private static final Set<String> SUPPORTED_GUANCE_QUERY_PARAMETERS =
+            Set.of(
+                    "viewer_source",
+                    "w",
+                    "query",
+                    "time",
+                    "lak",
+                    "activeName",
+                    "cols",
+                    "viewType");
 
     private final ObjectMapper objectMapper;
 
@@ -180,11 +194,14 @@ public final class DeploymentTopologySnapshotParser {
                     + " guance_url must be an HTTP(S) URL without user info or fragment");
         }
         Map<String, List<String>> params = queryParameters(explorer, nodeKey);
-        Set<String> supportedParameters = Set.of("viewer_source", "w", "query", "time");
-        if (!params.keySet().equals(supportedParameters)) {
+        if (!params.keySet().containsAll(REQUIRED_GUANCE_QUERY_PARAMETERS)
+                || !SUPPORTED_GUANCE_QUERY_PARAMETERS.containsAll(params.keySet())) {
             throw badRequest("node " + nodeKey
                     + " guance_url contains unsupported query parameters");
         }
+        OPTIONAL_GUANCE_PRESENTATION_PARAMETERS.stream()
+                .filter(params::containsKey)
+                .forEach(name -> singleParameter(params, name, nodeKey));
         if (!"http_dial_testing".equals(singleParameter(params, "viewer_source", nodeKey))) {
             throw badRequest("node " + nodeKey + " guance_url has an unsupported viewer_source");
         }

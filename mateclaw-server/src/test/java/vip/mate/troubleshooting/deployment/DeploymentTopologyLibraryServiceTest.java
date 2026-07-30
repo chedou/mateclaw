@@ -114,6 +114,32 @@ class DeploymentTopologyLibraryServiceTest {
     }
 
     @Test
+    void acceptsKnownGuanceExplorerPresentationParametersWithoutPersistingThem() {
+        ObjectNode supplied = snapshot();
+        ArrayNode nodes = (ArrayNode) supplied.withObject("topology").get("nodes");
+        ObjectNode probeNode = (ObjectNode) nodes.get(0);
+        probeNode.put(
+                "guance_url",
+                probeNode.path("guance_url").asText()
+                        + "&lak=CloudDial"
+                        + "&activeName=CloudDialExplorer"
+                        + "&cols=time,url,response_time,country,province,city"
+                        + "&viewType=view");
+
+        service.importTopology(7L, "真实观测云拓扑", supplied, "alice");
+
+        org.mockito.ArgumentCaptor<TroubleshootingDeploymentTopologyEntity> entityCaptor =
+                org.mockito.ArgumentCaptor.forClass(
+                        TroubleshootingDeploymentTopologyEntity.class);
+        verify(mapper).insert(entityCaptor.capture());
+        assertThat(entityCaptor.getValue().getSnapshotJson())
+                .doesNotContain("CloudDialExplorer")
+                .doesNotContain("response_time")
+                .doesNotContain("viewType")
+                .contains("metadata.invalid");
+    }
+
+    @Test
     void rejectsImportWhenTheWorkspaceCannotBeLocked() {
         when(mapper.lockWorkspace(7L)).thenReturn(null);
 
