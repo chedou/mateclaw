@@ -212,9 +212,11 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `DiagnosisExperienceProjection` / `DiagnosisExperienceProjectionService` 与
   `GET /api/v1/troubleshooting/diagnoses/{id}/projection`；同一 Diagnosis 生成
   `BusinessSummary` 和 `DeveloperEvidenceView`，构造器落实结论置信、精确人数证据引用等不变量。
-- **正式路由已吸收选定信息结构**：`/troubleshooting` 读取队列、完整 Diagnosis 与双投影真实 API，
-  业务摘要默认展开、开发证据默认折叠，并保留确认、转派、批准不执行、登记外部结果和关闭能力。
-  原工作台临时迁到 `/troubleshooting/legacy`，携同一个 `diagnosisId` 可直接回退。
+- **正式路由已吸收选定信息结构**：`/troubleshooting` 读取队列、完整 Diagnosis 与双投影真实 API；
+  无查询参数时默认进入全宽传统列表，用户可切换到紧凑队列，点击列表记录或携带 `diagnosisId` 的深链仍会
+  直接打开对应处置详情。业务摘要默认展开、开发证据默认折叠，并保留确认、转派、批准不执行、登记外部
+  结果和关闭能力；低频管理入口统一收进“更多能力”菜单。原工作台临时迁到
+  `/troubleshooting/legacy`，携同一个 `diagnosisId` 可直接回退。
 - **Diagnosis 1.5 运行时事实已落地（2026-07-29）**：显式持久化
   `investigationMode` / `routeAuthority` / `conclusionType` / `NorthStarTimings`，保持 1.3/1.4 JSON 兼容；
   规则被已取得证据全部反证时产出可确认的 `EXCLUDED`，缺证据才是 `INSUFFICIENT_EVIDENCE`。
@@ -731,6 +733,11 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   浏览器已加载真实样例部署图并确认 `21` 节点 / `27` 链路 / `1` 个可执行拨测 / `20` 个未配置节点，
   控制台 0 error；自动化没有点击“运行只读拨测 SOP”，因此没有向外部 Guance 发送 API Key，也不把
   此次入口验收表述为真实 canonical 返回或 T7/T8 通过。
+- 排障队列传统列表增量完成后，前端 `22` 个测试文件 / `158` 个测试全部通过；`vue-tsc --noEmit`、
+  变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建均通过，构建完成 `6294` 个模块转换。登录态
+  应用内浏览器确认无参数默认列表、列表/队列切换、列表记录进入详情、无 `view` 的 `diagnosisId` 历史
+  深链和“更多能力”5 个入口均正常，控制台 0 error；该增量只改变队列呈现，不改变真实 API、只读证据
+  与禁止生产写入边界。
 
 后端定向测试命令：
 

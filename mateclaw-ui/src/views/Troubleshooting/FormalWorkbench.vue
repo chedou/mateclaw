@@ -1,9 +1,28 @@
 <template>
-  <div class="formal-workbench">
+  <div class="formal-workbench" :class="{ 'traditional-list-mode': viewMode === 'LIST' }">
+    <DiagnosisListView
+      v-if="viewMode === 'LIST'"
+      v-model:status-filter="statusFilter"
+      :rows="rows"
+      :loading="listLoading"
+      :can-operate="canOperateTroubleshooting"
+      :can-manage="canManageTroubleshooting"
+      @refresh="loadList(false)"
+      @report="openIncidentReport"
+      @capability-command="handleCapabilityCommand"
+      @open-diagnosis="openDiagnosisFromList"
+      @switch-view="switchWorkbenchView('QUEUE')"
+      @open-legacy="openLegacy"
+    />
+
+    <template v-else>
     <aside class="queue-panel">
       <header class="queue-head">
         <div><span class="eyebrow">MateClaw</span><h2>排障队列</h2></div>
-        <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
+        <div class="queue-head-actions">
+          <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
+          <WorkbenchViewSwitch :mode="viewMode" compact @change="switchWorkbenchView" />
+        </div>
       </header>
       <div class="queue-tools">
         <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="loadList(false)">
@@ -18,21 +37,11 @@
             :icon="Plus"
             @click="openIncidentReport"
           >上报事件</el-button>
-          <el-button v-if="canManageTroubleshooting" size="small" text @click="router.push('/troubleshooting/sops')">
-            Playbook 管理
-          </el-button>
-          <el-button v-if="canManageTroubleshooting" size="small" text @click="openSynthesisPreview">
-            无码证据预览
-          </el-button>
-          <el-button v-if="canManageTroubleshooting" size="small" text @click="guanceOnboardingOpen = true">
-            P2 真源接入
-          </el-button>
-          <el-button v-if="canManageTroubleshooting" size="small" text @click="deploymentTopologyOpen = true">
-            部署图拨测 SOP
-          </el-button>
-          <el-button v-if="canManageTroubleshooting" size="small" text @click="openEvaluationLedger">
-            T8 样本台账
-          </el-button>
+          <WorkbenchCapabilityMenu
+            v-if="canManageTroubleshooting"
+            size="small"
+            @command="handleCapabilityCommand"
+          />
         </div>
       </div>
       <div v-loading="listLoading" class="queue-list">
@@ -363,6 +372,7 @@
         </details>
       </template>
     </main>
+    </template>
 
     <el-dialog
       v-model="incidentReportOpen"
@@ -676,6 +686,9 @@ import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPr
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
+import DiagnosisListView from './DiagnosisListView.vue'
+import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
+import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
   canAttachGuanceResultToDiagnosis,
   isActiveGuanceValidationSession,
@@ -689,11 +702,17 @@ import {
   replayEvaluationCaptureContext,
   suggestedEvaluationScenarioKey,
 } from './evaluationSamples'
+import {
+  WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
+  diagnosisStatusLabel as statusLabel,
+  diagnosisStatusTone as statusTone,
+  formatWorkbenchTime as shortTime,
+  resolveWorkbenchView,
+  workbenchViewQuery,
+  type WorkbenchCapabilityCommand,
+  type WorkbenchViewMode,
+} from './workbenchView'
 
-const STATUSES: DiagnosisStatus[] = ['READY_FOR_HUMAN', 'NEEDS_INVESTIGATION', 'CONFIRMED', 'TRANSFERRED', 'CLOSED']
-const STATUS_LABEL: Record<DiagnosisStatus, string> = {
-  READY_FOR_HUMAN: '待确认', NEEDS_INVESTIGATION: '需人工深查', CONFIRMED: '已确认', TRANSFERRED: '已转派', CLOSED: '已关闭',
-}
 const BLAST_RADIUS_LABEL: Record<BlastRadius, string> = {
   SINGLE_CUSTOMER: '单客户影响', MULTI_CUSTOMER: '多客户影响', SYSTEM_WIDE: '系统级影响', UNKNOWN: '影响范围未知',
 }
@@ -712,6 +731,7 @@ const selectedId = ref<string | null>(null)
 const current = ref<StoredDiagnosis | null>(null)
 const projection = ref<DiagnosisExperienceProjection | null>(null)
 const statusFilter = ref<DiagnosisStatus | ''>('')
+const viewMode = ref<WorkbenchViewMode>(resolveWorkbenchView(route.query.view, route.query.diagnosisId))
 const listLoading = ref(false)
 const detailLoading = ref(false)
 const actionLoading = ref(false)
@@ -861,13 +881,50 @@ const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
 
-function statusLabel(status: DiagnosisStatus) { return STATUS_LABEL[status] }
-function statusTone(status: DiagnosisStatus) {
-  if (status === 'NEEDS_INVESTIGATION') return 'warning'
-  if (status === 'CLOSED') return 'muted'
-  if (status === 'CONFIRMED' || status === 'TRANSFERRED') return 'success'
-  return 'active'
+async function replaceWorkbenchRoute(mode: WorkbenchViewMode, diagnosisId?: string | null) {
+  const query = { ...route.query }
+  delete query.view
+  delete query.diagnosisId
+  Object.assign(query, workbenchViewQuery(mode, diagnosisId))
+  await router.replace({ query })
 }
+
+async function switchWorkbenchView(mode: WorkbenchViewMode) {
+  viewMode.value = mode
+  if (mode === 'LIST') {
+    await replaceWorkbenchRoute('LIST')
+    return
+  }
+
+  const queryDiagnosisId = typeof route.query.diagnosisId === 'string'
+    ? route.query.diagnosisId
+    : null
+  const target = queryDiagnosisId || selectedId.value || rows.value[0]?.diagnosisId
+  if (target) {
+    await selectDiagnosis(target)
+  } else {
+    await replaceWorkbenchRoute('QUEUE')
+  }
+}
+
+async function openDiagnosisFromList(row: DiagnosisSummary) {
+  await selectDiagnosis(row.diagnosisId)
+}
+
+function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
+  if (command === 'playbooks') {
+    void router.push('/troubleshooting/sops')
+  } else if (command === 'synthesis') {
+    openSynthesisPreview()
+  } else if (command === 'guance') {
+    guanceOnboardingOpen.value = true
+  } else if (command === 'deployment') {
+    deploymentTopologyOpen.value = true
+  } else if (command === 'ledger') {
+    openEvaluationLedger()
+  }
+}
+
 function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
 function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
 function readinessTone(value: GuanceReadinessStatus) {
@@ -903,7 +960,6 @@ function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
   return '未执行'
 }
 function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
-function shortTime(value?: string | null) { return value ? value.replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 19) : '—' }
 function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   return kind === 'CRITERION' ? '判据' : shortTime(value).slice(11)
 }
@@ -968,6 +1024,7 @@ async function loadList(autoSelect = true) {
 
 async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
   const version = ++selectionVersion
+  viewMode.value = 'QUEUE'
   selectedId.value = diagnosisId
   detailLoading.value = true
   guanceOnboardingOpen.value = false
@@ -993,7 +1050,9 @@ async function selectDiagnosis(diagnosisId: string, updateQuery = true) {
     guanceOwnerAcceptance.value = null
     replayCapability.value = null
     readinessError.value = ''
-    if (updateQuery && route.query.diagnosisId !== diagnosisId) await router.replace({ query: { ...route.query, diagnosisId } })
+    if (updateQuery && (route.query.diagnosisId !== diagnosisId || route.query.view !== 'queue')) {
+      await replaceWorkbenchRoute('QUEUE', diagnosisId)
+    }
     void loadGuanceReadiness(
       diagnosisResponse.data.diagnosis.incident.system,
       diagnosisResponse.data.diagnosis.incident.service,
@@ -1299,22 +1358,32 @@ async function close() {
   closeOpen.value = false
 }
 
-watch(() => route.query.diagnosisId, (value) => {
-  if (typeof value === 'string' && value && value !== selectedId.value) selectDiagnosis(value, false)
-})
-onMounted(() => loadList(true))
+watch(
+  [() => route.query.view, () => route.query.diagnosisId],
+  ([queryView, diagnosisId]) => {
+    const nextMode = resolveWorkbenchView(queryView, diagnosisId)
+    viewMode.value = nextMode
+    if (nextMode === 'QUEUE' && typeof diagnosisId === 'string' && diagnosisId && diagnosisId !== selectedId.value) {
+      void selectDiagnosis(diagnosisId, false)
+    }
+  },
+)
+onMounted(() => loadList(viewMode.value === 'QUEUE'))
 </script>
 
 <style scoped>
 .formal-workbench { --ink:#172033; --muted:#667085; --line:#e1e6ef; --soft:#f5f7fb; --blue:#2f5cf5; --green:#138a58; --amber:#b54708; --red:#d92d20; display:grid; grid-template-columns:264px minmax(0,1fr); height:100%; overflow:hidden; color:var(--ink); background:#f4f6fa; }
+.formal-workbench.traditional-list-mode { display:block; overflow-y:auto; }
 .queue-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:#fff; border-right:1px solid var(--line); }
 .queue-head { display:flex; align-items:center; justify-content:space-between; padding:18px 16px 14px; border-bottom:1px solid var(--line); }
+.queue-head-actions { display:flex; align-items:flex-end; flex-direction:column; }
 .eyebrow { display:block; color:var(--blue); font-size:10px; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
 .queue-head h2 { margin:4px 0 0; font-size:17px; letter-spacing:-.02em; }
 .queue-tools { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
 .queue-tools .el-select { flex:1; min-width:0; }
 .queue-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
-.queue-action-row .el-button { flex:1 1 70px; margin-left:0; }
+.queue-action-row>.el-button,.queue-action-row>.el-dropdown { flex:1 1 92px; margin-left:0; }
+.queue-action-row>.el-dropdown .el-button { width:100%; margin-left:0; }
 .queue-list { flex:1; min-height:0; overflow-y:auto; }
 .queue-item { width:100%; padding:13px 14px 12px; border:0; border-bottom:1px solid #edf0f5; border-left:3px solid transparent; background:#fff; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .queue-item:hover { background:#f8f9fc; } .queue-item.active { border-left-color:var(--blue); background:#f1f4ff; }
