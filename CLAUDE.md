@@ -88,7 +88,8 @@ P0 含 record 契约、6 类 sealed 规则、确定性命中编排、人工控�
 `SopSynthesisService` 已完成 `log_search → PS ID → log_trace_bundle → contrast_sample →
 确定性压缩 → 一次结构化归纳 → Validator → ReferenceSolution 比较 → 幂等 candidate` 的
 fixture-only P1 竖线；候选始终 `NOT_ELIGIBLE`，不能直升 approved。
-**注意：P4 开关默认关闭，专用 Agent 尚未按运行手册配置和实机演练；Guance `asset-bindings` 默认空，
+**注意：P4 开关默认关闭；本地 Workspace 已按运行手册完成专用 Agent 配置和首次受限
+miss-path 演练，其他环境仍需独立配置与验收；Guance `asset-bindings` 默认空，
 观测云 measurement/字段/阈值仍未完成内网 T7 核实，两个数据源默认关闭，`fixtureMode` 仍恒 true。
 单次验证成功也只证明一个样本的传输与 canonical contract 可用，绝不等于 T7 验收。**
 

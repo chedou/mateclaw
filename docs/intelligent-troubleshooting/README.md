@@ -83,7 +83,8 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   `ClosureRecord`；交互卡片仍单独暂缓。
 - Loop Engineering 与多 Agent 反证已进入现行目标设计，但 P1 不实现；P2 先做固定角色影子评测，
   P4 才为 SCENARIO / OPEN_DISCOVERY 引入领域 Loop Control。
-- P4 默认关闭，尚未完成专用 Agent 与唯一模型的实机演练。
+- P4 默认关闭；本地 Workspace 已完成专用 Agent、唯一可用模型与唯一只读工具的
+  首次受限 miss-path 演练，其他环境仍需独立配置验收，该结果不代表 Guance T7/T8。
 - Guance Adapter 与 Recorded Replay Adapter 已接到统一 Router。CSDP SendMsg 的
   `log_search / log_trace_bundle / contrast_sample` 已在真实 Guance `csp-rpc-msg` 数据上
   首次返回 `FULL_SPINE_OBSERVED`；trace 从单条原子 JSON 日志提取白名单字段，成功样本对照使用

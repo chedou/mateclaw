@@ -1,7 +1,9 @@
 # P4 未命中路只读 Agent 运行手册
 
-> 状态（2026-07-27）：**工程链路已实现，默认关闭，尚未完成专用 Agent 配置和真实 miss-path 演练。**
-> 本手册只允许开启只读分诊；它不授权生产写，也不改变 `fixtureMode=true`。
+> 状态（2026-07-31）：**工程链路已实现，本地 Workspace 已完成专用 Agent 配置与首次受限
+> miss-path 演练；默认仍关闭，其他环境必须独立配置和验收。**
+> 本手册只允许开启只读分诊；它不授权生产写，也不改变 `fixtureMode=true`，
+> 本地 miss-path 演练通过不代表 Guance T7/T8 验收。
 
 ## 1. 安全合同
 
@@ -137,6 +139,25 @@ MATECLAW_TROUBLESHOOTING_AGENT_ENABLED=true
 这些配置在应用启动时绑定；修改后按部署方式重启或滚动发布。任一代码可校验的 Agent/模型配置条件不满足时，
 服务会在模型请求前返回 `err.troubleshooting.agent_misconfigured`（HTTP 409），不会自动放宽配置。
 证据源可用性、PAT/JWT 权限与 ToolGuard 部署策略仍需按验收矩阵另行核对；没有可用证据源时是安全弃权，不是 409。
+
+### 4.1 本地开发启动
+
+Spring Boot 不会自动读取仓库根目录的 `.env.guance.local`。直接运行
+`mvn spring-boot:run` 会丢失其中的 Agent ID 与开关，表现为页面返回
+`troubleshooting miss-path Agent is disabled`。本地联调统一使用下面的启动器：
+
+```bash
+# 只校验配置，不启动进程，也不输出 Agent ID 或凭据
+scripts/run-troubleshooting-dev.sh --check
+
+# 加载已忽略的 .env.guance.local 并启动后端
+scripts/run-troubleshooting-dev.sh
+```
+
+启动器会在 `MATECLAW_TROUBLESHOOTING_AGENT_ENABLED=true` 时提前检查 Agent ID、
+迭代数、证据请求数和 prompt 预算；任一值越界即拒绝启动。它不打印或复制
+`MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY`，真实 Agent ID 与 API Key 仍只能放在已忽略的
+本地文件或部署密钥系统。
 
 ## 5. 验收矩阵
 
