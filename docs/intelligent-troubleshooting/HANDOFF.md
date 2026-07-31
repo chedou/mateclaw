@@ -848,6 +848,12 @@ P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
   与单关键词聚合均可用，但已审核的 `failed AND sendmsg` 在当前 24 小时和运行手册历史窗口均返回 0，
   因此完整预览按设计停在 `log_search=MISSING`。没有提交 owner acceptance，也没有伪造或持久化 T8 样本；
   下一次执行需要 owner 提供仍可命中的历史故障时间窗，或审核一份新的失败筛选合同。
+- 2026-08-01 再次按已审核合同只读重试：当前诊断窗口内 `sendmsg` 有 307 条，但 `failed` 与 `error`
+  均为 0；2026-07-20 至 2026-08-01 的 24 小时以内分段扫描也未命中 `failed AND sendmsg`。对当前
+  24 小时的 `fail / timeout / exception / panic / warn / errcode AND sendmsg` 候选扫描同样为 0。
+  排查期间另做过一次不经过产品 Connector 的真源直连 7 天探索查询，真源返回 504；该查询超出产品合同允许的
+  24 小时窗口，不能作为产品运行或验收证据，也不能据此修改合同。本次仍不提交 T7 acceptance、不生成 T8 样本；
+  唯一下一输入是授权测试环境中一次真实 SendMsg 失败的精确时间，或仍在 Guance 保留期内的失败时间窗。
 - 这只证明“三次真源取证 + 确定性压缩 + 双投影”的首个真实竖线可执行。当前没有
   Workspace owner `ACCEPTED` 记录，也没有持久化到 T8 历史样本台账；`fixtureMode`
   不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，

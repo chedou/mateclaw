@@ -372,7 +372,9 @@
           当前配置指纹
           <code>{{ shortFingerprint(validationDialogOwnerAcceptance.currentBindingFingerprint) }}</code>
         </small>
-        <small v-for="blocker in validationDialogOwnerAcceptance.blockers" :key="blocker">{{ blocker }}</small>
+        <small v-for="blocker in validationDialogOwnerAcceptance.blockers" :key="blocker">
+          {{ guanceOwnerBlockerLabel(blocker) }}
+        </small>
       </div>
       <div
         v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
@@ -520,6 +522,7 @@ import {
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import {
   canStartGuanceValidation,
+  guanceOwnerBlockerLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
 } from './formalProjection'
