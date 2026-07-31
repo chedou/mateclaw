@@ -811,9 +811,9 @@ T14 MANUAL 精确候选固定回放 Gate（2026-07-31）已实现，人工批准
   必需或可选取证绕过证明；MANUAL 完整合同统一校验版本、预算、安全字段、证据—判据—规则引用与动作边界，
   在线诊断和回放共用同一确定性规则解释器。后端排障域 + Skill Manifest `576` 个测试、前端 `23` 个测试文件 /
   `171` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建均通过，
-  构建完成 `6298` 个模块转换。仓库 `npm run build` 的前置脚本仍引用不存在的
-  `../scripts/check-snowflake-precision.sh`，因此本次直接执行其余类型检查与 Vite 构建，不把该既有基础设施缺口
-  混入排障域功能变更。本地 H2 已从 V188 成功迁移至 V189，最新代码后端 PID `16961` 正在运行；登录态应用内浏览器已确认
+  构建完成 `6298` 个模块转换。此前仓库 `npm run build` 的前置脚本引用了不存在的
+  `../scripts/check-snowflake-precision.sh`；本轮已补齐精度守卫，完整 `npm run build`（精度检查、
+  `vue-tsc --noEmit`、Vite 生产构建）恢复通过。本地 H2 已从 V188 成功迁移至 V189，登录态应用内浏览器已确认
   治理页可从服务端载入 `CSDP:scenario:deployment_topology_probe` 完整候选合同并解除表单校验，控制台 0 error。
   验收没有点击注册或运行回放，因此没有新增候选、证明、审批记录、Diagnosis 或外部 Guance 调用。
 
@@ -844,6 +844,10 @@ P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
   最终快照的失败对照为 `2/2`、显式成功终态对照为 `0/14047`（实时样本量会变化），
   且三个 Step 均为 `CANONICAL_RESULT_OBSERVED`；
   `sourceRequestCount=3`，没有回退 Replay。
+- 2026-07-31 晚间用当前代码和同一授权重新验证：端点、API Key、`csp-rpc-msg` measurement、三份 binding
+  与单关键词聚合均可用，但已审核的 `failed AND sendmsg` 在当前 24 小时和运行手册历史窗口均返回 0，
+  因此完整预览按设计停在 `log_search=MISSING`。没有提交 owner acceptance，也没有伪造或持久化 T8 样本；
+  下一次执行需要 owner 提供仍可命中的历史故障时间窗，或审核一份新的失败筛选合同。
 - 这只证明“三次真源取证 + 确定性压缩 + 双投影”的首个真实竖线可执行。当前没有
   Workspace owner `ACCEPTED` 记录，也没有持久化到 T8 历史样本台账；`fixtureMode`
   不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，

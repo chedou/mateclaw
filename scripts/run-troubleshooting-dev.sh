@@ -65,9 +65,44 @@ case "${1:-}" in
     ;;
 esac
 
-if [[ -z "${JAVA_HOME:-}" ]] && [[ -x /usr/libexec/java_home ]]; then
-  export JAVA_HOME
-  JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+java_major_version() {
+  local java_bin="$1"
+  local version
+  local major
+  if [[ ! -x "${java_bin}" ]]; then
+    return 1
+  fi
+  if ! version="$("${java_bin}" -version 2>&1)"; then
+    return 1
+  fi
+  version="$(printf '%s\n' "${version}" \
+    | awk -F'"' '/^[[:space:]]*(openjdk|java) version "/ { print $2; exit }')"
+  if [[ "${version}" == 1.* ]]; then
+    major="${version#1.}"
+  else
+    major="${version}"
+  fi
+  major="${major%%.*}"
+  printf '%s\n' "${major%%-*}"
+}
+
+if [[ -n "${JAVA_HOME:-}" ]]; then
+  current_java_bin="${JAVA_HOME}/bin/java"
+else
+  current_java_bin="$(command -v java || true)"
+fi
+current_java_major="$(java_major_version "${current_java_bin}" || true)"
+if [[ "${current_java_major}" != "21" ]] && [[ -x /usr/libexec/java_home ]]; then
+  detected_java_home="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+  if [[ "$(java_major_version "${detected_java_home}/bin/java" || true)" == "21" ]]; then
+    export JAVA_HOME="${detected_java_home}"
+    current_java_major="21"
+  fi
+fi
+
+if [[ "${current_java_major}" != "21" ]]; then
+  echo "MateClaw requires Java 21; set JAVA_HOME to a JDK 21 installation." >&2
+  exit 2
 fi
 
 cd "${repo_root}"

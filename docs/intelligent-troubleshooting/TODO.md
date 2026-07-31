@@ -521,8 +521,8 @@ Challenger 影子运行和两者对比仍未实现。
   node --max-old-space-size=6144 ./node_modules/vite/bin/vite.js build
   ```
 
-  当前 `npm run build` 会先调用缺失的 `../scripts/check-snowflake-precision.sh`，这是仓库既有构建脚本缺口；
-  不要把它误判为本次原型的类型/构建失败。
+  `../scripts/check-snowflake-precision.sh` 已补齐；当前 `npm run build` 会依次执行 Snowflake ID 精度检查、
+  `vue-tsc --noEmit` 和 Vite 生产构建，三段均通过后才算前端构建成功。
 
 - 新增表或列必须同时更新 MySQL、H2、Kingbase 三份 Flyway 迁移。
 - 不擅自开 PR；源表 xlsx 含真实 token/IP/人名，未入库且不得入库。
