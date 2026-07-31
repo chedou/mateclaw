@@ -64,6 +64,11 @@ const GUANCE_SPINE_PREVIEW_LABEL: Record<GuanceSpinePreviewStage, string> = {
   FULL_SPINE_OBSERVED: '完整 Evidence Spine 已观测（待 T7/T8 验收）',
 }
 
+const GUANCE_OWNER_BLOCKER_LABEL: Record<string, string> = {
+  'the current Guance binding has not been explicitly accepted by an owner':
+    '当前 Guance 绑定尚未由 Workspace owner 明确验收。',
+}
+
 export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED'
 
 export function canStartGuanceValidation(value: GuanceReadinessStatus) {
@@ -119,6 +124,11 @@ export function guanceValidationLabel(value: GuanceValidationStage) {
 
 export function guanceSpinePreviewLabel(value: GuanceSpinePreviewStage) {
   return GUANCE_SPINE_PREVIEW_LABEL[value]
+}
+
+/** Keep unknown diagnostics visible while presenting known owner blockers in the UI language. */
+export function guanceOwnerBlockerLabel(value: string) {
+  return GUANCE_OWNER_BLOCKER_LABEL[value] || value
 }
 
 /**

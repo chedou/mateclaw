@@ -11,6 +11,7 @@ import {
   formatDuration,
   guanceAcceptanceProgress,
   guanceAcceptanceStateLabel,
+  guanceOwnerBlockerLabel,
   guanceReadinessLabel,
   guanceSignalLabel,
   guanceSpinePreviewLabel,
@@ -207,5 +208,12 @@ describe('formal troubleshooting projection formatting', () => {
     }))
     expect(stale.stages[2].state).toBe('BLOCKED')
     expect(stale.nextAction).toContain('配置指纹已变化')
+  })
+
+  it('localizes known Guance owner blockers without hiding unknown diagnostics', () => {
+    expect(guanceOwnerBlockerLabel(
+      'the current Guance binding has not been explicitly accepted by an owner',
+    )).toBe('当前 Guance 绑定尚未由 Workspace owner 明确验收。')
+    expect(guanceOwnerBlockerLabel('custom owner diagnostic')).toBe('custom owner diagnostic')
   })
 })
