@@ -16,7 +16,30 @@ public record KnowledgeReviewSnapshot(
         String modelConfigVersion,
         String approvalEligibility,
         List<String> eligibilityReasons,
-        Boolean fixtureMode) {
+        Boolean fixtureMode,
+        ManualPlaybookReplayAttestation manualReplay) {
+
+    /** Compatibility constructor for pre-replay snapshots and persisted tests. */
+    public KnowledgeReviewSnapshot(
+            String validationStatus,
+            KnowledgeQualificationPhase qualificationPhase,
+            List<PlaybookDraft.ValidationError> validationErrors,
+            ReferenceSolutionComparator.Comparison referenceComparison,
+            String modelConfigVersion,
+            String approvalEligibility,
+            List<String> eligibilityReasons,
+            Boolean fixtureMode) {
+        this(
+                validationStatus,
+                qualificationPhase,
+                validationErrors,
+                referenceComparison,
+                modelConfigVersion,
+                approvalEligibility,
+                eligibilityReasons,
+                fixtureMode,
+                null);
+    }
 
     public KnowledgeReviewSnapshot {
         if (validationStatus == null || validationStatus.isBlank()) {

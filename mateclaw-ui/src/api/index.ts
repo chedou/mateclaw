@@ -1800,6 +1800,28 @@ export interface KnowledgeReviewSnapshot {
   approvalEligibility: KnowledgeApprovalEligibility
   eligibilityReasons: string[]
   fixtureMode: boolean | null
+  /** Present only when a MANUAL source has a persisted exact replay result. */
+  manualReplay?: ManualPlaybookReplayAttestation | null
+}
+
+/** Bounded candidate-and-suite-scoped replay proof; contains no raw fixture evidence. */
+export interface ManualPlaybookReplayAttestation {
+  attestationId: string
+  sourceRecordId: string
+  selectorKey: string
+  candidateFingerprint: string
+  suiteId: string
+  suiteVersion: number
+  suiteFingerprint: string
+  status: 'PASSED' | 'FAILED'
+  positiveTotal: number
+  positivePassed: number
+  negativeOrAbstainTotal: number
+  negativeOrAbstainPassed: number
+  failureCodes: string[]
+  fixtureMode: true
+  executedBy: string
+  executedAt: string
 }
 
 export interface KnowledgeReviewState {
@@ -2896,6 +2918,19 @@ export const troubleshootingApi = {
   /** Three source lanes plus their independent review states; no promotion side effect. */
   knowledgeReviewInbox: (params?: { limit?: number }) =>
     http.get<KnowledgeReviewInbox>('/troubleshooting/sops/review-inbox', { params }),
+
+  /** Runs the server-owned fixed suite; callers cannot submit cases or expected answers. */
+  replayManualKnowledgeCandidate: (sourceRecordId: string) =>
+    http.post<ManualPlaybookReplayAttestation>(
+      `/troubleshooting/sops/review-inbox/manual/`
+        + `${encodeURIComponent(sourceRecordId)}/replay`,
+    ),
+
+  /** Downloads an import-safe candidate example; replay cases stay server-side. */
+  manualKnowledgeCandidateExample: (selectorKey: string) =>
+    http.get<SopEntry>('/troubleshooting/sops/review-inbox/manual/example', {
+      params: { selectorKey },
+    }),
 
   /** Starts optimistic review from the virtual CANDIDATE/v0 state. */
   startKnowledgeReview: (

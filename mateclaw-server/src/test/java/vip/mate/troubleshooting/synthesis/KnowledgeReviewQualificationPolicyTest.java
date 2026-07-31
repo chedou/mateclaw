@@ -3,11 +3,15 @@ package vip.mate.troubleshooting.synthesis;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
+import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.time.Instant;
@@ -67,6 +71,71 @@ class KnowledgeReviewQualificationPolicyTest {
     }
 
     @Test
+    void manualQualificationAcceptsOnlyAPassedProofForTheExactCandidateAndSuite() {
+        String candidateFingerprint = "a".repeat(64);
+        String suiteFingerprint = "b".repeat(64);
+        ManualPlaybookReplayAttestation attestation =
+                new ManualPlaybookReplayAttestation(
+                        "manual-replay-1",
+                        "sop-1",
+                        "csdp:903002",
+                        candidateFingerprint,
+                        "manual-suite/v1",
+                        1,
+                        suiteFingerprint,
+                        ManualPlaybookReplayAttestation.Status.PASSED,
+                        1,
+                        1,
+                        2,
+                        2,
+                        List.of(),
+                        true,
+                        "reviewer-a",
+                        Instant.parse("2026-07-31T02:00:00Z"));
+
+        KnowledgeReviewSource source = policy.manual(
+                manualSop(),
+                new ManualPlaybookReplayQualification(
+                        candidateFingerprint, suiteFingerprint, attestation));
+
+        assertThat(source.snapshot().approvalEligibility())
+                .isEqualTo("ELIGIBLE_FOR_APPROVAL");
+        assertThat(source.snapshot().eligibilityReasons()).isEmpty();
+        assertThat(source.snapshot().manualReplay()).isEqualTo(attestation);
+    }
+
+    @Test
+    void manualQualificationFailsClosedForAStaleReplayProof() {
+        ManualPlaybookReplayAttestation stale =
+                new ManualPlaybookReplayAttestation(
+                        "manual-replay-1",
+                        "sop-1",
+                        "csdp:903002",
+                        "c".repeat(64),
+                        "manual-suite/v1",
+                        1,
+                        "d".repeat(64),
+                        ManualPlaybookReplayAttestation.Status.PASSED,
+                        1,
+                        1,
+                        1,
+                        1,
+                        List.of(),
+                        true,
+                        "reviewer-a",
+                        Instant.parse("2026-07-31T02:00:00Z"));
+
+        KnowledgeReviewSource source = policy.manual(
+                manualSop(),
+                new ManualPlaybookReplayQualification(
+                        "a".repeat(64), "b".repeat(64), stale));
+
+        assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
+        assertThat(source.snapshot().eligibilityReasons())
+                .containsExactly("REPLAY_PROOF_STALE");
+    }
+
+    @Test
     void manualQualificationReportsBrokenCrossReferencesAndMissingOwner() {
         SopEntry invalid = new SopEntry(
                 "sop-invalid", SopEntry.CURRENT_CONTRACT_VERSION,
@@ -94,6 +163,84 @@ class KnowledgeReviewQualificationPolicyTest {
                 "CONTRACT_VALIDATION_FAILED",
                 "OWNER_REQUIRED",
                 "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+    }
+
+    @Test
+    void manualQualificationRejectsUnsupportedContractsAndSecretShapedContent() {
+        SopEntry base = manualSop();
+        SopEntry invalid = new SopEntry(
+                base.sopId(), "sop.v0", base.system(), base.errorCode(),
+                base.service(), "password=do-not-store", base.cause(), base.category(),
+                base.ownerTeam(), base.status(), base.verified(), base.evidenceRequests(),
+                base.anomalyCriteria(), base.diagnosisRules(), base.actions());
+
+        KnowledgeReviewSource source = policy.manual(invalid);
+
+        assertThat(source.snapshot().validationStatus()).isEqualTo("INVALID");
+        assertThat(source.snapshot().validationErrors())
+                .extracting(PlaybookDraft.ValidationError::code)
+                .contains("UNSUPPORTED_CONTRACT_VERSION", "SECRET_NOT_REDACTED");
+        assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
+    }
+
+    @Test
+    void manualQualificationRejectsEmbeddedGuanceDqlNamespaces() {
+        SopEntry base = manualSop();
+        SopEntry invalid = new SopEntry(
+                base.sopId(), base.contractVersion(), base.system(), base.errorCode(),
+                base.service(), base.title(), base.cause(), base.category(),
+                base.ownerTeam(), base.status(), base.verified(),
+                List.of(new EvidenceRequest(
+                        "EV-1", "log_count", "D::http_dial_testing", Map.of(),
+                        "-15m", true)),
+                base.anomalyCriteria(), base.diagnosisRules(), base.actions());
+
+        KnowledgeReviewSource source = policy.manual(invalid);
+
+        assertThat(source.snapshot().validationErrors())
+                .extracting(PlaybookDraft.ValidationError::code)
+                .contains("DQL_OR_RAW_LOG_FORBIDDEN");
+    }
+
+    @Test
+    void manualQualificationRejectsEvidenceWindowsBeyondTheExecutionBudget() {
+        SopEntry base = manualSop();
+        SopEntry invalid = new SopEntry(
+                base.sopId(), base.contractVersion(), base.system(), base.errorCode(),
+                base.service(), base.title(), base.cause(), base.category(),
+                base.ownerTeam(), base.status(), base.verified(),
+                List.of(new EvidenceRequest(
+                        "EV-1", "log_count", "确认错误", Map.of(), "-25h", true)),
+                base.anomalyCriteria(), base.diagnosisRules(), base.actions());
+
+        KnowledgeReviewSource source = policy.manual(invalid);
+
+        assertThat(source.snapshot().validationErrors())
+                .extracting(PlaybookDraft.ValidationError::code)
+                .contains("INVALID_WINDOW");
+        assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
+    }
+
+    @Test
+    void manualQualificationRejectsPreExecutedOrMistypedActions() {
+        SopEntry base = manualSop();
+        SopEntry invalid = new SopEntry(
+                base.sopId(), base.contractVersion(), base.system(), base.errorCode(),
+                base.service(), base.title(), base.cause(), base.category(),
+                base.ownerTeam(), base.status(), base.verified(), base.evidenceRequests(),
+                base.anomalyCriteria(), base.diagnosisRules(),
+                List.of(new RecommendedAction(
+                        "ACTION-1", ActionType.AUTO_READONLY, "重启生产服务", "curl endpoint",
+                        false, ApprovalStatus.NOT_REQUIRED, ExecutionStatus.COMPLETED)));
+
+        KnowledgeReviewSource source = policy.manual(invalid);
+
+        assertThat(source.snapshot().validationErrors())
+                .extracting(PlaybookDraft.ValidationError::code)
+                .contains(
+                        "NON_WRITE_ACTION_STATE_INVALID",
+                        "PRODUCTION_WRITE_FORBIDDEN",
+                        "TOOL_CALL_FORBIDDEN");
     }
 
     private PlaybookKnowledgeRecord evidenceRecord() {

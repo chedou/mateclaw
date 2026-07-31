@@ -1,16 +1,11 @@
 package vip.mate.troubleshooting.synthesis;
 
-import vip.mate.troubleshooting.model.AnomalyCriterion;
-import vip.mate.troubleshooting.model.DiagnosisRule;
-import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Deterministic, source-specific qualification projection for knowledge review.
@@ -110,6 +105,12 @@ public final class KnowledgeReviewQualificationPolicy {
     }
 
     public KnowledgeReviewSource manual(SopEntry sop) {
+        return manual(sop, null);
+    }
+
+    public KnowledgeReviewSource manual(
+            SopEntry sop,
+            ManualPlaybookReplayQualification replayQualification) {
         if (sop == null) {
             throw new IllegalArgumentException("manual candidate is required");
         }
@@ -121,9 +122,19 @@ public final class KnowledgeReviewQualificationPolicy {
         if (sop.ownerTeam() == null || sop.ownerTeam().isBlank()) {
             reasons.add("OWNER_REQUIRED");
         }
-        // Manual registration currently has no server-owned replay
-        // attestation. UI input cannot turn this condition into PASS.
-        reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+        ManualPlaybookReplayAttestation replay = replayQualification == null
+                ? null : replayQualification.attestation();
+        if (replayQualification == null || !replayQualification.suiteAvailable()) {
+            reasons.add(replayQualification == null
+                    ? "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED"
+                    : "REPLAY_SUITE_UNAVAILABLE");
+        } else if (replay == null) {
+            reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+        } else if (!sameReplayIdentity(sop, replayQualification, replay)) {
+            reasons.add("REPLAY_PROOF_STALE");
+        } else if (replay.status() != ManualPlaybookReplayAttestation.Status.PASSED) {
+            reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_FAILED");
+        }
         return source(
                 KnowledgeOrigin.MANUAL,
                 sop.sopId(),
@@ -136,71 +147,24 @@ public final class KnowledgeReviewQualificationPolicy {
                         null,
                         eligibility(reasons),
                         reasons,
-                        null));
+                        null,
+                        replay));
+    }
+
+    private boolean sameReplayIdentity(
+            SopEntry sop,
+            ManualPlaybookReplayQualification qualification,
+            ManualPlaybookReplayAttestation replay) {
+        return sop.sopId().equals(replay.sourceRecordId())
+                && sop.routingKey().equals(replay.selectorKey())
+                && qualification.candidateFingerprint()
+                        .equals(replay.candidateFingerprint())
+                && qualification.suiteFingerprint()
+                        .equals(replay.suiteFingerprint());
     }
 
     private List<PlaybookDraft.ValidationError> validateManualContract(SopEntry sop) {
-        List<PlaybookDraft.ValidationError> errors = new ArrayList<>();
-        Set<String> requestIds = new HashSet<>();
-        for (int index = 0; index < sop.evidenceRequests().size(); index++) {
-            EvidenceRequest request = sop.evidenceRequests().get(index);
-            if (!requestIds.add(request.requestId())) {
-                errors.add(error(
-                        "DUPLICATE_EVIDENCE_REQUEST",
-                        "evidenceRequests[" + index + "].requestId",
-                        "evidence request ids must be unique"));
-            }
-        }
-        Set<String> signals = new HashSet<>();
-        for (int index = 0; index < sop.anomalyCriteria().size(); index++) {
-            AnomalyCriterion criterion = sop.anomalyCriteria().get(index);
-            signals.add(criterion.signal());
-            if (!requestIds.contains(criterion.sourceRequestId())) {
-                errors.add(error(
-                        "UNKNOWN_EVIDENCE_REQUEST",
-                        "anomalyCriteria[" + index + "].sourceRequestId",
-                        "criterion must reference a declared evidence request"));
-            }
-        }
-        for (int ruleIndex = 0; ruleIndex < sop.diagnosisRules().size(); ruleIndex++) {
-            DiagnosisRule rule = sop.diagnosisRules().get(ruleIndex);
-            for (int signalIndex = 0;
-                    signalIndex < rule.requiredSignals().size();
-                    signalIndex++) {
-                if (!signals.contains(rule.requiredSignals().get(signalIndex))) {
-                    errors.add(error(
-                            "UNKNOWN_REQUIRED_SIGNAL",
-                            "diagnosisRules[" + ruleIndex + "].requiredSignals["
-                                    + signalIndex + "]",
-                            "diagnosis rule must reference a declared anomaly signal"));
-                }
-            }
-        }
-        if (sop.evidenceRequests().isEmpty()) {
-            errors.add(error(
-                    "EVIDENCE_PLAN_REQUIRED",
-                    "evidenceRequests",
-                    "manual playbook requires at least one read-only evidence request"));
-        }
-        if (sop.anomalyCriteria().isEmpty()) {
-            errors.add(error(
-                    "CRITERIA_REQUIRED",
-                    "anomalyCriteria",
-                    "manual playbook requires at least one deterministic criterion"));
-        }
-        if (sop.diagnosisRules().isEmpty()) {
-            errors.add(error(
-                    "DIAGNOSIS_RULE_REQUIRED",
-                    "diagnosisRules",
-                    "manual playbook requires at least one deterministic diagnosis rule"));
-        }
-        if (!"candidate".equals(sop.status()) || sop.verified()) {
-            errors.add(error(
-                    "SOURCE_STATE_INVALID",
-                    "status",
-                    "manual review source must remain candidate and unverified"));
-        }
-        return List.copyOf(errors);
+        return ManualPlaybookContractValidator.validate(sop);
     }
 
     private KnowledgeReviewSource source(
@@ -210,13 +174,6 @@ public final class KnowledgeReviewQualificationPolicy {
             KnowledgeReviewSnapshot snapshot) {
         return new KnowledgeReviewSource(
                 origin, sourceRecordId, selectorKey, snapshot);
-    }
-
-    private PlaybookDraft.ValidationError error(
-            String code,
-            String fieldPath,
-            String message) {
-        return new PlaybookDraft.ValidationError(code, fieldPath, message);
     }
 
     private String eligibility(List<String> reasons) {

@@ -15,16 +15,19 @@ public class DefaultKnowledgeReviewSourceReader implements KnowledgeReviewSource
     private final PlaybookCandidateReader evidenceCandidates;
     private final TroubleshootingPersistenceService outcomeCandidates;
     private final TroubleshootingSopPersistenceService manualCandidates;
+    private final ManualPlaybookReplayService manualReplays;
     private final KnowledgeReviewQualificationPolicy qualification =
             new KnowledgeReviewQualificationPolicy();
 
     public DefaultKnowledgeReviewSourceReader(
             PlaybookCandidateReader evidenceCandidates,
             TroubleshootingPersistenceService outcomeCandidates,
-            TroubleshootingSopPersistenceService manualCandidates) {
+            TroubleshootingSopPersistenceService manualCandidates,
+            ManualPlaybookReplayService manualReplays) {
         this.evidenceCandidates = evidenceCandidates;
         this.outcomeCandidates = outcomeCandidates;
         this.manualCandidates = manualCandidates;
+        this.manualReplays = manualReplays;
     }
 
     @Override
@@ -68,6 +71,7 @@ public class DefaultKnowledgeReviewSourceReader implements KnowledgeReviewSource
         if (sop == null || !"candidate".equals(sop.status())) {
             return Optional.empty();
         }
-        return Optional.of(qualification.manual(sop));
+        return Optional.of(qualification.manual(
+                sop, manualReplays.qualification(workspaceId, sop)));
     }
 }

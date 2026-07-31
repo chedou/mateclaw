@@ -408,9 +408,14 @@ Challenger 影子运行和两者对比仍未实现。
         判定链只从该不可变版本重建。新合同缺少引用直接拒绝，
         1.3–1.7 旧行继续可读但重建时 fail closed，正式开发证据台显示精确版本或“历史未冻结”，
         不用当前 active Playbook 冒充历史知识（2026-07-30）。
-  - [ ] 将真实 T8 正/负例或弃权回放接入精确候选 Gate；
-        selector 单 active-approved 已由 V186 数据库唯一约束关闭，以 ≥20 条样本和高置信错误数为 0 驱动 `CALIBRATION ↔ RUNTIME`
-        切换，条件全部可由服务端证明后才允许返回 `ELIGIBLE_FOR_APPROVAL`。
+  - [x] `MANUAL` 首个精确候选 Gate 已接入部署拓扑场景：服务端托管固定正例、健康反例和缺证据弃权例，
+        对完整候选执行零 LLM 确定性回放；V189 只持久化计数、失败码、执行主体/时间以及候选和套件双
+        SHA-256，不保存 fixture 事实、查询或原始响应。证明只对精确候选与精确套件有效，合同或套件变化
+        自动失效；通过后仍须人工开始审阅并批准，浏览器不能提交 fixture、预期答案或证明（2026-07-31）。
+  - [ ] 将 `EVIDENCE_DERIVED / OUTCOME_BACKED` 的真实 T8 正例、负例或弃权回放接入各自的精确候选 Gate；
+        selector 单 active-approved 已由 V186 数据库唯一约束关闭，以 ≥20 条样本和高置信错误数为 0 驱动
+        `CALIBRATION ↔ RUNTIME` 切换。该样本门禁不适用于不分阶段的 `MANUAL`，固定 fixture 回放通过也
+        不代表 T7/T8 真源验收完成。
 - [x] 审核记录 reviewer、reason，并在开始审阅时冻结 validation summary、
       reference comparison、模型版本、fixture 与当时的资格缺口（2026-07-29）。
 - [x] approved 永远创建新版本；审核开始冻结旧权威 baseline，批准时乐观校验，V186 以 nullable

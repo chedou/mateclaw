@@ -130,7 +130,7 @@ const inbox: KnowledgeReviewInbox = {
         'NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED',
         'FIXTURE_ONLY',
       ],
-      fixtureMode: true,
+      fixtureMode: true as const,
     },
   }, {
     origin: 'OUTCOME_BACKED',
@@ -256,7 +256,48 @@ describe('knowledge review projection', () => {
     expect(reviewReasonLabel('APPROVAL_IS_SERVER_GATED')).toContain('服务端')
     expect(reviewReasonLabel('OUTCOME_VERIFICATION_NOT_PROJECTED')).toContain('关闭结果')
     expect(reviewReasonLabel('VERSIONED_SELECTOR_UNIQUENESS_REQUIRED')).toContain('selector')
+    expect(reviewReasonLabel('REPLAY_SUITE_UNAVAILABLE')).toContain('回放套件')
+    expect(reviewReasonLabel('REPLAY_PROOF_STALE')).toContain('失效')
+    expect(reviewReasonLabel('POSITIVE_AND_NEGATIVE_REPLAY_FAILED')).toContain('未通过')
     expect(reviewReasonLabel('UNKNOWN_FUTURE_REASON')).toBe('UNKNOWN_FUTURE_REASON')
+  })
+
+  it('keeps the bounded manual replay attestation in the server qualification snapshot', () => {
+    const manualReplay = {
+      attestationId: 'manual-replay-1',
+      sourceRecordId: 'manual-sop-001',
+      selectorKey: 'csdp:903002',
+      candidateFingerprint: 'a'.repeat(64),
+      suiteId: 'manual-suite/v1',
+      suiteVersion: 1,
+      suiteFingerprint: 'b'.repeat(64),
+      status: 'PASSED' as const,
+      positiveTotal: 1,
+      positivePassed: 1,
+      negativeOrAbstainTotal: 2,
+      negativeOrAbstainPassed: 2,
+      failureCodes: [],
+      fixtureMode: true as const,
+      executedBy: 'reviewer-a',
+      executedAt: '2026-07-31T03:00:00Z',
+    }
+    const projected = buildKnowledgeReviewRows({
+      ...inbox,
+      sourceStates: inbox.sourceStates.map((state) => state.origin === 'MANUAL'
+        ? {
+            ...state,
+            snapshot: {
+              ...state.snapshot,
+              approvalEligibility: 'ELIGIBLE_FOR_APPROVAL' as const,
+              eligibilityReasons: [],
+              manualReplay,
+            },
+          }
+        : state),
+    }).find((row) => row.origin === 'MANUAL')
+
+    expect(projected?.approvalEligibility).toBe('ELIGIBLE_FOR_APPROVAL')
+    expect(projected?.qualificationSnapshot.manualReplay).toEqual(manualReplay)
   })
 
   it('distinguishes legacy projection gaps from an invalid current candidate', () => {

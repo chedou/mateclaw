@@ -36,6 +36,7 @@ class KnowledgeReviewInboxServiceTest {
                 mock(TroubleshootingSopPersistenceService.class);
         KnowledgeReviewWorkflowService reviews =
                 mock(KnowledgeReviewWorkflowService.class);
+        ManualPlaybookReplayService replays = mock(ManualPlaybookReplayService.class);
         KnowledgeCandidate outcome = outcomeCandidate();
         SopEntry manualEntry = manualSop();
         SopSummary manualSummary = new SopSummary(
@@ -57,8 +58,10 @@ class KnowledgeReviewInboxServiceTest {
                         manualSummary, manualEntry)));
         when(reviews.listForSources(eq(7L), org.mockito.ArgumentMatchers.anyList()))
                 .thenReturn(List.of());
+        ManualPlaybookReplayQualification replay = passedReplay(manualEntry);
+        when(replays.qualification(7L, manualEntry)).thenReturn(replay);
         KnowledgeReviewInboxService service = new KnowledgeReviewInboxService(
-                evidence, outcomes, manual, reviews);
+                evidence, outcomes, manual, reviews, replays);
 
         KnowledgeReviewInbox inbox = service.read(7L, 25);
 
@@ -76,6 +79,10 @@ class KnowledgeReviewInboxServiceTest {
                         "OWNER_REQUIRED");
         assertThat(inbox.sourceStates().getLast().snapshot().validationStatus())
                 .isEqualTo("VALID");
+        assertThat(inbox.sourceStates().getLast().snapshot().approvalEligibility())
+                .isEqualTo("ELIGIBLE_FOR_APPROVAL");
+        assertThat(inbox.sourceStates().getLast().snapshot().manualReplay())
+                .isEqualTo(replay.attestation());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<KnowledgeReviewSourceKey>> keys =
@@ -111,5 +118,20 @@ class KnowledgeReviewInboxServiceTest {
                         "R-1", List.of("error_present"), "连接异常", "超时",
                         Confidence.HIGH, false)),
                 List.of());
+    }
+
+    private ManualPlaybookReplayQualification passedReplay(SopEntry sop) {
+        String candidateFingerprint = "a".repeat(64);
+        String suiteFingerprint = "b".repeat(64);
+        return new ManualPlaybookReplayQualification(
+                candidateFingerprint,
+                suiteFingerprint,
+                new ManualPlaybookReplayAttestation(
+                        "replay-1", sop.sopId(), sop.routingKey(),
+                        candidateFingerprint, "manual-suite/v1", 1,
+                        suiteFingerprint,
+                        ManualPlaybookReplayAttestation.Status.PASSED,
+                        1, 1, 1, 1, List.of(), true, "reviewer-a",
+                        Instant.parse("2026-07-31T03:00:00Z")));
     }
 }

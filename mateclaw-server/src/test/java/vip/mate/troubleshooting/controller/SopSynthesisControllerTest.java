@@ -32,6 +32,8 @@ import vip.mate.troubleshooting.synthesis.KnowledgeReviewDeprecation;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewStatus;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayAttestation;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayService;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisService;
 
@@ -59,7 +61,8 @@ class SopSynthesisControllerTest {
                 mock(TroubleshootingPersistenceService.class),
                 synthesis,
                 mock(KnowledgeReviewInboxService.class),
-                mock(KnowledgeReviewWorkflowService.class));
+                mock(KnowledgeReviewWorkflowService.class),
+                mock(ManualPlaybookReplayService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -115,7 +118,8 @@ class SopSynthesisControllerTest {
                 persistence,
                 mock(SopSynthesisService.class),
                 inboxService,
-                reviews);
+                reviews,
+                mock(ManualPlaybookReplayService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -172,12 +176,15 @@ class SopSynthesisControllerTest {
     void reviewCommandsUseTheAuthenticatedActorAndExpectedVersion() throws Exception {
         KnowledgeReviewWorkflowService reviews =
                 mock(KnowledgeReviewWorkflowService.class);
+        ManualPlaybookReplayService replays =
+                mock(ManualPlaybookReplayService.class);
         SopManagementController controller = new SopManagementController(
                 mock(TroubleshootingSopPersistenceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 mock(SopSynthesisService.class),
                 mock(KnowledgeReviewInboxService.class),
-                reviews);
+                reviews,
+                replays);
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -260,6 +267,24 @@ class SopSynthesisControllerTest {
                 7L, "legacy-approved", 1,
                 "reviewer-a", "迁移规则已失效"))
                 .thenReturn(legacyRetired);
+        ManualPlaybookReplayAttestation replay =
+                new ManualPlaybookReplayAttestation(
+                        "replay-1", "manual-topology-v1",
+                        "csdp:scenario:deployment_topology_probe",
+                        "a".repeat(64), "deployment-topology-probe/v1", 1,
+                        "b".repeat(64),
+                        ManualPlaybookReplayAttestation.Status.PASSED,
+                        1, 1, 2, 2, List.of(), true, "reviewer-a",
+                        Instant.parse("2026-07-20T09:29:00Z"));
+        when(replays.run(7L, "manual-topology-v1", "reviewer-a"))
+                .thenReturn(replay);
+        when(replays.exampleCandidate("csdp:scenario:deployment_topology_probe"))
+                .thenReturn(new SopEntry(
+                        "manual-deployment-topology-probe-v1", "sop.v1", "CSDP",
+                        "scenario:deployment_topology_probe", "network-path",
+                        "部署拓扑拨测分析", "网络路径待核查", "network", "网络平台组",
+                        "candidate", false,
+                        List.of(), List.of(), List.of(), List.of()));
         SecurityContextHolder.getContext().setAuthentication(
                 new TestingAuthenticationToken("reviewer-a", "n/a", "ROLE_USER"));
         try {
@@ -329,6 +354,26 @@ class SopSynthesisControllerTest {
                     .andExpect(jsonPath("$.data.deprecatedBy").value("reviewer-a"))
                     .andExpect(jsonPath("$.data.deprecationReason")
                             .value("迁移规则已失效"));
+
+            mvc.perform(post("/api/v1/troubleshooting/sops/review-inbox/"
+                            + "manual/manual-topology-v1/replay")
+                            .header("X-Workspace-Id", "7"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("PASSED"))
+                    .andExpect(jsonPath("$.data.positivePassed").value(1))
+                    .andExpect(jsonPath("$.data.negativeOrAbstainPassed").value(2))
+                    .andExpect(jsonPath("$.data.candidateFingerprint")
+                            .value("a".repeat(64)))
+                    .andExpect(jsonPath("$.data.executedBy").value("reviewer-a"));
+
+            mvc.perform(get("/api/v1/troubleshooting/sops/review-inbox/manual/example")
+                            .param("selectorKey",
+                                    "csdp:scenario:deployment_topology_probe"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.sopId")
+                            .value("manual-deployment-topology-probe-v1"))
+                    .andExpect(jsonPath("$.data.status").value("candidate"))
+                    .andExpect(jsonPath("$.data.verified").value(false));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -348,6 +393,9 @@ class SopSynthesisControllerTest {
         verify(reviews).deprecateLegacy(
                 7L, "legacy-approved", 1,
                 "reviewer-a", "迁移规则已失效");
+        verify(replays).run(7L, "manual-topology-v1", "reviewer-a");
+        verify(replays).exampleCandidate(
+                "csdp:scenario:deployment_topology_probe");
     }
 
     private KnowledgeReviewState reviewState() {

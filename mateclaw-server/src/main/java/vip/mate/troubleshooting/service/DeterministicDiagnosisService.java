@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -28,10 +29,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,6 +42,7 @@ import java.util.UUID;
 public class DeterministicDiagnosisService {
 
     private final CriterionEvaluator evaluator;
+    private final DiagnosisRuleEvaluator ruleEvaluator;
     private final DiagnosisStateMachine stateMachine;
     private final TroubleshootingPersistenceService persistence;
     private final TroubleshootingPlaybookVersionService playbookVersions;
@@ -51,19 +51,28 @@ public class DeterministicDiagnosisService {
     @Autowired
     public DeterministicDiagnosisService(
             CriterionEvaluator evaluator,
+            DiagnosisRuleEvaluator ruleEvaluator,
             DiagnosisStateMachine stateMachine,
             TroubleshootingPersistenceService persistence,
             TroubleshootingPlaybookVersionService playbookVersions) {
-        this(evaluator, stateMachine, persistence, playbookVersions, Clock.systemUTC());
+        this(
+                evaluator,
+                ruleEvaluator,
+                stateMachine,
+                persistence,
+                playbookVersions,
+                Clock.systemUTC());
     }
 
     DeterministicDiagnosisService(
             CriterionEvaluator evaluator,
+            DiagnosisRuleEvaluator ruleEvaluator,
             DiagnosisStateMachine stateMachine,
             TroubleshootingPersistenceService persistence,
             TroubleshootingPlaybookVersionService playbookVersions,
             Clock clock) {
         this.evaluator = evaluator;
+        this.ruleEvaluator = ruleEvaluator;
         this.stateMachine = stateMachine;
         this.persistence = persistence;
         this.playbookVersions = playbookVersions;
@@ -201,11 +210,10 @@ public class DeterministicDiagnosisService {
 
         Map<String, CriterionOutcome> outcomes = evaluator.outcomesBySignal(
                 sop.anomalyCriteria(), normalizedEvidence);
-        List<String> signals = outcomes.entrySet().stream()
-                .filter(entry -> entry.getValue() == CriterionOutcome.SATISFIED)
-                .map(Map.Entry::getKey)
-                .toList();
-        Decision decision = synthesize(sop.diagnosisRules(), signals, outcomes);
+        DiagnosisRuleEvaluator.Evaluation ruleEvaluation = ruleEvaluator.evaluate(
+                sop.diagnosisRules(), outcomes);
+        List<String> signals = ruleEvaluation.activeSignals();
+        Decision decision = synthesize(ruleEvaluation);
         List<String> warnings = new ArrayList<>();
 
         if (!requiredMissing.isEmpty()) {
@@ -319,23 +327,18 @@ public class DeterministicDiagnosisService {
         return result == null || result.status() == EvidenceStatus.MISSING;
     }
 
-    private Decision synthesize(
-            List<DiagnosisRule> rules,
-            List<String> signals,
-            Map<String, CriterionOutcome> outcomes) {
-        Set<String> active = new HashSet<>(signals);
-        for (DiagnosisRule rule : rules) {
-            if (active.containsAll(rule.requiredSignals())) {
-                return new Decision(
-                        rule.rootCause(),
-                        rule.summary(),
-                        rule.confidence(),
-                        rule.abstained()
-                                ? ConclusionType.INSUFFICIENT_EVIDENCE
-                                : ConclusionType.LOCATED);
-            }
+    private Decision synthesize(DiagnosisRuleEvaluator.Evaluation evaluation) {
+        DiagnosisRule rule = evaluation.matchedRule();
+        if (rule != null) {
+            return new Decision(
+                    rule.rootCause(),
+                    rule.summary(),
+                    rule.confidence(),
+                    rule.abstained()
+                            ? ConclusionType.INSUFFICIENT_EVIDENCE
+                            : ConclusionType.LOCATED);
         }
-        if (allRulesDefinitivelyExcluded(rules, outcomes)) {
+        if (evaluation.disposition() == DiagnosisRuleEvaluator.Disposition.EXCLUDED) {
             return new Decision(
                     "当前 SOP 候选根因均被反证。",
                     "现有证据已排除当前 SOP 中的候选结论。",
@@ -347,22 +350,6 @@ public class DeterministicDiagnosisService {
                 "SOP 未提供与当前信号匹配的结论规则。",
                 Confidence.LOW,
                 ConclusionType.INSUFFICIENT_EVIDENCE);
-    }
-
-    private boolean allRulesDefinitivelyExcluded(
-            List<DiagnosisRule> rules,
-            Map<String, CriterionOutcome> outcomes) {
-        return !rules.isEmpty() && rules.stream().allMatch(rule -> {
-            boolean hasExclusion = false;
-            for (String signal : rule.requiredSignals()) {
-                CriterionOutcome outcome = outcomes.get(signal);
-                if (outcome == null || outcome == CriterionOutcome.UNEVALUATED) {
-                    return false;
-                }
-                hasExclusion |= outcome == CriterionOutcome.EXCLUDED;
-            }
-            return hasExclusion;
-        });
     }
 
     private record Decision(

@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.ApprovalStatus;
@@ -68,6 +69,7 @@ class DeterministicDiagnosisServiceTest {
     void setUp() {
         service = new DeterministicDiagnosisService(
                 new CriterionEvaluator(),
+                new DiagnosisRuleEvaluator(),
                 new DiagnosisStateMachine(
                         Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC),
                         prefix -> prefix + "-1"),

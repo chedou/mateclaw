@@ -40,6 +40,10 @@
   关闭时在同一事务排入 V180 通知状态，租约 worker 复用精确 workspace-aware local leader 路由，
   将 `BusinessSummary + ClosureRecord` 组合为最终结果，安全 @ 原报障人，平台 ACK 后完成；失败无硬重试上限。
   正式工作台同步展示类型化最终处置结果，旧版入口不变；出站交互卡片仍留待单独平台评审。
+- **v0.17**：保留部署拓扑拨测作为共享拓扑库和独立分析弹窗的中间态，真实记录当时结果尚未进入
+  Diagnosis；该版已被 v0.18 的统一 Evidence Spine 语义修正，但历史制品不覆盖。
+- **v0.18**：部署拓扑拨测回归统一排障架构：拓扑资产由场景 Playbook 选择，调用语义 Tool，再经来源
+  Adapter 产生 canonical evidence 并进入同一 Diagnosis、判据、规则、投影和治理链；不新增第二套结果权威。
 
 v0.2–v0.6 中存在用户已经否定的其他项目材料，因此不作为当前 MateClaw-only 架构版本导入。
 原始下载文件仍留在用户 Downloads 中，不得把其中结论重新并入现行设计。

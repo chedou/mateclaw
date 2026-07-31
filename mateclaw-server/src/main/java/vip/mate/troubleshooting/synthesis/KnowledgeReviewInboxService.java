@@ -24,6 +24,7 @@ public class KnowledgeReviewInboxService {
     private final TroubleshootingPersistenceService outcomeCandidates;
     private final TroubleshootingSopPersistenceService manualCandidates;
     private final KnowledgeReviewWorkflowService reviewWorkflow;
+    private final ManualPlaybookReplayService manualReplays;
     private final KnowledgeReviewQualificationPolicy qualification =
             new KnowledgeReviewQualificationPolicy();
 
@@ -31,11 +32,13 @@ public class KnowledgeReviewInboxService {
             PlaybookCandidateReader evidenceCandidates,
             TroubleshootingPersistenceService outcomeCandidates,
             TroubleshootingSopPersistenceService manualCandidates,
-            KnowledgeReviewWorkflowService reviewWorkflow) {
+            KnowledgeReviewWorkflowService reviewWorkflow,
+            ManualPlaybookReplayService manualReplays) {
         this.evidenceCandidates = evidenceCandidates;
         this.outcomeCandidates = outcomeCandidates;
         this.manualCandidates = manualCandidates;
         this.reviewWorkflow = reviewWorkflow;
+        this.manualReplays = manualReplays;
     }
 
     public KnowledgeReviewInbox read(long workspaceId, int limit) {
@@ -63,7 +66,8 @@ public class KnowledgeReviewInboxService {
                 .forEach(sourceStates::add);
         manualRecords.stream()
                 .map(SopRegistryRecord::entry)
-                .map(qualification::manual)
+                .map(entry -> qualification.manual(
+                        entry, manualReplays.qualification(workspaceId, entry)))
                 .forEach(sourceStates::add);
 
         List<KnowledgeReviewSourceKey> sourceKeys = sourceStates.stream()

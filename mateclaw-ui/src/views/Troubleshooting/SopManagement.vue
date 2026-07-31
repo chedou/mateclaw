@@ -562,6 +562,46 @@
                   <div><b>{{ selectedManualSop.actions.length }}</b><span>建议动作</span></div>
                 </div>
               </section>
+              <section
+                v-if="selectedReview.qualificationSnapshot.manualReplay"
+                class="candidate-detail-card"
+              >
+                <div class="section-title">
+                  <span>固定回放证明</span>
+                  <el-tag
+                    :type="selectedReview.qualificationSnapshot.manualReplay.status === 'PASSED' ? 'success' : 'danger'"
+                    size="small"
+                    effect="plain"
+                  >{{ selectedReview.qualificationSnapshot.manualReplay.status }}</el-tag>
+                </div>
+                <p class="candidate-summary">
+                  只证明这一份候选通过当前服务端固定套件；不等于 Guance T7/T8 真源验收，也不会自动批准或进入命中路。
+                </p>
+                <dl class="compact-facts replay-facts">
+                  <div><dt>suite</dt><dd class="mono">{{ selectedReview.qualificationSnapshot.manualReplay.suiteId }} / v{{ selectedReview.qualificationSnapshot.manualReplay.suiteVersion }}</dd></div>
+                  <div><dt>正例</dt><dd>{{ selectedReview.qualificationSnapshot.manualReplay.positivePassed }} / {{ selectedReview.qualificationSnapshot.manualReplay.positiveTotal }}</dd></div>
+                  <div><dt>负例 / 弃权</dt><dd>{{ selectedReview.qualificationSnapshot.manualReplay.negativeOrAbstainPassed }} / {{ selectedReview.qualificationSnapshot.manualReplay.negativeOrAbstainTotal }}</dd></div>
+                  <div><dt>执行人</dt><dd>{{ selectedReview.qualificationSnapshot.manualReplay.executedBy }}</dd></div>
+                  <div><dt>执行时间</dt><dd class="mono">{{ formatTime(selectedReview.qualificationSnapshot.manualReplay.executedAt) }}</dd></div>
+                  <div><dt>fixture</dt><dd class="mono">{{ selectedReview.qualificationSnapshot.manualReplay.fixtureMode }}</dd></div>
+                </dl>
+                <div class="replay-fingerprint">
+                  <span>candidate SHA-256</span>
+                  <code>{{ selectedReview.qualificationSnapshot.manualReplay.candidateFingerprint }}</code>
+                  <span>suite SHA-256</span>
+                  <code>{{ selectedReview.qualificationSnapshot.manualReplay.suiteFingerprint }}</code>
+                </div>
+                <ul
+                  v-if="selectedReview.qualificationSnapshot.manualReplay.failureCodes.length"
+                  class="reference-issues qualification-errors"
+                >
+                  <li
+                    v-for="failure in selectedReview.qualificationSnapshot.manualReplay.failureCodes"
+                    :key="failure"
+                    class="danger"
+                  ><strong>{{ failure }}</strong></li>
+                </ul>
+              </section>
             </template>
 
             <section class="capability-boundary">
@@ -586,6 +626,14 @@
                 <p v-else>决策不能原地重开；修正后应产生新的 source record。</p>
               </div>
               <div class="review-action-buttons">
+                <el-button
+                  v-if="selectedReview.origin === 'MANUAL'
+                    && (selectedReview.reviewStatus === 'CANDIDATE'
+                      || selectedReview.reviewStatus === 'IN_REVIEW')"
+                  plain
+                  :loading="reviewDecisionLoading === `replay:${selectedReview.key}`"
+                  @click="runManualReplay(selectedReview)"
+                >运行固定回放</el-button>
                 <el-button
                   v-if="selectedReview.reviewStatus === 'CANDIDATE'"
                   type="primary"
@@ -632,6 +680,12 @@
           只接受单个 JSON 对象，并强制以 <code>candidate + verified=false</code> 注册。sopId 冲突会拒绝覆盖；同 selector 的新 source 仍须重新审核并创建新版本。
         </template>
       </el-alert>
+      <div class="template-actions">
+        <span>第一次接入场景 Playbook？</span>
+        <el-button size="small" plain @click="loadDeploymentTopologyTemplate">
+          载入部署拓扑示例
+        </el-button>
+      </div>
       <el-input
         v-model="registerJson"
         type="textarea"
@@ -996,6 +1050,26 @@ async function approveReview(row: KnowledgeReviewRow) {
   }
 }
 
+async function runManualReplay(row: KnowledgeReviewRow) {
+  if (row.origin !== 'MANUAL'
+    || (row.reviewStatus !== 'CANDIDATE' && row.reviewStatus !== 'IN_REVIEW')) return
+  reviewDecisionLoading.value = `replay:${row.key}`
+  try {
+    const { data } = await troubleshootingApi.replayManualKnowledgeCandidate(row.recordId)
+    await loadReviewInbox()
+    if (data.status === 'PASSED') {
+      ElMessage.success(
+        `固定回放通过：正例 ${data.positivePassed}/${data.positiveTotal}，`
+          + `负例/弃权 ${data.negativeOrAbstainPassed}/${data.negativeOrAbstainTotal}`,
+      )
+    } else {
+      ElMessage.warning(`固定回放未通过：${data.failureCodes.join('、')}`)
+    }
+  } finally {
+    reviewDecisionLoading.value = null
+  }
+}
+
 async function deprecateReview(row: KnowledgeReviewRow) {
   if (row.reviewStatus !== 'APPROVED' || row.reviewVersion < 2) return
   const reason = await askReviewReason(
@@ -1087,6 +1161,13 @@ function clearFilters() {
 function openRegister() {
   registerJson.value = EMPTY_TEMPLATE
   registerOpen.value = true
+}
+
+async function loadDeploymentTopologyTemplate() {
+  const { data } = await troubleshootingApi.manualKnowledgeCandidateExample(
+    'csdp:scenario:deployment_topology_probe',
+  )
+  registerJson.value = JSON.stringify(data, null, 2)
 }
 
 async function registerSop() {
@@ -1442,6 +1523,13 @@ onMounted(() => Promise.all([loadList(), loadReviewInbox()]))
   color: var(--el-text-color-regular); font-size: 10.5px; line-height: 1.55;
 }
 .manual-counts { margin-top: 10px; }
+.replay-facts { margin-bottom: 10px; }
+.replay-fingerprint { display: grid; gap: 4px; }
+.replay-fingerprint span { color: var(--el-text-color-secondary); font: 9px var(--mc-mono, monospace); }
+.replay-fingerprint code {
+  overflow-wrap: anywhere; color: var(--el-text-color-regular);
+  font: 9px/1.5 var(--mc-mono, monospace);
+}
 .capability-boundary {
   padding: 10px 11px; border-left: 2px solid var(--el-color-warning);
   background: color-mix(in srgb, var(--el-color-warning) 8%, var(--el-bg-color));
@@ -1459,6 +1547,10 @@ onMounted(() => Promise.all([loadList(), loadReviewInbox()]))
 .audit-reason span { color: var(--el-text-color-secondary); font: 9.5px var(--mc-mono, monospace); }
 .audit-reason p { margin: 4px 0 0; color: var(--el-text-color-primary); font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; }
 .register-note { margin-bottom: 12px; }
+.template-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 10px; color: var(--el-text-color-secondary); font-size: 11px;
+}
 .register-note code, .validation code { font-family: var(--mc-mono, monospace); }
 .json-input :deep(textarea) { font-family: var(--mc-mono, monospace); font-size: 11px; line-height: 1.55; }
 .validation { min-height: 20px; margin-top: 9px; color: var(--el-color-danger); font-size: 11px; line-height: 1.5; }

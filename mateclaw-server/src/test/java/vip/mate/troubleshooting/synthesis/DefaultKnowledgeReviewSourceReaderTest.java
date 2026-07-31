@@ -30,9 +30,10 @@ class DefaultKnowledgeReviewSourceReaderTest {
                 mock(TroubleshootingPersistenceService.class);
         TroubleshootingSopPersistenceService manual =
                 mock(TroubleshootingSopPersistenceService.class);
+        ManualPlaybookReplayService replays = mock(ManualPlaybookReplayService.class);
         when(evidence.find(7L, "record-1")).thenReturn(evidenceRecord());
         DefaultKnowledgeReviewSourceReader reader =
-                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual);
+                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual, replays);
 
         KnowledgeReviewSource source = reader.find(
                 7L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1").orElseThrow();
@@ -60,10 +61,11 @@ class DefaultKnowledgeReviewSourceReaderTest {
                 mock(TroubleshootingPersistenceService.class);
         TroubleshootingSopPersistenceService manual =
                 mock(TroubleshootingSopPersistenceService.class);
+        ManualPlaybookReplayService replays = mock(ManualPlaybookReplayService.class);
         when(outcomes.findKnowledgeCandidate(7L, "candidate-1"))
                 .thenReturn(outcomeCandidate());
         DefaultKnowledgeReviewSourceReader reader =
-                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual);
+                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual, replays);
 
         KnowledgeReviewSource source = reader.find(
                 7L, KnowledgeOrigin.OUTCOME_BACKED, "candidate-1").orElseThrow();
@@ -88,17 +90,24 @@ class DefaultKnowledgeReviewSourceReaderTest {
                 mock(TroubleshootingPersistenceService.class);
         TroubleshootingSopPersistenceService manual =
                 mock(TroubleshootingSopPersistenceService.class);
-        when(manual.findBySopId(7L, "sop-1")).thenReturn(manualSop());
+        ManualPlaybookReplayService replays = mock(ManualPlaybookReplayService.class);
+        SopEntry manualSop = manualSop();
+        when(manual.findBySopId(7L, "sop-1")).thenReturn(manualSop);
+        ManualPlaybookReplayQualification replay = passedReplay(manualSop);
+        when(replays.qualification(7L, manualSop)).thenReturn(replay);
         DefaultKnowledgeReviewSourceReader reader =
-                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual);
+                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual, replays);
 
         KnowledgeReviewSource source = reader.find(
                 7L, KnowledgeOrigin.MANUAL, "sop-1").orElseThrow();
 
         assertThat(source.selectorKey()).isEqualTo("csdp:903002");
         assertThat(source.snapshot().validationStatus()).isEqualTo("VALID");
-        assertThat(source.snapshot().eligibilityReasons())
-                .containsExactly("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+        assertThat(source.snapshot().approvalEligibility())
+                .isEqualTo("ELIGIBLE_FOR_APPROVAL");
+        assertThat(source.snapshot().eligibilityReasons()).isEmpty();
+        assertThat(source.snapshot().manualReplay()).isEqualTo(replay.attestation());
+        verify(replays).qualification(7L, manualSop);
     }
 
     @Test
@@ -108,9 +117,10 @@ class DefaultKnowledgeReviewSourceReaderTest {
                 mock(TroubleshootingPersistenceService.class);
         TroubleshootingSopPersistenceService manual =
                 mock(TroubleshootingSopPersistenceService.class);
+        ManualPlaybookReplayService replays = mock(ManualPlaybookReplayService.class);
         when(evidence.find(8L, "record-1")).thenReturn(null);
         DefaultKnowledgeReviewSourceReader reader =
-                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual);
+                new DefaultKnowledgeReviewSourceReader(evidence, outcomes, manual, replays);
 
         assertThat(reader.find(
                 8L, KnowledgeOrigin.EVIDENCE_DERIVED, "record-1")).isEmpty();
@@ -164,5 +174,20 @@ class DefaultKnowledgeReviewSourceReaderTest {
                         "R-1", List.of("error_present"), "连接异常", "超时",
                         Confidence.HIGH, false)),
                 List.of());
+    }
+
+    private ManualPlaybookReplayQualification passedReplay(SopEntry sop) {
+        String candidateFingerprint = "a".repeat(64);
+        String suiteFingerprint = "b".repeat(64);
+        return new ManualPlaybookReplayQualification(
+                candidateFingerprint,
+                suiteFingerprint,
+                new ManualPlaybookReplayAttestation(
+                        "replay-1", sop.sopId(), sop.routingKey(),
+                        candidateFingerprint, "manual-suite/v1", 1,
+                        suiteFingerprint,
+                        ManualPlaybookReplayAttestation.Status.PASSED,
+                        1, 1, 1, 1, List.of(), true, "reviewer-a",
+                        Instant.parse("2026-07-31T03:00:00Z")));
     }
 }

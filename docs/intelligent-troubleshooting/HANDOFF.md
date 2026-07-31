@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-07-30
+> 更新时间：2026-07-31
 >
 > 仓库：`webonne/mateclaw`
 >
@@ -222,10 +222,10 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   active approved。正式命中路径只返回 operational 权威，最新版本为 `DEPRECATED` 时直接 route miss，
   不回落复活 legacy 行；治理详情独立读取最新历史版本。Diagnosis 1.7 现冻结来源 Playbook owner，
   `knowledge-candidate.v2` 与关闭事务同时冻结 outcome、恢复验证、actor 和时间；历史 v1 候选继续显示
-  `OUTCOME_VERIFICATION_NOT_PROJECTED / OWNER_REQUIRED`。当前真实精确候选回放、数据驱动的
-  `RUNTIME` 档切换尚未接入 Gate，因此现有三类真实来源仍保持 `NOT_ELIGIBLE`；版本命令可用不等于已有
-  候选可以晋升。`EVIDENCE_DERIVED / OUTCOME_BACKED` 的可执行 promotion material 也继续 fail closed，
-  直到各自的 server-owned Playbook 合同与证明接入。
+  `OUTCOME_VERIFICATION_NOT_PROJECTED / OWNER_REQUIRED`。2026-07-31 起，部署拓扑 selector 的 `MANUAL`
+  候选可运行服务端固定正例、健康反例和缺证据弃权例；证明与精确候选/套件双指纹绑定，通过后才消除回放
+  缺口，仍须人工审阅和批准。数据驱动的 `RUNTIME` 档切换以及 `EVIDENCE_DERIVED / OUTCOME_BACKED`
+  的精确候选回放尚未接入 Gate，继续 fail closed；MANUAL fixture 通过不等于 T7/T8 已通过。
 - H2/MySQL/Kingbase V174 candidate 表，generation key 按 workspace 唯一；四个北极星时间戳与三段成本已入合同。
 - 固定 Replay Eval 已组合真实 Replay/Router/压缩/结构化解析/Validator/参考比较/Store；
   正例创建并幂等复用，危险输出在入库前被拒绝。
@@ -793,6 +793,30 @@ T14 Diagnosis 精确 Playbook 权威引用（2026-07-30）已实现：
   `csdp:scenario:deployment_topology_probe` 权威选择器和提交按钮状态，控制台 0 error；验收没有提交
   表单，因此没有新增 Diagnosis 或调用外部 Guance。Spec / Standards 双轴复审均 PASS，无提交阻断项。
 
+T14 MANUAL 精确候选固定回放 Gate（2026-07-31）已实现，人工批准和真实 T8 边界保持不变：
+
+- 服务端资源 `manual-playbook-replay-suites.json` 同时托管部署拓扑导入示例、固定正例、健康反例与缺证据
+  弃权例；启动时校验示例必须能通过自己的套件。浏览器只能按 selector 下载候选示例、按 source ID 触发
+  回放，不能上传 fixture、预期答案、证明或候选内容来影响一次回放。
+- 零 LLM evaluator 先锁定 `synthetic_probe + deployment_topology + topology_synthetic_probe` 证据合同，
+  再复用确定性判据与规则语义核对每个预期结局。V189 在 H2/MySQL/Kingbase 保存不可变证明，只含通过计数、
+  结构化失败码、服务端登录主体/时间和候选/套件双 SHA-256；不保存 fixture 观测值、DQL、日志、密钥或原始响应。
+- Knowledge Review Inbox 实时重算当前候选和当前套件指纹；无套件、无证明、证明失效或回放失败都 fail closed。
+  精确证明通过只会把满足 owner 与合同校验的 MANUAL 候选推进到 `ELIGIBLE_FOR_APPROVAL`，不会使其 routeable，
+  不会自动开始审阅或代替审核人批准；批准仍由 V185/V186 乐观版本与 selector 单权威约束控制。
+- 正式治理页可载入服务端示例、运行固定回放，并展示 suite、正负例计数、执行主体/时间、双指纹和失败码。
+  这是 v4 §5.7 的 MANUAL 首版 bootstrap 证明，不是 Guance T7 owner 验收，也不是 T8 的 20–30 条真源样本；
+  `EVIDENCE_DERIVED / OUTCOME_BACKED` 的精确候选 Gate、Challenger 与 Loop 继续待真实数据。
+- 完成 Spec / Standards 双轴复审后，回放要求候选的全部 EvidenceRequest 与套件逐项精确覆盖，避免额外
+  必需或可选取证绕过证明；MANUAL 完整合同统一校验版本、预算、安全字段、证据—判据—规则引用与动作边界，
+  在线诊断和回放共用同一确定性规则解释器。后端排障域 + Skill Manifest `576` 个测试、前端 `23` 个测试文件 /
+  `171` 个测试全部通过；`vue-tsc --noEmit`、变更文件 ESLint、`git diff --check` 与直接 Vite 生产构建均通过，
+  构建完成 `6298` 个模块转换。仓库 `npm run build` 的前置脚本仍引用不存在的
+  `../scripts/check-snowflake-precision.sh`，因此本次直接执行其余类型检查与 Vite 构建，不把该既有基础设施缺口
+  混入排障域功能变更。本地 H2 已从 V188 成功迁移至 V189，最新代码后端 PID `16961` 正在运行；登录态应用内浏览器已确认
+  治理页可从服务端载入 `CSDP:scenario:deployment_topology_probe` 完整候选合同并解除表单校验，控制台 0 error。
+  验收没有点击注册或运行回放，因此没有新增候选、证明、审批记录、Diagnosis 或外部 Guance 调用。
+
 后端定向测试命令：
 
 ```bash
@@ -815,7 +839,9 @@ mvn -pl mateclaw-server -am \
 5. P2 T6 授权机制、真源验证接缝和部署拓扑拨测场景入口已完成；下一主攻是由 owner 核对当前空
    `series` 的任务时间窗与真实数据，再取得首个 `synthetic_probe` canonical 返回，并用正式工作台的“P2 真源门”
    完成 T7 字段核实和 20–30 条 T8 影子样本。
-6. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
+6. 部署拓扑 `MANUAL` 固定回放 Gate 已完成；示例导入、回放和人审是三个独立动作，不要自动批准候选，
+   也不要拿这份 fixture 证明替代 T7/T8。
+7. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。
 
 ## 10. 不要做
 

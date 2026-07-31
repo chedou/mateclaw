@@ -29,6 +29,8 @@ import vip.mate.troubleshooting.synthesis.KnowledgeReviewDeprecation;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayAttestation;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayService;
 import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.PlaybookSynthesisResult;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
@@ -63,6 +65,7 @@ public class SopManagementController {
     private final SopSynthesisService synthesisService;
     private final KnowledgeReviewInboxService reviewInboxService;
     private final KnowledgeReviewWorkflowService reviewWorkflow;
+    private final ManualPlaybookReplayService manualReplayService;
 
     /**
      * Previews the first three learning-loop stages without invoking a model or
@@ -115,6 +118,29 @@ public class SopManagementController {
         long resolvedWorkspace = resolveWorkspace(workspaceId);
         int resolvedLimit = limit == null ? DEFAULT_PAGE_SIZE : limit;
         return R.ok(reviewInboxService.read(resolvedWorkspace, resolvedLimit));
+    }
+
+    /**
+     * Runs the bundled fixed replay suite against one exact manual candidate.
+     *
+     * <p>The request supplies no fixture, expected answer, proof or candidate
+     * content. The service resolves all of them from immutable server-owned
+     * state and persists only bounded counters plus double fingerprints.</p>
+     */
+    @PostMapping("/review-inbox/manual/{sourceRecordId}/replay")
+    @RequireWorkspaceRole("admin")
+    public R<ManualPlaybookReplayAttestation> replayManualCandidate(
+            @PathVariable String sourceRecordId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(manualReplayService.run(
+                resolveWorkspace(workspaceId), sourceRecordId, currentActor()));
+    }
+
+    /** Downloads a server-owned candidate example without exposing replay cases. */
+    @GetMapping("/review-inbox/manual/example")
+    @RequireWorkspaceRole("admin")
+    public R<SopEntry> manualCandidateExample(@RequestParam String selectorKey) {
+        return R.ok(manualReplayService.exampleCandidate(selectorKey));
     }
 
     /** Starts an audited review from the virtual CANDIDATE/v0 state. */

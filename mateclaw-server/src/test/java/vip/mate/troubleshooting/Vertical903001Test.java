@@ -14,6 +14,7 @@ import org.mockito.stubbing.Answer;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
@@ -124,7 +125,8 @@ class Vertical903001Test {
                 diagnosisMapper(), outboxMapper(), objectMapper);
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();
         DeterministicDiagnosisService diagnosisService = new DeterministicDiagnosisService(
-                new CriterionEvaluator(), stateMachine, persistence, playbookVersions);
+                new CriterionEvaluator(), new DiagnosisRuleEvaluator(),
+                stateMachine, persistence, playbookVersions);
 
         intake = new TroubleshootingIntakeService(sopPersistence, diagnosisService);
         lifecycle = new DiagnosisLifecycleService(persistence, stateMachine);

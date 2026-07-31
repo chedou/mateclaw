@@ -50,8 +50,12 @@ Diagnosis 1.8 在 1.7 冻结来源 Playbook owner 的基础上，又冻结精确
 1.3–1.7 旧记录只保留反序列化兼容，新的确定性工厂必须显式给出精确引用；没有精确引用时禁止拿当前 Playbook
 补猜历史推导。`knowledge-candidate.v2` 与关闭事务同时冻结 outcome、恢复验证、actor 和时间。
 候选合同只接受 v1/v2：v1 不得携带 proof/owner，v2 必须携带与
-createdBy/createdAt 一致的服务端关闭 proof；历史 v1 候选继续 fail closed。真实精确候选回放和数据驱动的
-`RUNTIME` 档切换仍未完成，现有来源不能因版本命令可用而被视为可晋升。
+createdBy/createdAt 一致的服务端关闭 proof；历史 v1 候选继续 fail closed。V189 已为
+`csdp:scenario:deployment_topology_probe` 的 `MANUAL` 候选增加服务端固定正例、健康反例和缺证据弃权
+回放：浏览器不能提交 fixture/预期答案/证明，证明只保存有界计数与候选/套件双 SHA-256；完整合同、owner
+与精确证明全部通过后才可返回 `ELIGIBLE_FOR_APPROVAL`，仍须人工审阅和批准，不能自动成为权威。
+`EVIDENCE_DERIVED / OUTCOME_BACKED` 的精确候选回放和数据驱动的 `RUNTIME` 档切换仍未完成；这份
+MANUAL fixture 证明不代表 T7/T8 通过。
 运行键在取证/模型调用前以数据库占位原子领取，15 分钟租约每 4 分钟续期，丢失所有权会中断当前
 有界外部调用并在每个外部边界拒绝继续/提交；模型版本包含并钉死实际执行的 model + provider 配置快照，
 不泄露凭据。ABSTAIN 同样带当前 Evidence ValidationContext 校验完整 proposal：拒答理由必须同时明确
