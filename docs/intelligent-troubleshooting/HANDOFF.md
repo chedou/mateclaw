@@ -817,6 +817,38 @@ T14 MANUAL 精确候选固定回放 Gate（2026-07-31）已实现，人工批准
   治理页可从服务端载入 `CSDP:scenario:deployment_topology_probe` 完整候选合同并解除表单校验，控制台 0 error。
   验收没有点击注册或运行回放，因此没有新增候选、证明、审批记录、Diagnosis 或外部 Guance 调用。
 
+P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
+
+- 新增默认不激活的 `csdp-guance-evidence-pilot` Profile，只授权
+  `workspace 1 / CSDP / csdp-session-service` 的 `log_search / log_trace_bundle / contrast_sample`，
+  三份路由都硬限 `guance`，不存在 Recorded Replay 后备。
+- Guance scalar 可能按字段返回多个 series，Adapter 只在同一个 component 内按相同观测时间合并。
+  trace 则强制一个行集 series：每行的 `message` 是一条原子 JSON 日志，只从该记录提取白名单字段；
+  跨 series 序号拼接一律拒绝，避免相同时间戳或返回重排造成错配。字段冲突、混合 PS ID、超行数或
+  canonical 类型异常均 fail closed，trace DQL 不含会遮蔽 `maxRows + 1` 哨兵的 `LIMIT`。
+- `contrast_sample` 仍是一次 Router/HTTP 源调用，但含四个 DQL component：失败/成功 cohort 各有
+  样本总数和固定特征命中数。失败终态使用 `failed AND sendmsg`，成功终态使用
+  `success AND sendmsg AND NOT failed`；四项均按 `@trace_id` 去重，共享服务端时间范围并各自压成
+  单个 24 小时桶。固定特征命中率必须在失败 cohort 严格更高；早期同状态条件和仅 `NOT failed`
+  的代理对照结果均已废弃。`success` 终态标记的业务语义仍待 owner 在 T7 正式确认。
+- 真实运行暴露并修复了三个边界问题：应用全局 Long-to-String Jackson 设置不得把 Guance
+  `timeRange` 数组写成字符串；Spring relaxed Map binding 的嵌套 JSON alias 必须使用
+  `"[message@trace_id]"` 这类原样键语法；native curl 必须以 `-q` 禁用用户 `.curlrc`。
+  三处均有回归测试。
+- 当前本机 TUN 下 Java HTTP 连接无法稳定访问该内网主机，试点 Profile 使用受限
+  `native-curl` transport。API Key 和请求体只经 stdin 传入，不进 argv、临时文件或子进程环境；
+  错误不回显 stderr 或凭据，并以 `-q` 禁用用户配置。Key 仍仅存本地忽略的环境文件，未写入跟踪文件。
+  独立成功 cohort 扫描量较大，试点超时显式设为 45 秒；这项延迟仍待 owner 在 T7 复核接受。
+- 真实预览通过本地管理端点返回 `FULL_SPINE_OBSERVED`：`matchCount=2`、
+  PS ID 存在但未输出原文、3 条 trace、服务序列为 `csp-rpc-msg`、异常数为 1，
+  最终快照的失败对照为 `2/2`、显式成功终态对照为 `0/14047`（实时样本量会变化），
+  且三个 Step 均为 `CANONICAL_RESULT_OBSERVED`；
+  `sourceRequestCount=3`，没有回退 Replay。
+- 这只证明“三次真源取证 + 确定性压缩 + 双投影”的首个真实竖线可执行。当前没有
+  Workspace owner `ACCEPTED` 记录，也没有持久化到 T8 历史样本台账；`fixtureMode`
+  不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，
+  然后才能采集首条真实 T8 台账样本。CloudDial `synthetic_probe` 仍是独立未完成的真源合同。
+
 后端定向测试命令：
 
 ```bash
@@ -836,9 +868,10 @@ mvn -pl mateclaw-server -am \
 3. P1 T1→T5（含 T4.5）已完成；修改 prompt/model/schema 必须重跑固定 Replay Eval。
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
-5. P2 T6 授权机制、真源验证接缝和部署拓扑拨测场景入口已完成；下一主攻是由 owner 核对当前空
-   `series` 的任务时间窗与真实数据，再取得首个 `synthetic_probe` canonical 返回，并用正式工作台的“P2 真源门”
-   完成 T7 字段核实和 20–30 条 T8 影子样本。
+5. P2 T6 授权机制、真源验证接缝、部署拓扑拨测场景入口和首条 CSDP SendMsg
+   `FULL_SPINE_OBSERVED` 已完成；下一主攻是由 owner 对当前指纹提交 T7 acceptance，
+   再将真源运行持久化为首条 T8 台账样本，逐步积累 20–30 条。CloudDial
+   `synthetic_probe` 仍需核对空 `series` 的任务时间窗并完成独立验收。
 6. 部署拓扑 `MANUAL` 固定回放 Gate 已完成；示例导入、回放和人审是三个独立动作，不要自动批准候选，
    也不要拿这份 fixture 证明替代 T7/T8。
 7. 真实样本稳定后再实现 Scenario Registry/Planning；不要先搭空平台。

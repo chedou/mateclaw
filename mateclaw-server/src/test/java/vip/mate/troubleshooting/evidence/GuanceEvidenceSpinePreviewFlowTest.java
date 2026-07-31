@@ -28,18 +28,18 @@ class GuanceEvidenceSpinePreviewFlowTest {
     @Test
     void runsTheSharedThreeStageSpineAgainstGuanceWithoutReplayFallback() {
         CapturingTransport transport = new CapturingTransport(
-                response(
-                        "[4,\"ps-message-001\",\"message failed\"]",
-                        "[\"count\",\"ps_id\",\"message\"]"),
-                response(
-                        "[\"ps-message-001\",1000,\"gateway\",\"INFO\",\"accepted\",12],"
-                                + "[\"ps-message-001\",1042,\"session-svc\",\"ERROR\",\"send failed\",42]",
-                        "[\"ps_id\",\"time\",\"service\",\"status\",\"message\",\"duration_ms\"]"),
-                response(
-                        "[\"session_state_conflict\",100,92,100,3]",
-                        "[\"discriminating_feature\",\"failure_sample_count\","
-                                + "\"failure_match_count\",\"success_sample_count\","
-                                + "\"success_match_count\"]"));
+                fieldPerSeriesResponse(
+                        series("time", "count", "[1000,4]"),
+                        series("time", "ps_id", "[1000,\"ps-message-001\"]"),
+                        series("time", "message", "[1000,\"message failed\"]")),
+                traceRecordResponse(),
+                fieldPerSeriesResponse(
+                        series("time", "discriminating_feature",
+                                "[1000,\"session_state_conflict\"]"),
+                        series("time", "failure_sample_count", "[1000,100]"),
+                        series("time", "failure_match_count", "[1000,92]"),
+                        series("time", "success_sample_count", "[1000,100]"),
+                        series("time", "success_match_count", "[1000,3]")));
         EvidenceProperties properties = properties();
         GuanceEvidenceAdapter guance = new GuanceEvidenceAdapter(
                 properties.getGuance(), new ObjectMapper(), transport, CLOCK);
@@ -49,7 +49,15 @@ class GuanceEvidenceSpinePreviewFlowTest {
         GuanceEvidenceReadinessService readiness =
                 new GuanceEvidenceReadinessService(properties, guance);
         EvidenceSpineOrchestrator orchestrator = new EvidenceSpineOrchestrator(
-                router, new DeterministicLogTraceCompressor(), CLOCK);
+                router,
+                new DeterministicLogTraceCompressor(),
+                CLOCK,
+                new SequenceTicker(
+                        0L, 1_000_000L,
+                        2_000_000L, 3_000_000L,
+                        4_000_000L, 5_000_000L,
+                        6_000_000L, 7_000_000L,
+                        8_000_000L, 9_000_000L));
         GuanceEvidenceSpinePreviewService service = new GuanceEvidenceSpinePreviewService(
                 orchestrator, readiness, CLOCK, new SequenceTicker(0L, 75_000_000L));
 
@@ -90,8 +98,14 @@ class GuanceEvidenceSpinePreviewFlowTest {
                         Map.of("count", "match_count", "message", "sample_message"),
                         1),
                 "trace-binding", binding(
-                        "L::logs:(ps_id,time,service,status,message,duration_ms) {ps_id='{{ps_id}}'} [{{window}}]",
-                        Map.of("time", "timestamp", "status", "level"),
+                        "L::logs:(message) {query_string(message, '{{ps_id}}')} [{{window}}]",
+                        Map.of(
+                                "time", "timestamp",
+                                "message@trace_id", "ps_id",
+                                "message@source", "service",
+                                "message@level", "level",
+                                "message@msg", "message",
+                                "message@duration_ms", "duration_ms"),
                         200),
                 "contrast-binding", binding(
                         "L::logs:(discriminating_feature,failure_sample_count,failure_match_count,"
@@ -125,9 +139,26 @@ class GuanceEvidenceSpinePreviewFlowTest {
         return binding;
     }
 
-    private String response(String values, String columns) {
-        return "{\"code\":200,\"success\":true,\"content\":{\"data\":[{\"series\":[{"
-                + "\"columns\":" + columns + ",\"values\":[" + values + "]}]}]}}";
+    private String fieldPerSeriesResponse(String... series) {
+        return "{\"code\":200,\"success\":true,\"content\":{\"data\":[{\"series\":["
+                + String.join(",", series) + "]}]}}";
+    }
+
+    private String traceRecordResponse() {
+        return """
+                {"code":200,"success":true,"content":{"data":[{"series":[{
+                  "columns":["time","message"],
+                  "values":[
+                    [1000,"{\\\"trace_id\\\":\\\"ps-message-001\\\",\\\"source\\\":\\\"gateway\\\",\\\"level\\\":\\\"INFO\\\",\\\"msg\\\":\\\"accepted\\\",\\\"duration_ms\\\":12}"],
+                    [1042,"{\\\"trace_id\\\":\\\"ps-message-001\\\",\\\"source\\\":\\\"session-svc\\\",\\\"level\\\":\\\"ERROR\\\",\\\"msg\\\":\\\"send failed\\\",\\\"duration_ms\\\":42}"]
+                  ]
+                }]}]}}
+                """;
+    }
+
+    private String series(String timeColumn, String valueColumn, String values) {
+        return "{\"columns\":[\"" + timeColumn + "\",\"" + valueColumn
+                + "\"],\"values\":[" + values + "]}";
     }
 
     private static final class CapturingTransport implements EvidenceHttpTransport {

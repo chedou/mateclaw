@@ -212,17 +212,34 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单次成功仍只是 owner 执行 T7 的工具，
 不是 T7 或 T8 完成证明。
 
+2026-07-31：新增默认不激活的 `csdp-guance-evidence-pilot` Profile，精确授权
+`workspace 1 / CSDP / csdp-session-service` 的 `log_search / log_trace_bundle / contrast_sample`。
+三份合同已在真实 Guance `csp-rpc-msg` 数据上运行：失败搜索返回规范 PS ID，同 ID 链路返回
+3 条原子 JSON 日志；独立的 `failed` 失败终态与带显式 `success` 标记的成功终态 cohort 使用同一
+时间范围和单桶聚合，四项均按 `@trace_id` 去重，对照可复算。统一 `EvidenceSpineOrchestrator` 首次返回
+`FULL_SPINE_OBSERVED`，三次真源请求均为 `CANONICAL_RESULT_OBSERVED`，无 Replay 回退。
+早期同状态条件构造的对照结果已废弃；当前失败样本量仍小，只证明机制可运行，不代表判据已泛化。
+这仍是一次不持久化预览：尚无 owner `ACCEPTED` 记录，尚未进入 T8 样本台账，
+`fixtureMode` 不变；CloudDial `synthetic_probe` 仍待独立真源验收。
+
 ### T7 · 内网核实
 
 - [x] 建立持久化、按当前 binding 配置指纹失效的 owner 验收接缝：只有 Workspace owner 明确核对
       measurement/字段、索引、同 PS ID、时间单位/窗口、DQL 延迟与 903001 冲突，且服务端再次跑通
       Guance-only 两步读链后，才保存 V184 秘密无关验收记录；Guance T8 采集与基线复跑都在 Router
       调用前强制校验当前指纹。该接缝不代表下面任何真实核实项已完成。
-- [ ] 核实真实 measurement、字段名、索引、PS ID、时间戳单位、时间窗和 DQL 延迟。
-- [ ] 用旋转后的 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
+- [x] 在真实 CSDP SendMsg 数据上核实 `csp-rpc-msg`、原子 `message` JSON 内的
+      `trace_id / level / msg`、毫秒时间戳类型和同 PS ID 一致性；JSON `source` 是源码位置，
+      canonical `service` 改由服务端 binding 固定提供，并明确拒绝 trace 跨 series 序号拼接（2026-07-31）。
+- [x] 将成功样本对照改为独立 `failed` / 显式 `success` 终态 cohort，为两边使用同一服务器时间范围、
+      24 小时单桶 rollup，并按 `@trace_id` 去重；失败特征命中率在真实数据上严格高于成功样本
+      （2026-07-31）。`success` 终态标记的业务语义仍纳入下面 owner T7 acceptance。
+- [ ] 由 Workspace owner 完成索引、时间窗、DQL 延迟和旧 route 冲突复核，并对当前配置指纹提交
+      `ACCEPTED`；提交前不得开放 T8 真源采样。
+- [ ] 用当前受控运行时 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
       本地联调可按本次操作员明确授权临时开启 insecure HTTP，完成后立即关闭；正式部署仍须使用 HTTPS
       端点或受控 TLS 代理，不得提交 Key。
-- [ ] 用会议案例跑真实 `log_search → log_trace_bundle`，确认同一 PS ID 全链路。
+- [x] 用会议案例跑真实 `log_search → log_trace_bundle`，确认搜索和 3 条关联日志使用同一 PS ID。
 - [ ] 核实 903001 的字段/阈值与三处历史 route key 冲突；这只阻塞错误码竖线，不阻塞 P1 fixture。
 - [ ] 真实源未验收前 `fixtureMode` 不得改为 false。
 
@@ -232,6 +249,9 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       `EvidenceSpineOrchestrator` 执行 `log_search → log_trace_bundle → contrast_sample →
       deterministic compress`，只返回调用链骨架、异常数、对照比率、证据引用和应用侧总耗时；
       不持久化原始日志、不调模型、不回退 Replay。
+- [x] 在真实 Guance 环境运行首条不持久化预览：`log_search → log_trace_bundle →
+      contrast_sample → deterministic compress` 返回 `FULL_SPINE_OBSERVED`，且
+      `sourceRequestCount=3`（该项不等于 T8 台账已有 1 条样本）。
 - [x] 建立管理员 T8 历史样本台账基础设施：采集时由服务端重新执行 Guance-only Evidence Spine，
       V181 只保存结构化计数、PS ID、调用链骨架、对照、耗时和固定证据引用；不接收浏览器预览、
       outcome、fixture 标记或审计 actor。人工参考步骤只接受结构化 intent key，关联 Diagnosis 必须
@@ -279,7 +299,8 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 不是 20–30 条真实样本本身，更不是 T8 验收结论。`contrast_sample` 未绑定或不可用时仍保留核心
 同 PS ID 链路，显式标记对照缺失并继续校准期；Guance 与 Recorded Replay、证据 fixture 与关联
 Diagnosis fixture 分开记录。逐样本引用/意图覆盖、安全且证据落地的拒答原因、危险提议分类已经具备
-结构化存储；Recorded Replay 采集和基线执行已接入。但当前没有真实数据，不能产出质量结论；
+结构化存储；Recorded Replay 采集和基线执行已接入。当前只有一次真源预览事实，没有 owner 验收后持久化的
+T8 真实样本，仍不能产出质量结论；
 Challenger 影子运行和两者对比仍未实现。
 只有 owner 完成 T7、实际累积 20–30 条并跑完质量/完整性能统计后，
 才能计算和评审整体 T8 基线。

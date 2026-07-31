@@ -192,33 +192,33 @@
 
   <!-- 当前开发进度 -->
   <section id="development-status">
-    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-29</span><span class="sd">以录音产品基线、架构 v4.3 和正式工作台为口径</span></div>
+    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-31</span><span class="sd">以录音产品基线、架构 v4 和首条真实 Guance Evidence Spine 为口径</span></div>
     <div class="devstatus">
       <div class="devtop">
         <div class="devlead">
           <div class="eyebrow">Current implementation baseline</div>
-          <h3>正式工作台已承接双投影和最终处置结果</h3>
-          <p>现有 Java/Vue 领域底座不推倒。P1 证据→草稿已完成；P3 已打通普通消息 Intake、补问、持久化异步调查、leader 路由恢复、平台 ACK、纯文本业务摘要、正式页深链，以及关闭 outcome 的持久化原路 @ 通知。</p>
+          <h3>真实 Guance 三次取证已跑通首条完整 Evidence Spine</h3>
+          <p>现有 Java/Vue 领域底座不推倒。CSDP SendMsg 场景已在真实 Guance 上完成失败日志搜索、同 PS ID 原子日志链路，以及独立 failed / 显式 success 终态 cohort 的同窗、按 PS ID 去重样本对照；统一 EvidenceSpineOrchestrator 返回 FULL_SPINE_OBSERVED。全程零 LLM、无 Replay 回退、不持久化原始日志；早期同状态条件及仅 NOT failed 的代理对照结果已废弃。</p>
           <div class="devmeta"><span>branch claude/intelligent-troubleshooting-design</span><span>fixtureMode=true</span><span>architecture review: approved</span></div>
         </div>
         <div class="devverdict">
           <div class="vlabel">当前判断</div>
-          <strong>工程闭环已可在 fixture 下运行；真实 Guance 资产映射、字段核实和影子样本仍未完成，不能把 Recorded Replay 当成生产结论。</strong>
+          <strong>修正后的首条真实 Guance 竖线已观测；当前失败样本量仍小，且缺 owner T7 acceptance 和 20–30 条 T8 持久化样本。fixtureMode 不变，不能把单条成功当成生产结论。</strong>
           <a href="HANDOFF.md">查看完整交接清单 <span aria-hidden="true">→</span></a>
         </div>
       </div>
       <div class="phase-track" aria-label="v4 P0 到 P5 开发阶段">
         <div class="phase done"><span class="phase-dot"></span><div class="pid">P0</div><div class="pt">校准</div><div class="pd">录音事实、架构、评审、Demo</div><span class="ps">已完成</span></div>
         <div class="phase done"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">证据→草稿</div><div class="pd">Draft、Validator、Reference Eval</div><span class="ps">已完成</span></div>
-        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">真实取证</div><div class="pd">Guance 内网验证、历史样本</div><span class="ps">下一门</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">真实取证</div><div class="pd">首条 FULL 已观测，待 owner 验收与历史样本</div><span class="ps">进行中</span></div>
         <div class="phase next"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">企微闭环</div><div class="pd">补问、异步调查、原路回复</div><span class="ps">部分完成</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P4</div><div class="pt">场景调查</div><div class="pd">Scenario Playbook、DiscoveryPolicy</div><span class="ps">待真实样本</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P5</div><div class="pt">知识治理</div><div class="pd">审核资格、版本替换、双投影</div><span class="ps">分阶段</span></div>
       </div>
       <div class="next-focus">
         <span class="nfkey">NEXT</span>
-        <div class="nfcopy"><b>P3 关闭后原路通知</b><span>outcome 已登记 → 生命周期事件 → 原报障会话通知</span></div>
-        <span class="nfstage">T10 NEXT</span>
+        <div class="nfcopy"><b>P2 真源门</b><span>owner 核对当前 binding 指纹 → T7 acceptance → 首条 T8 台账样本</span></div>
+        <span class="nfstage">T7/T8 NOW</span>
       </div>
     </div>
   </section>

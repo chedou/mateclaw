@@ -2,6 +2,8 @@ package vip.mate.troubleshooting.evidence;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -208,6 +210,36 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void keepsGuanceTimeRangeNumericWhenTheApplicationMapperSerializesLongsAsStrings()
+            throws Exception {
+        SimpleModule longAsString = new SimpleModule();
+        longAsString.addSerializer(Long.class, ToStringSerializer.instance);
+        longAsString.addSerializer(Long.TYPE, ToStringSerializer.instance);
+        ObjectMapper applicationMapper = new ObjectMapper().registerModule(longAsString);
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "total", "trace"],
+                    "values": [[1753434723000, 148, "7f3a91c"]]
+                  }]}]}
+                }
+                """);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), applicationMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("timeRange").path(0).isNumber()).isTrue();
+        assertThat(query.path("timeRange").path(1).isNumber()).isTrue();
+        assertThat(query.path("limit").isNumber()).isTrue();
+    }
+
+    @Test
     void postsTheCloudDialEnvelopeAndNormalizesTheCspProbe() throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """
                 {
@@ -327,6 +359,165 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void mergesTheRealGuanceFieldPerSeriesScalarResponseDeterministically() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {
+                    "data": [{
+                      "series": [
+                        {
+                          "columns": ["time", "match_count"],
+                          "values": [[1753434723000, 2]]
+                        },
+                        {
+                          "columns": ["time", "ps_id"],
+                          "values": [[1753434723000, "safe-ps-001"]]
+                        },
+                        {
+                          "columns": ["time", "sample_message"],
+                          "values": [[1753434723000, "sendmsg failed"]]
+                        }
+                      ]
+                    }]
+                  }
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实失败日志检索",
+                "L::`csp-rpc-msg`:(count(*) as match_count,last(`@trace_id`) as ps_id,"
+                        + "last(`@msg`) as sample_message) "
+                        + "{ query_string(`message`, \"failed AND sendmsg\") }",
+                Map.of(),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_search", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-SEARCH", "log_search", "sample real failure logs",
+                Map.of("search_term", "message_send_failed"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "match_count", 2,
+                "ps_id", "safe-ps-001",
+                "sample_message", "sendmsg failed"));
+    }
+
+    @Test
+    void rejectsFieldPerSeriesScalarResponsesWithDifferentObservationTimes() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [
+                    {"columns": ["time", "match_count"],
+                     "values": [[1753434723000, 2]]},
+                    {"columns": ["time", "ps_id"],
+                     "values": [[1753434723001, "safe-ps-001"]]},
+                    {"columns": ["time", "sample_message"],
+                     "values": [[1753434723000, "sendmsg failed"]]}
+                  ]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实失败日志检索",
+                "L::`csp-rpc-msg`:(match_count,ps_id,sample_message)",
+                Map.of(),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_search", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-SEARCH", "log_search", "sample real failure logs",
+                Map.of("search_term", "message_send_failed"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void sendsACompoundContrastContractAndMergesServerOwnedFeatureMetadata()
+            throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [
+                    {"series": [
+                      {"columns": ["time", "failure_sample_count"],
+                       "values": [[1753434723000, 2]]}
+                    ]},
+                    {"series": [
+                      {"columns": ["time", "failure_match_count"],
+                       "values": [[1753434723000, 2]]}
+                    ]},
+                    {"series": [
+                      {"columns": ["time", "success_sample_count"],
+                       "values": [[1753521123000, 14055]]}
+                    ]},
+                    {"series": [
+                      {"columns": ["time", "success_match_count"],
+                       "values": [[1753521123000, 0]]}
+                    ]}
+                  ]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L", "同窗口成功样本负对照", "unused", Map.of(), 1);
+        binding.setQueryTemplate(null);
+        binding.setQueryTemplates(List.of(
+                "L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_sample_count) "
+                        + "{ query_string(`message`, \"failed AND sendmsg\") } "
+                        + "[{{window_span}}::{{window_span}}]",
+                "L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_match_count) "
+                        + "{ query_string(`message`, \"failed AND sendmsg\") "
+                        + "AND message_length = 2875 } "
+                        + "[{{window_span}}::{{window_span}}]",
+                "L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_sample_count) "
+                        + "{ query_string(`message`, \"success AND sendmsg AND NOT failed\") } "
+                        + "[{{window_span}}::{{window_span}}]",
+                "L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_match_count) "
+                        + "{ query_string(`message`, \"success AND sendmsg AND NOT failed\") "
+                        + "AND message_length = 2875 } "
+                        + "[{{window_span}}::{{window_span}}]"));
+        binding.setConstantFields(Map.of(
+                "discriminating_feature", "message_length_eq_2875"));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("contrast_sample", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-CONTRAST", "contrast_sample", "compare failure and success cohorts",
+                Map.of(), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "discriminating_feature", "message_length_eq_2875",
+                "failure_sample_count", 2,
+                "failure_match_count", 2,
+                "success_sample_count", 14055,
+                "success_match_count", 0));
+
+        JsonNode queries = objectMapper.readTree(transport.body).path("queries");
+        assertThat(queries).hasSize(4);
+        for (JsonNode query : queries) {
+            assertThat(query.path("query").path("q").asText())
+                    .contains("count_distinct", "[24h::24h]")
+                    .doesNotContain("{{");
+            assertThat(query.path("query").path("limit").asInt()).isEqualTo(2);
+        }
+    }
+
+    @Test
     void normalizesAndChronologicallyOrdersABoundedLogTraceBundle() throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """
                 {
@@ -384,6 +575,225 @@ class GuanceEvidenceAdapterTest {
         JsonNode query = objectMapper.readTree(transport.body)
                 .path("queries").path(0).path("query");
         assertThat(query.path("limit").asInt()).isEqualTo(3);
+    }
+
+    @Test
+    void normalizesRealTraceRowsFromOneJsonRecordSeries() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "message"],
+                    "values": [
+                      [1753434723042, "{\\\"trace_id\\\":\\\"safe-ps-001\\\",\\\"level\\\":\\\"WARN\\\",\\\"msg\\\":\\\"sendmsg failed\\\",\\\"source\\\":\\\"csp-rpc-msg\\\"}"],
+                      [1753434723000, "{\\\"trace_id\\\":\\\"safe-ps-001\\\",\\\"level\\\":\\\"INFO\\\",\\\"msg\\\":\\\"sendmsg accepted\\\",\\\"source\\\":\\\"csp-rpc-msg\\\"}"]
+                    ]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实关联 ID 日志链路",
+                "L::`csp-rpc-msg`:(message) "
+                        + "{ query_string(`message`, \"{{ps_id}}\") }",
+                Map.of(
+                        "time", "timestamp",
+                        "message@trace_id", "ps_id",
+                        "message@level", "level",
+                        "message@msg", "message"),
+                200);
+        binding.setConstantFields(Map.of("service", "csp-rpc-msg"));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-TRACE", "log_trace_bundle", "collect real trace logs",
+                Map.of("ps_id", "safe-ps-001"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsEntry("ps_id", "safe-ps-001");
+        assertThat(result.observed().get("entries")).isEqualTo(List.of(
+                Map.of(
+                        "timestamp", 1753434723000L,
+                        "service", "csp-rpc-msg",
+                        "level", "INFO",
+                        "message", "sendmsg accepted"),
+                Map.of(
+                        "timestamp", 1753434723042L,
+                        "service", "csp-rpc-msg",
+                        "level", "WARN",
+                        "message", "sendmsg failed")));
+    }
+
+    @Test
+    void rejectsFieldPerSeriesTraceRowsEvenWhenTimestampsAndCountsMatch() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [
+                    {"columns": ["time", "@trace_id"],
+                     "values": [[1753434723000, "safe-ps-001"],
+                                [1753434723000, "safe-ps-001"]]},
+                    {"columns": ["time", "@level"],
+                     "values": [[1753434723000, "WARN"],
+                                [1753434723000, "INFO"]]},
+                    {"columns": ["time", "@msg"],
+                     "values": [[1753434723000, "sendmsg failed"],
+                                [1753434723000, "sendmsg accepted"]]},
+                    {"columns": ["time", "service"],
+                     "values": [[1753434723000, "csp-rpc-msg"],
+                                [1753434723000, "csp-rpc-msg"]]}
+                  ]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实关联 ID 日志链路",
+                "L::`csp-rpc-msg`:(`@trace_id`,`@level`,`@msg`,`service`)",
+                Map.of(
+                        "time", "timestamp",
+                        "@trace_id", "ps_id",
+                        "@level", "level",
+                        "@msg", "message"),
+                200);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-TRACE", "log_trace_bundle", "collect real trace logs",
+                Map.of("ps_id", "safe-ps-001"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void rejectsCompoundQueryTemplatesForRowSetSignalsBeforeTransport() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "ambiguous trace binding",
+                "unused",
+                Map.of("time", "timestamp"),
+                200);
+        binding.setQueryTemplate(null);
+        binding.setQueryTemplates(List.of(
+                "L::logs:(message) {query_string(message, '{{ps_id}}')}",
+                "L::logs:(message) {query_string(message, '{{ps_id}}')}"));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-TRACE",
+                "log_trace_bundle",
+                "reject compound rowset binding",
+                Map.of("ps_id", "safe-ps-001"),
+                "-24h",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
+    void keepsCanonicalTraceTimestampsNumericWithTheApplicationLongSerializer() {
+        SimpleModule longAsString = new SimpleModule();
+        longAsString.addSerializer(Long.class, ToStringSerializer.instance);
+        longAsString.addSerializer(Long.TYPE, ToStringSerializer.instance);
+        ObjectMapper applicationMapper = new ObjectMapper().registerModule(longAsString);
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "message"],
+                    "values": [[1753434723000,
+                      "{\\\"trace_id\\\":\\\"safe-ps-001\\\",\\\"level\\\":\\\"WARN\\\",\\\"msg\\\":\\\"sendmsg failed\\\",\\\"source\\\":\\\"csp-rpc-msg\\\"}"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实关联 ID 日志链路",
+                "L::`csp-rpc-msg`:(message)",
+                Map.of(
+                        "time", "timestamp",
+                        "message@trace_id", "ps_id",
+                        "message@level", "level",
+                        "message@msg", "message",
+                        "message@source", "service"),
+                200);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding),
+                applicationMapper,
+                transport,
+                CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-TRACE", "log_trace_bundle", "collect real trace logs",
+                Map.of("ps_id", "safe-ps-001"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entries =
+                (List<Map<String, Object>>) result.observed().get("entries");
+        assertThat(entries).singleElement().satisfies(entry ->
+                assertThat(entry.get("timestamp"))
+                        .isInstanceOf(Number.class)
+                        .isEqualTo(1753434723000L));
+    }
+
+    @Test
+    void rejectsFieldPerSeriesTraceResponsesWithDifferentRowCounts() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [
+                    {"columns": ["time", "@trace_id"],
+                     "values": [[1753434723000, "safe-ps-001"],
+                                [1753434723000, "safe-ps-001"]]},
+                    {"columns": ["time", "@level"],
+                     "values": [[1753434723000, "WARN"]]},
+                    {"columns": ["time", "@msg"],
+                     "values": [[1753434723000, "sendmsg failed"]]},
+                    {"columns": ["time", "service"],
+                     "values": [[1753434723000, "csp-rpc-msg"]]}
+                  ]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "真实关联 ID 日志链路",
+                "L::`csp-rpc-msg`:(`@trace_id`,`@level`,`@msg`,`service`)",
+                Map.of(
+                        "time", "timestamp",
+                        "@trace_id", "ps_id",
+                        "@level", "level",
+                        "@msg", "message"),
+                200);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_trace_bundle", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-T7-TRACE", "log_trace_bundle", "collect real trace logs",
+                Map.of("ps_id", "safe-ps-001"), "-24h", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).isEmpty();
     }
 
     @Test

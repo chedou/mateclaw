@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 
 /** Composes evidence ports and adapters without enabling either source by default. */
 @Configuration(proxyBeanMethods = false)
@@ -18,7 +19,17 @@ import java.util.List;
 public class EvidenceAutoConfiguration {
 
     @Bean
-    EvidenceHttpTransport evidenceHttpTransport() {
+    EvidenceHttpTransport evidenceHttpTransport(EvidenceProperties properties) {
+        EvidenceProperties.Guance guance = properties.getGuance();
+        String transport = guance.getTransport() == null
+                ? ""
+                : guance.getTransport().trim().toLowerCase(Locale.ROOT);
+        if ("native-curl".equals(transport)) {
+            return new NativeCurlEvidenceHttpTransport(guance.getNativeCurlExecutable());
+        }
+        if (!"jdk".equals(transport)) {
+            throw new IllegalStateException("Unsupported Guance evidence transport");
+        }
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER)

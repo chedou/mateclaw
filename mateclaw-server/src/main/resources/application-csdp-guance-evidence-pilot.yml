@@ -1,0 +1,91 @@
+spring:
+  config:
+    activate:
+      on-profile: csdp-guance-evidence-pilot
+
+# Explicit, inactive-by-default binding for the first real CSDP Guance
+# Evidence Spine. Credentials stay in MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY
+# and are never stored in this profile.
+mateclaw:
+  troubleshooting:
+    evidence:
+      # The pilot is Guance-only. It must fail closed instead of silently
+      # replacing a missing live result with Recorded Replay evidence.
+      routes:
+        CSDP:
+          log_search: [guance]
+          log_trace_bundle: [guance]
+          contrast_sample: [guance]
+      guance:
+        base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:http://df-openapi.prd.sangfor.com}
+        # The local TUN path closes Java HTTP sockets but accepts the same
+        # read-only request from native curl. This override is pilot-only;
+        # credentials and request bodies are passed through stdin, never argv.
+        transport: native-curl
+        # The 24h independent success cohort currently scans hundreds of
+        # thousands of rows. Keep this pilot-only ceiling explicit; T7 records
+        # the observed latency instead of hiding it behind a fallback.
+        timeout: 45s
+        asset-bindings:
+          - workspace-id: ${MATECLAW_TROUBLESHOOTING_CSDP_WORKSPACE_ID:1}
+            system: CSDP
+            service: csdp-session-service
+            signal-bindings:
+              log_search: csdp-message-send-log-search
+              log_trace_bundle: csdp-message-send-trace-bundle
+              contrast_sample: csdp-message-send-contrast
+        bindings:
+          # Real contract verified against csp-rpc-msg on 2026-07-31.
+          # `message_send_failed` remains a server-owned scenario key; it is
+          # never interpolated into DQL. The source filter is fixed here.
+          csdp-message-send-log-search:
+            namespace: L
+            summary: CSDP SendMsg 失败日志检索
+            max-rows: 1
+            query-template: >-
+              L::`csp-rpc-msg`:(count(*) as match_count,last(`@trace_id`) as ps_id,last(`@msg`) as sample_message)
+              { query_string(`message`, "failed AND sendmsg") }
+              [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+          csdp-message-send-trace-bundle:
+            namespace: L
+            summary: CSDP SendMsg 关联 ID 日志链路
+            max-rows: 200
+            query-template: >-
+              L::`csp-rpc-msg`:(message)
+              { query_string(`message`, "{{ps_id}}") }
+            field-aliases:
+              time: timestamp
+              # Every canonical trace row is parsed from one Guance log JSON
+              # record. Cross-series ordinal joins are deliberately rejected.
+              "[message@trace_id]": ps_id
+              "[message@level]": level
+              "[message@msg]": message
+            # `message.source` is a source-code location, not a service name.
+            # The Guance measurement binding owns this canonical service label.
+            constant-fields:
+              service: csp-rpc-msg
+          csdp-message-send-contrast:
+            namespace: L
+            summary: CSDP SendMsg 失败与显式成功终态样本负对照
+            max-rows: 1
+            query-templates:
+              - >-
+                L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_sample_count)
+                { query_string(`message`, "failed AND sendmsg") }
+                [{{window_span}}::{{window_span}}]
+              - >-
+                L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_match_count)
+                { query_string(`message`, "failed AND sendmsg") AND message_length = 2875 }
+                [{{window_span}}::{{window_span}}]
+              - >-
+                L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_sample_count)
+                { query_string(`message`, "success AND sendmsg AND NOT failed") }
+                [{{window_span}}::{{window_span}}]
+              - >-
+                L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_match_count)
+                { query_string(`message`, "success AND sendmsg AND NOT failed") AND message_length = 2875 }
+                [{{window_span}}::{{window_span}}]
+            constant-fields:
+              discriminating_feature: message_length_eq_2875
+            field-aliases: {}

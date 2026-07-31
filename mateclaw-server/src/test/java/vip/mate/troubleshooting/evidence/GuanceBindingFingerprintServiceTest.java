@@ -30,6 +30,11 @@ class GuanceBindingFingerprintServiceTest {
                 .setQueryTemplate("L::other_measurement:(message=@search)");
         GuanceBindingFingerprintService.Snapshot afterQueryChange =
                 service.current(7L, "CSDP", "session-svc").orElseThrow();
+        properties.getGuance().getBindings().get("contrast-binding")
+                .setConstantFields(Map.of(
+                        "discriminating_feature", "message_length_eq_3000"));
+        GuanceBindingFingerprintService.Snapshot afterConstantChange =
+                service.current(7L, "CSDP", "session-svc").orElseThrow();
 
         assertThat(first.scopeKey()).matches("[a-f0-9]{64}");
         assertThat(first.bindingFingerprint()).matches("[a-f0-9]{64}");
@@ -40,6 +45,8 @@ class GuanceBindingFingerprintServiceTest {
                 .isNotEqualTo(first.bindingFingerprint());
         assertThat(afterQueryChange.bindingFingerprint())
                 .isNotEqualTo(afterQueryOptionsChange.bindingFingerprint());
+        assertThat(afterConstantChange.bindingFingerprint())
+                .isNotEqualTo(afterQueryChange.bindingFingerprint());
         assertThat(first.toString())
                 .doesNotContain("runtime-secret", "L::logs", "message=@search");
     }
@@ -95,9 +102,17 @@ class GuanceBindingFingerprintServiceTest {
         trace.setFieldAliases(new LinkedHashMap<>(Map.of(
                 "service", "service",
                 "status", "status")));
+        EvidenceProperties.Binding contrast = new EvidenceProperties.Binding();
+        contrast.setNamespace("logs");
+        contrast.setQueryTemplates(List.of(
+                "L::logs:(count(*) as failure_sample_count)",
+                "L::logs:(count(*) as success_sample_count)"));
+        contrast.setConstantFields(Map.of(
+                "discriminating_feature", "message_length_eq_2875"));
         properties.getGuance().setBindings(new LinkedHashMap<>(Map.of(
                 "search-binding", search,
-                "trace-binding", trace)));
+                "trace-binding", trace,
+                "contrast-binding", contrast)));
         return properties;
     }
 
@@ -109,7 +124,8 @@ class GuanceBindingFingerprintServiceTest {
         asset.setService(service);
         asset.setSignalBindings(new LinkedHashMap<>(Map.of(
                 "log_search", "search-binding",
-                "log_trace_bundle", "trace-binding")));
+                "log_trace_bundle", "trace-binding",
+                "contrast_sample", "contrast-binding")));
         return asset;
     }
 }

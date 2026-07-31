@@ -178,4 +178,95 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry("name", "probe_name");
                 });
     }
+
+    @Test
+    void bindsTheBundledCsdpGuanceEvidencePilotWithoutEmbeddingItsCredential() {
+        contextRunner
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withPropertyValues(
+                        "spring.profiles.active=csdp-guance-evidence-pilot",
+                        "MATECLAW_TROUBLESHOOTING_CSDP_WORKSPACE_ID=1",
+                        "mateclaw.troubleshooting.evidence.guance.enabled=false",
+                        "mateclaw.troubleshooting.evidence.guance.api-key=",
+                        "mateclaw.troubleshooting.evidence.guance.allow-insecure-http=false")
+                .run(context -> {
+                    EvidenceProperties properties = context.getBean(EvidenceProperties.class);
+
+                    assertThat(properties.getRoutes().get("CSDP"))
+                            .containsEntry("log_search", List.of("guance"))
+                            .containsEntry("log_trace_bundle", List.of("guance"))
+                            .containsEntry("contrast_sample", List.of("guance"));
+
+                    EvidenceProperties.Guance guance = properties.getGuance();
+                    assertThat(guance.isEnabled()).isFalse();
+                    assertThat(guance.isAllowInsecureHttp()).isFalse();
+                    assertThat(guance.getApiKey()).isBlank();
+                    assertThat(guance.getTransport()).isEqualTo("native-curl");
+                    assertThat(guance.getTimeout()).isEqualTo(java.time.Duration.ofSeconds(45));
+                    assertThat(context.getBean(EvidenceHttpTransport.class))
+                            .isInstanceOf(NativeCurlEvidenceHttpTransport.class);
+                    assertThat(guance.getAssetBindings()).singleElement()
+                            .satisfies(asset -> {
+                                assertThat(asset.getWorkspaceId()).isEqualTo(1L);
+                                assertThat(asset.getSystem()).isEqualTo("CSDP");
+                                assertThat(asset.getService()).isEqualTo("csdp-session-service");
+                                assertThat(asset.getSignalBindings())
+                                        .containsEntry("log_search", "csdp-message-send-log-search")
+                                        .containsEntry(
+                                                "log_trace_bundle",
+                                                "csdp-message-send-trace-bundle")
+                                        .containsEntry(
+                                                "contrast_sample",
+                                                "csdp-message-send-contrast");
+                            });
+
+                    assertThat(guance.getBindings())
+                            .containsKeys(
+                                    "csdp-message-send-log-search",
+                                    "csdp-message-send-trace-bundle",
+                                    "csdp-message-send-contrast");
+                    assertThat(guance.getBindings().get("csdp-message-send-log-search")
+                            .getQueryTemplate())
+                            .contains(
+                                    "csp-rpc-msg",
+                                    "query_string",
+                                    "failed AND sendmsg",
+                                    "@trace_id",
+                                    "{{window_span}}");
+                    EvidenceProperties.Binding traceBinding = guance.getBindings()
+                            .get("csdp-message-send-trace-bundle");
+                    assertThat(traceBinding.getQueryTemplate())
+                            .contains("(message)", "query_string", "{{ps_id}}")
+                            .doesNotContain("LIMIT");
+                    assertThat(traceBinding.getFieldAliases())
+                            .containsEntry("time", "timestamp")
+                            .containsEntry("message@trace_id", "ps_id")
+                            .containsEntry("message@level", "level")
+                            .containsEntry("message@msg", "message")
+                            .doesNotContainKey("message@source");
+                    assertThat(traceBinding.getConstantFields())
+                            .containsEntry("service", "csp-rpc-msg");
+                    EvidenceProperties.Binding contrastBinding = guance.getBindings()
+                            .get("csdp-message-send-contrast");
+                    assertThat(contrastBinding.getQueryTemplate()).isNull();
+                    assertThat(contrastBinding.getQueryTemplates())
+                            .hasSize(4)
+                            .allSatisfy(query -> assertThat(query)
+                                    .contains("count_distinct", "@trace_id", "{{window_span}}"));
+                    assertThat(contrastBinding.getQueryTemplates().get(0))
+                            .contains("failed AND sendmsg");
+                    assertThat(contrastBinding.getQueryTemplates().get(1))
+                            .contains("failed AND sendmsg", "message_length = 2875");
+                    assertThat(contrastBinding.getQueryTemplates().get(2))
+                            .contains("success AND sendmsg AND NOT failed");
+                    assertThat(contrastBinding.getQueryTemplates().get(3))
+                            .contains(
+                                    "success AND sendmsg AND NOT failed",
+                                    "message_length = 2875");
+                    assertThat(contrastBinding.getConstantFields())
+                            .containsEntry(
+                                    "discriminating_feature",
+                                    "message_length_eq_2875");
+                });
+    }
 }

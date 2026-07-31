@@ -123,6 +123,13 @@ public class GuanceBindingFingerprintService {
                     digest.add("binding.namespace", trim(binding.getNamespace()));
                     digest.add("binding.maxRows", Integer.toString(binding.getMaxRows()));
                     digest.add("binding.queryTemplate", trim(binding.getQueryTemplate()));
+                    List<String> queryTemplates = binding.getQueryTemplates() == null
+                            ? List.of()
+                            : binding.getQueryTemplates();
+                    digest.add("binding.queryTemplates.count",
+                            Integer.toString(queryTemplates.size()));
+                    queryTemplates.forEach(template ->
+                            digest.add("binding.queryTemplates.item", trim(template)));
                     EvidenceProperties.QueryOptions queryOptions =
                             binding.getQueryOptions();
                     if (queryOptions != null) {
@@ -147,6 +154,15 @@ public class GuanceBindingFingerprintService {
                             .forEach(alias -> {
                                 digest.add("binding.alias.source", trim(alias.getKey()));
                                 digest.add("binding.alias.canonical", trim(alias.getValue()));
+                            });
+                    Map<String, String> constants = binding.getConstantFields() == null
+                            ? Map.of()
+                            : binding.getConstantFields();
+                    constants.entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .forEach(constant -> {
+                                digest.add("binding.constant.canonical", trim(constant.getKey()));
+                                digest.add("binding.constant.value", trim(constant.getValue()));
                             });
                 });
 

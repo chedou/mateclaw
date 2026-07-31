@@ -20,7 +20,8 @@
 5. [HANDOFF](./HANDOFF.md)
    当前实施状态、红线、真实缺口与接手指针。
 6. [TODO](./TODO.md)
-   P1 已完成；当前优先级是 P2 真实 Guance 授权、字段核实和影子样本。
+   P1 已完成；当前唯一优先级是 P2：对首条真实 Guance Evidence Spine 完成
+   owner T7 验收，再累积 T8 影子样本。
 7. [P1 主链路验证记录](./p1-verification.md)
    固定 Replay Eval、REST 实测、fail-closed 边界与未完成范围。
 8. [源码核对与安全论证附录](../../rfcs/intelligent-troubleshooting-design.md)
@@ -83,8 +84,13 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 - Loop Engineering 与多 Agent 反证已进入现行目标设计，但 P1 不实现；P2 先做固定角色影子评测，
   P4 才为 SCENARIO / OPEN_DISCOVERY 引入领域 Loop Control。
 - P4 默认关闭，尚未完成专用 Agent 与唯一模型的实机演练。
-- Guance Adapter 与 Recorded Replay Adapter 已接到统一 Router，但真实 measurement、字段与阈值
-  尚未在内网验证，`fixtureMode` 仍应保持开启。正式工作台的开发证据台已有
+- Guance Adapter 与 Recorded Replay Adapter 已接到统一 Router。CSDP SendMsg 的
+  `log_search / log_trace_bundle / contrast_sample` 已在真实 Guance `csp-rpc-msg` 数据上
+  首次返回 `FULL_SPINE_OBSERVED`；trace 从单条原子 JSON 日志提取白名单字段，成功样本对照使用
+  独立的显式 `success` 终态 cohort、按 `@trace_id` 去重并同窗单桶聚合。早期同状态条件及仅
+  `NOT failed` 的代理对照结果已废弃。当前没有 owner
+  `ACCEPTED` 记录和 T8 持久化样本，
+  其他 measurement/字段/阈值也未全部验证，因此 `fixtureMode` 仍应保持开启。正式工作台的开发证据台已有
   **P2 真源门**：按 workspace/system/service 显示绑定就绪状态，并允许管理员发起一次
   Guance-only `log_search → log_trace_bundle` 只读验证。该入口不返回原始日志/DQL/密钥、
   不回退 Replay、不持久化验证数据；报告只增加应用侧每步与端到端 round-trip。页面分别显示 T6 授权、

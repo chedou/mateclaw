@@ -34,6 +34,9 @@ public class EvidenceProperties {
         private String baseUrl;
         private String apiKey;
         private boolean allowInsecureHttp;
+        /** HTTP implementation. The native curl path is opt-in for local pilot compatibility only. */
+        private String transport = "jdk";
+        private String nativeCurlExecutable = "/usr/bin/curl";
         private String queryPath = "/api/v1/df/query_data_v1";
         private Duration timeout = Duration.ofSeconds(5);
         private Map<String, Binding> bindings = new LinkedHashMap<>();
@@ -65,6 +68,8 @@ public class EvidenceProperties {
         private String namespace = "UNKNOWN";
         private String summary = "";
         private String queryTemplate;
+        /** Ordered DQL components for one compound read-only evidence contract. */
+        private List<String> queryTemplates = List.of();
         private QueryOptions queryOptions;
 
         /** Maximum accepted rows; Guance receives one extra overflow sentinel row. */
@@ -72,6 +77,9 @@ public class EvidenceProperties {
 
         /** Maps a source column name to the canonical field consumed by criteria. */
         private Map<String, String> fieldAliases = new LinkedHashMap<>();
+
+        /** Server-owned canonical literals that describe a configured aggregate. */
+        private Map<String, String> constantFields = new LinkedHashMap<>();
     }
 
     /** Optional Guance query envelope fields owned by one concrete binding. */

@@ -1,10 +1,11 @@
 # P3 证据源适配器运行说明
 
-> 状态（2026-07-30）：**工程链路与 T6 显式租户授权门已实现；P6 前置的
-> `log_search` / `log_trace_bundle` 已具备 schema、路由、Guance 草案绑定与脱敏回放。
-> 首个 `csp-deployment / csp-prm-miniapp / synthetic_probe` 已按部署快照写入默认不激活的试点 Profile，含精确资产授权和
-> CloudDial DQL 绑定，并已接入正式工作台的部署图批量触发入口，但尚未用新密钥完成内网真实查询。**
-> 因此 `fixtureMode` 仍为 `true`，默认数据源均关闭，不能把当前结果表述为“真实取证已验证”。
+> 状态（2026-07-31）：**T6 显式租户授权门已实现；CSDP `csp-rpc-msg`
+> 的 `log_search` / `log_trace_bundle` / `contrast_sample` 三份查询合同已在真实 Guance
+> 环境运行，并首次产出 Guance-only `FULL_SPINE_OBSERVED`。**
+> 本次只是一次不持久化的真源预览；还没有 owner `ACCEPTED` 记录，也没有进入 T8
+> 历史样本台账。`fixtureMode` 仍为 `true`，默认数据源均关闭，不得把单条成功改写为
+> “T7/T8 已通过”。CloudDial `synthetic_probe` 仍需独立完成真实返回验收。
 
 ## 1. 已落地的链路
 
@@ -37,14 +38,20 @@ route miss
 - 主源抛异常、超时、返回畸形响应或 `MISSING` 时，路由器尝试下一个显式后备源。
 - 全部失败时返回 `EvidenceStatus.MISSING`；必需证据缺失会触发现有 abstain 逻辑，不输出恢复动作。
 - 取证默认强制 `https`；仅可信隔离测试网可显式允许 `http`。模板值使用保守字符白名单，阻止告警载荷拼成任意 DQL。
-- Guance 与 replay 共用代码内的 canonical schema；缺列、错类型、多 series 或无法判定最新时间点均按畸形响应降级。
+- Guance 与 replay 共用代码内的 canonical schema；缺列、错类型、多 series 无法在单个查询结果内对齐或无法判定最新时间点均按畸形响应降级。
 - Guance 在任何凭据读取或 HTTP 调用前，必须唯一命中
   `workspaceId + system + service + signalKind → concrete binding`；缺失、重复或归一后歧义均返回 `MISSING`。
 - `log_search.target.search_term` 接受经场景映射后的安全错误码或关键词，同时匹配结构化
   `error_code` 和日志 `message`；不直接插入任意原始报障文本。
-- `log_trace_bundle` 只接受同一 PS ID 的单个 series，且返回 PS ID 必须与请求目标相等，再按时间升序归一。
-  Guance `query.limit` 取 `max-rows + 1` 作为溢出哨兵，本地只接受不超过 `max-rows` 的结果；
-  因此被截断的日志包不会被误当成完整链路。
+- `log_trace_bundle` 只接受一个行集 series；每行的 `message` 必须是同一条 Guance 日志的 JSON 原文，
+  Adapter 只在内存中从该原子记录提取白名单字段并立即丢弃原文。跨 series 按行号拼接会把不同日志误配，
+  因此一律 fail closed。所有行的 PS ID 必须与搜索阶段相等，再按规范字段稳定排序。
+  Guance 请求的 `query.limit` 取 `max-rows + 1` 作为溢出哨兵，trace DQL 本身不得再写 `LIMIT`；
+  本地只接受不超过 `max-rows` 的结果，因此第 `max-rows + 1` 条不会被服务端 DQL 提前隐藏。
+- `contrast_sample` 是一个 signal contract、一次 Router/HTTP 源调用，但内部包含四个 DQL component：
+  失败/成功 cohort 各有“样本总数”和“固定特征命中数”。失败终态固定查询 `failed AND sendmsg`，
+  成功终态固定查询 `success AND sendmsg AND NOT failed`；四项都按 `@trace_id` 去重，并使用同一
+  `timeRange` 和单桶 `window_span` rollup，禁止把普通 `NOT failed` 日志当成功样本或用同一状态条件自证差异。
 - 渲染后的 DQL 只留在适配器内发给 Guance，不写入 canonical `EvidenceResult.query`，避免平台方言上泄。
 - 没有注册任何生产写工具，命中路径仍然是确定性 Java，LLM 调用数为 0。
 - P4 只注册一个只读取证工具；即使直接调用该工具，没有活动 triage 会话也只会返回 `MISSING`。
@@ -60,12 +67,21 @@ route miss
 - `guance.asset-bindings: []` 默认仍为空，没有默认 workspace 或默认资产授权；
 - 试点配置单独放在 `mateclaw-server/src/main/resources/application-csp-clouddial-pilot.yml`，
   只有显式激活 `csp-clouddial-pilot` Profile 并提供 workspace ID 后才会加载；
+- CSDP 日志竖线单独放在
+  `mateclaw-server/src/main/resources/application-csdp-guance-evidence-pilot.yml`，只有显式激活
+  `csdp-guance-evidence-pilot` 才会加载三份 Guance-only 合同；
+- 该日志试点使用 `native-curl` transport 适配当前本机 TUN 网络。API Key 和请求体通过
+  stdin 传给 curl，不进 argv、临时文件或子进程环境；启动参数 `-q` 禁用用户级 `.curlrc`，
+  非零退出也不回显 stderr 或凭据；
+- 失败/成功 24 小时 cohort 当前需要扫描较多日志，因此仅该试点将 HTTP 上限显式设为 45 秒；
+  这不是隐藏延迟，Workspace owner 仍须在 T7 记录真实往返并决定是否接受；
 - 该 Profile 增加 `routes.csp-deployment.synthetic_probe: [guance]`，不会回退到伪造的健康数据；
 - `csp-prm-miniapp-synthetic-probe` 绑定使用 `D::http_dial_testing`，任务名为
   `客服数字化平台-首页-可用性监控`；它来自本次部署快照，真实返回列仍需 T7 核实；
 - curl 中的 `maxPointCount/interval/align_time/slimit/disable_sampling/tz` 作为该 binding 的
   `query-options` 保存；它们不会改变其他日志、指标或调用链 binding 的报文；
-- 其他 CSDP 查询模板仍是**未核实草案**，measurement、返回列和阈值都要经过 T7。
+- 除本次已运行的 CSDP SendMsg 三份合同外，其他 CSDP 查询模板仍是**未核实草案**，
+  measurement、返回列和阈值都要经过 T7。
 
 启用观测云前，在部署环境设置：
 
@@ -83,7 +99,23 @@ MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统注入>
 `MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true`。该例外不改变正式部署策略：生产进程不得开启，
 后续仍应切换到 HTTPS 端点或受控 TLS 代理。
 
-已经在聊天、工单或日志中出现过的 Key 必须先作废并换新，不得用于本次真实联调。
+凭据生命周期由环境 owner 依组织安全政策管理；一旦怀疑存在未授权使用必须立即轮换。
+无论是否轮换，运行时 Key 都只能从密钥系统或本地忽略的环境文件注入，不得写入仓库、日志或测试报告。
+
+CSDP SendMsg 真源试点的本地启用参考（值仍由环境注入）：
+
+```bash
+SPRING_PROFILES_INCLUDE=csdp-guance-evidence-pilot
+MATECLAW_TROUBLESHOOTING_CSDP_WORKSPACE_ID=1
+MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED=true
+MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL=http://df-openapi.prd.sangfor.com
+MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY=<通过密钥系统或忽略文件注入>
+MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP=true
+```
+
+YAML 中以 `@` 开头的 Guance 列名必须用 Spring Map 原样键语法，例如
+`"[@trace_id]": ps_id`；仅写 `"@trace_id"` 会被 relaxed binding 归一为 `trace_id`，导致真源返回的字段无法进入
+canonical row。
 
 其他场景仍必须在部署侧的外部配置中登记精确授权（以下仅示意，binding 名仍需 T7 核实）：
 
@@ -309,6 +341,27 @@ DQL、搜索键或凭据。`contrast_sample` 缺失时返回 `CORE_CHAIN_OBSERVE
 
 这是实际累积 T8 单条样本的采集工具，不是“单次成功即通过 T8”的快捷开关。
 20–30 条真实样本、人工参考结论/outcome 和整体 p50/p95 仍需按 TODO T8 完成。
+
+### 7.1 首次真实竖线记录（2026-07-31）
+
+本地显式激活 `csdp-guance-evidence-pilot` 后，已用同一
+`EvidenceSpineOrchestrator` 在真实 Guance 环境运行：
+
+- `log_search`：在一个 24 小时聚合桶内返回 `match_count / ps_id / sample_message`，观测到 `matchCount=2`；
+- `log_trace_bundle`：用搜索阶段的同一 PS ID 查得 3 条原子日志记录；Adapter 在内存中从每条 JSON
+  记录提取 `trace_id / level / msg`，canonical `service` 取自服务端已授权的 `csp-rpc-msg` binding；
+  JSON 的 `source` 是源码位置，不冒充服务名，也没有做跨 series 序号拼接；
+- `contrast_sample`：失败 cohort 与带显式 `success` 终态标记的成功 cohort 都非空，四项都按 PS ID
+  去重；固定特征在失败 cohort 的命中率严格高于成功 cohort。两个 cohort 各自使用一个 24 小时单桶聚合，
+  最终脱敏预览快照为失败 `2/2`、成功 `0/14047`；样本总量会随实时数据变化，不写成固定基线。
+  `success` 标记的业务语义仍须 owner 在 T7 正式确认；
+- 预览返回 `FULL_SPINE_OBSERVED`，`sourceRequestCount=3`，三个步骤均为
+  `CANONICAL_RESULT_OBSERVED`，且没有 Recorded Replay 回退。
+
+早期使用同一状态条件构造对照的结果已经废弃，不作为成功样本证明。当前记录没有保存完整 PS ID、
+原始日志、DQL 或 API Key。修正后的运行只证明“三次真源取证 + 确定性压缩 + 独立 cohort 对照投影”
+可执行；失败样本仍很小，不能外推为通用判据。仍需 Workspace owner 核对索引、时间窗与 DQL 延迟并提交
+T7 acceptance；随后才能将真实样本进入 T8 台账。
 
 ## 8. T8 可复现单 Agent 基线
 
