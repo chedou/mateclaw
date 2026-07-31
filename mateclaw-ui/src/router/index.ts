@@ -80,12 +80,6 @@ const router = createRouter({
           meta: { title: 'Troubleshooting', requiredCapability: 'view:troubleshooting' },
         },
         {
-          path: 'troubleshooting/legacy',
-          name: 'TroubleshootingLegacy',
-          component: () => import('@/views/Troubleshooting/index.vue'),
-          meta: { title: 'Troubleshooting Legacy', requiredCapability: 'view:troubleshooting' },
-        },
-        {
           // SOPs are executable knowledge for the deterministic hit path, so
           // even browsing this registry stays behind the curator capability.
           path: 'troubleshooting/sops',
