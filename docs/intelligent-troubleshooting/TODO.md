@@ -174,13 +174,17 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
 **现在做这些是有意义的：脚本第一次是绿的，可以当回归基线用。**
 
-- [ ] 把 `troubleshooting-smoke.sh` 挂进 CI，作为"默认路径没有被堵死"的回归。
+- [x] 把 `troubleshooting-smoke.sh` 挂进 CI，作为"默认路径没有被堵死"的回归。
       每加一道需要人工配置的门，它应当立刻变红。
       需要一个能起服务的 job：`mvn -pl mateclaw-server -DskipTests spring-boot:run
       -Dspring-boot.run.profiles=dev,troubleshooting-demo`，H2 默认库即可，
       不需要外部依赖。注意 `mateclaw-plugin-api` 要先 `install` 进本地库。
-- [ ] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
+      `.github/workflows/troubleshooting-smoke.yml` 在 PR、主干推送和手工触发时运行；失败上传服务端日志。
+      CI 里再把开发证据非空与北极星三段真实状态作为 fail-closed 合同，不只打印。
+- [x] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
       却从没量过自己跑通一次要多久；目标 5 分钟内。
+      CI 从 checkout 前开始计时，在成功产出 Diagnosis 后写入 Job Summary；超过 300 秒先告警，不伪装为
+      产品正确性失败。终点取脚本首次观测到 `diagnosisId` 的时刻，不含后续投影校验。
 - [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
 
 ### T0.8 · 错误码 Playbook 的晋升路径（T0.65 暴露的主干缺口）

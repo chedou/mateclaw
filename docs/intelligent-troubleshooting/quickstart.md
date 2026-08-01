@@ -120,6 +120,13 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 每加一道需要人工配置的门，这个数就会变长，而 `troubleshooting-smoke.sh`
 会立刻变红。建议把它挂进 CI，作为"默认路径没有被堵死"的回归。
 
+仓库现由 `.github/workflows/troubleshooting-smoke.yml` 执行这条回归：先安装
+`mateclaw-plugin-api`，用 `dev,troubleshooting-demo` 启动后端，再运行同一份操作员脚本。
+Workflow 会把 checkout 前到首条 Diagnosis 的耗时写入 Job Summary，目标不超过 300 秒；
+计时终点由冒烟脚本在读到 `diagnosisId` 时写入，不把后续投影校验耗时冒充为首诊耗时。
+超时先告警，链路闸门失败才使任务失败。脚本会 fail-closed 校验开发证据非空，
+以及北极星补问/调查已记录、未发生人工采纳时第三段仍为 `null`。
+
 ---
 
 ## 5. 相关文档
