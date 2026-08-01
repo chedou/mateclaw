@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,7 +49,11 @@ class ScheduledBaselineClaimLeaseKeeperTest {
             keeper.shutdown();
         }
 
-        verify(store).renew(7L, claim(), NOW.plusSeconds(1));
+        // The heartbeat is scheduleAtFixedRate(10ms), so a second tick can land
+        // between the latch releasing and shutdown(). Renewing again is correct
+        // behaviour, not a defect — asserting "exactly once" made this test fail
+        // on fast machines.
+        verify(store, atLeastOnce()).renew(7L, claim(), NOW.plusSeconds(1));
     }
 
     @Test

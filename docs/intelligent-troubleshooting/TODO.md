@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-07-31
+> 更新时间：2026-08-01
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -16,7 +16,38 @@
 > `ChannelMessageRouter` pre-route，模板卡片事件才走 `CardKind`，不新建入站——
 > 平台自带 `vip.mate.channel.wecom`，详见 v4 §7.4。
 
+---
+
+## 待办速览（2026-08-01）
+
+按"挡不挡住别人"排序，不按工作量。完整条目见对应小节。
+
+| # | 事项 | 卡在什么上 | 位置 |
+|---|---|---|---|
+| 1 | **T7 内网核实**：真实 Guance measurement / 字段 / 阈值 | 需要内网窗口 + 人，不是代码 | §5 T7 |
+| 2 | **T0.7 冒烟挂 CI** + 跟踪 clone→首次诊断耗时 | 无阻塞，脚本现在是绿的 | §3.5 |
+| 3 | **T0.8 错误码 Playbook 的晋升路径** | 需要一个决定：146 条错误码不可能人工手写回放用例 | §3.5 |
+| 4 | **T10.5 收敛 `RouteMode`** | 无阻塞，随 P4 T11 一起做 | §6.5 |
+| 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1 | §5 T8 |
+| 6 | P4 场景 Playbook / P5 知识治理 | 依赖 5 的真实时延与质量数据 | §7 §8 |
+
+**已经不再是阻塞项**：「跑不通一个场景」。T0.5–T0.65 已完成，
+`quickstart.md` 一条命令可复现，八道闸门全绿，结论 `LOCATED`。
+
+**唯一还没被验证过的核心断言**：证据可信。全程 fixture，`fixtureMode` 恒 `true`。
+在 T7 通过之前，任何"系统能定位根因"的说法都只覆盖到链路，不覆盖事实。
+
 ## 0. 当前判断
+
+> 更新于 T0.65 之后。**"没有一条默认可走的路"这个主要矛盾已经解除**：
+> `troubleshooting-demo` profile + `scripts/troubleshooting-smoke.sh` 现在能从
+> clone 走到一份 `LOCATED` 的诊断，八道闸门全绿，退出码 0。
+>
+> 矛盾因此回到了它原本该在的位置：**链路可走，但证据不可信**——全程 fixture，
+> `fixtureMode` 恒 `true`。下一个真实约束是 **T7 内网窗口**，它需要人和时间，
+> 不是代码问题。
+>
+> 现在挡在前面的工程项只剩三件，见 §3.5 T0.7、§6.5 T10.5、§5 T7。
 
 当前主线不是继续扩错误码页面，也不是接入更多 Agent 工具，而是先把会议指定案例跑通：
 
@@ -77,6 +108,102 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
       两者渲染同一份投影，入口选择不影响后端合同。
 - [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
       / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
+
+## 3.5 P1.5 · 让一条场景默认可跑（**已解除**，遗留 T0.7 / T0.8）
+
+**为什么插队。** 文档此前把主要矛盾写成「代码闭环已通 vs 未在真实数据上验证」，
+应对是 T7 内网窗口。那是上一阶段的判断。实际情况是：**默认状态下没有任何一条路径可走**——
+两个证据源默认关闭、仓库不随带任何 Playbook（迁移里 0 条 INSERT），任何报障必然 route miss。
+
+每道闸门单独看都对（fail-closed 是纪律），但**它们的合取**决定了有没有人能用起来，
+而此前没有任何东西在度量这个合取。
+
+两个后果：
+1. **T7 窗口拿到了也用不上**——操作员会卡在同样的配置迷宫里，而那是最贵、最难重来的一次机会；
+2. **"它是否安全"其实还没被真正检验**——fail-closed 只在有人真的去开门时才会被测试。
+
+### T0.5 · 端到端冒烟（已完成）
+
+- [x] `scripts/troubleshooting-smoke.sh`：以操作员的方式走 HTTP，逐道闸门断言，
+      失败时指出**是哪一道**和**唯一的下一步**；`--gates` 可在无服务时列出全部闸门。
+- [x] 断言覆盖：结论类型、开发证据步数、`fixtureMode` 必须为 true、北极星三段耗时。
+
+### T0.6 · demo 种子（已完成）
+
+- [x] `troubleshooting-demo` profile：打开 Recorded Replay，把 CSDP 六个 signalKind 路由过去，
+      **不碰 Guance**。
+- [x] `TroubleshootingDemoSeeder`：默认关闭（`mateclaw.troubleshooting.demo.enabled`），
+      走同一个 `TroubleshootingSopPersistenceService` 注册，全部不变量照常生效；
+      动作里没有 `MANUAL_WRITE`。（晋升方式在 T0.65 被推翻重做，见下。）
+- [x] `TroubleshootingDemoSeederTest`：锁住种子与回放样本一致——
+      **两者漂移不会抛异常，只会静默变成 `UNEVALUATED`**，操作员看到"证据不足"却分不清
+      是真缺证据还是配错了。这正是需要单独测试的原因。
+- [x] `quickstart.md`：把散在多份 runbook 里的步骤合成一条主线。
+
+### T0.65 · 真的跑了一次（已完成，且推翻了 T0.6 的两个假设）
+
+第一次把服务真的起起来跑冒烟，暴露了只有运行才会暴露的问题：
+
+- [x] **种子的"批准"是假的**。第一版做的是 `updateStatus(..., "approved")`，运行时被拒：
+      `candidate approval requires the eligibility gate and must create a new version`。
+      这个拒绝是对的。现在种子走真实晋升链：注册 candidate → 跑固定回放套件 →
+      `PASSED` 后资格快照才 `ELIGIBLE_FOR_APPROVAL` → `start` + `approve` 晋升出 v1。
+      回放不过就不晋升，路由保持缺失，冒烟脚本照实报告。
+      台账里 `approvedBy=ts-demo-seeder`，一眼可见没有人审过。
+- [x] **补上 `csdp:903001` 的固定回放套件**（2 正例 + 2 反例/弃权例）。
+      在此之前仓库里只有 `csdp:scenario:deployment_topology_probe` 一套，
+      也就是说**任何错误码 Playbook 都没有晋升路径**——而错误码正是产品的主干形态。
+      这不是 demo 的缺口，是主干缺件。
+- [x] **冒烟脚本加第 8 道闸门**：结论不得是 `INSUFFICIENT_EVIDENCE`。
+      第一次跑通时前七道全绿而结论是"证据不足"——报障 service 与回放样本不匹配，
+      三条证据全 MISSING、四条判据全 UNEVALUATED。
+      **"证据不足"同时也是系统在真实缺证据时的正确输出**，
+      从外面分不出是链路断了还是真没证据，所以必须单独立一道闸门。
+- [x] 修正脚本里与现实不符的三处：默认端口 8080→18088；
+      判定证据源用了不存在的 `.enabled` 字段（实际契约是 `EvidenceSourceHealth.status`）；
+      默认 service `csdp-order-service`→`order-svc`。
+      并支持 `MATECLAW_USERNAME/PASSWORD` 登录换 JWT，不再强制先造 PAT。
+- [x] 顺手修一处既有 flaky：`ScheduledBaselineClaimLeaseKeeperTest` 断言心跳"恰好一次"，
+      而心跳是 `scheduleAtFixedRate(10ms)`，快机器上必然多跳一次。改为 `atLeastOnce()`。
+
+实测结果：`LOCATED` / R2「慢查询占满连接池」/ HIGH，
+且 `instance_unreachable` 是 **EXCLUDED（真的排除）而非 UNEVALUATED（没验过）**——
+D15 负对照在真实 HTTP 边界上第一次被验证成立。
+
+### T0.7 · 待办
+
+**现在做这些是有意义的：脚本第一次是绿的，可以当回归基线用。**
+
+- [ ] 把 `troubleshooting-smoke.sh` 挂进 CI，作为"默认路径没有被堵死"的回归。
+      每加一道需要人工配置的门，它应当立刻变红。
+      需要一个能起服务的 job：`mvn -pl mateclaw-server -DskipTests spring-boot:run
+      -Dspring-boot.run.profiles=dev,troubleshooting-demo`，H2 默认库即可，
+      不需要外部依赖。注意 `mateclaw-plugin-api` 要先 `install` 进本地库。
+- [ ] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
+      却从没量过自己跑通一次要多久；目标 5 分钟内。
+- [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
+
+### T0.8 · 错误码 Playbook 的晋升路径（T0.65 暴露的主干缺口）
+
+**这不是 demo 的待办，是主干的。** 手工 Playbook 要晋升必须有服务端固定回放套件
+（`ManualPlaybookReplaySuiteCatalog`）。T0.65 之前，仓库里只有
+`csdp:scenario:deployment_topology_probe` 一套——也就是说**任何错误码 Playbook
+都没有晋升路径**，而错误码正是产品的主干形态。现在补上了 `csdp:903001`，
+但那是为 demo 补的，不是为 146 个错误码补的。
+
+- [ ] 明确回答：**每个错误码 Playbook 都要手写一套回放用例吗？**
+      146 条 × 至少 3 例（命中 / 排除 / 弃权）不是可持续的人工量。
+      三个可能方向，需要选一个：
+      (a) 从历史 EvidenceBundle 自动生成候选用例，人只审不写；
+      (b) 按判据形状（而非按错误码）复用套件模板；
+      (c) 承认错误码路的晋升门要低于场景路，并明确写出理由与代价。
+- [ ] 在 v4 §5.7 里把这个决定写成显式条款——目前 D5′ 只说了两级晋升资格，
+      没说资格证据本身从哪来。
+- [ ] `ManualPlaybookReplaySuiteCatalog` 在任一套件的样例不过用例时**会让应用启动失败**。
+      这个 fail-fast 现在是对的（套件很少），但套件数量上去后需要评估：
+      一条坏知识不应该让整个平台起不来。
+
+---
 
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（已完成）
 
@@ -363,6 +490,40 @@ Challenger 影子运行和两者对比仍未实现。
       语义相反。**严禁把 `BusinessSummary` 适配成 `ApprovalNotice`**——先泛化平台接缝（单独评审），
       在此之前 IM 出站只发纯文本摘要。
 
+## 6.5 T10.5 · 收敛 `RouteMode`（不要无限期停在中间态）
+
+**现状（2026-08-01 源码核对）**：`Diagnosis` 里三个字段并存，且新字段是从旧字段**推导**出来的——
+
+```java
+RouteMode routeMode,                                  // 旧的一维
+InvestigationMode investigationMode,                  // = defaultInvestigationMode(routeMode)
+RouteAuthority routeAuthority,                        // = defaultRouteAuthority(routeMode)
+```
+
+下游判断（含前端 `DerivationChain.vue`）仍在用 `routeMode == DETERMINISTIC | LLM_FALLBACK`。
+
+**为什么必须收敛**：D3 的原意是把"怎么查"和"为什么选中"拆成两个**独立**维度。
+现在新维度没有独立信息量——`RULE_MATCHED` 与 `MODEL_PROPOSED` 在数据上无法区分，
+因为两者都由同一个 `DETERMINISTIC` 推导而来。等 P4 的场景 Playbook 落地、模型开始提议
+`scenarioKey` 时，会发现**可信等级根本没有地方存**，那时再改要动已入库的历史记录。
+
+v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
+
+**收敛步骤**（建议随 P4 T11 一起做，不单独排期）：
+
+- [ ] 确定性诊断工厂**显式**写入 `investigationMode` + `routeAuthority`，不再走 `defaultXxx(routeMode)` 推导。
+- [ ] 新增的场景路径按真实来源写 `RULE_MATCHED` / `MODEL_PROPOSED`；两者必须能在数据上分开统计。
+- [ ] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
+      `routeMode` 退化为纯持久化兼容字段。
+- [ ] 历史记录**不回填猜测值**：1.x 旧行保持由 `routeMode` 推导，并在投影上可辨识，
+      不能让"推导来的"和"真实写入的"混在一张统计表里。
+- [ ] 收敛完成后，`RouteMode` 在契约文档里标注为 deprecated-for-read。
+
+**完成标准**：`grep routeMode ==` 在服务端与前端的业务判断中为 0 处；
+`RULE_MATCHED` 与 `MODEL_PROPOSED` 能在同一批样本上分别统计出条数。
+
+---
+
 ## 7. P4 · 场景 Playbook 与开放探索
 
 ### T11 · Scenario Playbook
@@ -529,6 +690,9 @@ Challenger 影子运行和两者对比仍未实现。
 
 ## 11. 推荐接手顺序
 
+0. **先跑一次**：`docs/intelligent-troubleshooting/quickstart.md`。
+   在读任何设计文档之前先看见一份真实的诊断——T0.65 的教训是，
+   写完不等于跑通，而"跑不通"在没有脚本之前只是一种感受。
 1. 先读现行录音基线、v4.4、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
 2. 主攻 P2 真实 Guance measurement/字段/阈值核实和 20–30 条影子样本；当前 CloudDial 请求已到达真源，
    但样例查询尚未返回 series，必须保持 `INSUFFICIENT_EVIDENCE`，不得伪造健康结论。

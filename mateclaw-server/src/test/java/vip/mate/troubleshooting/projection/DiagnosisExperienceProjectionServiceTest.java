@@ -103,7 +103,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(RouteAuthority.EXPLICIT);
         assertThat(developer.playbookRef())
                 .isEqualTo("csdp:903001 · playbook-903001@v3");
-        assertThat(developer.deploymentTopologyProbeRequired()).isFalse();
+        assertThat(developer.scenarioAffordances()).isEmpty();
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
         assertThat(developer.callChain().hops()).hasSize(1);
         assertThat(developer.callChain().hops().getFirst().service()).isEqualTo("mongo.find");
@@ -318,7 +318,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(InvestigationMode.SCENARIO_PLAYBOOK);
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.RULE_MATCHED);
-        assertThat(result.developerEvidence().deploymentTopologyProbeRequired()).isFalse();
+        assertThat(result.developerEvidence().scenarioAffordances()).isEmpty();
     }
 
     @Test
@@ -332,7 +332,8 @@ class DiagnosisExperienceProjectionServiceTest {
 
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
-        assertThat(result.developerEvidence().deploymentTopologyProbeRequired()).isTrue();
+        assertThat(result.developerEvidence()
+                .requiresScenario(DeploymentTopologyScenarioPolicy.SCENARIO_KEY)).isTrue();
     }
 
     @Test
