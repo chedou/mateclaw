@@ -17,8 +17,7 @@
 新增一个独立 GitHub Actions workflow，在影响智能排障运行链的 PR、`dev` 推送和手工触发时运行：
 
 1. 检出代码并记录计时起点。
-2. 配置 Temurin Java 21 和 Maven 缓存，通过仓库级 settings 固定使用阿里云公共镜像，
-   确保 `curl`、`jq` 可用。
+2. 配置 Temurin Java 21 和 Maven 缓存，使用 Maven 标准配置，确保 `curl`、`jq` 可用。
 3. 先安装 `mateclaw-plugin-api`，再以 `dev,troubleshooting-demo` profile 后台启动 `mateclaw-server`。
 4. 在有限时间内轮询登录接口，并确认 `csdp:903001` 已完成 demo 晋升；超时直接失败。
 5. 使用 demo 管理员账号运行现有 `troubleshooting-smoke.sh`。

@@ -36,7 +36,7 @@
 
 - [x] **Step 2: Add deterministic runner setup and build ordering**
 
-  Use Temurin Java 21 with Maven caching. Install `jq` only when absent. Run `mvn --settings mateclaw-server/settings.xml --batch-mode --no-transfer-progress -pl mateclaw-plugin-api -DskipTests install` before server startup so CI always uses the repository-owned Aliyun mirror.
+  Use Temurin Java 21 with Maven caching. Install `jq` only when absent. Run `mvn --batch-mode --no-transfer-progress -pl mateclaw-plugin-api -DskipTests install` before server startup. Do not force a repository-owned Maven mirror; runner or user settings remain external concerns.
 
 - [x] **Step 3: Add bounded server lifecycle and smoke execution**
 
@@ -79,23 +79,20 @@
 
   Expected: syntax checks exit 0, the contract test passes, and `--gates` prints all eight gates.
 
-- [ ] **Step 4: Run focused Java tests**
+- [x] **Step 4: Run focused Java tests**
 
   Run:
 
   ```bash
-  mvn --settings mateclaw-server/settings.xml \
-    --batch-mode --no-transfer-progress -pl mateclaw-server \
+  mvn --batch-mode --no-transfer-progress -pl mateclaw-server \
     -Dtest=TroubleshootingDemoSeederTest,ManualPlaybookReplaySuiteCatalogTest,ManualPlaybookReplayServiceTest \
     test
   ```
 
   Expected: Maven exits 0 with no failing focused tests.
 
-  Execution note (2026-08-01): the original run inherited an unreachable corporate mirror. A fresh run now
-  selects `aliyun-public-mirror` as intended, but this machine cannot resolve `maven.aliyun.com`; dependency
-  model resolution therefore still stops before compilation. A DNS-capable GitHub Actions run is required to
-  close this step.
+  Execution note (2026-08-01): repository-level mirror forcing was removed by user decision. Validation with
+  Maven's standard settings path passed all 15 focused tests.
 
 - [x] **Step 5: Review the final diff**
 

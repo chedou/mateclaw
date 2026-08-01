@@ -11,8 +11,7 @@ spring:
 # opens explicitly marked demo doors — it does not touch any real
 # observability binding and does not change the fixture marking on results.
 #
-#   mvn --settings mateclaw-server/settings.xml \
-#       -pl mateclaw-server spring-boot:run \
+#   mvn -pl mateclaw-server spring-boot:run \
 #       -Dspring-boot.run.profiles=troubleshooting-demo
 #   ./scripts/troubleshooting-smoke.sh
 mateclaw:

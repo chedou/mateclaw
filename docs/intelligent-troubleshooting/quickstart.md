@@ -16,11 +16,9 @@
 
 ```bash
 # 终端 A：先把父 POM 与 plugin API 装入本地库，再带 demo profile 启动
-mvn --settings mateclaw-server/settings.xml \
-    -pl mateclaw-plugin-api -am -DskipTests install
+mvn -pl mateclaw-plugin-api -am -DskipTests install
 
-mvn --settings mateclaw-server/settings.xml \
-    -pl mateclaw-server -DskipTests spring-boot:run \
+mvn -pl mateclaw-server -DskipTests spring-boot:run \
     -Dspring-boot.run.profiles=dev,troubleshooting-demo
 
 # 终端 B：走一次完整路径并断言结果
@@ -126,8 +124,8 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
 `.github/workflows/troubleshooting-smoke.yml` 已把这条路径挂进 CI，作为
 "默认路径没有被堵死"的回归。它在相关 PR、`dev`、主干、当前设计分支推送或手工触发时：
 
-1. 配置 Java 21，通过仓库级 `mateclaw-server/settings.xml` 使用阿里云公共镜像，
-   再以 `-am` 把父 POM 与 `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
+1. 配置 Java 21，以 Maven 标准配置和 `-am` 把父 POM 与
+   `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
 2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
    `csdp:IM1010` 已通过真实 demo 晋升链成为 approved Playbook；
 3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
@@ -148,7 +146,7 @@ fail-closed 校验开发证据非空、北极星补问/调查已记录，以及�
 bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 ```
 
-它会检查触发范围、Java 版本、阿里云 Maven 镜像、plugin API 构建顺序、demo profile、
+它会检查触发范围、Java 版本、Maven 不强制仓库级镜像、plugin API 构建顺序、demo profile、
 有限等待、八闸门入口、300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替
 GitHub runner 实跑。
 

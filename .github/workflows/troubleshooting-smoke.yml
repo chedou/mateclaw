@@ -64,16 +64,14 @@ jobs:
 
       - name: Install plugin API
         run: >-
-          mvn --settings mateclaw-server/settings.xml
-          --batch-mode --no-transfer-progress
+          mvn --batch-mode --no-transfer-progress
           -pl mateclaw-plugin-api -am -DskipTests install
 
       - name: Start troubleshooting demo server
         shell: bash
         run: |
           server_log="${RUNNER_TEMP}/troubleshooting-server.log"
-          nohup mvn --settings mateclaw-server/settings.xml \
-            --batch-mode --no-transfer-progress \
+          nohup mvn --batch-mode --no-transfer-progress \
             -pl mateclaw-server -DskipTests spring-boot:run \
             -Dspring-boot.run.profiles=dev,troubleshooting-demo \
             >"${server_log}" 2>&1 &

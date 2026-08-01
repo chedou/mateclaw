@@ -1,22 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Maven settings shared by Docker, CI, and local verification.
+  Minimal Maven settings for the Docker build.
 
-  All remote repository IDs are intentionally mirrored to Aliyun so developer
-  machines do not inherit an unreachable corporate mirror from ~/.m2/settings.xml.
-  Commands that require reproducible resolution must pass this file through
-  Maven's explicit settings-file option.
+  Repository URLs (US Maven Central, Google CDN, Aliyun) are declared directly
+  in the root pom.xml so a single pom covers multiple regions. Maven tries each
+  repository in order and falls over on 404 / unreachable.
+
+  This file intentionally does not force a mirror. A mirrorOf=* entry would
+  intercept every repository and remove that fallback behavior. Developers who
+  need a corporate proxy or regional mirror can configure it outside the repo.
 -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
                               http://maven.apache.org/xsd/settings-1.0.0.xsd">
-  <mirrors>
-    <mirror>
-      <id>aliyun-public-mirror</id>
-      <name>Aliyun Maven Public</name>
-      <url>https://maven.aliyun.com/repository/public</url>
-      <mirrorOf>*</mirrorOf>
-    </mirror>
-  </mirrors>
+  <mirrors/>
 </settings>

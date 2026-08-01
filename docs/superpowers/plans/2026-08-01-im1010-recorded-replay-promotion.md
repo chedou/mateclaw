@@ -38,7 +38,7 @@
   Run:
 
   ```bash
-  mvn --settings mateclaw-server/settings.xml --batch-mode --no-transfer-progress \
+  mvn --batch-mode --no-transfer-progress \
     -pl mateclaw-server \
     -Dtest=ManualPlaybookRecordedEvidenceSeedTest,ManualPlaybookReplaySuiteCatalogTest test
   ```
@@ -112,7 +112,7 @@
   Run:
 
   ```bash
-  mvn --settings mateclaw-server/settings.xml --batch-mode --no-transfer-progress \
+  mvn --batch-mode --no-transfer-progress \
     -pl mateclaw-server \
     -Dtest=RecordedReplayAdapterTest,PlaybookSynthesisReplayEvalTest,SopSynthesisReplayTest,ManualPlaybookReplaySuiteCatalogTest test
   ```
@@ -138,7 +138,7 @@
   Run:
 
   ```bash
-  mvn --settings mateclaw-server/settings.xml --batch-mode --no-transfer-progress \
+  mvn --batch-mode --no-transfer-progress \
     -pl mateclaw-server \
     -Dtest=TroubleshootingDemoSeederTest,ManualPlaybookReplayServiceTest,KnowledgeReviewWorkflowServiceTest test
   ```
