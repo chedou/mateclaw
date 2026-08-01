@@ -10,6 +10,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CanonicalEvidenceSchemaTest {
 
     @Test
+    void acceptsACloudDialSyntheticProbeWithoutTreatingMissingDataAsHealth() {
+        assertThat(CanonicalEvidenceSchema.supports("synthetic_probe")).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("synthetic_probe", Map.of(
+                "status_code", 200,
+                "target_url", "https://csdp-applet.sangfor.com",
+                "probe_name", "客服数字化平台-首页-可用性监控")))
+                .isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("synthetic_probe", Map.of(
+                "target_url", "https://csdp-applet.sangfor.com",
+                "probe_name", "客服数字化平台-首页-可用性监控")))
+                .as("a missing status code is unknown evidence, not a healthy probe")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("synthetic_probe", Map.of(
+                "status_code", "200",
+                "target_url", "https://csdp-applet.sangfor.com",
+                "probe_name", "客服数字化平台-首页-可用性监控")))
+                .as("status codes must retain their canonical numeric type")
+                .isFalse();
+    }
+
+    @Test
     void acceptsTheTwoP6LogContracts() {
         assertThat(CanonicalEvidenceSchema.supports("log_search")).isTrue();
         assertThat(CanonicalEvidenceSchema.isValid("log_search", Map.of(
@@ -52,6 +74,35 @@ class CanonicalEvidenceSchemaTest {
         assertThat(CanonicalEvidenceSchema.isValid("log_trace_bundle", Map.of(
                 "ps_id", "synthetic-ps-001",
                 "entries", List.of())))
+                .isFalse();
+    }
+
+    @Test
+    void acceptsMeasuredImpactWithNullableCountsButRejectsUnknownOrFractionalFacts() {
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 2,
+                "blast_radius", "MULTI_CUSTOMER",
+                "observed_at", 1753002785000L)))
+                .isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "blast_radius", "UNKNOWN",
+                "observed_at", 1753002785000L)))
+                .as("an all-unknown observation is not measured impact evidence")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 1.5,
+                "blast_radius", "MULTI_CUSTOMER",
+                "observed_at", 1753002785000L)))
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
+                "function_scope", "消息发送功能",
+                "affected_customers", 2,
+                "blast_radius", "GLOBAL",
+                "observed_at", 1753002785000L)))
                 .isFalse();
     }
 }

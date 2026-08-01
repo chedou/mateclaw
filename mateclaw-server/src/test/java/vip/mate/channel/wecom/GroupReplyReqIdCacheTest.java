@@ -106,4 +106,21 @@ class GroupReplyReqIdCacheTest {
         assertEquals("req-A2", adapter.pickGroupReplyReqId("group-A"));
         assertEquals("req-B1", adapter.pickGroupReplyReqId("group-B"));
     }
+
+    @Test
+    @DisplayName("connection release clears reply slots that cannot survive a reconnect")
+    void connectionReleaseClearsReplySlots() throws Exception {
+        Method remember = WeComChannelAdapter.class.getDeclaredMethod(
+                "rememberGroupReplyReqId", String.class, String.class);
+        remember.setAccessible(true);
+        remember.invoke(adapter, "group-1", "req-old-connection");
+        assertEquals("req-old-connection", adapter.pickGroupReplyReqId("group-1"));
+
+        Method release = WeComChannelAdapter.class.getDeclaredMethod(
+                "releaseConnectionResources", String.class);
+        release.setAccessible(true);
+        release.invoke(adapter, "reconnecting");
+
+        assertNull(adapter.pickGroupReplyReqId("group-1"));
+    }
 }

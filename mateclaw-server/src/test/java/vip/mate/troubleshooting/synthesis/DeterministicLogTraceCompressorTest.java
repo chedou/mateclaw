@@ -1,5 +1,8 @@
 package vip.mate.troubleshooting.synthesis;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -27,7 +30,7 @@ class DeterministicLogTraceCompressorTest {
                 entry(1753002781042L, "session-state", "ERROR",
                         "concurrent state write rejected", 42),
                 entry(1753002781087L, "session-api", "ERROR",
-                        "message send failed", 87))));
+                        "message send failed", 87))), contrast());
 
         assertThat(skeleton.psId()).isEqualTo("synthetic-ps-message-send-001");
         assertThat(skeleton.startedAtEpochMs()).isEqualTo(1753002781000L);
@@ -48,6 +51,96 @@ class DeterministicLogTraceCompressorTest {
                 .isEqualTo(new LogTraceSkeleton.DurationSummary(1, 87, 87, 87));
         assertThat(skeleton.sourceEntryCount()).isEqualTo(3);
         assertThat(skeleton.omittedEntryCount()).isZero();
+        assertThat(skeleton.contrast().available()).isTrue();
+        assertThat(skeleton.contrast().discriminatingFeature())
+                .isEqualTo("session_state_conflict");
+        assertThat(skeleton.contrast().failureRate()).isEqualTo(0.92);
+        assertThat(skeleton.contrast().successRate()).isEqualTo(0.03);
+        assertThat(skeleton.contrast().rateDelta()).isEqualTo(0.89);
+    }
+
+    @Test
+    void degradesToAnUnavailableContrastWithoutFailingTraceCompression() {
+        LogTraceSkeleton skeleton = compressor.compress(
+                bundle(List.of(entry(1L, "session-api", "ERROR", "failed", 1))),
+                new EvidenceResult(
+                        "SYNTH-CONTRAST-SAMPLE", "UNKNOWN", "", EvidenceStatus.MISSING,
+                        "not found", Map.of(), "recorded-replay:missing", NOW));
+
+        assertThat(skeleton.contrast().available()).isFalse();
+        assertThat(skeleton.contrast().rateDelta()).isZero();
+    }
+
+    @Test
+    void rejectsMathematicallyImpossibleContrastCounts() {
+        EvidenceResult invalid = new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "", EvidenceStatus.NORMAL,
+                "invalid control", Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", 100,
+                        "failure_match_count", 101,
+                        "success_sample_count", 100,
+                        "success_match_count", 3),
+                "recorded-replay:message-send-failed", NOW);
+
+        assertThatThrownBy(() -> compressor.compress(
+                bundle(List.of(entry(1L, "session-api", "ERROR", "failed", 1))), invalid))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("contrast");
+    }
+
+    @Test
+    void acceptsCanonicalIntegerStringsAfterTheAggregatePersistenceRoundTrip() throws Exception {
+        EvidenceResult sourceContrast = new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "", EvidenceStatus.NORMAL,
+                "same-window successful request comparison",
+                Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", 100L,
+                        "failure_match_count", 92L,
+                        "success_sample_count", 100L,
+                        "success_match_count", 3L),
+                "recorded-replay:message-send-failed", NOW);
+        EvidenceResult sourceTrace = bundle(List.of(
+                entry(1753002781000L, "session-api", "INFO", "message accepted", null),
+                entry(1753002781042L, "session-state", "ERROR",
+                        "concurrent state write rejected", 42L)));
+        ObjectMapper persistenceMapper = new ObjectMapper().findAndRegisterModules();
+        SimpleModule longPrecisionModule = new SimpleModule();
+        longPrecisionModule.addSerializer(Long.class, ToStringSerializer.instance);
+        longPrecisionModule.addSerializer(Long.TYPE, ToStringSerializer.instance);
+        persistenceMapper.registerModule(longPrecisionModule);
+        String persistedTraceJson = persistenceMapper.writeValueAsString(sourceTrace);
+        EvidenceResult persistedTrace = persistenceMapper.readValue(
+                persistedTraceJson, EvidenceResult.class);
+        EvidenceResult persistedContrast = persistenceMapper.readValue(
+                persistenceMapper.writeValueAsString(sourceContrast), EvidenceResult.class);
+
+        assertThat(persistedTraceJson).contains("\"timestamp\":\"1753002781000\"");
+        assertThat(persistedTraceJson).contains("\"duration_ms\":\"42\"");
+        LogTraceSkeleton skeleton = compressor.compress(persistedTrace, persistedContrast);
+
+        assertThat(skeleton.startedAtEpochMs()).isEqualTo(1753002781000L);
+        assertThat(skeleton.endedAtEpochMs()).isEqualTo(1753002781042L);
+        assertThat(skeleton.timeline())
+                .extracting(LogTraceSkeleton.TimelineEvent::offsetMs)
+                .containsExactly(0L, 42L);
+        assertThat(skeleton.contrast().failureSampleCount()).isEqualTo(100L);
+        assertThat(skeleton.contrast().failureMatchCount()).isEqualTo(92L);
+        assertThat(skeleton.contrast().successSampleCount()).isEqualTo(100L);
+        assertThat(skeleton.contrast().successMatchCount()).isEqualTo(3L);
+    }
+
+    @Test
+    void rejectsNonCanonicalOrOutOfRangePersistedIntegerStrings() {
+        for (String invalid : List.of(
+                "1e3", "42.0", "+42", " 42", "042", "9223372036854775808")) {
+            assertThatThrownBy(() -> compressor.compress(bundle(List.of(
+                    entry(invalid, "session-api", "INFO", "message accepted", null)))))
+                    .as("timestamp %s", invalid)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("timestamp");
+        }
     }
 
     @Test
@@ -149,8 +242,21 @@ class DeterministicLogTraceCompressorTest {
                 NOW);
     }
 
+    private EvidenceResult contrast() {
+        return new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "", EvidenceStatus.NORMAL,
+                "same-window successful request comparison",
+                Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", 100,
+                        "failure_match_count", 92,
+                        "success_sample_count", 100,
+                        "success_match_count", 3),
+                "recorded-replay:message-send-failed", NOW);
+    }
+
     private Map<String, Object> entry(
-            long timestamp,
+            Object timestamp,
             String service,
             String level,
             String message,

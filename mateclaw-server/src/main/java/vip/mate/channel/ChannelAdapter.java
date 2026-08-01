@@ -201,6 +201,22 @@ public interface ChannelAdapter {
         return false;
     }
 
+    /**
+     * Route-specific readiness for durable delivery hints.
+     *
+     * <p>Most transports need no state beyond an active adapter. WeCom group
+     * messages are the exception: when {@link DeliveryOptions#requiresReplyContext()}
+     * is true, its adapter must own a current inbound reply slot and overrides
+     * this method accordingly. The check is read-only; callers must still let
+     * {@link #proactiveSend(String, String, DeliveryOptions)} fail if readiness
+     * changes before the platform ACK.</p>
+     */
+    default boolean isProactiveDeliveryReady(
+            String targetId,
+            DeliveryOptions options) {
+        return supportsProactiveSend();
+    }
+
     // ==================== 元信息 ====================
 
     /**

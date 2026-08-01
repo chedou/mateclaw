@@ -9,8 +9,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.Diagnosis;
+import vip.mate.troubleshooting.model.DiagnosisStatus;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.ScenarioSelector;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
@@ -46,9 +49,69 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             Instant receivedAt) {
-        validateWorkspace(workspaceId);
-        Optional<String> dedupKey = IncidentDeduplicationKey.create(
-                diagnosis.incident(), diagnosis.rehearsal(), receivedAt);
+        validateCreate(workspaceId, diagnosis);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                IncidentDeduplicationKey.create(
+                        diagnosis.incident(), diagnosis.rehearsal(), receivedAt),
+                null);
+    }
+
+    /**
+     * Creates exactly one Diagnosis for an IntakeSession.
+     *
+     * <p>The source Intake ID is a stronger idempotency boundary than the
+     * generic five-minute incident bucket. Two independently reported channel
+     * sessions must never collapse merely because their route and event time
+     * happen to match.</p>
+     */
+    @Transactional
+    public StoredDiagnosis createOrGetForIntake(
+            long workspaceId,
+            Diagnosis diagnosis,
+            String intakeSessionId) {
+        validateCreate(workspaceId, diagnosis);
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return persistCreateOrGet(
+                workspaceId, diagnosis, Optional.empty(), intakeSessionId.trim());
+    }
+
+    /**
+     * Creates or reuses only a Diagnosis from the same explicit scenario path.
+     * The scenario discriminator prevents a generic symptom report, or another
+     * scenario, from becoming this tool run's evidence owner.
+     */
+    @Transactional
+    public StoredDiagnosis createOrGetForScenario(
+            long workspaceId,
+            Diagnosis diagnosis,
+            String scenarioKey,
+            Instant receivedAt) {
+        validateCreate(workspaceId, diagnosis);
+        validateScenarioIdentity(diagnosis, scenarioKey);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                IncidentDeduplicationKey.createForScenario(
+                        diagnosis.incident(), scenarioKey, diagnosis.rehearsal(), receivedAt),
+                null);
+    }
+
+    private StoredDiagnosis persistCreateOrGet(
+            long workspaceId,
+            Diagnosis diagnosis,
+            Optional<String> dedupKey,
+            String intakeSessionId) {
+        if (intakeSessionId != null) {
+            TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
+                    workspaceId, intakeSessionId);
+            if (existing != null) {
+                return stored(existing, false);
+            }
+        }
         if (dedupKey.isPresent()) {
             TroubleshootingDiagnosisEntity existing = findByDedupKey(workspaceId, dedupKey.get());
             if (existing != null) {
@@ -56,11 +119,20 @@ public class TroubleshootingPersistenceService {
             }
         }
 
-        TroubleshootingDiagnosisEntity entity = entity(workspaceId, diagnosis, dedupKey.orElse(null));
+        TroubleshootingDiagnosisEntity entity = entity(
+                workspaceId, diagnosis, dedupKey.orElse(null), intakeSessionId);
         try {
             diagnosisMapper.insert(entity);
             return new StoredDiagnosis(diagnosis, 0, true);
         } catch (DuplicateKeyException collision) {
+            if (intakeSessionId != null) {
+                TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
+                        workspaceId, intakeSessionId);
+                if (existing != null) {
+                    return stored(existing, false);
+                }
+                throw collision;
+            }
             if (dedupKey.isEmpty()) {
                 throw collision;
             }
@@ -69,6 +141,26 @@ public class TroubleshootingPersistenceService {
                 throw collision;
             }
             return stored(existing, false);
+        }
+    }
+
+    private void validateCreate(long workspaceId, Diagnosis diagnosis) {
+        validateWorkspace(workspaceId);
+        if (diagnosis == null) {
+            throw new IllegalArgumentException("diagnosis must not be null");
+        }
+    }
+
+    private void validateScenarioIdentity(Diagnosis diagnosis, String scenarioKey) {
+        if (diagnosis.investigationMode() != InvestigationMode.SCENARIO_PLAYBOOK) {
+            throw new IllegalArgumentException(
+                    "scenario persistence requires a SCENARIO_PLAYBOOK diagnosis");
+        }
+        String expectedSelector = new ScenarioSelector(
+                diagnosis.incident().system(), scenarioKey).routingKey();
+        if (!expectedSelector.equals(diagnosis.sopKey())) {
+            throw new IllegalArgumentException(
+                    "scenarioKey does not match the diagnosis selector: " + expectedSelector);
         }
     }
 
@@ -86,6 +178,22 @@ public class TroubleshootingPersistenceService {
                     "troubleshooting diagnosis not found: " + diagnosisId);
         }
         return stored(entity, false);
+    }
+
+    /**
+     * Finds the Diagnosis already owned by an IntakeSession without starting
+     * evidence collection or invoking the miss-path Agent again.
+     */
+    public Optional<StoredDiagnosis> findByIntakeSessionId(
+            long workspaceId,
+            String intakeSessionId) {
+        validateWorkspace(workspaceId);
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return Optional.ofNullable(findEntityByIntakeSessionId(
+                        workspaceId, intakeSessionId.trim()))
+                .map(entity -> stored(entity, false));
     }
 
     @Transactional
@@ -179,6 +287,36 @@ public class TroubleshootingPersistenceService {
         return candidates;
     }
 
+    /** Finds one outcome-backed candidate without scanning or crossing workspaces. */
+    public KnowledgeCandidate findKnowledgeCandidate(long workspaceId, String candidateId) {
+        validateWorkspace(workspaceId);
+        if (candidateId == null || candidateId.isBlank()) {
+            throw new IllegalArgumentException("candidateId must not be blank");
+        }
+        TroubleshootingKnowledgeOutboxEntity row = outboxMapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingKnowledgeOutboxEntity>()
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getCandidateId,
+                                candidateId.trim())
+                        .eq(TroubleshootingKnowledgeOutboxEntity::getDeleted, 0));
+        if (row == null) {
+            return null;
+        }
+        try {
+            KnowledgeCandidate candidate = objectMapper.readValue(
+                    row.getPayloadJson(), KnowledgeCandidate.class);
+            if (!candidate.candidateId().equals(candidateId.trim())) {
+                throw new MateClawException(
+                        "err.troubleshooting.knowledge_candidate_identity",
+                        500,
+                        "knowledge candidate payload does not match its indexed identity");
+            }
+            return candidate;
+        } catch (JsonProcessingException error) {
+            throw serializationError("deserialize knowledge candidate", error);
+        }
+    }
+
     private void updateAggregate(long workspaceId, Diagnosis diagnosis, int expectedVersion) {
         validateWorkspace(workspaceId);
         if (expectedVersion < 0) {
@@ -202,6 +340,10 @@ public class TroubleshootingPersistenceService {
                     "err.troubleshooting.optimistic_lock_conflict",
                     409,
                     "diagnosis changed concurrently; reload before applying the transition");
+        }
+        if (diagnosis.status() == DiagnosisStatus.CLOSED) {
+            diagnosisMapper.scheduleClosureNotification(
+                    workspaceId, diagnosis.diagnosisId(), now);
         }
     }
 
@@ -240,10 +382,23 @@ public class TroubleshootingPersistenceService {
                         .eq(TroubleshootingDiagnosisEntity::getDeleted, 0));
     }
 
+    private TroubleshootingDiagnosisEntity findEntityByIntakeSessionId(
+            long workspaceId,
+            String intakeSessionId) {
+        return diagnosisMapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingDiagnosisEntity>()
+                        .eq(TroubleshootingDiagnosisEntity::getWorkspaceId, workspaceId)
+                        .eq(
+                                TroubleshootingDiagnosisEntity::getSourceIntakeSessionId,
+                                intakeSessionId)
+                        .eq(TroubleshootingDiagnosisEntity::getDeleted, 0));
+    }
+
     private TroubleshootingDiagnosisEntity entity(
             long workspaceId,
             Diagnosis diagnosis,
-            String dedupKey) {
+            String dedupKey,
+            String intakeSessionId) {
         LocalDateTime now = utcNow();
         TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
         entity.setWorkspaceId(workspaceId);
@@ -254,6 +409,7 @@ public class TroubleshootingPersistenceService {
         entity.setErrorCode(diagnosis.incident().errorCode());
         entity.setService(diagnosis.incident().service());
         entity.setDedupKey(dedupKey);
+        entity.setSourceIntakeSessionId(intakeSessionId);
         entity.setRehearsal(diagnosis.rehearsal());
         entity.setStatus(diagnosis.status().name());
         entity.setContractVersion(diagnosis.contractVersion());

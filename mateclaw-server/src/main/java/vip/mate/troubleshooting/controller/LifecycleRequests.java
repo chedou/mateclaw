@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.controller;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 
@@ -41,12 +42,12 @@ public final class LifecycleRequests {
 
     /**
      * Closure. {@code createKnowledgeCandidate} decides whether this case
-     * sediments a reviewable lesson; the candidate enters a review queue and
-     * never overwrites an approved SOP.
+     * sediments a knowledge candidate. Recording or publishing that candidate
+     * is not an approval decision and never overwrites an approved SOP.
      */
     public record Close(
             @NotNull ClosureOutcome outcome,
-            @NotBlank String summary,
+            @NotBlank @Size(max = 500) String summary,
             boolean recoveryVerified,
             String sopFeedback,
             boolean createKnowledgeCandidate) {}

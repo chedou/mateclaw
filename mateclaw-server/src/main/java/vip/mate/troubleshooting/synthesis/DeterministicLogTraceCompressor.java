@@ -1,11 +1,11 @@
 package vip.mate.troubleshooting.synthesis;
 
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.CanonicalNumberParser;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -37,6 +37,12 @@ public final class DeterministicLogTraceCompressor {
             "unavailable", "denied", "conflict");
 
     public LogTraceSkeleton compress(EvidenceResult traceBundle) {
+        return compress(traceBundle, null);
+    }
+
+    public LogTraceSkeleton compress(
+            EvidenceResult traceBundle,
+            EvidenceResult contrastEvidence) {
         if (traceBundle == null || traceBundle.status() == EvidenceStatus.MISSING) {
             throw new IllegalArgumentException("usable log_trace_bundle evidence is required");
         }
@@ -86,7 +92,48 @@ public final class DeterministicLogTraceCompressor {
                 List.copyOf(anomalyIndexes),
                 durationSummary(parsed),
                 parsed.size(),
-                parsed.size() - timeline.size());
+                parsed.size() - timeline.size(),
+                contrastSummary(contrastEvidence));
+    }
+
+    private LogTraceSkeleton.ContrastSummary contrastSummary(EvidenceResult evidence) {
+        if (evidence == null || evidence.status() == EvidenceStatus.MISSING) {
+            return LogTraceSkeleton.ContrastSummary.unavailable();
+        }
+        String feature = sanitizedText(
+                evidence.observed().get("discriminating_feature"),
+                "contrast discriminating_feature", 128);
+        long failureSamples = nonNegativeLong(
+                evidence.observed().get("failure_sample_count"), "failure_sample_count");
+        long failureMatches = nonNegativeLong(
+                evidence.observed().get("failure_match_count"), "failure_match_count");
+        long successSamples = nonNegativeLong(
+                evidence.observed().get("success_sample_count"), "success_sample_count");
+        long successMatches = nonNegativeLong(
+                evidence.observed().get("success_match_count"), "success_match_count");
+        if (failureSamples == 0 || successSamples == 0
+                || failureMatches > failureSamples
+                || successMatches > successSamples) {
+            throw new IllegalArgumentException("contrast counts are mathematically invalid");
+        }
+        double failureRate = roundedRate(failureMatches, failureSamples);
+        double successRate = roundedRate(successMatches, successSamples);
+        double delta = Math.round((failureRate - successRate) * 1_000_000d) / 1_000_000d;
+        return new LogTraceSkeleton.ContrastSummary(
+                true, feature, failureSamples, failureMatches,
+                successSamples, successMatches, failureRate, successRate, delta);
+    }
+
+    private long nonNegativeLong(Object raw, String field) {
+        long value = exactLong(raw, field);
+        if (value < 0) {
+            throw new IllegalArgumentException("contrast " + field + " must not be negative");
+        }
+        return value;
+    }
+
+    private double roundedRate(long matches, long samples) {
+        return Math.round(((double) matches / samples) * 1_000_000d) / 1_000_000d;
     }
 
     private TraceEntry parse(Object raw, int originalIndex) {
@@ -252,27 +299,22 @@ public final class DeterministicLogTraceCompressor {
     }
 
     private long exactLong(Object raw, String field) {
-        if (!(raw instanceof Number value)) {
-            throw new IllegalArgumentException(field + " must be numeric");
+        Long value = CanonicalNumberParser.parseExactLong(raw);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    field + " must be an integer or canonical decimal integer string");
         }
-        try {
-            return new BigDecimal(String.valueOf(value)).longValueExact();
-        } catch (ArithmeticException invalid) {
-            throw new IllegalArgumentException(field + " must be an integer", invalid);
-        }
+        return value;
     }
 
     private Double optionalDuration(Object raw) {
         if (raw == null) {
             return null;
         }
-        if (!(raw instanceof Number value)) {
-            throw new IllegalArgumentException("duration_ms must be numeric");
-        }
-        double duration = value.doubleValue();
-        if (!Double.isFinite(duration) || duration < 0) {
+        Double duration = CanonicalNumberParser.parseFiniteNonNegativeDouble(raw);
+        if (duration == null) {
             throw new IllegalArgumentException(
-                    "duration_ms must be finite and non-negative");
+                    "duration_ms must be finite, non-negative, and canonical");
         }
         return duration;
     }

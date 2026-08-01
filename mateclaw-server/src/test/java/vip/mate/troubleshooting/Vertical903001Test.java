@@ -14,6 +14,7 @@ import org.mockito.stubbing.Answer;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
@@ -44,14 +45,17 @@ import vip.mate.troubleshooting.service.DeterministicDiagnosisService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,6 +100,8 @@ class Vertical903001Test {
     private TroubleshootingIntakeService intake;
     private DiagnosisLifecycleService lifecycle;
     private TroubleshootingSopPersistenceService sopPersistence;
+    private TroubleshootingPlaybookVersionService playbookVersions;
+    private ObjectMapper objectMapper;
 
     @BeforeAll
     static void initTableInfo() {
@@ -110,15 +116,17 @@ class Vertical903001Test {
 
     @BeforeEach
     void setUp() {
-        ObjectMapper objectMapper = new ObjectMapper()
-                .findAndRegisterModules();
+        objectMapper = new ObjectMapper().findAndRegisterModules();
 
-        sopPersistence = new TroubleshootingSopPersistenceService(sopMapper(), objectMapper);
+        playbookVersions = mock(TroubleshootingPlaybookVersionService.class);
+        sopPersistence = new TroubleshootingSopPersistenceService(
+                sopMapper(), playbookVersions, objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
                 diagnosisMapper(), outboxMapper(), objectMapper);
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();
         DeterministicDiagnosisService diagnosisService = new DeterministicDiagnosisService(
-                new CriterionEvaluator(), stateMachine, persistence);
+                new CriterionEvaluator(), new DiagnosisRuleEvaluator(),
+                stateMachine, persistence, playbookVersions);
 
         intake = new TroubleshootingIntakeService(sopPersistence, diagnosisService);
         lifecycle = new DiagnosisLifecycleService(persistence, stateMachine);
@@ -264,8 +272,39 @@ class Vertical903001Test {
     // ================= the 903001 knowledge entry =================
 
     private void registerApprovedSop() {
-        sopPersistence.register(WORKSPACE_ID, sop903001());
-        sopPersistence.updateStatus(WORKSPACE_ID, "CSDP", "903001", "approved");
+        SopEntry candidate = sop903001();
+        sopPersistence.register(WORKSPACE_ID, candidate);
+        SopEntry approved = new SopEntry(
+                candidate.sopId(), candidate.contractVersion(), candidate.system(),
+                candidate.errorCode(), candidate.service(), candidate.title(), candidate.cause(),
+                candidate.category(), candidate.ownerTeam(), "approved", true,
+                candidate.evidenceRequests(), candidate.anomalyCriteria(),
+                candidate.diagnosisRules(), candidate.actions());
+        TroubleshootingSopEntity row = sopRows.get(candidate.routingKey());
+        row.setStatus("approved");
+        row.setVerified(true);
+        try {
+            row.setAggregateJson(objectMapper.writeValueAsString(approved));
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+        when(playbookVersions.lockActiveApprovedByPlaybookId(
+                WORKSPACE_ID, approved.sopId()))
+                .thenReturn(Optional.of(new ApprovedPlaybookVersion(
+                        approved.sopId(),
+                        1,
+                        approved.routingKey(),
+                        "APPROVED",
+                        "LEGACY",
+                        approved.sopId(),
+                        null,
+                        null,
+                        "migration",
+                        "test backfill",
+                        null,
+                        approved,
+                        OCCURRED_AT,
+                        OCCURRED_AT)));
     }
 
     private SopEntry sop903001() {

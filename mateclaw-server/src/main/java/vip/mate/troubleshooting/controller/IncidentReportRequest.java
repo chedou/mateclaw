@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.IncidentImpact;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,7 +29,7 @@ public record IncidentReportRequest(
         String errorCode,
         String title,
         String severity,
-        String impact,
+        IncidentImpact impact,
         String traceId,
         Instant occurredAt,
         String slaRemaining,

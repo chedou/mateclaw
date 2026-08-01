@@ -32,11 +32,32 @@ public class TroubleshootingDiagnosisEntity {
     @TableField(value = "dedup_key", updateStrategy = FieldStrategy.ALWAYS)
     private String dedupKey;
 
+    @TableField(value = "source_intake_session_id", updateStrategy = FieldStrategy.ALWAYS)
+    private String sourceIntakeSessionId;
+
     private Boolean rehearsal;
     private String status;
     private String contractVersion;
     private String aggregateJson;
     private Integer version;
+
+    private String closureNotificationStatus;
+    private Integer closureNotificationAttempts;
+
+    @TableField(value = "closure_notification_claimed_by", updateStrategy = FieldStrategy.ALWAYS)
+    private String closureNotificationClaimedBy;
+
+    @TableField(value = "closure_notification_lease_expires_at", updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime closureNotificationLeaseExpiresAt;
+
+    @TableField(value = "closure_notification_next_attempt_at", updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime closureNotificationNextAttemptAt;
+
+    @TableField(value = "closure_notification_last_error", updateStrategy = FieldStrategy.ALWAYS)
+    private String closureNotificationLastError;
+
+    @TableField(value = "closure_notification_completed_at", updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime closureNotificationCompletedAt;
 
     @TableLogic
     private Integer deleted;

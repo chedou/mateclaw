@@ -109,6 +109,7 @@ CLAUDE.md
 
 # Codex CLI local artifacts
 .codex/
+.playwright-cli/
 
 # Codebase memory (local agent index / graph artifact; do not commit)
 .codebase-memory/

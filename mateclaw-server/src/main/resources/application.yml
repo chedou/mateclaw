@@ -130,6 +130,16 @@ springdoc:
 # MateClaw 自定义配置
 mateclaw:
   troubleshooting:
+    # Absolute browser origin used in IM deep links. In a reverse-proxy
+    # deployment this normally equals MATECLAW_PUBLIC_BASE_URL; local channel
+    # rehearsals can point it at the Vite origin explicitly.
+    workbench-base-url: ${MATECLAW_TROUBLESHOOTING_WORKBENCH_BASE_URL:${MATECLAW_PUBLIC_BASE_URL:}}
+    intake-dispatch:
+      poll-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_POLL_MS:1000}
+      initial-delay-ms: ${MATECLAW_TROUBLESHOOTING_INTAKE_INITIAL_DELAY_MS:3000}
+    closure-notification:
+      poll-ms: ${MATECLAW_TROUBLESHOOTING_CLOSURE_POLL_MS:1000}
+      initial-delay-ms: ${MATECLAW_TROUBLESHOOTING_CLOSURE_INITIAL_DELAY_MS:3000}
     agent:
       # Miss-path LLM triage is an explicit rollout. Keep disabled until a
       # dedicated workspace-local ReAct Agent is created with skills/wiki off,
@@ -141,6 +151,17 @@ mateclaw:
       # Separate from the normal conversation window because this invocation
       # deliberately bypasses ambient conversation context.
       max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}
+      # Initial approved Scenario Playbook. The model can return only this key;
+      # search term, window and source allowlist remain server-owned. The plan is
+      # deliberately replay-only until Guance T7/T8 verification is complete.
+      approved-scenario-plans:
+        message_send_failed:
+          enabled: true
+          system: CSDP
+          search-term: message_send_failed
+          window: -15m
+          workspace-ids: ["${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}"]
+          permitted-platforms: [recorded-replay]
     evidence:
       # Evidence collection is fail-closed. Routes are explicit, while both
       # concrete sources remain disabled until an operator opts in.
@@ -149,6 +170,12 @@ mateclaw:
           log_count: [guance, recorded-replay]
           log_search: [guance, recorded-replay]
           log_trace_bundle: [guance, recorded-replay]
+          # P1 contrast is replay-only. Add a Guance source in P2 only after
+          # workspace authorization and the real aggregation fields are verified.
+          contrast_sample: [recorded-replay]
+          # No built-in query binding is guessed. A live incident_impact query
+          # requires a T7-verified concrete binding plus exact asset authorization.
+          incident_impact: [guance, recorded-replay]
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
       default-sources: []
@@ -166,8 +193,11 @@ mateclaw:
         allow-insecure-http: ${MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP:false}
         query-path: /api/v1/df/query_data_v1
         timeout: 5s
+        # Empty by default. A real query requires an explicitly activated
+        # deployment profile with one exact workspace/system/service mapping.
+        asset-bindings: []
         # Draft bindings only. Measurement names and canonical aliases remain
-        # unverified until T2 is completed against the CSDP intranet workspace.
+        # unverified until T7 is completed against the CSDP intranet workspace.
         bindings:
           log_count:
             namespace: L

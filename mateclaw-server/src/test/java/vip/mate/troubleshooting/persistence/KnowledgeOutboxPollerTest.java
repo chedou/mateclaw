@@ -104,7 +104,13 @@ class KnowledgeOutboxPollerTest {
                 "resolved",
                 null,
                 "on-call",
-                Instant.parse("2026-07-25T02:00:00Z"));
+                Instant.parse("2026-07-25T02:00:00Z"),
+                new KnowledgeCandidate.OutcomeProof(
+                        vip.mate.troubleshooting.model.ClosureOutcome.UNRESOLVED,
+                        false,
+                        "on-call",
+                        Instant.parse("2026-07-25T02:00:00Z")),
+                null);
         TroubleshootingKnowledgeOutboxEntity row = new TroubleshootingKnowledgeOutboxEntity();
         row.setId(1L);
         row.setWorkspaceId(7L);

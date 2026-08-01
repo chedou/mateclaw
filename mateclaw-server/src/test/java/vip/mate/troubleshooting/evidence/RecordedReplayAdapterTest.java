@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RecordedReplayAdapterTest {
 
+    private static final long WORKSPACE_ID = 1L;
     private static final Instant NOW = Instant.parse("2026-07-25T09:12:03Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
@@ -46,7 +47,8 @@ class RecordedReplayAdapterTest {
                 }
                 """);
 
-        EvidenceResult result = adapter.collect(request("EV-1"), incident("903001"));
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("903001"));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
         assertThat(result.observed())
@@ -63,7 +65,8 @@ class RecordedReplayAdapterTest {
                 {"version":1,"records":[]}
                 """);
 
-        EvidenceResult result = adapter.collect(request("EV-1"), incident("999999"));
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("999999"));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.source()).isEqualTo("recorded-replay:missing");
@@ -91,7 +94,8 @@ class RecordedReplayAdapterTest {
 
         for (String catalog : malformedCatalogs) {
             RecordedReplayAdapter adapter = adapter(catalog);
-            EvidenceResult result = adapter.collect(request("EV-1"), incident("903001"));
+            EvidenceResult result = adapter.collect(
+                    WORKSPACE_ID, request("EV-1"), incident("903001"));
 
             assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.DEGRADED);
             assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
@@ -129,6 +133,7 @@ class RecordedReplayAdapterTest {
                 """);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 request("EV-P6-2", "log_trace_bundle"),
                 incident("csdp-session-service", null));
 
@@ -168,6 +173,7 @@ class RecordedReplayAdapterTest {
                 Map.of("ps_id", "requested-ps"), "-15m", true);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 request,
                 incident("csdp-session-service", null));
 
@@ -191,12 +197,46 @@ class RecordedReplayAdapterTest {
         assertThat(adapter.supports("trace")).isTrue();
         assertThat(adapter.supports("log_search")).isTrue();
         assertThat(adapter.supports("log_trace_bundle")).isTrue();
-        assertThat(adapter.collect(request("EV-1"), incident("903001")).observed())
+        assertThat(adapter.supports("contrast_sample")).isTrue();
+        assertThat(adapter.collect(
+                WORKSPACE_ID, request("EV-1"), incident("903001")).observed())
                 .containsEntry("count", 148);
         assertThat(adapter.collect(
+                WORKSPACE_ID,
                 request("SYNTH-LOG-SEARCH", "log_search"),
                 incident("csdp-session-service", null)).observed())
                 .containsEntry("ps_id", "synthetic-ps-message-send-001");
+        assertThat(adapter.collect(
+                WORKSPACE_ID,
+                request("SYNTH-CONTRAST-SAMPLE", "contrast_sample"),
+                incident("csdp-session-service", null)).observed())
+                .containsEntry("failure_match_count", 92)
+                .containsEntry("success_match_count", 3);
+    }
+
+    @Test
+    void reportsOnlyAnExactRegisteredCoreFixtureAsAvailable() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                CLOCK);
+
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "csdp-session-service", "message_send_failed"))
+                .isTrue();
+        assertThat(adapter.coreFixtureSearchTerm("CSDP", "csdp-session-service"))
+                .contains("message_send_failed");
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "csdp-session-service", "unregistered_search"))
+                .isFalse();
+        assertThat(adapter.hasCoreFixture(
+                "CSDP", "another-service", "message_send_failed"))
+                .isFalse();
+        assertThat(adapter.coreFixtureSearchTerm("CSDP", "another-service"))
+                .isEmpty();
     }
 
     @Test
@@ -217,11 +257,60 @@ class RecordedReplayAdapterTest {
                 true);
 
         EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
                 wrongKeyword,
                 incident("csdp-session-service", null));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void bundledP6ReplayAcceptsOnlyTheExplicitServerOwnedOnlineSpineAliases() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                CLOCK);
+
+        EvidenceResult search = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-LOG-SEARCH", "log_search", "online search",
+                        Map.of("search_term", "message_send_failed"), "-15m", true),
+                incident("csdp-session-service", null));
+        EvidenceResult trace = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-TRACE-BUNDLE", "log_trace_bundle", "online trace",
+                        Map.of("ps_id", "synthetic-ps-message-send-001"), "-15m", true),
+                incident("csdp-session-service", null));
+        EvidenceResult contrast = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-CONTRAST-SAMPLE", "contrast_sample", "online contrast",
+                        Map.of(
+                                "scenario_key", "message_send_failed",
+                                "exclude_ps_id", "synthetic-ps-message-send-001"),
+                        "-15m", false),
+                incident("csdp-session-service", null));
+        EvidenceResult inventedAlias = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "ONLINE-TRACE-OTHER", "log_trace_bundle", "invented",
+                        Map.of("ps_id", "synthetic-ps-message-send-001"), "-15m", true),
+                incident("csdp-session-service", null));
+
+        assertThat(search.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(search.queryId()).isEqualTo("ONLINE-LOG-SEARCH");
+        assertThat(trace.observed()).containsEntry(
+                "ps_id", "synthetic-ps-message-send-001");
+        assertThat(contrast.observed())
+                .containsEntry("failure_match_count", 92)
+                .containsEntry("success_match_count", 3);
+        assertThat(inventedAlias.status()).isEqualTo(EvidenceStatus.MISSING);
     }
 
     private RecordedReplayAdapter adapter(String json) {
@@ -242,6 +331,9 @@ class RecordedReplayAdapterTest {
         Map<String, Object> target = switch (signalKind) {
             case "log_search" -> Map.of("search_term", "message_send_failed");
             case "log_trace_bundle" -> Map.of("ps_id", "synthetic-ps-message-send-001");
+            case "contrast_sample" -> Map.of(
+                    "scenario_key", "message_send_failed",
+                    "exclude_ps_id", "synthetic-ps-message-send-001");
             default -> Map.of("service", "order-svc", "error_code", "903001");
         };
         return new EvidenceRequest(

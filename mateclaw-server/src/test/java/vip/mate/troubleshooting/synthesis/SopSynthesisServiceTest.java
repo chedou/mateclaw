@@ -19,6 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,8 +38,9 @@ class SopSynthesisServiceTest {
 
     @Test
     void preparesTheNoErrorCodeP6CaseForModelSynthesisWithoutCreatingACandidate() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
-                .thenReturn(searchEvidence(), traceEvidence());
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
+                .thenReturn(searchEvidence(), traceEvidence(), contrastEvidence());
 
         SopSynthesisPreview preview = service.preview(
                 1L,
@@ -55,6 +57,9 @@ class SopSynthesisServiceTest {
         assertThat(preview.psId()).isEqualTo("synthetic-ps-message-send-001");
         assertThat(preview.searchEvidence().queryId()).isEqualTo("SYNTH-LOG-SEARCH");
         assertThat(preview.traceEvidence().queryId()).isEqualTo("SYNTH-TRACE-BUNDLE");
+        assertThat(preview.contrastEvidence().queryId()).isEqualTo("SYNTH-CONTRAST-SAMPLE");
+        assertThat(preview.contrastAvailable()).isTrue();
+        assertThat(preview.skeleton().contrast().rateDelta()).isEqualTo(0.89);
         assertThat(preview.skeleton().serviceSequence())
                 .containsExactly("session-api", "session-state", "session-api");
         assertThat(preview.fixtureMode()).isTrue();
@@ -63,15 +68,19 @@ class SopSynthesisServiceTest {
 
         ArgumentCaptor<EvidenceRequest> requests = ArgumentCaptor.forClass(EvidenceRequest.class);
         ArgumentCaptor<IncidentContext> incidents = ArgumentCaptor.forClass(IncidentContext.class);
-        verify(router, times(2)).collect(
-                requests.capture(), incidents.capture(), eq(java.util.Set.of("recorded-replay")));
+        verify(router, times(3)).collect(
+                eq(1L), requests.capture(), incidents.capture(),
+                eq(java.util.Set.of("recorded-replay")));
         assertThat(requests.getAllValues())
                 .extracting(EvidenceRequest::signalKind)
-                .containsExactly("log_search", "log_trace_bundle");
+                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
         assertThat(requests.getAllValues().getFirst().target())
                 .containsEntry("search_term", "message_send_failed");
-        assertThat(requests.getAllValues().getLast().target())
+        assertThat(requests.getAllValues().get(1).target())
                 .containsEntry("ps_id", "synthetic-ps-message-send-001");
+        assertThat(requests.getAllValues().getLast().target())
+                .containsEntry("scenario_key", "message_send_failed")
+                .containsEntry("exclude_ps_id", "synthetic-ps-message-send-001");
         assertThat(incidents.getAllValues())
                 .allSatisfy(incident -> {
                     assertThat(incident.errorCode()).isNull();
@@ -81,7 +90,8 @@ class SopSynthesisServiceTest {
 
     @Test
     void stopsBeforeTraceCollectionWhenLogSearchIsMissing() {
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(new EvidenceResult(
                 "SYNTH-LOG-SEARCH", "UNKNOWN", "", EvidenceStatus.MISSING,
                 "not found", Map.of(), "recorded-replay:missing", NOW));
@@ -91,7 +101,7 @@ class SopSynthesisServiceTest {
                 .hasMessageContaining("log_search");
 
         verify(router, times(1)).collect(
-                any(), any(), eq(java.util.Set.of("recorded-replay")));
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay")));
     }
 
     @Test
@@ -104,7 +114,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -117,7 +127,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -127,7 +137,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(403);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -140,7 +150,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(403);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -153,7 +163,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -167,7 +177,7 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -181,18 +191,34 @@ class SopSynthesisServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(400);
 
-        verify(router, never()).collect(any(), any(), any());
+        verify(router, never()).collect(anyLong(), any(), any(), any());
     }
 
     @Test
     void failsClosedWhenTheTraceBundlePsIdDoesNotMatchTheSearchSample() {
         EvidenceResult mismatched = traceEvidence("other-ps-id");
-        when(router.collect(any(), any(), eq(java.util.Set.of("recorded-replay"))))
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
                 .thenReturn(searchEvidence(), mismatched);
 
         assertThatThrownBy(() -> service.preview(1L, request()))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("PS ID");
+    }
+
+    @Test
+    void missingContrastDegradesWithoutFailingThePreview() {
+        when(router.collect(
+                eq(1L), any(), any(), eq(java.util.Set.of("recorded-replay"))))
+                .thenReturn(searchEvidence(), traceEvidence(), new EvidenceResult(
+                        "SYNTH-CONTRAST-SAMPLE", "UNKNOWN", "", EvidenceStatus.MISSING,
+                        "not found", Map.of(), "recorded-replay:missing", NOW));
+
+        SopSynthesisPreview preview = service.preview(1L, request());
+
+        assertThat(preview.contrastAvailable()).isFalse();
+        assertThat(preview.contrastEvidence()).isNull();
+        assertThat(preview.warnings()).anyMatch(item -> item.contains("校准期"));
     }
 
     private SopSynthesisRequest request() {
@@ -227,6 +253,19 @@ class SopSynthesisServiceTest {
                                         "concurrent state write rejected"),
                                 entry(1753002781087L, "session-api", "ERROR",
                                         "message send failed"))),
+                "recorded-replay:message-send-failed", NOW);
+    }
+
+    private EvidenceResult contrastEvidence() {
+        return new EvidenceResult(
+                "SYNTH-CONTRAST-SAMPLE", "L", "", EvidenceStatus.NORMAL,
+                "same-window success comparison",
+                Map.of(
+                        "discriminating_feature", "session_state_conflict",
+                        "failure_sample_count", 100,
+                        "failure_match_count", 92,
+                        "success_sample_count", 100,
+                        "success_match_count", 3),
                 "recorded-replay:message-send-failed", NOW);
     }
 

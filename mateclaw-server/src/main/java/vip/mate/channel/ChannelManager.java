@@ -1000,7 +1000,14 @@ public class ChannelManager {
             throw new UnsupportedOperationException(
                     "Channel " + adapter.getDisplayName() + " (" + adapter.getChannelType() + ") does not support proactive send");
         }
-        adapter.proactiveSend(targetId, content, options != null ? options : DeliveryOptions.DEFAULTS);
+        DeliveryOptions effective = options != null ? options : DeliveryOptions.DEFAULTS;
+        if (effective.requiresReplyContext()
+                && !adapter.isProactiveDeliveryReady(targetId, effective)) {
+            throw new IllegalStateException(
+                    "Channel route is active but its required reply context is unavailable: "
+                            + adapter.getChannelType() + "/" + targetId);
+        }
+        adapter.proactiveSend(targetId, content, effective);
         log.info("Proactive message sent via channel {} to {}: {}chars",
                 adapter.getDisplayName(), targetId, content.length());
     }
@@ -1021,6 +1028,188 @@ public class ChannelManager {
         }
         sendToChannel(session.getChannelId(), session.getTargetId(), content);
     }
+
+    /**
+     * Returns whether this node owns one unambiguous, active delivery route
+     * for a workspace-scoped conversation.
+     *
+     * <p>Leader-required adapters (including WeCom) exist only on their local
+     * leader. Callers can therefore use this read-only check before claiming a
+     * durable job; follower nodes leave the job untouched for the leader.</p>
+     */
+    public boolean canSendToWorkspaceConversation(
+            long workspaceId,
+            String channelType,
+            String conversationRef) {
+        try {
+            Optional<WorkspaceConversationRoute> route = resolveWorkspaceConversation(
+                    workspaceId, channelType, conversationRef);
+            if (route.isEmpty()) {
+                return false;
+            }
+            DeliveryOptions effective = workspaceDeliveryOptions(
+                    route.get(), DeliveryOptions.DEFAULTS);
+            if (!effective.requiresReplyContext()) {
+                return true;
+            }
+            return getAdapter(route.get().channelId())
+                    .filter(adapter -> adapter.isProactiveDeliveryReady(
+                            route.get().targetId(), effective))
+                    .isPresent();
+        } catch (RuntimeException error) {
+            log.debug(
+                    "Workspace conversation route unavailable: workspace={}, type={}, reason={}",
+                    workspaceId,
+                    channelType,
+                    error.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Sends through the exact active route owned by this node and verifies the
+     * backing channel belongs to the requested workspace.
+     *
+     * <p>{@code conversationRef} may be the transport-specific
+     * ChannelSessionStore key used by new callers, or the legacy raw
+     * chat/sender id. Raw ids are accepted only when they resolve to exactly
+     * one locally active channel in the workspace.</p>
+     */
+    public void sendToWorkspaceConversation(
+            long workspaceId,
+            String channelType,
+            String conversationRef,
+            String content) {
+        sendToWorkspaceConversation(
+                workspaceId,
+                channelType,
+                conversationRef,
+                content,
+                DeliveryOptions.DEFAULTS);
+    }
+
+    /** Same workspace-safe route resolution, with transport delivery hints. */
+    public void sendToWorkspaceConversation(
+            long workspaceId,
+            String channelType,
+            String conversationRef,
+            String content,
+            DeliveryOptions options) {
+        WorkspaceConversationRoute route = resolveWorkspaceConversation(
+                        workspaceId, channelType, conversationRef)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No active channel route for workspace conversation: "
+                                + workspaceId + "/" + channelType + "/" + conversationRef));
+        sendToChannel(
+                route.channelId(),
+                route.targetId(),
+                content,
+                workspaceDeliveryOptions(route, options));
+    }
+
+    /**
+     * A persisted WeCom session distinguishes groups from single chats without
+     * guessing from opaque IDs: group targetId is the chat id while senderId is
+     * the reporting user; in a single chat both are the user id. Older rows
+     * lacking senderId fail closed as group-like. Other transports keep their
+     * original delivery hints unchanged.
+     */
+    private DeliveryOptions workspaceDeliveryOptions(
+            WorkspaceConversationRoute route,
+            DeliveryOptions requested) {
+        DeliveryOptions effective = requested == null
+                ? DeliveryOptions.DEFAULTS
+                : requested;
+        boolean weComGroupOrUnknown = "wecom".equals(route.channelType())
+                && !Objects.equals(route.targetId(), route.senderId());
+        return weComGroupOrUnknown
+                ? effective.withRequiredReplyContext()
+                : effective;
+    }
+
+    private Optional<WorkspaceConversationRoute> resolveWorkspaceConversation(
+            long workspaceId,
+            String channelType,
+            String conversationRef) {
+        if (workspaceId <= 0
+                || channelType == null || channelType.isBlank()
+                || conversationRef == null || conversationRef.isBlank()) {
+            return Optional.empty();
+        }
+
+        vip.mate.channel.model.ChannelSessionEntity exact =
+                channelSessionStore.getSession(conversationRef);
+        if (exact != null) {
+            if (!channelType.equals(exact.getChannelType())) {
+                return Optional.empty();
+            }
+            return activeWorkspaceRoute(workspaceId, channelType, exact);
+        }
+
+        Map<String, vip.mate.channel.model.ChannelSessionEntity> candidates =
+                new LinkedHashMap<>();
+        List<vip.mate.channel.model.ChannelSessionEntity> sameType =
+                channelSessionStore.listByChannelType(channelType);
+        if (sameType != null) {
+            sameType.stream()
+                    .filter(Objects::nonNull)
+                    .filter(session -> conversationRef.equals(session.getTargetId()))
+                    .forEach(session -> candidates.put(session.getConversationId(), session));
+        }
+
+        List<WorkspaceConversationRoute> routes = candidates.values().stream()
+                .map(session -> activeWorkspaceRoute(workspaceId, channelType, session))
+                .flatMap(Optional::stream)
+                .toList();
+        if (routes.size() > 1) {
+            throw new IllegalStateException(
+                    "Ambiguous active channel route for workspace conversation: "
+                            + workspaceId + "/" + channelType + "/" + conversationRef);
+        }
+        return routes.stream().findFirst();
+    }
+
+    private Optional<WorkspaceConversationRoute> activeWorkspaceRoute(
+            long workspaceId,
+            String channelType,
+            vip.mate.channel.model.ChannelSessionEntity session) {
+        if (session.getChannelId() == null
+                || session.getTargetId() == null
+                || session.getTargetId().isBlank()) {
+            return Optional.empty();
+        }
+        ChannelEntity channel;
+        try {
+            channel = channelService.getChannel(session.getChannelId());
+        } catch (RuntimeException error) {
+            log.debug("Channel route metadata unavailable for id={}: {}",
+                    session.getChannelId(), error.getMessage());
+            return Optional.empty();
+        }
+        if (!Objects.equals(channel.getWorkspaceId(), workspaceId)
+                || !channelType.equals(channel.getChannelType())
+                || !Boolean.TRUE.equals(channel.getEnabled())) {
+            return Optional.empty();
+        }
+        Optional<ChannelAdapter> active = getAdapter(session.getChannelId());
+        if (active.isEmpty()
+                || !channelType.equals(active.get().getChannelType())
+                || !active.get().isRunning()
+                || !active.get().supportsProactiveSend()) {
+            return Optional.empty();
+        }
+        return Optional.of(new WorkspaceConversationRoute(
+                session.getChannelId(),
+                session.getChannelType(),
+                session.getTargetId(),
+                session.getSenderId()));
+    }
+
+    private record WorkspaceConversationRoute(
+            Long channelId,
+            String channelType,
+            String targetId,
+            String senderId) { }
 
     // ==================== 插件渠道管理 ====================
 

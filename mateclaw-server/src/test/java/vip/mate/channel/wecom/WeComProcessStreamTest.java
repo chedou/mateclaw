@@ -8,6 +8,7 @@ import reactor.core.publisher.Flux;
 import vip.mate.agent.AgentService.StreamDelta;
 import vip.mate.channel.ChannelMessage;
 import vip.mate.channel.ChannelMessageRouter;
+import vip.mate.channel.DeliveryOptions;
 import vip.mate.channel.model.ChannelEntity;
 import vip.mate.channel.notification.ApprovalNotificationService;
 import vip.mate.channel.wecom.cards.WeComCardDispatcher;
@@ -135,6 +136,116 @@ class WeComProcessStreamTest {
         assertTrue(streamBodies(frames).isEmpty(), "no stream slot → no reply_stream frames");
         assertTrue(frames.stream().anyMatch(f -> "aibot_send_msg".equals(f.get("cmd"))),
                 "answer must fall back to the proactive send path");
+    }
+
+    @Test
+    @DisplayName("proactive delivery fails fast when the WeCom connection is unavailable")
+    void proactiveDeliveryRejectsDisconnectedChannel() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+        Field ws = WeComChannelAdapter.class.getDeclaredField("webSocket");
+        ws.setAccessible(true);
+        ws.set(adapter, null);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> adapter.proactiveSend("alice", "调查完成"));
+
+        assertTrue(error.getMessage().contains("not connected"));
+    }
+
+    @Test
+    @DisplayName("proactive delivery propagates a rejected platform ACK")
+    void proactiveDeliveryPropagatesAckFailure() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+        adapter.nextAckFailure = new IllegalStateException("platform rejected message");
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> adapter.proactiveSend("alice", "调查完成"));
+
+        assertTrue(error.getMessage().contains("platform ACK"));
+    }
+
+    @Test
+    @DisplayName("proactive markdown renders safe DeliveryOptions mentions with WeCom syntax")
+    @SuppressWarnings("unchecked")
+    void proactiveDeliveryMentionsOriginalReporter() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+
+        adapter.proactiveSend(
+                "group-1",
+                "排障已关闭",
+                DeliveryOptions.mentioningUsers(List.of("user-1")));
+
+        List<Map<String, Object>> frames = adapter.drainFrames();
+        Map<String, Object> body = (Map<String, Object>) frames.getFirst().get("body");
+        Map<String, Object> markdown = (Map<String, Object>) body.get("markdown");
+        assertEquals("<@user-1>\n排障已关闭", markdown.get("content"));
+    }
+
+    @Test
+    @DisplayName("proactive markdown omits unsafe mention ids without leaking them")
+    @SuppressWarnings("unchecked")
+    void proactiveDeliveryRejectsUnsafeMentionRecipients() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+        String unsafeRecipient = "bad>\n伪造通知";
+
+        adapter.proactiveSend(
+                "group-1",
+                "排障已关闭",
+                DeliveryOptions.mentioningUsers(List.of("user-1", unsafeRecipient)));
+
+        List<Map<String, Object>> frames = adapter.drainFrames();
+        Map<String, Object> body = (Map<String, Object>) frames.getFirst().get("body");
+        Map<String, Object> markdown = (Map<String, Object>) body.get("markdown");
+        String delivered = (String) markdown.get("content");
+        assertEquals("<@user-1>\n排障已关闭", delivered);
+        assertFalse(delivered.contains(unsafeRecipient));
+    }
+
+    @Test
+    @DisplayName("fresh adapter does not advertise a durable group route until an inbound reply slot exists")
+    void freshAdapterRequiresAnInboundGroupReplySlot() throws Exception {
+        DeliveryOptions required = DeliveryOptions.requiringReplyContext();
+        TestableAdapter beforeRestart = newAdapter("{}");
+        seedGroupReplyReqId(beforeRestart, "group-1", "req-before-restart");
+        assertTrue(beforeRestart.isProactiveDeliveryReady("group-1", required));
+
+        TestableAdapter restarted = newAdapter("{}");
+        assertFalse(restarted.isProactiveDeliveryReady("group-1", required));
+        IllegalStateException unavailable = assertThrows(
+                IllegalStateException.class,
+                () -> restarted.proactiveSend("group-1", "调查完成", required));
+        assertTrue(unavailable.getMessage().contains("reply context"));
+        assertTrue(restarted.drainFrames().isEmpty(),
+                "a fresh adapter must not fall through to aibot_send_msg for a group");
+
+        seedGroupReplyReqId(restarted, "group-1", "req-after-restart");
+        assertTrue(restarted.isProactiveDeliveryReady("group-1", required));
+        restarted.proactiveSend("group-1", "调查完成", required);
+        List<Map<String, Object>> frames = restarted.drainFrames();
+        assertEquals(1, frames.size());
+        assertEquals("aibot_respond_msg", frames.getFirst().get("cmd"));
+    }
+
+    @Test
+    @DisplayName("only validated DeliveryOptions can create WeCom mentions")
+    @SuppressWarnings("unchecked")
+    void proactiveDeliveryNeutralizesMentionMarkupFromTheBody() throws Exception {
+        TestableAdapter adapter = newAdapter("{}");
+
+        adapter.proactiveSend(
+                "alice",
+                "结案摘要 <@all> <@forged-user>",
+                DeliveryOptions.mentioningUsers(List.of("user-1", "all")));
+
+        List<Map<String, Object>> frames = adapter.drainFrames();
+        Map<String, Object> body = (Map<String, Object>) frames.getFirst().get("body");
+        Map<String, Object> markdown = (Map<String, Object>) body.get("markdown");
+        String delivered = (String) markdown.get("content");
+        assertTrue(delivered.startsWith("<@user-1>\n"));
+        assertFalse(delivered.contains("<@all>"));
+        assertFalse(delivered.contains("<@forged-user>"));
     }
 
     @Test
@@ -271,6 +382,16 @@ class WeComProcessStreamTest {
         contexts.put(replyToken, ctor.newInstance(reqId, streamId));
     }
 
+    @SuppressWarnings("unchecked")
+    private static void seedGroupReplyReqId(
+            WeComChannelAdapter adapter,
+            String chatId,
+            String reqId) throws Exception {
+        Field field = WeComChannelAdapter.class.getDeclaredField("lastChatReqIds");
+        field.setAccessible(true);
+        ((Map<String, String>) field.get(adapter)).put(chatId, reqId);
+    }
+
     /** Extract every reply_stream body (in dispatch order) from the captured frames. */
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> streamBodies(List<Map<String, Object>> frames) {
@@ -303,6 +424,7 @@ class WeComProcessStreamTest {
     /** Frame-capturing adapter with auto-ACK, mirroring ReplyStreamDedupTest. */
     static class TestableAdapter extends WeComChannelAdapter {
         final LinkedBlockingQueue<Map<String, Object>> sentFrames = new LinkedBlockingQueue<>();
+        volatile RuntimeException nextAckFailure;
         private static final ExecutorService AUTOACK = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "test-autoack-progress");
             t.setDaemon(true);
@@ -344,7 +466,15 @@ class WeComProcessStreamTest {
                 ConcurrentHashMap<String, CompletableFuture<Map<String, Object>>> pending =
                         (ConcurrentHashMap<String, CompletableFuture<Map<String, Object>>>) f.get(this);
                 CompletableFuture<Map<String, Object>> fut = pending.get(reqId);
-                if (fut != null) fut.complete(Map.of("errcode", 0));
+                if (fut != null) {
+                    RuntimeException failure = nextAckFailure;
+                    nextAckFailure = null;
+                    if (failure == null) {
+                        fut.complete(Map.of("errcode", 0));
+                    } else {
+                        fut.completeExceptionally(failure);
+                    }
+                }
             } catch (Exception ignored) {
             }
         }

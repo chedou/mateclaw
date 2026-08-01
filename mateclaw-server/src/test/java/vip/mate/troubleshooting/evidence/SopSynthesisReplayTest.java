@@ -44,6 +44,8 @@ class SopSynthesisReplayTest {
         assertThat(preview.skeleton().serviceSequence())
                 .containsExactly("session-api", "session-state", "session-api");
         assertThat(preview.skeleton().anomalySequenceIndexes()).containsExactly(1, 2);
+        assertThat(preview.contrastAvailable()).isTrue();
+        assertThat(preview.skeleton().contrast().rateDelta()).isEqualTo(0.89);
     }
 
     @Test
@@ -74,7 +76,8 @@ class SopSynthesisReplayTest {
                 "CSDP",
                 Map.of(
                         "log_search", List.of("recorded-replay"),
-                        "log_trace_bundle", List.of("recorded-replay"))));
+                        "log_trace_bundle", List.of("recorded-replay"),
+                        "contrast_sample", List.of("recorded-replay"))));
         return new SopSynthesisService(
                 new EvidenceSourceRouter(List.of(replay), properties, CLOCK),
                 new DeterministicLogTraceCompressor());

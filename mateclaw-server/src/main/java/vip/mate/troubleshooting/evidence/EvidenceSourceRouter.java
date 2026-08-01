@@ -35,8 +35,11 @@ public final class EvidenceSourceRouter {
     }
 
     /** Collects one request, trying sources in configured order and never surfacing source failure. */
-    public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
-        return collect(request, incident, null);
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident) {
+        return collect(workspaceId, request, incident, null);
     }
 
     /**
@@ -47,9 +50,13 @@ public final class EvidenceSourceRouter {
      * never fall through to a live observability source.</p>
      */
     public EvidenceResult collect(
+            long workspaceId,
             EvidenceRequest request,
             IncidentContext incident,
             Set<String> permittedPlatforms) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }
@@ -68,7 +75,7 @@ public final class EvidenceSourceRouter {
                 continue;
             }
             try {
-                EvidenceResult result = adapter.collect(request, incident);
+                EvidenceResult result = adapter.collect(workspaceId, request, incident);
                 if (usable(request, result)) {
                     return result;
                 }
@@ -94,6 +101,19 @@ public final class EvidenceSourceRouter {
     /** Snapshot used by health/capability endpoints without exposing credentials or query text. */
     public List<EvidenceSourceHealth> health() {
         return adapters.values().stream().map(this::safeHealth).toList();
+    }
+
+    /** Read-only route/capability check used before presenting a source action. */
+    public boolean canRoute(String system, String signalKind, String platform) {
+        String normalizedPlatform = normalize(platform);
+        if (normalizedPlatform.isEmpty()) {
+            return false;
+        }
+        boolean configured = routeFor(system, signalKind).stream()
+                .map(this::normalize)
+                .anyMatch(normalizedPlatform::equals);
+        EvidenceSourceAdapter adapter = adapters.get(normalizedPlatform);
+        return configured && adapter != null && supports(adapter, signalKind);
     }
 
     private Map<String, EvidenceSourceAdapter> index(List<EvidenceSourceAdapter> sources) {

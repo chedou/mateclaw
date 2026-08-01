@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.engine;
 
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
+import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 
@@ -87,6 +88,37 @@ class CriterionEvaluatorTest {
                 evidence("mongo-metrics", EvidenceStatus.MISSING, Map.of("reachable", false)));
 
         assertEquals(List.of("log_hit"), evaluator.matchingSignals(criteria, evidence));
+    }
+
+    @Test
+    void outcomesKeepUnavailableFieldsSeparateFromExplicitCounterEvidence() {
+        AnomalyCriterion criterion = new AnomalyCriterion(
+                "mongo_down", "mongo-metrics", "reachable=false",
+                new Criterion.BooleanEquals("reachable", false));
+
+        assertEquals(
+                CriterionOutcome.UNEVALUATED,
+                evaluator.outcomesBySignal(
+                                List.of(criterion),
+                                List.of(evidence(
+                                        "mongo-metrics", EvidenceStatus.NORMAL, Map.of())))
+                        .get("mongo_down"));
+        assertEquals(
+                CriterionOutcome.UNEVALUATED,
+                evaluator.outcomesBySignal(
+                                List.of(criterion),
+                                List.of(evidence(
+                                        "mongo-metrics", EvidenceStatus.NORMAL,
+                                        Map.of("reachable", "false"))))
+                        .get("mongo_down"));
+        assertEquals(
+                CriterionOutcome.EXCLUDED,
+                evaluator.outcomesBySignal(
+                                List.of(criterion),
+                                List.of(evidence(
+                                        "mongo-metrics", EvidenceStatus.NORMAL,
+                                        Map.of("reachable", true))))
+                        .get("mongo_down"));
     }
 
     private EvidenceResult evidence(String queryId, EvidenceStatus status, Map<String, Object> observed) {

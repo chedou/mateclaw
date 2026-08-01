@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "suites": [
+    {
+      "contractVersion": "manual-playbook-replay-suite.v1",
+      "suiteId": "deployment-topology-probe/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:deployment_topology_probe",
+      "requiredEvidenceRequest": {
+        "requestId": "EV-TOPOLOGY",
+        "signalKind": "synthetic_probe",
+        "required": true,
+        "target": {
+          "assetType": "deployment_topology",
+          "toolKey": "topology_synthetic_probe"
+        }
+      },
+      "exampleCandidate": {
+        "sopId": "manual-deployment-topology-probe-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:deployment_topology_probe",
+        "service": "network-path",
+        "title": "部署拓扑拨测分析",
+        "cause": "部署网络路径存在失败拨测节点，需沿拓扑相邻链路继续核查",
+        "category": "network",
+        "ownerTeam": "网络平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "EV-TOPOLOGY",
+            "signalKind": "synthetic_probe",
+            "purpose": "执行服务端授权的部署拓扑拨测",
+            "target": {
+              "assetType": "deployment_topology",
+              "toolKey": "topology_synthetic_probe"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "failed_probe_present",
+            "sourceRequestId": "EV-TOPOLOGY",
+            "description": "至少存在一个失败拨测节点",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "failed_probe_count",
+              "threshold": 1
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-TOPOLOGY-FAILURE",
+            "requiredSignals": ["failed_probe_present"],
+            "rootCause": "部署拓扑存在失败拨测节点",
+            "summary": "沿失败节点的相邻拓扑链路继续核查；相邻不等于已证明根因。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": []
+      },
+      "cases": [
+        {
+          "caseId": "failed-probe-positive",
+          "cohort": "POSITIVE",
+          "expectedDisposition": "MATCHED",
+          "expectedRuleId": "RULE-TOPOLOGY-FAILURE",
+          "evidence": [
+            {
+              "requestId": "EV-TOPOLOGY",
+              "status": "ANOMALY",
+              "observed": {
+                "failed_probe_count": 1,
+                "observed_probe_count": 1
+              }
+            }
+          ]
+        },
+        {
+          "caseId": "healthy-probe-negative",
+          "cohort": "NEGATIVE_OR_ABSTAIN",
+          "expectedDisposition": "EXCLUDED",
+          "expectedRuleId": null,
+          "evidence": [
+            {
+              "requestId": "EV-TOPOLOGY",
+              "status": "NORMAL",
+              "observed": {
+                "failed_probe_count": 0,
+                "observed_probe_count": 1
+              }
+            }
+          ]
+        },
+        {
+          "caseId": "probe-unavailable-abstain",
+          "cohort": "NEGATIVE_OR_ABSTAIN",
+          "expectedDisposition": "ABSTAINED",
+          "expectedRuleId": null,
+          "evidence": [
+            {
+              "requestId": "EV-TOPOLOGY",
+              "status": "MISSING",
+              "observed": {}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

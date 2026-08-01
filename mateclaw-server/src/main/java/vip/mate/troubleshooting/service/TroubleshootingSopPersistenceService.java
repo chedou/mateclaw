@@ -14,19 +14,26 @@ import vip.mate.troubleshooting.repository.TroubleshootingSopMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
-/** Persistent D1 route registry. A route collision fails closed. */
+/** Manual candidate source store plus the deterministic route projection. */
 @Service
 public class TroubleshootingSopPersistenceService {
 
     private final TroubleshootingSopMapper mapper;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
     private final ObjectMapper objectMapper;
 
     public TroubleshootingSopPersistenceService(
             TroubleshootingSopMapper mapper,
+            TroubleshootingPlaybookVersionService playbookVersions,
             ObjectMapper objectMapper) {
         this.mapper = mapper;
+        this.playbookVersions = playbookVersions;
         this.objectMapper = objectMapper;
     }
 
@@ -41,9 +48,9 @@ public class TroubleshootingSopPersistenceService {
                     "a new SOP must start as candidate with verified=false; "
                             + "promotion is a separate reviewed transition");
         }
-        TroubleshootingSopEntity existing = findEntity(workspaceId, sop.routingKey());
+        TroubleshootingSopEntity existing = findEntityBySopId(workspaceId, sop.sopId());
         if (existing != null) {
-            throw collision(sop.routingKey());
+            throw sourceCollision(sop.sopId());
         }
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         TroubleshootingSopEntity entity = new TroubleshootingSopEntity();
@@ -64,7 +71,7 @@ public class TroubleshootingSopPersistenceService {
         try {
             mapper.insert(entity);
         } catch (DuplicateKeyException ignored) {
-            throw collision(sop.routingKey());
+            throw sourceCollision(sop.sopId());
         }
         return sop;
     }
@@ -78,6 +85,47 @@ public class TroubleshootingSopPersistenceService {
      * screen in the console.</p>
      */
     public java.util.List<SopSummary> list(
+            long workspaceId, String status, String system, int limit) {
+        int capped = Math.min(Math.max(limit, 1), 500);
+        String normalizedStatus = status == null || status.isBlank()
+                ? null
+                : status.trim().toLowerCase(Locale.ROOT);
+        // Apply status only after version rows shadow their source rows;
+        // otherwise filtering "candidate" could resurrect an approved source.
+        int scanLimit = normalizedStatus == null ? capped : 500;
+        Map<String, SopSummary> currentBySelector = new LinkedHashMap<>();
+        listEntities(workspaceId, null, system, scanLimit).stream()
+                .map(SopSummary::from)
+                .forEach(summary -> currentBySelector.putIfAbsent(
+                        summary.routeKey(), summary));
+        playbookVersions.listLatest(workspaceId, null, system, scanLimit)
+                .forEach(summary -> currentBySelector.put(
+                        summary.routeKey(), summary));
+        return currentBySelector.values().stream()
+                .filter(summary -> normalizedStatus == null
+                        || normalizedStatus.equals(summary.status()))
+                .sorted(Comparator.comparing(SopSummary::updateTime).reversed())
+                .limit(capped)
+                .toList();
+    }
+
+    /**
+     * Reads registry metadata and full contracts in one bounded query.
+     *
+     * <p>The normal registry endpoint keeps using {@link #list} and returns
+     * summaries only. Knowledge qualification needs the complete manual
+     * candidate contract, so it consumes this paired internal projection
+     * instead of issuing one query per row.</p>
+     */
+    public java.util.List<SopRegistryRecord> listRecords(
+            long workspaceId, String status, String system, int limit) {
+        return listEntities(workspaceId, status, system, limit).stream()
+                .map(entity -> new SopRegistryRecord(
+                        SopSummary.from(entity), read(entity)))
+                .toList();
+    }
+
+    private java.util.List<TroubleshootingSopEntity> listEntities(
             long workspaceId, String status, String system, int limit) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
@@ -95,40 +143,60 @@ public class TroubleshootingSopPersistenceService {
         if (system != null && !system.isBlank()) {
             query.eq(TroubleshootingSopEntity::getSystem, system.trim());
         }
-        return mapper.selectList(query).stream().map(SopSummary::from).toList();
+        return mapper.selectList(query);
     }
 
     /**
-     * Moves a SOP along its review lifecycle.
+     * Retires an already approved SOP version.
      *
-     * <p>Only {@code candidate → approved} and {@code approved → deprecated},
-     * and only forwards. The deterministic path acts on an approved SOP without
-     * a human in the loop, so promotion has to be a deliberate review decision
-     * rather than a flag anyone can flip back and forth. Deprecation leaves the
-     * review trail intact; publishing a replacement for the same route requires
-     * a separate version model because the current registry keeps route keys unique.</p>
-     *
-     * <p>Approving also sets {@code verified}, because {@link SopEntry#operational()}
-     * requires both — a half-promoted SOP would keep abstaining while looking
-     * approved, which is the most confusing failure available here.</p>
+     * <p>The legacy endpoint used to allow {@code candidate → approved} by
+     * flipping this aggregate in place. That bypasses origin-specific
+     * eligibility, fixed replay, optimistic review and the v4 invariant that
+     * approval creates a new version. Candidate approval therefore fails
+     * closed here, and versioned retirement must use the exact review command
+     * rather than this compatibility mutation.</p>
      */
     @Transactional
     public SopEntry updateStatus(
             long workspaceId, String system, String errorCode, String targetStatus) {
-        SopEntry current = find(workspaceId, system, errorCode);
+        String routeKey = system.trim().toLowerCase(Locale.ROOT)
+                + ":" + errorCode.trim();
+        var versioned = playbookVersions.findCurrent(workspaceId, routeKey);
+        SopEntry current = versioned
+                .map(v -> v.playbook())
+                .orElseGet(() -> {
+                    TroubleshootingSopEntity entity = findOperationalEntity(
+                            workspaceId, routeKey);
+                    if (entity == null) {
+                        entity = findLatestEntity(workspaceId, routeKey);
+                    }
+                    return entity == null ? null : read(entity);
+                });
         if (current == null) {
             throw new MateClawException(
                     "err.troubleshooting.sop_not_found", 404,
                     "no SOP registered for " + system + ":" + errorCode);
         }
         String target = targetStatus == null ? "" : targetStatus.trim().toLowerCase(Locale.ROOT);
-        boolean legal = ("approved".equals(target) && "candidate".equals(current.status()))
-                || ("deprecated".equals(target) && "approved".equals(current.status()));
+        if ("approved".equals(target)) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_promotion_gate_required", 409,
+                    "candidate approval requires the eligibility gate and must create a new version");
+        }
+        boolean legal = "deprecated".equals(target) && "approved".equals(current.status());
         if (!legal) {
             throw new MateClawException(
                     "err.troubleshooting.sop_status_transition", 409,
                     "illegal SOP transition " + current.status() + " -> " + target
-                            + "; only candidate->approved and approved->deprecated are allowed");
+                            + "; the legacy endpoint only allows approved->deprecated");
+        }
+
+        if (versioned.isPresent()) {
+            throw new MateClawException(
+                    "err.troubleshooting.sop_versioned_deprecation_review_required",
+                    409,
+                    "versioned Playbook retirement requires the audited knowledge-review "
+                            + "command with an exact review version and reason");
         }
 
         SopEntry updated = new SopEntry(
@@ -146,7 +214,10 @@ public class TroubleshootingSopPersistenceService {
         int changed = mapper.update(patch,
                 new LambdaUpdateWrapper<TroubleshootingSopEntity>()
                         .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getSopId, current.sopId())
                         .eq(TroubleshootingSopEntity::getRouteKey, current.routingKey())
+                        .eq(TroubleshootingSopEntity::getStatus, "approved")
+                        .eq(TroubleshootingSopEntity::getVerified, true)
                         .eq(TroubleshootingSopEntity::getDeleted, 0));
         if (changed != 1) {
             throw new MateClawException(
@@ -158,10 +229,40 @@ public class TroubleshootingSopPersistenceService {
 
     public SopEntry find(long workspaceId, String system, String errorCode) {
         String routeKey = system.trim().toLowerCase(Locale.ROOT) + ":" + errorCode.trim();
-        TroubleshootingSopEntity entity = findEntity(workspaceId, routeKey);
-        if (entity == null) {
-            return null;
+        var versioned = playbookVersions.findCurrent(workspaceId, routeKey);
+        if (versioned.isPresent()) {
+            SopEntry latest = versioned.get().playbook();
+            return latest.operational() ? latest : null;
         }
+        TroubleshootingSopEntity entity = findOperationalEntity(workspaceId, routeKey);
+        return entity == null ? null : read(entity);
+    }
+
+    /** Reads the latest contract for governance UI, including candidate/deprecated. */
+    public SopEntry findLatest(long workspaceId, String system, String errorCode) {
+        String routeKey = system.trim().toLowerCase(Locale.ROOT) + ":" + errorCode.trim();
+        var versioned = playbookVersions.findCurrent(workspaceId, routeKey);
+        if (versioned.isPresent()) {
+            return versioned.get().playbook();
+        }
+        TroubleshootingSopEntity entity = findLatestEntity(workspaceId, routeKey);
+        return entity == null ? null : read(entity);
+    }
+
+    /** Finds a manual candidate by stable source ID inside one workspace. */
+    public SopEntry findBySopId(long workspaceId, String sopId) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
+        if (sopId == null || sopId.isBlank()) {
+            throw new IllegalArgumentException("sopId must not be blank");
+        }
+        TroubleshootingSopEntity entity = findEntityBySopId(
+                workspaceId, sopId.trim());
+        return entity == null ? null : read(entity);
+    }
+
+    private SopEntry read(TroubleshootingSopEntity entity) {
         try {
             return objectMapper.readValue(entity.getAggregateJson(), SopEntry.class);
         } catch (JsonProcessingException error) {
@@ -172,12 +273,40 @@ public class TroubleshootingSopPersistenceService {
         }
     }
 
-    private TroubleshootingSopEntity findEntity(long workspaceId, String routeKey) {
+    private TroubleshootingSopEntity findEntityBySopId(
+            long workspaceId,
+            String sopId) {
+        return mapper.selectOne(
+                new LambdaQueryWrapper<TroubleshootingSopEntity>()
+                        .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getSopId, sopId)
+                        .eq(TroubleshootingSopEntity::getDeleted, 0));
+    }
+
+    private TroubleshootingSopEntity findOperationalEntity(
+            long workspaceId,
+            String routeKey) {
         return mapper.selectOne(
                 new LambdaQueryWrapper<TroubleshootingSopEntity>()
                         .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
                         .eq(TroubleshootingSopEntity::getRouteKey, routeKey)
-                        .eq(TroubleshootingSopEntity::getDeleted, 0));
+                        .eq(TroubleshootingSopEntity::getStatus, "approved")
+                        .eq(TroubleshootingSopEntity::getVerified, true)
+                        .eq(TroubleshootingSopEntity::getDeleted, 0)
+                        .last("LIMIT 1"));
+    }
+
+    private TroubleshootingSopEntity findLatestEntity(
+            long workspaceId,
+            String routeKey) {
+        List<TroubleshootingSopEntity> rows = mapper.selectList(
+                new LambdaQueryWrapper<TroubleshootingSopEntity>()
+                        .eq(TroubleshootingSopEntity::getWorkspaceId, workspaceId)
+                        .eq(TroubleshootingSopEntity::getRouteKey, routeKey)
+                        .eq(TroubleshootingSopEntity::getDeleted, 0)
+                        .orderByDesc(TroubleshootingSopEntity::getId)
+                        .last("LIMIT 1"));
+        return rows.isEmpty() ? null : rows.getFirst();
     }
 
     private String json(SopEntry sop) {
@@ -191,10 +320,10 @@ public class TroubleshootingSopPersistenceService {
         }
     }
 
-    private MateClawException collision(String routeKey) {
+    private MateClawException sourceCollision(String sopId) {
         return new MateClawException(
                 "err.troubleshooting.sop_key_collision",
                 409,
-                "SOP routing key collision: " + routeKey);
+                "manual SOP source id collision: " + sopId);
     }
 }

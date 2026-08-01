@@ -10,13 +10,16 @@ public record DeterministicDiagnosisDraft(
         String runId,
         IncidentContext incident,
         SopEntry sop,
+        PlaybookVersionRef sourcePlaybookVersionRef,
         List<EvidenceResult> evidence,
         List<String> triggeredSignals,
         List<RecommendedAction> recommendedActions,
         String summary,
         String rootCause,
         Confidence confidence,
+        ConclusionType conclusionType,
         boolean abstained,
+        NorthStarTimings timings,
         String routeToTeam,
         boolean rehearsal,
         boolean fixtureMode,
@@ -26,8 +29,10 @@ public record DeterministicDiagnosisDraft(
         diagnosisId = required(diagnosisId, "diagnosisId");
         caseId = required(caseId, "caseId");
         runId = required(runId, "runId");
-        if (incident == null || sop == null || confidence == null) {
-            throw new IllegalArgumentException("incident, sop and confidence are required");
+        if (incident == null || sop == null || confidence == null
+                || conclusionType == null || timings == null) {
+            throw new IllegalArgumentException(
+                    "incident, sop, confidence, conclusionType and timings are required");
         }
         String routeKey = incident.system().trim().toLowerCase(Locale.ROOT)
                 + ":" + required(incident.errorCode(), "incident.errorCode");
@@ -45,6 +50,10 @@ public record DeterministicDiagnosisDraft(
         warnings = List.copyOf(warnings == null ? List.of() : warnings);
         if (abstained && !recommendedActions.isEmpty()) {
             throw new IllegalArgumentException("abstained diagnosis must not recommend actions");
+        }
+        if ((conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE) != abstained) {
+            throw new IllegalArgumentException(
+                    "only INSUFFICIENT_EVIDENCE deterministic drafts may abstain");
         }
     }
 

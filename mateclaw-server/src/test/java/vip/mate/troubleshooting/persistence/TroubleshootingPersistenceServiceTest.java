@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.persistence;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,14 +14,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.exception.MateClawException;
-import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ClosureOutcome;
+import vip.mate.troubleshooting.model.ConclusionType;
+import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
@@ -37,10 +43,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -92,6 +101,68 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
+    void symptomOnlyProductionDiagnosisAlsoStoresAFiveMinuteDeduplicationKey() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+
+        service.createOrGet(
+                7L,
+                symptomDiagnosis(false),
+                Instant.parse("2026-07-25T01:04:59Z"));
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertNotNull(entity.getValue().getDedupKey());
+        assertEquals(64, entity.getValue().getDedupKey().length());
+    }
+
+    @Test
+    void scenarioIntakeDoesNotReuseTheGenericSymptomDeduplicationNamespace() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        service.createOrGet(7L, symptomDiagnosis(false), receivedAt);
+        service.createOrGetForScenario(
+                7L,
+                scenarioDiagnosis(false),
+                "deployment_topology_probe",
+                receivedAt);
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entities =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper, org.mockito.Mockito.times(2)).insert(entities.capture());
+        assertNotEquals(
+                entities.getAllValues().get(0).getDedupKey(),
+                entities.getAllValues().get(1).getDedupKey());
+    }
+
+    @Test
+    void scenarioNamespaceRejectsDiagnosesFromAnotherInvestigationModeOrSelector() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        IllegalArgumentException wrongMode = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.createOrGetForScenario(
+                        7L,
+                        symptomDiagnosis(false),
+                        "deployment_topology_probe",
+                        receivedAt));
+        IllegalArgumentException wrongSelector = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.createOrGetForScenario(
+                        7L,
+                        scenarioDiagnosis(false),
+                        "slow_api",
+                        receivedAt));
+
+        assertTrue(wrongMode.getMessage().contains("SCENARIO_PLAYBOOK"));
+        assertTrue(wrongSelector.getMessage().contains("diagnosis selector"));
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+    }
+
+    @Test
     void rehearsalSkipsDeduplicationLookupAndStoresNullKey() {
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
 
@@ -102,6 +173,55 @@ class TroubleshootingPersistenceServiceTest {
         verify(diagnosisMapper, never()).selectOne(any());
         verify(diagnosisMapper).insert(entity.capture());
         assertEquals(null, entity.getValue().getDedupKey());
+    }
+
+    @Test
+    void intakeOwnershipIsDurableAndDoesNotShareTheFiveMinuteIncidentBucket() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+
+        StoredDiagnosis stored = service.createOrGetForIntake(
+                7L,
+                diagnosis(false),
+                "intake-7");
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertEquals("intake-7", entity.getValue().getSourceIntakeSessionId());
+        assertEquals(null, entity.getValue().getDedupKey());
+        assertTrue(stored.created());
+    }
+
+    @Test
+    void retryingTheSameIntakeReturnsItsExistingDiagnosis() throws Exception {
+        TroubleshootingDiagnosisEntity existing = persisted(diagnosis(false), 4);
+        existing.setSourceIntakeSessionId("intake-7");
+        when(diagnosisMapper.selectOne(any())).thenReturn(existing);
+
+        StoredDiagnosis stored = service.createOrGetForIntake(
+                7L,
+                diagnosis(false),
+                "intake-7");
+
+        assertEquals("diag-1", stored.diagnosis().diagnosisId());
+        assertEquals(4, stored.version());
+        assertFalse(stored.created());
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+    }
+
+    @Test
+    void findsPersistedDiagnosisByItsSourceIntakeWithoutRerunningInvestigation() throws Exception {
+        TroubleshootingDiagnosisEntity existing = persisted(diagnosis(false), 4);
+        existing.setSourceIntakeSessionId("intake-7");
+        when(diagnosisMapper.selectOne(any())).thenReturn(existing);
+
+        StoredDiagnosis stored = service.findByIntakeSessionId(7L, "intake-7").orElseThrow();
+
+        assertEquals("diag-1", stored.diagnosis().diagnosisId());
+        assertEquals(4, stored.version());
+        assertFalse(stored.created());
+        verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
     }
 
     @Test
@@ -145,7 +265,9 @@ class TroubleshootingPersistenceServiceTest {
                 ArgumentCaptor.forClass(TroubleshootingKnowledgeOutboxEntity.class);
         verify(outboxMapper).insert(outbox.capture());
         assertEquals("publication-candidate-1", outbox.getValue().getPublicationId());
-        assertEquals("knowledge-candidate.v1", outbox.getValue().getContractVersion());
+        assertEquals(
+                KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
+                outbox.getValue().getContractVersion());
         assertEquals(7L, outbox.getValue().getWorkspaceId());
         assertEquals(KnowledgePublicationStatus.PENDING, outbox.getValue().getStatus());
         assertTrue(outbox.getValue().getPayloadJson().contains("candidate-1"));
@@ -165,6 +287,53 @@ class TroubleshootingPersistenceServiceTest {
 
         assertEquals(409, error.getCode());
         verify(outboxMapper, never()).insert(any(TroubleshootingKnowledgeOutboxEntity.class));
+    }
+
+    @Test
+    void findsOneOutcomeCandidateByWorkspaceAndStableCandidateId() throws Exception {
+        KnowledgeCandidate candidate = candidate();
+        TroubleshootingKnowledgeOutboxEntity row =
+                new TroubleshootingKnowledgeOutboxEntity();
+        row.setWorkspaceId(7L);
+        row.setCandidateId(candidate.candidateId());
+        row.setPayloadJson(objectMapper.writeValueAsString(candidate));
+        row.setDeleted(0);
+        when(outboxMapper.selectOne(any())).thenReturn(row);
+
+        KnowledgeCandidate found = service.findKnowledgeCandidate(
+                7L, candidate.candidateId());
+
+        assertEquals(candidate, found);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<TroubleshootingKnowledgeOutboxEntity>> query =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(outboxMapper).selectOne(query.capture());
+        String sql = query.getValue().getCustomSqlSegment().toLowerCase();
+        assertTrue(sql.contains("workspace"), sql);
+        assertTrue(sql.contains("candidate"), sql);
+        assertTrue(sql.contains("deleted"), sql);
+        assertTrue(query.getValue().getParamNameValuePairs().values()
+                .containsAll(List.of(7L, candidate.candidateId(), 0)));
+    }
+
+    @Test
+    void closingAnIntakeDiagnosisSchedulesItsNotificationInTheAggregateTransaction() {
+        when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+        when(diagnosisMapper.scheduleClosureNotification(anyLong(), any(), any())).thenReturn(1);
+        Diagnosis closed = diagnosisWithCandidate(candidate());
+
+        service.update(7L, closed, 2);
+
+        verify(diagnosisMapper).scheduleClosureNotification(eq(7L), eq("diag-1"), any());
+    }
+
+    @Test
+    void aNonClosedDiagnosisNeverSchedulesAClosureNotification() {
+        when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        service.update(7L, diagnosis(false), 2);
+
+        verify(diagnosisMapper, never()).scheduleClosureNotification(anyLong(), any(), any());
     }
 
     private TroubleshootingDiagnosisEntity persisted(Diagnosis diagnosis, int version) throws Exception {
@@ -221,12 +390,96 @@ class TroubleshootingPersistenceServiceTest {
                 abstained,
                 "csdp:903001",
                 "903001 SOP",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(),
                 List.of(),
                 List.of(),
                 null,
                 rehearsal,
                 true,
+                List.of());
+    }
+
+    private Diagnosis symptomDiagnosis(boolean rehearsal) {
+        IncidentContext incident = new IncidentContext(
+                "inc-symptom",
+                "CSDP",
+                "csdp-wechat",
+                null,
+                "会话消息发送失败",
+                "P2",
+                "待确认",
+                "trace-safe-1",
+                Instant.parse("2026-07-25T01:02:00Z"),
+                null,
+                "web:formal-workbench",
+                IncidentCompleteness.SYMPTOM,
+                null);
+        return Diagnosis.initial(
+                "diag-symptom",
+                "case-symptom",
+                "run-symptom",
+                incident,
+                RouteMode.LLM_FALLBACK,
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "证据不足",
+                "待补证",
+                Confidence.LOW,
+                true,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                rehearsal,
+                true,
+                List.of());
+    }
+
+    private Diagnosis scenarioDiagnosis(boolean rehearsal) {
+        IncidentContext incident = new IncidentContext(
+                "inc-symptom",
+                "CSDP",
+                "csdp-wechat",
+                null,
+                "会话消息发送失败",
+                "P2",
+                "待确认",
+                "trace-safe-1",
+                Instant.parse("2026-07-25T01:02:00Z"),
+                null,
+                "web:deployment-topology-scenario",
+                IncidentCompleteness.STRUCTURED,
+                null);
+        return Diagnosis.initial(
+                "diag-scenario",
+                "case-scenario",
+                "run-scenario",
+                incident,
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(
+                        Instant.parse("2026-07-25T01:02:00Z"),
+                        Instant.parse("2026-07-25T01:02:01Z"),
+                        Instant.parse("2026-07-25T01:02:01Z")),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "场景已创建",
+                "待取得拓扑证据",
+                Confidence.LOW,
+                true,
+                "csdp:scenario:deployment_topology_probe",
+                "部署拓扑拨测",
+                new PlaybookVersionRef("playbook-topology", 3),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                rehearsal,
+                true,
+                List.of(),
                 List.of());
     }
 
@@ -247,7 +500,13 @@ class TroubleshootingPersistenceServiceTest {
                 "resolved",
                 null,
                 "on-call",
-                Instant.parse("2026-07-25T02:00:00Z"));
+                Instant.parse("2026-07-25T02:00:00Z"),
+                new KnowledgeCandidate.OutcomeProof(
+                        ClosureOutcome.UNRESOLVED,
+                        false,
+                        "on-call",
+                        Instant.parse("2026-07-25T02:00:00Z")),
+                null);
     }
 
     private Diagnosis diagnosisWithCandidate(KnowledgeCandidate candidate) {

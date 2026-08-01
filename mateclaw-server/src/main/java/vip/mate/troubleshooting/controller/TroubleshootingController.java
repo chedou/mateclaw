@@ -11,10 +11,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RestController;
 import vip.mate.common.result.R;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.DiagnosisDerivation;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
@@ -23,7 +26,6 @@ import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
@@ -61,6 +63,7 @@ public class TroubleshootingController {
     private final DiagnosisLifecycleService lifecycleService;
     private final DiagnosisDerivationService derivationService;
     private final TroubleshootingPersistenceService persistence;
+    private final DiagnosisExperienceProjectionService projectionService;
 
     // ---------- intake and read ----------
 
@@ -75,13 +78,15 @@ public class TroubleshootingController {
     @RequireWorkspaceRole("member")
     public R<StoredDiagnosis> report(
             @Valid @RequestBody IncidentReportRequest request,
+            @RequestAttribute(TroubleshootingRequestTimingFilter.REPORTED_AT_ATTRIBUTE)
+                    Instant reportedAt,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
-        Instant receivedAt = Instant.now(Clock.systemUTC());
         return R.ok(intakeService.report(
                 resolveWorkspace(workspaceId),
-                request.toIncidentContext(receivedAt),
+                request.toIncidentContext(reportedAt),
                 request.evidenceOrEmpty(),
-                request.isRehearsal()));
+                request.isRehearsal(),
+                reportedAt));
     }
 
     /** Duty queue. Reads indexed columns only, so listing never parses aggregates. */
@@ -122,6 +127,18 @@ public class TroubleshootingController {
             @PathVariable String diagnosisId,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(derivationService.explain(resolveWorkspace(workspaceId), diagnosisId));
+    }
+
+    /**
+     * The formal workbench contract: one diagnosis, rendered for business and
+     * developer audiences without asking the browser to infer a conclusion.
+     */
+    @GetMapping("/diagnoses/{diagnosisId}/projection")
+    @RequireWorkspaceRole("viewer")
+    public R<DiagnosisExperienceProjection> projection(
+            @PathVariable String diagnosisId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(projectionService.project(resolveWorkspace(workspaceId), diagnosisId));
     }
 
     // ---------- human-controlled lifecycle ----------

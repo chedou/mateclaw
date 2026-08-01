@@ -14,6 +14,7 @@ public record AgentTriageDraft(
         String hypothesis,
         Confidence confidence,
         boolean abstained,
+        NorthStarTimings timings,
         boolean rehearsal,
         boolean fixtureMode,
         List<String> warnings) {
@@ -22,8 +23,8 @@ public record AgentTriageDraft(
         diagnosisId = required(diagnosisId, "diagnosisId");
         caseId = required(caseId, "caseId");
         runId = required(runId, "runId");
-        if (incident == null || confidence == null) {
-            throw new IllegalArgumentException("incident and confidence are required");
+        if (incident == null || confidence == null || timings == null) {
+            throw new IllegalArgumentException("incident, confidence and timings are required");
         }
         evidence = List.copyOf(evidence == null ? List.of() : evidence);
         evidenceCitations = List.copyOf(

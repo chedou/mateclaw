@@ -44,6 +44,22 @@ public class ChannelSessionStore {
     private static final int SESSION_TTL_DAYS = 30;
 
     /**
+     * Builds the canonical key shared by the Router, domain pre-routes, and
+     * proactive delivery lookup.
+     */
+    public static String conversationId(
+            String channelType,
+            Long channelId,
+            String identifier) {
+        if (channelType == null || channelType.isBlank() || identifier == null) {
+            return null;
+        }
+        return channelId == null
+                ? channelType + ":" + identifier
+                : channelType + ":" + channelId + ":" + identifier;
+    }
+
+    /**
      * 应用启动时从 DB 加载所有会话到内存
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -159,7 +175,7 @@ public class ChannelSessionStore {
      * @return targetId，不存在则返回 null
      */
     public String getTargetId(String conversationId) {
-        ChannelSessionEntity entity = cache.get(conversationId);
+        ChannelSessionEntity entity = getSession(conversationId);
         return entity != null ? entity.getTargetId() : null;
     }
 
@@ -167,7 +183,18 @@ public class ChannelSessionStore {
      * 根据 conversationId 获取完整会话信息
      */
     public ChannelSessionEntity getSession(String conversationId) {
-        return cache.get(conversationId);
+        ChannelSessionEntity cached = cache.get(conversationId);
+        if (cached != null) {
+            return cached;
+        }
+        ChannelSessionEntity persisted = sessionMapper.selectOne(
+                new LambdaQueryWrapper<ChannelSessionEntity>()
+                        .eq(ChannelSessionEntity::getConversationId, conversationId));
+        if (persisted != null) {
+            cache.put(conversationId, persisted);
+            evictIfNeeded();
+        }
+        return persisted;
     }
 
     /**

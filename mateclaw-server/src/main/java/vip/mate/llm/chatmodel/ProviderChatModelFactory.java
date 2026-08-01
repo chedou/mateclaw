@@ -62,7 +62,29 @@ public class ProviderChatModelFactory {
      * a configuration error, not a transient failure.
      */
     public ChatModel buildFor(ModelConfigEntity model, RetryTemplate retry) {
-        ModelProviderEntity provider = modelProviderService.getProviderConfig(model.getProvider());
+        return buildFor(model, resolveProvider(model), retry);
+    }
+
+    /** Resolves the provider row once so evaluation callers can pin its exact version. */
+    public ModelProviderEntity resolveProvider(ModelConfigEntity model) {
+        if (model == null || model.getProvider() == null || model.getProvider().isBlank()) {
+            throw new IllegalArgumentException("model provider is required");
+        }
+        return modelProviderService.getProviderConfig(model.getProvider());
+    }
+
+    /** Builds from an already pinned provider snapshot instead of re-reading mutable config. */
+    public ChatModel buildFor(
+            ModelConfigEntity model,
+            ModelProviderEntity provider,
+            RetryTemplate retry) {
+        if (model == null || provider == null) {
+            throw new IllegalArgumentException("model and provider configuration are required");
+        }
+        if (model.getProvider() == null
+                || !model.getProvider().equals(provider.getProviderId())) {
+            throw new IllegalArgumentException("model and provider configuration do not match");
+        }
         ModelProtocol protocol = ModelProtocol.fromChatModel(provider.getChatModel());
         ChatModelBuilder builder = builders.get(protocol);
         if (builder == null) {

@@ -176,7 +176,7 @@
       <div class="metric"><div class="n">1<span class="u">条</span></div><div class="l">共享证据脊柱</div></div>
       <div class="metric"><div class="n">2<span class="u">环</span></div><div class="l">在线诊断 + 知识生产</div></div>
       <div class="metric"><div class="n">3<span class="u">路</span></div><div class="l">错误码 · 场景 · 开放探索</div></div>
-      <div class="metric"><div class="n">P1<span class="u">NOW</span></div><div class="l">无错误码证据→草稿</div></div>
+      <div class="metric"><div class="n">P3<span class="u">LIVE</span></div><div class="l">企微→正式工作台</div></div>
     </div>
   </div>
 
@@ -186,46 +186,46 @@
       <div class="fnode"><div class="fs">录音</div><div class="ft">找回产品事实</div><div class="fd">观测云日志 → PS ID → 全链路 → 排查步骤</div></div>
       <div class="fnode"><div class="fs">v4</div><div class="ft">证据脊柱</div><div class="fd">在线诊断与知识生产共享 Evidence，不共享状态</div></div>
       <div class="fnode"><div class="fs">评审</div><div class="ft">收紧权威边界</div><div class="fd">Playbook / Discovery 拆分，模型只提议注册键</div></div>
-      <div class="fnode final"><div class="fs">现行</div><div class="ft">P1 最短竖线</div><div class="fd">无错误码证据 → PlaybookDraft → 人工参考比较</div></div>
+      <div class="fnode final"><div class="fs">现行</div><div class="ft">P3 一线闭环</div><div class="fd">企微 Intake → 异步调查 → Diagnosis → 正式工作台</div></div>
     </div>
   </div>
 
   <!-- 当前开发进度 -->
   <section id="development-status">
-    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-28</span><span class="sd">以录音产品基线、架构 v4 和无错误码案例为口径</span></div>
+    <div class="sechd"><h2>当前开发进度</h2><span class="sc">2026-07-31</span><span class="sd">以录音产品基线、架构 v4 和首条真实 Guance Evidence Spine 为口径</span></div>
     <div class="devstatus">
       <div class="devtop">
         <div class="devlead">
           <div class="eyebrow">Current implementation baseline</div>
-          <h3>v4 P0 已完成并通过架构评审，P1 可开始</h3>
-          <p>现有 Java/Vue 领域底座不推倒。`SopSynthesisService.preview()` 已完成日志取样、PS ID、全链路和确定性压缩；下一步只补 PlaybookDraft 归纳、校验、人工参考比较与 candidate 幂等。</p>
+          <h3>真实 Guance 三次取证已跑通首条完整 Evidence Spine</h3>
+          <p>现有 Java/Vue 领域底座不推倒。CSDP SendMsg 场景已在真实 Guance 上完成失败日志搜索、同 PS ID 原子日志链路，以及独立 failed / 显式 success 终态 cohort 的同窗、按 PS ID 去重样本对照；统一 EvidenceSpineOrchestrator 返回 FULL_SPINE_OBSERVED。全程零 LLM、无 Replay 回退、不持久化原始日志；早期同状态条件及仅 NOT failed 的代理对照结果已废弃。</p>
           <div class="devmeta"><span>branch claude/intelligent-troubleshooting-design</span><span>fixtureMode=true</span><span>architecture review: approved</span></div>
         </div>
         <div class="devverdict">
           <div class="vlabel">当前判断</div>
-          <strong>证据竖线已到 READY_FOR_MODEL；仍未调用模型、未创建 candidate，也未完成真实 Guance 验证。</strong>
+          <strong>修正后的首条真实 Guance 竖线已观测；当前失败样本量仍小，且缺 owner T7 acceptance 和 20–30 条 T8 持久化样本。fixtureMode 不变，不能把单条成功当成生产结论。</strong>
           <a href="HANDOFF.md">查看完整交接清单 <span aria-hidden="true">→</span></a>
         </div>
       </div>
       <div class="phase-track" aria-label="v4 P0 到 P5 开发阶段">
         <div class="phase done"><span class="phase-dot"></span><div class="pid">P0</div><div class="pt">校准</div><div class="pd">录音事实、架构、评审、Demo</div><span class="ps">已完成</span></div>
-        <div class="phase next"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">证据→草稿</div><div class="pd">Draft、Validator、Reference Eval</div><span class="ps">当前主攻</span></div>
-        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">真实取证</div><div class="pd">Guance 内网验证、历史样本</div><span class="ps">待 P1</span></div>
-        <div class="phase"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">企微闭环</div><div class="pd">补问、异步调查、原路回复</div><span class="ps">待 P1</span></div>
+        <div class="phase done"><span class="phase-dot"></span><div class="pid">P1</div><div class="pt">证据→草稿</div><div class="pd">Draft、Validator、Reference Eval</div><span class="ps">已完成</span></div>
+        <div class="phase"><span class="phase-dot"></span><div class="pid">P2</div><div class="pt">真实取证</div><div class="pd">首条 FULL 已观测，待 owner 验收与历史样本</div><span class="ps">进行中</span></div>
+        <div class="phase next"><span class="phase-dot"></span><div class="pid">P3</div><div class="pt">企微闭环</div><div class="pd">补问、异步调查、原路回复</div><span class="ps">部分完成</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P4</div><div class="pt">场景调查</div><div class="pd">Scenario Playbook、DiscoveryPolicy</div><span class="ps">待真实样本</span></div>
         <div class="phase"><span class="phase-dot"></span><div class="pid">P5</div><div class="pt">知识治理</div><div class="pd">审核资格、版本替换、双投影</div><span class="ps">分阶段</span></div>
       </div>
       <div class="next-focus">
         <span class="nfkey">NEXT</span>
-        <div class="nfcopy"><b>P1 无错误码证据竖线</b><span>PlaybookDraft → Validator → ReferenceSolution → candidate</span></div>
-        <span class="nfstage">T1 → T5</span>
+        <div class="nfcopy"><b>P2 真源门</b><span>owner 核对当前 binding 指纹 → T7 acceptance → 首条 T8 台账样本</span></div>
+        <span class="nfstage">T7/T8 NOW</span>
       </div>
     </div>
   </section>
 
   <!-- 现行主推 -->
   <section>
-    <div class="sechd"><h2>当前体验原型</h2><span class="sc" id="sc1"></span><span class="sd">同一无错误码案例的三种信息结构，等待用户选择或组合</span></div>
+    <div class="sechd"><h2>当前产品入口</h2><span class="sc" id="sc1"></span><span class="sd">正式工作台是实现权威；旧版与原型只用于兼容和对照</span></div>
     <div class="grid two" id="g-now"></div>
   </section>
 
@@ -285,9 +285,9 @@ function card(c){
     </div></a>`;
 }
 const NOW=[
-  {t:"A · 服务经理摘要",d:"默认先回答问题、影响、结论和下一步；PS ID 证据与 PlaybookDraft 按需展开。推荐作为正式默认视图。",f:"http://127.0.0.1:5173/prototype/troubleshooting?variant=A",icon:"target",thumb:"t-rca",tag:"now",tagT:"推荐"},
-  {t:"B · 开发证据台",d:"调用链和异常点优先，适合开发下钻；业务摘要退居辅助。可作为 A 的展开层。",f:"http://127.0.0.1:5173/prototype/troubleshooting?variant=B",icon:"layers",thumb:"t-iter",tag:"now",tagT:"原型"},
-  {t:"C · 企微协同流",d:"展示真实入口、资料补问、调查回执和关闭后原路 @；适合说明端到端交互。",f:"http://127.0.0.1:5173/prototype/troubleshooting?variant=C",icon:"route",thumb:"t-over",tag:"now",tagT:"原型"},
+  {t:"正式排障工作台",d:"服务经理摘要默认展开，开发证据按需下钻；读取真实 Diagnosis 与双投影 API，是当前开发和验收权威。",f:"http://127.0.0.1:5173/troubleshooting",icon:"target",thumb:"t-rca",tag:"now",tagT:"正式"},
+  {t:"旧版兼容处置台",d:"保留原有智能排障交互；可携同一个 diagnosisId 回退对照，不再作为新架构实现依据。",f:"http://127.0.0.1:5173/troubleshooting/legacy",icon:"layers",thumb:"t-iter",tag:"iter",tagT:"兼容"},
+  {t:"企微协同流 · 对照",d:"静态展示资料补问、调查回执和关闭后通知目标；真实通道接缝已完成纯文本业务摘要、正式页深链和持久化关闭结果通知。",f:"experience-prototype-demo.html?view=WECOM",icon:"route",thumb:"t-over",tag:"arch",tagT:"对照"},
 ];
 const ITER=[
   {t:"根因定位视图（已归档）",d:"收敛漏斗 + 五阶段定位链 + 证据抽屉。方向被采纳，但结构过重，已由当前三层详情参考简化取代。",f:"console-rca.html",icon:"target",thumb:"t-iter",tag:"iter",tagT:"迭代 v4"},
@@ -298,7 +298,7 @@ const ITER=[
 ];
 const DOC=[
   {t:"录音产品基线",d:"F1–F11：差异化、首个案例、企微入口、双受众与能力边界；区分会议事实和设计脑暴。",f:"recording-product-baseline.md",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"事实源"},
-  {t:"MateClaw 架构蓝图 v0.5",d:"一页看懂证据脊柱、两个闭环、三类路径、P1 边界、红线和路线图。",f:"architecture-blueprint.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"现行"},
+  {t:"MateClaw 架构蓝图 v0.16",d:"一页看懂证据脊柱、两个闭环、三类路径、正式双投影和 P3 企微纯文本闭环。",f:"architecture-blueprint.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"现行"},
   {t:"现行概要设计 v4",d:"完整工程合同：接口、信任边界、资源预算、状态机、知识资格、迁移与实施顺序。",f:"../../rfcs/intelligent-troubleshooting-architecture-v4.md",icon:"layers",thumb:"t-doc",tag:"doc",tagT:"现行 RFC"},
   {t:"架构师评审 v4",d:"8 个架构问题、测试覆盖图、性能预算、失败模式、NOT in scope 与 P1 实施门。",f:"architecture-review-v4.md",icon:"shield",thumb:"t-doc",tag:"doc",tagT:"已通过"},
   {t:"执行摘要 · 一页纸",d:"给团队 / 领导的两分钟版：做什么、怎么安全、承诺什么、第一步与所需支持。",f:"executive-summary.html",icon:"doc",thumb:"t-doc",tag:"doc",tagT:"文档"},
@@ -314,7 +314,7 @@ document.getElementById('g-doc').innerHTML=DOC.map(card).join('');
 document.getElementById('g-arch').innerHTML=ARCH.map(card).join('');
 document.getElementById('sc1').textContent='02';document.getElementById('sc2').textContent='05';
 document.getElementById('sc3').textContent='03';document.getElementById('sc4').textContent='03';
-document.getElementById('thread-h').innerHTML=ic('route',16)+' 当前主线 · 从录音事实收敛到可实施的 P1 竖线';
+document.getElementById('thread-h').innerHTML=ic('route',16)+' 当前主线 · 从企微报障进入可开展处置的正式工作台';
 document.getElementById('redline').innerHTML=ic('shield')+'<div class="rt"><b>贯穿全程的安全底线：</b>错误码命中路零 LLM；原始日志/DQL/凭据不进模型；生产写工具永不注册；模型只提议注册场景键；PlaybookDraft 只能进 candidate；Recorded Replay 永远显式标记。现行合同见 <span class="mono">rfcs/intelligent-troubleshooting-architecture-v4.md</span>。</div>';
 
 // theme toggle

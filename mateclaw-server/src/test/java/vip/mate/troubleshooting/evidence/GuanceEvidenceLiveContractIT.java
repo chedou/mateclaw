@@ -1,0 +1,132 @@
+package vip.mate.troubleshooting.evidence;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.IncidentCompleteness;
+import vip.mate.troubleshooting.model.IncidentContext;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Manually selected live contract check; excluded from the default Surefire naming pattern. */
+class GuanceEvidenceLiveContractIT {
+
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withInitializer(new ConfigDataApplicationContextInitializer())
+            .withUserConfiguration(EvidenceAutoConfiguration.class)
+            .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withPropertyValues("spring.profiles.active=csdp-guance-evidence-pilot");
+
+    @Test
+    @EnabledIfEnvironmentVariable(
+            named = "MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY",
+            matches = ".+")
+    void observesTheSameContractThroughTheExactPilotProfileAndRouter() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(EvidenceHttpTransport.class))
+                    .isInstanceOf(NativeCurlEvidenceHttpTransport.class);
+
+            EvidenceRequest request = new EvidenceRequest(
+                    "EV-LIVE-PROFILE-SEARCH",
+                    "log_search",
+                    "verify live profile contract",
+                    Map.of("search_term", "message_send_failed"),
+                    "-24h",
+                    true);
+            IncidentContext incident = new IncidentContext(
+                    "inc-live-profile",
+                    "CSDP",
+                    "csdp-session-service",
+                    null,
+                    "live profile contract verification",
+                    "P2",
+                    "read-only",
+                    null,
+                    Instant.now(),
+                    null,
+                    "manual",
+                    IncidentCompleteness.LOG,
+                    null);
+
+            EvidenceSourceRouter router = context.getBean(EvidenceSourceRouter.class);
+            var result = router
+                    .collect(1L, request, incident, Set.of("guance"));
+
+            assertThat(result.status() == EvidenceStatus.NORMAL).isTrue();
+            assertThat(result.observed().keySet())
+                    .containsExactlyInAnyOrder("match_count", "ps_id", "sample_message");
+            assertThat(nonBlank(result.observed().get("ps_id"))).isTrue();
+            assertThat(nonBlank(result.observed().get("sample_message"))).isTrue();
+
+            String psId = String.valueOf(result.observed().get("ps_id"));
+            EvidenceRequest traceRequest = new EvidenceRequest(
+                    "EV-LIVE-PROFILE-TRACE",
+                    "log_trace_bundle",
+                    "verify live profile trace contract",
+                    Map.of("ps_id", psId),
+                    "-24h",
+                    true);
+            var trace = router.collect(1L, traceRequest, incident, Set.of("guance"));
+
+            assertThat(trace.status() == EvidenceStatus.NORMAL).isTrue();
+            assertThat(trace.observed().keySet())
+                    .containsExactlyInAnyOrder("ps_id", "entries");
+            assertThat(Objects.equals(trace.observed().get("ps_id"), psId)).isTrue();
+            assertThat(trace.observed().get("entries") instanceof java.util.List<?> entries
+                    && !entries.isEmpty()).isTrue();
+
+            EvidenceRequest contrastRequest = new EvidenceRequest(
+                    "EV-LIVE-PROFILE-CONTRAST",
+                    "contrast_sample",
+                    "verify live profile contrast contract",
+                    Map.of(),
+                    "-24h",
+                    true);
+            var contrast = router.collect(
+                    1L, contrastRequest, incident, Set.of("guance"));
+
+            assertThat(contrast.status() == EvidenceStatus.NORMAL)
+                    .as(contrast.summary())
+                    .isTrue();
+            assertThat(contrast.observed().keySet()).containsExactlyInAnyOrder(
+                    "discriminating_feature",
+                    "failure_sample_count",
+                    "failure_match_count",
+                    "success_sample_count",
+                    "success_match_count");
+            assertThat(Objects.equals(
+                    contrast.observed().get("discriminating_feature"),
+                    "message_length_eq_2875")).isTrue();
+            long failureSamples = number(contrast.observed().get("failure_sample_count"));
+            long failureMatches = number(contrast.observed().get("failure_match_count"));
+            long successSamples = number(contrast.observed().get("success_sample_count"));
+            long successMatches = number(contrast.observed().get("success_match_count"));
+            assertThat(failureSamples).isPositive();
+            assertThat(failureMatches).isBetween(0L, failureSamples);
+            assertThat(successSamples).isPositive();
+            assertThat(successMatches).isBetween(0L, successSamples);
+            assertThat(java.math.BigInteger.valueOf(failureMatches)
+                    .multiply(java.math.BigInteger.valueOf(successSamples)))
+                    .isGreaterThan(java.math.BigInteger.valueOf(successMatches)
+                            .multiply(java.math.BigInteger.valueOf(failureSamples)));
+        });
+    }
+
+    private static boolean nonBlank(Object value) {
+        return value instanceof String text && !text.isBlank();
+    }
+
+    private static long number(Object value) {
+        return value instanceof Number number ? number.longValue() : -1L;
+    }
+}

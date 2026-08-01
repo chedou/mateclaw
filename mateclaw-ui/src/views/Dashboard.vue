@@ -451,7 +451,7 @@ function calcDuration(run: any): string {
   align-items: flex-end;
   gap: 10px;
   flex-shrink: 0;
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
 .hero-note {
@@ -542,7 +542,7 @@ function calcDuration(run: any): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 16px;
+  border-radius: var(--mc-radius-md);
   background: linear-gradient(135deg, rgba(217, 109, 70, 0.12), rgba(24, 74, 69, 0.08));
   font-size: 24px;
   color: var(--mc-primary);
@@ -556,7 +556,7 @@ function calcDuration(run: any): string {
 .stat-card--secondary .stat-value { font-size: 24px; }
 
 /* Model Configuration card */
-.models-section { margin-bottom: 22px; }
+.models-section { margin-bottom: 20px; }
 .models-card { padding: 18px; }
 .models-card__head {
   display: flex; align-items: center; justify-content: space-between;
@@ -569,12 +569,12 @@ function calcDuration(run: any): string {
 }
 .active-model__value {
   display: flex; align-items: center; gap: 7px;
-  font-size: 14px; font-weight: 700; color: var(--mc-text-primary);
+  font-size: var(--mc-text-sm); font-weight: 700; color: var(--mc-text-primary);
 }
 .active-model__value--empty { color: var(--mc-text-tertiary); font-weight: 600; }
 .active-model__dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: #10b981; flex-shrink: 0;
+  background: var(--mc-success); flex-shrink: 0;
 }
 .models-card__actions { display: flex; align-items: center; gap: 14px; }
 .models-count { font-size: 12px; color: var(--mc-text-tertiary); white-space: nowrap; }
@@ -605,8 +605,8 @@ function calcDuration(run: any): string {
   width: 15px; height: 15px; border-radius: 4px;
   object-fit: contain; flex-shrink: 0;
 }
-.provider-chip--ready .provider-chip__dot { background: #10b981; }
-.provider-chip--partial .provider-chip__dot { background: #f59e0b; }
+.provider-chip--ready .provider-chip__dot { background: var(--mc-success); }
+.provider-chip--partial .provider-chip__dot { background: var(--mc-warning); }
 .provider-chip--down .provider-chip__dot { background: var(--mc-text-tertiary); }
 .provider-chip--down { opacity: 0.7; }
 
@@ -618,17 +618,17 @@ function calcDuration(run: any): string {
 .models-empty__text { font-size: 13px; color: var(--mc-text-tertiary); }
 .models-empty__btn {
   padding: 6px 14px; border-radius: 8px;
-  background: var(--mc-primary); color: #fff;
+  background: var(--mc-primary); color: var(--mc-text-inverse);
   border: none; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: opacity 0.15s ease;
 }
 .models-empty__btn:hover { opacity: 0.9; }
 
-.trend-section { margin-bottom: 22px; }
+.trend-section { margin-bottom: 20px; }
 .trend-chart { padding: 18px; }
 .chart-container { width: 100%; height: 240px; }
 
-.comparison-section { margin-bottom: 22px; }
+.comparison-section { margin-bottom: 20px; }
 .comparison-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .comparison-card {
   padding: 16px 16px 10px;
@@ -637,7 +637,7 @@ function calcDuration(run: any): string {
 .comparison-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--mc-border-light); }
 .comparison-row:last-child { border-bottom: none; }
 .comparison-label { font-size: 13px; color: var(--mc-text-tertiary); }
-.comparison-value { font-size: 14px; font-weight: 700; color: var(--mc-text-primary); }
+.comparison-value { font-size: var(--mc-text-sm); font-weight: 700; color: var(--mc-text-primary); }
 
 /* Runs Section */
 .runs-section { min-height: 0; }
@@ -662,11 +662,11 @@ function calcDuration(run: any): string {
 .cell-tokens { font-family: 'SF Mono', monospace; font-size: 12px; }
 
 .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-.status-running { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
-.status-completed { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-.status-failed { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+.status-running { background: rgba(59, 130, 246, 0.12); color: var(--mc-status-info-text); }
+.status-completed { background: rgba(90, 138, 90, 0.12); color: var(--mc-success); }
+.status-failed { background: var(--mc-danger-bg); color: var(--mc-danger); }
 
-.empty-state { padding: 48px; text-align: center; color: var(--mc-text-tertiary); font-size: 14px; }
+.empty-state { padding: 24px; text-align: center; color: var(--mc-text-tertiary); font-size: var(--mc-text-sm); }
 
 @media (max-width: 768px) {
   .dashboard-frame {

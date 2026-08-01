@@ -2,6 +2,7 @@ package vip.mate.troubleshooting;
 
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.IncidentImpact;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -388,6 +389,20 @@ public final class TroubleshootingSecretRedactor {
                 redact(incident.intakeSource()),
                 incident.completeness(),
                 redactNullable(incident.rawInput()));
+    }
+
+    public static IncidentImpact redact(IncidentImpact impact) {
+        if (impact == null) {
+            return null;
+        }
+        return new IncidentImpact(
+                redact(impact.functionScope()),
+                impact.affectedCustomers(),
+                impact.affectedUsers(),
+                impact.blastRadius(),
+                impact.evidenceRefs().stream().map(TroubleshootingSecretRedactor::redact).toList(),
+                impact.observedAt(),
+                redact(impact.note()));
     }
 
     public static EvidenceResult redact(EvidenceResult evidence) {

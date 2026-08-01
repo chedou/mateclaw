@@ -32,6 +32,10 @@ class IncidentDeduplicationKeyTest {
         assertEquals(first, equivalent);
         assertNotEquals(first, nextBucket);
         assertNotEquals(upperCode, lowerCode);
+        assertEquals(
+                "95c5a7c0cab4aaca50b70eb1a588bd52da75436b6fb5d3c06c6644f2bfed6662",
+                first,
+                "error-code keys must remain byte-compatible across rolling deployments");
         assertEquals(64, first.length());
     }
 
@@ -49,11 +53,63 @@ class IncidentDeduplicationKeyTest {
     }
 
     @Test
-    void rehearsalsAndIncidentsWithoutErrorCodeAreNeverDeduplicated() {
+    void rehearsalsAreNeverDeduplicated() {
         assertTrue(IncidentDeduplicationKey.create(
                 incident("csdp", "903001", "csdp-wechat", null), true, Instant.now()).isEmpty());
-        assertTrue(IncidentDeduplicationKey.create(
-                incident("csdp", null, "csdp-wechat", null), false, Instant.now()).isEmpty());
+        assertTrue(IncidentDeduplicationKey.createForScenario(
+                incident("csdp", null, "csdp-wechat", null),
+                "deployment_topology_probe", true, Instant.now()).isEmpty());
+    }
+
+    @Test
+    void explicitScenariosHaveTheirOwnIdempotencyNamespace() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+        IncidentContext context = incident(
+                " CSDP ", null, " CSDP-WeChat ", null,
+                " 会话消息发送失败 ", " trace-1 ");
+
+        String generic = IncidentDeduplicationKey.create(
+                context, false, receivedAt).orElseThrow();
+        String topology = IncidentDeduplicationKey.createForScenario(
+                context, " deployment_topology_probe ", false, receivedAt).orElseThrow();
+        String equivalentTopology = IncidentDeduplicationKey.createForScenario(
+                incident("csdp", null, "csdp-wechat", null,
+                        "会话消息发送失败", "trace-1"),
+                "DEPLOYMENT_TOPOLOGY_PROBE", false,
+                Instant.parse("2026-07-25T01:00:01Z")).orElseThrow();
+        String anotherScenario = IncidentDeduplicationKey.createForScenario(
+                context, "slow_api", false, receivedAt).orElseThrow();
+
+        assertNotEquals(generic, topology);
+        assertEquals(topology, equivalentTopology);
+        assertNotEquals(topology, anotherScenario);
+    }
+
+    @Test
+    void symptomOnlyRetriesUseAStableFiveMinuteKeyWithoutMergingDifferentSymptoms() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        String first = IncidentDeduplicationKey.create(
+                incident(" CSDP ", null, " CSDP-WeChat ", null,
+                        " 会话消息发送失败 ", " trace-1 "),
+                false, receivedAt).orElseThrow();
+        String equivalent = IncidentDeduplicationKey.create(
+                incident("csdp", null, "csdp-wechat", null,
+                        "会话消息发送失败", "trace-1"),
+                false, Instant.parse("2026-07-25T01:00:01Z")).orElseThrow();
+        String differentSymptom = IncidentDeduplicationKey.create(
+                incident("csdp", null, "csdp-wechat", null,
+                        "会话列表加载失败", "trace-1"),
+                false, receivedAt).orElseThrow();
+        String nextBucket = IncidentDeduplicationKey.create(
+                incident("csdp", null, "csdp-wechat", null,
+                        "会话消息发送失败", "trace-1"),
+                false, Instant.parse("2026-07-25T01:05:00Z")).orElseThrow();
+
+        assertEquals(first, equivalent);
+        assertNotEquals(first, differentSymptom);
+        assertNotEquals(first, nextBucket);
+        assertEquals(64, first.length());
     }
 
     private IncidentContext incident(
@@ -61,15 +117,25 @@ class IncidentDeduplicationKeyTest {
             String errorCode,
             String service,
             Instant occurredAt) {
+        return incident(system, errorCode, service, occurredAt, "title", null);
+    }
+
+    private IncidentContext incident(
+            String system,
+            String errorCode,
+            String service,
+            Instant occurredAt,
+            String title,
+            String traceId) {
         return new IncidentContext(
                 "inc-1",
                 system,
                 service,
                 errorCode,
-                "title",
+                title,
                 "P2",
                 "待确认",
-                null,
+                traceId,
                 occurredAt,
                 null,
                 "manual",

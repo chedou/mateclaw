@@ -20,6 +20,7 @@ import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -142,6 +143,13 @@ class DiagnosisLifecycleServiceTest {
 
         assertThat(saved.getValue().knowledgeCandidates()).hasSize(1);
         assertThat(candidate.getValue().sourceDiagnosisId()).isEqualTo(DIAGNOSIS_ID);
+        assertThat(candidate.getValue().outcomeProof()).isNotNull();
+        assertThat(candidate.getValue().outcomeProof().outcome())
+                .isEqualTo(ClosureOutcome.TRANSFERRED_OUT);
+        assertThat(candidate.getValue().outcomeProof().recoveryVerified()).isFalse();
+        assertThat(candidate.getValue().outcomeProof().registeredBy()).isEqualTo(ACTOR);
+        assertThat(candidate.getValue().outcomeProof().registeredAt())
+                .isEqualTo(saved.getValue().closure().closedAt());
         assertThat(saved.getValue().closure().knowledgeCandidateId())
                 .as("the closure must point at the candidate this transition produced")
                 .isEqualTo(candidate.getValue().candidateId());
@@ -156,6 +164,53 @@ class DiagnosisLifecycleServiceTest {
                 "告警误报", false, null, false, ACTOR);
 
         verify(persistence).update(eq(WORKSPACE_ID), any(), eq(4));
+        verify(persistence, never()).updateAndEnqueue(anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
+    void rejectsDeveloperEvidenceAndCredentialsFromTheClosureSummary() {
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "DQL L::service:(*) token=top-secret",
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("business-safe");
+
+        verify(persistence, never()).update(anyLong(), any(), anyInt());
+        verify(persistence, never()).updateAndEnqueue(anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
+    void rejectsForgedMentionsAndOversizedClosureSummaries() {
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "误报 <@all>",
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("business-safe");
+        assertThatThrownBy(() -> lifecycle.close(
+                WORKSPACE_ID,
+                DIAGNOSIS_ID,
+                ClosureOutcome.FALSE_POSITIVE,
+                "超长".repeat(300),
+                false,
+                null,
+                false,
+                ACTOR))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("500");
+
+        verify(persistence, never()).update(anyLong(), any(), anyInt());
         verify(persistence, never()).updateAndEnqueue(anyLong(), any(), anyInt(), any());
     }
 
@@ -205,6 +260,7 @@ class DiagnosisLifecycleServiceTest {
                 RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
                 "连接可用数归零", "Mongo 连接池打满", Confidence.HIGH, false,
                 "CSDP:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of("pool_exhausted"),
                 List.of(readOnlyAction(), manualWriteAction()),
                 "DBA 组", false, true, List.of());
@@ -220,6 +276,7 @@ class DiagnosisLifecycleServiceTest {
                 RouteMode.DETERMINISTIC, DiagnosisStatus.NEEDS_INVESTIGATION,
                 "SOP 尚未审核", "证据不足，暂不能确认根因。", Confidence.LOW, true,
                 "CSDP:903001", "订单服务 Mongo 连接池耗尽",
+                new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of(), List.of(),
                 null, false, true, List.of("SOP 仍为草案"));
     }

@@ -115,6 +115,29 @@
       },
       "source": "recorded-replay:message-send-failed",
       "collectedAt": "2026-07-20T09:13:02Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-session-service",
+      "requestId": "SYNTH-CONTRAST-SAMPLE",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "message_send_failed",
+        "exclude_ps_id": "synthetic-ps-message-send-001"
+      },
+      "namespace": "L",
+      "query": "recorded:message-send-failed/contrast-sample",
+      "status": "NORMAL",
+      "summary": "脱敏回放：同窗口成功请求与失败请求的结构化对照",
+      "observed": {
+        "discriminating_feature": "session_state_conflict",
+        "failure_sample_count": 100,
+        "failure_match_count": 92,
+        "success_sample_count": 100,
+        "success_match_count": 3
+      },
+      "source": "recorded-replay:message-send-failed",
+      "collectedAt": "2026-07-20T09:13:03Z"
     }
   ]
 }

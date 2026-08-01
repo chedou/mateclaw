@@ -7,6 +7,7 @@ import vip.mate.agent.AgentService.StreamDelta;
 import vip.mate.channel.AbstractChannelAdapter;
 import vip.mate.channel.ChannelMessage;
 import vip.mate.channel.ChannelMessageRouter;
+import vip.mate.channel.DeliveryOptions;
 import vip.mate.channel.StreamingChannelAdapter;
 import vip.mate.workspace.core.service.ChatUploadLocationResolver;
 import vip.mate.channel.ExponentialBackoff;
@@ -31,7 +32,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -75,6 +78,41 @@ import java.util.concurrent.atomic.AtomicReference;
 public class WeComChannelAdapter extends AbstractChannelAdapter implements StreamingChannelAdapter {
 
     public static final String CHANNEL_TYPE = "wecom";
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final Instant MIN_PROVIDER_EVENT_TIME =
+            Instant.parse("2000-01-01T00:00:00Z");
+    private static final Duration MAX_PROVIDER_FUTURE_SKEW = Duration.ofMinutes(5);
+
+    /**
+     * Normalize WeCom's provider-owned send_time into the business timezone.
+     * Both epoch milliseconds (current callbacks) and epoch seconds are
+     * accepted. Missing, malformed, pre-2000, or implausibly future values
+     * fail closed to the callback receipt instant without logging the raw
+     * provider value.
+     */
+    static LocalDateTime providerEventTime(Object rawSendTime, Instant fallback) {
+        Objects.requireNonNull(fallback, "fallback receipt time must not be null");
+        Instant parsed = null;
+        try {
+            long epoch = rawSendTime instanceof Number number
+                    ? number.longValue()
+                    : Long.parseLong(Objects.toString(rawSendTime, "").trim());
+            parsed = Math.abs(epoch) < 100_000_000_000L
+                    ? Instant.ofEpochSecond(epoch)
+                    : Instant.ofEpochMilli(epoch);
+        } catch (RuntimeException invalid) {
+            log.warn("[wecom] invalid send_time; using callback receipt time");
+        }
+        if (parsed == null
+                || parsed.isBefore(MIN_PROVIDER_EVENT_TIME)
+                || parsed.isAfter(fallback.plus(MAX_PROVIDER_FUTURE_SKEW))) {
+            if (parsed != null) {
+                log.warn("[wecom] implausible send_time; using callback receipt time");
+            }
+            parsed = fallback;
+        }
+        return LocalDateTime.ofInstant(parsed, BUSINESS_ZONE);
+    }
 
     /** 企业微信智能机器人 WebSocket 地址 */
     private static final String DEFAULT_WS_URL = "wss://openws.work.weixin.qq.com";
@@ -510,6 +548,10 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
         // ---- 其他 per-connection 状态 ----
         pendingFrames.clear();
         replyContexts.clear();
+        // req_id belongs to one authenticated WebSocket session. Keeping it
+        // across reconnect would advertise a stale group reply slot and could
+        // make durable dispatch race a platform rejection.
+        lastChatReqIds.clear();
         streamLastContent.clear();
         // 断线时可能残留半截帧碎片，清空以免污染下一个连接的首帧
         wsBuffer.setLength(0);
@@ -952,6 +994,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
     @SuppressWarnings("unchecked")
     private void handleMessageCallback(Map<String, Object> frame) {
         try {
+            Instant callbackReceivedAt = Instant.now();
             Map<String, Object> body = (Map<String, Object>) frame.getOrDefault("body", Map.of());
             Map<String, Object> headers = (Map<String, Object>) frame.getOrDefault("headers", Map.of());
             String frameReqId = (String) headers.getOrDefault("req_id", "");
@@ -1182,7 +1225,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
                     .contentType(msgType)
                     .contentParts(contentParts)
                     .inputMode(hasVoice ? "voice" : "text")
-                    .timestamp(LocalDateTime.now())
+                    .timestamp(providerEventTime(body.get("send_time"), callbackReceivedAt))
                     .replyToken(isGroup ? chatId : senderId)
                     .rawPayload(Map.of(
                             "wecom_frame_req_id", frameReqId,
@@ -1663,35 +1706,101 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
      * had to remember the group rule, and several didn't.
      */
     private void sendOutboundFrame(String chatId, Map<String, Object> bodyWithMsgtype) {
-        if (webSocket == null || chatId == null || chatId.isBlank()) return;
+        enqueueOutboundFrame(chatId, bodyWithMsgtype)
+                .whenComplete((ack, error) -> {
+                    if (error != null) {
+                        Throwable cause = error instanceof CompletionException
+                                && error.getCause() != null
+                                ? error.getCause()
+                                : error;
+                        log.error("[wecom] Failed to send outbound frame to {}: {}",
+                                chatId, cause.getMessage(), cause);
+                    }
+                });
+    }
+
+    /**
+     * Queues one proactive frame and exposes its real platform ACK.
+     *
+     * <p>Most legacy callers remain fire-and-forget through
+     * {@link #sendOutboundFrame(String, Map)}. Durable domain dispatchers call
+     * {@link #awaitOutboundAck(String, Map, boolean)} so a disconnected transport,
+     * rejected ACK or timeout is returned to their lease/retry state machine
+     * instead of being mistaken for a delivered notification.</p>
+     */
+    private CompletableFuture<Map<String, Object>> enqueueOutboundFrame(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype) {
+        return enqueueOutboundFrame(chatId, bodyWithMsgtype, false);
+    }
+
+    private CompletableFuture<Map<String, Object>> enqueueOutboundFrame(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype,
+            boolean requireReplyContext) {
+        if (webSocket == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("WeCom channel not connected"));
+        }
+        if (chatId == null || chatId.isBlank()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("WeCom proactive target is required"));
+        }
+        if (bodyWithMsgtype == null || bodyWithMsgtype.isEmpty()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("WeCom proactive body is required"));
+        }
+        String groupReplyReqId = pickGroupReplyReqId(chatId);
+        if (groupReplyReqId != null) {
+            // Group chat — ride aibot_respond_msg with the cached reqId.
+            // The body for respond_msg does NOT include "chatid" — the
+            // server infers the target from the original frame's reqId.
+            Map<String, Object> frame = Map.of(
+                    "cmd", CMD_RESPONSE,
+                    "headers", Map.of("req_id", groupReplyReqId),
+                    "body", bodyWithMsgtype
+            );
+            log.debug("[wecom] Group send via aibot_respond_msg: chatId={}, reqId={}",
+                    chatId, groupReplyReqId);
+            return sendFrameWithAck(groupReplyReqId, frame);
+        }
+        if (requireReplyContext) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException(
+                            "WeCom group reply context is unavailable; refusing aibot_send_msg fallback"));
+        }
+
+        // Single chat — aibot_send_msg accepts a chatid field.
+        Map<String, Object> withChatId = new LinkedHashMap<>(bodyWithMsgtype);
+        withChatId.put("chatid", chatId);
+        String reqId = generateReqId(CMD_SEND_MSG);
+        Map<String, Object> frame = Map.of(
+                "cmd", CMD_SEND_MSG,
+                "headers", Map.of("req_id", reqId),
+                "body", withChatId
+        );
+        return sendFrameWithAck(reqId, frame);
+    }
+
+    private void awaitOutboundAck(
+            String chatId,
+            Map<String, Object> bodyWithMsgtype,
+            boolean requireReplyContext) {
         try {
-            String groupReplyReqId = pickGroupReplyReqId(chatId);
-            if (groupReplyReqId != null) {
-                // Group chat — ride aibot_respond_msg with the cached reqId.
-                // The body for respond_msg does NOT include "chatid" — the
-                // server infers the target from the original frame's reqId.
-                Map<String, Object> frame = Map.of(
-                        "cmd", CMD_RESPONSE,
-                        "headers", Map.of("req_id", groupReplyReqId),
-                        "body", bodyWithMsgtype
-                );
-                sendFrameWithAck(groupReplyReqId, frame);
-                log.debug("[wecom] Group send via aibot_respond_msg: chatId={}, reqId={}",
-                        chatId, groupReplyReqId);
-            } else {
-                // Single chat — aibot_send_msg accepts a chatid field.
-                Map<String, Object> withChatId = new LinkedHashMap<>(bodyWithMsgtype);
-                withChatId.put("chatid", chatId);
-                String reqId = generateReqId(CMD_SEND_MSG);
-                Map<String, Object> frame = Map.of(
-                        "cmd", CMD_SEND_MSG,
-                        "headers", Map.of("req_id", reqId),
-                        "body", withChatId
-                );
-                sendFrameWithAck(reqId, frame);
-            }
-        } catch (Exception e) {
-            log.error("[wecom] Failed to send outbound frame to {}: {}", chatId, e.getMessage(), e);
+            enqueueOutboundFrame(chatId, bodyWithMsgtype, requireReplyContext)
+                    .get(REPLY_ACK_TIMEOUT_MS + 1_000, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "WeCom proactive delivery interrupted before platform ACK", error);
+        } catch (ExecutionException | TimeoutException error) {
+            Throwable cause = error instanceof ExecutionException && error.getCause() != null
+                    ? error.getCause()
+                    : error;
+            throw new IllegalStateException(
+                    "WeCom proactive delivery failed before platform ACK: "
+                            + cause.getMessage(),
+                    cause);
         }
     }
 
@@ -3391,8 +3500,72 @@ public class WeComChannelAdapter extends AbstractChannelAdapter implements Strea
     }
 
     @Override
+    public boolean isProactiveDeliveryReady(
+            String targetId,
+            DeliveryOptions options) {
+        return options == null
+                || !options.requiresReplyContext()
+                || pickGroupReplyReqId(targetId) != null;
+    }
+
+    @Override
     public void proactiveSend(String targetId, String content) {
-        sendMessageToChat(targetId, content);
+        proactiveSend(targetId, content, DeliveryOptions.DEFAULTS);
+    }
+
+    @Override
+    public void proactiveSend(String targetId, String content, DeliveryOptions options) {
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("WeCom proactive content is required");
+        }
+        DeliveryOptions effective = options == null ? DeliveryOptions.DEFAULTS : options;
+        String deliveredContent = prependMentions(
+                neutralizeUntrustedMentions(content), effective);
+        Map<String, Object> textBody = Map.of(
+                "msgtype", "markdown",
+                "markdown", Map.of("content", deliveredContent)
+        );
+        awaitOutboundAck(targetId, textBody, effective.requiresReplyContext());
+    }
+
+    /** Raw body text cannot mint identities; trusted mentions come only from DeliveryOptions. */
+    private String neutralizeUntrustedMentions(String content) {
+        return content.replace("<@", "＜@");
+    }
+
+    /** WeCom text/markdown supports the official {@code <@userid>} mention form. */
+    private String prependMentions(String content, DeliveryOptions options) {
+        List<String> requested = options == null
+                ? List.of()
+                : options.mentionUserIds();
+        if (requested.isEmpty()) {
+            return content;
+        }
+        StringBuilder prefix = new StringBuilder();
+        int rejected = 0;
+        for (String userId : requested) {
+            if (!safeMentionUserId(userId)) {
+                rejected++;
+                continue;
+            }
+            if (!prefix.isEmpty()) {
+                prefix.append(' ');
+            }
+            prefix.append("<@").append(userId).append('>');
+        }
+        if (rejected > 0) {
+            log.warn("[wecom] ignored {} unsafe mention recipient(s)", rejected);
+        }
+        return prefix.isEmpty() ? content : prefix.append('\n').append(content).toString();
+    }
+
+    private boolean safeMentionUserId(String userId) {
+        return userId != null
+                && !userId.isBlank()
+                && userId.length() <= 128
+                && !"all".equalsIgnoreCase(userId)
+                && !"@all".equalsIgnoreCase(userId)
+                && userId.matches("[A-Za-z0-9_@.\\-]+");
     }
 
     @Override

@@ -13,6 +13,7 @@ import vip.mate.troubleshooting.model.DeterministicDiagnosisDraft;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.RecommendedAction;
+import vip.mate.troubleshooting.model.ScenarioDiagnosisDraft;
 import vip.mate.troubleshooting.model.TimelineEvent;
 import vip.mate.troubleshooting.model.TransferContextSnapshot;
 import vip.mate.troubleshooting.model.TransferRecord;
@@ -72,6 +73,10 @@ public final class DiagnosisStateMachine {
                 draft.runId(),
                 draft.incident(),
                 vip.mate.troubleshooting.model.RouteMode.DETERMINISTIC,
+                vip.mate.troubleshooting.model.InvestigationMode.ERROR_CODE_PLAYBOOK,
+                vip.mate.troubleshooting.model.RouteAuthority.EXPLICIT,
+                draft.conclusionType(),
+                draft.timings(),
                 initialStatus,
                 draft.summary(),
                 draft.rootCause(),
@@ -79,6 +84,8 @@ public final class DiagnosisStateMachine {
                 draft.abstained(),
                 draft.sop().routingKey(),
                 draft.sop().title(),
+                draft.sop().ownerTeam(),
+                draft.sourcePlaybookVersionRef(),
                 draft.evidence(),
                 draft.triggeredSignals(),
                 draft.recommendedActions(),
@@ -114,6 +121,54 @@ public final class DiagnosisStateMachine {
                         "orchestrator",
                         "current"));
         return Diagnosis.initialAgentFallback(draft, initialStatus, timeline);
+    }
+
+    /** Starts an explicitly selected Scenario Playbook without inventing evidence or a root cause. */
+    public Diagnosis initializeScenarioAwaitingEvidence(ScenarioDiagnosisDraft draft) {
+        Objects.requireNonNull(draft, "draft");
+        List<TimelineEvent> timeline = List.of(
+                new TimelineEvent(
+                        clock.instant(),
+                        "故障上下文已接收",
+                        draft.incident().intakeSource(),
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        "显式选择排障场景 " + draft.scenarioKey(),
+                        draft.actor(),
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        "等待场景 Playbook 要求的只读证据",
+                        "orchestrator",
+                        "current"));
+        return Diagnosis.initial(
+                draft.diagnosisId(),
+                draft.caseId(),
+                draft.runId(),
+                draft.incident(),
+                vip.mate.troubleshooting.model.RouteMode.DETERMINISTIC,
+                vip.mate.troubleshooting.model.InvestigationMode.SCENARIO_PLAYBOOK,
+                vip.mate.troubleshooting.model.RouteAuthority.EXPLICIT,
+                vip.mate.troubleshooting.model.ConclusionType.INSUFFICIENT_EVIDENCE,
+                draft.timings(),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                draft.playbook().title() + "场景已创建，等待执行只读取证。",
+                "尚未取得场景要求的只读证据，当前不能判断根因。",
+                vip.mate.troubleshooting.model.Confidence.LOW,
+                true,
+                draft.selectorKey(),
+                draft.playbook().title(),
+                draft.playbook().ownerTeam(),
+                draft.sourcePlaybookVersionRef(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                draft.rehearsal(),
+                draft.fixtureMode(),
+                draft.warnings(),
+                timeline);
     }
 
     public Diagnosis confirm(Diagnosis diagnosis, String actor) {
@@ -257,17 +312,21 @@ public final class DiagnosisStateMachine {
             requireSuccessfulVerifiedOutcomes(diagnosis);
         }
 
-        KnowledgeCandidate candidate = createKnowledgeCandidate
-                ? candidate(diagnosis, summary, sopFeedback, actor)
+        String candidateId = createKnowledgeCandidate
+                ? identifiers.next("candidate")
                 : null;
+        Instant closedAt = clock.instant();
         ClosureRecord closure = new ClosureRecord(
                 outcome,
                 summary,
                 recoveryVerified,
                 sopFeedback,
-                candidate == null ? null : candidate.candidateId(),
+                candidateId,
                 actor,
-                clock.instant());
+                closedAt);
+        KnowledgeCandidate candidate = createKnowledgeCandidate
+                ? candidate(diagnosis, summary, sopFeedback, actor, candidateId, closure)
+                : null;
         List<KnowledgeCandidate> candidates = candidate == null
                 ? diagnosis.knowledgeCandidates()
                 : append(diagnosis.knowledgeCandidates(), candidate);
@@ -276,7 +335,11 @@ public final class DiagnosisStateMachine {
                 "关闭归档：" + outcome.name().toLowerCase() + "（" + summary + "）",
                 actor);
         if (candidate != null) {
-            timeline = event(timeline, "知识候选 " + candidate.candidateId() + " 已提交审核", actor);
+            timeline = event(
+                    timeline,
+                    "知识候选 " + candidate.candidateId()
+                            + " 已记录（发布状态不等于审核）",
+                    actor);
         }
         return diagnosis.closed(
                 closure,
@@ -320,9 +383,11 @@ public final class DiagnosisStateMachine {
             Diagnosis diagnosis,
             String summary,
             String feedback,
-            String actor) {
+            String actor,
+            String candidateId,
+            ClosureRecord closure) {
         return new KnowledgeCandidate(
-                identifiers.next("candidate"),
+                candidateId,
                 KnowledgeCandidate.CURRENT_CONTRACT_VERSION,
                 diagnosis.diagnosisId(),
                 diagnosis.caseId(),
@@ -337,7 +402,9 @@ public final class DiagnosisStateMachine {
                 summary,
                 feedback,
                 actor,
-                clock.instant());
+                closure.closedAt(),
+                KnowledgeCandidate.OutcomeProof.from(closure),
+                diagnosis.sourcePlaybookOwner());
     }
 
     private RecommendedAction action(Diagnosis diagnosis, String actionId) {

@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,9 +18,16 @@ class DiagnosisContractTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
+    void currentContractIsVersion18ForFrozenPlaybookAuthority() {
+        assertEquals("1.8", Diagnosis.CURRENT_CONTRACT_VERSION);
+    }
+
+    @Test
     void persistedPayloadRejectsUnknownContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.4\"", "\"contractVersion\":\"9.9\"");
+                .replace(
+                        "\"contractVersion\":\"" + Diagnosis.CURRENT_CONTRACT_VERSION + "\"",
+                        "\"contractVersion\":\"9.9\"");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -29,7 +37,9 @@ class DiagnosisContractTest {
     @Test
     void persistedPayloadRejectsMissingContractVersion() throws Exception {
         String json = objectMapper.writeValueAsString(diagnosis())
-                .replace("\"contractVersion\":\"1.4\",", "");
+                .replace(
+                        "\"contractVersion\":\"" + Diagnosis.CURRENT_CONTRACT_VERSION + "\",",
+                        "");
 
         assertThrows(
                 JsonProcessingException.class,
@@ -41,11 +51,122 @@ class DiagnosisContractTest {
         ObjectNode payload = objectMapper.valueToTree(diagnosis());
         payload.put("contractVersion", "1.3");
         payload.remove("evidenceCitations");
+        payload.remove("sourcePlaybookVersionRef");
 
         Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
 
         assertEquals("1.3", restored.contractVersion());
         assertTrue(restored.evidenceCitations().isEmpty());
+    }
+
+    @Test
+    void persistedVersion14PayloadDefaultsMissingV15ExperienceFieldsWithoutInventingTimings()
+            throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.4");
+        payload.remove("investigationMode");
+        payload.remove("routeAuthority");
+        payload.remove("conclusionType");
+        payload.remove("timings");
+        payload.remove("sourcePlaybookVersionRef");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.4", restored.contractVersion());
+        assertEquals(InvestigationMode.ERROR_CODE_PLAYBOOK, restored.investigationMode());
+        assertEquals(RouteAuthority.EXPLICIT, restored.routeAuthority());
+        assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, restored.conclusionType());
+        assertEquals(NorthStarTimings.unrecorded(), restored.timings());
+    }
+
+    @Test
+    void persistedVersion15ReadsItsLegacyImpactStringWithoutWeakeningV15Invariants()
+            throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.5");
+        payload.remove("sourcePlaybookVersionRef");
+        ((ObjectNode) payload.path("incident")).put("impact", "订单创建功能受影响");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.5", restored.contractVersion());
+        assertEquals("订单创建功能受影响", restored.incident().impact().functionScope());
+        assertEquals(BlastRadius.UNKNOWN, restored.incident().impact().blastRadius());
+
+        payload.remove("investigationMode");
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.treeToValue(payload, Diagnosis.class));
+    }
+
+    @Test
+    void currentContractPersistsScenarioAuthorityAndAllNorthStarIntervals() throws Exception {
+        Instant reportedAt = Instant.parse("2026-07-25T01:00:00Z");
+        Instant readyAt = Instant.parse("2026-07-25T01:00:30Z");
+        Instant conclusionAt = Instant.parse("2026-07-25T01:02:00Z");
+        NorthStarTimings timings = NorthStarTimings.concluded(
+                reportedAt, readyAt, conclusionAt);
+        Diagnosis base = diagnosis();
+        Diagnosis scenario = Diagnosis.initial(
+                base.diagnosisId(), base.caseId(), base.runId(), base.incident(),
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.RULE_MATCHED,
+                ConclusionType.LOCATED,
+                timings,
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "scenario located", "slow dependency", Confidence.MEDIUM, false,
+                "scenario:slow-api", "Slow API", "API 组",
+                new PlaybookVersionRef("playbook-scenario", 4),
+                base.evidence(), List.of(), List.of(),
+                "API 组", false, true, List.of(), List.of());
+
+        Diagnosis restored = objectMapper.readValue(
+                objectMapper.writeValueAsString(scenario), Diagnosis.class);
+
+        assertEquals(Diagnosis.CURRENT_CONTRACT_VERSION, restored.contractVersion());
+        assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, restored.investigationMode());
+        assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
+        assertEquals(ConclusionType.LOCATED, restored.conclusionType());
+        assertEquals(timings, restored.timings());
+        assertEquals(
+                new PlaybookVersionRef("playbook-scenario", 4),
+                restored.sourcePlaybookVersionRef());
+    }
+
+    @Test
+    void currentDeterministicContractRejectsMissingExactPlaybookVersion() {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.remove("sourcePlaybookVersionRef");
+
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.treeToValue(payload, Diagnosis.class));
+    }
+
+    @Test
+    void version17WithoutExactPlaybookVersionRemainsReadableWithoutGuessing() throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.7");
+        payload.remove("sourcePlaybookVersionRef");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.7", restored.contractVersion());
+        assertNull(restored.sourcePlaybookVersionRef());
+    }
+
+    @Test
+    void version16PayloadWithoutFrozenPlaybookOwnerRemainsReadable() throws Exception {
+        ObjectNode payload = objectMapper.valueToTree(diagnosis());
+        payload.put("contractVersion", "1.6");
+        payload.remove("sourcePlaybookOwner");
+        payload.remove("sourcePlaybookVersionRef");
+
+        Diagnosis restored = objectMapper.treeToValue(payload, Diagnosis.class);
+
+        assertEquals("1.6", restored.contractVersion());
+        assertNull(restored.sourcePlaybookOwner());
     }
 
     @Test
@@ -67,6 +188,7 @@ class DiagnosisContractTest {
                         false,
                         diagnosis.sopKey(),
                         diagnosis.sopTitle(),
+                        diagnosis.sourcePlaybookVersionRef(),
                         diagnosis.evidence(),
                         diagnosis.triggeredSignals(),
                         diagnosis.recommendedActions(),
@@ -74,6 +196,21 @@ class DiagnosisContractTest {
                         diagnosis.rehearsal(),
                         diagnosis.fixtureMode(),
                         diagnosis.warnings()));
+    }
+
+    @Test
+    void currentFactoryCannotCreateALegacyDeterministicDiagnosisWithoutExactAuthority() {
+        Diagnosis base = diagnosis();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        base.diagnosisId(), base.caseId(), base.runId(), base.incident(),
+                        RouteMode.DETERMINISTIC, DiagnosisStatus.READY_FOR_HUMAN,
+                        base.summary(), base.rootCause(), base.confidence(), false,
+                        base.sopKey(), base.sopTitle(), base.evidence(),
+                        base.triggeredSignals(), base.recommendedActions(), null,
+                        false, true, List.of()));
     }
 
     @Test
@@ -92,6 +229,7 @@ class DiagnosisContractTest {
                 false,
                 base.sopKey(),
                 base.sopTitle(),
+                base.sourcePlaybookVersionRef(),
                 base.evidence(),
                 base.triggeredSignals(),
                 List.of(RecommendedAction.manualWrite(
@@ -146,6 +284,10 @@ class DiagnosisContractTest {
                 "run-contract",
                 incident,
                 RouteMode.DETERMINISTIC,
+                InvestigationMode.ERROR_CODE_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.unrecorded(),
                 DiagnosisStatus.NEEDS_INVESTIGATION,
                 "insufficient evidence",
                 "unknown",
@@ -153,12 +295,15 @@ class DiagnosisContractTest {
                 true,
                 "csdp:903001",
                 "SOP",
+                "DBA 组",
+                new PlaybookVersionRef("playbook-contract", 3),
                 List.of(),
                 List.of(),
                 List.of(),
                 null,
                 false,
                 true,
+                List.of(),
                 List.of());
     }
 }

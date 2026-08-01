@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting;
 
+import vip.mate.troubleshooting.evidence.EvidenceSpineStage;
 import vip.mate.troubleshooting.model.EvidenceResult;
 
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ public final class TroubleshootingEvidenceSanitizer {
     private static final Pattern SAFE_EVIDENCE_ID =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private static final String REMAPPED_ID_PREFIX = "supplied-redacted-";
+    private static final String RESERVED_ID_PREFIX = "supplied-reserved-";
 
     private TroubleshootingEvidenceSanitizer() {
     }
@@ -29,6 +31,21 @@ public final class TroubleshootingEvidenceSanitizer {
      * id cannot collide with a later caller-provided id.
      */
     public static List<EvidenceResult> sanitize(List<EvidenceResult> evidence) {
+        return sanitize(evidence, false);
+    }
+
+    /**
+     * Sanitizes caller-supplied evidence and remaps server-owned Evidence Spine
+     * stage ids before collection. This prevents an external payload from
+     * masquerading as proof that a server-side collection stage executed.
+     */
+    public static List<EvidenceResult> sanitizeSupplied(List<EvidenceResult> evidence) {
+        return sanitize(evidence, true);
+    }
+
+    private static List<EvidenceResult> sanitize(
+            List<EvidenceResult> evidence,
+            boolean remapReservedStageIds) {
         List<EvidenceResult> sanitized = new ArrayList<>();
         for (EvidenceResult result : evidence == null
                 ? List.<EvidenceResult>of() : evidence) {
@@ -49,15 +66,26 @@ public final class TroubleshootingEvidenceSanitizer {
         Set<String> allocatedIds = new HashSet<>(reservedSafeIds);
         List<EvidenceResult> result = new ArrayList<>(sanitized.size());
         int redactedIndex = 1;
+        int reservedIndex = 1;
         for (EvidenceResult item : sanitized) {
-            if (isSafeEvidenceId(item.queryId())) {
+            boolean safeId = isSafeEvidenceId(item.queryId());
+            boolean reservedStageId = safeId
+                    && remapReservedStageIds
+                    && EvidenceSpineStage.fromRequestId(item.queryId()).isPresent();
+            if (safeId && !reservedStageId) {
                 result.add(item);
                 continue;
             }
             String queryId;
-            do {
-                queryId = REMAPPED_ID_PREFIX + redactedIndex++;
-            } while (!allocatedIds.add(queryId));
+            if (reservedStageId) {
+                do {
+                    queryId = RESERVED_ID_PREFIX + reservedIndex++;
+                } while (!allocatedIds.add(queryId));
+            } else {
+                do {
+                    queryId = REMAPPED_ID_PREFIX + redactedIndex++;
+                } while (!allocatedIds.add(queryId));
+            }
             result.add(withQueryId(item, queryId));
         }
         return List.copyOf(result);

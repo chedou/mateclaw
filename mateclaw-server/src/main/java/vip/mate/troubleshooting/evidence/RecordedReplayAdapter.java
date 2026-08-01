@@ -14,12 +14,12 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /** Deterministic replay source for sanitized regression fixtures. */
 public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
 
     private static final String PLATFORM = "recorded-replay";
-
     private final EvidenceProperties.RecordedReplay config;
     private final Clock clock;
     private final Map<ReplayKey, ReplayRecord> records;
@@ -71,7 +71,13 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
     }
 
     @Override
-    public EvidenceResult collect(EvidenceRequest request, IncidentContext incident) {
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident) {
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }
@@ -79,7 +85,7 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
                 normalize(incident.system()),
                 normalize(incident.errorCode()),
                 normalize(incident.service()),
-                normalize(request.requestId()),
+                replayRequestId(request.requestId()),
                 normalize(request.signalKind())));
         if (replay == null || !matchesRequestTarget(request, replay)) {
             return missing(request);
@@ -92,6 +98,77 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
     @Override
     public EvidenceSourceHealth health() {
         return health;
+    }
+
+    /**
+     * Checks the exact core fixture target without collecting evidence or exposing
+     * catalog content. Contrast remains optional by architecture.
+     */
+    public boolean hasCoreFixture(
+            String system,
+            String service,
+            String searchTerm) {
+        if (!config.isEnabled() || health.status() != EvidenceSourceHealth.Status.READY) {
+            return false;
+        }
+        String normalizedSystem = normalize(system);
+        String normalizedService = normalize(service);
+        String normalizedSearch = searchTerm == null ? "" : searchTerm.trim();
+        if (normalizedSystem.isEmpty()
+                || normalizedService.isEmpty()
+                || normalizedSearch.isEmpty()) {
+            return false;
+        }
+        ReplayRecord search = records.get(new ReplayKey(
+                normalizedSystem,
+                "",
+                normalizedService,
+                normalize(EvidenceSpineStage.SEARCH.synthesisRequestId()),
+                EvidenceSpineStage.SEARCH.signalKind()));
+        if (search == null
+                || !normalizedSearch.equals(search.expectedTarget().get("search_term"))) {
+            return false;
+        }
+        Object psId = search.observed().get("ps_id");
+        ReplayRecord trace = records.get(new ReplayKey(
+                normalizedSystem,
+                "",
+                normalizedService,
+                normalize(EvidenceSpineStage.TRACE.synthesisRequestId()),
+                EvidenceSpineStage.TRACE.signalKind()));
+        return psId != null
+                && trace != null
+                && String.valueOf(psId).equals(trace.expectedTarget().get("ps_id"))
+                && String.valueOf(psId).equals(trace.observed().get("ps_id"));
+    }
+
+    /**
+     * Returns the exact catalog-owned search target for one registered core
+     * Replay fixture. The browser never invents this value for no-error-code
+     * incidents.
+     */
+    public Optional<String> coreFixtureSearchTerm(String system, String service) {
+        if (!config.isEnabled() || health.status() != EvidenceSourceHealth.Status.READY) {
+            return Optional.empty();
+        }
+        String normalizedSystem = normalize(system);
+        String normalizedService = normalize(service);
+        if (normalizedSystem.isEmpty() || normalizedService.isEmpty()) {
+            return Optional.empty();
+        }
+        ReplayRecord search = records.get(new ReplayKey(
+                normalizedSystem,
+                "",
+                normalizedService,
+                normalize(EvidenceSpineStage.SEARCH.synthesisRequestId()),
+                EvidenceSpineStage.SEARCH.signalKind()));
+        if (search == null) {
+            return Optional.empty();
+        }
+        String searchTerm = search.expectedTarget().get("search_term");
+        return searchTerm != null && hasCoreFixture(system, service, searchTerm)
+                ? Optional.of(searchTerm)
+                : Optional.empty();
     }
 
     private Map<ReplayKey, ReplayRecord> load(JsonNode root, ObjectMapper objectMapper) {
@@ -212,6 +289,13 @@ public final class RecordedReplayAdapter implements EvidenceSourceAdapter {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String replayRequestId(String requestId) {
+        String normalized = normalize(requestId);
+        // Online and synthesis use the same fixture facts through explicit,
+        // server-owned aliases. Unknown ids remain exact misses.
+        return normalize(EvidenceSpineStage.replayCatalogRequestId(normalized));
     }
 
     private record ReplayKey(

@@ -25,6 +25,15 @@
   --mc-radius-lg: 16px;
   --mc-radius-xl: 20px;
   --mc-radius-full: 9999px;
+  --mc-radius-xs: 4px;
+  --mc-radius-compact: 6px;
+
+  /* spacing system */
+  --mc-space-xs: 4px;
+  --mc-space-sm: 8px;
+  --mc-space-md: 12px;
+  --mc-space-lg: 16px;
+  --mc-space-xl: 24px;
 
   /* brand */
   --mc-primary: #d96d46;
@@ -109,6 +118,18 @@
   --mc-blockquote-color: #6B5344;
   --mc-link-color: #C1572B;
   --mc-hr-color: #DDD5CC;
+
+  /* status semantic colors */
+  --mc-status-success-bg: #ecfdf3;
+  --mc-status-success-text: #138a58;
+  --mc-status-warning-bg: #fffaeb;
+  --mc-status-warning-text: #b54708;
+  --mc-status-error-bg: #fff2f0;
+  --mc-status-error-text: #d92d20;
+  --mc-status-info-bg: #eff4ff;
+  --mc-status-info-text: #175cd3;
+  --mc-status-purple-bg: #f4f3ff;
+  --mc-status-purple-text: #6941c6;
 
   /* misc */
   --mc-tool-call-bg: #fef9c3;
@@ -236,6 +257,18 @@ html.dark {
   --mc-blockquote-color: #C4A898;
   --mc-link-color: #E08860;
   --mc-hr-color: #3D3028;
+
+  /* status semantic colors — dark */
+  --mc-status-success-bg: rgba(19, 138, 88, 0.15);
+  --mc-status-success-text: #7AB87A;
+  --mc-status-warning-bg: rgba(251, 191, 36, 0.12);
+  --mc-status-warning-text: #fbbf24;
+  --mc-status-error-bg: rgba(224, 90, 74, 0.15);
+  --mc-status-error-text: #E05A4A;
+  --mc-status-info-bg: rgba(96, 165, 250, 0.12);
+  --mc-status-info-text: #60a5fa;
+  --mc-status-purple-bg: rgba(139, 92, 246, 0.12);
+  --mc-status-purple-text: #a78bfa;
 
   /* misc */
   --mc-tool-call-bg: rgba(250, 204, 21, 0.1);

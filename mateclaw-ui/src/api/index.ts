@@ -1598,7 +1598,37 @@ export type ExecutionStatus = 'COMPLETED' | 'PENDING' | 'BLOCKED' | 'NOT_APPLICA
 export type ActionOutcomeStatus = 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
 export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' | 'UNRESOLVED'
 export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
+export type IncidentSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type SopStatus = 'candidate' | 'approved' | 'deprecated'
+
+/**
+ * Browser incident-intake boundary.
+ *
+ * Deliberately excludes caller-owned evidence, raw logs, impact counts and an
+ * incident id. Those facts must come from the server-owned evidence spine or
+ * be derived by the domain rather than being asserted by a console form.
+ */
+export interface IncidentReportRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  errorCode?: string
+  traceId?: string
+  intakeSource: 'web:formal-workbench'
+  completeness: IncidentCompleteness
+  rehearsal: boolean
+}
+
+/** Explicit topology-scenario intake; routing, Playbook and Tool keys are server-owned. */
+export interface CreateDeploymentTopologyScenarioRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  traceId?: string
+  rehearsal: boolean
+}
 
 /** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
 export interface SopEntry {
@@ -1631,6 +1661,319 @@ export interface SopSummary {
   operational: boolean
   createTime: string
   updateTime: string
+  playbookVersion?: number | null
+  sourceOrigin?: KnowledgeOrigin | 'LEGACY' | null
+  sourceRecordId?: string | null
+  reviewId?: string | null
+  reviewVersion?: number | null
+}
+
+export type KnowledgeOrigin = 'EVIDENCE_DERIVED' | 'OUTCOME_BACKED' | 'MANUAL'
+export type KnowledgeReviewStatus =
+  | 'DRAFT' | 'CANDIDATE' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEPRECATED'
+export type KnowledgeValidationStatus = 'VALID' | 'INVALID' | 'PENDING' | 'NOT_EVALUATED'
+export type KnowledgeApprovalEligibility = 'NOT_ELIGIBLE' | 'ELIGIBLE_FOR_APPROVAL'
+
+export interface PlaybookDraftSelector {
+  system: string
+  scenarioKey: string | null
+  errorCode: string | null
+}
+
+export interface PlaybookDraftModelProvenance {
+  provider: string
+  modelName: string
+  modelConfigVersion: string
+  draftContractVersion: string
+  generatedAt: string
+  invocationCount: number
+}
+
+export interface PlaybookDraft {
+  draftId: string
+  generationKey: string
+  sourceIncident: string | null
+  proposedType: 'ERROR_CODE' | 'SCENARIO'
+  proposedSelector: PlaybookDraftSelector
+  title: string
+  evidencePlan: Array<{
+    intentKey: string
+    signalKind: string
+    purpose: string
+    required: boolean
+  }>
+  criteria: Array<{
+    criterionKey: string
+    description: string
+    evidenceKinds: string[]
+    evidenceCitations: string[]
+  }>
+  diagnosisHypotheses: Array<{
+    hypothesisKey: string
+    summary: string
+    evidenceCitations: string[]
+  }>
+  humanActions: Array<{
+    intentKey: string
+    instruction: string
+    executionMode: string
+    evidenceCitations: string[]
+  }>
+  evidenceCitations: string[]
+  modelProvenance: PlaybookDraftModelProvenance
+  contrastAvailable: boolean
+  validationErrors: Array<{ code: string; fieldPath: string; message: string }>
+}
+
+export interface ReferenceSolutionComparison {
+  referenceId: string
+  passed: boolean
+  requiredIntentCoverage: number
+  missingStepIntents: string[]
+  forbiddenStepIntentsPresent: string[]
+  orderingViolations: string[]
+  missingEvidenceKinds: string[]
+}
+
+export interface PlaybookKnowledgeRecord {
+  recordId: string
+  draft: PlaybookDraft
+  origin: 'EVIDENCE_DERIVED'
+  reviewStatus: KnowledgeReviewStatus
+  validationStatus: KnowledgeValidationStatus
+  reviewer: string
+  reviewReason: string
+  evidenceBundleId: string
+  service: string
+  referenceComparison: ReferenceSolutionComparison
+  approvalEligibility: KnowledgeApprovalEligibility
+  eligibilityReasons: string[]
+  fixtureMode: boolean
+  timings: NorthStarTimings
+  createdAt: string
+}
+
+export interface KnowledgeActionOutcome {
+  outcomeId: string
+  actionId: string
+  outcome: ActionOutcomeStatus
+  notes: string
+  recoveryVerified: boolean
+  actor: string
+  recordedAt: string
+}
+
+export interface KnowledgeCandidate {
+  candidateId: string
+  contractVersion: string
+  sourceDiagnosisId: string
+  sourceCaseId: string
+  sourceRunId: string
+  system: string
+  errorCode: string | null
+  sopKey: string | null
+  rootCause: string
+  evidenceIds: string[]
+  recommendedActions: RecommendedAction[]
+  actionOutcomes: KnowledgeActionOutcome[]
+  resolutionSummary: string
+  feedback: string | null
+  createdBy: string
+  createdAt: string
+  /** Missing only on legacy knowledge-candidate.v1 outbox rows. */
+  outcomeProof?: {
+    outcome: ClosureOutcome
+    recoveryVerified: boolean
+    registeredBy: string
+    registeredAt: string
+  } | null
+  /** Frozen from the Playbook used by the source Diagnosis; never inferred from transfer. */
+  ownerTeam?: string | null
+}
+
+export interface KnowledgeReviewSnapshot {
+  validationStatus: KnowledgeValidationStatus
+  qualificationPhase: 'CALIBRATION' | 'RUNTIME' | 'NOT_APPLICABLE' | 'UNKNOWN'
+  validationErrors: PlaybookDraft['validationErrors']
+  referenceComparison: ReferenceSolutionComparison | null
+  modelConfigVersion: string | null
+  approvalEligibility: KnowledgeApprovalEligibility
+  eligibilityReasons: string[]
+  fixtureMode: boolean | null
+  /** Present only when a MANUAL source has a persisted exact replay result. */
+  manualReplay?: ManualPlaybookReplayAttestation | null
+}
+
+/** Bounded candidate-and-suite-scoped replay proof; contains no raw fixture evidence. */
+export interface ManualPlaybookReplayAttestation {
+  attestationId: string
+  sourceRecordId: string
+  selectorKey: string
+  candidateFingerprint: string
+  suiteId: string
+  suiteVersion: number
+  suiteFingerprint: string
+  status: 'PASSED' | 'FAILED'
+  positiveTotal: number
+  positivePassed: number
+  negativeOrAbstainTotal: number
+  negativeOrAbstainPassed: number
+  failureCodes: string[]
+  fixtureMode: true
+  executedBy: string
+  executedAt: string
+}
+
+export interface KnowledgeReviewState {
+  reviewId: string
+  origin: KnowledgeOrigin
+  sourceRecordId: string
+  selectorKey: string | null
+  status: KnowledgeReviewStatus
+  reviewer: string
+  reason: string
+  snapshot: KnowledgeReviewSnapshot
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Current server-computed qualification for one exact persisted source row. */
+export interface KnowledgeReviewSourceState {
+  origin: KnowledgeOrigin
+  sourceRecordId: string
+  selectorKey: string | null
+  snapshot: KnowledgeReviewSnapshot
+}
+
+export interface KnowledgeReviewDecisionRequest {
+  expectedVersion: number
+  reason: string
+}
+
+export interface ApprovedPlaybookVersion {
+  playbookId: string
+  playbookVersion: number
+  selectorKey: string
+  status: 'APPROVED' | 'DEPRECATED'
+  sourceOrigin: KnowledgeOrigin | 'LEGACY'
+  sourceRecordId: string
+  reviewId: string | null
+  reviewVersion: number | null
+  approvedBy: string
+  approvalReason: string
+  approvalSnapshot: KnowledgeReviewSnapshot | null
+  deprecatedBy?: string | null
+  deprecationReason?: string | null
+  deprecatedAt?: string | null
+  playbook: SopEntry
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeReviewApproval {
+  review: KnowledgeReviewState
+  approvedVersion: ApprovedPlaybookVersion
+}
+
+export interface KnowledgeReviewDeprecation {
+  review: KnowledgeReviewState
+  deprecatedVersion: ApprovedPlaybookVersion
+}
+
+/** Knowledge governance projection; start/reject are separate optimistic commands. */
+export interface KnowledgeReviewInbox {
+  evidenceDerived: PlaybookKnowledgeRecord[]
+  outcomeBacked: KnowledgeCandidate[]
+  manual: SopSummary[]
+  sourceStates: KnowledgeReviewSourceState[]
+  reviewStates: KnowledgeReviewState[]
+  capabilityLimits: string[]
+}
+
+/** Shared bounded request shape for deterministic evidence-chain probes. */
+export interface EvidenceChainPreviewRequest {
+  system: string
+  service: string
+  searchTerm: string
+  window: string
+  occurredAt: string | null
+}
+
+/** Fixture-confined input for the no-error-code Evidence -> call-chain preview. */
+export type SopSynthesisPreviewRequest = EvidenceChainPreviewRequest
+
+export interface SynthesisEvidenceReference {
+  queryId: string
+  status: EvidenceStatus
+  source: string
+  collectedAt: string
+}
+
+export interface LogTraceTimelineEvent {
+  sequenceIndex: number
+  offsetMs: number
+  service: string
+  level: string
+  message: string
+  durationMs: number | null
+  anomalous: boolean
+}
+
+export interface LogTraceDurationSummary {
+  sampleCount: number
+  minMs: number
+  maxMs: number
+  averageMs: number
+}
+
+export interface LogTraceContrastSummary {
+  available: boolean
+  discriminatingFeature: string
+  failureSampleCount: number
+  failureMatchCount: number
+  successSampleCount: number
+  successMatchCount: number
+  failureRate: number
+  successRate: number
+  rateDelta: number
+}
+
+/** Bounded deterministic projection; it is safe to expose, unlike the raw trace bundle. */
+export interface LogTraceSkeleton {
+  psId: string
+  startedAtEpochMs: number
+  endedAtEpochMs: number
+  elapsedMs: number
+  serviceSequence: string[]
+  timeline: LogTraceTimelineEvent[]
+  anomalySequenceIndexes: number[]
+  durationByService: Record<string, LogTraceDurationSummary>
+  sourceEntryCount: number
+  omittedEntryCount: number
+  contrast: LogTraceContrastSummary
+}
+
+/** Read-only result after three routed evidence steps and deterministic compression. */
+export interface SopSynthesisPreview {
+  stage: 'READY_FOR_MODEL'
+  system: string
+  service: string
+  searchTerm: string
+  matchCount: number
+  psId: string
+  searchEvidence: SynthesisEvidenceReference
+  traceEvidence: SynthesisEvidenceReference
+  contrastEvidence: SynthesisEvidenceReference | null
+  skeleton: LogTraceSkeleton
+  fixtureMode: boolean
+  traceEntries: number
+  sourceRequestCount: number
+  totalDurationMs: number
+  timings: EvidenceSpineTimings
+  completedAt: string
+  contrastAvailable: boolean
+  warnings: string[]
 }
 
 export interface IncidentContext {
@@ -1640,13 +1983,24 @@ export interface IncidentContext {
   errorCode: string | null
   title: string
   severity: string
-  impact: string
+  /** v1.6 writes the object; string remains readable for v1.3-v1.5 rows. */
+  impact: IncidentImpact | string
   traceId: string | null
   occurredAt: string
   slaRemaining: string | null
   intakeSource: string
   completeness: IncidentCompleteness
   rawInput: string | null
+}
+
+export interface IncidentImpact {
+  functionScope: string
+  affectedCustomers: number | null
+  affectedUsers: number | null
+  blastRadius: BlastRadius
+  evidenceRefs: string[]
+  observedAt: string | null
+  note: string
 }
 
 export interface EvidenceResult {
@@ -1678,6 +2032,21 @@ export interface TimelineEvent {
   status: string
 }
 
+export interface ClosureRecord {
+  outcome: ClosureOutcome
+  summary: string
+  recoveryVerified: boolean
+  sopFeedback: string | null
+  knowledgeCandidateId: string | null
+  actor: string
+  closedAt: string
+}
+
+export interface PlaybookVersionRef {
+  playbookId: string
+  playbookVersion: number
+}
+
 export interface Diagnosis {
   diagnosisId: string
   contractVersion: string
@@ -1685,6 +2054,10 @@ export interface Diagnosis {
   runId: string
   incident: IncidentContext
   routeMode: RouteMode
+  /** v4 route semantics; do not infer either value from legacy routeMode. */
+  investigationMode: InvestigationMode
+  routeAuthority: RouteAuthority
+  conclusionType: ConclusionType
   status: DiagnosisStatus
   summary: string
   rootCause: string
@@ -1699,11 +2072,17 @@ export interface Diagnosis {
   recommendedActions: RecommendedAction[]
   pendingWrites: RecommendedAction[]
   routeToTeam: string | null
+  /** Frozen Playbook owner; absent on Diagnosis contracts before 1.7. */
+  sourcePlaybookOwner?: string | null
+  /** Exact immutable authority used by Diagnosis 1.8 deterministic routes. */
+  sourcePlaybookVersionRef?: PlaybookVersionRef | null
   transfers: unknown[]
   actionOutcomes: unknown[]
-  closure: unknown | null
-  knowledgeCandidates: unknown[]
+  closure: ClosureRecord | null
+  knowledgeCandidates: KnowledgeCandidate[]
   timeline: TimelineEvent[]
+  /** D14 timing snapshot; legacy 1.3/1.4 rows carry all-null values. */
+  timings: NorthStarTimings
   rehearsal: boolean
   /** True until real evidence bindings and thresholds are live-verified. */
   fixtureMode: boolean
@@ -1772,10 +2151,632 @@ export interface DiagnosisDerivation {
   rules: RuleEvaluation[]
 }
 
+/** Formal workbench projections — the browser renders these and does not infer conclusions. */
+export type ConclusionType = 'LOCATED' | 'EXCLUDED' | 'HYPOTHESIS' | 'INSUFFICIENT_EVIDENCE'
+export type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
+export type InvestigationMode = 'ERROR_CODE_PLAYBOOK' | 'SCENARIO_PLAYBOOK' | 'OPEN_DISCOVERY'
+export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED'
+export type EvidenceStepTone = 'NORMAL' | 'ANOMALY' | 'EXCLUDED' | 'UNEVALUATED'
+export type EvidenceStepKind = 'EVIDENCE' | 'CRITERION'
+export type DraftReviewStatus = 'DRAFT' | 'CANDIDATE'
+
+export interface ImpactView {
+  functionScope: string
+  affectedCustomers: number | null
+  affectedUsers: number | null
+  blastRadius: BlastRadius
+  evidenceRefs: string[]
+  observedAt: string | null
+  note: string
+}
+
+export interface ProjectionNextStep {
+  label: string
+  text: string
+  capabilityBoundary: string | null
+}
+
+export interface NorthStarTimings {
+  reportedAt: string | null
+  readyAt: string | null
+  conclusionAt: string | null
+  handoffAt: string | null
+  intakeCost: string | null
+  investigateCost: string | null
+  adoptCost: string | null
+}
+
+export interface BusinessSummary {
+  diagnosisId: string
+  conclusionType: ConclusionType
+  headline: string
+  narrative: string
+  confidence: Confidence
+  problem: string
+  impact: ImpactView
+  nextStep: ProjectionNextStep
+  status: DiagnosisStatus
+  timings: NorthStarTimings
+  fixtureMode: boolean
+}
+
+export interface CallChainHop {
+  hopId: string
+  service: string
+  duration: string
+  anomalous: boolean
+}
+
+export interface CallChainView {
+  psId: string | null
+  hops: CallChainHop[]
+  emptyReason: string | null
+  blastRadius: BlastRadius
+}
+
+export interface ProjectionEvidenceStep {
+  kind: EvidenceStepKind
+  at: string | null
+  title: string
+  detail: string
+  ref: string
+  tone: EvidenceStepTone
+}
+
+export interface ContrastView {
+  available: boolean
+  failedSample: string | null
+  baselineSample: string | null
+  note: string
+  evidenceRefs: string[]
+}
+
+export interface DraftView {
+  draftId: string | null
+  title: string
+  steps: string[]
+  emptyReason: string | null
+  reviewStatus: DraftReviewStatus
+  stateNote: string
+}
+
+export interface DeveloperEvidenceView {
+  diagnosisId: string
+  investigationMode: InvestigationMode
+  routeAuthority: RouteAuthority
+  playbookRef: string | null
+  deploymentTopologyProbeRequired: boolean
+  callChain: CallChainView
+  steps: ProjectionEvidenceStep[]
+  contrast: ContrastView
+  draft: DraftView
+  capabilityLimits: string[]
+  fixtureMode: boolean
+}
+
+export interface DiagnosisExperienceProjection {
+  businessSummary: BusinessSummary
+  developerEvidence: DeveloperEvidenceView
+}
+
+export type GuanceReadinessStatus =
+  | 'DISABLED'
+  | 'CONFIGURATION_INCOMPLETE'
+  | 'UNAUTHORIZED'
+  | 'READY_FOR_VALIDATION'
+  | 'CANONICAL_SIGNALS_OBSERVED'
+export type GuanceCredentialState = 'NOT_INSPECTED' | 'MISSING' | 'CONFIGURED'
+export type GuanceSignalStatus =
+  | 'NOT_ROUTED'
+  | 'UNAUTHORIZED'
+  | 'INVALID_BINDING'
+  | 'READY_FOR_VALIDATION'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceSignalReadiness {
+  signalKind: string
+  routedToGuance: boolean
+  status: GuanceSignalStatus
+  bindingRef: string
+  lastObservedAt: string | null
+  detail: string
+}
+
+/** Secret-free, non-probing readiness for one workspace-owned source asset. */
+export interface GuanceEvidenceReadiness {
+  system: string
+  service: string
+  status: GuanceReadinessStatus
+  adapterEnabled: boolean
+  endpointConfigured: boolean
+  credentialState: GuanceCredentialState
+  uniqueAssetAuthorized: boolean
+  signals: GuanceSignalReadiness[]
+  blockers: string[]
+}
+
+export type GuanceEvidenceAcceptanceStatus =
+  | 'BLOCKED'
+  | 'NOT_ACCEPTED'
+  | 'STALE'
+  | 'ACCEPTED'
+
+export interface GuanceEvidenceAcceptanceChecklist {
+  measurementAndFieldsVerified: boolean
+  indexVerified: boolean
+  psIdJoinVerified: boolean
+  timestampUnitVerified: boolean
+  timeWindowVerified: boolean
+  dqlLatencyReviewed: boolean
+  legacyRouteConflictReviewed: boolean
+}
+
+export interface GuanceEvidenceAcceptanceFacts {
+  matchCount: number
+  traceEntries: number
+  psIdFingerprint: string
+  logSearchDurationMs: number
+  logTraceDurationMs: number
+  totalDurationMs: number
+  observedAt: string
+}
+
+/** Immutable owner attestation; no search key, PS ID, DQL, credential or raw row. */
+export interface GuanceEvidenceAcceptance {
+  acceptanceId: string
+  system: string
+  service: string
+  bindingFingerprint: string
+  checklist: GuanceEvidenceAcceptanceChecklist
+  validation: GuanceEvidenceAcceptanceFacts
+  acceptedBy: string
+  acceptedAt: string
+}
+
+export interface GuanceEvidenceAcceptanceView {
+  status: GuanceEvidenceAcceptanceStatus
+  system: string
+  service: string
+  currentBindingFingerprint: string | null
+  acceptance: GuanceEvidenceAcceptance | null
+  blockers: string[]
+}
+
+export interface AcceptGuanceEvidenceRequest extends EvidenceChainPreviewRequest {
+  checklist: GuanceEvidenceAcceptanceChecklist
+}
+
+export type GuanceValidationStage = 'BLOCKED' | 'CANONICAL_CHAIN_OBSERVED'
+export type GuanceValidationStepStatus =
+  | 'NOT_RUN'
+  | 'BLOCKED'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceValidationStep {
+  signalKind: string
+  status: GuanceValidationStepStatus
+  evidenceRef: string
+  detail: string
+  durationMs: number | null
+  collectedAt: string | null
+}
+
+/** Structural outcome only; raw source rows and DQL never cross this boundary. */
+export interface GuanceEvidenceValidationReport {
+  stage: GuanceValidationStage
+  readiness: GuanceEvidenceReadiness
+  matchCount: number | null
+  psId: string | null
+  traceEntries: number | null
+  totalDurationMs: number
+  steps: GuanceValidationStep[]
+  completedAt: string
+  warnings: string[]
+}
+
+export type GuanceSpinePreviewStage =
+  | 'BLOCKED'
+  | 'CORE_CHAIN_OBSERVED'
+  | 'FULL_SPINE_OBSERVED'
+export type GuanceSpinePreviewStepStatus =
+  | 'NOT_RUN'
+  | 'MISSING'
+  | 'CANONICAL_RESULT_OBSERVED'
+
+export interface GuanceSpinePreviewStep {
+  signalKind: string
+  status: GuanceSpinePreviewStepStatus
+  evidenceRef: string
+  collectedAt: string | null
+}
+
+export interface GuanceSpineContrast {
+  available: boolean
+  failureSampleCount: number
+  failureMatchCount: number
+  successSampleCount: number
+  successMatchCount: number
+  failureRate: number
+  successRate: number
+  rateDelta: number
+}
+
+/** Application-side wall time; null means the stage was not measured or not reached. */
+export interface EvidenceSpineTimings {
+  logSearchDurationMs: number | null
+  logTraceDurationMs: number | null
+  contrastDurationMs: number | null
+  compressionDurationMs: number | null
+}
+
+/** Guance-only, model-free and secret-free projection of the shared Evidence Spine. */
+export interface GuanceEvidenceSpinePreview {
+  stage: GuanceSpinePreviewStage
+  readiness: GuanceEvidenceReadiness
+  matchCount: number | null
+  psId: string | null
+  traceEntries: number | null
+  serviceSequence: string[]
+  anomalyCount: number
+  traceElapsedMs: number | null
+  contrast: GuanceSpineContrast
+  sourceRequestCount: number
+  totalDurationMs: number
+  timings: EvidenceSpineTimings
+  steps: GuanceSpinePreviewStep[]
+  completedAt: string
+  warnings: string[]
+}
+
+export type DeploymentTopologyAnalysisStatus =
+  | 'NO_PROBES_CONFIGURED'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'PARTIAL_OBSERVATION'
+  | 'NETWORK_PROBLEM_DETECTED'
+  | 'NO_PROBLEM_OBSERVED'
+
+export interface DeploymentTopologyAssetSummary {
+  topologyId: string
+  name: string
+  system: string
+  systemLabel: string
+  schemaVersion: string
+  exportedAt: string
+  nodeCount: number
+  linkCount: number
+  configuredProbeNodes: number
+  importedBy: string
+  importedAt: string
+}
+
+export interface DeploymentTopologyImportResult {
+  topology: DeploymentTopologyAssetSummary
+  created: boolean
+}
+
+export type DeploymentTopologyObservationStatus =
+  | 'HEALTHY'
+  | 'FAILED'
+  | 'UNAVAILABLE'
+  | 'IDENTITY_MISMATCH'
+
+export interface DeploymentTopologySopSummary {
+  nodeCount: number
+  linkCount: number
+  configuredProbeNodes: number
+  observedProbeNodes: number
+  healthyProbeNodes: number
+  failingProbeNodes: number
+  unavailableProbeNodes: number
+}
+
+export interface DeploymentTopologyNodeObservation {
+  nodeKey: string
+  label: string
+  type: string
+  targetUrl: string
+  probeName: string
+  window: string
+  status: DeploymentTopologyObservationStatus
+  statusCode: number | null
+  observedTargetUrl: string
+  observedProbeName: string
+  evidenceRef: string
+  detail: string
+  collectedAt: string | null
+}
+
+export interface DeploymentTopologySuspectLink {
+  source: string
+  target: string
+  reason: string
+}
+
+/** Safe read result. It never contains an API key, DQL, or raw Guance rows. */
+export interface DeploymentTopologySopResult {
+  schemaVersion: string
+  system: string
+  systemLabel: string
+  snapshotExportedAt: string
+  signalKind: 'synthetic_probe'
+  status: DeploymentTopologyAnalysisStatus
+  summary: DeploymentTopologySopSummary
+  observations: DeploymentTopologyNodeObservation[]
+  suspectLinks: DeploymentTopologySuspectLink[]
+  unconfiguredNodeKeys: string[]
+  warnings: string[]
+  completedAt: string
+  modelCalled: false
+  persisted: boolean
+}
+
+/** Immutable topology evidence run owned by one troubleshooting Diagnosis. */
+export interface TopologyProbeEvidenceRun {
+  runId: string
+  diagnosisId: string
+  topologyId: string
+  scenarioKey: 'deployment_topology_probe'
+  toolKey: 'topology_synthetic_probe'
+  result: DeploymentTopologySopResult
+  startedAt: string
+  completedAt: string
+  actorRef: string
+}
+
+export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
+export type EvaluationSampleReferenceStatus = 'EVIDENCE_CAPTURED' | 'READY_FOR_EVALUATION'
+export type EvaluationExpectedDisposition = 'DRAFT' | 'ABSTAIN'
+
+export interface EvaluationEvidenceSnapshot {
+  stage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
+  fixtureMode: boolean
+  matchCount: number
+  psId: string
+  traceEntries: number
+  serviceSequence: string[]
+  anomalyCount: number
+  traceElapsedMs: number
+  contrast: GuanceSpineContrast
+  sourceRequestCount: number
+  totalDurationMs: number
+  timings: EvidenceSpineTimings
+  steps: GuanceSpinePreviewStep[]
+  completedAt: string
+}
+
+export interface EvaluationReferenceSolution {
+  referenceId: string
+  scenarioKey: string
+  requiredStepIntents: string[]
+  forbiddenStepIntents: string[]
+  orderingConstraints: Array<{ beforeIntent: string; afterIntent: string }>
+  requiredEvidenceKinds: string[]
+}
+
+export interface EvaluationOutcomeSnapshot {
+  outcome: ClosureOutcome
+  summary: string
+  recoveryVerified: boolean
+  closedAt: string
+}
+
+/** Secret-free historical sample; source lookup keys and raw evidence never appear here. */
+export interface EvidenceEvaluationSample {
+  sampleId: string
+  sampleKey: string
+  captureIdentityKey: string
+  captureRevision: number
+  diagnosisId: string
+  system: string
+  service: string
+  scenarioKey: string
+  sourcePlatform: EvaluationSampleSourcePlatform
+  evidence: EvaluationEvidenceSnapshot
+  /** SHA-256 of the exact bounded model input; null only for legacy V181 samples. */
+  modelInputHash: string | null
+  /** Frozen evidence anchor used for a reproducible source rerun. */
+  evidenceOccurredAt: string | null
+  diagnosisFixtureMode: boolean
+  referenceStatus: EvaluationSampleReferenceStatus
+  referenceSolution: EvaluationReferenceSolution | null
+  expectedDisposition: EvaluationExpectedDisposition | null
+  outcome: EvaluationOutcomeSnapshot | null
+  version: number
+  capturedBy: string
+  finalizedBy: string | null
+  capturedAt: string
+  finalizedAt: string | null
+}
+
+export interface StoredEvidenceEvaluationSample {
+  sample: EvidenceEvaluationSample
+  created: boolean
+}
+
+export interface EvaluationSampleSummary {
+  total: number
+  guance: number
+  recordedReplay: number
+  evidenceCaptured: number
+  readyForEvaluation: number
+  fullSpineObserved: number
+  coreChainObserved: number
+  linkedFixtureDiagnoses: number
+  timingMeasuredSamples: number
+  guanceLatency: EvaluationLatencySummary
+  recordedReplayLatency: EvaluationLatencySummary
+  minimumEvaluationTarget: number
+  targetRangeMax: number
+}
+
+/** Source-isolated descriptive percentiles; this is not an acceptance verdict. */
+export interface EvaluationLatencySummary {
+  sampleCount: number
+  evidenceP50Ms: number | null
+  evidenceP95Ms: number | null
+  compressionP50Ms: number | null
+  compressionP95Ms: number | null
+  totalP50Ms: number | null
+  totalP95Ms: number | null
+}
+
+export interface EvidenceEvaluationSampleLedger {
+  samples: EvidenceEvaluationSample[]
+  summary: EvaluationSampleSummary
+}
+
+export interface CaptureEvaluationSampleRequest {
+  diagnosisId: string
+  scenarioKey: string
+  searchTerm: string
+  window: string
+}
+
+export interface CaptureRecordedReplayEvaluationSampleRequest {
+  diagnosisId: string
+}
+
+export interface RecordedReplayEvaluationCapability {
+  available: boolean
+  reasonCode: string
+  reason: string
+  scenarioKey: string | null
+  searchTerm: string | null
+  window: string | null
+}
+
+export interface FinalizeEvaluationSampleReferenceRequest {
+  expectedVersion: number
+  requiredStepIntents: string[]
+  forbiddenStepIntents: string[]
+  expectedDisposition: EvaluationExpectedDisposition
+}
+
+export type BaselineEvaluationStatus =
+  | 'MODEL_REJECTED'
+  | 'ABSTAINED'
+  | 'VALIDATION_REJECTED'
+  | 'SCORED'
+export type BaselineActualDisposition = 'NONE' | 'DRAFT' | 'ABSTAIN'
+export type BaselineClassification =
+  | 'HELPFUL'
+  | 'UNHELPFUL'
+  | 'HARMFUL_BLOCKED'
+  | 'TECHNICAL_FAILURE'
+
+export interface BaselineValidationSnapshot {
+  executed: boolean
+  valid: boolean
+  errorCodes: string[]
+}
+
+export interface BaselineQualitySnapshot {
+  expectedDisposition: EvaluationExpectedDisposition
+  actualDisposition: BaselineActualDisposition
+  classification: BaselineClassification
+  citationComplete: boolean | null
+  requiredIntentCoverage: number | null
+  missingStepIntents: string[]
+  forbiddenStepIntentsPresent: string[]
+  orderingViolations: string[]
+  missingEvidenceKinds: string[]
+  abstainAssessmentCodes: string[]
+  dangerousProposalDetected: boolean
+}
+
+export interface BaselineModelSnapshot {
+  provider: string
+  modelName: string
+  modelConfigVersion: string
+  calledAt: string
+  invocationCount: number
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+}
+
+/** Candidate-free, immutable single-Agent baseline fact. Draft text is never returned. */
+export interface BaselineEvaluationRun {
+  runId: string
+  runKey: string
+  sampleId: string
+  diagnosisId: string
+  sampleVersion: number
+  sourcePlatform: EvaluationSampleSourcePlatform
+  evidenceFixtureMode: boolean
+  diagnosisFixtureMode: boolean
+  modelInputHash: string
+  status: BaselineEvaluationStatus
+  modelErrorCodes: string[]
+  validation: BaselineValidationSnapshot
+  quality: BaselineQualitySnapshot
+  model: BaselineModelSnapshot
+  evidenceDurationMs: number
+  modelDurationMs: number
+  composedTotalDurationMs: number
+  executedBy: string
+  executedAt: string
+}
+
+export interface StoredBaselineEvaluationRun {
+  run: BaselineEvaluationRun
+  created: boolean
+}
+
+export interface BaselineCohortMetrics {
+  runCount: number
+  helpful: number
+  unhelpful: number
+  harmfulBlocked: number
+  technicalFailure: number
+  modelP50Ms: number | null
+  modelP95Ms: number | null
+  composedTotalP50Ms: number | null
+  composedTotalP95Ms: number | null
+  tokenMeasuredRuns: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface BaselineSourceMetrics {
+  runCount: number
+  evidenceFixtureRuns: number
+  realDiagnosis: BaselineCohortMetrics
+  fixtureDiagnosis: BaselineCohortMetrics
+}
+
+export interface BaselineEvaluationSummary {
+  total: number
+  scored: number
+  abstained: number
+  modelRejected: number
+  validationRejected: number
+  guance: BaselineSourceMetrics
+  recordedReplay: BaselineSourceMetrics
+}
+
+export interface BaselineEvaluationLedger {
+  runs: BaselineEvaluationRun[]
+  summary: BaselineEvaluationSummary
+}
+
+export interface RunBaselineEvaluationRequest {
+  expectedSampleVersion: number
+  searchTerm: string
+  window: string
+}
+
 export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
-  report: (data: Record<string, unknown>) =>
+  report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
+
+  /** Creates the Diagnosis owner before any deployment-topology evidence Tool may run. */
+  createDeploymentTopologyScenario: (data: CreateDeploymentTopologyScenarioRequest) =>
+    http.post<StoredDiagnosis>(
+      '/troubleshooting/scenarios/deployment-topology/diagnoses', data,
+    ),
 
   list: (params?: { status?: string; system?: string; limit?: number }) =>
     http.get<DiagnosisSummary[]>('/troubleshooting/diagnoses', { params }),
@@ -1787,20 +2788,218 @@ export const troubleshootingApi = {
   derivation: (diagnosisId: string) =>
     http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
 
+  /** One diagnosis projected for the service-manager summary and developer evidence desk. */
+  projection: (diagnosisId: string) =>
+    http.get<DiagnosisExperienceProjection>(
+      `/troubleshooting/diagnoses/${diagnosisId}/projection`,
+    ),
+
+  /** Inspects bindings for this exact workspace asset without probing Guance. */
+  evidenceReadiness: (params: { system: string; service: string }) =>
+    http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
+
+  /** Persistent owner acceptance for the exact current Guance binding fingerprint. */
+  guanceEvidenceAcceptance: (params: { system: string; service: string }) =>
+    http.get<GuanceEvidenceAcceptanceView>(
+      '/troubleshooting/evidence/guance/acceptance', { params },
+    ),
+
+  /** Re-runs the canonical chain before recording the owner checklist. */
+  acceptGuanceEvidence: (data: AcceptGuanceEvidenceRequest) =>
+    http.post<GuanceEvidenceAcceptanceView>(
+      '/troubleshooting/evidence/guance/acceptance', data,
+    ),
+
+  /** Admin-only Guance chain; one run does not by itself complete T7 or T8. */
+  validateGuanceEvidence: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceValidationReport>(
+    '/troubleshooting/evidence/guance/validate', data,
+  ),
+
+  /** Runs the shared three-stage spine against Guance only; never falls back to Replay. */
+  previewGuanceEvidenceSpine: (data: EvidenceChainPreviewRequest) => http.post<GuanceEvidenceSpinePreview>(
+    '/troubleshooting/evidence/guance/spine/preview', data,
+  ),
+
+  /** Parses a deployment snapshot and runs only its server-authorized Guance probes. */
+  analyzeDeploymentTopology: (snapshot: Record<string, unknown>) =>
+    http.post<DeploymentTopologySopResult>(
+      '/troubleshooting/sops/deployment-topology/analyze', { snapshot },
+    ),
+
+  /** Lists immutable, workspace-shared deployment topology snapshots. */
+  listDeploymentTopologies: () => http.get<DeploymentTopologyAssetSummary[]>(
+    '/troubleshooting/sops/deployment-topology/topologies',
+  ),
+
+  /** Validates and imports one topology for reuse by workspace administrators. */
+  importDeploymentTopology: (data: { name: string; snapshot: Record<string, unknown> }) =>
+    http.post<DeploymentTopologyImportResult>(
+      '/troubleshooting/sops/deployment-topology/topologies', data,
+    ),
+
+  /** Downloads a valid, secret-free topology example. */
+  deploymentTopologyExample: () => http.get<Record<string, unknown>>(
+    '/troubleshooting/sops/deployment-topology/example',
+  ),
+
+  /** Analyzes the exact stored topology server-side without resubmitting its snapshot. */
+  analyzeImportedDeploymentTopology: (topologyId: string) =>
+    http.post<DeploymentTopologySopResult>(
+      `/troubleshooting/sops/deployment-topology/topologies/${encodeURIComponent(topologyId)}/analyze`,
+    ),
+
+  /** Runs the topology scenario and persists only its safe projection under one Diagnosis. */
+  runDiagnosisTopologyProbe: (diagnosisId: string, topologyId: string) =>
+    http.post<TopologyProbeEvidenceRun>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/topology-probe-runs`,
+      { topologyId },
+    ),
+
+  /** Lists immutable topology evidence runs already attached to one Diagnosis. */
+  diagnosisTopologyProbeRuns: (diagnosisId: string, limit = 50) =>
+    http.get<TopologyProbeEvidenceRun[]>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/topology-probe-runs`,
+      { params: { limit } },
+    ),
+
+  /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */
+  captureGuanceEvaluationSample: (data: CaptureEvaluationSampleRequest) =>
+    http.post<StoredEvidenceEvaluationSample>(
+      '/troubleshooting/evaluation-samples/guance', data,
+    ),
+
+  /** Runs only the registered fixture Replay adapter and stores a separate T8 sample. */
+  captureRecordedReplayEvaluationSample: (data: CaptureRecordedReplayEvaluationSampleRequest) =>
+    http.post<StoredEvidenceEvaluationSample>(
+      '/troubleshooting/evaluation-samples/recorded-replay', data,
+    ),
+
+  /** Exact server-owned adapter, route, fixture catalog and scope readiness. */
+  recordedReplayEvaluationCapability: (params: { diagnosisId: string }) =>
+    http.get<RecordedReplayEvaluationCapability>(
+    '/troubleshooting/evaluation-samples/recorded-replay/capability', { params },
+  ),
+
+  /** Lists sample accumulation only; the response deliberately has no gate-pass verdict. */
+  evaluationSamples: (params?: { diagnosisId?: string; limit?: number }) =>
+    http.get<EvidenceEvaluationSampleLedger>(
+      '/troubleshooting/evaluation-samples', { params },
+    ),
+
+  /** Stores human-authored intent keys; closure outcome is derived by the server. */
+  finalizeEvaluationSampleReference: (
+    sampleId: string,
+    data: FinalizeEvaluationSampleReferenceRequest,
+  ) => http.put<EvidenceEvaluationSample>(
+    `/troubleshooting/evaluation-samples/${encodeURIComponent(sampleId)}/reference`, data,
+  ),
+
+  /** Replays the frozen source input and invokes one pinned model without writing a candidate. */
+  runEvaluationBaseline: (
+    sampleId: string,
+    data: RunBaselineEvaluationRequest,
+  ) => http.post<StoredBaselineEvaluationRun>(
+    `/troubleshooting/evaluation-samples/${encodeURIComponent(sampleId)}/baseline-runs`, data,
+  ),
+
+  /** Lists source-separated descriptive baseline facts; never returns a Gate verdict. */
+  evaluationBaselineRuns: (params?: { diagnosisId?: string; limit?: number }) =>
+    http.get<BaselineEvaluationLedger>(
+      '/troubleshooting/evaluation-samples/baseline-runs', { params },
+    ),
+
+  /** Runs the meeting-case evidence lane without invoking a model or writing a candidate. */
+  previewSopSynthesis: (data: SopSynthesisPreviewRequest) =>
+    http.post<SopSynthesisPreview>('/troubleshooting/sops/synthesis/preview', data),
+
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
+
+  /** Three source lanes plus their independent review states; no promotion side effect. */
+  knowledgeReviewInbox: (params?: { limit?: number }) =>
+    http.get<KnowledgeReviewInbox>('/troubleshooting/sops/review-inbox', { params }),
+
+  /** Runs the server-owned fixed suite; callers cannot submit cases or expected answers. */
+  replayManualKnowledgeCandidate: (sourceRecordId: string) =>
+    http.post<ManualPlaybookReplayAttestation>(
+      `/troubleshooting/sops/review-inbox/manual/`
+        + `${encodeURIComponent(sourceRecordId)}/replay`,
+    ),
+
+  /** Downloads an import-safe candidate example; replay cases stay server-side. */
+  manualKnowledgeCandidateExample: (selectorKey: string) =>
+    http.get<SopEntry>('/troubleshooting/sops/review-inbox/manual/example', {
+      params: { selectorKey },
+    }),
+
+  /** Starts optimistic review from the virtual CANDIDATE/v0 state. */
+  startKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewState>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/start`,
+    data,
+  ),
+
+  /** Records rejection for the exact IN_REVIEW version. */
+  rejectKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewState>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/reject`,
+    data,
+  ),
+
+  /** Server-gated approval that always creates a new immutable Playbook version. */
+  approveKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewApproval>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/approve`,
+    data,
+  ),
+
+  /** Retires the exact active version created by an approved review. */
+  deprecateKnowledgeReview: (
+    origin: KnowledgeOrigin,
+    sourceRecordId: string,
+    data: KnowledgeReviewDecisionRequest,
+  ) => http.post<KnowledgeReviewDeprecation>(
+    `/troubleshooting/sops/review-inbox/${encodeURIComponent(origin)}`
+      + `/${encodeURIComponent(sourceRecordId)}/deprecate`,
+    data,
+  ),
+
+  /** Audited retirement for a V186 legacy authority without a review row. */
+  deprecateLegacyPlaybook: (
+    playbookId: string,
+    data: { expectedPlaybookVersion: number; reason: string },
+  ) => http.post<ApprovedPlaybookVersion>(
+    `/troubleshooting/sops/versions/${encodeURIComponent(playbookId)}/deprecate`,
+    data,
+  ),
 
   getSop: (system: string, errorCode: string) =>
     http.get<SopEntry>(
       `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}`,
     ),
 
+  /** Exact manual source lookup; does not resolve to the active selector version. */
+  getSopById: (sopId: string) =>
+    http.get<SopEntry>(`/troubleshooting/sops/by-id/${encodeURIComponent(sopId)}`),
+
   /** Create-only: the server accepts only candidate + verified=false. */
   registerSop: (data: SopEntry) =>
     http.post<SopEntry>('/troubleshooting/sops', data),
 
-  /** Forward-only review transition: candidate -> approved -> deprecated. */
-  updateSopStatus: (system: string, errorCode: string, status: Exclude<SopStatus, 'candidate'>) =>
+  /** Compatibility transition: only retires a non-versioned approved row. */
+  updateSopStatus: (system: string, errorCode: string, status: 'deprecated') =>
     http.post<SopEntry>(
       `/troubleshooting/sops/${encodeURIComponent(system)}/${encodeURIComponent(errorCode)}/status`,
       { status },
