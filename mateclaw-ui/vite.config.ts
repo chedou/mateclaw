@@ -113,6 +113,9 @@ export default defineConfig({
     ],
   },
   server: {
+    // Keep the documented local URL reachable on macOS even when localhost
+    // resolves to IPv6 (::1) while the in-app browser opens 127.0.0.1.
+    host: '127.0.0.1',
     port: 5173,
     proxy: {
       '/api': {
