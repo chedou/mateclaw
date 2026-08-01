@@ -181,12 +181,13 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
       -pl mateclaw-server -DskipTests spring-boot:run
       -Dspring-boot.run.profiles=dev,troubleshooting-demo`，H2 默认库即可，
       不需要外部依赖。注意 `mateclaw-plugin-api` 要先 `install` 进本地库。
-      已由 `.github/workflows/troubleshooting-smoke.yml` 落地：PR、`dev` 推送和手工触发可运行，
-      demo Playbook 120 秒内未晋升就绪或八道闸门任一失败都会失败，并无条件保留服务与冒烟日志。
-- [ ] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
-      却从没量过自己跑通一次要多久；目标 5 分钟内。当前 CI 已先记录
-      `checkout 完成 → 首次诊断` 代理指标并在超过 300 秒时告警；要关闭此项仍需积累真实 Actions
-      运行历史，并把 checkout 本身纳入完整 clone 基线。
+      已由 `.github/workflows/troubleshooting-smoke.yml` 落地：PR、`dev`、主干与当前设计分支推送和
+      手工触发均可运行。demo Playbook 120 秒内未晋升就绪、八道闸门任一失败、开发证据为空，
+      或北极星三段状态被伪造都会 fail-closed；服务与冒烟日志会无条件保留。
+- [x] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
+      却从没量过自己跑通一次要多久；目标 5 分钟内。
+      CI 从 checkout 前开始计时，在成功产出 Diagnosis 后写入 Job Summary；超过 300 秒先告警，不伪装为
+      产品正确性失败。终点取脚本首次观测到 `diagnosisId` 的时刻，不含后续投影校验。
 - [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
 
 ### T0.8 · 错误码 Playbook 的晋升路径（机制与首个切片已完成）

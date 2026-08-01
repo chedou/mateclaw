@@ -25,6 +25,7 @@ TOKEN="${MATECLAW_TOKEN:-}"
 USERNAME="${MATECLAW_USERNAME:-}"
 PASSWORD="${MATECLAW_PASSWORD:-}"
 WORKSPACE_ID="${MATECLAW_WORKSPACE_ID:-1}"
+DIAGNOSIS_OBSERVED_AT_FILE="${MATECLAW_SMOKE_DIAGNOSIS_OBSERVED_AT_FILE:-}"
 SYSTEM="${SMOKE_SYSTEM:-csdp}"
 # Must match the seeded Playbook and the recorded fixture: the replay adapter
 # looks records up by (system, errorCode, service, requestId), so a plausible
@@ -173,6 +174,12 @@ created="$(call POST "/incidents" "${report}")"
 diagnosis_id="$(echo "${created}" | jq -r '.data.diagnosis.diagnosisId // empty')"
 [[ -n "${diagnosis_id}" ]] || gate_failed "报障被接受" \
   "响应里没有 diagnosisId" "检查 POST /incidents 的响应结构是否变更"
+if [[ -n "${DIAGNOSIS_OBSERVED_AT_FILE}" ]]; then
+  printf '%s\n' "$(date +%s)" > "${DIAGNOSIS_OBSERVED_AT_FILE}" || {
+    red "无法记录首条 Diagnosis 的观测时间"
+    exit 2
+  }
+fi
 ok "已产出诊断：${diagnosis_id}"
 
 # ── 闸门 6/7：诊断与投影可读回 ──────────────────────────────────────
@@ -183,8 +190,13 @@ projection="$(call GET "/diagnoses/${diagnosis_id}/projection")"
 conclusion="$(echo "${projection}" | jq -r '.data.businessSummary.conclusionType // empty')"
 headline="$(echo "${projection}" | jq -r '.data.businessSummary.headline // empty')"
 fixture="$(echo "${projection}" | jq -r '.data.businessSummary.fixtureMode')"
+reported_at="$(echo "${projection}" | jq -r '.data.businessSummary.timings.reportedAt // empty')"
+ready_at="$(echo "${projection}" | jq -r '.data.businessSummary.timings.readyAt // empty')"
+conclusion_at="$(echo "${projection}" | jq -r '.data.businessSummary.timings.conclusionAt // empty')"
+handoff_at="$(echo "${projection}" | jq -r '.data.businessSummary.timings.handoffAt // "null"')"
 intake_cost="$(echo "${projection}" | jq -r '.data.businessSummary.timings.intakeCost // "null"')"
 invest_cost="$(echo "${projection}" | jq -r '.data.businessSummary.timings.investigateCost // "null"')"
+adopt_cost="$(echo "${projection}" | jq -r '.data.businessSummary.timings.adoptCost // "null"')"
 steps="$(echo "${projection}" | jq '[.data.developerEvidence.steps[]?] | length')"
 
 [[ -n "${conclusion}" ]] || gate_failed "投影可用" \
@@ -208,10 +220,27 @@ fi
   "fixtureMode=${fixture}，但真实源尚未通过 T7 验收" \
   "在真实观测云验收前，投影必须始终标记 fixture"
 
+[[ "${steps}" =~ ^[0-9]+$ && "${steps}" -gt 0 ]] || gate_failed "开发证据" \
+  "developerEvidence.steps 没有任何可读步骤" \
+  "检查 DiagnosisExperienceProjectionService 的开发者投影"
+
+[[ -n "${reported_at}" && -n "${ready_at}" && -n "${conclusion_at}" \
+   && "${intake_cost}" != "null" && "${invest_cost}" != "null" ]] \
+  || gate_failed "北极星前两段耗时" \
+    "reportedAt=${reported_at:-null} readyAt=${ready_at:-null} conclusionAt=${conclusion_at:-null} \
+intakeCost=${intake_cost} investigateCost=${invest_cost}" \
+    "检查 Intake 与 Diagnosis 是否在真实边界记录 NorthStarTimings"
+
+[[ "${handoff_at}" == "null" && "${adopt_cost}" == "null" ]] \
+  || gate_failed "北极星第三段耗时" \
+    "尚未人工确认的冒烟诊断应保持 handoffAt/adoptCost 为 null，实际为 \
+handoffAt=${handoff_at} adoptCost=${adopt_cost}" \
+    "检查是否在未发生人工采纳时伪造了第三段耗时"
+
 ok "结论类型：${conclusion}"
 ok "结论：${headline}"
 ok "开发证据步数：${steps}"
-ok "北极星：补问=${intake_cost} 调查=${invest_cost}（三段分别计量，不合成总时长）"
+ok "北极星：补问=${intake_cost} 调查=${invest_cost} 采纳=未发生（三段分别计量）"
 echo
 blue "冒烟通过：一次报障走到了一份可读的诊断。"
 dim  "注意：全程 fixture。这只证明路径可走，不证明证据可信——"

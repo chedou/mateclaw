@@ -124,7 +124,7 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
 **自己从 clone 到看见一次诊断要多久**。
 
 `.github/workflows/troubleshooting-smoke.yml` 已把这条路径挂进 CI，作为
-"默认路径没有被堵死"的回归。它在相关 PR、`dev` 推送或手工触发时：
+"默认路径没有被堵死"的回归。它在相关 PR、`dev`、主干、当前设计分支推送或手工触发时：
 
 1. 配置 Java 21，通过仓库级 `mateclaw-server/settings.xml` 使用阿里云公共镜像，
    再以 `-am` 把父 POM 与 `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
@@ -132,10 +132,11 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
    `csdp:IM1010` 已通过真实 demo 晋升链成为 approved Playbook；
 3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
 4. 把服务日志和冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
-5. 在 Step Summary 记录 `checkout 完成 → 首次诊断` 耗时，超过 300 秒发 warning。
+5. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
+   `clone → 首次诊断` 耗时，超过 300 秒发 warning，不把后续投影校验耗时冒充为首诊耗时。
 
-这个 CI 数值是 clone→首次诊断的第一版代理指标，不包含 checkout 本身。待积累真实 Actions
-运行历史后，再把完整 clone 时间纳入基线；在此之前不把五分钟目标写成已验收。
+超过五分钟只表示启动速度回退，不伪装成产品正确性失败。链路闸门失败才让任务失败；脚本还会
+fail-closed 校验开发证据非空、北极星补问/调查已记录，以及未发生人工采纳时第三段仍为 `null`。
 
 ---
 
