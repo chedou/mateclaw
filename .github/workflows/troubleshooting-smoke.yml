@@ -1,0 +1,158 @@
+name: Troubleshooting smoke
+
+on:
+  pull_request:
+    paths:
+      - 'pom.xml'
+      - 'mateclaw-plugin-api/**'
+      - 'mateclaw-server/**'
+      - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - '.github/workflows/troubleshooting-smoke.yml'
+  push:
+    branches:
+      - dev
+    paths:
+      - 'pom.xml'
+      - 'mateclaw-plugin-api/**'
+      - 'mateclaw-server/**'
+      - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - '.github/workflows/troubleshooting-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: troubleshooting-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Eight-gate HTTP diagnosis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Start checkout-to-diagnosis timer
+        shell: bash
+        run: echo "TROUBLESHOOTING_SMOKE_STARTED_AT=$(date +%s)" >> "${GITHUB_ENV}"
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Ensure smoke prerequisites
+        shell: bash
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes jq
+          fi
+          command -v curl >/dev/null
+          command -v jq >/dev/null
+
+      - name: Install plugin API
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          -pl mateclaw-plugin-api -DskipTests install
+
+      - name: Start troubleshooting demo server
+        shell: bash
+        run: |
+          server_log="${RUNNER_TEMP}/troubleshooting-server.log"
+          nohup mvn --batch-mode --no-transfer-progress \
+            -pl mateclaw-server -DskipTests spring-boot:run \
+            -Dspring-boot.run.profiles=dev,troubleshooting-demo \
+            >"${server_log}" 2>&1 &
+          echo "TROUBLESHOOTING_SERVER_PID=$!" >> "${GITHUB_ENV}"
+          echo "TROUBLESHOOTING_SERVER_LOG=${server_log}" >> "${GITHUB_ENV}"
+
+      - name: Wait for the HTTP boundary
+        shell: bash
+        run: |
+          ready=false
+          login_body="${RUNNER_TEMP}/troubleshooting-login.json"
+          for attempt in {1..60}; do
+            http_code="$(curl --silent --show-error \
+              --connect-timeout 2 --max-time 3 \
+              --output "${login_body}" --write-out '%{http_code}' \
+              --request POST 'http://127.0.0.1:18088/api/v1/auth/login' \
+              --header 'Content-Type: application/json' \
+              --data '{"username":"admin","password":"admin123"}' \
+              || true)"
+            if [[ "${http_code}" == "200" ]]; then
+              token="$(jq -r '.data.token // empty' "${login_body}")"
+              if [[ -n "${token}" ]]; then
+                playbook_status="$(curl --silent --show-error \
+                  --connect-timeout 2 --max-time 3 \
+                  --header "Authorization: Bearer ${token}" \
+                  --header 'X-Workspace-Id: 1' \
+                  'http://127.0.0.1:18088/api/v1/troubleshooting/sops/csdp/903001' \
+                  | jq -r '.data.status // empty' \
+                  || true)"
+                if [[ "${playbook_status}" == "approved" ]]; then
+                  ready=true
+                  break
+                fi
+              fi
+            fi
+            sleep 2
+          done
+
+          if [[ "${ready}" != "true" ]]; then
+            echo "Demo Playbook was not approved within 120 seconds" >&2
+            tail -n 200 "${TROUBLESHOOTING_SERVER_LOG}" >&2 || true
+            exit 1
+          fi
+
+      - name: Run eight-gate troubleshooting smoke
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-smoke.log"
+          smoke_status=${PIPESTATUS[0]}
+          set -e
+
+          elapsed_seconds=$(( $(date +%s) - TROUBLESHOOTING_SMOKE_STARTED_AT ))
+          {
+            echo '## Troubleshooting smoke'
+            echo
+            echo "- Checkout complete to first diagnosis: ${elapsed_seconds}s"
+            echo '- Target: 300s'
+            echo "- Eight-gate result: $([[ ${smoke_status} -eq 0 ]] && echo PASS || echo FAIL)"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if (( elapsed_seconds > 300 )); then
+            echo "::warning title=Troubleshooting startup regression::First diagnosis took ${elapsed_seconds}s; target is 300s"
+          fi
+
+          exit "${smoke_status}"
+
+      - name: Stop troubleshooting demo server
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${TROUBLESHOOTING_SERVER_PID:-}" ]]; then
+            kill "${TROUBLESHOOTING_SERVER_PID}" 2>/dev/null || true
+          fi
+
+      - name: Upload troubleshooting smoke logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: troubleshooting-smoke-logs-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/troubleshooting-*.log
+          if-no-files-found: warn
+          retention-days: 7

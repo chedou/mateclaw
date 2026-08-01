@@ -19,7 +19,7 @@
 1. 检出代码并记录计时起点。
 2. 配置 Temurin Java 21 和 Maven 缓存，确保 `curl`、`jq` 可用。
 3. 先安装 `mateclaw-plugin-api`，再以 `dev,troubleshooting-demo` profile 后台启动 `mateclaw-server`。
-4. 在有限时间内轮询登录接口；超时直接失败。
+4. 在有限时间内轮询登录接口，并确认 `csdp:903001` 已完成 demo 晋升；超时直接失败。
 5. 使用 demo 管理员账号运行现有 `troubleshooting-smoke.sh`。
 6. 把耗时和五分钟目标写入 GitHub Step Summary；超过目标时发 warning。
 7. 无论成功失败都上传服务日志，并停止后台进程。

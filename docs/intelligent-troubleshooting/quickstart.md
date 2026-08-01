@@ -111,18 +111,40 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 
 ---
 
-## 4. 建议纳入的一个指标
+## 4. 持续回归与耗时指标
 
 我们量了"客户从报障到拿到结论要多久"（北极星），却从没量过
 **自己从 clone 到看见一次诊断要多久**。
 
-现在这个数第一次变得可测。它会持续暴露"闸门合取"这类问题——
-每加一道需要人工配置的门，这个数就会变长，而 `troubleshooting-smoke.sh`
-会立刻变红。建议把它挂进 CI，作为"默认路径没有被堵死"的回归。
+`.github/workflows/troubleshooting-smoke.yml` 已把这条路径挂进 CI，作为
+"默认路径没有被堵死"的回归。它在相关 PR、`dev` 推送或手工触发时：
+
+1. 配置 Java 21，先把 `mateclaw-plugin-api` 安装进本地 Maven 仓库；
+2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
+   `csdp:903001` 已通过真实 demo 晋升链成为 approved Playbook；
+3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
+4. 把服务日志和冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
+5. 在 Step Summary 记录 `checkout 完成 → 首次诊断` 耗时，超过 300 秒发 warning。
+
+这个 CI 数值是 clone→首次诊断的第一版代理指标，不包含 checkout 本身。待积累真实 Actions
+运行历史后，再把完整 clone 时间纳入基线；在此之前不把五分钟目标写成已验收。
 
 ---
 
-## 5. 相关文档
+## 5. 本地验证 workflow 合同
+
+不启动服务也可以检查 CI 关键合同有没有被改坏：
+
+```bash
+bash scripts/ci/test-troubleshooting-smoke-workflow.sh
+```
+
+它会检查触发范围、Java 版本、plugin API 构建顺序、demo profile、有限等待、八闸门入口、
+300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替 GitHub runner 实跑。
+
+---
+
+## 6. 相关文档
 
 - 闸门与失败原因：`./scripts/troubleshooting-smoke.sh --gates`
 - 真实 Guance 接入：`evidence-adapter-runbook.md`（T6/T7）
