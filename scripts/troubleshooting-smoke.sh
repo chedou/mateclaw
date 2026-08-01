@@ -102,22 +102,31 @@ auth_header=()
 [[ -n "${TOKEN}" ]] && auth_header=(-H "Authorization: Bearer ${TOKEN}")
 
 BODY_FILE="$(mktemp -t ts-smoke-body.XXXXXX)"
-trap 'rm -f "${BODY_FILE}"' EXIT
+CODE_FILE="$(mktemp -t ts-smoke-code.XXXXXX)"
+trap 'rm -f "${BODY_FILE}" "${CODE_FILE}"' EXIT
 
-call() { # method path [body] -> body on stdout, HTTP code in $HTTP_CODE
+# Callers use `body="$(call ...)"`, which runs the function in a subshell, so a
+# plain HTTP_CODE assignment never reaches the caller. Every status check would
+# then silently read the code of some earlier request that did run in the parent
+# — the checks stayed green by accident and reported the wrong cause on failure.
+# Route the status through a file, which does survive the subshell.
+call() { # method path [body] -> body on stdout; read status with http_code
   local method="$1" path="$2" body="${3:-}"
   local args=(-sS -o "${BODY_FILE}" -w '%{http_code}' -X "${method}"
               -H 'Content-Type: application/json'
               -H "X-Workspace-Id: ${WORKSPACE_ID}" "${auth_header[@]}")
   [[ -n "${body}" ]] && args+=(--data "${body}")
   : > "${BODY_FILE}"
+  local code
   # curl already writes 000 to stdout on a connection failure, so the exit code
-  # is swallowed rather than appended — otherwise HTTP_CODE becomes "000000"
+  # is swallowed rather than appended — otherwise the code becomes "000000"
   # and every status comparison silently stops matching.
-  HTTP_CODE="$(curl "${args[@]}" "${API}${path}" 2>/dev/null || true)"
-  HTTP_CODE="${HTTP_CODE: -3}"
+  code="$(curl "${args[@]}" "${API}${path}" 2>/dev/null || true)"
+  printf '%s' "${code: -3}" > "${CODE_FILE}"
   cat "${BODY_FILE}"
 }
+
+http_code() { cat "${CODE_FILE}"; }
 
 blue "MateClaw 智能排障 · 端到端冒烟"
 dim  "目标：从一次报障走到一份可读的诊断，全程 fixture。"
@@ -126,10 +135,10 @@ echo
 
 # ── 闸门 1：服务可达 ────────────────────────────────────────────────
 call GET "/evidence/sources" >/dev/null
-case "${HTTP_CODE}" in
+case "$(http_code)" in
   000) gate_failed "服务可达" "连不上 ${BASE_URL}" \
         "先启动应用：./scripts/run-troubleshooting-dev.sh，或设置 MATECLAW_BASE_URL" ;;
-  401|403) gate_failed "身份" "HTTP ${HTTP_CODE}，凭据被拒绝" \
+  401|403) gate_failed "身份" "HTTP $(http_code)，凭据被拒绝" \
         "设置 MATECLAW_TOKEN 为具备 operate:troubleshooting 的 PAT（mc_ 前缀）" ;;
 esac
 ok "服务可达，身份通过"
@@ -149,9 +158,9 @@ ok "READY 的证据源：${ready}"
 
 # ── 闸门 4：该路由有 approved Playbook ──────────────────────────────
 playbook="$(call GET "/sops/${SYSTEM}/${ERROR_CODE}")"
-if [[ "${HTTP_CODE}" != "200" ]]; then
+if [[ "$(http_code)" != "200" ]]; then
   gate_failed "已注册 approved Playbook" \
-    "${SYSTEM}:${ERROR_CODE} 在本 workspace 查不到（HTTP ${HTTP_CODE}）" \
+    "${SYSTEM}:${ERROR_CODE} 在本 workspace 查不到（HTTP $(http_code)）" \
     "启用 troubleshooting-demo，或让候选先通过 replay 再走 knowledge review 晋升"
 fi
 status="$(echo "${playbook}" | jq -r '.data.status // "unknown"')"
@@ -168,8 +177,8 @@ report=$(cat <<JSON
 JSON
 )
 created="$(call POST "/incidents" "${report}")"
-[[ "${HTTP_CODE}" == "200" ]] || gate_failed "报障被接受" \
-  "POST /incidents 返回 HTTP ${HTTP_CODE}：$(echo "${created}" | jq -r '.message // .' | head -c 200)" \
+[[ "$(http_code)" == "200" ]] || gate_failed "报障被接受" \
+  "POST /incidents 返回 HTTP $(http_code)：$(echo "${created}" | jq -r '.message // .' | head -c 200)" \
   "若是 route_miss，说明闸门 4 的 Playbook 与报障的 system/errorCode 不匹配"
 diagnosis_id="$(echo "${created}" | jq -r '.data.diagnosis.diagnosisId // empty')"
 [[ -n "${diagnosis_id}" ]] || gate_failed "报障被接受" \
@@ -184,8 +193,8 @@ ok "已产出诊断：${diagnosis_id}"
 
 # ── 闸门 6/7：诊断与投影可读回 ──────────────────────────────────────
 projection="$(call GET "/diagnoses/${diagnosis_id}/projection")"
-[[ "${HTTP_CODE}" == "200" ]] || gate_failed "投影可用" \
-  "GET /projection 返回 HTTP ${HTTP_CODE}" "检查 DiagnosisExperienceProjectionService"
+[[ "$(http_code)" == "200" ]] || gate_failed "投影可用" \
+  "GET /projection 返回 HTTP $(http_code)" "检查 DiagnosisExperienceProjectionService"
 
 conclusion="$(echo "${projection}" | jq -r '.data.businessSummary.conclusionType // empty')"
 headline="$(echo "${projection}" | jq -r '.data.businessSummary.headline // empty')"

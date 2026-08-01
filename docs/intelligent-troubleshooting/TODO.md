@@ -26,12 +26,16 @@
 |---|---|---|---|
 | 1 | **T0.9 让"哪条知识是真的"可见** | 无阻塞。D19 之后 IM1010（真实聚合）与 903001（手写 fixture）在注册表里平级，外面分不出 | §3.5 |
 | 2 | **T7 内网核实**：真实 Guance measurement / 字段 / 阈值 | 需要内网窗口 + 人，不是代码 | §5 T7 |
-| 3 | **T0.8 剩余 145 条错误码录制种子导入** | 机制与首个 IM1010 切片已完成 | §3.5 |
+| 3 | T0.8 剩余 145 条错误码录制种子导入 | 机制与首个 IM1010 切片已完成；**建议排在 P1.6 之后** | §3.5 |
 | 4 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
 | 5 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
 | 6 | T8 历史样本 20–30 条 + 性能基线 | 依赖 2 | §5 T8 |
 | 7 | T0.10 v4 §5 与代码的命名分歧 | 结构账，不阻塞 | §3.5 |
 | 8 | P4 场景 Playbook / P5 知识治理 | 依赖 6 的真实时延与质量数据 | §7 §8 |
+
+**P1.6 已打通（2026-08-01）**：蓝图 §11.1 唯一点名"必须先通过"的无码路验收案例，
+现在默认可跑，九道闸门全绿，已进 CI。学习环第一次在 HTTP 边界上供出了一条可评审的知识。
+遗留：T0.8 的 145 条批量导入应当排在它之后重新评估——学习环通了，其中一部分可能不需要手写。
 
 **T0.9 排在 T7 前面的理由**：D19 让"知识规模化"成了可能，而规模化的第一个副作用是
 **真知识和编的知识开始混在一起**。现在只有 2 条，人还记得住；到 20 条就记不住了，
@@ -265,6 +269,85 @@ v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
       `EvidenceBundle` 值得真的建（`completeness` / `missingRequired` 现在散在四个类里）；
       其余标注"未实现，等 P4/P5"即可。
 - [ ] 在 §5 开头加一张**实现状态表**，让"设计"与"已实现"在同一页可分辨。
+
+---
+
+## 3.6 P1.6 · 让**无码路**默认可跑（**已打通**，遗留 T0.13 收尾项）
+
+**为什么插队。** 蓝图 §11.1 里唯一被点名"必须先通过"的验收案例是**无 error_code** 的
+「会话消息发送失败」。但连续几轮的默认可跑路径、CI 回归、quickstart、D19 规模化机制，
+全部落在**错误码命中路**上。P1.5 为命中路解决的那个"闸门合取"问题，在无码路上原封不动地还站着：
+
+| 闸门 | 命中路 | 无码路 |
+|---|---|---|
+| 证据源 | demo profile 已开 | 同上（复用） |
+| Playbook | demo 种子已晋升 | 不需要 |
+| **Agent** | 不需要 | `agent.enabled` 默认 `false`、`agentId` 默认 `0` |
+| **模型** | 不需要（零 LLM） | 需要已配置的 provider + default model |
+| demo profile 是否覆盖 | ✅ | ❌ **完全没有** |
+
+**更要紧的是供给侧的账。** D19 扩的是晋升门的吞吐，不是知识的供给。现在错误码 Playbook
+能高效晋升了，但它们从哪来？答案是人读那张 xlsx 手写。而蓝图里负责供给的正是学习环
+（无码报障 → 三次取证 → 确定性压缩 → `PlaybookDraft` → 与人工解法对照 → candidate），
+它从来没在单元测试之外跑通过一次。
+
+> **在线排障闭环消费知识，知识生产闭环供给知识；现在消费侧修得又快又稳，供给侧还没通电。**
+
+剩下 145 条 × 人工手写，正是这个产品声称要消灭的那个瓶颈。
+
+### T0.11 · 无码路端到端冒烟（已完成）
+
+- [x] `scripts/troubleshooting-miss-path-smoke.sh`：以操作员方式走 HTTP——
+      `POST /sops/synthesis/preview` → `POST /sops/synthesis/candidates`，逐道闸门断言，
+      失败时指出是哪一道和唯一的下一步。与命中路脚本共用同一套闸门叙事，但**不共用闸门**。
+      **先让它红**：第一次运行停在闸门 4 `MODEL_UNAVAILABLE`；闸门 1–3 当场就是绿的，
+      说明证据脊柱和确定性压缩早就能在 HTTP 边界上跑，缺的只有模型那一步。
+- [x] 断言覆盖这几条**只有无码路才有**的不变量：
+      - 产出的是 `CANDIDATE_CREATED`，且 `reviewStatus=CANDIDATE`；
+      - **`approvalEligibility` 必须是 `NOT_ELIGIBLE`**——证据型草稿永远不能被自动晋升；
+      - `referenceComparison` 存在且有结构化差异，不是空对象；
+      - `fixtureMode=true`；
+      - 重跑一次得到 `CANDIDATE_REUSED`（generationKey 幂等），不产生第二条候选。
+- [x] **顺带修掉两条脚本共有的一个真 bug**：`call` 在命令替换里执行（子 shell），
+      `HTTP_CODE` 从来传不回父 shell，于是每一处状态判断读的都是**更早一次请求**的状态码。
+      它一直是绿的纯属巧合，而失败时报的原因是错的（"当前状态是 unknown"而不是"HTTP 404"）。
+      改为经文件传递；现在 404/409 会如实报出来。
+
+### T0.12 · demo 侧的确定性模型响应（已完成）
+
+无码路必须调一次模型，而 demo 不能依赖真实 provider。做法与录制证据同构：
+**服务端拥有一份录制的模型响应**，不是"跳过模型"，也不是"假装模型在线"。
+
+- [x] `troubleshooting/synthesis/recorded-draft-proposals.json`：按
+      (system, service, searchTerm) 键入的 server-owned 录制 `PlaybookDraftProposal`。
+- [x] `RecordedPlaybookDraftInducer`（`@Primary`，仅 demo 开关打开时生效）替换一次模型调用，
+      其余流程（确定性校验、参考解法比较、候选写入、幂等）**完全不变**——
+      被替换的只有"模型说了什么"，不是"我们信不信它"。
+      **没有录制的案例回落到真实 inducer**，绝不替一个没录过的案例作答。
+- [x] **provenance 自证**：`provider=recorded`、`modelName=recorded-demo-draft`，
+      不冒用任何真实 provider 名。读候选的人一眼能看出这次归纳没有真的调过模型——
+      和 `approvedBy=ts-demo-seeder` 是同一个手法。
+- [x] `RecordedPlaybookDraftInducerTest` 6 条：录制响应通过确定性校验、只提议 SCENARIO、
+      引用全部属于本次证据、动作只能 `EXTERNAL_HUMAN`、provenance 不含真实 provider 名、
+      坏目录直接抛错。**含一条负对照**：把录制响应污染成生产写动作后仍被拦下——
+      否则"录制响应能通过校验"与"校验根本没在跑"无法区分。
+
+### T0.13 · 收尾
+
+- [x] 两条 smoke 一起进 CI；无码路失败同样让 job 失败。
+      `scripts/ci/test-troubleshooting-smoke-workflow.sh` 增加静态合同：无码路入口存在、
+      排在命中路之后、脚本可执行，且仍带 `NOT_ELIGIBLE` / `CANDIDATE_REUSED` 两道反向断言。
+- [x] `quickstart.md` 增加第二条主线：不仅"看见一次诊断"，还要"看见一条知识被生产出来"。
+- [ ] 只有无码路默认可跑之后，再回头做 T0.8 的 145 条批量导入——
+      学习环通了，其中一部分可能根本不需要手写。
+
+**实测**（`dev,troubleshooting-demo`，H2 默认库）：九道闸门全绿，
+`CANDIDATE_CREATED` → `reviewStatus=CANDIDATE` → `approvalEligibility=NOT_ELIGIBLE` →
+`referenceComparison.passed=true` → 重跑 `CANDIDATE_REUSED` 复用同一候选。
+命中路八道闸门同时保持全绿。后端 607 tests / 0 failures。
+
+**没有证明**：归纳得对不对。录制响应是一次真实模型输出的快照，
+它证明学习环可走，不证明模型在真实证据上会归纳出同样的东西——那是 T7 与 T8 的事。
 
 ---
 

@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "proposals": [
+    {
+      "system": "CSDP",
+      "service": "csdp-session-service",
+      "scenarioKey": "message_send_failed",
+      "sourceReference": "recorded-model-response-2026-08-01-message-send-failed",
+      "note": "Recorded structured induction output for the §11.1 acceptance case. Kept here so the learning loop is walkable without a configured provider; it is a recording, not a live model, and never a claim that the induction is correct.",
+      "proposal": {
+        "abstain": false,
+        "abstainReason": "",
+        "proposedType": "SCENARIO",
+        "proposedSelector": {
+          "system": "CSDP",
+          "scenarioKey": "message_send_failed",
+          "errorCode": null
+        },
+        "title": "会话消息发送失败排查草案",
+        "evidencePlan": [
+          {
+            "intentKey": "locate_failed_request",
+            "signalKind": "log_search",
+            "purpose": "定位失败请求",
+            "required": true
+          },
+          {
+            "intentKey": "trace_ps_id",
+            "signalKind": "log_trace_bundle",
+            "purpose": "追踪 PS ID 调用链",
+            "required": true
+          },
+          {
+            "intentKey": "compare_success_sample",
+            "signalKind": "contrast_sample",
+            "purpose": "对比同窗口成功样本",
+            "required": true
+          },
+          {
+            "intentKey": "confirm_session_state_conflict",
+            "signalKind": "log_trace_bundle",
+            "purpose": "确认会话状态冲突",
+            "required": true
+          }
+        ],
+        "criteria": [
+          {
+            "criterionKey": "state_conflict",
+            "description": "状态并发写冲突在失败样本中显著出现",
+            "evidenceKinds": ["log_trace_bundle", "contrast_sample"],
+            "evidenceCitations": ["SYNTH-TRACE-BUNDLE", "SYNTH-CONTRAST-SAMPLE"]
+          }
+        ],
+        "diagnosisHypotheses": [
+          {
+            "hypothesisKey": "session_state_conflict",
+            "summary": "会话状态并发写冲突",
+            "evidenceCitations": ["SYNTH-TRACE-BUNDLE"]
+          }
+        ],
+        "humanActions": [
+          {
+            "intentKey": "verify_recovery",
+            "instruction": "由值班研发在平台外验证新消息发送是否恢复",
+            "executionMode": "EXTERNAL_HUMAN",
+            "evidenceCitations": ["SYNTH-LOG-SEARCH"]
+          }
+        ],
+        "evidenceCitations": [
+          "SYNTH-LOG-SEARCH",
+          "SYNTH-TRACE-BUNDLE",
+          "SYNTH-CONTRAST-SAMPLE"
+        ]
+      }
+    }
+  ]
+}

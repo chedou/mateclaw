@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${ROOT_DIR}/.github/workflows/troubleshooting-smoke.yml"
 MAVEN_SETTINGS="${ROOT_DIR}/mateclaw-server/settings.xml"
 SMOKE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-smoke.sh"
+MISS_PATH_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-miss-path-smoke.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -29,6 +30,12 @@ assert_smoke_contains() {
   local needle="$1"
   grep -Fq -- "${needle}" "${SMOKE_SCRIPT}" \
     || fail "smoke script must contain: ${needle}"
+}
+
+assert_miss_path_contains() {
+  local needle="$1"
+  grep -Fq -- "${needle}" "${MISS_PATH_SCRIPT}" \
+    || fail "miss-path smoke script must contain: ${needle}"
 }
 
 assert_order() {
@@ -73,6 +80,20 @@ assert_order "-pl mateclaw-plugin-api" "spring-boot:run"
 
 assert_smoke_contains 'SMOKE_SERVICE:-csp-rpc-msg'
 assert_smoke_contains 'SMOKE_ERROR_CODE:-IM1010'
+
+# The learning loop must stay in CI. A green diagnosis loop over a dead
+# knowledge loop is not a green build: blueprint §11.1 names the no-error-code
+# case as the one that must pass first, and it is the only path that produces
+# new Playbooks. Dropping this step would silently return knowledge supply to
+# "a human hand-writes it from a spreadsheet".
+assert_contains "./scripts/troubleshooting-miss-path-smoke.sh"
+assert_order "./scripts/troubleshooting-smoke.sh" "./scripts/troubleshooting-miss-path-smoke.sh"
+[[ -x "${MISS_PATH_SCRIPT}" ]] || fail "miss-path smoke script must be executable"
+assert_miss_path_contains 'SMOKE_SEARCH_TERM:-message_send_failed'
+# The reverse assertion: producing knowledge is easy, producing knowledge that
+# cannot be mistaken for authority is the hard part.
+assert_miss_path_contains 'NOT_ELIGIBLE'
+assert_miss_path_contains 'CANDIDATE_REUSED'
 
 if grep -Eqi 'guance|fixtureMode[[:space:]]*:[[:space:]]*false' "${WORKFLOW}"; then
   fail "workflow must stay fixture-only and must not configure Guance"

@@ -8,6 +8,7 @@ on:
       - 'mateclaw-plugin-api/**'
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/troubleshooting-miss-path-smoke.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
   push:
     branches:
@@ -21,6 +22,7 @@ on:
       - 'mateclaw-plugin-api/**'
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/troubleshooting-miss-path-smoke.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
   workflow_dispatch:
 
@@ -33,7 +35,7 @@ concurrency:
 
 jobs:
   smoke:
-    name: Eight-gate HTTP diagnosis
+    name: Both loops over HTTP (diagnosis + knowledge)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -130,6 +132,23 @@ jobs:
           set -e
           exit "${smoke_status}"
 
+      # The hit path consumes knowledge; this one produces it. Blueprint §11.1
+      # names the no-error-code case as the acceptance case that must pass
+      # first, so a green diagnosis loop over a dead learning loop is not a
+      # green build.
+      - name: Run nine-gate miss-path smoke (learning loop)
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-miss-path-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-miss-path-smoke.log"
+          miss_status=${PIPESTATUS[0]}
+          set -e
+          exit "${miss_status}"
+
       - name: Record clone-to-diagnosis duration
         if: success()
         shell: bash
@@ -154,7 +173,8 @@ jobs:
             echo
             echo "- Clone to first diagnosis: ${elapsed_seconds}s"
             echo '- Target: no more than 300s'
-            echo '- Eight-gate result: PASS'
+            echo '- Eight-gate diagnosis loop: PASS'
+            echo '- Nine-gate learning loop: PASS'
           } >> "${GITHUB_STEP_SUMMARY}"
           if (( elapsed_seconds > 300 )); then
             echo "::warning title=Troubleshooting startup regression::First diagnosis took ${elapsed_seconds}s; target is 300s"

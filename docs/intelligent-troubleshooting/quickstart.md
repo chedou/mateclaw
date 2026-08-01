@@ -1,6 +1,6 @@
-# Quickstart：从零到看见一次诊断
+# Quickstart：从零到看见一次诊断，以及一条知识
 
-> 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断**，全程 fixture。
+> 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断 + 一条可评审的知识**，全程 fixture。
 >
 > 这份文档存在的原因不是"缺文档"。此前每一道闸门都是刻意 fail-closed 的，
 > 每一道单独看都对；但它们的**合取**是——默认状态下没有任何一条路径可走：
@@ -55,6 +55,38 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
 
 ---
 
+## 1.5 再跑一次：看见一条知识被**生产**出来
+
+上面那条是**命中路**——已知错误码路由到已批准 Playbook，零 LLM 调用。它**消费**知识。
+
+蓝图 §11.1 唯一点名"必须先通过"的验收案例是相反的那条：**无 error_code**，
+靠 `log_search → PS ID → log_trace_bundle` 调查，最后产出一份可评审的 `PlaybookDraft`
+并与人工解法逐项对照。它**生产**知识——而新 Playbook 只能从这里来。
+
+```bash
+MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
+    ./scripts/troubleshooting-miss-path-smoke.sh
+```
+
+实测输出：
+
+```text
+  ✓ 三次取证完成，PS ID=synthetic-ps-message-send-001，调用链服务数=3，成功样本对照=true
+  ✓ 归纳完成：stage=CANDIDATE_CREATED
+  ✓ 候选已写入：reviewStatus=CANDIDATE，归纳来源 provider=recorded
+  ✓ 晋升资格：NOT_ELIGIBLE（这一道是反向断言——它必须失败才算通过）
+  ✓ 与人工解法对照：passed=true
+  ✓ 幂等：重跑复用同一条候选（stage=CANDIDATE_REUSED）
+```
+
+**第 7 道闸门是这条路里最值得看的一格**：它断言候选**不可**被自动晋升。
+产出知识很容易，产出"不会被误当权威的知识"才难——证据型草稿必须先补齐
+owner / 正例回放 / 负例回放，才谈得上晋升资格。
+
+`--gates` 同样可用。
+
+---
+
 ## 2. `troubleshooting-demo` profile 做了什么（以及没做什么）
 
 | 做了 | 没做 |
@@ -62,6 +94,7 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
 | 打开 **Recorded Replay** 证据源 | **不碰** Guance：demo 绝不能意外访问真实观测源 |
 | 把 CSDP 的六个 signalKind 路由到 recorded-replay | 不改任何真实 workspace 的配置 |
 | 从服务端目录种 `csdp:903001` 与 `csdp:IM1010` 并逐条走完晋升 | 不改 `fixtureMode`：产出仍全程标记 fixture |
+| 用**录制的模型响应**替换无码路那一次模型调用 | 不跳过归纳、不假装模型在线：只替换"模型说了什么" |
 
 ### 晋升是走出来的，不是改状态位改出来的
 
@@ -128,9 +161,12 @@ IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样�
    `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
 2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
    `csdp:IM1010` 已通过真实 demo 晋升链成为 approved Playbook；
-3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
-4. 把服务日志和冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
-5. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
+3. 运行同一份 `scripts/troubleshooting-smoke.sh`（命中路八道闸门）；
+4. 再运行 `scripts/troubleshooting-miss-path-smoke.sh`（学习环九道闸门）。
+   **一条绿的诊断环配一条死的学习环不算绿**：新 Playbook 只能从无码路来，
+   这一步掉了就等于把知识供给悄悄退回"人读表格手写"；
+5. 把服务日志和两份冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
+6. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
    `clone → 首次诊断` 耗时，超过 300 秒发 warning，不把后续投影校验耗时冒充为首诊耗时。
 
 超过五分钟只表示启动速度回退，不伪装成产品正确性失败。链路闸门失败才让任务失败；脚本还会
@@ -147,14 +183,15 @@ bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 ```
 
 它会检查触发范围、Java 版本、Maven 不强制仓库级镜像、plugin API 构建顺序、demo profile、
-有限等待、八闸门入口、300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替
-GitHub runner 实跑。
+有限等待、两条冒烟的入口与先后顺序、300 秒目标、清理步骤和无条件日志上传，并断言无码路脚本
+仍带着 `NOT_ELIGIBLE` 与 `CANDIDATE_REUSED` 两道反向断言。这个静态合同不能代替 GitHub runner 实跑。
 
 ---
 
 ## 6. 相关文档
 
-- 闸门与失败原因：`./scripts/troubleshooting-smoke.sh --gates`
+- 命中路闸门：`./scripts/troubleshooting-smoke.sh --gates`
+- 无码路闸门：`./scripts/troubleshooting-miss-path-smoke.sh --gates`
 - 真实 Guance 接入：`evidence-adapter-runbook.md`（T6/T7）
 - 未命中路 Agent：`agent-miss-path-runbook.md`
 - 现行架构：`../../rfcs/intelligent-troubleshooting-architecture-v4.md`
