@@ -1,6 +1,7 @@
-# Quickstart：从零到看见一次诊断，以及一条知识
+# Quickstart：从零到走完一个案子
 
-> 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断 + 一条可评审的知识**，全程 fixture。
+> 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断、一条可评审的知识、
+> 一个走到关闭的案子**，全程 fixture。
 >
 > 这份文档存在的原因不是"缺文档"。此前每一道闸门都是刻意 fail-closed 的，
 > 每一道单独看都对；但它们的**合取**是——默认状态下没有任何一条路径可走：
@@ -87,6 +88,47 @@ owner / 正例回放 / 负例回放，才谈得上晋升资格。
 
 ---
 
+## 1.6 第三次：把一个案子真正走完
+
+前两条各自证明了一个环，但都停在环的前半段——一个停在"诊断可读"，一个停在"候选已产出"。
+**交接、批准、外部登记、恢复验证、关闭**，才是服务经理和处置人真正做的那部分，
+也是北极星里「可交接」所在的地方。
+
+```bash
+MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
+    ./scripts/troubleshooting-scenario-smoke.sh
+```
+
+实测输出：
+
+```text
+  ✓ 诊断已产出：diag-…（LOCATED）
+  ✓ 生产写动作就位：A2（BLOCKED）
+  ✓ 已确认：READY_FOR_HUMAN → CONFIRMED
+  ✓ 已交接：数据库平台组
+  ✓ 批准前登记被拒（409）：manual write must be approved before recording an external outcome
+  ✓ 批准生效但什么都没发生：approval=APPROVED_NOT_EXECUTED，execution=BLOCKED
+  ✓ 批准之后执行依旧被拒（409）：production write executor is not connected
+  ✓ 外部结果已登记：1 条，recoveryVerified=true
+  ✓ 已关闭并沉淀候选：candidate-…（owner=工单平台组）
+  ✓ 新知识候选：NOT_ELIGIBLE（阻塞原因：POSITIVE_REPLAY_REQUIRED）
+```
+
+### 闸门 6 是这条脚本存在的理由
+
+**「人工批准只推进状态机，不触发执行」是整个产品安全论证的支点。**
+在这条脚本之前，它只有**拒绝**那一半被演示过——`POST /execute` 返回 409。
+**肯定**那一半——批准之后动作变成 `APPROVED_NOT_EXECUTED`，而 `executionStatus`
+仍然是 `BLOCKED`，什么都没跑——在 HTTP 边界上从来没有被走过一次，
+因为**两条 Playbook 都没有 `MANUAL_WRITE` 动作**。
+
+现在 `csdp:903001` 带上了一个。它的定位也因此变了：不再是跟真实数据的 IM1010
+争可信度的"第二条知识"，而是**专门用来行走这条红线的夹具**。
+（`ManualPlaybookReplaySuiteCatalogTest` 同时锁住反面：IM1010 不得被塞进
+手写的生产写动作——那等于往唯一一条证据来源的知识里掺进一条编的指令。）
+
+---
+
 ## 2. `troubleshooting-demo` profile 做了什么（以及没做什么）
 
 | 做了 | 没做 |
@@ -165,8 +207,11 @@ owner / 正例回放 / 负例回放，才谈得上晋升资格。
 4. 再运行 `scripts/troubleshooting-miss-path-smoke.sh`（学习环九道闸门）。
    **一条绿的诊断环配一条死的学习环不算绿**：新 Playbook 只能从无码路来，
    这一步掉了就等于把知识供给悄悄退回"人读表格手写"；
-5. 把服务日志和两份冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
-6. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
+5. 再运行 `scripts/troubleshooting-scenario-smoke.sh`（单案十道闸门）。
+   前两条各自停在环的前半段；这一条把一个案子走到关闭，
+   并且是唯一一处真正行走「批准≠执行」肯定半边的地方；
+6. 把服务日志和三份冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
+7. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
    `clone → 首次诊断` 耗时，超过 300 秒发 warning，不把后续投影校验耗时冒充为首诊耗时。
 
 超过五分钟只表示启动速度回退，不伪装成产品正确性失败。链路闸门失败才让任务失败；脚本还会
@@ -183,8 +228,10 @@ bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 ```
 
 它会检查触发范围、Java 版本、Maven 不强制仓库级镜像、plugin API 构建顺序、demo profile、
-有限等待、两条冒烟的入口与先后顺序、300 秒目标、清理步骤和无条件日志上传，并断言无码路脚本
-仍带着 `NOT_ELIGIBLE` 与 `CANDIDATE_REUSED` 两道反向断言。这个静态合同不能代替 GitHub runner 实跑。
+有限等待、三条冒烟的入口与先后顺序、300 秒目标、清理步骤和无条件日志上传，并断言无码路脚本
+仍带着 `NOT_ELIGIBLE` 与 `CANDIDATE_REUSED` 两道反向断言、场景脚本仍断言
+`APPROVED_NOT_EXECUTED` 之后 `executionStatus` 必须仍是 `BLOCKED`。
+这个静态合同不能代替 GitHub runner 实跑。
 
 ---
 
@@ -192,6 +239,7 @@ bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 
 - 命中路闸门：`./scripts/troubleshooting-smoke.sh --gates`
 - 无码路闸门：`./scripts/troubleshooting-miss-path-smoke.sh --gates`
+- 单案场景闸门：`./scripts/troubleshooting-scenario-smoke.sh --gates`
 - 真实 Guance 接入：`evidence-adapter-runbook.md`（T6/T7）
 - 未命中路 Agent：`agent-miss-path-runbook.md`
 - 现行架构：`../../rfcs/intelligent-troubleshooting-architecture-v4.md`

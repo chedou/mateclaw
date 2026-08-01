@@ -382,6 +382,15 @@
             "requiresApproval": false,
             "approvalStatus": "NOT_REQUIRED",
             "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "A2",
+            "actionType": "MANUAL_WRITE",
+            "title": "由 DBA 终止占用连接的慢查询会话",
+            "description": "授权后仍不由平台执行：MateClaw 没有生产写执行器。由授权人员在平台之外操作，再回填结果。",
+            "requiresApproval": true,
+            "approvalStatus": "PENDING",
+            "executionStatus": "BLOCKED"
           }
         ]
       }

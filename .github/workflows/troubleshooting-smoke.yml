@@ -9,6 +9,7 @@ on:
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
       - 'scripts/troubleshooting-miss-path-smoke.sh'
+      - 'scripts/troubleshooting-scenario-smoke.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
   push:
     branches:
@@ -23,6 +24,7 @@ on:
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
       - 'scripts/troubleshooting-miss-path-smoke.sh'
+      - 'scripts/troubleshooting-scenario-smoke.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
   workflow_dispatch:
 
@@ -35,7 +37,7 @@ concurrency:
 
 jobs:
   smoke:
-    name: Both loops over HTTP (diagnosis + knowledge)
+    name: Both loops plus one complete case, over HTTP
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -149,6 +151,23 @@ jobs:
           set -e
           exit "${miss_status}"
 
+      # Both scripts above stop once their loop is proven. Neither walks a case
+      # to closure, so the product's central guarantee — approval advances the
+      # state machine and executes nothing — was only ever shown in its refusing
+      # half. This one walks the affirmative half.
+      - name: Run ten-gate single-case scenario (report to closure)
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-scenario-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-scenario-smoke.log"
+          scenario_status=${PIPESTATUS[0]}
+          set -e
+          exit "${scenario_status}"
+
       - name: Record clone-to-diagnosis duration
         if: success()
         shell: bash
@@ -175,6 +194,7 @@ jobs:
             echo '- Target: no more than 300s'
             echo '- Eight-gate diagnosis loop: PASS'
             echo '- Nine-gate learning loop: PASS'
+            echo '- Ten-gate single case to closure: PASS'
           } >> "${GITHUB_STEP_SUMMARY}"
           if (( elapsed_seconds > 300 )); then
             echo "::warning title=Troubleshooting startup regression::First diagnosis took ${elapsed_seconds}s; target is 300s"

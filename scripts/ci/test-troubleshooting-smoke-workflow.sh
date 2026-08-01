@@ -7,6 +7,7 @@ WORKFLOW="${ROOT_DIR}/.github/workflows/troubleshooting-smoke.yml"
 MAVEN_SETTINGS="${ROOT_DIR}/mateclaw-server/settings.xml"
 SMOKE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-smoke.sh"
 MISS_PATH_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-miss-path-smoke.sh"
+SCENARIO_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-scenario-smoke.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -36,6 +37,12 @@ assert_miss_path_contains() {
   local needle="$1"
   grep -Fq -- "${needle}" "${MISS_PATH_SCRIPT}" \
     || fail "miss-path smoke script must contain: ${needle}"
+}
+
+assert_scenario_contains() {
+  local needle="$1"
+  grep -Fq -- "${needle}" "${SCENARIO_SCRIPT}" \
+    || fail "scenario smoke script must contain: ${needle}"
 }
 
 assert_order() {
@@ -94,6 +101,16 @@ assert_miss_path_contains 'SMOKE_SEARCH_TERM:-message_send_failed'
 # cannot be mistaken for authority is the hard part.
 assert_miss_path_contains 'NOT_ELIGIBLE'
 assert_miss_path_contains 'CANDIDATE_REUSED'
+
+# One complete case must stay in CI. Without it the product's central
+# guarantee is only demonstrated in its refusing half (POST /execute -> 409);
+# the affirmative half — approval moves the action to APPROVED_NOT_EXECUTED
+# while executionStatus stays BLOCKED — has no coverage at the HTTP boundary.
+assert_contains "./scripts/troubleshooting-scenario-smoke.sh"
+assert_order "./scripts/troubleshooting-miss-path-smoke.sh" "./scripts/troubleshooting-scenario-smoke.sh"
+[[ -x "${SCENARIO_SCRIPT}" ]] || fail "scenario smoke script must be executable"
+assert_scenario_contains 'APPROVED_NOT_EXECUTED'
+assert_scenario_contains 'executionStatus=${execution_status}，期望仍然是 BLOCKED'
 
 if grep -Eqi 'guance|fixtureMode[[:space:]]*:[[:space:]]*false' "${WORKFLOW}"; then
   fail "workflow must stay fixture-only and must not configure Guance"

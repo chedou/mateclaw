@@ -9,7 +9,11 @@ import org.springframework.core.io.ClassPathResource;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.ApprovalStatus;
+import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.RecommendedAction;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,6 +49,75 @@ class ManualPlaybookReplaySuiteCatalogTest {
                         "healthy-probe-negative",
                         "probe-unavailable-abstain");
         assertThat(catalog.find("csdp:scenario:unknown")).isEmpty();
+    }
+
+    /**
+     * The 903001 fixture is the only Playbook carrying a production-write
+     * action, and that is now its job.
+     *
+     * <p>Until it did, the product's central guarantee — 人工批准只推进状态机，
+     * 不触发执行 — could only be demonstrated in its refusing half
+     * ({@code POST /execute} answers 409). The affirmative half, that approval
+     * moves the action to {@code APPROVED_NOT_EXECUTED} while execution stays
+     * {@code BLOCKED}, had no Playbook to walk it on.</p>
+     *
+     * <p>Dropping this action would not break any unit test; the scenario smoke
+     * would fail at runtime with no build-time explanation. Hence this test.</p>
+     */
+    @Test
+    void theFixturePlaybookCarriesTheProductionWriteActionTheScenarioNeeds() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        List<RecommendedAction> fixtureActions = catalog.find("csdp:903001")
+                .orElseThrow()
+                .suite()
+                .exampleCandidate()
+                .actions();
+
+        assertThat(fixtureActions)
+                .as("903001 是夹具，它必须带一个生产写动作供场景冒烟行走批准红线")
+                .filteredOn(action -> action.actionType() == ActionType.MANUAL_WRITE)
+                .singleElement()
+                .satisfies(write -> {
+                    assertThat(write.requiresApproval()).isTrue();
+                    assertThat(write.approvalStatus())
+                            .isEqualTo(ApprovalStatus.PENDING);
+                    assertThat(write.executionStatus())
+                            .as("生产写从注册那一刻起就必须是 BLOCKED")
+                            .isEqualTo(ExecutionStatus.BLOCKED);
+                });
+    }
+
+    /**
+     * IM1010 is real-data knowledge; its actions come from the recording. A
+     * production-write action must never be authored into it to make a demo
+     * more interesting — that would put an invented instruction inside the one
+     * Playbook whose content is meant to be evidence-derived.
+     */
+    @Test
+    void theRealDataPlaybookCarriesNoAuthoredProductionWrite() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        assertThat(catalog.find("csdp:IM1010").orElseThrow()
+                .suite().exampleCandidate().actions())
+                .allSatisfy(action -> assertThat(action.actionType())
+                        .isNotEqualTo(ActionType.MANUAL_WRITE));
     }
 
     @Test
