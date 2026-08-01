@@ -11,18 +11,18 @@ describe('deployment topology SOP entry', () => {
   it('shows the topology tool only for the selected diagnosis capability', () => {
     expect(shouldShowDeploymentTopologyProbe({
       diagnosisId: 'diag-topology',
-      deploymentTopologyProbeRequired: true,
+      scenarioAffordances: [{ scenarioKey: 'deployment_topology_probe', required: true }],
     }, 'diag-topology')).toBe(true)
   })
 
   it('hides stale or unavailable topology capabilities', () => {
     expect(shouldShowDeploymentTopologyProbe({
       diagnosisId: 'diag-previous',
-      deploymentTopologyProbeRequired: true,
+      scenarioAffordances: [{ scenarioKey: 'deployment_topology_probe', required: true }],
     }, 'diag-current')).toBe(false)
     expect(shouldShowDeploymentTopologyProbe({
       diagnosisId: 'diag-current',
-      deploymentTopologyProbeRequired: false,
+      scenarioAffordances: [{ scenarioKey: 'deployment_topology_probe', required: false }],
     }, 'diag-current')).toBe(false)
     expect(shouldShowDeploymentTopologyProbe(null, 'diag-current')).toBe(false)
   })

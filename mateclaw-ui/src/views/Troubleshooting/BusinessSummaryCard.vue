@@ -48,25 +48,34 @@
       </small>
     </section>
 
-    <div class="timing-strip">
-      <article>
-        <span>补问 / Intake</span>
-        <b>{{ timingState(business.timings.readyAt, business.timings.intakeCost, 'recorded') }}</b>
-        <small>{{ timeRange(business.timings.reportedAt, business.timings.readyAt) }}</small>
-      </article>
-      <i />
-      <article>
-        <span>调查 / Investigate</span>
-        <b>{{ timingState(business.timings.conclusionAt, business.timings.investigateCost, 'recorded') }}</b>
-        <small>{{ timeRange(business.timings.readyAt, business.timings.conclusionAt) }}</small>
-      </article>
-      <i />
-      <article>
-        <span>采纳 / Handoff</span>
-        <b>{{ timingState(business.timings.handoffAt, business.timings.adoptCost, 'pending') }}</b>
-        <small>{{ timeRange(business.timings.conclusionAt, business.timings.handoffAt, true) }}</small>
-      </article>
-    </div>
+    <section class="north-star">
+      <header>
+        <span class="ns-title">北极星耗时 · 三个阶段分别计量</span>
+        <span class="ns-note">三段由不同的人承担，不合成总时长——合成之后就分不清该优化哪一段。</span>
+      </header>
+
+      <ol class="ns-stages">
+        <li v-for="stage in stages" :key="stage.key" class="ns-stage" :class="stage.key + ' ' + stage.state">
+          <div class="ns-head">
+            <span class="ns-index">{{ stage.index }}</span>
+            <span class="ns-label">{{ stage.label }}</span>
+            <span class="ns-owner">{{ stage.owner }}</span>
+          </div>
+          <b class="ns-cost">{{ stage.display }}</b>
+          <div class="ns-bar" :class="{ empty: stage.share === null }">
+            <i v-if="stage.share !== null" :style="{ width: Math.max(stage.share * 100, 2) + '%' }" />
+          </div>
+          <small class="ns-range">
+            {{ timeRange(stage.from, stage.to, stage.key === 'adopt') }}
+            <template v-if="stage.share !== null"> · 占比 {{ Math.round(stage.share * 100) }}%</template>
+          </small>
+        </li>
+      </ol>
+
+      <p v-if="!stagesComplete" class="ns-incomplete">
+        有阶段尚未记录，因此不显示占比——在不完整的数据上画比例会凭空暗示一个系统并不知道的总量。
+      </p>
+    </section>
 
     <div class="lifecycle-bar">
       <el-button
@@ -95,7 +104,7 @@ import {
   closureOutcomeLabel,
   conclusionLabel,
   impactMetrics,
-  timingState,
+  northStarStages,
 } from './formalProjection'
 import {
   diagnosisStatusLabel as statusLabel,
@@ -118,6 +127,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+/** Three separately owned cost segments; never summed into one number (D14). */
+const stages = computed(() => northStarStages(props.business?.timings))
+const stagesComplete = computed(() => stages.value.every((stage) => stage.share !== null))
 
 defineEmits<{
   confirm: []
@@ -153,11 +166,39 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .impact-metrics { display:flex; gap:7px; margin:8px 0; } .impact-metrics span { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-info-text); background:var(--mc-status-info-bg); font-size:12px; } .capability-boundary { color:var(--mc-warning)!important; }
 .closure-result { display:grid; grid-template-columns:180px minmax(0,1fr) auto; align-items:center; gap:18px; margin-top:14px; padding:14px 16px; border:1px solid var(--mc-success); border-radius:var(--mc-radius-sm); background:var(--mc-status-success-bg); }
 .closure-result div b { display:block; margin-top:5px; color:var(--mc-success); font-size:var(--mc-text-sm); } .closure-result>strong { font-size:var(--mc-text-sm); line-height:1.55; } .closure-result>small { color:var(--mc-text-secondary); font-size:12px; text-align:right; }
-.timing-strip { display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:center; margin-top:14px; padding:13px 16px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
-.timing-strip article { display:grid; grid-template-columns:1fr auto; gap:3px 12px; } .timing-strip span { color:var(--mc-text-secondary); font-size:12px; } .timing-strip b { color:var(--mc-text-secondary); font-size:var(--mc-text-sm); }
-.timing-strip small { grid-column:1/-1; color:var(--mc-text-tertiary); font-size:12px; } .timing-strip i { width:5px; height:5px; justify-self:center; border-radius:50%; background:var(--mc-text-tertiary); }
+/* North-star timings: three stages, deliberately not one strip.
+   Each stage owns a lane, a colour and an owner label, because the three costs
+   are paid by three different parties and get optimised in different ways. */
+.north-star { margin-top:14px; padding:14px 16px 12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
+.north-star header { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.ns-title { color:var(--mc-text-primary); font-size:12px; font-weight:600; letter-spacing:.04em; }
+.ns-note { color:var(--mc-text-tertiary); font-size:12px; }
+.ns-stages { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0; padding:0; list-style:none; }
+.ns-stage { display:grid; gap:5px; padding:10px 12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg); border-left-width:3px; }
+.ns-stage.intake { border-left-color:var(--mc-primary); }
+.ns-stage.investigate { border-left-color:var(--mc-success); }
+.ns-stage.adopt { border-left-color:var(--mc-warning); }
+.ns-stage.PENDING, .ns-stage.UNRECORDED { border-style:dashed; border-left-style:solid; }
+.ns-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.ns-index { display:grid; place-items:center; width:17px; height:17px; border-radius:50%; color:#fff; font-size:11px; font-variant-numeric:tabular-nums; }
+.ns-stage.intake .ns-index { background:var(--mc-primary); }
+.ns-stage.investigate .ns-index { background:var(--mc-success); }
+.ns-stage.adopt .ns-index { background:var(--mc-warning); }
+.ns-stage.PENDING .ns-index, .ns-stage.UNRECORDED .ns-index { background:var(--mc-text-tertiary); }
+.ns-label { color:var(--mc-text-primary); font-size:12px; font-weight:600; }
+.ns-owner { margin-left:auto; color:var(--mc-text-tertiary); font-size:12px; }
+.ns-cost { color:var(--mc-text-primary); font-size:17px; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+.ns-stage.PENDING .ns-cost, .ns-stage.UNRECORDED .ns-cost { color:var(--mc-text-tertiary); font-size:var(--mc-text-sm); }
+.ns-bar { height:3px; border-radius:2px; background:var(--mc-border); overflow:hidden; }
+.ns-bar.empty { background:transparent; border-top:1px dashed var(--mc-border); height:1px; border-radius:0; }
+.ns-bar i { display:block; height:100%; border-radius:2px; }
+.ns-stage.intake .ns-bar i { background:var(--mc-primary); }
+.ns-stage.investigate .ns-bar i { background:var(--mc-success); }
+.ns-stage.adopt .ns-bar i { background:var(--mc-warning); }
+.ns-range { color:var(--mc-text-tertiary); font-size:12px; }
+.ns-incomplete { margin:10px 0 0; color:var(--mc-text-tertiary); font-size:12px; line-height:1.6; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--mc-border); } .lifecycle-bar>span { margin-left:5px; color:var(--mc-text-secondary); font-size:12px; }
 .active { color:var(--mc-primary)!important; } .success { color:var(--mc-success)!important; } .warning { color:var(--mc-warning)!important; } .muted { color:var(--mc-text-tertiary)!important; }
 @media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}}
-@media(max-width:760px){.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}}
+@media(max-width:760px){.ns-stages{grid-template-columns:1fr}.north-star header{flex-direction:column;gap:4px}}
 </style>

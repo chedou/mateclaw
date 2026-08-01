@@ -2240,12 +2240,18 @@ export interface DraftView {
   stateNote: string
 }
 
+export interface ScenarioAffordance {
+  scenarioKey: string
+  required: boolean
+}
+
 export interface DeveloperEvidenceView {
   diagnosisId: string
   investigationMode: InvestigationMode
   routeAuthority: RouteAuthority
   playbookRef: string | null
-  deploymentTopologyProbeRequired: boolean
+  /** Keyed scenario capabilities; a new scenario adds a row, not a boolean. */
+  scenarioAffordances: ScenarioAffordance[]
   callChain: CallChainView
   steps: ProjectionEvidenceStep[]
   contrast: ContrastView

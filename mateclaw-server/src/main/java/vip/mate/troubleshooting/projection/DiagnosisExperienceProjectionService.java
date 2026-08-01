@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.projection;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ScenarioAffordance;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.CriterionOutcome;
@@ -93,7 +94,7 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.investigationMode(),
                 authority,
                 playbookRef(diagnosis),
-                topologyScenarioPolicy.requiresProbe(workspaceId, diagnosis),
+                scenarioAffordances(workspaceId, diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
                 evidenceFacts.contrast(),
@@ -306,4 +307,19 @@ public class DiagnosisExperienceProjectionService {
         }
         return "待确认";
     }
+
+    /**
+     * Scenario capabilities as a keyed list. Each scenario contributes at most one
+     * entry; the projection itself stays scenario-agnostic so shipping a new
+     * scenario does not add a field every other diagnosis has to carry.
+     */
+    private List<ScenarioAffordance> scenarioAffordances(long workspaceId, Diagnosis diagnosis) {
+        List<ScenarioAffordance> affordances = new ArrayList<>();
+        if (topologyScenarioPolicy.requiresProbe(workspaceId, diagnosis)) {
+            affordances.add(new ScenarioAffordance(
+                    DeploymentTopologyScenarioPolicy.SCENARIO_KEY, true));
+        }
+        return List.copyOf(affordances);
+    }
+
 }

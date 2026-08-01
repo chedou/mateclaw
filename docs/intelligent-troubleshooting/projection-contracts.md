@@ -123,6 +123,7 @@ public record DeveloperEvidenceView(
         InvestigationMode investigationMode,   // ERROR_CODE_PLAYBOOK | SCENARIO_PLAYBOOK | OPEN_DISCOVERY
         RouteAuthority routeAuthority,         // EXPLICIT | RULE_MATCHED | MODEL_PROPOSED
         String playbookRef,                    // 可空
+        List<ScenarioAffordance> scenarioAffordances,  // 场景能力，键控列表
         CallChainView callChain,
         List<EvidenceStep> steps,
         ContrastView contrast,
@@ -137,6 +138,13 @@ public record CallChainView(
         BlastRadius blastRadius) { }
 
 public record Hop(String hopId, String service, String duration, boolean anomalous) { }
+
+/**
+ * 一项场景专属能力。**用键控列表而不是每个场景一个 boolean**：
+ * 后者会让每个 Diagnosis 都背着一堆与自己无关的开关，且投影每上一个场景就长一个字段。
+ * 投影本身保持场景无关，只有 key 是场景特定的。
+ */
+public record ScenarioAffordance(String scenarioKey, boolean required) { }
 
 /** 一步 = 一条证据或一次判据求值，两者都要能被点开看引用。 */
 public record EvidenceStep(
@@ -172,6 +180,9 @@ public record DraftView(
 - `contrast.available=false` 时前端要显示这一行而不是隐藏它，
   因为"没取到对照"本身是判断质量的信息（对应 v4 §5.7 该草稿锁定校准期档）；
 - **不展示模型私有思维链**：`steps` 只能来自服务端证据与判据，不得放 prompt 或模型自述。
+- `scenarioAffordances` 的 `scenarioKey` 必须唯一；查询用 `requiresScenario(key)`，
+  **不得为具体场景在本记录上新增 boolean 字段**（2026-08-01 已把
+  `deploymentTopologyProbeRequired` 按此收敛）。
 
 ---
 
@@ -190,6 +201,15 @@ public record NorthStarTimings(
 
 三段**必须分开显示**，禁止只给总时长——否则无法判断该优化补问、调查还是呈现（v4 §5.10 / D14）。
 未发生的阶段保持 `null`，前端显示「未发生」，不得用 `0`。
+
+**前端呈现规则（2026-08-01 落地）**：三段渲染为三个独立阶段卡，各自带序号、
+**成本归属方**（补问=报障人↔助手 / 调查=平台 / 采纳=处置人）和专属色轨——
+因为这三笔成本由三方承担、优化手段也各不相同，视觉上必须一眼可分。
+
+占比条**只在三段全部已记录时才画**。在部分记录的数据上画比例，等于凭空暗示一个
+系统并不知道的总量；缺记录时改为显示一行说明。`未发生`（PENDING）与
+`未记录`（UNRECORDED）分别呈现，不合并成"无数据"。
+投影函数与不变量见 `formalProjection.ts#northStarStages`，有专门的单元测试。
 
 **实现现状（2026-07-29）**：`Diagnosis` 1.5 已持久化该值对象；1.6 又把 `IncidentImpact` 纳入同一
 聚合，且兼容 1.3–1.5 的字符串影响。Servlet Filter 在 Spring 请求映射与

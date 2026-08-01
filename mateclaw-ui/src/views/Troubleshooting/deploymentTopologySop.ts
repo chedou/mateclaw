@@ -10,8 +10,11 @@ export const MAX_DEPLOYMENT_PROBE_NODES = 32
 
 type DeploymentTopologyCapability = Pick<
   DeveloperEvidenceView,
-  'diagnosisId' | 'deploymentTopologyProbeRequired'
+  'diagnosisId' | 'scenarioAffordances'
 >
+
+/** Server-side scenario key; the projection stays scenario-agnostic. */
+export const DEPLOYMENT_TOPOLOGY_SCENARIO_KEY = 'deployment_topology_probe'
 
 /** Prevents a previous diagnosis's resolved capability from leaking during selection. */
 export function shouldShowDeploymentTopologyProbe(
@@ -20,7 +23,8 @@ export function shouldShowDeploymentTopologyProbe(
 ): boolean {
   return Boolean(selectedDiagnosisId
     && capability?.diagnosisId === selectedDiagnosisId
-    && capability.deploymentTopologyProbeRequired)
+    && capability.scenarioAffordances?.some(
+      (item) => item.scenarioKey === DEPLOYMENT_TOPOLOGY_SCENARIO_KEY && item.required))
 }
 
 export interface DeploymentTopologySnapshotPreview {

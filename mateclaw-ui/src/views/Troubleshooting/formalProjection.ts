@@ -260,3 +260,99 @@ export function timingState(
   if (timestamp) return '已记录'
   return emptyState === 'pending' ? '未发生' : '未记录'
 }
+
+/** Seconds carried by an ISO-8601 Java Duration, or null when unrecorded. */
+export function durationSeconds(value: string | null): number | null {
+  if (!value) return null
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(value)
+  if (!match) return null
+  return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0)
+}
+
+export type NorthStarStageKey = 'intake' | 'investigate' | 'adopt'
+
+export interface NorthStarStage {
+  key: NorthStarStageKey
+  index: number
+  /** What is being measured, in the operator's words. */
+  label: string
+  /** Who pays this cost — the three segments are owned by three different parties. */
+  owner: string
+  from: string | null
+  to: string | null
+  cost: string | null
+  seconds: number | null
+  state: 'RECORDED' | 'PENDING' | 'UNRECORDED'
+  display: string
+  /** 0–1 share of the total; null unless every stage is recorded (see below). */
+  share: number | null
+}
+
+interface NorthStarTimingsLike {
+  reportedAt: string | null
+  readyAt: string | null
+  conclusionAt: string | null
+  handoffAt: string | null
+  intakeCost: string | null
+  investigateCost: string | null
+  adoptCost: string | null
+}
+
+const STAGE_META: Record<NorthStarStageKey, { label: string; owner: string }> = {
+  intake: { label: '补问成本', owner: '报障人 ↔ 助手' },
+  investigate: { label: '系统调查成本', owner: '平台' },
+  adopt: { label: '人的采纳成本', owner: '处置人' },
+}
+
+/**
+ * Projects D14 timings into three explicitly separate stages.
+ *
+ * The three segments measure costs paid by three different parties, so they are
+ * never summed into one number: a single total cannot tell you whether to
+ * improve the follow-up questions, the investigation, or the presentation.
+ *
+ * `share` is only populated when all three stages are recorded. A proportional
+ * bar drawn over a partially recorded set would silently imply a total that the
+ * system does not actually know.
+ */
+export function northStarStages(timings: NorthStarTimingsLike | null | undefined): NorthStarStage[] {
+  const source: NorthStarTimingsLike = timings ?? {
+    reportedAt: null, readyAt: null, conclusionAt: null, handoffAt: null,
+    intakeCost: null, investigateCost: null, adoptCost: null,
+  }
+  const raw: Array<{
+    key: NorthStarStageKey; from: string | null; to: string | null
+    cost: string | null; emptyState: 'recorded' | 'pending'
+  }> = [
+    { key: 'intake', from: source.reportedAt, to: source.readyAt, cost: source.intakeCost, emptyState: 'recorded' },
+    { key: 'investigate', from: source.readyAt, to: source.conclusionAt, cost: source.investigateCost, emptyState: 'recorded' },
+    { key: 'adopt', from: source.conclusionAt, to: source.handoffAt, cost: source.adoptCost, emptyState: 'pending' },
+  ]
+
+  const stages = raw.map((item, index) => {
+    const seconds = durationSeconds(item.cost)
+    const state: NorthStarStage['state'] = seconds !== null
+      ? 'RECORDED'
+      : item.emptyState === 'pending' ? 'PENDING' : 'UNRECORDED'
+    return {
+      key: item.key,
+      index: index + 1,
+      label: STAGE_META[item.key].label,
+      owner: STAGE_META[item.key].owner,
+      from: item.from,
+      to: item.to,
+      cost: item.cost,
+      seconds,
+      state,
+      display: timingState(item.to, item.cost, item.emptyState),
+      share: null as number | null,
+    }
+  })
+
+  const complete = stages.every((stage) => stage.seconds !== null)
+  const total = stages.reduce((sum, stage) => sum + (stage.seconds ?? 0), 0)
+  if (complete && total > 0) {
+    for (const stage of stages) stage.share = (stage.seconds ?? 0) / total
+  }
+  return stages
+}

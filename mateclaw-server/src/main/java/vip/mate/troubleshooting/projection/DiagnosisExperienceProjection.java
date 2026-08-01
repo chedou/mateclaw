@@ -129,7 +129,7 @@ public record DiagnosisExperienceProjection(
             InvestigationMode investigationMode,
             RouteAuthority routeAuthority,
             String playbookRef,
-            boolean deploymentTopologyProbeRequired,
+            List<ScenarioAffordance> scenarioAffordances,
             CallChainView callChain,
             List<EvidenceStep> steps,
             ContrastView contrast,
@@ -146,8 +146,37 @@ public record DiagnosisExperienceProjection(
                         "investigationMode, routeAuthority, callChain, contrast and draft are required");
             }
             steps = List.copyOf(steps == null ? List.of() : steps);
+            scenarioAffordances = List.copyOf(
+                    scenarioAffordances == null ? List.of() : scenarioAffordances);
             capabilityLimits = List.copyOf(
                     capabilityLimits == null ? List.of() : capabilityLimits);
+            if (scenarioAffordances.stream().map(ScenarioAffordance::scenarioKey).distinct()
+                    .count() != scenarioAffordances.size()) {
+                throw new IllegalArgumentException("scenarioAffordances must have unique scenarioKey");
+            }
+        }
+
+        /** True when the named scenario is offered on this diagnosis and still required. */
+        public boolean requiresScenario(String scenarioKey) {
+            return scenarioAffordances.stream()
+                    .anyMatch(item -> item.scenarioKey().equals(scenarioKey) && item.required());
+        }
+    }
+
+    /**
+     * One scenario-specific affordance the developer view may offer.
+     *
+     * <p>Scenario capabilities are carried as a keyed list rather than as booleans
+     * on {@link DeveloperEvidenceView}. A boolean per scenario would make every
+     * diagnosis carry a flag about a scenario it has nothing to do with, and the
+     * record would grow one field per scenario shipped. The projection stays
+     * scenario-agnostic; only the key is scenario-specific.</p>
+     */
+    public record ScenarioAffordance(String scenarioKey, boolean required) {
+        public ScenarioAffordance {
+            // The accessor `required()` shadows the outer static helper of the same
+            // name inside this constructor, so the helper must be qualified.
+            scenarioKey = DiagnosisExperienceProjection.required(scenarioKey, "scenarioKey");
         }
     }
 

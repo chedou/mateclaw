@@ -108,7 +108,7 @@
         </el-table-column>
         <el-table-column label="操作" width="110" align="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click.stop="emit('open-diagnosis', row)">查看详情</el-button>
+            <el-button type="primary" link @click.stop="openDiagnosis(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -174,7 +174,12 @@ const systemOptions = computed(() =>
   [...new Set(props.rows.map(r => r.system).filter(Boolean))].sort()
 )
 
-function onSortChange({ prop, order }: { prop: string; order: string | null }) {
+/**
+ * Element Plus emits `{ column, prop, order }` with both `prop` and `order`
+ * nullable — clearing a sort sends nulls. Declaring them non-null made the
+ * handler unassignable to the emitted type, which is why `vue-tsc` failed.
+ */
+function onSortChange({ prop, order }: { prop: string | null; order: string | null }) {
   if (prop && order) {
     store.sortField = prop as 'updateTime' | 'service' | 'status'
     store.sortOrder = order === 'ascending' ? 'asc' : 'desc'
@@ -182,6 +187,16 @@ function onSortChange({ prop, order }: { prop: string; order: string | null }) {
     store.sortField = 'updateTime'
     store.sortOrder = 'desc'
   }
+}
+
+/**
+ * `el-table` scoped slots are typed as `DefaultRow`, not as the element type of
+ * `:data`. The table is bound to `store.filteredRows`, so the row really is a
+ * `DiagnosisSummary`; narrowing happens here, at one boundary, rather than with
+ * a cast scattered through the template.
+ */
+function openDiagnosis(row: DiagnosisSummary | Record<string, unknown>) {
+  emit('open-diagnosis', row as DiagnosisSummary)
 }
 
 function onSelectionChange(rows: DiagnosisSummary[]) {
