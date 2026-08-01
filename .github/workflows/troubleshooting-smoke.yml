@@ -63,7 +63,7 @@ jobs:
         run: >-
           mvn --settings mateclaw-server/settings.xml
           --batch-mode --no-transfer-progress
-          -pl mateclaw-plugin-api -DskipTests install
+          -pl mateclaw-plugin-api -am -DskipTests install
 
       - name: Start troubleshooting demo server
         shell: bash

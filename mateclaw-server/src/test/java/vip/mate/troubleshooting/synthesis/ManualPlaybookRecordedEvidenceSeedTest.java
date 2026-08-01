@@ -110,6 +110,19 @@ class ManualPlaybookRecordedEvidenceSeedTest {
                 .hasMessageContaining("safe bounded aggregate");
     }
 
+    @Test
+    void appliesTheItemBudgetAcrossTheWholeRecordedAggregate() {
+        SopEntry candidate = singleCriterionCandidate();
+        Map<String, Object> observed = Map.of(
+                "count", 2,
+                "first_bucket", java.util.Collections.nCopies(16, 1),
+                "second_bucket", java.util.Collections.nCopies(16, 1));
+
+        assertThatThrownBy(() -> seed(candidate, observed))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("safe bounded aggregate");
+    }
+
     private void assertGeneratedSuitePasses(
             Criterion criterion,
             Map<String, Object> positiveObserved) {

@@ -1,0 +1,239 @@
+meta:
+  profile: engineering-review
+  theme: tech-blue
+  source: generated
+  layout: horizontal
+  routing: orthogonal
+  canvas: 1920x1200
+  title: "MateClaw 智能排障总体架构"
+  description: "v0.18：部署拓扑是 Workspace 资产，deployment_topology_probe 是场景 Playbook，topology_synthetic_probe 是只读语义 Tool；Guance CloudDial 只是来源 Adapter，结果回到同一 Diagnosis / EvidenceBundle。"
+
+nodes:
+  - id: areaChannels
+    label: "入口与通道"
+    type: service
+    bounds: { x: 24, y: 64, width: 240, height: 480 }
+    style: { fillColor: "#F8FAFC", strokeColor: "#CBD5E1", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: areaCore
+    label: "MateClaw 证据脊柱"
+    type: service
+    bounds: { x: 296, y: 144, width: 1120, height: 320 }
+    style: { fillColor: "#EFF6FF", strokeColor: "#2563EB", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: areaEvidence
+    label: "只读证据 Tool 插拔层（受控）"
+    type: service
+    bounds: { x: 720, y: 504, width: 696, height: 272 }
+    style: { fillColor: "#ECFDF5", strokeColor: "#059669", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: areaOutcomes
+    label: "在线排障闭环"
+    type: service
+    bounds: { x: 1488, y: 64, width: 384, height: 560 }
+    style: { fillColor: "#FFF7ED", strokeColor: "#D97706", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+  - id: areaKnowledge
+    label: "知识改进外循环 · 结构化反证 / 回放 / 人工裁决"
+    type: service
+    bounds: { x: 480, y: 864, width: 1056, height: 256 }
+    style: { fillColor: "#F5F3FF", strokeColor: "#7C3AED", align: left, verticalAlign: top, spacingLeft: 12, spacingTop: 10, fontWeight: 600 }
+
+  - id: wecom
+    label: "企微 @ 报障 / 补问"
+    type: user
+    bounds: { x: 56, y: 128, width: 176, height: 80 }
+  - id: web
+    label: "Web 证据 / 处置 / 审核"
+    type: service
+    bounds: { x: 56, y: 240, width: 176, height: 80 }
+  - id: alert
+    label: "告警 / 工单接入"
+    type: document
+    bounds: { x: 56, y: 448, width: 176, height: 80 }
+  - id: topologyAsset
+    label: "Workspace 拓扑资产"
+    type: database
+    bounds: { x: 56, y: 352, width: 176, height: 64 }
+
+  - id: intake
+    label: "报障受理"
+    type: service
+    bounds: { x: 328, y: 248, width: 184, height: 88 }
+  - id: planning
+    label: "调查规划 · 拓扑拨测"
+    type: service
+    bounds: { x: 544, y: 248, width: 184, height: 88 }
+  - id: loopController
+    label: "Loop Control · 预算 / 检查点 / 停止"
+    type: process
+    bounds: { x: 760, y: 216, width: 224, height: 152 }
+    style: { fillColor: "#DBEAFE", strokeColor: "#2563EB", fontWeight: 600 }
+  - id: orchestration
+    label: "只读取证编排"
+    type: service
+    bounds: { x: 1016, y: 248, width: 184, height: 88 }
+  - id: bundle
+    label: "EvidenceBundle"
+    type: document
+    bounds: { x: 1232, y: 248, width: 184, height: 88 }
+
+  - id: toolRegistry
+    label: "只读 Tool Registry"
+    type: service
+    bounds: { x: 752, y: 544, width: 632, height: 56 }
+  - id: toolPlugins
+    label: "Tool SPI · topology_synthetic_probe 等"
+    type: process
+    bounds: { x: 752, y: 632, width: 632, height: 56 }
+    style: { fillColor: "#D1FAE5", strokeColor: "#059669" }
+  - id: sourceAdapters
+    label: "Adapter SPI · CloudDial / Replay"
+    type: service
+    bounds: { x: 752, y: 720, width: 632, height: 40 }
+
+  - id: diagnosis
+    label: "Verify Gate · 完成 / 补证 / 弃权"
+    type: service
+    bounds: { x: 1536, y: 128, width: 288, height: 104 }
+  - id: projection
+    label: "业务摘要 / 证据 / 拓扑历史"
+    type: document
+    bounds: { x: 1536, y: 288, width: 288, height: 96 }
+  - id: lifecycle
+    label: "人工处置 / outcome / 关闭"
+    type: service
+    bounds: { x: 1536, y: 448, width: 288, height: 96 }
+
+  - id: synthesis
+    label: "PlaybookDraft 合成"
+    type: process
+    bounds: { x: 1288, y: 936, width: 216, height: 104 }
+  - id: adversarialEvaluation
+    label: "Adversarial Eval · 证据质疑 / 安全质疑"
+    type: process
+    bounds: { x: 996, y: 920, width: 260, height: 136 }
+    style: { fillColor: "#FEF3C7", strokeColor: "#D97706", fontWeight: 600 }
+  - id: governance
+    label: "确定性回放 + 人工审核"
+    type: service
+    bounds: { x: 744, y: 936, width: 220, height: 104 }
+  - id: approved
+    label: "Approved Playbook"
+    type: terminal
+    bounds: { x: 512, y: 936, width: 200, height: 104 }
+
+  - id: safety
+    label: "安全边界 · 写工具=0 · Loop 有界 · 共识≠证据 · 候选≠权威"
+    type: document
+    bounds: { x: 1584, y: 864, width: 288, height: 216 }
+    style: { fillColor: "#FEF2F2", strokeColor: "#DC2626", fontColor: "#7F1D1D", fontSize: 11 }
+
+edges:
+  - from: wecom
+    to: intake
+    type: primary
+    label: "报障上下文"
+    labelOffset: { x: 0, y: -16 }
+  - from: web
+    to: intake
+    type: primary
+  - from: alert
+    to: intake
+    type: data
+  - from: topologyAsset
+    to: planning
+    type: data
+    label: "选定不可变快照"
+    labelOffset: { x: 0, y: -16 }
+    waypoints:
+      - { x: 264, y: 384 }
+      - { x: 636, y: 384 }
+  - from: intake
+    to: planning
+    type: primary
+  - from: planning
+    to: loopController
+    type: primary
+  - from: loopController
+    to: orchestration
+    type: primary
+  - from: orchestration
+    to: bundle
+    type: primary
+  - from: orchestration
+    to: toolRegistry
+    type: data
+    label: "唯一只读门面 / 服务端计划"
+    labelOffset: { x: 16, y: 0 }
+    waypoints:
+      - { x: 1108, y: 480 }
+      - { x: 1068, y: 480 }
+  - from: toolRegistry
+    to: toolPlugins
+    type: primary
+  - from: toolPlugins
+    to: sourceAdapters
+    type: primary
+  - from: bundle
+    to: diagnosis
+    type: primary
+    waypoints:
+      - { x: 1520, y: 292 }
+      - { x: 1520, y: 180 }
+  - from: diagnosis
+    to: loopController
+    type: optional
+    label: "NEEDS_EVIDENCE · 预算内继续"
+    labelOffset: { x: 0, y: -16 }
+    waypoints:
+      - { x: 1608, y: 96 }
+      - { x: 872, y: 96 }
+  - from: diagnosis
+    to: projection
+    type: primary
+  - from: projection
+    to: lifecycle
+    type: primary
+  - from: bundle
+    to: synthesis
+    type: data
+    label: "脱敏骨架 + 引用"
+    labelOffset: { x: 16, y: 0 }
+    waypoints:
+      - { x: 1496, y: 336 }
+      - { x: 1496, y: 848 }
+      - { x: 1396, y: 848 }
+  - from: synthesis
+    to: adversarialEvaluation
+    type: primary
+  - from: adversarialEvaluation
+    to: governance
+    type: primary
+  - from: diagnosis
+    to: adversarialEvaluation
+    type: data
+    label: "P2 影子样本"
+    labelOffset: { x: 0, y: -16 }
+    waypoints:
+      - { x: 1424, y: 160 }
+      - { x: 1424, y: 800 }
+      - { x: 1080, y: 800 }
+  - from: lifecycle
+    to: adversarialEvaluation
+    type: data
+    label: "人工解法 / outcome / ReferenceSolution"
+    labelOffset: { x: 0, y: -16 }
+    waypoints:
+      - { x: 1456, y: 496 }
+      - { x: 1456, y: 832 }
+      - { x: 1180, y: 832 }
+      - { x: 1180, y: 880 }
+  - from: governance
+    to: approved
+    type: primary
+  - from: approved
+    to: planning
+    type: data
+    label: "已审核知识反馈"
+    labelOffset: { x: 16, y: 0 }
+    waypoints:
+      - { x: 448, y: 988 }
+      - { x: 448, y: 400 }
+      - { x: 636, y: 400 }

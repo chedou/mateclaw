@@ -67,8 +67,9 @@ public record ManualPlaybookRecordedEvidenceSeed(
         if (positiveCase.evidence().size() > MAX_AGGREGATE_ITEMS) {
             throw unsafeAggregate();
         }
+        AggregateBudget aggregateBudget = new AggregateBudget(MAX_AGGREGATE_ITEMS);
         positiveCase.evidence().forEach(evidence ->
-                requireSafeAggregate(evidence.observed(), 0));
+                requireSafeAggregate(evidence.observed(), 0, aggregateBudget));
     }
 
     private static String required(String value, String field) {
@@ -78,7 +79,10 @@ public record ManualPlaybookRecordedEvidenceSeed(
         return value.trim();
     }
 
-    private static void requireSafeAggregate(Object value, int depth) {
+    private static void requireSafeAggregate(
+            Object value,
+            int depth,
+            AggregateBudget aggregateBudget) {
         if (value == null || depth > MAX_AGGREGATE_DEPTH) {
             throw unsafeAggregate();
         }
@@ -97,6 +101,7 @@ public record ManualPlaybookRecordedEvidenceSeed(
             if (mapValue.size() > MAX_AGGREGATE_ITEMS) {
                 throw unsafeAggregate();
             }
+            aggregateBudget.consume(mapValue.size());
             for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
                 if (!(entry.getKey() instanceof String key)
                         || key.isBlank()
@@ -105,7 +110,7 @@ public record ManualPlaybookRecordedEvidenceSeed(
                         .equals(key + "=placeholder")) {
                     throw unsafeAggregate();
                 }
-                requireSafeAggregate(entry.getValue(), depth + 1);
+                requireSafeAggregate(entry.getValue(), depth + 1, aggregateBudget);
             }
             return;
         }
@@ -113,7 +118,9 @@ public record ManualPlaybookRecordedEvidenceSeed(
             if (listValue.size() > MAX_AGGREGATE_ITEMS) {
                 throw unsafeAggregate();
             }
-            listValue.forEach(item -> requireSafeAggregate(item, depth + 1));
+            aggregateBudget.consume(listValue.size());
+            listValue.forEach(item ->
+                    requireSafeAggregate(item, depth + 1, aggregateBudget));
             return;
         }
         throw unsafeAggregate();
@@ -129,5 +136,20 @@ public record ManualPlaybookRecordedEvidenceSeed(
     private static IllegalArgumentException unsafeAggregate() {
         return new IllegalArgumentException(
                 "recorded evidence seed must contain only safe bounded aggregate data");
+    }
+
+    private static final class AggregateBudget {
+        private int remaining;
+
+        private AggregateBudget(int remaining) {
+            this.remaining = remaining;
+        }
+
+        private void consume(int items) {
+            if (items < 0 || items > remaining) {
+                throw unsafeAggregate();
+            }
+            remaining -= items;
+        }
     }
 }

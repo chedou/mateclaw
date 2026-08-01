@@ -496,9 +496,7 @@
             "requestId": "EV-IM1010-SEARCH",
             "status": "ANOMALY",
             "observed": {
-              "match_count": 2,
-              "ps_id": "synthetic-ps-im1010-001",
-              "sample_message": "message send failed in producer path"
+              "match_count": 2
             }
           },
           {

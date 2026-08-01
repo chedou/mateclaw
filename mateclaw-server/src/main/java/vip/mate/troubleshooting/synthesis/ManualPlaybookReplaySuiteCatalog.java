@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ public final class ManualPlaybookReplaySuiteCatalog {
 
     private static final String RESOURCE =
             "troubleshooting/replay/manual-playbook-replay-suites.json";
+    private static final int MAX_REJECTION_REFERENCE_LENGTH = 128;
 
     private final Map<String, ResolvedSuite> suites;
     private final List<RejectedSeed> rejectedSeeds;
@@ -141,8 +143,14 @@ public final class ManualPlaybookReplaySuiteCatalog {
     }
 
     private String seedReference(JsonNode node, int index) {
+        String fallback = "recordedEvidenceSeeds[" + index + "]";
         String selector = node.path("selectorKey").asText("").trim();
-        return selector.isEmpty() ? "recordedEvidenceSeeds[" + index + "]" : selector;
+        if (selector.isEmpty()
+                || selector.length() > MAX_REJECTION_REFERENCE_LENGTH
+                || !TroubleshootingSecretRedactor.redact(selector).equals(selector)) {
+            return fallback;
+        }
+        return selector;
     }
 
     public record ResolvedSuite(
@@ -161,12 +169,14 @@ public final class ManualPlaybookReplaySuiteCatalog {
 
     public record RejectedSeed(String reference, String code) {
         public RejectedSeed {
-            if (reference == null || reference.isBlank()
+            reference = reference == null ? null : reference.trim();
+            if (reference == null || reference.isEmpty()
+                    || reference.length() > MAX_REJECTION_REFERENCE_LENGTH
+                    || !TroubleshootingSecretRedactor.redact(reference).equals(reference)
                     || code == null || !code.matches("[A-Z0-9_]+")) {
                 throw new IllegalArgumentException(
                         "recorded seed rejection requires a bounded reference and code");
             }
-            reference = reference.trim();
         }
     }
 }

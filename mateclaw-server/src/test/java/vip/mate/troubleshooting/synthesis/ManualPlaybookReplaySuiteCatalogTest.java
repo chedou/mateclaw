@@ -107,4 +107,40 @@ class ManualPlaybookReplaySuiteCatalogTest {
                 .containsExactly(new ManualPlaybookReplaySuiteCatalog.RejectedSeed(
                         "csdp:BROKEN", "INVALID_RECORDED_EVIDENCE_SEED"));
     }
+
+    @Test
+    void quarantinedSeedReferencesNeverExposeUnboundedOrSecretShapedSelectors()
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ObjectNode document;
+        try (var input = new ClassPathResource(
+                "troubleshooting/replay/manual-playbook-replay-suites.json")
+                .getInputStream()) {
+            document = (ObjectNode) objectMapper.readTree(input);
+        }
+        ArrayNode recordedSeeds = document.putArray("recordedEvidenceSeeds");
+        recordedSeeds.addObject()
+                .put("contractVersion", "invalid-recorded-seed")
+                .put("selectorKey", "csdp:" + "X".repeat(300));
+        recordedSeeds.addObject()
+                .put("contractVersion", "invalid-recorded-seed")
+                .put("selectorKey", "token=redaction-fixture");
+
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ByteArrayResource(objectMapper.writeValueAsBytes(document)));
+
+        assertThat(catalog.rejectedSeeds())
+                .containsExactly(
+                        new ManualPlaybookReplaySuiteCatalog.RejectedSeed(
+                                "recordedEvidenceSeeds[0]",
+                                "INVALID_RECORDED_EVIDENCE_SEED"),
+                        new ManualPlaybookReplaySuiteCatalog.RejectedSeed(
+                                "recordedEvidenceSeeds[1]",
+                                "INVALID_RECORDED_EVIDENCE_SEED"));
+    }
 }

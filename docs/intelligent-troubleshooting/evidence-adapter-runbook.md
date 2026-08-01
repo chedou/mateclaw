@@ -148,9 +148,10 @@ mateclaw.troubleshooting.evidence.guance:
 MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED=true
 ```
 
-随仓样本包含合成的 `order-svc / 903001 / synthetic-trace-903001`，以及无错误码的
-`csdp-session-service / 会话消息发送失败 / synthetic-ps-message-send-001`。回放键允许
-`errorCode` 缺省，二者都只用于回归合同，不代表生产事实。
+随仓 catalog 包含合成的 `order-svc / 903001 / synthetic-trace-903001`、无错误码的
+`csdp-session-service / 会话消息发送失败 / synthetic-ps-message-send-001`，以及 2026-07-31
+脱敏聚合快照 `csp-rpc-msg / IM1010`（失败 2/2、成功 0/14047）。回放键允许
+`errorCode` 缺省；三者都只用于回归合同，`IM1010` 的历史来源也不把回放变成在线生产事实。
 
 ### 2.1 部署拓扑拨测场景与 Tool 触发入口
 
@@ -353,7 +354,8 @@ DQL、搜索键或凭据。`contrast_sample` 缺失时返回 `CORE_CHAIN_OBSERVE
   JSON 的 `source` 是源码位置，不冒充服务名，也没有做跨 series 序号拼接；
 - `contrast_sample`：失败 cohort 与带显式 `success` 终态标记的成功 cohort 都非空，四项都按 PS ID
   去重；固定特征在失败 cohort 的命中率严格高于成功 cohort。两个 cohort 各自使用一个 24 小时单桶聚合，
-  最终脱敏预览快照为失败 `2/2`、成功 `0/14047`；样本总量会随实时数据变化，不写成固定基线。
+  最终脱敏预览快照为失败 `2/2`、成功 `0/14047`；这组数值已作为带日期的录制回放快照冻结，
+  只用于可复算回归，不是对实时样本总量的永久阈值。
   `success` 标记的业务语义仍须 owner 在 T7 正式确认；
 - 预览返回 `FULL_SPINE_OBSERVED`，`sourceRequestCount=3`，三个步骤均为
   `CANONICAL_RESULT_OBSERVED`，且没有 Recorded Replay 回退。

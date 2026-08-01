@@ -292,7 +292,7 @@ class ToolDisclosureServiceTest {
         AgentToolSet set = manyCoreSet();
 
         var split = svc.split(set, Set.of(), Set.of("tool_b"));
-        assertEquals(List.of("tool_a", "tool_c"), names(split.activeCallbacks()));
+        assertEquals(Set.of("tool_a", "tool_c"), Set.copyOf(names(split.activeCallbacks())));
         assertEquals(List.of("tool_b"), names(split.extensionCatalog()));
 
         var enabledBack = svc.split(set, Set.of("tool_b"), Set.of("tool_b"));

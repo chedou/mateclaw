@@ -44,6 +44,9 @@
   Diagnosis；该版已被 v0.18 的统一 Evidence Spine 语义修正，但历史制品不覆盖。
 - **v0.18**：部署拓扑拨测回归统一排障架构：拓扑资产由场景 Playbook 选择，调用语义 Tool，再经来源
   Adapter 产生 canonical evidence 并进入同一 Diagnosis、判据、规则、投影和治理链；不新增第二套结果权威。
+- **v0.19**：图形语义不变，RFC 升级为 v4.5。D19 锁定错误码知识采用“安全有界的录制聚合正例 +
+  封闭判据形状生成排除/弃权例”，继续执行原晋升门；固定套件 fail-fast，坏生成种子按 selector
+  隔离。首个 `CSDP / csp-rpc-msg / IM1010` 切片已在真实 HTTP 边界跑通，仍明确标记 fixture。
 
 v0.2–v0.6 中存在用户已经否定的其他项目材料，因此不作为当前 MateClaw-only 架构版本导入。
 原始下载文件仍留在用户 Downloads 中，不得把其中结论重新并入现行设计。

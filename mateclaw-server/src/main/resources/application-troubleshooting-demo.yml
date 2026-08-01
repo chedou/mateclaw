@@ -3,12 +3,12 @@ spring:
     activate:
       on-profile: troubleshooting-demo
 
-# One walkable scenario, entirely on the recorded fixture.
+# Walkable scenarios, entirely on the recorded fixture.
 #
 # This profile exists because the domain's gates are all fail-closed and their
 # conjunction left no default path: no evidence source is on, and the repository
 # ships no Playbook, so every report missed the route. Activating this profile
-# opens exactly one clearly-marked demo door — it does not touch any real
+# opens explicitly marked demo doors — it does not touch any real
 # observability binding and does not change the fixture marking on results.
 #
 #   mvn --settings mateclaw-server/settings.xml \
