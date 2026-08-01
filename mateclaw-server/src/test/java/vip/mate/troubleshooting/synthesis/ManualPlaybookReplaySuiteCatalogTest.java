@@ -8,6 +8,8 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.RecommendedAction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,6 +45,36 @@ class ManualPlaybookReplaySuiteCatalogTest {
                         "healthy-probe-negative",
                         "probe-unavailable-abstain");
         assertThat(catalog.find("csdp:scenario:unknown")).isEmpty();
+    }
+
+    @Test
+    void generatesTheIm1010SuiteFromRecordedAggregateEvidence() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        ManualPlaybookReplaySuiteCatalog.ResolvedSuite resolved = catalog.find("csdp:IM1010")
+                .orElseThrow();
+
+        assertThat(catalog.rejectedSeeds()).isEmpty();
+        assertThat(resolved.suite().suiteId()).isEqualTo("csdp-im1010-message-send/v1");
+        assertThat(resolved.suite().exampleCandidate().service()).isEqualTo("csp-rpc-msg");
+        assertThat(resolved.suite().cases())
+                .extracting(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .containsExactly(
+                        ManualPlaybookReplaySuite.Disposition.MATCHED,
+                        ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                        ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+        assertThat(resolved.suite().exampleCandidate().actions())
+                .extracting(RecommendedAction::actionType)
+                .allMatch(type -> type == ActionType.AUTO_READONLY
+                        || type == ActionType.HUMAN_CONTACT);
     }
 
     @Test

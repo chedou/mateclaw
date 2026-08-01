@@ -13,7 +13,9 @@ import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluation;
 import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluator;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayFingerprint;
 import vip.mate.troubleshooting.synthesis.ManualPlaybookReplaySuite;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplaySuiteCatalog;
 
 import java.io.InputStream;
 import java.util.LinkedHashMap;
@@ -42,10 +44,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TroubleshootingDemoSeederTest {
 
     private static final String FIXTURE =
-            "/troubleshooting/evidence/recorded-replay-903001.json";
-    private static final String SUITES =
-            "/troubleshooting/replay/manual-playbook-replay-suites.json";
-    private static final String SELECTOR = "csdp:903001";
+            "/troubleshooting/evidence/recorded-replay-catalog.json";
+
+    @Test
+    @DisplayName("演示种子覆盖固定 903001 与录制 IM1010 两条服务端场景")
+    void demoSelectorsAreOwnedByTheReplayCatalog() {
+        assertThat(TroubleshootingDemoSeeder.selectors())
+                .containsExactly("csdp:903001", "csdp:IM1010");
+        assertThat(candidates())
+                .extracting(SopEntry::routingKey)
+                .containsExactly("csdp:903001", "csdp:IM1010");
+    }
 
     @Test
     @DisplayName("每条证据请求都能在回放样本里找到对应记录")
@@ -54,7 +63,8 @@ class TroubleshootingDemoSeederTest {
                 .map(record -> record.get("requestId").asText())
                 .collect(Collectors.toSet());
 
-        List<String> requested = TroubleshootingDemoSeeder.playbook().evidenceRequests().stream()
+        List<String> requested = candidates().stream()
+                .flatMap(candidate -> candidate.evidenceRequests().stream())
                 .map(request -> request.requestId())
                 .toList();
 
@@ -71,15 +81,18 @@ class TroubleshootingDemoSeederTest {
                     fieldNames(record.get("observed")));
         }
 
-        for (AnomalyCriterion criterion : TroubleshootingDemoSeeder.playbook().anomalyCriteria()) {
-            Set<String> available = observedFields.get(criterion.sourceRequestId());
-            assertThat(available)
-                    .as("criterion %s points at a request the fixture does not answer",
-                            criterion.signal())
-                    .isNotNull();
-            assertThat(available)
-                    .as("criterion %s reads a field the fixture never observes", criterion.signal())
-                    .containsAll(fieldsOf(criterion.rule()));
+        for (SopEntry candidate : candidates()) {
+            for (AnomalyCriterion criterion : candidate.anomalyCriteria()) {
+                Set<String> available = observedFields.get(criterion.sourceRequestId());
+                assertThat(available)
+                        .as("criterion %s points at a request the fixture does not answer",
+                                criterion.signal())
+                        .isNotNull();
+                assertThat(available)
+                        .as("criterion %s reads a field the fixture never observes",
+                                criterion.signal())
+                        .containsAll(fieldsOf(criterion.rule()));
+            }
         }
     }
 
@@ -89,7 +102,7 @@ class TroubleshootingDemoSeederTest {
         Map<String, Object> observed = observedOf("EV-2");
         CriterionEvaluator evaluator = new CriterionEvaluator();
 
-        Map<String, AnomalyCriterion> bySignal = TroubleshootingDemoSeeder.playbook()
+        Map<String, AnomalyCriterion> bySignal = candidateFor("csdp:903001")
                 .anomalyCriteria().stream()
                 .collect(Collectors.toMap(AnomalyCriterion::signal, criterion -> criterion,
                         (first, second) -> first, LinkedHashMap::new));
@@ -106,12 +119,13 @@ class TroubleshootingDemoSeederTest {
     @Test
     @DisplayName("种子 playbook 只以 candidate 注册，且不含任何生产写动作")
     void seededPlaybookStaysCandidateAndReadOnly() {
-        SopEntry playbook = TroubleshootingDemoSeeder.playbook();
-        assertThat(playbook.status()).isEqualTo("candidate");
-        assertThat(playbook.verified()).isFalse();
-        assertThat(playbook.actions())
-                .allSatisfy(action -> assertThat(action.actionType())
-                        .isNotEqualTo(ActionType.MANUAL_WRITE));
+        assertThat(candidates()).allSatisfy(playbook -> {
+            assertThat(playbook.status()).isEqualTo("candidate");
+            assertThat(playbook.verified()).isFalse();
+            assertThat(playbook.actions())
+                    .allSatisfy(action -> assertThat(action.actionType())
+                            .isIn(ActionType.AUTO_READONLY, ActionType.HUMAN_CONTACT));
+        });
     }
 
     /**
@@ -122,48 +136,61 @@ class TroubleshootingDemoSeederTest {
      * boot and the demo route would silently stay missing.</p>
      */
     @Test
-    @DisplayName("种子 playbook 能通过 csdp:903001 的固定回放套件，因而可被正常晋升")
-    void seededPlaybookPassesTheSuiteThatGatesItsPromotion() throws Exception {
-        ManualPlaybookReplaySuite suite = suiteFor(SELECTOR);
-        ManualPlaybookReplayEvaluation evaluation =
-                new ManualPlaybookReplayEvaluator(
-                        new CriterionEvaluator(), new DiagnosisRuleEvaluator())
-                        .evaluate(TroubleshootingDemoSeeder.playbook(), suite);
+    @DisplayName("每个演示候选都能通过自己的服务端回放套件，因而可被正常晋升")
+    void seededPlaybooksPassTheSuitesThatGateTheirPromotion() {
+        for (String selector : TroubleshootingDemoSeeder.selectors()) {
+            ManualPlaybookReplaySuite suite = suiteFor(selector);
+            ManualPlaybookReplayEvaluation evaluation =
+                    new ManualPlaybookReplayEvaluator(
+                            new CriterionEvaluator(), new DiagnosisRuleEvaluator())
+                            .evaluate(candidateFor(selector), suite);
 
-        assertThat(evaluation.failureCodes()).isEmpty();
-        assertThat(evaluation.passed()).isTrue();
-        assertThat(evaluation.positiveTotal())
-                .as("一套只有正例的回放证明不了任何排除能力").isPositive();
-        assertThat(evaluation.negativeOrAbstainTotal())
-                .as("必须有反例/弃权例，否则规则永远赢").isPositive();
+            assertThat(evaluation.failureCodes()).as(selector).isEmpty();
+            assertThat(evaluation.passed()).as(selector).isTrue();
+            assertThat(evaluation.positiveTotal())
+                    .as("%s 一套只有正例的回放证明不了任何排除能力", selector).isPositive();
+            assertThat(evaluation.negativeOrAbstainTotal())
+                    .as("%s 必须有反例/弃权例，否则规则永远赢", selector).isPositive();
+        }
     }
 
     @Test
     @DisplayName("回放套件覆盖命中、排除与弃权三种处置，而不是只证明会命中")
-    void theSuiteCoversAllThreeDispositions() throws Exception {
-        List<ManualPlaybookReplaySuite.Disposition> expected = suiteFor(SELECTOR).cases().stream()
-                .map(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
-                .distinct()
-                .toList();
+    void theSuitesCoverAllThreeDispositions() {
+        for (String selector : TroubleshootingDemoSeeder.selectors()) {
+            List<ManualPlaybookReplaySuite.Disposition> expected = suiteFor(selector).cases().stream()
+                    .map(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                    .distinct()
+                    .toList();
 
-        assertThat(expected).containsExactlyInAnyOrder(
-                ManualPlaybookReplaySuite.Disposition.MATCHED,
-                ManualPlaybookReplaySuite.Disposition.EXCLUDED,
-                ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+            assertThat(expected).as(selector).containsExactlyInAnyOrder(
+                    ManualPlaybookReplaySuite.Disposition.MATCHED,
+                    ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                    ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+        }
     }
 
-    private static ManualPlaybookReplaySuite suiteFor(String selectorKey) throws Exception {
-        try (InputStream stream = TroubleshootingDemoSeederTest.class.getResourceAsStream(SUITES)) {
-            assertThat(stream).as("replay suite catalog must ship with the module").isNotNull();
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(stream);
-            for (JsonNode suite : root.get("suites")) {
-                if (selectorKey.equals(suite.get("selectorKey").asText())) {
-                    return mapper.treeToValue(suite, ManualPlaybookReplaySuite.class);
-                }
-            }
-            throw new IllegalStateException("no replay suite registered for " + selectorKey);
-        }
+    private static ManualPlaybookReplaySuite suiteFor(String selectorKey) {
+        return catalog().find(selectorKey).orElseThrow().suite();
+    }
+
+    private static SopEntry candidateFor(String selectorKey) {
+        return suiteFor(selectorKey).exampleCandidate();
+    }
+
+    private static List<SopEntry> candidates() {
+        return TroubleshootingDemoSeeder.selectors().stream()
+                .map(TroubleshootingDemoSeederTest::candidateFor)
+                .toList();
+    }
+
+    private static ManualPlaybookReplaySuiteCatalog catalog() {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        return new ManualPlaybookReplaySuiteCatalog(
+                mapper,
+                new ManualPlaybookReplayFingerprint(mapper),
+                new ManualPlaybookReplayEvaluator(
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator()));
     }
 
     private static Set<String> fieldNames(JsonNode node) {

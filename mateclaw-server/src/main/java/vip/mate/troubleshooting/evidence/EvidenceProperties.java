@@ -99,7 +99,7 @@ public class EvidenceProperties {
     public static class RecordedReplay {
         private boolean enabled;
         private String resource =
-                "classpath:/troubleshooting/evidence/recorded-replay-903001.json";
+                "classpath:/troubleshooting/evidence/recorded-replay-catalog.json";
     }
 
     /** Explicit fixture-only scope for the read-only synthesis preview. */

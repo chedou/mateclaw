@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${ROOT_DIR}/.github/workflows/troubleshooting-smoke.yml"
 MAVEN_SETTINGS="${ROOT_DIR}/mateclaw-server/settings.xml"
+SMOKE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-smoke.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -21,6 +22,12 @@ assert_settings_contains() {
   local needle="$1"
   grep -Fq -- "${needle}" "${MAVEN_SETTINGS}" \
     || fail "Maven settings must contain: ${needle}"
+}
+
+assert_smoke_contains() {
+  local needle="$1"
+  grep -Fq -- "${needle}" "${SMOKE_SCRIPT}" \
+    || fail "smoke script must contain: ${needle}"
 }
 
 assert_order() {
@@ -50,7 +57,7 @@ assert_contains "spring-boot:run"
 assert_contains "dev,troubleshooting-demo"
 assert_contains "{1..60}"
 assert_contains "sleep 2"
-assert_contains "/sops/csdp/903001"
+assert_contains "/sops/csdp/IM1010"
 assert_contains '[[ "${playbook_status}" == "approved" ]]'
 assert_contains "./scripts/troubleshooting-smoke.sh"
 assert_contains "MATECLAW_USERNAME: admin"
@@ -64,6 +71,8 @@ assert_order "-pl mateclaw-plugin-api" "spring-boot:run"
 
 assert_settings_contains "<mirrorOf>*</mirrorOf>"
 assert_settings_contains "https://maven.aliyun.com/repository/public"
+assert_smoke_contains 'SMOKE_SERVICE:-csp-rpc-msg'
+assert_smoke_contains 'SMOKE_ERROR_CODE:-IM1010'
 
 if grep -Eqi 'guance|fixtureMode[[:space:]]*:[[:space:]]*false' "${WORKFLOW}"; then
   fail "workflow must stay fixture-only and must not configure Guance"

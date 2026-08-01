@@ -97,7 +97,7 @@ jobs:
                   --connect-timeout 2 --max-time 3 \
                   --header "Authorization: Bearer ${token}" \
                   --header 'X-Workspace-Id: 1' \
-                  'http://127.0.0.1:18088/api/v1/troubleshooting/sops/csdp/903001' \
+                  'http://127.0.0.1:18088/api/v1/troubleshooting/sops/csdp/IM1010' \
                   | jq -r '.data.status // empty' \
                   || true)"
                 if [[ "${playbook_status}" == "approved" ]]; then

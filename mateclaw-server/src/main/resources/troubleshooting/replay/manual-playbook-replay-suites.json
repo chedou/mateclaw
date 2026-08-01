@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "suites": [
     {
       "contractVersion": "manual-playbook-replay-suite.v1",
@@ -382,6 +382,135 @@
             "requiresApproval": false,
             "approvalStatus": "NOT_REQUIRED",
             "executionStatus": "PENDING"
+          }
+        ]
+      }
+    }
+  ],
+  "recordedEvidenceSeeds": [
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-im1010-message-send/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:IM1010",
+      "requiredEvidenceRequestId": "EV-IM1010-SEARCH",
+      "sourceReference": "guance-spine-2026-07-31-message-send-failed",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-im1010-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "IM1010",
+        "service": "csp-rpc-msg",
+        "title": "消息发送失败路径核查",
+        "cause": "失败样本均命中消息发送特征，而同窗口成功样本未命中；消息发送或 MQ 生产者路径需要进一步核查",
+        "category": "message",
+        "ownerTeam": "消息平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "EV-IM1010-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "统计 IM1010 消息发送失败日志",
+            "target": {
+              "search_term": "message_send_failed"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "EV-IM1010-CONTRAST",
+            "signalKind": "contrast_sample",
+            "purpose": "对比失败与成功请求中的消息发送特征",
+            "target": {
+              "scenario_key": "message_send_failed"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "message_send_failure_present",
+            "sourceRequestId": "EV-IM1010-SEARCH",
+            "description": "至少存在一条消息发送失败日志",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "failure_feature_dominates",
+            "sourceRequestId": "EV-IM1010-CONTRAST",
+            "description": "消息发送失败特征主要出现在失败请求中",
+            "rule": {
+              "kind": "ratio_of_sum_gt",
+              "numeratorField": "failure_match_count",
+              "addendField": "success_match_count",
+              "threshold": 0.5
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-IM1010-MESSAGE-SEND-PATH",
+            "requiredSignals": [
+              "message_send_failure_present",
+              "failure_feature_dominates"
+            ],
+            "rootCause": "消息发送或 MQ 生产者路径异常待核查",
+            "summary": "历史聚合证据将异常收敛到消息发送路径，但不足以证明 Kafka Broker 故障。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "IM1010-A1",
+            "actionType": "AUTO_READONLY",
+            "title": "核对消息发送失败与成功样本",
+            "description": "只读查看同窗口聚合对照，不执行生产变更。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "IM1010-A2",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系应用与消息平台负责人继续核查",
+            "description": "携带脱敏聚合证据核查生产者配置与消息平台状态，不把路径相关性当作 Broker 根因。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-im1010-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-IM1010-MESSAGE-SEND-PATH",
+        "evidence": [
+          {
+            "requestId": "EV-IM1010-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 2,
+              "ps_id": "synthetic-ps-im1010-001",
+              "sample_message": "message send failed in producer path"
+            }
+          },
+          {
+            "requestId": "EV-IM1010-CONTRAST",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "message_send_failed",
+              "failure_sample_count": 2,
+              "failure_match_count": 2,
+              "success_sample_count": 14047,
+              "success_match_count": 0
+            }
           }
         ]
       }

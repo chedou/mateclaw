@@ -138,6 +138,50 @@
       },
       "source": "recorded-replay:message-send-failed",
       "collectedAt": "2026-07-20T09:13:03Z"
+    },
+    {
+      "system": "CSDP",
+      "errorCode": "IM1010",
+      "service": "csp-rpc-msg",
+      "requestId": "EV-IM1010-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "message_send_failed"
+      },
+      "namespace": "L",
+      "query": "recorded:im1010/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：IM1010 消息发送失败日志聚合",
+      "observed": {
+        "match_count": 2,
+        "ps_id": "synthetic-ps-im1010-001",
+        "sample_message": "message send failed in producer path"
+      },
+      "source": "recorded-replay:im1010",
+      "collectedAt": "2026-07-31T09:12:03Z"
+    },
+    {
+      "system": "CSDP",
+      "errorCode": "IM1010",
+      "service": "csp-rpc-msg",
+      "requestId": "EV-IM1010-CONTRAST",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "message_send_failed"
+      },
+      "namespace": "L",
+      "query": "recorded:im1010/contrast-sample",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：IM1010 失败与成功请求聚合对照",
+      "observed": {
+        "discriminating_feature": "message_send_failed",
+        "failure_sample_count": 2,
+        "failure_match_count": 2,
+        "success_sample_count": 14047,
+        "success_match_count": 0
+      },
+      "source": "recorded-replay:im1010",
+      "collectedAt": "2026-07-31T09:12:04Z"
     }
   ]
 }

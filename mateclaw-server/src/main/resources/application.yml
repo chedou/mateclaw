@@ -235,7 +235,7 @@ mateclaw:
               duration: duration_ms
       recorded-replay:
         enabled: ${MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED:false}
-        resource: classpath:/troubleshooting/evidence/recorded-replay-903001.json
+        resource: classpath:/troubleshooting/evidence/recorded-replay-catalog.json
   server:
     # Public base URL used to build absolute download links for tool-generated
     # files (e.g. https://mateclaw.example.com). Leave empty to fall back to the

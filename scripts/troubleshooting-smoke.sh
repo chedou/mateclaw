@@ -29,8 +29,8 @@ SYSTEM="${SMOKE_SYSTEM:-csdp}"
 # Must match the seeded Playbook and the recorded fixture: the replay adapter
 # looks records up by (system, errorCode, service, requestId), so a plausible
 # but wrong service name yields MISSING evidence and a silent 证据不足.
-SERVICE="${SMOKE_SERVICE:-order-svc}"
-ERROR_CODE="${SMOKE_ERROR_CODE:-903001}"
+SERVICE="${SMOKE_SERVICE:-csp-rpc-msg}"
+ERROR_CODE="${SMOKE_ERROR_CODE:-IM1010}"
 API="${BASE_URL}/api/v1/troubleshooting"
 
 blue() { printf '\033[34m%s\033[0m\n' "$1"; }
@@ -59,7 +59,8 @@ print_gates() {
   3. 证据源已启用        mateclaw.troubleshooting.evidence.recorded-replay.enabled=true
                         （默认 false；Guance 另需 asset-bindings，默认为空）
   4. 该路由有 approved Playbook
-                        仓库不随带任何 seed，迁移里 0 条 INSERT，所以未注册前必然 route miss。
+                        默认 profile 不写入 seed；troubleshooting-demo 会把服务端候选逐条
+                        走完固定回放证明与知识审核，再生成 approved 版本。
                         注意"批准"不是改个状态位：它必须先通过服务端固定回放套件，
                         再走知识评审晋升出一个新版本（updateStatus 对 approved 是 fail-closed 的）
   5. 报障被接受          POST /incidents 返回 diagnosisId
@@ -149,19 +150,19 @@ ok "READY 的证据源：${ready}"
 playbook="$(call GET "/sops/${SYSTEM}/${ERROR_CODE}")"
 if [[ "${HTTP_CODE}" != "200" ]]; then
   gate_failed "已注册 approved Playbook" \
-    "${SYSTEM}:${ERROR_CODE} 在本 workspace 查不到（HTTP ${HTTP_CODE}）——仓库不随带任何 seed" \
-    "先注册再批准：POST ${API}/sops 然后 POST ${API}/sops/${SYSTEM}/${ERROR_CODE}/status"
+    "${SYSTEM}:${ERROR_CODE} 在本 workspace 查不到（HTTP ${HTTP_CODE}）" \
+    "启用 troubleshooting-demo，或让候选先通过 replay 再走 knowledge review 晋升"
 fi
 status="$(echo "${playbook}" | jq -r '.data.status // "unknown"')"
 [[ "${status}" == "approved" ]] || gate_failed "已注册 approved Playbook" \
   "当前状态是 ${status}，只有 approved 才会被确定性路由采用" \
-  "POST ${API}/sops/${SYSTEM}/${ERROR_CODE}/status  body: {\"status\":\"approved\"}"
+  "运行服务端 replay 并走 knowledge review；兼容 status 接口不会绕过晋升闸门"
 ok "Playbook 已就绪：${SYSTEM}:${ERROR_CODE} (${status})"
 
 # ── 闸门 5：报障被接受 ──────────────────────────────────────────────
 report=$(cat <<JSON
 {"system":"${SYSTEM}","service":"${SERVICE}","errorCode":"${ERROR_CODE}",
- "title":"冒烟：工单提交失败","severity":"P2","intakeSource":"smoke",
+ "title":"冒烟：消息发送失败","severity":"P0","intakeSource":"smoke",
  "rawInput":"scripts/troubleshooting-smoke.sh","rehearsal":true}
 JSON
 )

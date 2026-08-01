@@ -188,7 +188,7 @@ class RecordedReplayAdapterTest {
         RecordedReplayAdapter adapter = new RecordedReplayAdapter(
                 config,
                 new ObjectMapper(),
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
 
         assertThat(adapter.health().status()).isEqualTo(EvidenceSourceHealth.Status.READY);
@@ -215,13 +215,54 @@ class RecordedReplayAdapterTest {
     }
 
     @Test
+    void bundledCatalogReplaysTheRecordedIm1010FailureAndSuccessCohorts() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
+                CLOCK);
+        IncidentContext incident = incident("csp-rpc-msg", "IM1010");
+
+        EvidenceResult search = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "EV-IM1010-SEARCH", "log_search", "find recorded failures",
+                        Map.of("search_term", "message_send_failed"), "-15m", true),
+                incident);
+        EvidenceResult contrast = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "EV-IM1010-CONTRAST", "contrast_sample", "compare cohorts",
+                        Map.of("scenario_key", "message_send_failed"), "-15m", true),
+                incident);
+
+        assertThat(search.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(search.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "match_count", 2,
+                "ps_id", "synthetic-ps-im1010-001",
+                "sample_message", "message send failed in producer path"));
+        assertThat(contrast.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(contrast.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "discriminating_feature", "message_send_failed",
+                "failure_sample_count", 2,
+                "failure_match_count", 2,
+                "success_sample_count", 14047,
+                "success_match_count", 0));
+        assertThat(search.source()).isEqualTo("recorded-replay:im1010");
+        assertThat(contrast.source()).isEqualTo("recorded-replay:im1010");
+        assertThat(adapter.health().verified()).isFalse();
+    }
+
+    @Test
     void reportsOnlyAnExactRegisteredCoreFixtureAsAvailable() {
         EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
         config.setEnabled(true);
         RecordedReplayAdapter adapter = new RecordedReplayAdapter(
                 config,
                 new ObjectMapper(),
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
 
         assertThat(adapter.hasCoreFixture(
@@ -246,7 +287,7 @@ class RecordedReplayAdapterTest {
         RecordedReplayAdapter adapter = new RecordedReplayAdapter(
                 config,
                 new ObjectMapper(),
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
         EvidenceRequest wrongKeyword = new EvidenceRequest(
                 "SYNTH-LOG-SEARCH",
@@ -272,7 +313,7 @@ class RecordedReplayAdapterTest {
         RecordedReplayAdapter adapter = new RecordedReplayAdapter(
                 config,
                 new ObjectMapper(),
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
 
         EvidenceResult search = adapter.collect(
