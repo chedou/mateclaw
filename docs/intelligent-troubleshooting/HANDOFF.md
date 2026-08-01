@@ -854,6 +854,9 @@ P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
   排查期间另做过一次不经过产品 Connector 的真源直连 7 天探索查询，真源返回 504；该查询超出产品合同允许的
   24 小时窗口，不能作为产品运行或验收证据，也不能据此修改合同。本次仍不提交 T7 acceptance、不生成 T8 样本；
   唯一下一输入是授权测试环境中一次真实 SendMsg 失败的精确时间，或仍在 Guance 保留期内的失败时间窗。
+- T7 只读验收与完整 Evidence Spine 弹窗现提供可清空的故障时间选择器。未选择时浏览器明确提交 `null`，
+  服务端以请求执行时的当前时间作为本次查询结束点；该兜底不回写 Diagnosis 的真实 `occurredAt`，也不会让
+  与 Diagnosis 冻结 lookup 不一致的结果进入对应 T8 样本上下文。固定 `Clock` 回归覆盖两步读链和完整脊柱。
 - 这只证明“三次真源取证 + 确定性压缩 + 双投影”的首个真实竖线可执行。当前没有
   Workspace owner `ACCEPTED` 记录，也没有持久化到 T8 历史样本台账；`fixtureMode`
   不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，

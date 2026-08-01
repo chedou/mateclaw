@@ -33,9 +33,18 @@
           </el-select>
         </el-form-item>
         <el-form-item label="故障时间（可选）">
-          <el-input v-model="form.occurredAt" placeholder="ISO-8601" />
+          <el-date-picker
+            v-model="form.occurredAt"
+            type="datetime"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            placeholder="不选择则使用当前时间"
+            clearable
+            style="width: 100%"
+          />
         </el-form-item>
       </div>
+      <p class="time-fallback-hint">未选择故障时间时，服务端会在点击验证时取当前时间作为查询结束点；这不会改写 Diagnosis 的真实故障时间。</p>
       <p v-if="scopeErrors.length" class="scope-error">{{ scopeErrors.join('；') }}</p>
       <p v-if="!safeSearchTerm" class="scope-error">T7 搜索键必须是 1–128 位安全资源标识符。</p>
     </el-form>
@@ -123,6 +132,7 @@ import {
   guanceOnboardingScopeErrors,
   guanceOnboardingScopeKey,
   isSafeGuanceSearchTerm,
+  normalizeEvidenceChainPreviewRequest,
   type GuanceOnboardingValidationPayload,
 } from './guanceOnboarding'
 
@@ -241,13 +251,13 @@ async function copyGuide() {
 function startValidation() {
   if (!canEnterValidation.value || !currentReadiness.value || !currentOwnerAcceptance.value) return
   emit('start-validation', {
-    request: {
+    request: normalizeEvidenceChainPreviewRequest({
       system: form.system.trim(),
       service: form.service.trim(),
       searchTerm: form.searchTerm.trim(),
       window: form.window,
-      occurredAt: form.occurredAt?.trim() || null,
-    },
+      occurredAt: form.occurredAt,
+    }),
     ownerAcceptance: currentOwnerAcceptance.value,
   })
 }
@@ -271,6 +281,7 @@ function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') 
 .onboarding-alert { margin-bottom: 16px; }
 .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .scope-grid.three { grid-template-columns: 1.1fr .75fr 1fr; }
+.time-fallback-hint { margin: -4px 0 12px; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.55; }
 .scope-error { margin: 0 0 12px; color: var(--el-color-danger); font-size: 12px; }
 .configuration-guide,
 .readiness-result { margin-top: 14px; padding: 14px; border: 1px solid var(--el-border-color-light); border-radius: 8px; background: var(--el-fill-color-lighter); }

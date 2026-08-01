@@ -349,6 +349,18 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="故障时间（可选）">
+          <el-date-picker
+            v-model="guanceValidationForm.occurredAt"
+            type="datetime"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            placeholder="不选择则使用当前时间"
+            clearable
+            style="width: 100%"
+          />
+          <p class="form-hint">默认带入当前 Diagnosis 的故障时间；清空后，服务端会以点击验证时的当前时间作为查询结束点，不会改写 Diagnosis。</p>
+        </el-form-item>
       </el-form>
       <div v-if="validationDialogReport" class="dialog-validation-result">
         <b>{{ guanceValidationLabel(validationDialogReport.stage) }}</b>
@@ -564,6 +576,7 @@ import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
+  normalizeEvidenceChainPreviewRequest,
   sameEvidenceChainLookup,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
@@ -885,7 +898,7 @@ function openGuanceValidationDialog(
   origin: GuanceValidationOrigin,
 ) {
   store.nextGuanceValidationSessionVersion()
-  Object.assign(guanceValidationForm, request)
+  Object.assign(guanceValidationForm, normalizeEvidenceChainPreviewRequest(request))
   validationDialogReport.value = null
   validationDialogSpinePreview.value = null
   validationDialogOwnerAcceptance.value = ownerAcceptance
@@ -914,7 +927,7 @@ function captureGuanceValidationSession() {
   return {
     sessionVersion: store.getSelectionVersion(),
     origin: guanceValidationOrigin.value,
-    request: { ...guanceValidationForm },
+    request: normalizeEvidenceChainPreviewRequest(guanceValidationForm),
   }
 }
 

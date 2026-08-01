@@ -6,6 +6,7 @@ import {
   isActiveGuanceValidationSession,
   guanceOnboardingScopeErrors,
   isSafeGuanceSearchTerm,
+  normalizeEvidenceChainPreviewRequest,
   sameEvidenceChainLookup,
 } from '../guanceOnboarding'
 import { canStartGuanceValidation } from '../formalProjection'
@@ -82,6 +83,28 @@ describe('formal Guance onboarding', () => {
     expect(sameEvidenceChainLookup(lookup, { ...lookup, occurredAt: null })).toBe(false)
     expect(canAttachGuanceResultToDiagnosis('ONBOARDING', lookup, lookup)).toBe(false)
     expect(canAttachGuanceResultToDiagnosis('DIAGNOSIS', lookup, lookup)).toBe(true)
+  })
+
+  it('normalizes an omitted occurrence time to the server-side current-time fallback', () => {
+    const base = {
+      system: ' CSDP ',
+      service: ' csdp-session-service ',
+      searchTerm: ' message_send_failed ',
+      window: '-15m',
+      occurredAt: '   ',
+    }
+
+    expect(normalizeEvidenceChainPreviewRequest(base)).toEqual({
+      system: 'CSDP',
+      service: 'csdp-session-service',
+      searchTerm: 'message_send_failed',
+      window: '-15m',
+      occurredAt: null,
+    })
+    expect(normalizeEvidenceChainPreviewRequest({
+      ...base,
+      occurredAt: '2026-08-01T10:23:15+08:00',
+    }).occurredAt).toBe('2026-08-01T10:23:15+08:00')
   })
 
   it('rejects an old response after the validation dialog is reopened with a new origin', () => {

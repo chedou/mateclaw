@@ -3,6 +3,8 @@ import type {
   GuanceEvidenceAcceptanceView,
 } from '@/api'
 
+export { normalizeEvidenceChainPreviewRequest } from './evidenceRequest'
+
 export interface GuanceOnboardingScope {
   workspaceId: string
   system: string

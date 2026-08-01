@@ -1,9 +1,12 @@
 import type {
   EvidenceStatus,
   SopSynthesisPreview,
-  SopSynthesisPreviewRequest,
   SynthesisEvidenceReference,
 } from '@/api'
+
+export {
+  normalizeEvidenceChainPreviewRequest as normalizeSynthesisPreviewRequest,
+} from './evidenceRequest'
 
 export interface SynthesisEvidenceStep {
   signalKind: 'log_search' | 'log_trace_bundle' | 'contrast_sample'
@@ -52,18 +55,6 @@ function evidenceStep(
     status: evidence?.status ?? 'MISSING',
     source: evidence?.source ?? null,
     collectedAt: evidence?.collectedAt ?? null,
-  }
-}
-
-export function normalizeSynthesisPreviewRequest(
-  request: SopSynthesisPreviewRequest,
-): SopSynthesisPreviewRequest {
-  return {
-    system: request.system.trim(),
-    service: request.service.trim(),
-    searchTerm: request.searchTerm.trim(),
-    window: request.window.trim(),
-    occurredAt: request.occurredAt?.trim() || null,
   }
 }
 

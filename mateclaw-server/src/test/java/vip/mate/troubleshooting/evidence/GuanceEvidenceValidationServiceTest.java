@@ -79,6 +79,28 @@ class GuanceEvidenceValidationServiceTest {
     }
 
     @Test
+    void usesTheServerClockAsTheObservationEndWhenOccurredAtIsOmitted() throws Exception {
+        SequenceTransport transport = new SequenceTransport(
+                response("[4,\"ps-message-001\",\"message failed\"]",
+                        "[\"count\",\"ps_id\",\"message\"]"),
+                response("[\"ps-message-001\",1753775941000,\"session-svc\",\"ERROR\",\"send failed\",3010]",
+                        "[\"ps_id\",\"time\",\"service\",\"status\",\"message\",\"duration_ms\"]"));
+        Fixture fixture = fixture(transport, true);
+
+        fixture.validation().validate(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", null);
+
+        assertThat(transport.requestBodies).hasSize(2);
+        for (String body : transport.requestBodies) {
+            var timeRange = new ObjectMapper().readTree(body)
+                    .at("/queries/0/query/timeRange");
+            assertThat(timeRange.get(0).asLong())
+                    .isEqualTo(NOW.minus(Duration.ofMinutes(15)).toEpochMilli());
+            assertThat(timeRange.get(1).asLong()).isEqualTo(NOW.toEpochMilli());
+        }
+    }
+
+    @Test
     void returnsATypedBlockedReportBeforeTransportWhenTheAssetIsUnauthorized() {
         SequenceTransport transport = new SequenceTransport();
         Fixture fixture = fixture(transport, false);
@@ -264,6 +286,7 @@ class GuanceEvidenceValidationServiceTest {
 
     private static final class SequenceTransport implements EvidenceHttpTransport {
         private final Deque<String> responses = new ArrayDeque<>();
+        private final List<String> requestBodies = new ArrayList<>();
         private final AtomicInteger calls = new AtomicInteger();
 
         private SequenceTransport(String... responses) {
@@ -277,6 +300,7 @@ class GuanceEvidenceValidationServiceTest {
                 String body,
                 Duration timeout) {
             calls.incrementAndGet();
+            requestBodies.add(body);
             if (responses.isEmpty()) {
                 throw new AssertionError("unexpected Guance request");
             }

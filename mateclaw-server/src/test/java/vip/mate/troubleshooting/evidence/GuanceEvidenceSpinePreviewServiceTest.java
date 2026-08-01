@@ -91,6 +91,32 @@ class GuanceEvidenceSpinePreviewServiceTest {
     }
 
     @Test
+    void usesTheServerClockAsTheObservationEndWhenOccurredAtIsOmitted() {
+        GuanceEvidenceReadinessService readinessService =
+                mock(GuanceEvidenceReadinessService.class);
+        EvidenceSpineOrchestrator orchestrator = mock(EvidenceSpineOrchestrator.class);
+        when(readinessService.inspect(7L, "CSDP", "session-svc"))
+                .thenReturn(readiness(GuanceEvidenceReadiness.Status.READY_FOR_VALIDATION));
+        when(orchestrator.collect(
+                eq(7L), any(IncidentContext.class), any(EvidenceSpinePlan.class),
+                eq(Set.of("guance"))))
+                .thenReturn(fullSpine());
+        GuanceEvidenceSpinePreviewService service = new GuanceEvidenceSpinePreviewService(
+                orchestrator,
+                readinessService,
+                CLOCK,
+                new SequenceTicker(0L, 47_000_000L));
+
+        service.preview(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", null);
+
+        ArgumentCaptor<IncidentContext> incident = ArgumentCaptor.forClass(IncidentContext.class);
+        verify(orchestrator).collect(
+                eq(7L), incident.capture(), any(EvidenceSpinePlan.class), eq(Set.of("guance")));
+        assertThat(incident.getValue().occurredAt()).isEqualTo(NOW);
+    }
+
+    @Test
     void keepsMissingContrastVisibleWithoutDiscardingTheCoreChain() {
         GuanceEvidenceReadinessService readinessService =
                 mock(GuanceEvidenceReadinessService.class);
