@@ -16,7 +16,8 @@
 
 ```bash
 # 终端 A：带 demo profile 启动（默认关闭，必须显式打开）
-mvn -pl mateclaw-server -DskipTests spring-boot:run \
+mvn --settings mateclaw-server/settings.xml \
+    -pl mateclaw-server -DskipTests spring-boot:run \
     -Dspring-boot.run.profiles=dev,troubleshooting-demo
 
 # 终端 B：走一次完整路径并断言结果
@@ -119,7 +120,8 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 `.github/workflows/troubleshooting-smoke.yml` 已把这条路径挂进 CI，作为
 "默认路径没有被堵死"的回归。它在相关 PR、`dev` 推送或手工触发时：
 
-1. 配置 Java 21，先把 `mateclaw-plugin-api` 安装进本地 Maven 仓库；
+1. 配置 Java 21，通过仓库级 `mateclaw-server/settings.xml` 使用阿里云公共镜像，
+   再把 `mateclaw-plugin-api` 安装进本地 Maven 仓库；
 2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
    `csdp:903001` 已通过真实 demo 晋升链成为 approved Playbook；
 3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
@@ -139,8 +141,9 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 ```
 
-它会检查触发范围、Java 版本、plugin API 构建顺序、demo profile、有限等待、八闸门入口、
-300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替 GitHub runner 实跑。
+它会检查触发范围、Java 版本、阿里云 Maven 镜像、plugin API 构建顺序、demo profile、
+有限等待、八闸门入口、300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替
+GitHub runner 实跑。
 
 ---
 

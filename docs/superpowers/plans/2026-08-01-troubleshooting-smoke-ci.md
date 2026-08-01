@@ -36,7 +36,7 @@
 
 - [x] **Step 2: Add deterministic runner setup and build ordering**
 
-  Use Temurin Java 21 with Maven caching. Install `jq` only when absent. Run `mvn --batch-mode --no-transfer-progress -pl mateclaw-plugin-api -DskipTests install` before server startup.
+  Use Temurin Java 21 with Maven caching. Install `jq` only when absent. Run `mvn --settings mateclaw-server/settings.xml --batch-mode --no-transfer-progress -pl mateclaw-plugin-api -DskipTests install` before server startup so CI always uses the repository-owned Aliyun mirror.
 
 - [x] **Step 3: Add bounded server lifecycle and smoke execution**
 
@@ -84,16 +84,18 @@
   Run:
 
   ```bash
-  mvn --batch-mode --no-transfer-progress -pl mateclaw-server \
+  mvn --settings mateclaw-server/settings.xml \
+    --batch-mode --no-transfer-progress -pl mateclaw-server \
     -Dtest=TroubleshootingDemoSeederTest,ManualPlaybookReplaySuiteCatalogTest,ManualPlaybookReplayServiceTest \
     test
   ```
 
   Expected: Maven exits 0 with no failing focused tests.
 
-  Execution note (2026-08-01): this local environment could not resolve the public Maven repository,
-  so dependency model resolution stopped before compilation. The GitHub Actions run remains the required
-  execution evidence for this step.
+  Execution note (2026-08-01): the original run inherited an unreachable corporate mirror. A fresh run now
+  selects `aliyun-public-mirror` as intended, but this machine cannot resolve `maven.aliyun.com`; dependency
+  model resolution therefore still stops before compilation. A DNS-capable GitHub Actions run is required to
+  close this step.
 
 - [x] **Step 5: Review the final diff**
 

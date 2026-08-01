@@ -176,7 +176,8 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
 - [x] 把 `troubleshooting-smoke.sh` 挂进 CI，作为"默认路径没有被堵死"的回归。
       每加一道需要人工配置的门，它应当立刻变红。
-      需要一个能起服务的 job：`mvn -pl mateclaw-server -DskipTests spring-boot:run
+      需要一个能起服务的 job：`mvn --settings mateclaw-server/settings.xml
+      -pl mateclaw-server -DskipTests spring-boot:run
       -Dspring-boot.run.profiles=dev,troubleshooting-demo`，H2 默认库即可，
       不需要外部依赖。注意 `mateclaw-plugin-api` 要先 `install` 进本地库。
       已由 `.github/workflows/troubleshooting-smoke.yml` 落地：PR、`dev` 推送和手工触发可运行，
@@ -668,7 +669,7 @@ v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 - 后端测试：JUnit 5 + Mockito + AssertJ。
 
   ```bash
-  mvn -pl mateclaw-server -am \
+  mvn --settings mateclaw-server/settings.xml -pl mateclaw-server -am \
     -Dtest='vip.mate.troubleshooting.**.*Test' \
     -Dsurefire.failIfNoSpecifiedTests=false test
   ```
