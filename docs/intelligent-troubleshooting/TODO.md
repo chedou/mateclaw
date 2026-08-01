@@ -78,6 +78,47 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
 - [x] 两个投影合同已固定：`projection-contracts.md`（BusinessSummary / DeveloperEvidenceView
       / NorthStarTimings，含服务端不变量）。**P1 只固定合同，不实现 Projection**。
 
+## 3.5 P1.5 · 让一条场景默认可跑（**当前主要矛盾**）
+
+**为什么插队。** 文档此前把主要矛盾写成「代码闭环已通 vs 未在真实数据上验证」，
+应对是 T7 内网窗口。那是上一阶段的判断。实际情况是：**默认状态下没有任何一条路径可走**——
+两个证据源默认关闭、仓库不随带任何 Playbook（迁移里 0 条 INSERT），任何报障必然 route miss。
+
+每道闸门单独看都对（fail-closed 是纪律），但**它们的合取**决定了有没有人能用起来，
+而此前没有任何东西在度量这个合取。
+
+两个后果：
+1. **T7 窗口拿到了也用不上**——操作员会卡在同样的配置迷宫里，而那是最贵、最难重来的一次机会；
+2. **"它是否安全"其实还没被真正检验**——fail-closed 只在有人真的去开门时才会被测试。
+
+### T0.5 · 端到端冒烟（已完成）
+
+- [x] `scripts/troubleshooting-smoke.sh`：以操作员的方式走 HTTP，逐道闸门断言，
+      失败时指出**是哪一道**和**唯一的下一步**；`--gates` 可在无服务时列出全部闸门。
+- [x] 断言覆盖：结论类型、开发证据步数、`fixtureMode` 必须为 true、北极星三段耗时。
+
+### T0.6 · demo 种子（已完成）
+
+- [x] `troubleshooting-demo` profile：打开 Recorded Replay，把 CSDP 六个 signalKind 路由过去，
+      **不碰 Guance**。
+- [x] `TroubleshootingDemoSeeder`：默认关闭（`mateclaw.troubleshooting.demo.enabled`），
+      走同一个 `TroubleshootingSopPersistenceService` 注册 + 批准，全部不变量照常生效；
+      以 candidate 注册再显式 approved，动作里没有 `MANUAL_WRITE`。
+- [x] `TroubleshootingDemoSeederTest`：锁住种子与回放样本一致——
+      **两者漂移不会抛异常，只会静默变成 `UNEVALUATED`**，操作员看到"证据不足"却分不清
+      是真缺证据还是配错了。这正是需要单独测试的原因。
+- [x] `quickstart.md`：把散在多份 runbook 里的步骤合成一条主线。
+
+### T0.7 · 待办
+
+- [ ] 把 `troubleshooting-smoke.sh` 挂进 CI，作为"默认路径没有被堵死"的回归。
+      每加一道需要人工配置的门，它应当立刻变红。
+- [ ] 记录并跟踪**从 clone 到看见一次诊断的时间**。我们量了客户的排障时间（北极星），
+      却从没量过自己跑通一次要多久；目标 5 分钟内。
+- [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
+
+---
+
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（已完成）
 
 ### T1 · PlaybookDraft 合同与结构化归纳

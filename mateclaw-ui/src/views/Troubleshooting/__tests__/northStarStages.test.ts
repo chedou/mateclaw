@@ -24,7 +24,7 @@ describe('north-star stages', () => {
     const stages = northStarStages(RECORDED)
     const shares = stages.map((s) => s.share)
     expect(shares.every((share) => share !== null)).toBe(true)
-    expect(shares.reduce((sum, share) => sum + (share ?? 0), 0)).toBeCloseTo(1, 6)
+    expect(shares.reduce<number>((sum, share) => sum + (share ?? 0), 0)).toBeCloseTo(1, 6)
   })
 
   /** A bar drawn over partial data would imply a total the system does not know. */
