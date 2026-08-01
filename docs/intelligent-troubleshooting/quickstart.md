@@ -1,6 +1,6 @@
 # Quickstart：从零到看见一次诊断
 
-> 目标：**新克隆的仓库 → 一条命令 → 一份可读的诊断**，全程 fixture。
+> 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断**，全程 fixture。
 >
 > 这份文档存在的原因不是"缺文档"。此前每一道闸门都是刻意 fail-closed 的，
 > 每一道单独看都对；但它们的**合取**是——默认状态下没有任何一条路径可走：
@@ -15,7 +15,9 @@
 ## 1. 跑一次
 
 ```bash
-# 终端 A：带 demo profile 启动（默认关闭，必须显式打开）
+# 终端 A：先把父 POM 与 plugin API 装入本地库，再带 demo profile 启动
+mvn -pl mateclaw-plugin-api -am -DskipTests install
+
 mvn -pl mateclaw-server -DskipTests spring-boot:run \
     -Dspring-boot.run.profiles=dev,troubleshooting-demo
 
@@ -31,16 +33,17 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 ```text
   ✓ 服务可达，身份通过
   ✓ READY 的证据源：recorded-replay
-  ✓ Playbook 已就绪：csdp:903001 (approved)
+  ✓ Playbook 已就绪：csdp:IM1010 (approved)
   ✓ 已产出诊断：diag-…
   ✓ 结论类型：LOCATED
   ✓ 结论：已通过受控证据定位到异常环节
-  ✓ 开发证据步数：7
-  ✓ 北极星：补问=PT0.014S 调查=PT0.006S（三段分别计量，不合成总时长）
+  ✓ 开发证据步数：4
+  ✓ 北极星：补问=PT0.029S 调查=PT0.004S（三段分别计量，不合成总时长）
 ```
 
-其中 `instance_unreachable` 被判为 **EXCLUDED（真的排除）而不是 UNEVALUATED（没验过）** ——
-这条负对照是这次跑通里最值得看的一格。
+IM1010 的真实历史聚合正例是失败样本 2/2 命中特征、成功样本 0/14047 命中特征；同一判据形状还会
+确定性生成排除例和全 `MISSING` 弃权例。HTTP 结果为 `LOCATED / MEDIUM / fixtureMode=true`，
+并明确写明“消息发送或 MQ 生产者路径异常待核查”，不足以证明 Kafka Broker 故障。
 
 任何一道闸门没过，它会指出是哪一道、以及唯一的下一步动作。
 
@@ -58,7 +61,7 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 |---|---|
 | 打开 **Recorded Replay** 证据源 | **不碰** Guance：demo 绝不能意外访问真实观测源 |
 | 把 CSDP 的六个 signalKind 路由到 recorded-replay | 不改任何真实 workspace 的配置 |
-| 种一条 `csdp:903001` 的 Playbook 并走完晋升 | 不改 `fixtureMode`：产出仍全程标记 fixture |
+| 从服务端目录种 `csdp:903001` 与 `csdp:IM1010` 并逐条走完晋升 | 不改 `fixtureMode`：产出仍全程标记 fixture |
 
 ### 晋升是走出来的，不是改状态位改出来的
 
@@ -71,9 +74,9 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 
 这个拒绝是对的。现在种子做的是评审人做的那套动作：
 
-1. 以 `candidate` 注册（`register` 对非 candidate 是 fail-closed 的）；
-2. 跑服务端自带的固定回放套件 `csdp-903001-connection-pool/v1`——
-   2 条正例（R2 命中、R1 命中）+ 2 条反例/弃权例（全排除、证据缺失弃权）；
+1. 从 server-owned replay catalog 读取候选并以 `candidate` 注册（Seeder 不再复制 Java Playbook）；
+2. 903001 跑固定套件；IM1010 从安全有界的录制正例生成判据形状排除例和缺证据弃权例，
+   两者执行同一套正/负回放门，不降低错误码路资格；
 3. 回放 `PASSED` 后，资格快照才变成 `ELIGIBLE_FOR_APPROVAL`，
    再 `start` + `approve` 一次知识评审，晋升出 Playbook v1。
 
@@ -93,9 +96,11 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 这条链路在真实的 HTTP 边界上可走，且 fail-closed 的门是可以被**正常打开**的——
 包括那道最难的：手工 Playbook 必须先有回放证明才能晋升。
 
-**顺带暴露了一件事**：在这次之前，仓库里唯一的回放套件是
+**此前暴露并已由 D19 关闭的机制缺口**：最初仓库里唯一的回放套件是
 `csdp:scenario:deployment_topology_probe`。也就是说**任何错误码 Playbook 都没有晋升路径**——
-产品的主干形态恰好是那个走不通的。这不是 demo 的问题，是主干缺件。
+产品的主干形态恰好是那个走不通的。现在每条错误码只需一份安全聚合正例，反例/弃权按封闭判据
+词汇生成；坏生成种子按 selector 隔离，固定套件仍 fail-fast。其余 145 条错误码仍待分批导入，
+不能把机制完成冒充全量知识覆盖。
 
 **还暴露了一个更隐蔽的**：第一次跑通时前七道闸门全绿，结论却是 `INSUFFICIENT_EVIDENCE`。
 报障里的 service 写成了 `csdp-order-service`，而回放样本按
@@ -111,18 +116,43 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 
 ---
 
-## 4. 建议纳入的一个指标
+## 4. 持续回归与耗时指标
 
 我们量了"客户从报障到拿到结论要多久"（北极星），却从没量过
 **自己从 clone 到看见一次诊断要多久**。
 
-现在这个数第一次变得可测。它会持续暴露"闸门合取"这类问题——
-每加一道需要人工配置的门，这个数就会变长，而 `troubleshooting-smoke.sh`
-会立刻变红。建议把它挂进 CI，作为"默认路径没有被堵死"的回归。
+`.github/workflows/troubleshooting-smoke.yml` 已把这条路径挂进 CI，作为
+"默认路径没有被堵死"的回归。它在相关 PR、`dev`、主干、当前设计分支推送或手工触发时：
+
+1. 配置 Java 21，以 Maven 标准配置和 `-am` 把父 POM 与
+   `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
+2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
+   `csdp:IM1010` 已通过真实 demo 晋升链成为 approved Playbook；
+3. 运行同一份 `scripts/troubleshooting-smoke.sh`，八道闸门任一道失败都会让 job 失败；
+4. 把服务日志和冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
+5. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
+   `clone → 首次诊断` 耗时，超过 300 秒发 warning，不把后续投影校验耗时冒充为首诊耗时。
+
+超过五分钟只表示启动速度回退，不伪装成产品正确性失败。链路闸门失败才让任务失败；脚本还会
+fail-closed 校验开发证据非空、北极星补问/调查已记录，以及未发生人工采纳时第三段仍为 `null`。
 
 ---
 
-## 5. 相关文档
+## 5. 本地验证 workflow 合同
+
+不启动服务也可以检查 CI 关键合同有没有被改坏：
+
+```bash
+bash scripts/ci/test-troubleshooting-smoke-workflow.sh
+```
+
+它会检查触发范围、Java 版本、Maven 不强制仓库级镜像、plugin API 构建顺序、demo profile、
+有限等待、八闸门入口、300 秒目标、清理步骤和无条件日志上传。这个静态合同不能代替
+GitHub runner 实跑。
+
+---
+
+## 6. 相关文档
 
 - 闸门与失败原因：`./scripts/troubleshooting-smoke.sh --gates`
 - 真实 Guance 接入：`evidence-adapter-runbook.md`（T6/T7）

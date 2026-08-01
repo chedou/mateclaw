@@ -14,7 +14,7 @@
    一条证据脊柱、在线诊断/知识生产两个闭环、三类调查路径与实施顺序。
 3. [架构师评审 v4](./architecture-review-v4.md)
    评审结论、范围收敛、测试覆盖图、失败模式和资源预算。
-4. [架构蓝图 v0.18](./architecture-blueprint.html)
+4. [架构蓝图 v0.19](./architecture-blueprint.html)
    面向讨论和汇报的精简可视化版本，已嵌入架构图、流程图和泳道图。
    [历史版本](./versions/index.html)按版本完整保留，不再覆盖。
 5. [HANDOFF](./HANDOFF.md)
@@ -34,7 +34,7 @@
 - [总体架构图](./diagrams/mateclaw-troubleshooting-architecture.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-architecture.svg)
 - [端到端流程图](./diagrams/mateclaw-troubleshooting-flow.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-flow.svg)
 - [跨角色泳道图](./diagrams/mateclaw-troubleshooting-swimlane.drawio) · [SVG 预览](./diagrams/mateclaw-troubleshooting-swimlane.svg)
-- [架构蓝图版本库](./versions/index.html) · v0.7–v0.18 完整快照
+- [架构蓝图版本库](./versions/index.html) · v0.7–v0.19 完整快照
 
 ## 一句话架构
 
@@ -96,6 +96,10 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   Guance-only `log_search → log_trace_bundle` 只读验证。该入口不返回原始日志/DQL/密钥、
   不回退 Replay、不持久化验证数据；报告只增加应用侧每步与端到端 round-trip。页面分别显示 T6 授权、
   T7 真字段验收和 T8 20–30 条历史样本门禁，单次通过不代表 T7/T8 验收完成。
+- RFC v4.5 / D19 已关闭错误码晋升的机制缺口：安全有界的录制聚合正例按封闭判据形状生成
+  排除/弃权例，不降低原晋升门；固定套件 fail-fast，坏生成种子按 selector 隔离。首个
+  `CSDP / csp-rpc-msg / IM1010` 已通过真实 HTTP 登录、晋升、报障与投影链，结果为
+  `LOCATED / MEDIUM / fixtureMode=true`。其余 145 条错误码仍待分批导入，T7 仍未完成。
 - 本地无真实模型配置时，生成接口已实测会返回 `MODEL_REJECTED`且不产生 candidate。
 - 生产写执行能力不存在；`execute` 端点继续恒拒绝。
 - “从日志生成 SOP”是当前产品主线之一，但产物只可成为 candidate，不得自动晋升或改写权威 Playbook。

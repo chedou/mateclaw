@@ -1,0 +1,284 @@
+{
+  "version": 1,
+  "title": "MateClaw 智能排障总体架构",
+  "type": "engineering-diagram",
+  "source": "generated",
+  "profile": "engineering-review",
+  "theme": "tech-blue",
+  "layout": "horizontal",
+  "counts": {
+    "nodes": 25,
+    "edges": 22,
+    "modules": 0
+  },
+  "nodes": [
+    {
+      "id": "areaChannels",
+      "label": "入口与通道",
+      "type": "service"
+    },
+    {
+      "id": "areaCore",
+      "label": "MateClaw 证据脊柱",
+      "type": "service"
+    },
+    {
+      "id": "areaEvidence",
+      "label": "只读证据 Tool 插拔层（受控）",
+      "type": "service"
+    },
+    {
+      "id": "areaOutcomes",
+      "label": "在线排障闭环",
+      "type": "service"
+    },
+    {
+      "id": "areaKnowledge",
+      "label": "知识改进外循环 · 结构化反证 / 回放 / 人工裁决",
+      "type": "service"
+    },
+    {
+      "id": "wecom",
+      "label": "企微 @ 报障 / 补问",
+      "type": "user"
+    },
+    {
+      "id": "web",
+      "label": "Web 证据 / 处置 / 审核",
+      "type": "service"
+    },
+    {
+      "id": "alert",
+      "label": "告警 / 工单接入",
+      "type": "document"
+    },
+    {
+      "id": "topologyAsset",
+      "label": "Workspace 拓扑资产",
+      "type": "database"
+    },
+    {
+      "id": "intake",
+      "label": "报障受理",
+      "type": "service"
+    },
+    {
+      "id": "planning",
+      "label": "调查规划 · 拓扑拨测",
+      "type": "service"
+    },
+    {
+      "id": "loopController",
+      "label": "Loop Control · 预算 / 检查点 / 停止",
+      "type": "process"
+    },
+    {
+      "id": "orchestration",
+      "label": "只读取证编排",
+      "type": "service"
+    },
+    {
+      "id": "bundle",
+      "label": "EvidenceBundle",
+      "type": "document"
+    },
+    {
+      "id": "toolRegistry",
+      "label": "只读 Tool Registry",
+      "type": "service"
+    },
+    {
+      "id": "toolPlugins",
+      "label": "Tool SPI · topology_synthetic_probe 等",
+      "type": "process"
+    },
+    {
+      "id": "sourceAdapters",
+      "label": "Adapter SPI · CloudDial / Replay",
+      "type": "service"
+    },
+    {
+      "id": "diagnosis",
+      "label": "Verify Gate · 完成 / 补证 / 弃权",
+      "type": "service"
+    },
+    {
+      "id": "projection",
+      "label": "业务摘要 / 证据 / 拓扑历史",
+      "type": "document"
+    },
+    {
+      "id": "lifecycle",
+      "label": "人工处置 / outcome / 关闭",
+      "type": "service"
+    },
+    {
+      "id": "synthesis",
+      "label": "PlaybookDraft 合成",
+      "type": "process"
+    },
+    {
+      "id": "adversarialEvaluation",
+      "label": "Adversarial Eval · 证据质疑 / 安全质疑",
+      "type": "process"
+    },
+    {
+      "id": "governance",
+      "label": "确定性回放 + 人工审核",
+      "type": "service"
+    },
+    {
+      "id": "approved",
+      "label": "Approved Playbook",
+      "type": "terminal"
+    },
+    {
+      "id": "safety",
+      "label": "安全边界 · 写工具=0 · Loop 有界 · 共识≠证据 · 候选≠权威",
+      "type": "document"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "from": "wecom",
+      "to": "intake",
+      "type": "primary",
+      "label": "报障上下文"
+    },
+    {
+      "id": "edge-2",
+      "from": "web",
+      "to": "intake",
+      "type": "primary"
+    },
+    {
+      "id": "edge-3",
+      "from": "alert",
+      "to": "intake",
+      "type": "data"
+    },
+    {
+      "id": "edge-4",
+      "from": "topologyAsset",
+      "to": "planning",
+      "type": "data",
+      "label": "选定不可变快照"
+    },
+    {
+      "id": "edge-5",
+      "from": "intake",
+      "to": "planning",
+      "type": "primary"
+    },
+    {
+      "id": "edge-6",
+      "from": "planning",
+      "to": "loopController",
+      "type": "primary"
+    },
+    {
+      "id": "edge-7",
+      "from": "loopController",
+      "to": "orchestration",
+      "type": "primary"
+    },
+    {
+      "id": "edge-8",
+      "from": "orchestration",
+      "to": "bundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-9",
+      "from": "orchestration",
+      "to": "toolRegistry",
+      "type": "data",
+      "label": "唯一只读门面 / 服务端计划"
+    },
+    {
+      "id": "edge-10",
+      "from": "toolRegistry",
+      "to": "toolPlugins",
+      "type": "primary"
+    },
+    {
+      "id": "edge-11",
+      "from": "toolPlugins",
+      "to": "sourceAdapters",
+      "type": "primary"
+    },
+    {
+      "id": "edge-12",
+      "from": "bundle",
+      "to": "diagnosis",
+      "type": "primary"
+    },
+    {
+      "id": "edge-13",
+      "from": "diagnosis",
+      "to": "loopController",
+      "type": "optional",
+      "label": "NEEDS_EVIDENCE · 预算内继续"
+    },
+    {
+      "id": "edge-14",
+      "from": "diagnosis",
+      "to": "projection",
+      "type": "primary"
+    },
+    {
+      "id": "edge-15",
+      "from": "projection",
+      "to": "lifecycle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-16",
+      "from": "bundle",
+      "to": "synthesis",
+      "type": "data",
+      "label": "脱敏骨架 + 引用"
+    },
+    {
+      "id": "edge-17",
+      "from": "synthesis",
+      "to": "adversarialEvaluation",
+      "type": "primary"
+    },
+    {
+      "id": "edge-18",
+      "from": "adversarialEvaluation",
+      "to": "governance",
+      "type": "primary"
+    },
+    {
+      "id": "edge-19",
+      "from": "diagnosis",
+      "to": "adversarialEvaluation",
+      "type": "data",
+      "label": "P2 影子样本"
+    },
+    {
+      "id": "edge-20",
+      "from": "lifecycle",
+      "to": "adversarialEvaluation",
+      "type": "data",
+      "label": "人工解法 / outcome / ReferenceSolution"
+    },
+    {
+      "id": "edge-21",
+      "from": "governance",
+      "to": "approved",
+      "type": "primary"
+    },
+    {
+      "id": "edge-22",
+      "from": "approved",
+      "to": "planning",
+      "type": "data",
+      "label": "已审核知识反馈"
+    }
+  ],
+  "modules": []
+}

@@ -69,7 +69,7 @@ class SopSynthesisReplayTest {
         RecordedReplayAdapter replay = new RecordedReplayAdapter(
                 replayConfig,
                 new ObjectMapper(),
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
         EvidenceProperties properties = new EvidenceProperties();
         properties.setRoutes(Map.of(

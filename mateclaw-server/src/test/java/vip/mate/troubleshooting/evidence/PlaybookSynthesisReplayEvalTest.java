@@ -52,7 +52,7 @@ class PlaybookSynthesisReplayEvalTest {
         EvidenceProperties properties = properties();
         RecordedReplayAdapter replay = new RecordedReplayAdapter(
                 properties.getRecordedReplay(), objectMapper,
-                new ClassPathResource("troubleshooting/evidence/recorded-replay-903001.json"),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
                 CLOCK);
         EvidenceSourceRouter router = new EvidenceSourceRouter(
                 List.of(replay), properties, CLOCK);

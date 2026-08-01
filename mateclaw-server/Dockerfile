@@ -38,7 +38,9 @@ FROM maven:3.9-eclipse-temurin-21 AS builder
 # repos first. This speeds up builds inside mainland China.
 ARG MAVEN_FLAGS=""
 
-# Inject mirror settings to avoid Maven Central timeouts in restricted networks
+# Keep Docker Maven behavior aligned with the POM repository order. The copied
+# settings file deliberately has no forced mirror; MAVEN_FLAGS can opt into the
+# existing aliyun-first profile when a builder explicitly needs it.
 COPY mateclaw-server/settings.xml /root/.m2/settings.xml
 
 # Copy the root parent plus module POMs first for Docker layer caching.

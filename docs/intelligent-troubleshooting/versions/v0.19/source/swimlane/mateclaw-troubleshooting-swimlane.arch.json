@@ -1,0 +1,381 @@
+{
+  "version": 1,
+  "title": "MateClaw 智能排障跨角色泳道图",
+  "type": "engineering-diagram",
+  "source": "generated",
+  "profile": "engineering-review",
+  "theme": "tech-blue",
+  "layout": "horizontal",
+  "counts": {
+    "nodes": 31,
+    "edges": 30,
+    "modules": 0
+  },
+  "nodes": [
+    {
+      "id": "laneReporter",
+      "label": "报障人 / 服务经理",
+      "type": "service"
+    },
+    {
+      "id": "laneChannel",
+      "label": "企业微信 Channel Adapter",
+      "type": "service"
+    },
+    {
+      "id": "laneMateClaw",
+      "label": "Java MateClaw",
+      "type": "service"
+    },
+    {
+      "id": "laneAgents",
+      "label": "MateClaw 内部模型角色 · 无独立权限 / 无裁决权",
+      "type": "service"
+    },
+    {
+      "id": "laneSources",
+      "label": "观测云 / 只读证据源",
+      "type": "service"
+    },
+    {
+      "id": "laneHumans",
+      "label": "开发 / 处置人 / 知识审核人",
+      "type": "service"
+    },
+    {
+      "id": "report",
+      "label": "@ 助手报障",
+      "type": "terminal"
+    },
+    {
+      "id": "context",
+      "label": "补客户 / 时间 / 截图",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "readSummary",
+      "label": "阅读业务摘要",
+      "type": "document"
+    },
+    {
+      "id": "confirmRecovery",
+      "label": "确认恢复",
+      "type": "terminal"
+    },
+    {
+      "id": "ack",
+      "label": "确认收到 / 补问",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "progress",
+      "label": "原路回执进展",
+      "type": "document"
+    },
+    {
+      "id": "closedNotice",
+      "label": "关闭后 @ 报障人",
+      "type": "terminal",
+      "size": "large"
+    },
+    {
+      "id": "intakeSession",
+      "label": "IntakeSession",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "plan",
+      "label": "三类路径 · 权威 / 预算",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "loopControl",
+      "label": "Loop Control",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "orchestrate",
+      "label": "只读场景 Tool",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "diagnose",
+      "label": "Verify Gate · 诊断 / 补证 / 弃权",
+      "type": "service"
+    },
+    {
+      "id": "lifecycle",
+      "label": "outcome · 验证 / 关闭",
+      "type": "service",
+      "size": "large"
+    },
+    {
+      "id": "makeCandidate",
+      "label": "Candidate · 不可直接批准",
+      "type": "database",
+      "size": "large"
+    },
+    {
+      "id": "investigator",
+      "label": "Investigator · OPEN_DISCOVERY · 唯一只读门面",
+      "type": "process"
+    },
+    {
+      "id": "challengers",
+      "label": "Evidence + Safety Challengers · P2 影子 / P5 Gate",
+      "type": "process"
+    },
+    {
+      "id": "logSearch",
+      "label": "topology_synthetic_probe",
+      "type": "process"
+    },
+    {
+      "id": "topologyAsset",
+      "label": "Workspace 拓扑资产",
+      "type": "database"
+    },
+    {
+      "id": "traceBundle",
+      "label": "canonical 安全证据",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "evidenceBundle",
+      "label": "Diagnosis EvidenceBundle",
+      "type": "document"
+    },
+    {
+      "id": "inspect",
+      "label": "开发核验证据",
+      "type": "process"
+    },
+    {
+      "id": "execute",
+      "label": "人工处置（系统不执行）",
+      "type": "process",
+      "size": "large"
+    },
+    {
+      "id": "reviewCandidate",
+      "label": "知识审核：满足资格？",
+      "type": "decision",
+      "size": "large"
+    },
+    {
+      "id": "approvedPlaybook",
+      "label": "批准新版本",
+      "type": "terminal"
+    },
+    {
+      "id": "rejectedCandidate",
+      "label": "驳回并留痕",
+      "type": "terminal"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "from": "report",
+      "to": "ack",
+      "type": "primary"
+    },
+    {
+      "id": "edge-2",
+      "from": "ack",
+      "to": "context",
+      "type": "optional",
+      "label": "缺字段"
+    },
+    {
+      "id": "edge-3",
+      "from": "context",
+      "to": "intakeSession",
+      "type": "primary"
+    },
+    {
+      "id": "edge-4",
+      "from": "intakeSession",
+      "to": "ack",
+      "type": "optional",
+      "label": "AWAITING_INPUT"
+    },
+    {
+      "id": "edge-5",
+      "from": "intakeSession",
+      "to": "plan",
+      "type": "primary",
+      "label": "READY"
+    },
+    {
+      "id": "edge-6",
+      "from": "plan",
+      "to": "loopControl",
+      "type": "primary"
+    },
+    {
+      "id": "edge-7",
+      "from": "loopControl",
+      "to": "orchestrate",
+      "type": "primary"
+    },
+    {
+      "id": "edge-8",
+      "from": "loopControl",
+      "to": "investigator",
+      "type": "optional",
+      "label": "OPEN_DISCOVERY"
+    },
+    {
+      "id": "edge-9",
+      "from": "investigator",
+      "to": "loopControl",
+      "type": "data",
+      "label": "proposal / EvidenceGap"
+    },
+    {
+      "id": "edge-10",
+      "from": "orchestrate",
+      "to": "logSearch",
+      "type": "data"
+    },
+    {
+      "id": "edge-11",
+      "from": "plan",
+      "to": "topologyAsset",
+      "type": "data",
+      "label": "deployment_topology_probe"
+    },
+    {
+      "id": "edge-12",
+      "from": "topologyAsset",
+      "to": "logSearch",
+      "type": "data",
+      "label": "Guance CloudDial"
+    },
+    {
+      "id": "edge-13",
+      "from": "logSearch",
+      "to": "traceBundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-14",
+      "from": "traceBundle",
+      "to": "evidenceBundle",
+      "type": "primary"
+    },
+    {
+      "id": "edge-15",
+      "from": "evidenceBundle",
+      "to": "diagnose",
+      "type": "data"
+    },
+    {
+      "id": "edge-16",
+      "from": "diagnose",
+      "to": "loopControl",
+      "type": "optional",
+      "label": "需补证且预算内"
+    },
+    {
+      "id": "edge-17",
+      "from": "diagnose",
+      "to": "progress",
+      "type": "data"
+    },
+    {
+      "id": "edge-18",
+      "from": "progress",
+      "to": "readSummary",
+      "type": "primary"
+    },
+    {
+      "id": "edge-19",
+      "from": "diagnose",
+      "to": "inspect",
+      "type": "primary"
+    },
+    {
+      "id": "edge-20",
+      "from": "inspect",
+      "to": "execute",
+      "type": "primary"
+    },
+    {
+      "id": "edge-21",
+      "from": "execute",
+      "to": "lifecycle",
+      "type": "data",
+      "label": "登记结果"
+    },
+    {
+      "id": "edge-22",
+      "from": "lifecycle",
+      "to": "confirmRecovery",
+      "type": "primary"
+    },
+    {
+      "id": "edge-23",
+      "from": "confirmRecovery",
+      "to": "closedNotice",
+      "type": "primary"
+    },
+    {
+      "id": "edge-24",
+      "from": "diagnose",
+      "to": "makeCandidate",
+      "type": "data",
+      "label": "证据型"
+    },
+    {
+      "id": "edge-25",
+      "from": "lifecycle",
+      "to": "makeCandidate",
+      "type": "data",
+      "label": "结果型"
+    },
+    {
+      "id": "edge-26",
+      "from": "makeCandidate",
+      "to": "challengers",
+      "type": "primary"
+    },
+    {
+      "id": "edge-27",
+      "from": "challengers",
+      "to": "reviewCandidate",
+      "type": "primary",
+      "label": "AdversarialEvalReport"
+    },
+    {
+      "id": "edge-28",
+      "from": "reviewCandidate",
+      "to": "approvedPlaybook",
+      "type": "primary",
+      "label": "是"
+    },
+    {
+      "id": "edge-29",
+      "from": "reviewCandidate",
+      "to": "rejectedCandidate",
+      "type": "optional",
+      "label": "否"
+    },
+    {
+      "id": "edge-30",
+      "from": "approvedPlaybook",
+      "to": "plan",
+      "type": "data",
+      "label": "已审核知识反馈"
+    }
+  ],
+  "modules": []
+}

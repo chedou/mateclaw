@@ -1,12 +1,17 @@
 package vip.mate.troubleshooting.synthesis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,10 +21,15 @@ import java.util.Optional;
 @Component
 public final class ManualPlaybookReplaySuiteCatalog {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(ManualPlaybookReplaySuiteCatalog.class);
+
     private static final String RESOURCE =
             "troubleshooting/replay/manual-playbook-replay-suites.json";
+    private static final int MAX_REJECTION_REFERENCE_LENGTH = 128;
 
     private final Map<String, ResolvedSuite> suites;
+    private final List<RejectedSeed> rejectedSeeds;
 
     @Autowired
     public ManualPlaybookReplaySuiteCatalog(
@@ -46,27 +56,55 @@ public final class ManualPlaybookReplaySuiteCatalog {
                     "objectMapper, fingerprints, evaluator and replay resource are required");
         }
         try (InputStream input = resource.getInputStream()) {
-            CatalogDocument document = objectMapper.readValue(
-                    input, CatalogDocument.class);
-            if (document.version() != 1 || document.suites().isEmpty()) {
+            JsonNode document = objectMapper.readTree(input);
+            int version = document.path("version").asInt(-1);
+            JsonNode fixedSuites = document.path("suites");
+            if ((version != 1 && version != 2)
+                    || !fixedSuites.isArray()
+                    || fixedSuites.isEmpty()) {
                 throw new IllegalArgumentException("unsupported or empty manual replay catalog");
             }
             Map<String, ResolvedSuite> loaded = new LinkedHashMap<>();
-            for (ManualPlaybookReplaySuite suite : document.suites()) {
-                if (suite.exampleCandidate() == null
-                        || !evaluator.evaluate(
-                                suite.exampleCandidate(), suite).passed()) {
+            for (JsonNode node : fixedSuites) {
+                ManualPlaybookReplaySuite suite = objectMapper.treeToValue(
+                        node, ManualPlaybookReplaySuite.class);
+                addFixed(loaded, resolve(suite, fingerprints, evaluator));
+            }
+
+            List<RejectedSeed> rejected = new ArrayList<>();
+            if (version == 2) {
+                JsonNode seeds = document.path("recordedEvidenceSeeds");
+                if (!seeds.isMissingNode() && !seeds.isArray()) {
                     throw new IllegalArgumentException(
-                            "manual replay suite example must pass its own cases");
+                            "recordedEvidenceSeeds must be an array");
                 }
-                ResolvedSuite resolved = new ResolvedSuite(
-                        suite, fingerprints.suite(suite));
-                if (loaded.putIfAbsent(suite.selectorKey(), resolved) != null) {
-                    throw new IllegalArgumentException(
-                            "manual replay selectors must be unique");
+                ManualPlaybookReplaySuiteTemplateFactory templateFactory =
+                        new ManualPlaybookReplaySuiteTemplateFactory();
+                int index = 0;
+                for (JsonNode node : seeds) {
+                    String reference = seedReference(node, index++);
+                    try {
+                        ManualPlaybookRecordedEvidenceSeed seed = objectMapper.treeToValue(
+                                node, ManualPlaybookRecordedEvidenceSeed.class);
+                        ManualPlaybookReplaySuite generated =
+                                templateFactory.generate(seed);
+                        ResolvedSuite resolved = resolve(
+                                generated, fingerprints, evaluator);
+                        if (loaded.putIfAbsent(generated.selectorKey(), resolved) != null) {
+                            throw new IllegalArgumentException(
+                                    "manual replay selectors must be unique");
+                        }
+                    } catch (Exception failure) {
+                        RejectedSeed item = new RejectedSeed(
+                                reference, "INVALID_RECORDED_EVIDENCE_SEED");
+                        rejected.add(item);
+                        log.warn("[manual-replay] quarantined recorded seed {} ({})",
+                                item.reference(), item.code());
+                    }
                 }
             }
             suites = Map.copyOf(loaded);
+            rejectedSeeds = List.copyOf(rejected);
         } catch (Exception failure) {
             throw new IllegalStateException(
                     "bundled manual Playbook replay catalog is invalid", failure);
@@ -78,6 +116,41 @@ public final class ManualPlaybookReplaySuiteCatalog {
             return Optional.empty();
         }
         return Optional.ofNullable(suites.get(selectorKey.trim()));
+    }
+
+    public List<RejectedSeed> rejectedSeeds() {
+        return rejectedSeeds;
+    }
+
+    private ResolvedSuite resolve(
+            ManualPlaybookReplaySuite suite,
+            ManualPlaybookReplayFingerprint fingerprints,
+            ManualPlaybookReplayEvaluator evaluator) {
+        if (suite.exampleCandidate() == null
+                || !evaluator.evaluate(suite.exampleCandidate(), suite).passed()) {
+            throw new IllegalArgumentException(
+                    "manual replay suite example must pass its own cases");
+        }
+        return new ResolvedSuite(suite, fingerprints.suite(suite));
+    }
+
+    private void addFixed(
+            Map<String, ResolvedSuite> loaded,
+            ResolvedSuite resolved) {
+        if (loaded.putIfAbsent(resolved.suite().selectorKey(), resolved) != null) {
+            throw new IllegalArgumentException("manual replay selectors must be unique");
+        }
+    }
+
+    private String seedReference(JsonNode node, int index) {
+        String fallback = "recordedEvidenceSeeds[" + index + "]";
+        String selector = node.path("selectorKey").asText("").trim();
+        if (selector.isEmpty()
+                || selector.length() > MAX_REJECTION_REFERENCE_LENGTH
+                || !TroubleshootingSecretRedactor.redact(selector).equals(selector)) {
+            return fallback;
+        }
+        return selector;
     }
 
     public record ResolvedSuite(
@@ -94,9 +167,16 @@ public final class ManualPlaybookReplaySuiteCatalog {
         }
     }
 
-    public record CatalogDocument(int version, List<ManualPlaybookReplaySuite> suites) {
-        public CatalogDocument {
-            suites = List.copyOf(suites == null ? List.of() : suites);
+    public record RejectedSeed(String reference, String code) {
+        public RejectedSeed {
+            reference = reference == null ? null : reference.trim();
+            if (reference == null || reference.isEmpty()
+                    || reference.length() > MAX_REJECTION_REFERENCE_LENGTH
+                    || !TroubleshootingSecretRedactor.redact(reference).equals(reference)
+                    || code == null || !code.matches("[A-Z0-9_]+")) {
+                throw new IllegalArgumentException(
+                        "recorded seed rejection requires a bounded reference and code");
+            }
         }
     }
 }
