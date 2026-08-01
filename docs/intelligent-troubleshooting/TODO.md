@@ -102,12 +102,42 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
 - [x] `troubleshooting-demo` profile：打开 Recorded Replay，把 CSDP 六个 signalKind 路由过去，
       **不碰 Guance**。
 - [x] `TroubleshootingDemoSeeder`：默认关闭（`mateclaw.troubleshooting.demo.enabled`），
-      走同一个 `TroubleshootingSopPersistenceService` 注册 + 批准，全部不变量照常生效；
-      以 candidate 注册再显式 approved，动作里没有 `MANUAL_WRITE`。
+      走同一个 `TroubleshootingSopPersistenceService` 注册，全部不变量照常生效；
+      动作里没有 `MANUAL_WRITE`。（晋升方式在 T0.65 被推翻重做，见下。）
 - [x] `TroubleshootingDemoSeederTest`：锁住种子与回放样本一致——
       **两者漂移不会抛异常，只会静默变成 `UNEVALUATED`**，操作员看到"证据不足"却分不清
       是真缺证据还是配错了。这正是需要单独测试的原因。
 - [x] `quickstart.md`：把散在多份 runbook 里的步骤合成一条主线。
+
+### T0.65 · 真的跑了一次（已完成，且推翻了 T0.6 的两个假设）
+
+第一次把服务真的起起来跑冒烟，暴露了只有运行才会暴露的问题：
+
+- [x] **种子的"批准"是假的**。第一版做的是 `updateStatus(..., "approved")`，运行时被拒：
+      `candidate approval requires the eligibility gate and must create a new version`。
+      这个拒绝是对的。现在种子走真实晋升链：注册 candidate → 跑固定回放套件 →
+      `PASSED` 后资格快照才 `ELIGIBLE_FOR_APPROVAL` → `start` + `approve` 晋升出 v1。
+      回放不过就不晋升，路由保持缺失，冒烟脚本照实报告。
+      台账里 `approvedBy=ts-demo-seeder`，一眼可见没有人审过。
+- [x] **补上 `csdp:903001` 的固定回放套件**（2 正例 + 2 反例/弃权例）。
+      在此之前仓库里只有 `csdp:scenario:deployment_topology_probe` 一套，
+      也就是说**任何错误码 Playbook 都没有晋升路径**——而错误码正是产品的主干形态。
+      这不是 demo 的缺口，是主干缺件。
+- [x] **冒烟脚本加第 8 道闸门**：结论不得是 `INSUFFICIENT_EVIDENCE`。
+      第一次跑通时前七道全绿而结论是"证据不足"——报障 service 与回放样本不匹配，
+      三条证据全 MISSING、四条判据全 UNEVALUATED。
+      **"证据不足"同时也是系统在真实缺证据时的正确输出**，
+      从外面分不出是链路断了还是真没证据，所以必须单独立一道闸门。
+- [x] 修正脚本里与现实不符的三处：默认端口 8080→18088；
+      判定证据源用了不存在的 `.enabled` 字段（实际契约是 `EvidenceSourceHealth.status`）；
+      默认 service `csdp-order-service`→`order-svc`。
+      并支持 `MATECLAW_USERNAME/PASSWORD` 登录换 JWT，不再强制先造 PAT。
+- [x] 顺手修一处既有 flaky：`ScheduledBaselineClaimLeaseKeeperTest` 断言心跳"恰好一次"，
+      而心跳是 `scheduleAtFixedRate(10ms)`，快机器上必然多跳一次。改为 `atLeastOnce()`。
+
+实测结果：`LOCATED` / R2「慢查询占满连接池」/ HIGH，
+且 `instance_unreachable` 是 **EXCLUDED（真的排除）而非 UNEVALUATED（没验过）**——
+D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
 ### T0.7 · 待办
 

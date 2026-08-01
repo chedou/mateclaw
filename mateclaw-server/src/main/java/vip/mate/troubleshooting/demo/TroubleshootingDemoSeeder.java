@@ -17,6 +17,11 @@ import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
+import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewState;
+import vip.mate.troubleshooting.synthesis.KnowledgeReviewWorkflowService;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayAttestation;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayService;
 
 import java.util.List;
 import java.util.Map;
@@ -32,19 +37,30 @@ import java.util.Map;
  * also a system whose safety has never actually been exercised — fail-closed is
  * only tested when someone tries to open the door.</p>
  *
- * <p><b>Why it does not weaken anything.</b> It is off unless
- * {@code mateclaw.troubleshooting.demo.enabled=true} is set explicitly; it
- * writes through {@link TroubleshootingSopPersistenceService} so every
- * registration and promotion invariant still applies; the seeded Playbook is
- * bound to the Recorded Replay fixture, so any diagnosis it produces is marked
- * {@code fixtureMode}. It never touches a real observability binding, and it
- * never promotes anything a human could mistake for verified knowledge.</p>
+ * <p><b>It walks the real promotion pipeline, it does not bypass it.</b> An
+ * earlier version of this class registered the candidate and then flipped its
+ * status to {@code approved}. That is rejected at runtime, and rightly so:
+ * {@code updateStatus} fails closed on candidate approval because approval must
+ * pass the eligibility gate and must create a new version. So the seeder does
+ * what a reviewer does — register the candidate, run the server-owned fixed
+ * replay suite against it, then start and approve a knowledge review. If the
+ * replay does not pass, the review is not eligible and nothing is promoted; the
+ * demo route simply stays missing and the smoke script says so.</p>
+ *
+ * <p><b>What it therefore cannot hide.</b> The approval is recorded in the
+ * knowledge-review ledger under {@link #ACTOR}, not under a person's name, so
+ * the audit trail never suggests a human vouched for this content. The Playbook
+ * is bound to the Recorded Replay fixture, so every diagnosis it produces is
+ * marked {@code fixtureMode}. It is off unless
+ * {@code mateclaw.troubleshooting.demo.enabled=true} is set explicitly, and it
+ * never touches a real observability binding.</p>
  *
  * <p>The signals below intentionally mirror
- * {@code troubleshooting/evidence/recorded-replay-903001.json} request-for-request.
- * If they drift apart the criteria evaluate as {@code UNEVALUATED} rather than
- * failing loudly, which is exactly the silent outcome the smoke script exists
- * to catch.</p>
+ * {@code troubleshooting/evidence/recorded-replay-903001.json} request-for-request,
+ * and the replay suite for {@code csdp:903001} mirrors them again. If they drift
+ * apart the criteria evaluate as {@code UNEVALUATED} rather than failing loudly,
+ * which is exactly the silent outcome {@code TroubleshootingDemoSeederTest} and
+ * the smoke script exist to catch.</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "mateclaw.troubleshooting.demo", name = "enabled",
@@ -58,13 +74,29 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
     static final String SERVICE = "order-svc";
     static final String SOP_ID = "demo-csdp-903001";
 
+    /**
+     * Deliberately not a person. Whoever reads the review ledger later must be
+     * able to see at a glance that no human reviewed this content.
+     */
+    static final String ACTOR = "ts-demo-seeder";
+
+    private static final String REASON =
+            "fixture demo seed: approved against the bundled replay suite only, "
+                    + "not a human review and not evidence that any real source was verified";
+
     private final TroubleshootingSopPersistenceService sops;
+    private final ManualPlaybookReplayService replays;
+    private final KnowledgeReviewWorkflowService reviews;
     private final TroubleshootingDemoProperties properties;
 
     public TroubleshootingDemoSeeder(
             TroubleshootingSopPersistenceService sops,
+            ManualPlaybookReplayService replays,
+            KnowledgeReviewWorkflowService reviews,
             TroubleshootingDemoProperties properties) {
         this.sops = sops;
+        this.replays = replays;
+        this.reviews = reviews;
         this.properties = properties;
     }
 
@@ -73,7 +105,7 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
         long workspaceId = properties.getWorkspaceId();
         try {
             if (sops.find(workspaceId, SYSTEM, ERROR_CODE) != null) {
-                log.info("[ts-demo] demo playbook already present: workspace={} route={}:{}",
+                log.info("[ts-demo] demo playbook already routeable: workspace={} route={}:{}",
                         workspaceId, SYSTEM, ERROR_CODE);
                 return;
             }
@@ -82,12 +114,27 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
         }
 
         try {
-            sops.register(workspaceId, playbook());
-            sops.updateStatus(workspaceId, SYSTEM, ERROR_CODE, "approved");
+            registerIfAbsent(workspaceId);
+            ManualPlaybookReplayAttestation attestation = replays.run(
+                    workspaceId, SOP_ID, ACTOR);
+            if (attestation.status() != ManualPlaybookReplayAttestation.Status.PASSED) {
+                // Fail closed and say why. Promoting anyway would make the demo
+                // the one place in this system where replay proof is optional.
+                log.warn("[ts-demo] replay did not pass ({}); leaving the candidate unpromoted."
+                                + " The route stays missing and the smoke script will report it.",
+                        attestation.failureCodes());
+                return;
+            }
+
+            KnowledgeReviewState review = reviews.start(
+                    workspaceId, KnowledgeOrigin.MANUAL, SOP_ID, 0, ACTOR, REASON);
+            reviews.approve(
+                    workspaceId, KnowledgeOrigin.MANUAL, SOP_ID, review.version(), ACTOR, REASON);
             log.info("[ts-demo] seeded fixture-backed demo playbook: workspace={} route={}:{}"
-                            + " — diagnoses from it are marked fixtureMode and are not evidence"
-                            + " that the real observability source has been verified",
-                    workspaceId, SYSTEM, ERROR_CODE);
+                            + " — approved by {} against replay suite {}; diagnoses are marked"
+                            + " fixtureMode and are not evidence that the real observability"
+                            + " source has been verified",
+                    workspaceId, SYSTEM, ERROR_CODE, ACTOR, attestation.suiteId());
         } catch (RuntimeException failure) {
             // Seeding must never take the application down: an operator with a
             // real workspace should still boot even if the demo route collides.
@@ -95,7 +142,14 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
         }
     }
 
-    /** Mirrors the recorded-replay fixture request-for-request. */
+    private void registerIfAbsent(long workspaceId) {
+        if (sops.findBySopId(workspaceId, SOP_ID) != null) {
+            return;
+        }
+        sops.register(workspaceId, playbook());
+    }
+
+    /** Mirrors the recorded-replay fixture and the {@code csdp:903001} replay suite. */
     static SopEntry playbook() {
         List<EvidenceRequest> evidence = List.of(
                 new EvidenceRequest("EV-1", "log_count", "错误码日志计数",
@@ -121,8 +175,9 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
                         new Criterion.NumericGte("count", 1)));
 
         // Order matters: the unreachable-instance rule is listed first precisely
-        // so the fixture proves it loses — `reachable=true` excludes it rather
-        // than leaving it untested.
+        // so the replay suite proves both outcomes — it wins when the instance is
+        // genuinely unreachable, and it is EXCLUDED (not merely untested) when
+        // the instance answers.
         List<DiagnosisRule> rules = List.of(
                 new DiagnosisRule("R1", List.of("instance_unreachable"),
                         "数据库实例不可达",
@@ -139,13 +194,13 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
                 new RecommendedAction("A1", ActionType.HUMAN_CONTACT,
                         "联系 DBA 确认慢查询来源",
                         "由 DBA 在平台之外处理；平台只提供证据，不执行任何生产变更。",
-                        false, ApprovalStatus.PENDING, ExecutionStatus.BLOCKED));
+                        false, ApprovalStatus.NOT_REQUIRED, ExecutionStatus.PENDING));
 
         return new SopEntry(
                 SOP_ID, SopEntry.CURRENT_CONTRACT_VERSION, SYSTEM, ERROR_CODE, SERVICE,
                 "工单库连接池被慢查询占满",
                 "慢查询长时间持有连接，连接池耗尽后新请求拿不到连接",
-                "database", "demo-owner",
+                "database", "工单平台组",
                 "candidate", false,
                 evidence, criteria, rules, actions);
     }

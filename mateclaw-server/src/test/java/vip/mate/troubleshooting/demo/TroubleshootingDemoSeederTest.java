@@ -6,10 +6,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluation;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluator;
+import vip.mate.troubleshooting.synthesis.ManualPlaybookReplaySuite;
 
 import java.io.InputStream;
 import java.util.LinkedHashMap;
@@ -21,18 +25,27 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Locks the demo playbook to the recorded fixture it is meant to run against.
+ * Locks the demo playbook to the two server-owned artifacts it must satisfy:
+ * the recorded fixture it runs against, and the replay suite that gates its
+ * promotion.
  *
- * <p>A drift between the two does not throw: the criteria simply evaluate as
- * {@code UNEVALUATED} and the scenario quietly stops concluding anything. That
- * silence is the whole reason the demo path needs a test of its own — an
+ * <p>A drift against the fixture does not throw: the criteria simply evaluate
+ * as {@code UNEVALUATED} and the scenario quietly stops concluding anything.
+ * That silence is the whole reason the demo path needs a test of its own — an
  * operator would see "证据不足" and have no way to tell it apart from a genuine
  * evidence gap.</p>
+ *
+ * <p>A drift against the replay suite is louder but easier to misread: the
+ * seeder logs a skip and the route stays missing, which looks identical to
+ * "the demo profile is off".</p>
  */
 class TroubleshootingDemoSeederTest {
 
     private static final String FIXTURE =
             "/troubleshooting/evidence/recorded-replay-903001.json";
+    private static final String SUITES =
+            "/troubleshooting/replay/manual-playbook-replay-suites.json";
+    private static final String SELECTOR = "csdp:903001";
 
     @Test
     @DisplayName("每条证据请求都能在回放样本里找到对应记录")
@@ -99,6 +112,58 @@ class TroubleshootingDemoSeederTest {
         assertThat(playbook.actions())
                 .allSatisfy(action -> assertThat(action.actionType())
                         .isNotEqualTo(ActionType.MANUAL_WRITE));
+    }
+
+    /**
+     * The gate the first version of the seeder tried to skip.
+     *
+     * <p>Approval is not a status flip: it requires a passing run of the
+     * server-owned replay suite. Without this the seeder would log a skip at
+     * boot and the demo route would silently stay missing.</p>
+     */
+    @Test
+    @DisplayName("种子 playbook 能通过 csdp:903001 的固定回放套件，因而可被正常晋升")
+    void seededPlaybookPassesTheSuiteThatGatesItsPromotion() throws Exception {
+        ManualPlaybookReplaySuite suite = suiteFor(SELECTOR);
+        ManualPlaybookReplayEvaluation evaluation =
+                new ManualPlaybookReplayEvaluator(
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator())
+                        .evaluate(TroubleshootingDemoSeeder.playbook(), suite);
+
+        assertThat(evaluation.failureCodes()).isEmpty();
+        assertThat(evaluation.passed()).isTrue();
+        assertThat(evaluation.positiveTotal())
+                .as("一套只有正例的回放证明不了任何排除能力").isPositive();
+        assertThat(evaluation.negativeOrAbstainTotal())
+                .as("必须有反例/弃权例，否则规则永远赢").isPositive();
+    }
+
+    @Test
+    @DisplayName("回放套件覆盖命中、排除与弃权三种处置，而不是只证明会命中")
+    void theSuiteCoversAllThreeDispositions() throws Exception {
+        List<ManualPlaybookReplaySuite.Disposition> expected = suiteFor(SELECTOR).cases().stream()
+                .map(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .distinct()
+                .toList();
+
+        assertThat(expected).containsExactlyInAnyOrder(
+                ManualPlaybookReplaySuite.Disposition.MATCHED,
+                ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+    }
+
+    private static ManualPlaybookReplaySuite suiteFor(String selectorKey) throws Exception {
+        try (InputStream stream = TroubleshootingDemoSeederTest.class.getResourceAsStream(SUITES)) {
+            assertThat(stream).as("replay suite catalog must ship with the module").isNotNull();
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(stream);
+            for (JsonNode suite : root.get("suites")) {
+                if (selectorKey.equals(suite.get("selectorKey").asText())) {
+                    return mapper.treeToValue(suite, ManualPlaybookReplaySuite.class);
+                }
+            }
+            throw new IllegalStateException("no replay suite registered for " + selectorKey);
+        }
     }
 
     private static Set<String> fieldNames(JsonNode node) {

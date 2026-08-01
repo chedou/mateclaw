@@ -20,11 +20,16 @@
 
 set -euo pipefail
 
-BASE_URL="${MATECLAW_BASE_URL:-http://127.0.0.1:8080}"
+BASE_URL="${MATECLAW_BASE_URL:-http://127.0.0.1:18088}"
 TOKEN="${MATECLAW_TOKEN:-}"
+USERNAME="${MATECLAW_USERNAME:-}"
+PASSWORD="${MATECLAW_PASSWORD:-}"
 WORKSPACE_ID="${MATECLAW_WORKSPACE_ID:-1}"
 SYSTEM="${SMOKE_SYSTEM:-csdp}"
-SERVICE="${SMOKE_SERVICE:-csdp-order-service}"
+# Must match the seeded Playbook and the recorded fixture: the replay adapter
+# looks records up by (system, errorCode, service, requestId), so a plausible
+# but wrong service name yields MISSING evidence and a silent 证据不足.
+SERVICE="${SMOKE_SERVICE:-order-svc}"
 ERROR_CODE="${SMOKE_ERROR_CODE:-903001}"
 API="${BASE_URL}/api/v1/troubleshooting"
 
@@ -49,16 +54,20 @@ print_gates() {
   cat <<'GATES'
 
   1. 服务可达            应用已启动，且 /api/v1/troubleshooting 可访问
-  2. 身份               PAT（mc_ 前缀）+ X-Workspace-Id，且具备 operate:troubleshooting
+  2. 身份               PAT（mc_ 前缀）或 MATECLAW_USERNAME/PASSWORD 登录换取的 JWT，
+                        加 X-Workspace-Id，且具备 operate:troubleshooting
   3. 证据源已启用        mateclaw.troubleshooting.evidence.recorded-replay.enabled=true
                         （默认 false；Guance 另需 asset-bindings，默认为空）
   4. 该路由有 approved Playbook
-                        仓库不随带任何 seed，迁移里 0 条 INSERT，
-                        所以未注册前任何报障必然 route miss
+                        仓库不随带任何 seed，迁移里 0 条 INSERT，所以未注册前必然 route miss。
+                        注意"批准"不是改个状态位：它必须先通过服务端固定回放套件，
+                        再走知识评审晋升出一个新版本（updateStatus 对 approved 是 fail-closed 的）
   5. 报障被接受          POST /incidents 返回 diagnosisId
   6. 诊断可读回          GET /diagnoses/{id} 拿到结论
   7. 投影可用            GET /diagnoses/{id}/projection 有 businessSummary
                         与三段北极星耗时
+  8. 判据真的被求值过      结论不是 INSUFFICIENT_EVIDENCE。取证断掉时前七道全绿，
+                        因为"证据不足"同时也是系统在真实缺证据时的正确输出
 
   第 3、4 条是当前默认状态下必然失败的两道；它们需要显式打开与显式入库，
   这正是「跑不通一个场景」的直接原因。
@@ -73,6 +82,19 @@ fi
 for tool in curl jq; do
   command -v "${tool}" >/dev/null 2>&1 || { red "缺少 ${tool}"; exit 2; }
 done
+
+# Either a scoped PAT (mc_ prefix) or a username/password the platform's own
+# login endpoint exchanges for a JWT. The same filter accepts both, so the
+# smoke path never needs a credential shape that operators do not already have.
+if [[ -z "${TOKEN}" && -n "${USERNAME}" ]]; then
+  TOKEN="$(curl -sS -X POST "${BASE_URL}/api/v1/auth/login" \
+      -H 'Content-Type: application/json' \
+      --data "{\"username\":\"${USERNAME}\",\"password\":\"${PASSWORD}\"}" \
+      2>/dev/null | jq -r '.data.token // empty')"
+  [[ -n "${TOKEN}" ]] || gate_failed "身份" \
+    "用 ${USERNAME} 登录 ${BASE_URL} 未拿到 token" \
+    "确认服务已启动且账号密码正确，或改用 MATECLAW_TOKEN 提供 PAT"
+fi
 
 auth_header=()
 [[ -n "${TOKEN}" ]] && auth_header=(-H "Authorization: Bearer ${TOKEN}")
@@ -112,13 +134,16 @@ ok "服务可达，身份通过"
 
 # ── 闸门 3：证据源已启用 ────────────────────────────────────────────
 sources="$(call GET "/evidence/sources")"
-enabled_count="$(echo "${sources}" | jq '[.data[]? | select(.enabled == true)] | length' 2>/dev/null || echo 0)"
-if [[ "${enabled_count}" == "0" ]]; then
+# The contract is EvidenceSourceHealth{platform,status,verified,detail}; a
+# disabled adapter reports DISABLED rather than being absent. DEGRADED is not
+# counted: a source that cannot answer is not a path.
+ready="$(echo "${sources}" | jq -r '[.data[]? | select(.status == "READY") | .platform] | join(", ")' 2>/dev/null || echo "")"
+if [[ -z "${ready}" ]]; then
   gate_failed "证据源已启用" \
-    "没有任何已启用的证据源（recorded-replay 与 guance 默认都是 false）" \
+    "没有任何 READY 的证据源：$(echo "${sources}" | jq -c '[.data[]? | {platform,status}]' 2>/dev/null)" \
     "在配置里打开 mateclaw.troubleshooting.evidence.recorded-replay.enabled=true"
 fi
-ok "已启用证据源：${enabled_count} 个"
+ok "READY 的证据源：${ready}"
 
 # ── 闸门 4：该路由有 approved Playbook ──────────────────────────────
 playbook="$(call GET "/sops/${SYSTEM}/${ERROR_CODE}")"
@@ -163,6 +188,21 @@ steps="$(echo "${projection}" | jq '[.data.developerEvidence.steps[]?] | length'
 
 [[ -n "${conclusion}" ]] || gate_failed "投影可用" \
   "businessSummary 里没有 conclusionType" "投影没有产出结论类型"
+
+# ── 闸门 8：判据真的被求值过 ────────────────────────────────────────
+# 没有这道闸门，一次全程 UNEVALUATED 的诊断也会被判为"通过"：接入没问题、
+# 投影没问题、结论字段也在——只是链路在取证那一步就断了，而"证据不足"正是
+# 系统在真实缺证据时的正确输出，两者从外面看一模一样。
+# 对这条种子场景，回放样本是齐的，所以 INSUFFICIENT_EVIDENCE 只可能意味着配错。
+if [[ "${conclusion}" == "INSUFFICIENT_EVIDENCE" ]]; then
+  unevaluated="$(echo "${projection}" \
+    | jq -r '[.data.developerEvidence.steps[]? | select(.tone == "UNEVALUATED") | .ref] | join(", ")')"
+  gate_failed "判据真的被求值过" \
+    "结论是 INSUFFICIENT_EVIDENCE，未求值项：${unevaluated}" \
+    "回放样本按 (system, errorCode, service, requestId) 精确匹配；
+         先核对报障的 SMOKE_SERVICE=${SERVICE} 是否与种子 Playbook 和样本里的 service 一致"
+fi
+
 [[ "${fixture}" == "true" ]] || gate_failed "fixture 标记" \
   "fixtureMode=${fixture}，但真实源尚未通过 T7 验收" \
   "在真实观测云验收前，投影必须始终标记 fixture"

@@ -55,7 +55,9 @@
         "diagnosisRules": [
           {
             "ruleId": "RULE-TOPOLOGY-FAILURE",
-            "requiredSignals": ["failed_probe_present"],
+            "requiredSignals": [
+              "failed_probe_present"
+            ],
             "rootCause": "部署拓扑存在失败拨测节点",
             "summary": "沿失败节点的相邻拓扑链路继续核查；相邻不等于已证明根因。",
             "confidence": "MEDIUM",
@@ -111,6 +113,278 @@
           ]
         }
       ]
+    },
+    {
+      "contractVersion": "manual-playbook-replay-suite.v1",
+      "suiteId": "csdp-903001-connection-pool/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:903001",
+      "requiredEvidenceRequest": {
+        "requestId": "EV-2",
+        "signalKind": "metric",
+        "required": true,
+        "target": {
+          "target": "mongo"
+        }
+      },
+      "cases": [
+        {
+          "caseId": "slow-query-saturation-positive",
+          "cohort": "POSITIVE",
+          "expectedDisposition": "MATCHED",
+          "expectedRuleId": "R2",
+          "evidence": [
+            {
+              "requestId": "EV-1",
+              "status": "ANOMALY",
+              "observed": {
+                "count": 148
+              }
+            },
+            {
+              "requestId": "EV-2",
+              "status": "ANOMALY",
+              "observed": {
+                "reachable": true,
+                "connections_current": 3998,
+                "connections_available": 2,
+                "slow_query_count": 37,
+                "baseline_slow": 8
+              }
+            },
+            {
+              "requestId": "EV-3",
+              "status": "ANOMALY",
+              "observed": {
+                "failed_hop": "mongo.find",
+                "duration_ms": 3001
+              }
+            }
+          ]
+        },
+        {
+          "caseId": "instance-unreachable-positive",
+          "cohort": "POSITIVE",
+          "expectedDisposition": "MATCHED",
+          "expectedRuleId": "R1",
+          "evidence": [
+            {
+              "requestId": "EV-1",
+              "status": "ANOMALY",
+              "observed": {
+                "count": 148
+              }
+            },
+            {
+              "requestId": "EV-2",
+              "status": "ANOMALY",
+              "observed": {
+                "reachable": false,
+                "connections_current": 0,
+                "connections_available": 0,
+                "slow_query_count": 0,
+                "baseline_slow": 8
+              }
+            },
+            {
+              "requestId": "EV-3",
+              "status": "MISSING",
+              "observed": {}
+            }
+          ]
+        },
+        {
+          "caseId": "healthy-pool-negative",
+          "cohort": "NEGATIVE_OR_ABSTAIN",
+          "expectedDisposition": "EXCLUDED",
+          "expectedRuleId": null,
+          "evidence": [
+            {
+              "requestId": "EV-1",
+              "status": "NORMAL",
+              "observed": {
+                "count": 0
+              }
+            },
+            {
+              "requestId": "EV-2",
+              "status": "NORMAL",
+              "observed": {
+                "reachable": true,
+                "connections_current": 12,
+                "connections_available": 388,
+                "slow_query_count": 2,
+                "baseline_slow": 8
+              }
+            },
+            {
+              "requestId": "EV-3",
+              "status": "NORMAL",
+              "observed": {
+                "failed_hop": "none"
+              }
+            }
+          ]
+        },
+        {
+          "caseId": "metric-missing-abstain",
+          "cohort": "NEGATIVE_OR_ABSTAIN",
+          "expectedDisposition": "ABSTAINED",
+          "expectedRuleId": null,
+          "evidence": [
+            {
+              "requestId": "EV-1",
+              "status": "ANOMALY",
+              "observed": {
+                "count": 148
+              }
+            },
+            {
+              "requestId": "EV-2",
+              "status": "MISSING",
+              "observed": {}
+            },
+            {
+              "requestId": "EV-3",
+              "status": "MISSING",
+              "observed": {}
+            }
+          ]
+        }
+      ],
+      "exampleCandidate": {
+        "sopId": "manual-csdp-903001-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "903001",
+        "service": "order-svc",
+        "title": "工单库连接池被慢查询占满",
+        "cause": "慢查询长时间持有连接，连接池耗尽后新请求拿不到连接",
+        "category": "database",
+        "ownerTeam": "工单平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "EV-1",
+            "signalKind": "log_count",
+            "purpose": "错误码日志计数",
+            "target": {
+              "errorCode": "903001"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "EV-2",
+            "signalKind": "metric",
+            "purpose": "连接池与慢查询水位",
+            "target": {
+              "target": "mongo"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "EV-3",
+            "signalKind": "trace",
+            "purpose": "失败跳点",
+            "target": {
+              "service": "order-svc"
+            },
+            "window": "-15m",
+            "required": false
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "pool_exhausted",
+            "sourceRequestId": "EV-2",
+            "description": "连接池占用率超过 95%",
+            "rule": {
+              "kind": "ratio_of_sum_gt",
+              "numeratorField": "connections_current",
+              "addendField": "connections_available",
+              "threshold": 0.95
+            }
+          },
+          {
+            "signal": "slow_query_burst",
+            "sourceRequestId": "EV-2",
+            "description": "慢查询数超过基线 3 倍",
+            "rule": {
+              "kind": "multiple_gt",
+              "field": "slow_query_count",
+              "baselineField": "baseline_slow",
+              "multiplier": 3
+            }
+          },
+          {
+            "signal": "instance_unreachable",
+            "sourceRequestId": "EV-2",
+            "description": "实例不可达",
+            "rule": {
+              "kind": "boolean_equals",
+              "field": "reachable",
+              "expected": false
+            }
+          },
+          {
+            "signal": "error_burst",
+            "sourceRequestId": "EV-1",
+            "description": "错误码日志出现",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "count",
+              "threshold": 1
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "R1",
+            "requiredSignals": [
+              "instance_unreachable"
+            ],
+            "rootCause": "数据库实例不可达",
+            "summary": "实例不可达导致连接失败",
+            "confidence": "HIGH",
+            "abstained": false
+          },
+          {
+            "ruleId": "R2",
+            "requiredSignals": [
+              "pool_exhausted",
+              "slow_query_burst"
+            ],
+            "rootCause": "慢查询占满连接池",
+            "summary": "慢查询长时间占用连接，新请求拿不到连接",
+            "confidence": "HIGH",
+            "abstained": false
+          },
+          {
+            "ruleId": "R3",
+            "requiredSignals": [
+              "error_burst"
+            ],
+            "rootCause": "错误码集中出现，原因待确认",
+            "summary": "只观察到错误码集中出现，尚不足以定位到具体原因",
+            "confidence": "LOW",
+            "abstained": true
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系 DBA 确认慢查询来源",
+            "description": "由 DBA 在平台之外处理；平台只提供证据，不执行任何生产变更。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      }
     }
   ]
 }
