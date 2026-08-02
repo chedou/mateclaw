@@ -388,8 +388,13 @@
           {{ guanceOwnerBlockerLabel(blocker) }}
         </small>
       </div>
+      <div v-if="guanceRecordingTargets" class="dialog-validation-result" :class="recordingBatchReady ? 'passed' : 'blocked'">
+        <b>T7 窗口批次目标 · {{ guanceRecordingTargets.executableTargetCount }} / 20</b>
+        <p>服务端冻结 {{ guanceRecordingTargets.frozenTargetCount }} 个未录制 D1 目标；只有与当前三份 binding 精确匹配的目标才计入。</p>
+        <small v-for="blocker in guanceRecordingTargets.blockers" :key="blocker">{{ blocker }}</small>
+      </div>
       <div
-        v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
+        v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner && recordingBatchReady"
         class="t7-owner-checklist"
       >
         <b>T7 owner 字段核实清单</b>
@@ -416,6 +421,10 @@
         </el-checkbox>
         <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
       </div>
+      <p
+        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
+        class="source-blocker"
+      >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询合同；服务端不会记录 owner ACCEPTED。</p>
       <p
         v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED'"
         class="source-blocker"
@@ -614,6 +623,7 @@ const {
   listLoading, detailLoading, actionLoading, readinessLoading,
   guanceReadiness, guanceValidation, guanceSpinePreview,
   guanceOwnerAcceptance, guanceDiagnosisLookup, replayCapability, readinessError,
+  guanceRecordingTargets,
   business, developer, closure,
   deploymentTopologyRequired, latestTopologyProbeRun, impactMetricList,
   canTransfer, canClose, canValidateGuance, guanceAcceptance,
@@ -685,8 +695,11 @@ const deploymentTopologySelector = computed(() =>
   deploymentTopologyScenarioSelector(deploymentTopologyScenarioForm.system))
 const canSubmitDeploymentTopologyScenario = computed(() =>
   canManageTroubleshooting.value && deploymentTopologyScenarioErrors.value.length === 0)
+const recordingBatchReady = computed(() =>
+  (guanceRecordingTargets.value?.executableTargetCount ?? 0) >= 20)
 const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && canAcceptGuanceOwner.value
+  && recordingBatchReady.value
   && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
 

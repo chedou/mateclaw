@@ -80,6 +80,11 @@
           <strong :class="acceptanceTone(stage.state)">{{ guanceAcceptanceStateLabel(stage.state) }}</strong>
         </li>
       </ol>
+      <p v-if="currentRecordingTargets" class="recording-targets">
+        <b>窗口批次目标</b>
+        {{ currentRecordingTargets.executableTargetCount }} / 20 个可执行新目标
+        · 目录 <code>{{ currentRecordingTargets.catalogFingerprint.slice(0, 12) }}…</code>
+      </p>
       <ul class="onboarding-signals">
         <li v-for="signal in currentReadiness.signals" :key="signal.signalKind">
           <code>{{ signal.signalKind }}</code>
@@ -100,7 +105,7 @@
         type="primary"
         :disabled="!canEnterValidation"
         @click="startValidation"
-      >进入 T7 只读验收</el-button>
+      >验证单条查询合同</el-button>
     </template>
   </el-dialog>
 </template>
@@ -114,6 +119,7 @@ import {
   type GuanceCredentialState,
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceReadiness,
+  type GuanceRecordingTargetCatalogView,
   type GuanceReadinessStatus,
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -159,6 +165,7 @@ const form = reactive<EvidenceChainPreviewRequest>({
 })
 const readiness = ref<GuanceEvidenceReadiness | null>(null)
 const ownerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
+const recordingTargets = ref<GuanceRecordingTargetCatalogView | null>(null)
 const inspectedScopeKey = ref('')
 const loading = ref(false)
 const loadError = ref('')
@@ -190,8 +197,15 @@ const currentReadiness = computed(() => inspectedScopeKey.value === scopeKey.val
 const currentOwnerAcceptance = computed(() => inspectedScopeKey.value === scopeKey.value
   ? ownerAcceptance.value
   : null)
+const currentRecordingTargets = computed(() => inspectedScopeKey.value === scopeKey.value
+  ? recordingTargets.value
+  : null)
 const acceptanceProgress = computed(() => currentReadiness.value
-  ? guanceAcceptanceProgress(currentReadiness.value, currentOwnerAcceptance.value)
+  ? guanceAcceptanceProgress(
+      currentReadiness.value,
+      currentOwnerAcceptance.value,
+      currentRecordingTargets.value,
+    )
   : null)
 const safeSearchTerm = computed(() => isSafeGuanceSearchTerm(form.searchTerm))
 const canEnterValidation = computed(() => Boolean(currentReadiness.value
@@ -203,6 +217,7 @@ watch(visible, (open) => {
   requestVersion += 1
   readiness.value = null
   ownerAcceptance.value = null
+  recordingTargets.value = null
   inspectedScopeKey.value = ''
   loadError.value = ''
   loading.value = false
@@ -219,18 +234,21 @@ async function inspect() {
   loadError.value = ''
   try {
     const scope = { system: form.system.trim(), service: form.service.trim() }
-    const [readinessResponse, acceptanceResponse] = await Promise.all([
+    const [readinessResponse, acceptanceResponse, recordingTargetsResponse] = await Promise.all([
       troubleshootingApi.evidenceReadiness(scope),
       troubleshootingApi.guanceEvidenceAcceptance(scope),
+      troubleshootingApi.guanceRecordingTargets(scope),
     ])
     if (version !== requestVersion || !visible.value) return
     readiness.value = readinessResponse.data
     ownerAcceptance.value = acceptanceResponse.data
+    recordingTargets.value = recordingTargetsResponse.data
     inspectedScopeKey.value = requestedKey
   } catch (error) {
     if (version !== requestVersion || !visible.value) return
     readiness.value = null
     ownerAcceptance.value = null
+    recordingTargets.value = null
     inspectedScopeKey.value = requestedKey
     loadError.value = `接入条件检查失败：${error instanceof Error ? error.message : String(error)}`
   } finally {
@@ -313,6 +331,8 @@ function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') 
 .onboarding-signals small { grid-column: 1 / -1; color: var(--el-text-color-secondary); word-break: break-all; }
 .next-action { margin: 12px 0 0; padding: 10px; color: #344054; background: #eff4ff; font-size: 11px; line-height: 1.55; }
 .next-action b { display: block; margin-bottom: 3px; color: #175cd3; }
+.recording-targets { margin: 10px 0 0; padding: 8px 10px; color: var(--el-text-color-regular); background: var(--el-bg-color); font-size: 11px; }
+.recording-targets b { margin-right: 6px; }
 .blocker { margin: 7px 0 0; color: #b54708; font-size: 10px; }
 @media (max-width: 720px) {
   .scope-grid,

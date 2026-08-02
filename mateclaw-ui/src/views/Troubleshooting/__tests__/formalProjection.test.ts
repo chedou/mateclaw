@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   GuanceEvidenceAcceptanceStatus,
   GuanceEvidenceAcceptanceView,
+  GuanceRecordingTargetCatalogView,
   GuanceReadinessStatus,
   GuanceSignalStatus,
 } from '@/api'
@@ -79,6 +80,20 @@ function acceptance(
   }
 }
 
+function recordingTargets(executableTargetCount: number): GuanceRecordingTargetCatalogView {
+  return {
+    contractVersion: 't7-guance-recording-target-catalog.v1',
+    system: 'CSDP',
+    service: 'session-svc',
+    catalogFingerprint: 'e'.repeat(64),
+    frozenTargetCount: executableTargetCount,
+    executableTargetCount,
+    targets: [],
+    asOfEpochSeconds: 1785657600,
+    blockers: executableTargetCount < 20 ? ['at least 20 targets are required'] : [],
+  }
+}
+
 describe('formal troubleshooting projection formatting', () => {
   it('keeps conclusion semantics explicit', () => {
     expect(conclusionLabel('LOCATED')).toBe('已定位')
@@ -148,7 +163,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const ready = guanceAcceptanceProgress(readiness(
       'READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true,
-    ))
+    ), null, recordingTargets(20))
     expect(ready.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'READY' }),
@@ -158,7 +173,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const observed = guanceAcceptanceProgress(readiness(
       'CANONICAL_SIGNALS_OBSERVED', 'CANONICAL_RESULT_OBSERVED', true,
-    ))
+    ), null, recordingTargets(20))
     expect(observed.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'OWNER_EVIDENCE_REQUIRED' }),
@@ -170,7 +185,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const missingRuntime = guanceAcceptanceProgress(readiness(
       'CONFIGURATION_INCOMPLETE', 'READY_FOR_VALIDATION', true,
-    ))
+    ), null, recordingTargets(20))
     expect(missingRuntime.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'BLOCKED' }),
@@ -179,10 +194,28 @@ describe('formal troubleshooting projection formatting', () => {
     expect(missingRuntime.stages[1].title).toBe('真源运行条件未就绪')
   })
 
+  it('blocks T7 before the window when the server owns fewer than 20 executable targets', () => {
+    const progress = guanceAcceptanceProgress(
+      readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
+      acceptance('NOT_ACCEPTED'),
+      recordingTargets(0),
+    )
+
+    expect(progress.stages[0]).toEqual(expect.objectContaining({ code: 'T6', state: 'READY' }))
+    expect(progress.stages[1]).toEqual(expect.objectContaining({
+      code: 'T7',
+      state: 'BLOCKED',
+      title: '录制批次目标未就绪',
+    }))
+    expect(progress.stages[1].detail).toContain('0 / 20')
+    expect(progress.nextAction).toContain('冻结至少 20 个')
+  })
+
   it('unlocks T8 collection only for the current owner-accepted binding', () => {
     const accepted = guanceAcceptanceProgress(
       readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
       acceptance('ACCEPTED'),
+      recordingTargets(0),
     )
 
     expect(accepted.stages).toEqual([
@@ -208,6 +241,7 @@ describe('formal troubleshooting projection formatting', () => {
         true,
       ),
       acceptance('STALE'),
+      recordingTargets(20),
     )
     expect(stale.stages[1]).toEqual(expect.objectContaining({
       state: 'OWNER_EVIDENCE_REQUIRED',

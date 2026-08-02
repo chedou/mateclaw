@@ -3,6 +3,7 @@ import type {
   ConclusionType,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
+  GuanceRecordingTargetCatalogView,
   GuanceReadinessStatus,
   GuanceSignalStatus,
   GuanceSpinePreviewStage,
@@ -149,6 +150,7 @@ export function guanceOwnerBlockerLabel(value: string) {
 export function guanceAcceptanceProgress(
   readiness: GuanceAcceptanceInput,
   ownerAcceptance: GuanceEvidenceAcceptanceView | null = null,
+  recordingTargets: GuanceRecordingTargetCatalogView | null = null,
 ): GuanceAcceptanceProgress {
   const { status } = readiness
   const coreSignalsAuthorized = ['log_search', 'log_trace_bundle'].every(signalKind =>
@@ -161,6 +163,12 @@ export function guanceAcceptanceProgress(
   const coreSignalsObserved = status === 'CANONICAL_SIGNALS_OBSERVED'
   const ownerAccepted = ownerAcceptance?.status === 'ACCEPTED'
   const ownerAcceptanceStale = ownerAcceptance?.status === 'STALE'
+  const executableTargetCount = recordingTargets?.executableTargetCount ?? 0
+  const recordingBatchReady = executableTargetCount >= 20
+  const recordingBatchBlocked = sourceReady && !recordingBatchReady
+  const recordingTargetDetail = recordingTargets
+    ? `当前 ${executableTargetCount} / 20 个可执行新目标（冻结 ${recordingTargets.frozenTargetCount} 个）。目标必须由服务端冻结候选、请求指纹和三份当前 binding；已录制目标不能重复凑数。`
+    : '录制目标目录未加载，不能证明已准备 20 个可执行新目标。'
 
   const stages: GuanceAcceptanceStage[] = [
     {
@@ -175,29 +183,35 @@ export function guanceAcceptanceProgress(
       code: 'T7',
       state: ownerAccepted
         ? 'READY'
-        : ownerAcceptanceStale || coreSignalsObserved
-          ? 'OWNER_EVIDENCE_REQUIRED'
-          : sourceReady ? 'READY' : 'BLOCKED',
+        : recordingBatchBlocked
+          ? 'BLOCKED'
+          : ownerAcceptanceStale || coreSignalsObserved
+            ? 'OWNER_EVIDENCE_REQUIRED'
+            : sourceReady ? 'READY' : 'BLOCKED',
       title: ownerAccepted
         ? '当前绑定已完成 owner 验收'
-        : ownerAcceptanceStale
-          ? '绑定已变更，旧验收已过期'
-          : coreSignalsObserved
-            ? '核心信号已观测，真链路待验收'
-            : sourceReady
-              ? '首条真实读链待执行'
-              : sourceAuthorized ? '真源运行条件未就绪' : '被 T6 阻断',
+        : recordingBatchBlocked
+          ? '录制批次目标未就绪'
+          : ownerAcceptanceStale
+            ? '绑定已变更，旧验收已过期'
+            : coreSignalsObserved
+              ? '核心信号已观测，真链路待验收'
+              : sourceReady
+                ? '首条真实读链待执行'
+                : sourceAuthorized ? '真源运行条件未就绪' : '被 T6 阻断',
       detail: ownerAccepted
         ? `配置指纹已由 ${ownerAcceptance?.acceptance?.acceptedBy || 'owner'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；验收不会关闭 fixtureMode。`
-        : ownerAcceptanceStale
-          ? '查询模板、字段映射、路由或端点发生变化，必须重新执行真实同 PS ID 链并完成 owner 清单。'
-          : coreSignalsObserved
-            ? '当前进程已分别观测两个核心信号；该状态不证明同一 PS ID，仍需验证报告核实 measurement、字段、索引、时间单位/窗、DQL 延迟与 903001 冲突。'
-            : sourceReady
-              ? '用会议案例执行 Guance-only 的 log_search → log_trace_bundle。'
-              : sourceAuthorized
-                ? '端点、运行时凭据或适配器尚未就绪，不得发起真实查询。'
-                : 'T6 未就绪前不得查询真实观测资产。',
+        : recordingBatchBlocked
+          ? recordingTargetDetail
+          : ownerAcceptanceStale
+            ? '查询模板、字段映射、路由或端点发生变化，必须重新执行真实同 PS ID 链并完成 owner 清单。'
+            : coreSignalsObserved
+              ? '当前进程已分别观测两个核心信号；该状态不证明同一 PS ID，仍需验证报告核实 measurement、字段、索引、时间单位/窗、DQL 延迟与 903001 冲突。'
+              : sourceReady
+                ? '用会议案例执行 Guance-only 的 log_search → log_trace_bundle。'
+                : sourceAuthorized
+                  ? '端点、运行时凭据或适配器尚未就绪，不得发起真实查询。'
+                  : 'T6 未就绪前不得查询真实观测资产。',
     },
     {
       code: 'T8',
@@ -216,6 +230,9 @@ export function guanceAcceptanceProgress(
   const nextAction = (() => {
     if (ownerAccepted && sourceReady) {
       return '当前绑定已完成 T7 owner 验收；从关闭 Diagnosis 积累 20–30 条真实样本、冻结参考解并运行单 Agent 基线。'
+    }
+    if (recordingBatchBlocked) {
+      return `先在窗口外冻结至少 20 个未录制 D1 目标；当前可执行 ${executableTargetCount} 个。目录达标并准备 20–30 条历史时间计划后，再约 owner 的内网窗口。`
     }
     if (ownerAcceptanceStale) {
       return 'Guance 配置指纹已变化；重新执行同 PS ID 两步读链并完成 T7 owner 清单。'

@@ -49,6 +49,8 @@ import java.util.regex.Pattern;
 @Component
 public final class GuanceRecordingTargetCatalog {
 
+    public static final int MIN_WINDOW_TARGETS = 20;
+
     static final String CONTRACT_VERSION =
             "t7-guance-recording-target-catalog.v1";
     static final String RESOURCE =
@@ -172,9 +174,10 @@ public final class GuanceRecordingTargetCatalog {
                 .toList();
 
         List<String> blockers = new ArrayList<>();
-        if (scoped.size() < 20) {
+        if (scoped.size() < MIN_WINDOW_TARGETS) {
             blockers.add("only " + scoped.size()
-                    + " server-frozen unrecorded targets exist for this scope; 20 required");
+                    + " server-frozen unrecorded targets exist for this scope; "
+                    + MIN_WINDOW_TARGETS + " required");
         }
         if (executable.size() < scoped.size()) {
             blockers.add((scoped.size() - executable.size())
@@ -441,6 +444,10 @@ public final class GuanceRecordingTargetCatalog {
         public View {
             targets = List.copyOf(targets == null ? List.of() : targets);
             blockers = List.copyOf(blockers == null ? List.of() : blockers);
+        }
+
+        public boolean readyForOwnerAcceptance() {
+            return executableTargetCount >= MIN_WINDOW_TARGETS;
         }
     }
 }

@@ -2366,6 +2366,33 @@ export interface GuanceEvidenceAcceptanceView {
   blockers: string[]
 }
 
+export interface GuanceRecordingTarget {
+  targetId: string
+  system: string
+  service: string
+  selectorKey: string
+  candidateReference: string
+  candidateFingerprint: string
+  requiredEvidenceRequestId: string
+  requestFingerprint: string
+  searchTerm: string
+  window: string
+  bindingRefs: Record<'log_search' | 'log_trace_bundle' | 'contrast_sample', string>
+}
+
+/** Server-owned T7 batch identities. Candidate bodies and Guance queries stay server-side. */
+export interface GuanceRecordingTargetCatalogView {
+  contractVersion: 't7-guance-recording-target-catalog.v1'
+  system: string
+  service: string
+  catalogFingerprint: string
+  frozenTargetCount: number
+  executableTargetCount: number
+  targets: GuanceRecordingTarget[]
+  asOfEpochSeconds: number
+  blockers: string[]
+}
+
 export interface AcceptGuanceEvidenceRequest extends EvidenceChainPreviewRequest {
   checklist: GuanceEvidenceAcceptanceChecklist
 }
@@ -2844,6 +2871,12 @@ export const troubleshootingApi = {
   guanceEvidenceAcceptance: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceAcceptanceView>(
       '/troubleshooting/evidence/guance/acceptance', { params },
+    ),
+
+  /** Server-frozen, unrecorded D1 targets that match the current three bindings. */
+  guanceRecordingTargets: (params: { system: string; service: string }) =>
+    http.get<GuanceRecordingTargetCatalogView>(
+      '/troubleshooting/evidence/guance/recording-targets', { params },
     ),
 
   /** Re-runs the canonical chain before recording the owner checklist. */
