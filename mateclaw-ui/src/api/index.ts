@@ -2161,6 +2161,50 @@ export interface RuleEvaluation {
   undefinedSignals: string[]
 }
 
+/**
+ * 这次调查动用了什么，以及刻意没有动用什么。
+ *
+ * The negatives are not decoration: this product's safety argument is a set of
+ * things that did not happen, and a view listing only participants lets the
+ * reader assume the rest — more generously than the truth.
+ */
+export interface InvestigationProvenance {
+  diagnosisId: string
+  knowledge: {
+    selectorKey: string
+    title: string | null
+    playbookId: string | null
+    playbookVersion: number | null
+    ownerTeam: string | null
+    /** 手写夹具 vs 真实归纳；读不到冻结版本时为 null，不猜 */
+    origin: string | null
+    operational: boolean
+    readable: boolean
+    note: string | null
+  }
+  collectors: Array<{
+    requestId: string
+    signalKind: string
+    adapter: string
+    status: 'NORMAL' | 'ANOMALY' | 'MISSING'
+    answered: boolean
+    /** null = 本路径不维护引用清单，与「没有支撑结论」不是一回事 */
+    cited: boolean | null
+    collectedAt: string | null
+  }>
+  reasoning: {
+    routeMode: string
+    investigationMode: InvestigationMode
+    routeAuthority: string
+    conclusionType: string
+    modelInvoked: boolean
+    modelIdentity: string | null
+    signalsSatisfied: number
+    derivationRebuildable: boolean
+  }
+  abstentions: Array<{ capability: string; reason: string }>
+}
+
 export interface DiagnosisDerivation {
   diagnosisId: string
   sopKey: string
@@ -2867,6 +2911,8 @@ export const troubleshootingApi = {
   /** How the conclusion was reached: criteria with substituted arithmetic, and losing rules. */
   derivation: (diagnosisId: string) =>
     http.get<DiagnosisDerivation>(`/troubleshooting/diagnoses/${diagnosisId}/derivation`),
+  provenance: (diagnosisId: string) =>
+    http.get<InvestigationProvenance>(`/troubleshooting/diagnoses/${diagnosisId}/provenance`),
 
   /** One diagnosis projected for the service-manager summary and developer evidence desk. */
   projection: (diagnosisId: string) =>

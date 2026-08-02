@@ -77,6 +77,43 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 
 ---
 
+## 排障过程透明化（2026-08-02）
+
+**「详情页看不出用了什么能力」查下来，问题不在记录，在装配和挂载。**
+
+- 判定链（证据 → 判据 → 规则，区分 SATISFIED / EXCLUDED / **UNEVALUATED**，
+  按冻结版本重建、对不上 fail closed）后端与 `DerivationChain.vue` **都早就写好了**，
+  但**这个组件没有被任何地方挂载**——建好了，页面从来没渲染过。
+- **排障链路一次都没经过 skills / tools 注册表**（grep 全空）。
+  所以「用了什么 skills」有确定答案：零。这不是记录缺失，是从没被说出来的事实。
+- Playbook 的来源（手写夹具 vs 真实归纳）在 `ApprovedPlaybookVersion.sourceOrigin`，
+  详情页不读——而 T0.9 问的正是这件事。现在在**用它下结论的地方**直接标出来。
+
+已落地：
+
+- [x] `InvestigationProvenance` + `GET /diagnoses/{id}/provenance`：知识（含来源与
+      冻结版本）、每条取证实际问了哪个适配器、是否有模型参与，以及一份 **abstentions**。
+      **契约层面拒绝一份没有否定句的 provenance**——这个产品的安全论证整个由否定句
+      构成（零模型、无生产写执行器、只读、fixture 而非真源），只列参与者的页面
+      会让读者自己补完剩下的，而他补出来的一定比真相更宽容。
+- [x] `cited` 改为可空。错误码路径根本不填引用清单（那是模型路径的要求），
+      恒 false 会被读成「这条证据没有支撑结论」。**「本路径不维护引用清单」
+      和「没有支撑结论」是两回事**，与 EXCLUDED / UNEVALUATED 同一条纪律。
+      测试先抓到的。
+- [x] `InvestigationProvenancePanel.vue` + **把 `DerivationChain.vue` 真正挂上**
+      开发证据台侧栏。
+- [x] 更正 `DiagnosisDerivation` 一处过时类注释（说按当前 SOP 重算，实际早已改成
+      按冻结版本、无冻结版本则 fail closed）。
+
+待办：
+
+- [ ] 前端把 `cited === null` 与 `false` 的区分做**回归测试**钉住。
+      现在只有后端有；前端渲染混淆了也不会红。
+- [ ] `DerivationChain.vue` 此前无人挂载却也无人发现——说明**组件挂没挂没有守卫**。
+      考虑加一条静态检查：Troubleshooting 下的展示组件必须被引用。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。
