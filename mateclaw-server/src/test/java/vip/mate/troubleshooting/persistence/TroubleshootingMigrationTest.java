@@ -5,6 +5,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
@@ -814,10 +815,67 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void v191DialectResourcesGuardMysqlDdlAndWhitelistExplicitSemantics() throws Exception {
+        String mysql = resourceText("db/migration/mysql/V191__troubleshooting_route_semantics.sql");
+        String kingbase = resourceText("db/migration/kingbase/V191__troubleshooting_route_semantics.sql");
+        String mysqlLogic = stripSqlLineComments(mysql);
+        String kingbaseLogic = stripSqlLineComments(kingbase);
+
+        assertFalse(mysql.contains("ADD COLUMN IF NOT EXISTS"));
+        assertEquals(2, countOccurrences(mysql, "INFORMATION_SCHEMA.COLUMNS"));
+        assertTrue(mysql.contains("COLUMN_NAME = 'investigation_mode'"));
+        assertTrue(mysql.contains("COLUMN_NAME = 'route_authority'"));
+        assertEquals(2, countOccurrences(mysql, "INFORMATION_SCHEMA.STATISTICS"));
+        assertTrue(mysql.contains("INDEX_NAME = 'idx_ts_diagnosis_investigation'"));
+        assertTrue(mysql.contains("INDEX_NAME = 'idx_ts_diagnosis_authority'"));
+        assertTrue(countOccurrences(mysql, "PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;") >= 4);
+
+        assertFalse(mysqlLogic.contains("routeMode"));
+        assertTrue(mysqlLogic.contains("ERROR_CODE_PLAYBOOK"));
+        assertTrue(mysqlLogic.contains("SCENARIO_PLAYBOOK"));
+        assertTrue(mysqlLogic.contains("OPEN_DISCOVERY"));
+        assertTrue(mysqlLogic.contains("EXPLICIT"));
+        assertTrue(mysqlLogic.contains("RULE_MATCHED"));
+        assertTrue(mysqlLogic.contains("MODEL_PROPOSED"));
+        assertTrue(countOccurrences(mysqlLogic, "ELSE NULL") >= 2);
+        assertTrue(mysqlLogic.contains("contract_version NOT IN ('1.3', '1.4')"));
+
+        assertFalse(kingbaseLogic.contains("routeMode"));
+        assertTrue(kingbaseLogic.contains("ERROR_CODE_PLAYBOOK"));
+        assertTrue(kingbaseLogic.contains("SCENARIO_PLAYBOOK"));
+        assertTrue(kingbaseLogic.contains("OPEN_DISCOVERY"));
+        assertTrue(kingbaseLogic.contains("EXPLICIT"));
+        assertTrue(kingbaseLogic.contains("RULE_MATCHED"));
+        assertTrue(kingbaseLogic.contains("MODEL_PROPOSED"));
+        assertTrue(countOccurrences(kingbaseLogic, "ELSE NULL") >= 2);
+        assertTrue(kingbaseLogic.contains("contract_version NOT IN ('1.3', '1.4')"));
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,
                 new EncodedResource(new ClassPathResource(resourcePath), "UTF-8"));
+    }
+
+    private String resourceText(String resourcePath) throws Exception {
+        try (var inputStream = new ClassPathResource(resourcePath).getInputStream()) {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int fromIndex = 0;
+        while ((fromIndex = haystack.indexOf(needle, fromIndex)) >= 0) {
+            count++;
+            fromIndex += needle.length();
+        }
+        return count;
+    }
+
+    private String stripSqlLineComments(String sql) {
+        return sql.replaceAll("(?m)^\\s*--.*$", "");
     }
 
     private Set<String> tables(DatabaseMetaData metadata) throws Exception {

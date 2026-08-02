@@ -13,10 +13,24 @@ CREATE INDEX IF NOT EXISTS idx_ts_diagnosis_authority
     ON mate_troubleshooting_diagnosis(workspace_id, route_authority, id);
 
 UPDATE mate_troubleshooting_diagnosis
-SET investigation_mode = NULLIF(
-        aggregate_json::jsonb ->> 'investigationMode', ''),
-    route_authority = NULLIF(
-        aggregate_json::jsonb ->> 'routeAuthority', '')
+SET investigation_mode = CASE
+        WHEN aggregate_json::jsonb ->> 'investigationMode' = 'ERROR_CODE_PLAYBOOK'
+            THEN 'ERROR_CODE_PLAYBOOK'
+        WHEN aggregate_json::jsonb ->> 'investigationMode' = 'SCENARIO_PLAYBOOK'
+            THEN 'SCENARIO_PLAYBOOK'
+        WHEN aggregate_json::jsonb ->> 'investigationMode' = 'OPEN_DISCOVERY'
+            THEN 'OPEN_DISCOVERY'
+        ELSE NULL
+    END,
+    route_authority = CASE
+        WHEN aggregate_json::jsonb ->> 'routeAuthority' = 'EXPLICIT'
+            THEN 'EXPLICIT'
+        WHEN aggregate_json::jsonb ->> 'routeAuthority' = 'RULE_MATCHED'
+            THEN 'RULE_MATCHED'
+        WHEN aggregate_json::jsonb ->> 'routeAuthority' = 'MODEL_PROPOSED'
+            THEN 'MODEL_PROPOSED'
+        ELSE NULL
+    END
 WHERE contract_version NOT IN ('1.3', '1.4')
   AND (
       aggregate_json::jsonb ->> 'investigationMode' IS NOT NULL
