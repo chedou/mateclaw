@@ -345,14 +345,14 @@ class DiagnosisContractTest {
     void currentScenarioPlaybookStillRejectsMissingExactVersion() {
         Diagnosis base = diagnosis();
 
-        assertThrows(
+        IllegalArgumentException error = assertThrows(
                 IllegalArgumentException.class,
                 () -> Diagnosis.initial(
                         "diag-scenario-missing-version",
                         "case-scenario-missing-version",
                         "run-scenario-missing-version",
                         base.incident(),
-                        RouteMode.DETERMINISTIC,
+                        RouteMode.LLM_FALLBACK,
                         InvestigationMode.SCENARIO_PLAYBOOK,
                         RouteAuthority.RULE_MATCHED,
                         ConclusionType.LOCATED,
@@ -377,6 +377,8 @@ class DiagnosisContractTest {
                         true,
                         List.of(),
                         List.of()));
+
+        assertTrue(error.getMessage().contains("exact Playbook version"));
     }
 
     @Test
@@ -385,7 +387,7 @@ class DiagnosisContractTest {
         RecommendedAction manualWrite =
                 RecommendedAction.manualWrite("manual-1", "restart", "external only");
 
-        assertThrows(
+        IllegalArgumentException error = assertThrows(
                 IllegalArgumentException.class,
                 () -> new Diagnosis(
                         "diag-open-actions",
@@ -393,7 +395,7 @@ class DiagnosisContractTest {
                         "case-open-actions",
                         "run-open-actions",
                         base.incident(),
-                        RouteMode.LLM_FALLBACK,
+                        RouteMode.DETERMINISTIC,
                         InvestigationMode.OPEN_DISCOVERY,
                         RouteAuthority.MODEL_PROPOSED,
                         ConclusionType.HYPOTHESIS,
@@ -433,6 +435,9 @@ class DiagnosisContractTest {
                         true,
                         false,
                         List.of()));
+
+        assertTrue(error.getMessage().contains("OPEN_DISCOVERY"));
+        assertTrue(error.getMessage().contains("actions"));
     }
 
     private Diagnosis openDiscoveryDiagnosis(RouteMode routeMode, Confidence confidence) {
