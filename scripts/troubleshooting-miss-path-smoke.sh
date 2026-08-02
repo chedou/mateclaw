@@ -72,8 +72,9 @@ print_gates() {
                         这一道是反向断言：产出知识很容易，产出"不会被误当权威的知识"才难
   8. 与人工解法有结构化差异 referenceComparison 存在且非空，不是一个空壳对象
   9. 幂等                同 generationKey 重跑得到 CANDIDATE_REUSED，不产生第二条候选
- 10. 在线 lane 也通       同一个无码故障能走场景入口拿到一份诊断。
-                        没有这道，无码路就只有"知识生产"半边通，报障人拿不到任何东西
+ 10. 在线 lane 能接住      同一个无码故障能走场景入口落一份合法诊断。
+                        注意它只到"接住"为止：诊断停在 NEEDS_INVESTIGATION 等待取证，
+                        场景侧的证据执行件尚未实现（拓扑场景有专用探针端点，无码场景没有）
  11. 没有编造            该诊断 errorCode 必须为 null、结论必须是 INSUFFICIENT_EVIDENCE、
                         权威必须是 EXPLICIT——指定场景是选证据计划，不是断言原因
 
@@ -255,13 +256,13 @@ online=$(cat <<JSON
 JSON
 )
 created="$(call POST "/scenarios/${SCENARIO_KEY}/diagnoses" "${online}")"
-[[ "$(http_code)" == "200" ]] || gate_failed "在线 lane 也通" \
+[[ "$(http_code)" == "200" ]] || gate_failed "在线 lane 能接住" \
   "POST /scenarios/${SCENARIO_KEY}/diagnoses 返回 HTTP $(http_code)：$(echo "${created}" | jq -r '.msg // .' | head -c 200)" \
   "确认 ${SYSTEM}:scenario:${SCENARIO_KEY} 已有 approved 的 SCENARIO Playbook"
 online_id="$(echo "${created}" | jq -r '.data.diagnosis.diagnosisId // empty')"
-[[ -n "${online_id}" ]] || gate_failed "在线 lane 也通" "响应里没有 diagnosisId" \
+[[ -n "${online_id}" ]] || gate_failed "在线 lane 能接住" "响应里没有 diagnosisId" \
   "检查场景入口的响应结构"
-ok "在线诊断已产出：${online_id}"
+ok "在线诊断已接住：${online_id}"
 
 online_code="$(echo "${created}" | jq -r '.data.diagnosis.incident.errorCode // "null"')"
 online_conclusion="$(echo "${created}" | jq -r '.data.diagnosis.conclusionType')"
@@ -280,7 +281,14 @@ online_authority="$(echo "${created}" | jq -r '.data.diagnosis.routeAuthority')"
      "人显式选定的场景必须记为 EXPLICIT；模型提议注册键才是 MODEL_PROPOSED，两者要能分开统计"
 ok "没有编造：errorCode=null，结论=${online_conclusion}，${online_mode} + ${online_authority}"
 
+online_status="$(echo "${created}" | jq -r '.data.diagnosis.status')"
+[[ "${online_status}" == "NEEDS_INVESTIGATION" ]] || gate_failed "在线 lane 能接住" \
+  "诊断状态是 ${online_status}，期望 NEEDS_INVESTIGATION" \
+  "场景入口只创建 Diagnosis 归属，取证尚未执行；它不该以别的状态落地"
+dim "  └ 状态=${online_status}：已接住，等待取证。场景侧证据执行件尚未实现，"
+dim "    这条诊断目前无法被确认或关闭——这是已知缺口，不是本次跑通的一部分。"
+
 echo
-blue "无码路冒烟通过：一条无错误码报障走到了一条可评审的知识，在线 lane 也拿到了诊断。"
+blue "无码路冒烟通过：一条无错误码报障走到了一条可评审的知识；在线 lane 能接住同一个故障。"
 dim  "注意：全程 fixture，归纳来源 provider=${provider}。"
 dim  "这证明学习环可走，不证明它归纳得对——后者要看与人工解法的差异报告和 T7 真实证据。"

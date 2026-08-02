@@ -468,7 +468,25 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 **因此 §5.5 的"契约缺口"结论要修正**：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`
 本来就是合法形状，不要 errorCode、不要模型。缺的从来不是契约，是入口。
 
-**(c) 已全部完成（2026-08-01）——第一个场景的在线 lane 现在默认可跑：**
+**更正（同日，实跑后）**：下面这条我说过头了。场景入口**能接住**无码故障并落一份
+合法诊断，但**没有任何东西去执行它的证据计划**——诊断停在 `NEEDS_INVESTIGATION`，
+确认时被正确拒绝：`abstained diagnosis requires new evidence before confirmation`。
+拓扑场景有专用探针端点把证据跑起来，无码场景没有对应件。冒烟第 10 道闸门已改名为
+「在线 lane 能接住」并断言状态必须是 `NEEDS_INVESTIGATION`——
+**一个说过头的绿灯比没有灯更危险。**
+
+### T0.17 · 场景证据执行（在线 lane 的后半段，未做）
+
+- [ ] 让场景 Diagnosis 能执行它自己 Playbook 的 evidencePlan。
+      `EvidenceSpineOrchestrator` 已经能零 LLM 跑三步脊柱（`/sops/synthesis/preview`
+      用的就是它），缺的是把结果**挂回 Diagnosis** 并重新求值判据/规则、推进状态。
+- [ ] 注意 A9：拓扑走的是独立运行表（V188），不是把证据写回 Diagnosis。
+      要么把那条路一并归位，要么明确写出两者为何不同——现在是"看起来该统一但没统一"。
+- [ ] 在此之前，无码故障的**可用产出仍然只有知识生产 lane**
+      （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
+      所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
+
+**(c) 部分完成（2026-08-01）——场景入口已开，证据执行未做：**
 
 - [x] `POST /scenarios/{scenarioKey}/diagnoses` 通用场景入口。语义按 §3.1 分开：
       人显式指定记 `EXPLICIT`；模型提议注册键必须走别的路并记 `MODEL_PROPOSED`，
