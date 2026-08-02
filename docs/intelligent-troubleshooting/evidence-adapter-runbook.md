@@ -267,12 +267,41 @@ GET /api/v1/troubleshooting/evidence/sources
 
 ```bash
 MATECLAW_BASE_URL=<目标环境> MATECLAW_USERNAME=<owner> MATECLAW_PASSWORD=<...> \
+    T7_SEED_PLAN_FILE=/secure/local/t7-recording-window-plan.json \
     ./scripts/troubleshooting-t7-preflight.sh
 ```
 
 它卡住时会把服务端自己的 blockers 原样打出来。在没接真源的机器上跑，它**应当**
 停在第 2 格并报告真源采样仍然关着——那是正确答案，不是故障。
 通过后它会打印下面这份验收模板，七项一律 `false`：逐项真的核对过才改成 `true`。
+
+预检不会只检查“单条读链能不能跑”。本次窗口目标是一次取得 20–30 份 D19 聚合正例，因此
+`T7_SEED_PLAN_FILE` 是第 5 格硬门：没有清单、少于 20 条、超过 30 条、重复 selector、清单外
+selector、已有录制种子、作用域不一致、时间/窗口不合法或出现任何额外字段都会阻断。
+计划只允许下面七个 lookup 元数据字段；它不是 `recordedEvidenceSeeds`、不会导入 Playbook、不会调用
+Guance，也不能携带 API Key、DQL、原始日志或聚合结果。真实聚合事实仍须在 owner 验收后的窗口里
+取得，再走 T0.8 的服务端录制种子审核/导入路径。
+
+```json
+{
+  "contractVersion": "t7-recording-window-plan.v1",
+  "seeds": [
+    {
+      "system": "CSDP",
+      "service": "csdp-session-service",
+      "selectorKey": "csdp:<冻结 D1 selector>",
+      "searchTerm": "<安全查询键>",
+      "occurredAt": "<精确 UTC RFC3339 整秒故障时间>",
+      "window": "-15m",
+      "sourceReference": "<唯一安全引用>"
+    }
+  ]
+}
+```
+
+上面只展示单条形状，故意不是可通过样例；真正计划必须在窗口外补齐 20–30 条。交互式单次验证允许
+清空 `occurredAt` 并回落执行时当前时间，批次计划不允许：没有精确历史时间的目标不能占用窗口分母。
+预检会输出该本地计划的完整 SHA-256；窗口记录必须引用同一指纹，避免预检之后悄悄换清单。
 
 
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。

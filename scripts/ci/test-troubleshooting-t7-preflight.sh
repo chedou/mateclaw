@@ -7,7 +7,7 @@
 # 就绪"的预检，和一个只会说"就绪"的一样没用：真正进内网那天，没人知道它会不会
 # 在第 4 格上因为一个字段名写错而误报通过。
 #
-# 这支脚本用一个本地桩服务喂进各种真源状态，把 2→6 格逐个走通，
+# 这支脚本用一个本地桩服务喂进各种真源状态，把 2→7 格逐个走通，
 # 确认每一格既能拦住该拦的，也能放过该放的。
 #
 #   ./scripts/ci/test-troubleshooting-t7-preflight.sh
@@ -22,11 +22,15 @@ PORT="${T7_STUB_PORT:-18099}"
 STATE_FILE="$(mktemp -t t7-stub-state.XXXXXX)"
 STUB_LOG="$(mktemp -t t7-stub-log.XXXXXX)"
 OUT_FILE="$(mktemp -t t7-preflight-out.XXXXXX)"
+SEED_PLAN="$(mktemp -t t7-seed-plan.XXXXXX)"
 STUB_PID=""
 
 cleanup() {
-  [[ -n "${STUB_PID}" ]] && kill "${STUB_PID}" 2>/dev/null || true
-  rm -f "${STATE_FILE}" "${STUB_LOG}" "${OUT_FILE}"
+  if [[ -n "${STUB_PID}" ]]; then
+    kill "${STUB_PID}" 2>/dev/null || true
+    wait "${STUB_PID}" 2>/dev/null || true
+  fi
+  rm -f "${STATE_FILE}" "${STUB_LOG}" "${OUT_FILE}" "${SEED_PLAN}"
 }
 trap cleanup EXIT
 
@@ -118,9 +122,56 @@ state() { # signals-json fingerprint acceptStatus acceptedFingerprint
       acceptance:$acc}' > "${STATE_FILE}"
 }
 
+seed_plan() { # count [duplicate|unknown|extra-field]
+  local count="$1" mutation="${2:-}"
+  local inventory catalog selectors
+  inventory="${ROOT_DIR}/mateclaw-server/src/main/resources/troubleshooting/knowledge/csdp-d1-error-code-selectors.json"
+  catalog="${ROOT_DIR}/mateclaw-server/src/main/resources/troubleshooting/replay/manual-playbook-replay-suites.json"
+  selectors="$(jq -c --argjson count "${count}" --slurpfile catalog "${catalog}" '
+    (.selectors
+      - [$catalog[0].recordedEvidenceSeeds[]?.selectorKey])[:$count]
+  ' "${inventory}")"
+  if [[ "${mutation}" == "duplicate" ]]; then
+    selectors="$(jq -c '.[1] = .[0]' <<<"${selectors}")"
+  elif [[ "${mutation}" == "unknown" ]]; then
+    selectors="$(jq -c '.[0] = "csdp:NOT-IN-D1"' <<<"${selectors}")"
+  elif [[ "${mutation}" == "already-recorded" ]]; then
+    selectors="$(jq -c '.[0] = "csdp:IM1010"' <<<"${selectors}")"
+  fi
+
+  jq -n --argjson selectors "${selectors}" --arg mutation "${mutation}" '
+    {
+      contractVersion: "t7-recording-window-plan.v1",
+      seeds: ($selectors | to_entries | map({
+        system: "CSDP",
+        service: "csdp-session-service",
+        selectorKey: .value,
+        searchTerm: (.value | split(":")[1]),
+        occurredAt: "2026-07-31T09:55:10Z",
+        window: "-15m",
+        sourceReference: ("t7-window-seed-" + ((.key + 1) | tostring))
+      }
+      | if $mutation == "extra-field" and .sourceReference == "t7-window-seed-1"
+        then . + {apiKey: "must-never-enter-plan"}
+        elif $mutation == "wrong-scope" and .sourceReference == "t7-window-seed-1"
+        then .service = "another-service"
+        elif $mutation == "invalid-time" and .sourceReference == "t7-window-seed-1"
+        then .occurredAt = "2026-99-99T99:99:99Z"
+        elif $mutation == "invalid-window" and .sourceReference == "t7-window-seed-1"
+        then .window = "-25h"
+        elif $mutation == "overflow-window" and .sourceReference == "t7-window-seed-1"
+        then .window = "-999999999999999999999s"
+        elif $mutation == "duplicate-reference" and .sourceReference == "t7-window-seed-2"
+        then .sourceReference = "t7-window-seed-1"
+        else . end))
+    }
+  ' > "${SEED_PLAN}"
+}
+
 run() { # -> exit code in RC, output in OUT_FILE
   set +e
   MATECLAW_BASE_URL="http://127.0.0.1:${PORT}" MATECLAW_TOKEN=stub-token \
+    T7_SEED_PLAN_FILE="${SEED_PLAN}" \
     "${PREFLIGHT}" > "${OUT_FILE}" 2>&1
   RC=$?
   set -e
@@ -174,15 +225,42 @@ grep -Fq "contrast_sample" "${OUT_FILE}" \
 printf 'ok  少 contrast_sample → 停在第 3 格并点名\n'
 
 # ── 指纹算不出必须停在第 4 格 ───────────────────────────────────────
+seed_plan 20
 state "$(signals log_search log_trace_bundle contrast_sample)" "" "BLOCKED"
 run
 expect_blocked_at "binding 指纹可唯一计算"
 printf 'ok  指纹为 null → 停在第 4 格\n'
 
-# ── 全部就位但未验收：通过，并给出验收模板 ──────────────────────────
+# ── 没准备 20–30 条批次时必须停在第 5 格 ───────────────────────────
+state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
+set +e
+MATECLAW_BASE_URL="http://127.0.0.1:${PORT}" MATECLAW_TOKEN=stub-token \
+  "${PREFLIGHT}" > "${OUT_FILE}" 2>&1
+RC=$?
+set -e
+expect_blocked_at "20–30 条种子清单"
+printf 'ok  缺批次清单 → 停在第 5 格，不把单次 Demo 冒充窗口就绪\n'
+
+# ── 19/31 条、重复/越界/已有 selector、坏时间与额外字段必须停第 5 格 ─
+for bad_case in \
+  "19:" "31:" \
+  "20:duplicate" "20:duplicate-reference" "20:unknown" "20:already-recorded" \
+  "20:wrong-scope" "20:invalid-time" "20:invalid-window" "20:overflow-window" "20:extra-field"; do
+  seed_plan "${bad_case%%:*}" "${bad_case#*:}"
+  run
+  expect_blocked_at "20–30 条种子清单"
+done
+printf 'ok  数量、唯一性、D1 成员关系与字段白名单均会阻断坏清单\n'
+
+# ── 全部就位但未验收：20 条清单通过，并给出验收模板 ───────────────
+seed_plan 20
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
 run
 expect_ready "可以约窗口"
+grep -Fq "20 条种子目标已冻结" "${OUT_FILE}" \
+  || fail "a passing preflight must report the prepared batch size"
+grep -Fq "计划 SHA-256" "${OUT_FILE}" \
+  || fail "a passing preflight must freeze the exact local plan fingerprint"
 grep -Fq "尚未验收" "${OUT_FILE}" || fail "NOT_ACCEPTED must be reported as the window's job"
 grep -Fq "真源采样仍然关着" "${OUT_FILE}" \
   || fail "sampling must be reported as correctly closed before acceptance"
@@ -196,6 +274,12 @@ if sed -n '/checklist/,/}/p' "${OUT_FILE}" | grep -Fq 'true'; then
 fi
 printf 'ok  配置就位未验收 → 通过，模板七项全 false\n'
 
+# 30 条也必须通过，不能把上限误写成 20。
+seed_plan 30
+run
+expect_ready "30 条种子目标已冻结"
+printf 'ok  20–30 条批次边界双向通过\n'
+
 # ── 验收指纹与当前指纹不一致：按 STALE 处理，不得报已完成 ───────────
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-2" "ACCEPTED" "fp-1"
 run
@@ -207,7 +291,7 @@ printf 'ok  指纹漂移的 ACCEPTED → 按 STALE 处理，不冒充已完成\n
 # ── 真正已验收：报已完成，并说下一步是攒样本 ────────────────────────
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "ACCEPTED" "fp-1"
 run
-expect_ready "下一步是攒样本"
+expect_ready "下一步按冻结清单采集 30 条"
 grep -Fq "真源采样已开放" "${OUT_FILE}" || fail "acceptance must open sampling"
 printf 'ok  指纹匹配的 ACCEPTED → 报已完成，下一步是攒样本\n'
 
