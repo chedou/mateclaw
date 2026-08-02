@@ -927,6 +927,30 @@ v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 
 ## 10. 工程约定与验证命令
 
+### 10.0 分层跑测试（实测数据，2026-08-01）
+
+| 层 | 范围 | 耗时 | 什么时候用 |
+|---|---|---|---|
+| `scenario` | `intake` + `synthesis`，147 tests | **13s** | 改第一个场景那条链 |
+| `domain` | `vip.mate.troubleshooting.**`，612 tests | **67s** | 提交前（默认） |
+| `all` | 整个 module，741 tests | **>10min** | 动了共享契约/域外代码 |
+
+```bash
+./scripts/troubleshooting-test.sh scenario   # 13s
+./scripts/troubleshooting-test.sh            # domain，67s
+./scripts/troubleshooting-test.sh all        # 慢，别默认用
+```
+
+**关键数字是第三行**：多 129 个测试，时间多 10 倍以上。贵的不是测试数量，
+是域外那几个重上下文的类。所以"每次都跑全量"不是严谨，是给反馈加 10 分钟的税，
+而且大部分在重复验证这次改动根本没碰的代码。
+
+**但分层是一个关于影响面的断言，断错了是静默的。** 动到 `Diagnosis`、
+`EvidenceResult`、Flyway 迁移，或 `vip.mate.common` / `vip.mate.channel` 时，
+domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 CI。
+
+
+
 - 后端测试：JUnit 5 + Mockito + AssertJ。
 
   ```bash
