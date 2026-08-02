@@ -14,20 +14,20 @@ CREATE INDEX IF NOT EXISTS idx_ts_diagnosis_authority
 
 UPDATE mate_troubleshooting_diagnosis
 SET investigation_mode = CASE
-        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"[[:space:]]*:[[:space:]]*"ERROR_CODE_PLAYBOOK"')
+        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"\s*:\s*"ERROR_CODE_PLAYBOOK"')
             THEN 'ERROR_CODE_PLAYBOOK'
-        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"[[:space:]]*:[[:space:]]*"SCENARIO_PLAYBOOK"')
+        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"\s*:\s*"SCENARIO_PLAYBOOK"')
             THEN 'SCENARIO_PLAYBOOK'
-        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"[[:space:]]*:[[:space:]]*"OPEN_DISCOVERY"')
+        WHEN REGEXP_LIKE(aggregate_json, '"investigationMode"\s*:\s*"OPEN_DISCOVERY"')
             THEN 'OPEN_DISCOVERY'
         ELSE NULL
     END,
     route_authority = CASE
-        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"[[:space:]]*:[[:space:]]*"EXPLICIT"')
+        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"\s*:\s*"EXPLICIT"')
             THEN 'EXPLICIT'
-        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"[[:space:]]*:[[:space:]]*"RULE_MATCHED"')
+        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"\s*:\s*"RULE_MATCHED"')
             THEN 'RULE_MATCHED'
-        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"[[:space:]]*:[[:space:]]*"MODEL_PROPOSED"')
+        WHEN REGEXP_LIKE(aggregate_json, '"routeAuthority"\s*:\s*"MODEL_PROPOSED"')
             THEN 'MODEL_PROPOSED'
         ELSE NULL
     END
