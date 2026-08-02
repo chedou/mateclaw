@@ -8,7 +8,12 @@ on:
       - 'mateclaw-plugin-api/**'
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/troubleshooting-miss-path-smoke.sh'
+      - 'scripts/troubleshooting-scenario-smoke.sh'
+      - 'scripts/troubleshooting-scenario-evidence-smoke.sh'
+      - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
   push:
     branches:
       - dev
@@ -21,7 +26,12 @@ on:
       - 'mateclaw-plugin-api/**'
       - 'mateclaw-server/**'
       - 'scripts/troubleshooting-smoke.sh'
+      - 'scripts/troubleshooting-miss-path-smoke.sh'
+      - 'scripts/troubleshooting-scenario-smoke.sh'
+      - 'scripts/troubleshooting-scenario-evidence-smoke.sh'
+      - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +43,7 @@ concurrency:
 
 jobs:
   smoke:
-    name: Eight-gate HTTP diagnosis
+    name: Both loops plus one complete case, over HTTP
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -130,6 +140,66 @@ jobs:
           set -e
           exit "${smoke_status}"
 
+      # The hit path consumes knowledge; this one produces it. Blueprint §11.1
+      # names the no-error-code case as the acceptance case that must pass
+      # first, so a green diagnosis loop over a dead learning loop is not a
+      # green build.
+      - name: Run nine-gate miss-path smoke (learning loop)
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-miss-path-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-miss-path-smoke.log"
+          miss_status=${PIPESTATUS[0]}
+          set -e
+          exit "${miss_status}"
+
+      # Both scripts above stop once their loop is proven. Neither walks a case
+      # to closure, so the product's central guarantee — approval advances the
+      # state machine and executes nothing — was only ever shown in its refusing
+      # half. This one walks the affirmative half.
+      - name: Run ten-gate single-case scenario (report to closure)
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-scenario-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-scenario-smoke.log"
+          scenario_status=${PIPESTATUS[0]}
+          set -e
+          exit "${scenario_status}"
+
+      # The three above all begin from an errorCode or from knowledge
+      # production. The lane that begins from a bare symptom had a hole in the
+      # middle — naming a scenario opened a Diagnosis that waited for evidence
+      # nobody ran — and deployment topology's private probe endpoint hid it by
+      # being the one scenario that could finish. This walks the general path.
+      - name: Run seven-gate symptom lane (scenario evidence run)
+        shell: bash
+        env:
+          MATECLAW_USERNAME: admin
+          MATECLAW_PASSWORD: admin123
+        run: |
+          set +e
+          ./scripts/troubleshooting-scenario-evidence-smoke.sh \
+            | tee "${RUNNER_TEMP}/troubleshooting-scenario-evidence-smoke.log"
+          evidence_status=${PIPESTATUS[0]}
+          set -e
+          exit "${evidence_status}"
+
+      # The preflight's whole value is that its "ready" verdict can be trusted
+      # on the one expensive intranet window. On any machine without a real
+      # observability binding it can only ever say "not ready", so its passing
+      # path would otherwise ship unexercised. The stub walks both directions.
+      - name: Verify the T7 window preflight on both paths
+        shell: bash
+        run: ./scripts/ci/test-troubleshooting-t7-preflight.sh
+
       - name: Record clone-to-diagnosis duration
         if: success()
         shell: bash
@@ -154,7 +224,11 @@ jobs:
             echo
             echo "- Clone to first diagnosis: ${elapsed_seconds}s"
             echo '- Target: no more than 300s'
-            echo '- Eight-gate result: PASS'
+            echo '- Eight-gate diagnosis loop: PASS'
+            echo '- Nine-gate learning loop: PASS'
+            echo '- Ten-gate single case to closure: PASS'
+            echo '- Seven-gate symptom lane (scenario evidence run): PASS'
+            echo '- T7 window preflight (blocked + ready paths): PASS'
           } >> "${GITHUB_STEP_SUMMARY}"
           if (( elapsed_seconds > 300 )); then
             echo "::warning title=Troubleshooting startup regression::First diagnosis took ${elapsed_seconds}s; target is 300s"

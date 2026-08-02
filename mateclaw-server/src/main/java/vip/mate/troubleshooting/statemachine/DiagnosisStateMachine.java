@@ -8,6 +8,9 @@ import vip.mate.troubleshooting.model.AgentTriageDraft;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.ClosureRecord;
+import vip.mate.troubleshooting.engine.PlaybookEvidenceAssessment;
+import vip.mate.troubleshooting.model.EvidenceResult;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DeterministicDiagnosisDraft;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
@@ -169,6 +172,53 @@ public final class DiagnosisStateMachine {
                 draft.fixtureMode(),
                 draft.warnings(),
                 timeline);
+    }
+
+    /**
+     * Applies read-only evidence to a scenario investigation and lets the
+     * deterministic evaluator revise the conclusion.
+     *
+     * <p>The judgement is {@link PlaybookEvidenceAssessment} — the same one the
+     * error-code hit path uses. Re-deriving it here would let two evaluators
+     * drift and give two answers to one set of evidence (A9).</p>
+     *
+     * <p>Recommended actions are attached only for a {@code LOCATED}
+     * conclusion, matching the hit path: an excluded or still-insufficient
+     * result has nothing for a human to do yet, and offering steps anyway would
+     * dress up an unfinished investigation as a plan.</p>
+     */
+    public Diagnosis recordScenarioEvidence(
+            Diagnosis diagnosis,
+            SopEntry playbook,
+            List<EvidenceResult> evidence,
+            PlaybookEvidenceAssessment assessment,
+            String actor) {
+        requireDiagnosis(diagnosis);
+        requireActor(actor);
+        if (playbook == null || assessment == null) {
+            throw new IllegalArgumentException("playbook and assessment are required");
+        }
+        if (diagnosis.investigationMode()
+                != vip.mate.troubleshooting.model.InvestigationMode.SCENARIO_PLAYBOOK) {
+            throw conflict("only a scenario investigation accepts scenario evidence");
+        }
+        List<RecommendedAction> actions =
+                assessment.conclusionType() == vip.mate.troubleshooting.model.ConclusionType.LOCATED
+                        ? List.copyOf(playbook.actions())
+                        : List.of();
+        String event = assessment.actionable()
+                ? "只读取证完成，判据与规则已重新求值"
+                : "只读取证完成，证据仍不足以确认根因";
+        return diagnosis.evidenceRecorded(
+                assessment.conclusionType(),
+                assessment.rootCause(),
+                assessment.summary(),
+                assessment.confidence(),
+                evidence,
+                assessment.activeSignals(),
+                actions,
+                assessment.warnings(),
+                event(diagnosis.timeline(), event, actor));
     }
 
     public Diagnosis confirm(Diagnosis diagnosis, String actor) {

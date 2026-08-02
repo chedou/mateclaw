@@ -35,6 +35,7 @@ public record EvidenceEvaluationSample(
         ReferenceStatus referenceStatus,
         ReferenceSolution referenceSolution,
         ExpectedDisposition expectedDisposition,
+        HumanBaseline humanBaseline,
         OutcomeSnapshot outcome,
         int version,
         String capturedBy,
@@ -156,6 +157,7 @@ public record EvidenceEvaluationSample(
                 referenceStatus,
                 referenceSolution,
                 expectedDisposition,
+                null,
                 outcome,
                 version,
                 capturedBy,
@@ -200,6 +202,7 @@ public record EvidenceEvaluationSample(
                 referenceStatus,
                 referenceSolution,
                 null,
+                null,
                 outcome,
                 version,
                 capturedBy,
@@ -243,6 +246,7 @@ public record EvidenceEvaluationSample(
                 requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
                 diagnosisFixtureMode,
                 ReferenceStatus.EVIDENCE_CAPTURED,
+                null,
                 null,
                 null,
                 null,
@@ -324,6 +328,7 @@ public record EvidenceEvaluationSample(
                 null,
                 null,
                 null,
+                null,
                 0,
                 actor,
                 null,
@@ -396,6 +401,7 @@ public record EvidenceEvaluationSample(
                 null,
                 null,
                 null,
+                null,
                 0,
                 actor,
                 null,
@@ -407,6 +413,7 @@ public record EvidenceEvaluationSample(
     public EvidenceEvaluationSample finalizeReference(
             ReferenceSolution reference,
             ExpectedDisposition expectedDisposition,
+            HumanBaseline humanBaseline,
             OutcomeSnapshot authoritativeOutcome,
             String actor,
             Instant finalizedAt) {
@@ -438,6 +445,7 @@ public record EvidenceEvaluationSample(
                 ReferenceStatus.READY_FOR_EVALUATION,
                 reference,
                 expectedDisposition,
+                null,
                 authoritativeOutcome,
                 version + 1,
                 capturedBy,
@@ -455,6 +463,7 @@ public record EvidenceEvaluationSample(
         return finalizeReference(
                 reference,
                 ExpectedDisposition.DRAFT,
+                null,
                 authoritativeOutcome,
                 actor,
                 finalizedAt);
@@ -468,6 +477,46 @@ public record EvidenceEvaluationSample(
     public enum ReferenceStatus {
         EVIDENCE_CAPTURED,
         READY_FOR_EVALUATION
+    }
+
+    /**
+     * How long the incident actually took a human, before this system existed.
+     *
+     * <p><b>Why the ledger needs it.</b> The baseline ledger measures machine
+     * time — model latency, composed total. The north star measures a person's
+     * time: 「从一条不完整报障，到一个带证据、可交接、可复用的定位结论所需的
+     * 时间」. Without a human figure on the sample, a shadow cohort can answer
+     * "is it right" and cannot answer "does it save anyone anything", which is
+     * the whole reason for running one.</p>
+     *
+     * <p><b>Why the basis is part of the value.</b> A number recalled by the
+     * engineer who handled it and a number read out of the ticket system are not
+     * the same evidence, and averaging them together would launder the weaker
+     * one. They are reported as separate cohorts, for the same reason
+     * {@code EXCLUDED} and {@code UNEVALUATED} are never merged.</p>
+     */
+    public record HumanBaseline(long minutesToLocate, Basis basis, String note) {
+
+        public HumanBaseline {
+            if (minutesToLocate <= 0 || minutesToLocate > 60L * 24 * 30) {
+                throw new IllegalArgumentException(
+                        "human baseline must be a positive number of minutes within 30 days");
+            }
+            if (basis == null) {
+                throw new IllegalArgumentException("human baseline basis is required");
+            }
+            note = note == null ? "" : note.trim();
+            if (note.length() > 500) {
+                throw new IllegalArgumentException("human baseline note must be bounded");
+            }
+        }
+
+        public enum Basis {
+            /** Read out of a system of record (ticket timestamps, chat history). */
+            MEASURED,
+            /** Recalled by the person who handled it. Never reported as measured. */
+            ESTIMATED
+        }
     }
 
     /** Human-owned oracle used to score abstention separately from an unhelpful answer. */

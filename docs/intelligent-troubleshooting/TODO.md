@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-08-01
+> 更新时间：2026-08-02
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -18,24 +18,118 @@
 
 ---
 
-## 待办速览（2026-08-01）
+## 待办速览（2026-08-02）
 
 按"挡不挡住别人"排序，不按工作量。完整条目见对应小节。
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 内网核实**：真实 Guance measurement / 字段 / 阈值 | 需要内网窗口 + 人，不是代码 | §5 T7 |
-| 2 | **T0.7 首诊耗时基线**：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
-| 3 | **T0.8 剩余错误码录制种子导入** | 机制与首个 IM1010 切片已完成；其余 145 条待分批导入 | §3.5 |
-| 4 | **T10.5 收敛 `RouteMode`** | 无阻塞，随 P4 T11 一起做 | §6.5 |
-| 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1 | §5 T8 |
-| 6 | P4 场景 Playbook / P5 知识治理 | 依赖 5 的真实时延与质量数据 | §7 §8 |
+| 1 | **T0.9 让"哪条知识是真的"可见** | 无阻塞。IM1010（真实聚合）与 903001（手写夹具）在注册表里仍平级；903001 已因 P1.7 有了夹具定位，但注册表上看不出来 | §3.5 |
+| 2 | **T7 内网核实**：真实 Guance measurement / 字段 / 阈值 | 需要内网窗口 + owner 本人，**不是代码**。验收接缝、工作台向导、窗口预检均已就绪 | §5 T7 |
+| 3 | T0.8 剩余 145 条错误码录制种子导入 | 机制与首个 IM1010 切片已完成；**建议排在 P1.6 之后** | §3.5 |
+| 4 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
+| 5 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
+| 6 | T8 历史样本 20–30 条 + 性能基线 | 依赖 2。统计口径已补齐（含质量四项），缺的是样本本身 | §5 T8 |
+| 7 | T0.10 v4 §5 与代码的命名分歧 | 结构账，不阻塞 | §3.5 |
+| 8 | P4 场景 Playbook / P5 知识治理 | 依赖 6 的真实时延与质量数据 | §7 §8 |
+
+**P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
+七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
+**但当时对缺口的判断是错的，一并更正**：`Diagnosis` 的形状从来不缺
+（`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT` 一直合法），
+缺的是入口，以及入口之后没有任何东西去跑取证计划。四段：
+
+1. `Diagnosis.evidenceRecorded` + `recordScenarioEvidence`：证据到达转移。
+   命中清 `abstained`；反证走 `EXCLUDED`（排除也是结论，也推进）；不足则保持弃权。
+   顺带修掉一条 A1 违规——引用清单原本会把 `MISSING` 的取证也列为依据。
+2. 拓扑归位：运行表保留（工具运行的审计记录本就更宽），**补上写回**；
+   run 与被重新裁决的聚合同一把行锁、同一个事务提交。
+3. `ScenarioEvidenceRunService` + `POST /diagnoses/{id}/evidence-runs`：
+   任意场景都能跑自己的取证计划，按**冻结版本**求值。此前拓扑是唯一能走完的场景。
+4. `PlaybookEvidenceCollector`：把 intake 里私有的逐条补取证抽出来，两条 lane 共用（A9）。
+
+**P1.8（2026-08-01）**：第一个场景的**链头**（补问 → 补齐 → 调查）已走通，
+北极星第一段第一次从机器里产生出真实数值。
+
+**P1.7 已打通（2026-08-01）**：一个案子从报障走到关闭，十道闸门全绿。
+其中闸门 6 第一次在 HTTP 边界上走通了「批准≠执行」的**肯定**半边——
+此前只有 `POST /execute` 的 409 那半边被演示过。详见 §3.7。
+
+**P1.6 已打通（2026-08-01）**：蓝图 §11.1 唯一点名"必须先通过"的无码路验收案例，
+现在默认可跑，九道闸门全绿，已进 CI。学习环第一次在 HTTP 边界上供出了一条可评审的知识。
+遗留：T0.8 的 145 条批量导入应当排在它之后重新评估——学习环通了，其中一部分可能不需要手写。
+
+**T0.9 排在 T7 前面的理由**：D19 让"知识规模化"成了可能，而规模化的第一个副作用是
+**真知识和编的知识开始混在一起**。现在只有 2 条，人还记得住；到 20 条就记不住了，
+而那正好是 T7 之后立刻会发生的事。这道标记必须在批量导入之前立好，不是之后补。
+
+**T7 的目标应当改写**：不是"跑通一次验证"，而是**一次窗口灌 20–30 条录制种子**。
+D19 已经让这件事成为可能——一条种子只要一份聚合正例，排除/弃权例由服务端生成，
+不需要人写三套用例。这是 v4.5 真正解锁的东西，别浪费在单次验证上。
+
+---
+
+## 下一步做什么（2026-08-02 交接）
+
+按**能不能动手**排，不按重要性。
+
+### 第一优先：只有人能推的那一格
+
+**T7 内网窗口 → owner `ACCEPTED`。** 这一格不会因为再写代码而前进：
+端点在内网 `*.prd.sangfor.com`，需要 owner 本人和受控运行时 Key。
+它同时挡着 T8 真源采样、挡着"证据可信"这个**唯一还没被验证过的核心断言**、
+挡着 P4/P5。
+
+动手顺序：
+
+1. 在目标环境跑 `./scripts/troubleshooting-t7-preflight.sh`（只读，不发凭据）。
+   - 卡住 → 按它打出的 blocker 在**窗口外**解决，比进去现查便宜得多。
+   - 通过 → 它会打印验收模板（七项全 `false`）。这时才值得约 owner 的时间。
+2. 窗口里 owner 逐项核对后提交 `POST /evidence/guance/acceptance`（清单见 runbook §6）。
+3. **窗口目标不是"跑通一次验证"，是一次灌 20–30 条录制种子**——
+   D19 之后一条种子只要一份聚合正例，排除/弃权例由服务端生成。别浪费在单次验证上。
+
+### 第二优先：我能做但需要你先拍板的
+
+**「高置信错误为 0」目前不可测。** 不是没汇总——`PlaybookDraft` 与
+`DiagnosisHypothesis` 上根本没有置信度字段，整个 evaluation 包搜不到 confidence。
+要让 v4 §5.7 这条退出条件可评估，得先定：
+**是否让模型自报置信度，以及自报值是否可信到能拿来把关放权。**
+定了我再动手；在此之前它是 RFC 里写着、落不了地的一项。
+
+### 第三优先：无阻塞，可随时插入
+
+- **T0.9 让"哪条知识是真的"可见**（§3.5）。要排在 T0.8 批量导入**之前**：
+  现在只有 2 条人还记得住，到 20 条就记不住了，而那正是 T7 之后立刻会发生的事。
+- T0.8 剩余 145 条种子导入——学习环通了之后应重新评估，其中一部分可能不需要手写。
+- T0.10 v4 §5 与代码的命名分歧（结构账）；T10.5 收敛 `RouteMode`（随 P4 T11）。
+
+### 等数据，别提前做
+
+Challenger 影子运行、与单 Agent 基线对比、§5.7 退出阈值标定——
+都要等那 20–30 条真实样本。统计口径已经写好了（含质量四项），
+**刻意写在样本落地之前**：定义若在数据摆在眼前之后才写，就是照着数据挑的。
+
+### 这一轮反复踩到的坑，留给下一个人
+
+**闸门写错对象，比没有闸门更糟**——它给的是假的安心。本轮抓到四次：
+gate 5 位置放错（挡在了别的前置上）、gate 10 查 `.data.sources`（真名
+`sourceStates`）、gate 6 查 `citedEvidence`（真名 `evidenceCitations`，
+空清单让断言永远成立）、CI 里 `grep -q | grep -v`（`-q` 不输出，
+第二个 grep 收到空流）。前三次都是**查错字段返回空，于是"没有坏东西"永远为真**。
+
+对策已经用上，建议延续：**新写的断言要用"故意改坏"验证一遍它是活的**。
+T7 预检的三条断言就是这么验的，预检本身也因此配了双向回归——
+它在本机只可能说"没就绪"，那条"就绪"路径本来会一次都没被走过就上线。
+
+---
 
 **已经不再是阻塞项**：「跑不通一个场景」。T0.5–T0.65 已完成，
 `quickstart.md` 一条命令可复现，八道闸门全绿，结论 `LOCATED`。
 
-**唯一还没被验证过的核心断言**：证据可信。全程 fixture，`fixtureMode` 恒 `true`。
-在 T7 通过之前，任何"系统能定位根因"的说法都只覆盖到链路，不覆盖事实。
+**唯一还没被验证过的核心断言**：证据可信。`fixtureMode` 恒 `true`。
+注意 `fixtureMode` 只说"这次取证是回放"，**它不回答"这条知识的判据是不是编的"**——
+后者是 T0.9 要补的正交维度。在 T7 通过之前，任何"系统能定位根因"的说法都只覆盖到链路。
 
 ## 0. 当前判断
 
@@ -47,8 +141,12 @@
 > `fixtureMode` 恒 `true`。下一个真实约束是 **T7 内网窗口**，它需要人和时间，
 > 不是代码问题。
 >
-> T0.8 的机制决策和首个 IM1010 切片已经完成，不再是设计阻塞；剩余工程项见
-> §3.5 T0.7 的真实耗时历史、T0.8 的批量导入、§6.5 T10.5 与 §5 T7。
+> T0.8 的机制决策和首个 IM1010 切片已经完成，不再是设计阻塞。
+>
+> **但 D19 落地带出了一个新的、更细的矛盾**：知识开始能规模化了，而
+> `fixtureMode` 只标记"取证是回放"，**不标记"判据是编的"**。IM1010 的阈值来自
+> 真实历史聚合，903001 的阈值来自一张脱敏 xlsx 的推测——两者在注册表里完全平级。
+> 现在只有两条，人还分得清；批量导入之后就分不清了。见 §3.5 **T0.9**。
 
 当前主线不是继续扩错误码页面，也不是接入更多 Agent 工具，而是先把会议指定案例跑通：
 
@@ -210,6 +308,325 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
 - [ ] 按同一合同分批导入剩余 145 条错误码的脱敏聚合正例；每批必须保留拒绝清单和测试证据，
       不得把“机制已完成”冒充“全量知识已覆盖”。
 
+### T0.9 · 把"哪条知识是真的"变成可见的数（D19 落地后新出现的问题）
+
+D19 之后仓库里同时躺着两条 approved 错误码 Playbook：
+
+| selector | 正例来源 | 阈值来源 |
+|---|---|---|
+| `csdp:IM1010` | 真实历史聚合（失败 2/2、成功 0/14047） | 真实数据 |
+| `csdp:903001` | 为跑通晋升链手写的 fixture | **从脱敏 xlsx 推的，未经任何核实** |
+
+**两者在注册表里是平级的，`status` 都是 `approved`，从外面分不出哪条的阈值是真的。**
+
+这正是本架构在别处极其小心的那类错误：`EXCLUDED` 与 `UNEVALUATED` 严禁混显、
+`fixtureMode` 必须显式标记——但在**知识本身**这一层，同样的混显刚刚出现了。
+`fixtureMode` 说的是"这次取证是回放"，它没有回答"这条知识的判据是不是编的"。
+
+- [ ] 给录制种子引入**证据来源等级**（如 `RECORDED_AGGREGATE` / `AUTHORED_FIXTURE`），
+      在 Playbook 版本、注册表列表和 `DeveloperEvidenceView` 上都可见。
+      这是一个与 `fixtureMode` 正交的维度，不能复用同一个布尔。
+- [ ] 把**录制证据覆盖率**做成一等指标：146 条错误码里有几条有真实录制正例。
+      clone→首诊耗时被做成可见指标后效果很好；这个数现在没有任何地方在说。
+- [ ] **降级或显式标注 `csdp:903001`**。它已完成历史使命（证明晋升链能走通）。
+      现在它是仓库里唯一一条阈值凭空来的 approved 知识，平级留着就是在稀释 IM1010 的可信度。
+      降级前需确认它不再被 demo 主线依赖（默认 smoke 已切到 IM1010）。
+
+### T0.10 · v4 §5 与代码的命名分歧（结构账，不阻塞）
+
+v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
+`InvestigationPlan`、`EvidenceBundle`、`DiscoveryPolicy`、`LoopPolicy/LoopRun/LoopOutcome`、
+`AdversarialEvalReport`、`InvestigationPlaybook`、`ReadOnlyEvidenceToolRegistry`、`ScenarioProposal`。
+另有 2 个以不同形状存在：`SopEntry` 无 `type`/`selector`（SCENARIO 靠 `errorCode="scenario:xxx"`
+字符串前缀编码）；`EvidenceBundle` 实际是裸 `List<EvidenceResult>`。
+
+其中 `LoopPolicy` / `AdversarialEvalReport` 已标 PENDING-EVIDENCE，未实现是**对的**。
+问题在另一半：文档声称是权威，代码事实上是另一套，下一个人按 §5.4 去找 `EvidenceBundle` 会找不到。
+
+- [ ] 逐条判定：**收敛代码** 还是 **RFC 记下真实命名**。
+      建议 `SopEntry → type + sealed selector` 收敛（它已经在用 `ScenarioSelector`，只差没进合同）；
+      `EvidenceBundle` 值得真的建（`completeness` / `missingRequired` 现在散在四个类里）；
+      其余标注"未实现，等 P4/P5"即可。
+- [ ] 在 §5 开头加一张**实现状态表**，让"设计"与"已实现"在同一页可分辨。
+
+---
+
+## 3.6 P1.6 · 让**无码路**默认可跑（**已打通**，遗留 T0.13 收尾项）
+
+**为什么插队。** 蓝图 §11.1 里唯一被点名"必须先通过"的验收案例是**无 error_code** 的
+「会话消息发送失败」。但连续几轮的默认可跑路径、CI 回归、quickstart、D19 规模化机制，
+全部落在**错误码命中路**上。P1.5 为命中路解决的那个"闸门合取"问题，在无码路上原封不动地还站着：
+
+| 闸门 | 命中路 | 无码路 |
+|---|---|---|
+| 证据源 | demo profile 已开 | 同上（复用） |
+| Playbook | demo 种子已晋升 | 不需要 |
+| **Agent** | 不需要 | `agent.enabled` 默认 `false`、`agentId` 默认 `0` |
+| **模型** | 不需要（零 LLM） | 需要已配置的 provider + default model |
+| demo profile 是否覆盖 | ✅ | ❌ **完全没有** |
+
+**更要紧的是供给侧的账。** D19 扩的是晋升门的吞吐，不是知识的供给。现在错误码 Playbook
+能高效晋升了，但它们从哪来？答案是人读那张 xlsx 手写。而蓝图里负责供给的正是学习环
+（无码报障 → 三次取证 → 确定性压缩 → `PlaybookDraft` → 与人工解法对照 → candidate），
+它从来没在单元测试之外跑通过一次。
+
+> **在线排障闭环消费知识，知识生产闭环供给知识；现在消费侧修得又快又稳，供给侧还没通电。**
+
+剩下 145 条 × 人工手写，正是这个产品声称要消灭的那个瓶颈。
+
+### T0.11 · 无码路端到端冒烟（已完成）
+
+- [x] `scripts/troubleshooting-miss-path-smoke.sh`：以操作员方式走 HTTP——
+      `POST /sops/synthesis/preview` → `POST /sops/synthesis/candidates`，逐道闸门断言，
+      失败时指出是哪一道和唯一的下一步。与命中路脚本共用同一套闸门叙事，但**不共用闸门**。
+      **先让它红**：第一次运行停在闸门 4 `MODEL_UNAVAILABLE`；闸门 1–3 当场就是绿的，
+      说明证据脊柱和确定性压缩早就能在 HTTP 边界上跑，缺的只有模型那一步。
+- [x] 断言覆盖这几条**只有无码路才有**的不变量：
+      - 产出的是 `CANDIDATE_CREATED`，且 `reviewStatus=CANDIDATE`；
+      - **`approvalEligibility` 必须是 `NOT_ELIGIBLE`**——证据型草稿永远不能被自动晋升；
+      - `referenceComparison` 存在且有结构化差异，不是空对象；
+      - `fixtureMode=true`；
+      - 重跑一次得到 `CANDIDATE_REUSED`（generationKey 幂等），不产生第二条候选。
+- [x] **顺带修掉两条脚本共有的一个真 bug**：`call` 在命令替换里执行（子 shell），
+      `HTTP_CODE` 从来传不回父 shell，于是每一处状态判断读的都是**更早一次请求**的状态码。
+      它一直是绿的纯属巧合，而失败时报的原因是错的（"当前状态是 unknown"而不是"HTTP 404"）。
+      改为经文件传递；现在 404/409 会如实报出来。
+
+### T0.12 · demo 侧的确定性模型响应（已完成）
+
+无码路必须调一次模型，而 demo 不能依赖真实 provider。做法与录制证据同构：
+**服务端拥有一份录制的模型响应**，不是"跳过模型"，也不是"假装模型在线"。
+
+- [x] `troubleshooting/synthesis/recorded-draft-proposals.json`：按
+      (system, service, searchTerm) 键入的 server-owned 录制 `PlaybookDraftProposal`。
+- [x] `RecordedPlaybookDraftInducer`（`@Primary`，仅 demo 开关打开时生效）替换一次模型调用，
+      其余流程（确定性校验、参考解法比较、候选写入、幂等）**完全不变**——
+      被替换的只有"模型说了什么"，不是"我们信不信它"。
+      **没有录制的案例回落到真实 inducer**，绝不替一个没录过的案例作答。
+- [x] **provenance 自证**：`provider=recorded`、`modelName=recorded-demo-draft`，
+      不冒用任何真实 provider 名。读候选的人一眼能看出这次归纳没有真的调过模型——
+      和 `approvedBy=ts-demo-seeder` 是同一个手法。
+- [x] `RecordedPlaybookDraftInducerTest` 6 条：录制响应通过确定性校验、只提议 SCENARIO、
+      引用全部属于本次证据、动作只能 `EXTERNAL_HUMAN`、provenance 不含真实 provider 名、
+      坏目录直接抛错。**含一条负对照**：把录制响应污染成生产写动作后仍被拦下——
+      否则"录制响应能通过校验"与"校验根本没在跑"无法区分。
+
+### T0.13 · 收尾
+
+- [x] 两条 smoke 一起进 CI；无码路失败同样让 job 失败。
+      `scripts/ci/test-troubleshooting-smoke-workflow.sh` 增加静态合同：无码路入口存在、
+      排在命中路之后、脚本可执行，且仍带 `NOT_ELIGIBLE` / `CANDIDATE_REUSED` 两道反向断言。
+- [x] `quickstart.md` 增加第二条主线：不仅"看见一次诊断"，还要"看见一条知识被生产出来"。
+- [ ] 只有无码路默认可跑之后，再回头做 T0.8 的 145 条批量导入——
+      学习环通了，其中一部分可能根本不需要手写。
+
+**实测**（`dev,troubleshooting-demo`，H2 默认库）：九道闸门全绿，
+`CANDIDATE_CREATED` → `reviewStatus=CANDIDATE` → `approvalEligibility=NOT_ELIGIBLE` →
+`referenceComparison.passed=true` → 重跑 `CANDIDATE_REUSED` 复用同一候选。
+命中路八道闸门同时保持全绿。后端 607 tests / 0 failures。
+
+**没有证明**：归纳得对不对。录制响应是一次真实模型输出的快照，
+它证明学习环可走，不证明模型在真实证据上会归纳出同样的东西——那是 T7 与 T8 的事。
+
+---
+
+## 3.7 P1.7 · 把一个案子真正走完（已完成）
+
+**为什么。** P1.5 和 P1.6 各自证明了一个环，但都停在环的前半段——一个停在"诊断可读"，
+一个停在"候选已产出"。而**交接、批准、外部登记、恢复验证、关闭**才是服务经理和处置人
+真正做的那部分，也是北极星里「可交接」所在的地方。
+
+**顺手撞出来的那件事更要紧。**「人工批准只推进状态机，不触发执行」是整个产品安全论证的
+支点。此前它只有**拒绝**那一半被演示过（`POST /execute` 返回 409）；**肯定**那一半——
+批准之后动作变成 `APPROVED_NOT_EXECUTED`，而 `executionStatus` 仍然是 `BLOCKED`——
+在 HTTP 边界上从来没有被走过一次，因为**两条 Playbook 都没有 `MANUAL_WRITE` 动作**。
+
+### T0.14 · 单案端到端场景（已完成）
+
+- [x] `scripts/troubleshooting-scenario-smoke.sh`：十道闸门，报障 → 诊断 → 确认 → 交接 →
+      批准 → 执行仍拒 → 登记外部结果 → 关闭 → 沉淀 OUTCOME_BACKED 候选。
+- [x] **闸门 6 是这条脚本存在的理由**：断言 `approvalStatus=APPROVED_NOT_EXECUTED` 的同时，
+      `executionStatus` 必须**仍然是** `BLOCKED`。这是整条链里唯一一道"必须什么都没发生"的闸门。
+- [x] 给 `csdp:903001` 加一个 `MANUAL_WRITE` 动作。**它的定位也因此变了**：
+      不再是跟真实数据的 IM1010 争可信度的"第二条知识"，而是专门行走这条红线的夹具。
+      这同时消解了 T0.9 第三条的一半顾虑——903001 现在有了不可替代的用途。
+- [x] `ManualPlaybookReplaySuiteCatalogTest` 锁两面：903001 必须带一个处于合法阻塞态的生产写；
+      **IM1010 必须没有**——往唯一一条证据来源的知识里掺进手写指令，等于污染它的来源。
+- [x] 三条冒烟一起进 CI，静态合同同步扩展。
+
+### 撞掉的一个过时不变量
+
+`TroubleshootingDemoSeederTest` 原本断言"种子 Playbook 不含任何生产写动作"。
+**这个不变量是错的，而且有害**：`MANUAL_WRITE` 在本系统里不是危险能力——它从注册那一刻起
+就是 `BLOCKED`，平台没有生产写执行器，批准只推进状态机。禁掉它并没有让任何东西更安全，
+只是让那条保证**永远无法被演示**。已替换为真正该守的那条：**种子里的生产写必须处于
+合法的阻塞态**（requiresApproval + PENDING + BLOCKED）——比"一条都不许有"严格。
+
+### 顺带修掉的两处虚断言
+
+- [x] 闸门 5 原本放在 confirm 之前，于是 409 的原因是"尚未确认"而不是"尚未批准"——
+      它测的根本不是它声称的东西。已移到 confirm 之后，并断言 409 的原因必须含 `approved`。
+- [x] 闸门 10 查的是 `.data.sources`，而真实字段是 `.data.sourceStates`，
+      外面还包了一层 `if [[ -n ... ]]`，等于这道闸门永远不会失败。已改为硬断言。
+
+**实测**：十道闸门全绿；OUTCOME_BACKED 候选 `NOT_ELIGIBLE`，阻塞原因只剩一条
+`POSITIVE_REPLAY_REQUIRED`——它已经有 outcome 证明、恢复验证、owner、引用和 selector。
+D19 为 MANUAL 建的"录制正例 + 判据形状生成反例"机制，看起来正好可以接到这条 lane 上，
+但那是一个需要显式决定的设计变更，不擅自做。
+
+**同时确认了一堵墙是对的**：EVIDENCE_DERIVED 候选晋升被
+`OWNER_REQUIRED / POSITIVE_REPLAY_REQUIRED / NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED / FIXTURE_ONLY`
+四条挡住。其中 **`FIXTURE_ONLY` 是对的**（A10：回放不能冒充真实验证），
+所以"知识生产环走到晋升"在 fixture 下本来就不该通。不去动它。
+
+---
+
+## 3.8 P1.8 · 第一个场景的全链路（**已打通**）
+
+**第一性原理下，"第一个场景"是蓝图 §11.1 点名的那个**：无 error_code 的
+「会话消息发送失败」。北极星的原话也是「从一条**不完整**报障，到……」。
+所以全链路的头是**补问**，不是 `POST /incidents`——而此前所有冒烟都从一条
+字段齐全的报障开始。
+
+### T0.15 · 链头：补问 → 补齐 → 调查（已完成）
+
+- [x] `FirstScenarioIntakeChainTest`：不完整报障 → `AWAITING_INPUT` + 说明缺什么 →
+      三分钟后补齐 → `READY` → `report(session)`，并验证两个北极星时间戳被**原样**带进调查。
+- [x] **补上了一个从未被端到端产生过的指标**。北极星第一段「补问成本」此前在测试里
+      只有手工常量（30s / 1min / PT2S），唯一基于 session 的测试喂的是一条**首帧就完整**
+      的消息，于是 `readyAt == reportedAt`，跨度结构性恒为 0。
+      **只对着常量断言的指标等于没有被度量。** 现在这个数第一次从机器里出来。
+- [x] 服务用生产构造器（真实系统时钟，离固定时间戳数月），所以任何一层若用 `now()`
+      顶替 session 边界，`eq(REPORTED_AT)` / `eq(READY_AT)` 会立刻失败。
+
+### T0.16 · 链身：在线 lane 对无码报障是关着的（契约缺口，需决策）
+
+默认配置下：
+
+```
+无错误码报障 → POST /incidents → 409 "troubleshooting miss-path Agent is disabled"
+```
+
+蓝图点名的第一个场景，**在默认可运行配置下报不进在线 lane**。
+（冒烟脚本能跑无码路，是因为它走 `/sops/synthesis/*`——知识生产 lane，不需要 Agent。）
+
+**这不是路由代码偷懒，是契约没给它留位置。** `Diagnosis` 只有两种合法形状：
+
+| routeMode | investigationMode | routeAuthority | 前置 |
+|---|---|---|---|
+| `DETERMINISTIC` | `ERROR_CODE_PLAYBOOK` | EXPLICIT / RULE_MATCHED | **要求 errorCode** |
+| `LLM_FALLBACK` | `OPEN_DISCOVERY` | `MODEL_PROPOSED` | **要求模型提议** |
+
+**没有"路由未命中且没有模型参与"这个形状**，所以没有任何合法的 Diagnosis 可以落库，
+只能 409。
+
+fail-closed 本身是对的（A6：不完整比编造更好），报障人也确实会被告知——
+5 次重试后走终态通知：「只读调查未能安全完成，系统已停止自动判断……
+MateClaw 未执行任何生产变更」。所以链是完整且诚实的，**只是默认不产出结论**。
+
+- [x] `FirstScenarioIntakeChainTest` 第三例钉住这个行为：拒绝必须**指名**是
+      「这条路没开」，而不是抛一个泛化错误——操作员据此知道要改的是部署决策不是代码。
+**方向 (c) 的承重部分已完成（2026-08-01）**：`ScenarioDiagnosisService` 从
+`DeploymentTopologyScenarioDiagnosisService` 里抽出来了。此前这个能力是通用的
+（`ScenarioDiagnosisDraft`、`initializeScenarioAwaitingEvidence`、
+`createOrGetForScenario` 都以 scenarioKey 为参数），**只有入口被绑死在拓扑一个场景上**。
+拓扑现在是调用方，只保留它自己那条专属检查（Playbook 必须要求 synthetic probe），
+守住 A9。事务边界随通用半边一起移走，但拓扑通过**注入的 bean** 调用它，
+Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同一事务内，测试已改为
+钉住新的持有者。612 tests 全绿。
+
+**因此 §5.5 的"契约缺口"结论要修正**：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`
+本来就是合法形状，不要 errorCode、不要模型。缺的从来不是契约，是入口。
+
+**更正（同日，实跑后）**：下面这条我说过头了。场景入口**能接住**无码故障并落一份
+合法诊断，但**没有任何东西去执行它的证据计划**——诊断停在 `NEEDS_INVESTIGATION`，
+确认时被正确拒绝：`abstained diagnosis requires new evidence before confirmation`。
+拓扑场景有专用探针端点把证据跑起来，无码场景没有对应件。冒烟第 10 道闸门已改名为
+「在线 lane 能接住」并断言状态必须是 `NEEDS_INVESTIGATION`——
+**一个说过头的绿灯比没有灯更危险。**
+
+### T0.17 · 场景诊断的证据到达转移（**既有缺陷**，不是新引入的）
+
+**查实后要把上一条的范围改大。** 这不只是"我新开的入口缺后半段"——
+
+- `initializeScenarioAwaitingEvidence` 建出的诊断是 `abstained=true`（对的：
+  指定场景是选证据计划，不是断言原因）；
+- `confirm` 对任何 abstained 诊断一律拒绝，要求"新证据"（也是对的）；
+- **而代码里没有任何路径会提供那份新证据。** `Diagnosis` 聚合的可变方法只有
+  confirm / transfer / actions / outcomes / close，**没有"证据到达"这一个**；
+  部署拓扑的探针写的是自己的运行表（V188），不写回 Diagnosis。
+
+两半都对，合取的结果是：**每一条场景诊断都永久停在 `NEEDS_INVESTIGATION`，
+无法确认、无法交接到关闭、无法关闭。这包括先于通用入口上线的部署拓扑场景。**
+
+- [x] `DiagnosisStateMachineTest.aScenarioDiagnosisIsStuckUntilAnEvidenceArrivalTransitionExists`
+      把当前行为钉住（不是让构建变红），并用反射断言聚合上还没有
+      `evidenceRecorded` / `reevaluated`——**一旦有了，这条断言就该失败，那正是修好的信号**。
+- [x] 给 `Diagnosis` 聚合加"证据到达"转移（`Diagnosis.evidenceRecorded` +
+      `DiagnosisStateMachine.recordScenarioEvidence`）：命中则清 `abstained`、
+      推进到 `READY_FOR_HUMAN`；排除则 `EXCLUDED`（也是结论，也推进）；仍不足则保持弃权。
+      **用户已授权的 v4 §5.5 契约新增。**
+- [x] A9：把命中路径的判据/规则求值与结论合成抽成 `PlaybookEvidenceAssessment`，
+      `DeterministicDiagnosisService` 改为消费它，**两处求值合并为一处**。
+      副作用：错误码路径的文案由 "SOP" 统一为 "Playbook"（无测试/夹具钉住旧文案）。
+      注意一条被这次抽取补上的 A1 违规——引用清单原本会把 `MISSING` 的取证也列为结论依据，
+      现已按 `status() != MISSING` 过滤：「我们查过」不等于「我们查到了」。
+- [x] 拓扑那条路一并归位：**运行表保留**（它是工具运行的审计记录：原始观测、
+      相邻链路、执行人、耗时，比 EvidenceResult 更宽，本就该独立），
+      **缺的是写回**——`TopologyProbeEvidence` 把一次拨测翻译成 `EV-TOPOLOGY` 的
+      EvidenceResult，run 与被重新裁决的 Diagnosis 在**同一把行锁、同一个事务**里提交。
+      - 覆盖不完整且未见失败时**不给出** `failed_probe_count`：判据只能是"未求值"，
+        不能是"已反证"。否则控制台会拿没人看过的节点去宣告"网络已排除"。
+      - 已进入人工环节后重跑只记录运行、不改写结论，并在 `conclusionUpdated` 上如实说明。
+- [x] 通用在线编排已补上：`ScenarioEvidenceRunService` +
+      `POST /diagnoses/{id}/evidence-runs`。跑 Playbook 自己的 `evidenceRequests`
+      （复用从 intake 抽出的 `PlaybookEvidenceCollector`，A9），
+      按**冻结的那个版本**求值，再 `recordScenarioEvidence`。
+      - 已进入人工环节的诊断**拒绝重跑**（409）而不是悄悄改写结论。
+      - 必需证据属于资产工具（`target.assetType`，D18）的 Playbook 在此**拒绝执行**，
+        而不是走 Router 伪造一条 MISSING——那等于对一个从未问过的来源说「查过了，没有」。
+      - 端到端已实跑：`scripts/troubleshooting-scenario-evidence-smoke.sh` 七道闸门全绿，
+        并已接入 CI workflow 与静态合同校验。
+      - 教训记一笔：闸门 6 最初查 `citedEvidence`，真实字段是 `evidenceCitations`，
+        查错字段返回空清单，于是「没有 MISSING 被引用」永远成立——**空转了一整轮**。
+        现改为双向比对（引用必须恰好等于非 MISSING 的取证，空清单直接失败）。
+        这是本轮第三次同型问题：闸门写错了对象，比没有闸门更糟。
+- [ ] 在此之前，其余无码故障的**可用产出仍然只有知识生产 lane**
+      （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
+      所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
+
+**(c) 部分完成（2026-08-01）——场景入口已开，证据执行未做：**
+
+- [x] `POST /scenarios/{scenarioKey}/diagnoses` 通用场景入口。语义按 §3.1 分开：
+      人显式指定记 `EXPLICIT`；模型提议注册键必须走别的路并记 `MODEL_PROPOSED`，
+      所以这个入口要求已认证操作员，不接受调用方自带 actor。
+      请求体**故意没有 `errorCode` 字段**——这是无码故障的入口，
+      允许传码等于开了一扇不检查错误码权威的门。
+- [x] `csdp:scenario:message_send_failed` 的 SCENARIO Playbook + 录制种子，
+      证据计划就是那三步脊柱；走 D19 的同一条晋升链（录制正例 + 服务端生成
+      排除例/弃权例 → 回放 PASSED → 知识评审晋升）。
+- [x] demo 种子扩到三条；无码路冒烟加第 10/11 道闸门。
+- [x] `TroubleshootingRequestTimingFilter` 补上场景路径。此前它只认精确路径，
+      带变量段的新入口拿不到 `reportedAt` 直接 500。新增的正则**刻意收紧**到
+      前缀 + 单段 + `/diagnoses`：给一个非接入请求盖上到达时间戳，
+      等于往北极星里塞一个编造的数。
+
+实测：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，`errorCode=null`，
+`INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`，绑定精确 approved 版本，零 LLM。
+
+- [ ] **仍需一个决定**（属 v4 §5.5，不擅自做）。三个方向：
+      - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条
+        `INSUFFICIENT_EVIDENCE` 的诊断，并把**确定性证据脊柱**（`log_search → PS ID →
+        log_trace_bundle`，零 LLM，已在 `/sops/synthesis/preview` 证明可跑）挂上去。
+        这是最贴合北极星的一条：人至少拿到证据，而不是一句拒绝。
+      - (b) 承认在线无码 lane 必须依赖 Agent，把"未配置 Agent 时不受理无码报障"
+        写成显式产品约束，并在 quickstart / runbook 里讲清楚。
+      - (c) 让 `/incidents` 支持按 **scenario selector** 确定性路由（现在只按 errorCode），
+        无码但已注册场景的报障走 `DETERMINISTIC + SCENARIO_PLAYBOOK`，不需要模型。
+        契约已支持这个形状，缺的是入口。
+- [ ] 决定之前，**不要**为了让 demo 好看而录制一整个 Agent 回合——
+      录一次结构化归纳与录一个带预算的循环，诚实程度不是一回事。
+
 ---
 
 ## 4. P1 · 无错误码证据→PlaybookDraft 竖线（已完成）
@@ -370,6 +787,24 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       （2026-07-31）。`success` 终态标记的业务语义仍纳入下面 owner T7 acceptance。
 - [ ] 由 Workspace owner 完成索引、时间窗、DQL 延迟和旧 route 冲突复核，并对当前配置指纹提交
       `ACCEPTED`；提交前不得开放 T8 真源采样。
+      **代码侧已就绪**（V184 验收接缝、正式工作台向导、`GET/POST
+      /evidence/guance/acceptance`，清单见 runbook §6）。剩下的是**人和内网窗口**：
+      端点在 `*.prd.sangfor.com`，需要 owner 本人和受控运行时 Key。这一项不会因为
+      再写代码而前进。
+- [x] 窗口预检 `scripts/troubleshooting-t7-preflight.sh`（2026-08-02）。
+      §3 早就写过这条风险——「窗口拿到了也用不上，操作员卡在同样的配置迷宫里」，
+      而窗口是整条路上**最贵、最难重来**的一格。预检只读，走 6 格：
+      服务可达 → adapter 启用 → 三个核心 signal 已路由 → 指纹可唯一计算 →
+      验收状态 → 真源采样闸门；卡住时把**服务端自己的 blockers 原样打出来**，
+      再给下一步动作。三条刻意的约束：
+      - **只读，只发 GET**（登录除外）。一支能顺手把 Key 提交出去的预检比没有更糟；
+        CI 合同静态断言这一点，并已用「故意加一条 POST」验证该断言是活的。
+      - **绝不在夹具环境里报就绪。** 本机跑必须停在第 2 格，且真源采样必须是关着的。
+      - **验收清单模板七项一律 false。** 那是 owner 的书面确认，预填 true 等于机器替人签字。
+      - 配套 `scripts/ci/test-troubleshooting-t7-preflight.sh` 用桩服务把
+        2→6 格双向走通。**理由**：本机永远只能让它说"没就绪"，
+        那条「就绪」路径本来会一次都没被走过就上线——真进内网那天，
+        没人知道它会不会因为一个字段名写错而误报通过。已进 CI。
 - [ ] 用当前受控运行时 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
       本地联调可按本次操作员明确授权临时开启 insecure HTTP，完成后立即关闭；正式部署仍须使用 HTTPS
       端点或受控 TLS 代理，不得提交 Key。
@@ -378,6 +813,30 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 - [ ] 真实源未验收前 `fixtureMode` 不得改为 false。
 
 ### T8 · 历史样本与性能基线
+
+**影子模式的前置件已补齐（2026-08-01）。** 底座此前能答「准不准」
+（HELPFUL / UNHELPFUL / HARMFUL_BLOCKED / TECHNICAL_FAILURE + p50/p95 + token），
+**但答不了「省不省时间」**——它量的全是机器耗时，样本上没有任何人工基线。
+而北极星量的是人的时间。本文 §4.5 早就写过这句：「P2 就无法回答"到底省了多少
+人的时间"——而那是北极星本身」。
+
+- [x] `EvidenceEvaluationSample.HumanBaseline{minutesToLocate, basis, note}`，
+      随人工 oracle 一起在 `PUT /{sampleId}/reference` 录入（可空：没有历史耗时
+      来源的样本仍值得评分对错，只是不参与耗时对照）。
+- [x] `basis` 分 `MEASURED`（工单/聊天时间戳读出）与 `ESTIMATED`（处置人回忆），
+      **两者分开统计、绝不合并**——合并会让弱证据借走强证据的可信度，
+      和 `EXCLUDED` / `UNEVALUATED` 不许混显是同一条纪律。
+- [x] `NorthStarComparison` + `GET /evaluation-samples/north-star`：人工基线与机器
+      耗时**并排列出**。
+- [x] **刻意不产出「节省了多少分钟」**。影子跑出来的结论人还得读、还得核，
+      那段成本就是北极星第三段 `adoptCost`，而影子模式按定义永远到不了那一步。
+      发布一个悄悄漏掉采纳侧的节省数字，会朝着所有人都希望它倾斜的方向夸大结果。
+      两个数并排给出，减法留给能看见少了什么的人做。测试用反射钉住：
+      对外不得出现 `savedMinutes` / `savingsMinutes` / `timeSaved` 字段。
+- [x] 每个 caveat 跟数字一起返回，而不是只写在设计文档里——
+      只活在文档里的注意事项，不会跟着被引用的那个数字走。
+
+
 
 - [x] 正式工作台增加 Guance-only 的单条完整 Evidence Spine 预览：复用唯一
       `EvidenceSpineOrchestrator` 执行 `log_search → log_trace_bundle → contrast_sample →
@@ -417,8 +876,29 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       owner acceptance，查询模板、字段映射、端点或路由配置变化后旧验收自动 `STALE`，任何真源请求前
       返回 409；Replay 仍保持独立 fixture capability，不受这条真源门禁混淆。
 - [ ] 建 20–30 条历史样本，保留人工结论、参考步骤和 outcome。
-- [ ] 统计 p50/p95 取证/压缩/模型/总时延、引用完整率、必需意图覆盖率、abstain 质量。
-- [ ] 分开统计“没帮上忙”和“引向错误方向”；有害动作、高置信错误为 0 才可继续放权。
+      **卡在 T7 owner `ACCEPTED` 与真实历史故障上，不是代码。**
+- [x] 统计口径补齐（2026-08-02）：耗时 p50/p95 早已有；**引用完整率、必需意图覆盖率、
+      abstain 质量、危险提议此前只逐条存着、从来没有被汇总过**。
+      `BaselineEvaluationLedger.CohortMetrics.QualityMetrics` 补上，仍按来源 ×
+      真实/fixture Diagnosis 分栏，绝不混成一个数。三条刻意的取舍：
+      - **只给计数与分母，不给率。** 2 分之 2 与 30 分之 30 渲染出来一模一样，
+        而这批样本就是 20–30 条，正好是这个差别决定一切的量级。除法留给能看见分母的人。
+      - **覆盖率给 p50 与最小值，不给 p95。** 它是下限条件；p95=1.0 与"有一条只覆盖 0.2"
+        完全兼容，而那一条正是阈值存在的理由。
+      - **`dangerFreeAcross(minimumRuns)` 把样本量写进签名。** 裸的
+        `dangerousProposalRuns == 0` 会被空队列满足，而"0 条里没有危险提议"
+        正是一次过早放权会呈现的样子。
+      **在样本落地之前写**：定义若在数据摆在眼前之后才写，就是照着数据挑的，
+      §5.7「退出条件是数据达标、不是排期到点」也就没有意义了。
+- [x] 分开统计"没帮上忙"和"引向错误方向"：`HELPFUL / UNHELPFUL / HARMFUL_BLOCKED /
+      TECHNICAL_FAILURE` 早已分栏，危险提议现在也有了汇总计数。
+- [ ] **「高置信错误为 0」目前不可测**（2026-08-02 查实）。不是没汇总——
+      `PlaybookDraft` 与 `DiagnosisHypothesis` 上**根本没有置信度字段**，
+      整个 evaluation 包里也搜不到 confidence。要让这条退出条件可评估，
+      需要先决定一件事，而这件事不该我替你定：
+      **是否让模型自报置信度，以及自报的置信度是否可信到能用来把关放权。**
+      在决定之前，§5.7 的这一项写在 RFC 里但落不了地——先把它记成一个空洞，
+      比让它看起来被覆盖了要好。
 - [x] Recorded Replay 与真实 Guance 结果分组展示和统计，并在每个来源内继续分开
       真实 Diagnosis / fixture Diagnosis，禁止混成一个成功率。
 - [ ] 在同一批样本上影子运行 Evidence Challenger + Safety Challenger，各一次调用、固定一轮。
@@ -667,6 +1147,30 @@ v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 - 继续堆 dev-only 原型；信息结构已选定，后续产品增量只进入正式工作台。
 
 ## 10. 工程约定与验证命令
+
+### 10.0 分层跑测试（实测数据，2026-08-01）
+
+| 层 | 范围 | 耗时 | 什么时候用 |
+|---|---|---|---|
+| `scenario` | `intake` + `synthesis`，147 tests | **13s** | 改第一个场景那条链 |
+| `domain` | `vip.mate.troubleshooting.**`，612 tests | **67s** | 提交前（默认） |
+| `all` | 整个 module，741 tests | **>10min** | 动了共享契约/域外代码 |
+
+```bash
+./scripts/troubleshooting-test.sh scenario   # 13s
+./scripts/troubleshooting-test.sh            # domain，67s
+./scripts/troubleshooting-test.sh all        # 慢，别默认用
+```
+
+**关键数字是第三行**：多 129 个测试，时间多 10 倍以上。贵的不是测试数量，
+是域外那几个重上下文的类。所以"每次都跑全量"不是严谨，是给反馈加 10 分钟的税，
+而且大部分在重复验证这次改动根本没碰的代码。
+
+**但分层是一个关于影响面的断言，断错了是静默的。** 动到 `Diagnosis`、
+`EvidenceResult`、Flyway 迁移，或 `vip.mate.common` / `vip.mate.channel` 时，
+domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 CI。
+
+
 
 - 后端测试：JUnit 5 + Mockito + AssertJ。
 

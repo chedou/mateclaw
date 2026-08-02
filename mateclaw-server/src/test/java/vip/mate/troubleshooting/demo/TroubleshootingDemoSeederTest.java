@@ -8,8 +8,10 @@ import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.CriterionOutcome;
+import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluation;
 import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayEvaluator;
@@ -47,13 +49,15 @@ class TroubleshootingDemoSeederTest {
             "/troubleshooting/evidence/recorded-replay-catalog.json";
 
     @Test
-    @DisplayName("演示种子覆盖固定 903001 与录制 IM1010 两条服务端场景")
+    @DisplayName("演示种子覆盖三条服务端场景：夹具 903001、录制 IM1010、无码场景 message_send_failed")
     void demoSelectorsAreOwnedByTheReplayCatalog() {
         assertThat(TroubleshootingDemoSeeder.selectors())
-                .containsExactly("csdp:903001", "csdp:IM1010");
+                .containsExactly("csdp:903001", "csdp:IM1010",
+                        "csdp:scenario:message_send_failed");
         assertThat(candidates())
                 .extracting(SopEntry::routingKey)
-                .containsExactly("csdp:903001", "csdp:IM1010");
+                .containsExactly("csdp:903001", "csdp:IM1010",
+                        "csdp:scenario:message_send_failed");
     }
 
     @Test
@@ -116,15 +120,41 @@ class TroubleshootingDemoSeederTest {
                 .isEqualTo(CriterionOutcome.EXCLUDED);
     }
 
+    /**
+     * This assertion used to forbid {@code MANUAL_WRITE} in seeded Playbooks
+     * outright. That was the wrong invariant, and it was actively harmful.
+     *
+     * <p>A {@code MANUAL_WRITE} action is not a dangerous capability here: it is
+     * {@code BLOCKED} from the moment it is registered, MateClaw has no
+     * production-write executor, and approval only advances the state machine.
+     * Banning it from the demo did not make anything safer — it meant the
+     * product's central guarantee could never be <em>demonstrated</em>, because
+     * no Playbook existed to walk it on. The scenario smoke needs exactly one.</p>
+     *
+     * <p>So the ban is replaced by the invariant that actually matters: a seeded
+     * write must be in the legal blocked state — approval required, pending, and
+     * blocked. That is strictly stronger than "there are none".</p>
+     */
     @Test
-    @DisplayName("种子 playbook 只以 candidate 注册，且不含任何生产写动作")
-    void seededPlaybookStaysCandidateAndReadOnly() {
+    @DisplayName("种子 playbook 只以 candidate 注册；生产写动作必须处于合法的阻塞态")
+    void seededPlaybookStaysCandidateAndCannotExecute() {
         assertThat(candidates()).allSatisfy(playbook -> {
             assertThat(playbook.status()).isEqualTo("candidate");
             assertThat(playbook.verified()).isFalse();
-            assertThat(playbook.actions())
-                    .allSatisfy(action -> assertThat(action.actionType())
-                            .isIn(ActionType.AUTO_READONLY, ActionType.HUMAN_CONTACT));
+            assertThat(playbook.actions()).allSatisfy(action -> {
+                if (action.actionType() == ActionType.MANUAL_WRITE) {
+                    assertThat(action.requiresApproval())
+                            .as("生产写必须要求人工批准").isTrue();
+                    assertThat(action.approvalStatus())
+                            .isEqualTo(ApprovalStatus.PENDING);
+                    assertThat(action.executionStatus())
+                            .as("生产写从注册那一刻起就必须是 BLOCKED")
+                            .isEqualTo(ExecutionStatus.BLOCKED);
+                } else {
+                    assertThat(action.actionType())
+                            .isIn(ActionType.AUTO_READONLY, ActionType.HUMAN_CONTACT);
+                }
+            });
         });
     }
 

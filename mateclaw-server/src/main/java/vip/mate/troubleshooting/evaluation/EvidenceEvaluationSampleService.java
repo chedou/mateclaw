@@ -322,6 +322,7 @@ public class EvidenceEvaluationSampleService {
             List<String> requiredStepIntents,
             List<String> forbiddenStepIntents,
             EvidenceEvaluationSample.ExpectedDisposition expectedDisposition,
+            EvidenceEvaluationSample.HumanBaseline humanBaseline,
             String actor) {
         validateWorkspace(workspaceId);
         if (expectedVersion < 0) {
@@ -392,6 +393,7 @@ public class EvidenceEvaluationSampleService {
         EvidenceEvaluationSample finalized = sample.finalizeReference(
                 reference,
                 expectedDisposition,
+                humanBaseline,
                 outcome,
                 normalizedActor,
                 Instant.now(clock));
@@ -413,6 +415,7 @@ public class EvidenceEvaluationSampleService {
                 requiredStepIntents,
                 forbiddenStepIntents,
                 EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                null,
                 actor);
     }
 
@@ -427,6 +430,30 @@ public class EvidenceEvaluationSampleService {
         int capped = Math.min(Math.max(limit, 1), 200);
         return EvidenceEvaluationSampleLedger.from(
                 store.list(workspaceId, normalizedDiagnosisId, capped));
+    }
+
+    /**
+     * The shadow cohort's second answer: what a person used to spend, next to
+     * what the machine spends.
+     *
+     * <p>The join lives here because this service owns the sample ledger and the
+     * run ledger is a separate one; {@link NorthStarComparison} only does the
+     * arithmetic, and is deliberately kept ignorant of how either was stored.</p>
+     */
+    public NorthStarComparison northStar(
+            long workspaceId,
+            String diagnosisId,
+            int limit,
+            List<BaselineEvaluationRun> runs) {
+        List<EvidenceEvaluationSample> samples =
+                list(workspaceId, diagnosisId, limit).samples();
+        return NorthStarComparison.from(
+                samples.size(),
+                samples.stream()
+                        .map(EvidenceEvaluationSample::humanBaseline)
+                        .filter(baseline -> baseline != null)
+                        .toList(),
+                runs);
     }
 
     private EvidenceSpinePlan safePlan(String searchTerm, String window) {

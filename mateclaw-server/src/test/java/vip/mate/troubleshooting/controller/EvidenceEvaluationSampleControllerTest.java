@@ -170,6 +170,7 @@ class EvidenceEvaluationSampleControllerTest {
                 List.of("locate_failed_request", "trace_ps_id"),
                 List.of("restart_production"),
                 EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                null,
                 "reviewer@example.com"))
                 .thenReturn(ready);
         authenticate("reviewer@example.com");
@@ -201,6 +202,7 @@ class EvidenceEvaluationSampleControllerTest {
                 List.of("locate_failed_request", "trace_ps_id"),
                 List.of("restart_production"),
                 EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                null,
                 "reviewer@example.com");
     }
 

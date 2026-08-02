@@ -419,6 +419,72 @@ public record Diagnosis(
                 draft.warnings());
     }
 
+    /**
+     * Read-only evidence arrived for a scenario investigation; the conclusion is
+     * revised from it.
+     *
+     * <p><b>Why this had to exist.</b> A scenario Diagnosis is created
+     * {@code abstained} — naming a scenario picks an evidence plan, it does not
+     * assert a cause — and {@code confirm} refuses an abstained Diagnosis until
+     * new evidence arrives. Both halves were right and nothing supplied that
+     * evidence, so every scenario Diagnosis in the system was permanently stuck
+     * in {@code NEEDS_INVESTIGATION}: it could never be confirmed, handed off,
+     * or closed. This is the transition that was missing.</p>
+     *
+     * <p><b>It cannot manufacture a conclusion.</b> The caller passes what the
+     * deterministic evaluator concluded from this exact evidence. When that is
+     * still {@code INSUFFICIENT_EVIDENCE} the Diagnosis stays abstained and
+     * stays in {@code NEEDS_INVESTIGATION} — evidence arriving is not the same
+     * as evidence answering, and a run that collected nothing useful must not
+     * unlock human confirmation.</p>
+     *
+     * <p>Only an investigation may take this step. A Diagnosis a human has
+     * already acted on is not re-decided underneath them.</p>
+     */
+    public Diagnosis evidenceRecorded(
+            ConclusionType newConclusionType,
+            String newRootCause,
+            String newSummary,
+            Confidence newConfidence,
+            List<EvidenceResult> newEvidence,
+            List<String> newTriggeredSignals,
+            List<RecommendedAction> newActions,
+            List<String> newWarnings,
+            List<TimelineEvent> newTimeline) {
+        requireStatus(DiagnosisStatus.NEEDS_INVESTIGATION, "record evidence");
+        if (newConclusionType == null || newRootCause == null || newConfidence == null) {
+            throw new IllegalArgumentException(
+                    "recorded evidence must carry a conclusion type, root cause and confidence");
+        }
+        boolean stillAbstained = newConclusionType == ConclusionType.INSUFFICIENT_EVIDENCE;
+        return new Diagnosis(
+                diagnosisId, contractVersion, caseId, runId, incident,
+                routeMode, investigationMode, routeAuthority,
+                newConclusionType,
+                stillAbstained
+                        ? DiagnosisStatus.NEEDS_INVESTIGATION
+                        : DiagnosisStatus.READY_FOR_HUMAN,
+                newSummary == null ? summary : newSummary,
+                newRootCause,
+                newConfidence,
+                stillAbstained,
+                sopKey, sopTitle, sourcePlaybookOwner, sourcePlaybookVersionRef,
+                immutable(newEvidence),
+                // A1: only evidence that actually answered may be cited. Citing a
+                // MISSING result would let "we tried to look" support a conclusion.
+                immutable(newEvidence).stream()
+                        .filter(result -> result.status() != EvidenceStatus.MISSING)
+                        .map(EvidenceResult::queryId)
+                        .toList(),
+                immutable(newTriggeredSignals),
+                immutable(newActions),
+                pendingWrites,
+                routeToTeam, transfers, actionOutcomes, closure, knowledgeCandidates,
+                advancedTimeline(newTimeline),
+                timings, rehearsal, fixtureMode, writeExecutionEnabled,
+                immutable(newWarnings));
+    }
+
     public Diagnosis confirmed(List<TimelineEvent> newTimeline) {
         requireStatus(DiagnosisStatus.READY_FOR_HUMAN, "confirm");
         return copyLifecycle(

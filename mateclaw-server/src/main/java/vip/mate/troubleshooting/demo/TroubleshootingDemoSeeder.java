@@ -58,7 +58,7 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TroubleshootingDemoSeeder.class);
 
     private static final List<String> SELECTORS =
-            List.of("csdp:903001", "csdp:IM1010");
+            List.of("csdp:903001", "csdp:IM1010", "csdp:scenario:message_send_failed");
 
     /**
      * Deliberately not a person. Whoever reads the review ledger later must be

@@ -95,6 +95,6 @@ class DiagnosisTopologyProbeControllerTest {
         return new TopologyProbeEvidenceRun(
                 "topology-run-1", "diag-1", "topology-1",
                 "deployment_topology_probe", "topology_synthetic_probe",
-                result, now, now, "alice");
+                result, now, now, "alice", true);
     }
 }

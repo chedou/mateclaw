@@ -1,7 +1,10 @@
 package vip.mate.troubleshooting.evaluation;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /** Source- and Diagnosis-fixture-separated telemetry; intentionally no gate verdict. */
@@ -111,9 +114,151 @@ public record BaselineEvaluationLedger(
             int tokenMeasuredRuns,
             long promptTokens,
             long completionTokens,
-            long totalTokens) {
+            long totalTokens,
+            QualityMetrics quality) {
+
+        /**
+         * 引用完整率、必需意图覆盖率、abstain 质量、危险提议——v4 §5.7 退出校准期
+         * 要看的那几个。
+         *
+         * <p><b>Why it is defined before the samples exist.</b> Every one of
+         * these signals was already stored per run and never summed. Written
+         * after the 20–30 samples land, each definition would be chosen with the
+         * data already on screen, and a threshold fitted to its own data is not
+         * a threshold. §5.7 says 退出条件是数据达标、不是排期到点; that only means
+         * something if the metric predates the data.</p>
+         *
+         * <p><b>Counts with denominators, never rates.</b> There is no
+         * {@code citationCompletionRate} and no {@code dangerousProposalRate}.
+         * "100%" over two assessed runs renders identically to "100%" over
+         * thirty, and a cohort this small is exactly where that difference
+         * decides everything. The reader gets both numbers and does the division
+         * knowing what it was over — the same reason {@link NorthStarComparison}
+         * refuses to publish a savings figure.</p>
+         *
+         * <p><b>Assessed is not the same as run.</b> A model-rejected or
+         * validation-rejected run carries no comparison at all, so it can
+         * neither pass nor fail these; it stays outside the denominator rather
+         * than being silently counted as a pass.</p>
+         */
+        public record QualityMetrics(
+                int citationAssessedRuns,
+                int citationCompleteRuns,
+                int coverageAssessedRuns,
+                Double coverageP50,
+                Double coverageMin,
+                int fullCoverageRuns,
+                int abstentions,
+                int cleanAbstentions,
+                Map<String, Integer> abstainFailureCounts,
+                int dangerousProposalRuns) {
+
+            public QualityMetrics {
+                abstainFailureCounts = Collections.unmodifiableMap(new TreeMap<>(
+                        abstainFailureCounts == null ? Map.of() : abstainFailureCounts));
+                if (citationAssessedRuns < 0 || citationCompleteRuns < 0
+                        || coverageAssessedRuns < 0 || fullCoverageRuns < 0
+                        || abstentions < 0 || cleanAbstentions < 0
+                        || dangerousProposalRuns < 0) {
+                    throw new IllegalArgumentException(
+                            "quality metric counts must not be negative");
+                }
+                if (citationCompleteRuns > citationAssessedRuns
+                        || fullCoverageRuns > coverageAssessedRuns
+                        || cleanAbstentions > abstentions) {
+                    throw new IllegalArgumentException(
+                            "a quality pass count cannot exceed what was assessed");
+                }
+                // Both-or-neither, same discipline as the north-star cohorts: a
+                // coverage figure with no denominator reads as a measured one.
+                boolean hasBoth = coverageP50 != null && coverageMin != null;
+                boolean hasNeither = coverageP50 == null && coverageMin == null;
+                if (coverageAssessedRuns == 0 ? !hasNeither : !hasBoth) {
+                    throw new IllegalArgumentException(
+                            "coverage percentiles exist exactly when coverage was assessed");
+                }
+                if (hasBoth && (coverageMin > coverageP50
+                        || coverageMin < 0 || coverageP50 > 1)) {
+                    throw new IllegalArgumentException(
+                            "coverage min must not exceed p50 and both must be a ratio");
+                }
+                if (abstainFailureCounts.values().stream()
+                        .anyMatch(value -> value == null || value <= 0)) {
+                    throw new IllegalArgumentException(
+                            "an abstain failure code with no occurrences is not a tally entry");
+                }
+            }
+
+            static QualityMetrics unavailable() {
+                return new QualityMetrics(0, 0, 0, null, null, 0, 0, 0, Map.of(), 0);
+            }
+
+            static QualityMetrics from(List<BaselineEvaluationRun> runs) {
+                if (runs.isEmpty()) {
+                    return unavailable();
+                }
+                List<BaselineEvaluationRun> citationAssessed = runs.stream()
+                        .filter(run -> run.quality().citationComplete() != null)
+                        .toList();
+                List<Double> coverage = runs.stream()
+                        .map(run -> run.quality().requiredIntentCoverage())
+                        .filter(Objects::nonNull)
+                        .sorted()
+                        .toList();
+                List<BaselineEvaluationRun> abstained = runs.stream()
+                        .filter(run -> run.status() == BaselineEvaluationRun.Status.ABSTAINED)
+                        .toList();
+                Map<String, Integer> failures = new TreeMap<>();
+                for (BaselineEvaluationRun run : abstained) {
+                    for (String code : run.quality().abstainAssessmentCodes()) {
+                        failures.merge(code, 1, Integer::sum);
+                    }
+                }
+                return new QualityMetrics(
+                        citationAssessed.size(),
+                        count(citationAssessed, run -> run.quality().citationComplete()),
+                        coverage.size(),
+                        ratioPercentile(coverage, 0.50),
+                        coverage.isEmpty() ? null : coverage.getFirst(),
+                        (int) coverage.stream().filter(value -> value >= 1.0d).count(),
+                        abstained.size(),
+                        count(abstained, run -> run.quality()
+                                .abstainAssessmentCodes().isEmpty()),
+                        failures,
+                        count(runs, run -> run.quality().dangerousProposalDetected()));
+            }
+        }
+
+        /**
+         * Zero dangerous proposals over a cohort large enough for the zero to
+         * mean anything.
+         *
+         * <p>A bare {@code dangerousProposalRuns == 0} is satisfied by an empty
+         * cohort, and "no dangerous proposal in zero runs" is the shape a
+         * premature 放权 decision would arrive in. The denominator is in the
+         * signature so it cannot be left out.</p>
+         */
+        public boolean dangerFreeAcross(int minimumRuns) {
+            return minimumRuns > 0
+                    && runCount >= minimumRuns
+                    && quality.dangerousProposalRuns() == 0;
+        }
 
         public CohortMetrics {
+            quality = quality == null ? QualityMetrics.unavailable() : quality;
+            if (runCount == 0 && quality.citationAssessedRuns()
+                    + quality.coverageAssessedRuns() + quality.abstentions()
+                    + quality.dangerousProposalRuns() != 0) {
+                throw new IllegalArgumentException(
+                        "an empty cohort cannot carry quality observations");
+            }
+            if (quality.citationAssessedRuns() > runCount
+                    || quality.coverageAssessedRuns() > runCount
+                    || quality.abstentions() > runCount
+                    || quality.dangerousProposalRuns() > runCount) {
+                throw new IllegalArgumentException(
+                        "quality observations cannot exceed the cohort they came from");
+            }
             List<Long> durations = Stream.of(
                             modelP50Ms,
                             modelP95Ms,
@@ -149,7 +294,8 @@ public record BaselineEvaluationLedger(
 
         static CohortMetrics unavailable() {
             return new CohortMetrics(0, 0, 0, 0, 0,
-                    null, null, null, null, 0, 0, 0, 0);
+                    null, null, null, null, 0, 0, 0, 0,
+                    QualityMetrics.unavailable());
         }
 
         static CohortMetrics from(List<BaselineEvaluationRun> runs) {
@@ -194,7 +340,8 @@ public record BaselineEvaluationLedger(
                             .mapToLong(Long::longValue).sum(),
                     tokenMeasured.stream().map(BaselineEvaluationRun::model)
                             .map(BaselineEvaluationRun.ModelSnapshot::totalTokens)
-                            .mapToLong(Long::longValue).sum());
+                            .mapToLong(Long::longValue).sum(),
+                    QualityMetrics.from(runs));
         }
     }
 
@@ -202,6 +349,15 @@ public record BaselineEvaluationLedger(
             List<BaselineEvaluationRun> runs,
             java.util.function.Predicate<BaselineEvaluationRun> predicate) {
         return (int) runs.stream().filter(predicate).count();
+    }
+
+    /** Nearest-rank, same as the duration percentiles; the input is pre-sorted. */
+    private static Double ratioPercentile(List<Double> sorted, double percentile) {
+        if (sorted.isEmpty()) {
+            return null;
+        }
+        int index = (int) Math.ceil(percentile * sorted.size()) - 1;
+        return sorted.get(Math.max(0, index));
     }
 
     private static Long percentile(List<Long> values, double percentile) {

@@ -9,6 +9,7 @@ import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
@@ -250,28 +251,10 @@ public class TroubleshootingIntakeService {
             SopEntry sop,
             IncidentContext incident,
             List<EvidenceResult> supplied) {
-        if (evidenceRouter == null) {
-            return supplied;
-        }
-
-        Map<String, EvidenceResult> merged = new LinkedHashMap<>();
-        for (EvidenceResult result : supplied) {
-            if (merged.putIfAbsent(result.queryId(), result) != null) {
-                throw new IllegalArgumentException(
-                        "duplicate evidence queryId: " + result.queryId());
-            }
-        }
-        for (EvidenceRequest request : sop.evidenceRequests()) {
-            EvidenceResult current = merged.get(request.requestId());
-            if (current != null && current.status() != EvidenceStatus.MISSING) {
-                continue;
-            }
-            EvidenceResult collected = evidenceRouter.collect(workspaceId, request, incident);
-            if (current == null || collected.status() != EvidenceStatus.MISSING) {
-                merged.put(request.requestId(), collected);
-            }
-        }
-        return List.copyOf(merged.values());
+        // Same collection the scenario lane runs after its Diagnosis is already
+        // waiting. One implementation, two arrival orders (A9).
+        return new PlaybookEvidenceCollector(evidenceRouter)
+                .collect(workspaceId, sop, incident, supplied);
     }
 
     private String deterministicRouteMissReason(IncidentContext incident) {

@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.controller;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -13,7 +14,14 @@ public record EvaluationSampleReferenceRequest(
         @NotNull @Min(0) Integer expectedVersion,
         @NotEmpty @Size(max = 20) List<String> requiredStepIntents,
         @NotEmpty @Size(max = 20) List<String> forbiddenStepIntents,
-        @NotNull EvidenceEvaluationSample.ExpectedDisposition expectedDisposition) {
+        @NotNull EvidenceEvaluationSample.ExpectedDisposition expectedDisposition,
+        /**
+         * How long this incident actually took a human. Optional, because a
+         * sample whose historical duration nobody can source is still worth
+         * scoring for correctness — but a cohort without it can only answer
+         * "准不准", never "省不省时间".
+         */
+        @Valid EvidenceEvaluationSample.HumanBaseline humanBaseline) {
 
     public EvaluationSampleReferenceRequest {
         requiredStepIntents = List.copyOf(

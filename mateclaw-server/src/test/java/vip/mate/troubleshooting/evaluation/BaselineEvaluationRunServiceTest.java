@@ -619,6 +619,7 @@ class BaselineEvaluationRunServiceTest {
                 NOW).finalizeReference(
                         reference(),
                         EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        null,
                         new EvidenceEvaluationSample.OutcomeSnapshot(
                                 ClosureOutcome.RECOVERED,
                                 "回放样本已验证恢复",
@@ -743,6 +744,7 @@ class BaselineEvaluationRunServiceTest {
                 NOW).finalizeReference(
                         sampleReference,
                         expectedDisposition,
+                        null,
                         new EvidenceEvaluationSample.OutcomeSnapshot(
                                 ClosureOutcome.RECOVERED,
                                 "人工修复后恢复",
