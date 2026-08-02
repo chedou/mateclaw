@@ -552,6 +552,7 @@ public final class BaselineEvaluationRunService {
                 sample.sourcePlatform(),
                 sample.evidence().fixtureMode(),
                 sample.diagnosisFixtureMode(),
+                sample.evidence().stage(),
                 sample.modelInputHash(),
                 status,
                 modelErrors,

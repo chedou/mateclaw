@@ -20,10 +20,13 @@ public class DefaultKnowledgePromotionMaterialReader
         implements KnowledgePromotionMaterialReader {
 
     private final TroubleshootingSopPersistenceService manualCandidates;
+    private final ManualPlaybookReplaySuiteCatalog replayCatalog;
 
     public DefaultKnowledgePromotionMaterialReader(
-            TroubleshootingSopPersistenceService manualCandidates) {
+            TroubleshootingSopPersistenceService manualCandidates,
+            ManualPlaybookReplaySuiteCatalog replayCatalog) {
         this.manualCandidates = manualCandidates;
+        this.replayCatalog = replayCatalog;
     }
 
     @Override
@@ -47,10 +50,16 @@ public class DefaultKnowledgePromotionMaterialReader
                 || candidate.verified()) {
             return Optional.empty();
         }
+        var evidenceGrade = replayCatalog.evidenceGrade(
+                candidate.routingKey(), candidate);
+        if (evidenceGrade.isEmpty()) {
+            return Optional.empty();
+        }
         return Optional.of(new KnowledgePromotionMaterial(
                 origin,
                 candidate.sopId(),
                 candidate.routingKey(),
+                evidenceGrade.get(),
                 candidate));
     }
 }

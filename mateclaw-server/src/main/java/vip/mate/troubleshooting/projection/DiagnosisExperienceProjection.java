@@ -5,6 +5,7 @@ import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RouteAuthority;
 
@@ -129,6 +130,7 @@ public record DiagnosisExperienceProjection(
             InvestigationMode investigationMode,
             RouteAuthority routeAuthority,
             String playbookRef,
+            KnowledgeEvidenceGrade knowledgeEvidenceGrade,
             List<ScenarioAffordance> scenarioAffordances,
             CallChainView callChain,
             List<EvidenceStep> steps,
@@ -140,6 +142,13 @@ public record DiagnosisExperienceProjection(
         public DeveloperEvidenceView {
             diagnosisId = required(diagnosisId, "diagnosisId");
             playbookRef = normalizeNullable(playbookRef);
+            if (playbookRef == null && knowledgeEvidenceGrade != null) {
+                throw new IllegalArgumentException(
+                        "knowledge evidence grade requires a Playbook reference");
+            }
+            if (playbookRef != null && knowledgeEvidenceGrade == null) {
+                knowledgeEvidenceGrade = KnowledgeEvidenceGrade.UNVERIFIED;
+            }
             if (investigationMode == null || routeAuthority == null || callChain == null
                     || contrast == null || draft == null) {
                 throw new IllegalArgumentException(
@@ -154,6 +163,34 @@ public record DiagnosisExperienceProjection(
                     .count() != scenarioAffordances.size()) {
                 throw new IllegalArgumentException("scenarioAffordances must have unique scenarioKey");
             }
+        }
+
+        /** Compatibility shape for projections created before T0.9. */
+        public DeveloperEvidenceView(
+                String diagnosisId,
+                InvestigationMode investigationMode,
+                RouteAuthority routeAuthority,
+                String playbookRef,
+                List<ScenarioAffordance> scenarioAffordances,
+                CallChainView callChain,
+                List<EvidenceStep> steps,
+                ContrastView contrast,
+                DraftView draft,
+                List<String> capabilityLimits,
+                boolean fixtureMode) {
+            this(
+                    diagnosisId,
+                    investigationMode,
+                    routeAuthority,
+                    playbookRef,
+                    playbookRef == null ? null : KnowledgeEvidenceGrade.UNVERIFIED,
+                    scenarioAffordances,
+                    callChain,
+                    steps,
+                    contrast,
+                    draft,
+                    capabilityLimits,
+                    fixtureMode);
         }
 
         /** True when the named scenario is offered on this diagnosis and still required. */

@@ -8,6 +8,7 @@ import type {
   GuanceSpinePreviewStage,
   GuanceValidationStage,
   InvestigationMode,
+  KnowledgeEvidenceGrade,
   RouteAuthority,
 } from '@/api'
 
@@ -35,6 +36,12 @@ const AUTHORITY_LABEL: Record<RouteAuthority, string> = {
   EXPLICIT: '显式命中',
   RULE_MATCHED: '规则命中',
   MODEL_PROPOSED: '模型提议',
+}
+
+const KNOWLEDGE_EVIDENCE_GRADE_LABEL: Record<KnowledgeEvidenceGrade, string> = {
+  RECORDED_AGGREGATE: '真实录制聚合',
+  AUTHORED_FIXTURE: '手写验证夹具',
+  UNVERIFIED: '来源未核实',
 }
 
 const GUANCE_READINESS_LABEL: Record<GuanceReadinessStatus, string> = {
@@ -108,6 +115,10 @@ export function closureOutcomeLabel(value: ClosureOutcome) {
 
 export function investigationLabel(mode: InvestigationMode, authority: RouteAuthority) {
   return `${INVESTIGATION_LABEL[mode]} · ${AUTHORITY_LABEL[authority]}`
+}
+
+export function knowledgeEvidenceGradeLabel(value: KnowledgeEvidenceGrade) {
+  return KNOWLEDGE_EVIDENCE_GRADE_LABEL[value]
 }
 
 export function guanceReadinessLabel(value: GuanceReadinessStatus) {

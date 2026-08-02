@@ -1,6 +1,8 @@
 package vip.mate.troubleshooting.evaluation;
 
 import org.junit.jupiter.api.Test;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
+import vip.mate.troubleshooting.synthesis.PlaybookDraft;
 
 import java.time.Instant;
 import java.util.List;
@@ -100,6 +102,95 @@ class BaselineEvaluationRunTest {
         assertThat(ledger.toString()).doesNotContain("gatePassed", "T8_PASSED");
     }
 
+    @Test
+    void systemConfidenceIsServerAssignedBeforeTheHumanOracleScoresCorrectness() {
+        BaselineEvaluationRun helpful = realGuanceFullSpine(
+                "baseline-helpful",
+                BaselineEvaluationRun.Classification.HELPFUL);
+        BaselineEvaluationRun wrong = realGuanceFullSpine(
+                "baseline-wrong",
+                BaselineEvaluationRun.Classification.UNHELPFUL);
+
+        assertThat(helpful.systemConfidence())
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.HIGH);
+        assertThat(wrong.systemConfidence())
+                .as("同样的真源权威条件必须得到相同置信度，不能用参考答案反推置信度")
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.HIGH);
+        assertThat(helpful.highConfidenceError()).isFalse();
+        assertThat(wrong.highConfidenceError())
+                .as("真源、完整取证、校验通过但人工判错，必须成为一条可见的高置信错误")
+                .isTrue();
+    }
+
+    @Test
+    void fixturesCoreOnlyEvidenceAndRejectedOutputsCannotBecomeHighConfidence() {
+        BaselineEvaluationRun replay = scoredRun(
+                EvidenceEvaluationSample.SourcePlatform.RECORDED_REPLAY,
+                BaselineEvaluationRun.Classification.HELPFUL,
+                1.0,
+                List.of(),
+                List.of());
+        BaselineEvaluationRun coreOnly = realGuanceScored(
+                "baseline-core",
+                GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED,
+                BaselineEvaluationRun.Classification.HELPFUL);
+
+        assertThat(replay.systemConfidence())
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.MEDIUM);
+        assertThat(coreOnly.systemConfidence())
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.MEDIUM);
+        assertThat(coreOnly.highConfidenceError()).isFalse();
+    }
+
+    @Test
+    void historicalRunsWithoutAnEvidenceStageNeverUpgradeToHigh() {
+        BaselineEvaluationRun historical = new BaselineEvaluationRun(
+                "baseline-historical",
+                "a".repeat(64),
+                "eval-historical",
+                "diag-historical",
+                1,
+                EvidenceEvaluationSample.SourcePlatform.GUANCE,
+                false,
+                false,
+                "b".repeat(64),
+                BaselineEvaluationRun.Status.SCORED,
+                List.of(),
+                new BaselineEvaluationRun.ValidationSnapshot(true, true, List.of()),
+                new BaselineEvaluationRun.QualitySnapshot(
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        BaselineEvaluationRun.ActualDisposition.DRAFT,
+                        BaselineEvaluationRun.Classification.HELPFUL,
+                        true,
+                        1.0d,
+                        List.of(), List.of(), List.of(), List.of(), List.of(), false),
+                model(),
+                800,
+                150,
+                950,
+                "reviewer",
+                NOW);
+
+        assertThat(historical.evidenceStage())
+                .isEqualTo(GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED);
+        assertThat(historical.systemConfidence())
+                .as("缺失的新字段不能把历史真源记录反推成完整三次取证")
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.MEDIUM);
+    }
+
+    @Test
+    void modelSelfReportedConfidenceCannotCrossIntoTheT8DraftOrLedgerContract() {
+        assertThat(PlaybookDraft.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .doesNotContain("confidence", "modelConfidence", "selfReportedConfidence");
+        assertThat(PlaybookDraft.DiagnosisHypothesis.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .doesNotContain("confidence", "modelConfidence", "selfReportedConfidence");
+        assertThat(BaselineEvaluationRun.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .doesNotContain("confidence", "modelConfidence", "selfReportedConfidence");
+    }
+
     private BaselineEvaluationRun scoredRun(
             EvidenceEvaluationSample.SourcePlatform platform,
             BaselineEvaluationRun.Classification classification,
@@ -132,6 +223,53 @@ class BaselineEvaluationRunTest {
                         List.of(),
                         List.of(),
                         dangerous),
+                model(),
+                800,
+                150,
+                950,
+                "reviewer",
+                NOW);
+    }
+
+    private BaselineEvaluationRun realGuanceFullSpine(
+            String runId,
+            BaselineEvaluationRun.Classification classification) {
+        return realGuanceScored(
+                runId,
+                GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED,
+                classification);
+    }
+
+    private BaselineEvaluationRun realGuanceScored(
+            String runId,
+            GuanceEvidenceSpinePreview.Stage evidenceStage,
+            BaselineEvaluationRun.Classification classification) {
+        return new BaselineEvaluationRun(
+                runId,
+                ("%08x".formatted(runId.hashCode()) + "0".repeat(64)).substring(0, 64),
+                "eval-" + runId,
+                "diag-" + runId,
+                1,
+                EvidenceEvaluationSample.SourcePlatform.GUANCE,
+                false,
+                false,
+                evidenceStage,
+                "b".repeat(64),
+                BaselineEvaluationRun.Status.SCORED,
+                List.of(),
+                new BaselineEvaluationRun.ValidationSnapshot(true, true, List.of()),
+                new BaselineEvaluationRun.QualitySnapshot(
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        BaselineEvaluationRun.ActualDisposition.DRAFT,
+                        classification,
+                        true,
+                        1.0d,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        false),
                 model(),
                 800,
                 150,

@@ -23,7 +23,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Executes every annotated V186 version lookup against a real H2 database. */
+/** Executes every annotated version lookup through V190 against a real H2 database. */
 class TroubleshootingPlaybookVersionMapperIntegrationTest {
 
     private JdbcDataSource dataSource;
@@ -55,12 +55,15 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
                         ) VALUES (
                             1, 7, 'playbook-1', 'csdp:903001',
                             1, 'csdp:903001', 'CSDP', '903001', 'order-svc',
-                            'APPROVED', 'MANUAL', 'manual-1', 'review-1', 2,
+                            'APPROVED', 'MANUAL', 'manual-csdp-903001-v1', 'review-1', 2,
                             'reviewer-a', 'fixed replay passed', 'sop.v1',
                             '{}', 0, 0
                         )
                         """);
             }
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V190__troubleshooting_knowledge_evidence_grade.sql");
         }
 
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -83,8 +86,12 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
 
     @Test
     void annotatedVersionLookupsUseExecutableSql() {
-        assertThat(mapper.findActive(7L, "csdp:903001").getPlaybookId())
-                .isEqualTo("playbook-1");
+        assertThat(mapper.findActive(7L, "csdp:903001"))
+                .satisfies(version -> {
+                    assertThat(version.getPlaybookId()).isEqualTo("playbook-1");
+                    assertThat(version.getKnowledgeEvidenceGrade())
+                            .isEqualTo("UNVERIFIED");
+                });
         assertThat(mapper.findCurrent(7L, "csdp:903001").getPlaybookId())
                 .isEqualTo("playbook-1");
         assertThat(mapper.findByReview(7L, "review-1").getPlaybookId())
@@ -97,6 +104,14 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
                 .singleElement()
                 .extracting("playbookId")
                 .isEqualTo("playbook-1");
+        assertThat(mapper.listUnverifiedKnowledgeEvidenceGradesAfter(0L, 10))
+                .singleElement()
+                .extracting("playbookId")
+                .isEqualTo("playbook-1");
+        assertThat(mapper.backfillKnowledgeEvidenceGrade(
+                1L, "AUTHORED_FIXTURE")).isEqualTo(1);
+        assertThat(mapper.findByPlaybookId(7L, "playbook-1")
+                .getKnowledgeEvidenceGrade()).isEqualTo("AUTHORED_FIXTURE");
     }
 
     @Test

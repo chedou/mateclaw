@@ -13,6 +13,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
@@ -28,6 +29,7 @@ import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.StepTon
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -44,16 +46,19 @@ public class DiagnosisExperienceProjectionService {
     private final DiagnosisDerivationService derivationService;
     private final CanonicalEvidenceViewProjector evidenceProjector;
     private final DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
             DiagnosisDerivationService derivationService,
             CanonicalEvidenceViewProjector evidenceProjector,
-            DeploymentTopologyScenarioPolicy topologyScenarioPolicy) {
+            DeploymentTopologyScenarioPolicy topologyScenarioPolicy,
+            TroubleshootingPlaybookVersionService playbookVersions) {
         this.persistence = persistence;
         this.derivationService = derivationService;
         this.evidenceProjector = evidenceProjector;
         this.topologyScenarioPolicy = topologyScenarioPolicy;
+        this.playbookVersions = playbookVersions;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -94,6 +99,7 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.investigationMode(),
                 authority,
                 playbookRef(diagnosis),
+                knowledgeEvidenceGrade(workspaceId, diagnosis),
                 scenarioAffordances(workspaceId, diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
@@ -103,6 +109,19 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.fixtureMode());
 
         return new DiagnosisExperienceProjection(business, developer);
+    }
+
+    private KnowledgeEvidenceGrade knowledgeEvidenceGrade(
+            long workspaceId,
+            Diagnosis diagnosis) {
+        if (diagnosis.sopKey() == null) {
+            return null;
+        }
+        if (diagnosis.sourcePlaybookVersionRef() == null) {
+            return KnowledgeEvidenceGrade.UNVERIFIED;
+        }
+        return playbookVersions.knowledgeEvidenceGradeByRef(
+                workspaceId, diagnosis.sourcePlaybookVersionRef());
     }
 
     private String playbookRef(Diagnosis diagnosis) {

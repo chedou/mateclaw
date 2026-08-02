@@ -18,6 +18,7 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteMode;
@@ -26,6 +27,7 @@ import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Instant;
@@ -54,6 +56,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
 
+    @Mock
+    private TroubleshootingPlaybookVersionService playbookVersions;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -62,7 +67,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 persistence,
                 derivationService,
                 new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()),
-                topologyScenarioPolicy);
+                topologyScenarioPolicy,
+                playbookVersions);
     }
 
     @Test
@@ -71,6 +77,9 @@ class DiagnosisExperienceProjectionServiceTest {
                 .thenReturn(new StoredDiagnosis(deterministicDiagnosis(), 2, false));
         when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(derivation());
+        when(playbookVersions.knowledgeEvidenceGradeByRef(
+                WORKSPACE_ID, new PlaybookVersionRef("playbook-903001", 3)))
+                .thenReturn(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
 
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
@@ -103,6 +112,9 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(RouteAuthority.EXPLICIT);
         assertThat(developer.playbookRef())
                 .isEqualTo("csdp:903001 · playbook-903001@v3");
+        assertThat(developer.knowledgeEvidenceGrade())
+                .as("903001 的夹具身份必须跟随冻结版本出现在开发证据台")
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
         assertThat(developer.scenarioAffordances()).isEmpty();
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
         assertThat(developer.callChain().hops()).hasSize(1);

@@ -15,6 +15,7 @@ import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
+import vip.mate.troubleshooting.service.KnowledgeEvidenceCoverage;
 import vip.mate.troubleshooting.service.SopSummary;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.model.NorthStarTimings;
@@ -52,6 +53,40 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SopSynthesisControllerTest {
+
+    @Test
+    void exposesKnowledgeEvidenceCoverageAsCountsWithoutInventingARate() throws Exception {
+        TroubleshootingSopPersistenceService sopPersistence =
+                mock(TroubleshootingSopPersistenceService.class);
+        SopManagementController controller = new SopManagementController(
+                sopPersistence,
+                mock(TroubleshootingPersistenceService.class),
+                mock(SopSynthesisService.class),
+                mock(KnowledgeReviewInboxService.class),
+                mock(KnowledgeReviewWorkflowService.class),
+                mock(ManualPlaybookReplayService.class));
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+        when(sopPersistence.knowledgeEvidenceCoverage(7L))
+                .thenReturn(new KnowledgeEvidenceCoverage(146, 3, 1, 1, 1, 2));
+
+        mvc.perform(get("/api/v1/troubleshooting/sops/evidence-coverage")
+                        .header("X-Workspace-Id", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inventoryErrorCodeSelectors").value(146))
+                .andExpect(jsonPath("$.data.registryErrorCodeSelectors").value(3))
+                .andExpect(jsonPath("$.data.recordedAggregateSelectors").value(1))
+                .andExpect(jsonPath("$.data.authoredFixtureSelectors").value(1))
+                .andExpect(jsonPath("$.data.unverifiedSelectors").value(1))
+                .andExpect(jsonPath("$.data.outsideInventorySelectors").value(2))
+                .andExpect(jsonPath("$.data.coverageRate").doesNotExist())
+                .andExpect(jsonPath("$.data.percentage").doesNotExist());
+
+        verify(sopPersistence).knowledgeEvidenceCoverage(7L);
+    }
 
     @Test
     void exposesTheTypedGenerationResultWithoutAnApprovalControl() throws Exception {

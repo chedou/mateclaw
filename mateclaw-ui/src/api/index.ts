@@ -1600,6 +1600,10 @@ export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' 
 export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
 export type IncidentSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type SopStatus = 'candidate' | 'approved' | 'deprecated'
+export type KnowledgeEvidenceGrade =
+  | 'RECORDED_AGGREGATE'
+  | 'AUTHORED_FIXTURE'
+  | 'UNVERIFIED'
 
 /**
  * Browser incident-intake boundary.
@@ -1666,6 +1670,17 @@ export interface SopSummary {
   sourceRecordId?: string | null
   reviewId?: string | null
   reviewVersion?: number | null
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade
+}
+
+/** Counts with the reviewed CSDP inventory denominator; deliberately no rate. */
+export interface KnowledgeEvidenceCoverage {
+  inventoryErrorCodeSelectors: number
+  registryErrorCodeSelectors: number
+  recordedAggregateSelectors: number
+  authoredFixtureSelectors: number
+  unverifiedSelectors: number
+  outsideInventorySelectors: number
 }
 
 export type KnowledgeOrigin = 'EVIDENCE_DERIVED' | 'OUTCOME_BACKED' | 'MANUAL'
@@ -1858,6 +1873,7 @@ export interface ApprovedPlaybookVersion {
   status: 'APPROVED' | 'DEPRECATED'
   sourceOrigin: KnowledgeOrigin | 'LEGACY'
   sourceRecordId: string
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade
   reviewId: string | null
   reviewVersion: number | null
   approvedBy: string
@@ -2250,6 +2266,8 @@ export interface DeveloperEvidenceView {
   investigationMode: InvestigationMode
   routeAuthority: RouteAuthority
   playbookRef: string | null
+  /** Null only when no Playbook owns this Diagnosis. */
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade | null
   /** Keyed scenario capabilities; a new scenario adds a row, not a boolean. */
   scenarioAffordances: ScenarioAffordance[]
   callChain: CallChainView
@@ -2711,6 +2729,7 @@ export interface BaselineEvaluationRun {
   sourcePlatform: EvaluationSampleSourcePlatform
   evidenceFixtureMode: boolean
   diagnosisFixtureMode: boolean
+  evidenceStage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
   modelInputHash: string
   status: BaselineEvaluationStatus
   modelErrorCodes: string[]
@@ -2743,6 +2762,23 @@ export interface BaselineCohortMetrics {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  quality: BaselineQualityMetrics
+}
+
+export interface BaselineQualityMetrics {
+  citationAssessedRuns: number
+  citationCompleteRuns: number
+  coverageAssessedRuns: number
+  coverageP50: number | null
+  coverageMin: number | null
+  fullCoverageRuns: number
+  abstentions: number
+  cleanAbstentions: number
+  abstainFailureCounts: Record<string, number>
+  dangerousProposalRuns: number
+  confidenceAssessedRuns: number
+  highConfidenceRuns: number
+  highConfidenceErrorRuns: number
 }
 
 export interface BaselineSourceMetrics {
@@ -2920,6 +2956,9 @@ export const troubleshootingApi = {
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
+
+  knowledgeEvidenceCoverage: () =>
+    http.get<KnowledgeEvidenceCoverage>('/troubleshooting/sops/evidence-coverage'),
 
   /** Three source lanes plus their independent review states; no promotion side effect. */
   knowledgeReviewInbox: (params?: { limit?: number }) =>

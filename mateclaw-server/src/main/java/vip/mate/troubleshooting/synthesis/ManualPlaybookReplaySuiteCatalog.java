@@ -9,6 +9,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
+import vip.mate.troubleshooting.model.SopEntry;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ public final class ManualPlaybookReplaySuiteCatalog {
 
     private final Map<String, ResolvedSuite> suites;
     private final List<RejectedSeed> rejectedSeeds;
+    private final ManualPlaybookReplayFingerprint fingerprints;
 
     @Autowired
     public ManualPlaybookReplaySuiteCatalog(
@@ -55,6 +58,7 @@ public final class ManualPlaybookReplaySuiteCatalog {
             throw new IllegalArgumentException(
                     "objectMapper, fingerprints, evaluator and replay resource are required");
         }
+        this.fingerprints = fingerprints;
         try (InputStream input = resource.getInputStream()) {
             JsonNode document = objectMapper.readTree(input);
             int version = document.path("version").asInt(-1);
@@ -68,7 +72,11 @@ public final class ManualPlaybookReplaySuiteCatalog {
             for (JsonNode node : fixedSuites) {
                 ManualPlaybookReplaySuite suite = objectMapper.treeToValue(
                         node, ManualPlaybookReplaySuite.class);
-                addFixed(loaded, resolve(suite, fingerprints, evaluator));
+                addFixed(loaded, resolve(
+                        suite,
+                        KnowledgeEvidenceGrade.AUTHORED_FIXTURE,
+                        fingerprints,
+                        evaluator));
             }
 
             List<RejectedSeed> rejected = new ArrayList<>();
@@ -89,7 +97,10 @@ public final class ManualPlaybookReplaySuiteCatalog {
                         ManualPlaybookReplaySuite generated =
                                 templateFactory.generate(seed);
                         ResolvedSuite resolved = resolve(
-                                generated, fingerprints, evaluator);
+                                generated,
+                                KnowledgeEvidenceGrade.RECORDED_AGGREGATE,
+                                fingerprints,
+                                evaluator);
                         if (loaded.putIfAbsent(generated.selectorKey(), resolved) != null) {
                             throw new IllegalArgumentException(
                                     "manual replay selectors must be unique");
@@ -122,8 +133,23 @@ public final class ManualPlaybookReplaySuiteCatalog {
         return rejectedSeeds;
     }
 
+    /** Returns authority only when the exact server-owned example is promoted. */
+    public Optional<KnowledgeEvidenceGrade> evidenceGrade(
+            String selectorKey,
+            SopEntry candidate) {
+        if (candidate == null) {
+            return Optional.empty();
+        }
+        String candidateFingerprint = fingerprints.candidate(candidate);
+        return find(selectorKey)
+                .filter(resolved -> candidateFingerprint.equals(
+                        fingerprints.candidate(resolved.suite().exampleCandidate())))
+                .map(ResolvedSuite::evidenceGrade);
+    }
+
     private ResolvedSuite resolve(
             ManualPlaybookReplaySuite suite,
+            KnowledgeEvidenceGrade evidenceGrade,
             ManualPlaybookReplayFingerprint fingerprints,
             ManualPlaybookReplayEvaluator evaluator) {
         if (suite.exampleCandidate() == null
@@ -131,7 +157,7 @@ public final class ManualPlaybookReplaySuiteCatalog {
             throw new IllegalArgumentException(
                     "manual replay suite example must pass its own cases");
         }
-        return new ResolvedSuite(suite, fingerprints.suite(suite));
+        return new ResolvedSuite(suite, fingerprints.suite(suite), evidenceGrade);
     }
 
     private void addFixed(
@@ -155,12 +181,21 @@ public final class ManualPlaybookReplaySuiteCatalog {
 
     public record ResolvedSuite(
             ManualPlaybookReplaySuite suite,
-            String fingerprint) {
+            String fingerprint,
+            KnowledgeEvidenceGrade evidenceGrade) {
+
+        /** Compatibility shape for test doubles; never grants recorded authority. */
+        public ResolvedSuite(
+                ManualPlaybookReplaySuite suite,
+                String fingerprint) {
+            this(suite, fingerprint, KnowledgeEvidenceGrade.UNVERIFIED);
+        }
 
         public ResolvedSuite {
             if (suite == null
                     || fingerprint == null
-                    || !fingerprint.matches("[a-f0-9]{64}")) {
+                    || !fingerprint.matches("[a-f0-9]{64}")
+                    || evidenceGrade == null) {
                 throw new IllegalArgumentException(
                         "resolved replay suite and SHA-256 fingerprint are required");
             }

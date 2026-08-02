@@ -143,6 +143,17 @@ $(cat "${OUT_FILE}")"
 }
 
 # ── adapter 关着必须停在第 2 格 ─────────────────────────────────────
+set +e
+MATECLAW_BASE_URL="http://127.0.0.1:1" \
+  MATECLAW_USERNAME=stub-user MATECLAW_PASSWORD=stub-password \
+  "${PREFLIGHT}" > "${OUT_FILE}" 2>&1
+RC=$?
+set -e
+expect_blocked_at "服务可达且能认证"
+grep -Fq "未能取得 token" "${OUT_FILE}" \
+  || fail "an unreachable service must produce the stage-1 recovery instruction"
+printf 'ok  服务不可达 → 停在第 1 格，不泄漏 curl 退出码\n'
+
 jq -n '{readiness:{status:"DISABLED", adapterEnabled:false,
                    endpointConfigured:false, credentialState:"NOT_INSPECTED",
                    signals:[], blockers:["Guance adapter is disabled"]},

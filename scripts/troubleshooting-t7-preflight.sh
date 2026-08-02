@@ -95,10 +95,13 @@ echo
 
 # ── 格 1：服务可达且能认证 ──────────────────────────────────────────
 if [[ -z "${TOKEN}" && -n "${USERNAME}" ]]; then
-  TOKEN="$(curl -sS -X POST "${BASE_URL}/api/v1/auth/login" \
+  login_response=""
+  if login_response="$(curl -sS -X POST "${BASE_URL}/api/v1/auth/login" \
       -H 'Content-Type: application/json' \
       --data "{\"username\":\"${USERNAME}\",\"password\":\"${PASSWORD}\"}" \
-      2>/dev/null | jq -r '.data.token // empty')"
+      2>/dev/null)"; then
+    TOKEN="$(jq -r '.data.token // empty' <<<"${login_response}" 2>/dev/null || true)"
+  fi
 fi
 [[ -n "${TOKEN}" ]] || blocked "服务可达且能认证" \
   "未能取得 token（${BASE_URL}）" \

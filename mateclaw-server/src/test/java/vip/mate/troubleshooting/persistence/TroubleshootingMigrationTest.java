@@ -613,6 +613,87 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V190MakesKnowledgeEvidenceGradeExplicitAndLeavesHistoryFailClosed()
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v190;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V185__troubleshooting_knowledge_review.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V186__troubleshooting_playbook_version.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_playbook_version (
+                            id, workspace_id, playbook_id, selector_key,
+                            playbook_version, active_selector_key,
+                            system, error_code, service, status,
+                            source_origin, source_record_id, approved_by,
+                            approval_reason, contract_version, aggregate_json,
+                            version, deleted, create_time, update_time
+                        ) VALUES
+                            (31, 7, 'pb-im1010', 'csdp:IM1010', 1, 'csdp:IM1010',
+                             'CSDP', 'IM1010', 'csp-rpc-msg', 'APPROVED',
+                             'MANUAL', 'manual-csdp-im1010-v1', 'seed', 'recorded',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (32, 7, 'pb-903001', 'csdp:903001', 1, 'csdp:903001',
+                             'CSDP', '903001', 'order-svc', 'APPROVED',
+                             'MANUAL', 'manual-csdp-903001-v1', 'seed', 'fixture',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (33, 7, 'pb-unknown', 'csdp:999999', 1, 'csdp:999999',
+                             'CSDP', '999999', 'unknown', 'APPROVED',
+                             'LEGACY', 'legacy-unknown', 'migration', 'unknown',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (34, 7, 'pb-im1010-rogue', 'csdp:IM1010', 2, NULL,
+                             'CSDP', 'IM1010', 'csp-rpc-msg', 'DEPRECATED',
+                             'MANUAL', 'manual-im1010-rogue', 'seed', 'handwritten',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (35, 7, 'pb-903001-rogue', 'csdp:903001', 2, NULL,
+                             'CSDP', '903001', 'order-svc', 'DEPRECATED',
+                             'MANUAL', 'manual-903001-rogue', 'seed', 'unknown',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V190__troubleshooting_knowledge_evidence_grade.sql");
+
+            Set<String> columns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_playbook_version");
+            assertTrue(columns.contains("knowledge_evidence_grade"));
+            assertFalse(isNullable(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_playbook_version",
+                    "knowledge_evidence_grade"));
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT source_record_id, knowledge_evidence_grade
+                    FROM mate_troubleshooting_playbook_version
+                    ORDER BY source_record_id
+                    """); ResultSet rows = query.executeQuery()) {
+                java.util.Map<String, String> grades = new java.util.LinkedHashMap<>();
+                while (rows.next()) {
+                    grades.put(rows.getString(1), rows.getString(2));
+                }
+                assertEquals("UNVERIFIED",
+                        grades.get("manual-csdp-903001-v1"));
+                assertEquals("UNVERIFIED",
+                        grades.get("manual-csdp-im1010-v1"));
+                assertEquals("UNVERIFIED", grades.get("legacy-unknown"));
+                assertEquals("UNVERIFIED", grades.get("manual-im1010-rogue"));
+                assertEquals("UNVERIFIED", grades.get("manual-903001-rogue"));
+            }
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingPlaybookVersionMapper;
@@ -68,6 +69,15 @@ public class TroubleshootingPlaybookVersionService {
             return Optional.empty();
         }
         return Optional.of(read(entity));
+    }
+
+    /** Conservative projection used by a Diagnosis frozen to one exact version. */
+    public KnowledgeEvidenceGrade knowledgeEvidenceGradeByRef(
+            long workspaceId,
+            PlaybookVersionRef ref) {
+        return findByRef(workspaceId, ref)
+                .map(ApprovedPlaybookVersion::knowledgeEvidenceGrade)
+                .orElse(KnowledgeEvidenceGrade.UNVERIFIED);
     }
 
     /**
@@ -223,6 +233,7 @@ public class TroubleshootingPlaybookVersionService {
                     && prior.reviewVersion() == reviewVersion
                     && prior.sourceOrigin().equals(material.origin().name())
                     && prior.sourceRecordId().equals(material.sourceRecordId())
+                    && prior.knowledgeEvidenceGrade() == material.evidenceGrade()
                     && prior.selectorKey().equals(selector)
                     && prior.approvedBy().equals(reviewer)
                     && prior.approvalReason().equals(auditReason)) {
@@ -276,6 +287,7 @@ public class TroubleshootingPlaybookVersionService {
         entity.setStatus("APPROVED");
         entity.setSourceOrigin(material.origin().name());
         entity.setSourceRecordId(material.sourceRecordId());
+        entity.setKnowledgeEvidenceGrade(material.evidenceGrade().name());
         entity.setReviewId(normalizedReviewId);
         entity.setReviewVersion(reviewVersion);
         entity.setApprovedBy(reviewer);
@@ -374,6 +386,7 @@ public class TroubleshootingPlaybookVersionService {
                 entity.getStatus(),
                 entity.getSourceOrigin(),
                 entity.getSourceRecordId(),
+                KnowledgeEvidenceGrade.fromStored(entity.getKnowledgeEvidenceGrade()),
                 entity.getReviewId(),
                 entity.getReviewVersion(),
                 entity.getApprovedBy(),

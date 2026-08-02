@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
+
 /**
  * One model-version-specific single-Agent shadow evaluation result.
  *
@@ -19,6 +21,7 @@ public record BaselineEvaluationRun(
         EvidenceEvaluationSample.SourcePlatform sourcePlatform,
         boolean evidenceFixtureMode,
         boolean diagnosisFixtureMode,
+        GuanceEvidenceSpinePreview.Stage evidenceStage,
         String modelInputHash,
         Status status,
         List<String> modelErrorCodes,
@@ -33,6 +36,54 @@ public record BaselineEvaluationRun(
 
     private static final Pattern HASH = Pattern.compile("[a-f0-9]{64}");
     private static final Pattern ERROR_CODE = Pattern.compile("[A-Z][A-Z0-9_]{1,95}");
+
+    /**
+     * Backward-compatible constructor for persisted runs written before the
+     * Evidence Spine stage became part of the confidence authority contract.
+     * Unknown history is deliberately treated as core-only, never as HIGH.
+     */
+    public BaselineEvaluationRun(
+            String runId,
+            String runKey,
+            String sampleId,
+            String diagnosisId,
+            int sampleVersion,
+            EvidenceEvaluationSample.SourcePlatform sourcePlatform,
+            boolean evidenceFixtureMode,
+            boolean diagnosisFixtureMode,
+            String modelInputHash,
+            Status status,
+            List<String> modelErrorCodes,
+            ValidationSnapshot validation,
+            QualitySnapshot quality,
+            ModelSnapshot model,
+            long evidenceDurationMs,
+            long modelDurationMs,
+            long composedTotalDurationMs,
+            String executedBy,
+            Instant executedAt) {
+        this(
+                runId,
+                runKey,
+                sampleId,
+                diagnosisId,
+                sampleVersion,
+                sourcePlatform,
+                evidenceFixtureMode,
+                diagnosisFixtureMode,
+                GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED,
+                modelInputHash,
+                status,
+                modelErrorCodes,
+                validation,
+                quality,
+                model,
+                evidenceDurationMs,
+                modelDurationMs,
+                composedTotalDurationMs,
+                executedBy,
+                executedAt);
+    }
 
     public BaselineEvaluationRun {
         runId = required(runId, "runId");
@@ -56,6 +107,14 @@ public record BaselineEvaluationRun(
             throw new IllegalArgumentException(
                     "Recorded Replay baseline evidence must remain fixture data");
         }
+        // Missing on historical JSON means "not proven full", never infer HIGH.
+        evidenceStage = evidenceStage == null
+                ? GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED
+                : evidenceStage;
+        if (evidenceStage == GuanceEvidenceSpinePreview.Stage.BLOCKED) {
+            throw new IllegalArgumentException(
+                    "a baseline run must reference an observed Evidence Spine");
+        }
         modelInputHash = hash(modelInputHash, "modelInputHash");
         modelErrorCodes = List.copyOf(
                 modelErrorCodes == null ? List.of() : modelErrorCodes);
@@ -77,6 +136,28 @@ public record BaselineEvaluationRun(
             throw new IllegalArgumentException("executedAt is required");
         }
         validateStatus(status, modelErrorCodes, validation, quality);
+    }
+
+    /**
+     * Authority assigned by the server from facts fixed before the human
+     * reference solution scores correctness. It is not model self-report.
+     */
+    public SystemConfidence systemConfidence() {
+        if (status != Status.SCORED) {
+            return SystemConfidence.NOT_ASSESSED;
+        }
+        boolean hasHighAuthority = sourcePlatform == EvidenceEvaluationSample.SourcePlatform.GUANCE
+                && !evidenceFixtureMode
+                && !diagnosisFixtureMode
+                && evidenceStage == GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED
+                && Boolean.TRUE.equals(quality.citationComplete());
+        return hasHighAuthority ? SystemConfidence.HIGH : SystemConfidence.MEDIUM;
+    }
+
+    /** Human-oracle error over an independently server-assigned HIGH run. */
+    public boolean highConfidenceError() {
+        return systemConfidence() == SystemConfidence.HIGH
+                && quality.classification() != Classification.HELPFUL;
     }
 
     private static void validateStatus(
@@ -130,6 +211,12 @@ public record BaselineEvaluationRun(
         NONE,
         DRAFT,
         ABSTAIN
+    }
+
+    public enum SystemConfidence {
+        NOT_ASSESSED,
+        MEDIUM,
+        HIGH
     }
 
     /** Per-sample structural category, not a T8 acceptance or promotion verdict. */

@@ -11,7 +11,9 @@ import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ExecutionStatus;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.RecommendedAction;
+import vip.mate.troubleshooting.model.SopEntry;
 
 import java.util.List;
 
@@ -186,6 +188,55 @@ class ManualPlaybookReplaySuiteCatalogTest {
                 .extracting(RecommendedAction::actionType)
                 .allMatch(type -> type == ActionType.AUTO_READONLY
                         || type == ActionType.HUMAN_CONTACT);
+    }
+
+    @Test
+    void sourceGradeComesFromTheCatalogLaneRatherThanSelectorGuessing() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        assertThat(catalog.find("csdp:IM1010").orElseThrow().evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(catalog.find("csdp:scenario:message_send_failed")
+                .orElseThrow().evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(catalog.find("csdp:903001").orElseThrow().evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
+        assertThat(catalog.find("csdp:scenario:deployment_topology_probe")
+                .orElseThrow().evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
+    }
+
+    @Test
+    void recordedAuthorityRequiresTheExactServerOwnedCandidateFingerprint()
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+        SopEntry exact = catalog.find("csdp:IM1010").orElseThrow()
+                .suite().exampleCandidate();
+        ObjectNode alteredNode = objectMapper.valueToTree(exact);
+        alteredNode.put("cause", "手写替换的判据来源");
+        SopEntry altered = objectMapper.treeToValue(alteredNode, SopEntry.class);
+
+        assertThat(catalog.evidenceGrade("csdp:IM1010", exact))
+                .contains(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(catalog.evidenceGrade("csdp:IM1010", altered))
+                .as("复用 selector 但改写合同的 candidate 不能继承录制权威")
+                .isEmpty();
     }
 
     @Test

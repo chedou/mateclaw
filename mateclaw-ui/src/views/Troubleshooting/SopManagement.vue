@@ -13,6 +13,7 @@
     <SopFilterbar
       :active-desk="registry.activeDesk.value"
       :row-count="registry.rows.value.length"
+      :evidence-coverage="registry.evidenceCoverage.value"
       :knowledge-row-count="review.knowledgeRows.value.length"
       :status-filter="registry.statusFilter.value"
       :system-filter="registry.systemFilter.value"
@@ -102,7 +103,6 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import type { SopEntry } from '@/api'
 import { useSopRegistry } from './useSopRegistry'
 import { useKnowledgeReview } from './useKnowledgeReview'
 import type { KnowledgeReviewRow } from './knowledgeReview'

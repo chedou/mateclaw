@@ -862,6 +862,51 @@ P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
   不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，
   然后才能采集首条真实 T8 台账样本。CloudDial `synthetic_probe` 仍是独立未完成的真源合同。
 
+T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，但不改变 T7/T8 状态：
+
+- V190 为 H2/MySQL/Kingbase 的不可变 Playbook 版本增加
+  `knowledge_evidence_grade`。服务端受控回放目录只产生
+  `RECORDED_AGGREGATE / AUTHORED_FIXTURE / UNVERIFIED`，未知历史值保守落为
+  `UNVERIFIED`；只有 selector 与候选内容指纹都精确匹配服务端冻结示例时才授予目录等级，
+  同 selector 的改写候选不能继承权威。V190 SQL 将全部历史版本先置为 `UNVERIFIED`；启动
+  协调器从冻结聚合重建候选并复算相同指纹，坏 JSON、冒用公开 source ID 或内容不一致都不升级。
+  协调器按 ID keyset 分页，早期永久不匹配记录不会遮住后续精确候选。
+- 注册表列表/详情、冻结 Playbook 的 `DeveloperEvidenceView` 和前端标签都展示相同等级。
+  服务端目录中精确 `csdp:IM1010` 候选为真实录制聚合，精确 `csdp:903001` 候选为手写验证夹具；
+  只有该候选真正完成本 workspace 审核晋升后才进入注册表覆盖。内容不同的 legacy approved 版本
+  继续显示 `UNVERIFIED`，不会凭 selector 或公开 source ID 继承等级。
+- `GET /api/v1/troubleshooting/sops/evidence-coverage` 以固定 D1 错误码清单 146 为分母，
+  分开返回注册、真实聚合、手写夹具、未核实和清单外计数。146 个 selector 冻结在服务端
+  manifest 中，按成员关系统计；场景 selector 排除，清单外 CSDP 错误码不挤占分母，接口和 UI
+  都不发布遮住小样本的百分比。2026-08-02 本地以最终工作树迁移到 V190 并真实打开页面，当前注册表
+  显示 `0 / 146`：唯一 legacy 903001 保持“来源未核实”，目录中的 IM1010 尚未在该 workspace 形成
+  active-approved 版本。这是 fail-closed 的真实结果，不是回归。完整合同见
+  `knowledge-evidence-grade-contract.md`。
+- 已拍板 T8 `SystemConfidence` **不接收、不存储、不映射模型自报置信度**。旧 miss-path
+  `AgentTriageDraft.confidence` 只是服务端会降档的模型提议，不能进入本计数或 Gate。服务端只对形成有效草案的运行，
+  按真 Guance、证据/Diagnosis 双非 fixture、`FULL_SPINE_OBSERVED` 和引用完整性派生
+  `HIGH`，其他有效草案为 `MEDIUM`，拒绝/弃权/校验失败为 `NOT_ASSESSED`；冻结人工参考解
+  独立判定 `HELPFUL / UNHELPFUL / HARMFUL_BLOCKED / TECHNICAL_FAILURE`。
+- 台账新增 `confidenceAssessedRuns / highConfidenceRuns / highConfidenceErrorRuns`，
+  `highConfidenceErrorFreeAcross(minimumHighConfidenceRuns)` 要求显式、非零的 HIGH 分母，
+  因而 `0 / 0` 不会过门。完整合同见 `system-confidence-contract.md`。这里完成的是测量能力，
+  **不是** §5.7 阈值、T8 Gate 或生产放权结论。
+- 核心新断言均做过故意改坏验证：错标录制 lane、同 selector 冒充冻结候选、把 146 成员关系
+  弱化成行数、让历史记录绕过指纹直接升级、让坏历史挡住后续分页、未知等级错误升级、冻结版本
+  投影丢级、历史缺失阶段反推完整脊柱、以及把服务端 `HIGH` 降成 `MEDIUM`，分别触发
+  1/1/2/1/1/1/1/1/3 条失败；
+  恢复后均通过。
+  T7 预检也覆盖不可达服务、adapter 关闭、缺对照、空指纹、未接受、陈旧指纹和已接受双向路径，
+  先在窗口外暴露 blocker。
+- T0.9 已排在 T0.8 批量导入之前。下一步仍只有 owner 能推进：先跑 T7 预检，
+  对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入 20–30 条真实种子。
+  Challenger、单 Agent 基线比较和 §5.7 阈值标定继续等待这批数据，不提前实现。
+- 最终验证：排障域 + Skill Manifest 后端 `674` 项、前端 `24` 文件 / `180` 项、
+  `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 预检的阻塞/就绪双向套件通过。
+  Standards 与 Spec 双轴复审最终均无 P0/P1/P2。
+- 本地 H2 已真实迁移到 V190；后端 PID `21214` 监听 `18088`，前端 PID `25308` 监听 `5173`。
+  登录态页面确认正式队列可读取、规则库显示 `0 / 146`，legacy 903001 为“来源未核实”。
+
 后端定向测试命令：
 
 ```bash

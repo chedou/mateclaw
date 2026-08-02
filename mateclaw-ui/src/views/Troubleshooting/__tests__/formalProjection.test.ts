@@ -18,6 +18,7 @@ import {
   guanceValidationLabel,
   impactMetrics,
   investigationLabel,
+  knowledgeEvidenceGradeLabel,
   timingState,
 } from '../formalProjection'
 
@@ -113,6 +114,12 @@ describe('formal troubleshooting projection formatting', () => {
       .toBe('错误码 Playbook · 显式命中')
     expect(investigationLabel('OPEN_DISCOVERY', 'MODEL_PROPOSED'))
       .toBe('开放调查 · 模型提议')
+  })
+
+  it('makes recorded knowledge and authored fixtures impossible to confuse', () => {
+    expect(knowledgeEvidenceGradeLabel('RECORDED_AGGREGATE')).toBe('真实录制聚合')
+    expect(knowledgeEvidenceGradeLabel('AUTHORED_FIXTURE')).toBe('手写验证夹具')
+    expect(knowledgeEvidenceGradeLabel('UNVERIFIED')).toBe('来源未核实')
   })
 
   it('keeps the real-source gate distinct from T7 acceptance', () => {
