@@ -12,13 +12,17 @@
 | `B_CONTEXT_ONLY` | 2 | 等级、场景 | 额外补安全检索键或日志合同 |
 | `C_SOURCE_GAPS` | 11 | 只有部分上下文 | 还要补等级/场景缺口和检索合同 |
 
+每行 `sourceHints.hasLogSignatureHint` 只表示源材料存在结构化日志提示，不携带日志正文；
+`signatureErrorCodes` 只列可安全提取的错误标识符，因此“存在提示但列表为空”不是矛盾。
+
 首批 20 条的低成本顺序建议是：15 条 `A_HINTED` 全部核实，加入 2 条 `B_CONTEXT_ONLY`，再从
 `C_SOURCE_GAPS` 优先核实已有场景提示的 `csdp:101017`、`csdp:101062`、`csdp:301045`。
 这 20 条已展开到
 [`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。
 这只是分工顺序，不是查询合同或可执行目标；owner 可以基于真实资产调整选择。
 
-`csdp:101014` 因源材料冲突不进入模板，必须先回源解决；`csdp:IM1010` 已有录制权威，不能重复计数。
+`csdp:101014` 因源材料冲突不进入模板，保持隔离并行回源；剩余 28 条足够组成首批，它不是建议 20 条的
+前置条件。`csdp:IM1010` 已有录制权威，不能重复计数。
 
 ## 填写方法
 

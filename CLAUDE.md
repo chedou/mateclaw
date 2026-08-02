@@ -97,7 +97,7 @@ miss-path 演练，其他环境仍需独立配置与验收；Guance `asset-bindi
 
 0. **`docs/intelligent-troubleshooting/recording-product-baseline.md`** —— **现行产品事实**：
    2026-07-27 录音 F1–F11，明确核心差异化、首个案例、企微入口和能力边界。
-1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.4）**：
+1. **`rfcs/intelligent-troubleshooting-architecture-v4.md`** —— **唯一现行概要设计（当前 v4.5）**：
    证据脊柱、在线诊断/知识生产双闭环、ERROR_CODE/SCENARIO/OPEN_DISCOVERY 三种调查路径和分阶段实施。
    **§9 是红线的唯一权威清单**，其余文档只引用不复述；**§7.4 是通道复用（D17）**。
 2. **`docs/intelligent-troubleshooting/architecture-review-v4.md`** —— **架构师评审**：
@@ -106,13 +106,14 @@ miss-path 演练，其他环境仍需独立配置与验收；Guance `asset-bindi
    （用户已认可）：D5′ 晋升分档、D14 北极星时间戳、D15 成功样本对照、D16 PENDING-EVIDENCE 纪律。
 2.6 **`docs/intelligent-troubleshooting/projection-contracts.md`** —— **已选定的两个投影合同**：
    BusinessSummary / DeveloperEvidenceView / NorthStarTimings，含服务端不变量与通道消费方式。
-3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.18**：
+3. **`docs/intelligent-troubleshooting/architecture-blueprint.html`** —— **产品与架构蓝图 v0.19**：
    增加有界 Loop Engineering 与固定角色的多 Agent 结构化反证（**当前为 PENDING-EVIDENCE，不得据以新增实现**）；
    v0.10 统一修复三张图的正交走廊、箭头端点与标签间距；v0.11–v0.17 保留当时图形，
    v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 READY 异步调查、幂等 Diagnosis、
    workspace-aware leader 投递/平台 ACK、BusinessSummary 与正式工作台深链实现状态；v0.16
    记录 V180 关闭结果持久化原路通知与正式页最终处置卡；v0.18 把部署拓扑拨测收回统一
-   Evidence Spine，明确资产 / 场景 / Tool / Adapter / Diagnosis 证据五层边界；RFC 为 v4.4。
+   Evidence Spine，明确资产 / 场景 / Tool / Adapter / Diagnosis 证据五层边界；v0.19 冻结 D19
+   “录制聚合正例 + 判据形状模板”的规模化规则；RFC 为 v4.5。
    历史版本从 **`docs/intelligent-troubleshooting/versions/index.html`** 进入。
 4. **`docs/intelligent-troubleshooting/TODO.md`** —— **接手第一站**：实时完成状态、下一缺口、完成标准和测试清单。
 5. **`docs/intelligent-troubleshooting/HANDOFF.md`** —— 当前真实状态与接手指针。

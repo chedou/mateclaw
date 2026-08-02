@@ -133,6 +133,7 @@ def build_template(report: Mapping[str, Any]) -> Dict[str, Any]:
                     "sourceServices": list(row["sourceServices"]),
                     "modules": list(row["modules"]),
                     "scenarios": list(row["scenarios"]),
+                    "hasLogSignatureHint": bool(row["hasLogSignatureHint"]),
                     "signatureErrorCodes": list(row["signatureErrorCodes"]),
                 },
                 "selectedForWindow": False,

@@ -10,7 +10,22 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.4 / 蓝图 v0.18**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.5 / 蓝图 v0.19**
+
+## 0. 当前总体进度（2026-08-02）
+
+| 轴 | 当前事实 | 下一步 |
+|---|---|---|
+| 产品竖线 | Recorded Replay 的三次取证、确定性压缩、双投影及 P1 在线闭环已跑通 | Demo 继续只诚实展示这条竖线 |
+| T7 真源批次 | 本机真实只读预检前 4 格通过；服务端冻结未录制目标仍为 **0 / 20** | 窗口外先完成至少 20 份真实 owner 合同并冻结目标，再约内网窗口 |
+| Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；成功仍只是 `PREPARED_NOT_EXECUTABLE` |
+| 源质量 | `csdp:101014` 同时指向“一键授权登录”和“Pulsar 调度失败”，禁止代码猜测 | 保持隔离并行回源；不计入也不阻塞其余 28 条中的首批 20 条 |
+| T0.9 / 置信度 | 来源等级已先于 T0.8 落地；系统置信度由服务端事实派生并由人工 oracle 判分，拒绝 `0 / 0` | 等真实样本后再标定阈值 |
+| 暂停项 | T0.8 批量导入、Challenger 影子运行、基线比较、§5.7 阈值标定 | 等 T7 一次灌入 20–30 条 D19 聚合正例后再启动 |
+
+当前唯一关键路径不是继续开发新能力，而是把建议 20 条中的真实运行 service、查询合同、安全检索键、
+确定性判据/规则、当前 bindingRef 与保留期内历史时间交给 owner 核实。窗口目标仍是一次灌入 20–30 条，
+不是跑通一条验证。
 
 ## 1. 一句话
 
@@ -59,11 +74,12 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.18：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
+蓝图已升级到 v0.19：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
 v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 T10 前半段的持久化异步调查、
 幂等 Diagnosis、纯文本 BusinessSummary 与正式工作台深链，v0.16 记录 Diagnosis 关闭 outcome 的
 持久化原路 @ 通知与正式工作台最终处置卡；v0.17 冻结部署拓扑独立结果的中间态，v0.18 将其修正为
-Workspace 资产 + Diagnosis 场景 + 可插拔只读 Tool + 来源 Adapter + 同一证据详情。这些版本均不扩大
+Workspace 资产 + Diagnosis 场景 + 可插拔只读 Tool + 来源 Adapter + 同一证据详情；v0.19 冻结 D19
+“录制聚合正例 + 判据形状模板”的规模化规则。这些版本均不扩大
 P1：P2 才在历史样本上影子运行 Evidence Challenger /
 Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
@@ -916,6 +932,7 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   `t7-target-contract-preparation.{json,md}`：冻结 146 条 D1 中有 30 条只读候选，当前为
   `1 ALREADY_RECORDED / 1 BLOCKED_SOURCE_QUALITY / 28 NEEDS_OWNER_CONTRACT /
   0 FROZEN_AWAITING_RUNTIME_VALIDATION`。它明确是 `PREPARATION_ONLY`，不生成可执行 target、DQL 或凭据；
+  `BLOCKED_SOURCE_QUALITY` 保持隔离并行回源，不计入首批，也不阻塞从其余 28 条中完成建议 20 条；
   smoke workflow 已接入 7 条单测和生成物漂移检查。故意读取错误的单数字段时 3 条测试失败，故意把
   Markdown 分母从 146 改成 145 时 `--check` 失败；恢复后均通过。
 - Owner 可执行的接力面已生成为 `t7-owner-contract-intake.template.json`、
@@ -928,9 +945,11 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   生成物漂移、当前 28 条有效上限和改名不改查询的语义重复均先经过故意改坏证明断言是活的；
   Python 门与 Java 运行目录都拒绝相同 `system/service/searchTerm/window/bindings`。
   建议工作表精确选中 15 A + 2 B + 3 条已有场景提示的 C，展开 20 份完整结构；
+  `sourceHints.hasLogSignatureHint` 只投影是否存在结构化日志提示，错误标识符提取为空时也不再伪装成无提示，
+  且仍不携带日志正文；
   占位符未替换时必须校验失败。新测试先因 generator 尚未存在而准确变红，workflow 路径断言也先因
-  未监听建议工作表而变红；自由文本遗留占位符断言也先暴露原校验缺口。修复后 CI 接入 11 条单测和
-  两份生成物 `--check`。
+  未监听建议工作表而变红；自由文本遗留占位符与日志提示布尔缺失断言也分别先暴露原校验缺口。
+  修复后 CI 接入 11 条单测和两份生成物 `--check`。
   下一个真实输入不是代码：owner 替换建议工作表中 20 份合同的全部占位符并校验。
 - 对当前 `18088` 运行服务执行只读预检，服务/认证、Adapter、三信号路由和 binding 指纹前 4 格通过，
   第 5 格准确停在 `0 个可执行新目标（冻结 0 个）/ 20 required`。首次真实运行同时发现 CI stub 把

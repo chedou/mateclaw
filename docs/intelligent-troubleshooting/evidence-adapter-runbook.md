@@ -305,9 +305,10 @@ python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparati
 python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 ```
 
-先解决 `csdp:101014` 的源材料冲突，再由 owner 给其余候选补责任团队、真实运行 service、安全检索键、
-服务端查询合同、确定性异常判据/诊断规则、当前三份 bindingRef 和精确历史故障时间。只有这些证据齐全，
-才可将其中 20–30 条写进下面的服务端目录；不得根据日志签名提示猜 DQL 或复制 SendMsg 合同凑数。
+`csdp:101014` 的两个真实业务上下文继续隔离并行回源，不纳入首批，也不阻塞剩余 28 条；owner 直接给
+建议 20 条补责任团队、真实运行 service、安全检索键、服务端查询合同、确定性异常判据/诊断规则、
+当前三份 bindingRef 和精确历史故障时间。只有这些证据齐全，才可写进下面的服务端目录；不得根据日志
+签名提示猜 DQL 或复制 SendMsg 合同凑数。
 
 实际交接使用 [Owner 填写说明](./t7-owner-contract-intake.md) 和
 [`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。

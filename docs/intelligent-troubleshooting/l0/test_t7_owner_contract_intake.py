@@ -53,6 +53,9 @@ class T7OwnerContractIntakeTest(unittest.TestCase):
 
     def test_template_is_preparation_only_and_prioritized(self) -> None:
         document = build_current_template(REPO)
+        by_selector = {
+            row["selectorKey"]: row for row in document["contracts"]
+        }
 
         self.assertEqual("t7-owner-contract-intake.v1", document["contractVersion"])
         self.assertEqual(
@@ -68,6 +71,13 @@ class T7OwnerContractIntakeTest(unittest.TestCase):
         self.assertFalse(document["authorization"]["canWriteRuntimeCatalog"])
         self.assertTrue(all(not row["selectedForWindow"] for row in document["contracts"]))
         self.assertTrue(all(row["ownerContract"] is None for row in document["contracts"]))
+        self.assertTrue(
+            by_selector["csdp:301002"]["sourceHints"]["hasLogSignatureHint"]
+        )
+        self.assertEqual(
+            [],
+            by_selector["csdp:301002"]["sourceHints"]["signatureErrorCodes"],
+        )
 
     def test_unfilled_template_is_not_window_ready(self) -> None:
         with self.assertRaisesRegex(OwnerInputError, "20 to 28 selected"):

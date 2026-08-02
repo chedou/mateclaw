@@ -106,6 +106,7 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 - 窗口外 owner 准备清单已由代码确定性生成：[Markdown 队列](./t7-target-contract-preparation.md) ·
   [JSON 合同](./t7-target-contract-preparation.json)。冻结 146 条 D1 中，清洗出 30 条只读候选：
   **1 条已录制、1 条被源材料质量阻断、28 条待 owner 补查询合同、0 条已冻结待运行验证**。
+  源质量冲突项保持隔离并行回源，不计入也不阻塞从其余 28 条中完成建议 20 条；
   该清单明确为 `PREPARATION_ONLY`，不生成 DQL、凭据或可执行 target；CI 会同时校验错误字段、
   重复键/尾随根值和生成物漂移。
 - Owner 不再靠聊天补齐 28 条合同：[填写说明](./t7-owner-contract-intake.md) 和

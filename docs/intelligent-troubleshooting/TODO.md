@@ -112,7 +112,8 @@ Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contra
 已把首批低成本的 15 条 A + 2 条 B + `csdp:101017 / csdp:101062 / csdp:301045` 三条 C
 精确选中并展开 20 份合同；每个占位符都故意不能通过校验。
 [`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json) 保留全部 28 条空白候选，
-仅在 owner 需要调整首批时使用。完成文件用下列命令校验，成功结果仍必须是
+仅在 owner 需要调整首批时使用。`sourceHints.hasLogSignatureHint` 只表示存在结构化日志提示；即使没有
+提取出安全错误标识符也会明确显示，但不会带出日志正文。完成文件用下列命令校验，成功结果仍必须是
 `PREPARED_NOT_EXECUTABLE / canAcceptT7=false / canWriteRuntimeCatalog=false`：
 
 ```bash
@@ -126,7 +127,7 @@ python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
 
 动手顺序：
 
-1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，owner 复制建议 20 条工作表，
+1. `csdp:101014` 保持隔离并行回源，不计入或阻塞首批；owner 直接复制建议 20 条工作表，
    逐项替换所有占位符并核实责任团队、真实运行 service、安全检索键、
    服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间，再跑
    `--validate`。校验器只接受安全引用，确定拒绝 DQL、URL、Key/Token 和 `rawLog`
@@ -202,6 +203,8 @@ owner intake 门也做了反向证明：把最小选择数从 20 故意降为 19
 Python owner 门与 Java 运行目录新断言都先准确失败；修复后两层均拒绝这种“改名不改查询”的假批次。
 推荐工作表接入后又故意只在自由文本 `ownerTeam / ownerScenario` 中保留 `<replace:...>`；新断言先准确失败，
 随后校验器统一拒绝任意字段中的未替换占位符，避免“结构填完但责任人与场景仍是模板文字”被放行。
+最后故意要求读取 `csdp:301002.sourceHints.hasLogSignatureHint`，旧模板因查不到字段准确失败；补入安全布尔
+投影后才恢复，避免 `A_HINTED` 在错误标识符提取为空时被误读成“无日志提示”。
 
 ---
 

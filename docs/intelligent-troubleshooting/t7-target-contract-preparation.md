@@ -56,7 +56,7 @@
 
 ## 使用顺序
 
-1. 先处理 `BLOCKED_SOURCE_QUALITY`，不能在冲突路由键上猜一个上下文。
+1. 将 `BLOCKED_SOURCE_QUALITY` 保持隔离并行回源，不能在冲突路由键上猜一个上下文；它不计入首批，也不阻塞从其余 28 条中完成建议 20 条。
 2. Owner 优先复制 `t7-owner-contract-intake.recommended.template.json`：它已按审核过的 15 A + 2 B + 3 C 选好 20 条并展开全部字段；如需调整批次再使用空白模板。
 3. 逐项替换所有 `<replace:...>` 占位符，核对真实运行 service、服务端查询合同、安全 search term、判据/规则、bindingRef 和历史故障时间。
 4. 执行 `t7_owner_contract_intake.py --validate <受控文件>`；通过仍只表示 `PREPARED_NOT_EXECUTABLE`，不是 T7 授权。
