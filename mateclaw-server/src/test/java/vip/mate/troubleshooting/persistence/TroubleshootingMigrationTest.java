@@ -18,6 +18,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -690,6 +691,69 @@ class TroubleshootingMigrationTest {
                 assertEquals("UNVERIFIED", grades.get("legacy-unknown"));
                 assertEquals("UNVERIFIED", grades.get("manual-im1010-rogue"));
                 assertEquals("UNVERIFIED", grades.get("manual-903001-rogue"));
+            }
+        }
+    }
+
+    @Test
+    void h2V191IndexesOnlyPersistedRouteSemantics() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v191;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V172__troubleshooting_domain.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_diagnosis (
+                            id, workspace_id, diagnosis_id, case_id, run_id,
+                            system, error_code, service, dedup_key, rehearsal,
+                            status, contract_version, aggregate_json, version, deleted,
+                            create_time, update_time
+                        ) VALUES
+                            (41, 7, 'diag-legacy', 'case-legacy', 'run-legacy',
+                             'CSDP', '903001', 'csdp-wechat',
+                             'legacydeduplegacydeduplegacydeduplegacydeduplegacydedup',
+                             FALSE, 'READY_FOR_HUMAN', '1.4',
+                             '{"diagnosisId":"diag-legacy","contractVersion":"1.4","caseId":"case-legacy","runId":"run-legacy","incident":{"incidentId":"inc-legacy","system":"CSDP","service":"csdp-wechat","errorCode":"903001","symptom":"legacy symptom","severity":"P1","environment":"prod","traceId":null,"occurredAt":"2026-07-25T01:02:00Z","additionalContext":null,"source":"manual","completeness":"STRUCTURED","customerRef":null},"routeMode":"DETERMINISTIC","conclusionType":"ROOT_CAUSE_CONFIRMED","status":"READY_FOR_HUMAN","summary":"legacy summary","rootCause":"legacy root cause","confidence":"HIGH","abstained":false,"sopKey":"csdp:903001","sopTitle":"903001 SOP","sourcePlaybookOwner":null,"evidence":[],"evidenceCitations":[],"triggeredSignals":[],"recommendedActions":[],"pendingWrites":[],"routeToTeam":null,"transfers":[],"actionOutcomes":[],"closure":null,"knowledgeCandidates":[],"timeline":[],"timings":{"observedAt":null,"firstActionAt":null,"concludedAt":null},"rehearsal":false,"fixtureMode":true,"writeExecutionEnabled":false,"warnings":[]}',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (42, 7, 'diag-persisted', 'case-persisted', 'run-persisted',
+                             'CSDP', '903001', 'csdp-wechat',
+                             'persisteddeduppersisteddeduppersisteddeduppersisteddedup',
+                             FALSE, 'NEEDS_INVESTIGATION', '1.8',
+                             '{"diagnosisId":"diag-persisted","contractVersion":"1.8","caseId":"case-persisted","runId":"run-persisted","incident":{"incidentId":"inc-persisted","system":"CSDP","service":"csdp-wechat","errorCode":"903001","symptom":"persisted symptom","severity":"P1","environment":"prod","traceId":null,"occurredAt":"2026-07-25T01:02:00Z","additionalContext":null,"source":"manual","completeness":"STRUCTURED","customerRef":null},"routeMode":"DETERMINISTIC","investigationMode":"SCENARIO_PLAYBOOK","routeAuthority":"RULE_MATCHED","conclusionType":"INSUFFICIENT_EVIDENCE","status":"NEEDS_INVESTIGATION","summary":"persisted summary","rootCause":"persisted root cause","confidence":"LOW","abstained":true,"sopKey":"csdp:scenario:deployment_topology_probe","sopTitle":"Deployment Topology Probe","sourcePlaybookOwner":null,"sourcePlaybookVersionRef":{"playbookId":"playbook-topology","version":3},"evidence":[],"evidenceCitations":[],"triggeredSignals":[],"recommendedActions":[],"pendingWrites":[],"routeToTeam":null,"transfers":[],"actionOutcomes":[],"closure":null,"knowledgeCandidates":[],"timeline":[],"timings":{"observedAt":"2026-07-25T01:02:00Z","firstActionAt":"2026-07-25T01:02:01Z","concludedAt":"2026-07-25T01:02:01Z"},"rehearsal":false,"fixtureMode":true,"writeExecutionEnabled":false,"warnings":[]}',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V191__troubleshooting_route_semantics.sql");
+
+            Set<String> columns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_diagnosis");
+            assertTrue(columns.contains("investigation_mode"));
+            assertTrue(columns.contains("route_authority"));
+            assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_investigation"));
+            assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_authority"));
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT diagnosis_id, investigation_mode, route_authority
+                    FROM mate_troubleshooting_diagnosis
+                    WHERE workspace_id = 7
+                    ORDER BY id
+                    """);
+                    ResultSet rows = query.executeQuery()) {
+                assertTrue(rows.next());
+                assertEquals("diag-legacy", rows.getString("diagnosis_id"));
+                assertNull(rows.getString("investigation_mode"));
+                assertNull(rows.getString("route_authority"));
+                assertTrue(rows.next());
+                assertEquals("diag-persisted", rows.getString("diagnosis_id"));
+                assertEquals("SCENARIO_PLAYBOOK", rows.getString("investigation_mode"));
+                assertEquals("RULE_MATCHED", rows.getString("route_authority"));
+                assertFalse(rows.next());
             }
         }
     }
