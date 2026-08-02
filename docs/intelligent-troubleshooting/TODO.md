@@ -411,7 +411,7 @@ D19 为 MANUAL 建的"录制正例 + 判据形状生成反例"机制，看起来
 
 ---
 
-## 3.8 P1.8 · 第一个场景的全链路（链头已通，链身有契约缺口）
+## 3.8 P1.8 · 第一个场景的全链路（**已打通**）
 
 **第一性原理下，"第一个场景"是蓝图 §11.1 点名的那个**：无 error_code 的
 「会话消息发送失败」。北极星的原话也是「从一条**不完整**报障，到……」。
@@ -468,14 +468,24 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 **因此 §5.5 的"契约缺口"结论要修正**：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`
 本来就是合法形状，不要 errorCode、不要模型。缺的从来不是契约，是入口。
 
-仍待完成（(c) 的剩余部分）：
+**(c) 已全部完成（2026-08-01）——第一个场景的在线 lane 现在默认可跑：**
 
-- [ ] 一个通用的场景入口（`POST /scenarios/{scenarioKey}/diagnoses` 或给 `/incidents`
-      加可选 `scenarioKey`）。注意语义：人显式指定 → `EXPLICIT`；模型提议注册键 →
-      `MODEL_PROPOSED`，两者必须能在数据上分开。
-- [ ] 为 `csdp:scenario:message_send_failed` 注册一条 SCENARIO Playbook 及其回放套件，
-      证据计划就是那三步脊柱（`log_search → log_trace_bundle → contrast_sample`）。
-- [ ] demo 种子 + 冒烟，让第一个场景的**在线 lane** 也默认可跑。
+- [x] `POST /scenarios/{scenarioKey}/diagnoses` 通用场景入口。语义按 §3.1 分开：
+      人显式指定记 `EXPLICIT`；模型提议注册键必须走别的路并记 `MODEL_PROPOSED`，
+      所以这个入口要求已认证操作员，不接受调用方自带 actor。
+      请求体**故意没有 `errorCode` 字段**——这是无码故障的入口，
+      允许传码等于开了一扇不检查错误码权威的门。
+- [x] `csdp:scenario:message_send_failed` 的 SCENARIO Playbook + 录制种子，
+      证据计划就是那三步脊柱；走 D19 的同一条晋升链（录制正例 + 服务端生成
+      排除例/弃权例 → 回放 PASSED → 知识评审晋升）。
+- [x] demo 种子扩到三条；无码路冒烟加第 10/11 道闸门。
+- [x] `TroubleshootingRequestTimingFilter` 补上场景路径。此前它只认精确路径，
+      带变量段的新入口拿不到 `reportedAt` 直接 500。新增的正则**刻意收紧**到
+      前缀 + 单段 + `/diagnoses`：给一个非接入请求盖上到达时间戳，
+      等于往北极星里塞一个编造的数。
+
+实测：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，`errorCode=null`，
+`INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`，绑定精确 approved 版本，零 LLM。
 
 - [ ] **仍需一个决定**（属 v4 §5.5，不擅自做）。三个方向：
       - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条

@@ -35,6 +35,7 @@ WORKSPACE_ID="${MATECLAW_WORKSPACE_ID:-1}"
 SYSTEM="${SMOKE_SYSTEM:-CSDP}"
 SERVICE="${SMOKE_SERVICE:-csdp-session-service}"
 SEARCH_TERM="${SMOKE_SEARCH_TERM:-message_send_failed}"
+SCENARIO_KEY="${SMOKE_SCENARIO_KEY:-message_send_failed}"
 WINDOW="${SMOKE_WINDOW:--15m}"
 API="${BASE_URL}/api/v1/troubleshooting"
 
@@ -71,6 +72,10 @@ print_gates() {
                         这一道是反向断言：产出知识很容易，产出"不会被误当权威的知识"才难
   8. 与人工解法有结构化差异 referenceComparison 存在且非空，不是一个空壳对象
   9. 幂等                同 generationKey 重跑得到 CANDIDATE_REUSED，不产生第二条候选
+ 10. 在线 lane 也通       同一个无码故障能走场景入口拿到一份诊断。
+                        没有这道，无码路就只有"知识生产"半边通，报障人拿不到任何东西
+ 11. 没有编造            该诊断 errorCode 必须为 null、结论必须是 INSUFFICIENT_EVIDENCE、
+                        权威必须是 EXPLICIT——指定场景是选证据计划，不是断言原因
 
   第 2、4 条是当前默认状态下必然失败的两道：demo profile 完全没有覆盖模型侧。
 GATES
@@ -239,7 +244,43 @@ repeat_id="$(echo "${repeat}" | jq -r '.data.candidate.recordId // empty')"
   "同一 generationKey 必须复用候选；否则一次故障会在评审台上刷出多条重复知识"
 ok "幂等：重跑复用同一条候选 ${first_id}（stage=${repeat_stage}）"
 
+# ── 闸门 10/11：在线 lane 也通，且没有编造 ─────────────────────────
+# 知识生产 lane 通了不等于报障人能拿到东西。/incidents 只按错误码路由，
+# 无码故障会落到 miss-path Agent，而它默认关闭 —— 于是蓝图点名的第一个场景
+# 在线上是关着的。场景入口用 DETERMINISTIC + SCENARIO_PLAYBOOK 把它打开，
+# 零 LLM，不需要 Agent。
+online=$(cat <<JSON
+{"system":"${SYSTEM}","service":"${SERVICE}","title":"冒烟：会话消息发送失败",
+ "severity":"P1","customerRef":"tenant-42"}
+JSON
+)
+created="$(call POST "/scenarios/${SCENARIO_KEY}/diagnoses" "${online}")"
+[[ "$(http_code)" == "200" ]] || gate_failed "在线 lane 也通" \
+  "POST /scenarios/${SCENARIO_KEY}/diagnoses 返回 HTTP $(http_code)：$(echo "${created}" | jq -r '.msg // .' | head -c 200)" \
+  "确认 ${SYSTEM}:scenario:${SCENARIO_KEY} 已有 approved 的 SCENARIO Playbook"
+online_id="$(echo "${created}" | jq -r '.data.diagnosis.diagnosisId // empty')"
+[[ -n "${online_id}" ]] || gate_failed "在线 lane 也通" "响应里没有 diagnosisId" \
+  "检查场景入口的响应结构"
+ok "在线诊断已产出：${online_id}"
+
+online_code="$(echo "${created}" | jq -r '.data.diagnosis.incident.errorCode // "null"')"
+online_conclusion="$(echo "${created}" | jq -r '.data.diagnosis.conclusionType')"
+online_mode="$(echo "${created}" | jq -r '.data.diagnosis.investigationMode')"
+online_authority="$(echo "${created}" | jq -r '.data.diagnosis.routeAuthority')"
+[[ "${online_code}" == "null" ]] || gate_failed "没有编造" \
+  "诊断带上了 errorCode=${online_code}，但报障根本没有错误码" \
+  "无码故障不得被补上一个猜来的码——那会让它混进确定性错误码权威"
+[[ "${online_conclusion}" == "INSUFFICIENT_EVIDENCE" ]] || gate_failed "没有编造" \
+  "结论是 ${online_conclusion}，但取证尚未执行" \
+  "指定场景是在选哪份只读证据计划适用，不是断言原因；
+         点个场景名就能拿到结论的话，route/authority 的拆分就是装饰"
+[[ "${online_mode}" == "SCENARIO_PLAYBOOK" && "${online_authority}" == "EXPLICIT" ]] \
+  || gate_failed "没有编造" \
+     "mode=${online_mode} authority=${online_authority}，期望 SCENARIO_PLAYBOOK + EXPLICIT" \
+     "人显式选定的场景必须记为 EXPLICIT；模型提议注册键才是 MODEL_PROPOSED，两者要能分开统计"
+ok "没有编造：errorCode=null，结论=${online_conclusion}，${online_mode} + ${online_authority}"
+
 echo
-blue "无码路冒烟通过：一条无错误码报障走到了一条可评审的知识。"
+blue "无码路冒烟通过：一条无错误码报障走到了一条可评审的知识，在线 lane 也拿到了诊断。"
 dim  "注意：全程 fixture，归纳来源 provider=${provider}。"
 dim  "这证明学习环可走，不证明它归纳得对——后者要看与人工解法的差异报告和 T7 真实证据。"

@@ -52,6 +52,44 @@ class ManualPlaybookReplaySuiteCatalogTest {
     }
 
     /**
+     * The blueprint's first scenario (§11.1) is a no-error-code fault, so the
+     * online lane can only reach it through a SCENARIO Playbook. A quarantined
+     * seed is warned about and skipped, which looks identical to "nobody
+     * registered it" — hence an explicit assertion that it actually resolved.
+     */
+    @Test
+    void theFirstScenarioResolvesAsASceneratioSuiteWithTheThreeStepSpine() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        ManualPlaybookReplaySuiteCatalog.ResolvedSuite resolved =
+                catalog.find("csdp:scenario:message_send_failed").orElseThrow();
+
+        assertThat(resolved.suite().exampleCandidate().evidenceRequests())
+                .extracting(request -> request.signalKind())
+                .as("无码路的证据计划就是那三步脊柱")
+                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
+        assertThat(resolved.suite().cases())
+                .extracting(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .as("录制正例 + 服务端生成的排除例与弃权例")
+                .containsExactlyInAnyOrder(
+                        ManualPlaybookReplaySuite.Disposition.MATCHED,
+                        ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                        ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+        assertThat(resolved.suite().exampleCandidate().actions())
+                .allSatisfy(action -> assertThat(action.actionType())
+                        .as("场景 Playbook 不得携带手写的生产写动作")
+                        .isNotEqualTo(ActionType.MANUAL_WRITE));
+    }
+
+    /**
      * The 903001 fixture is the only Playbook carrying a production-write
      * action, and that is now its job.
      *

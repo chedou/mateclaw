@@ -101,6 +101,10 @@ assert_miss_path_contains 'SMOKE_SEARCH_TERM:-message_send_failed'
 # cannot be mistaken for authority is the hard part.
 assert_miss_path_contains 'NOT_ELIGIBLE'
 assert_miss_path_contains 'CANDIDATE_REUSED'
+# The online lane for a no-error-code fault. Without it the miss path proves
+# only that knowledge can be produced, while the reporter still gets nothing.
+assert_miss_path_contains '/scenarios/${SCENARIO_KEY}/diagnoses'
+assert_miss_path_contains 'SCENARIO_PLAYBOOK'
 
 # One complete case must stay in CI. Without it the product's central
 # guarantee is only demonstrated in its refusing half (POST /execute -> 409);

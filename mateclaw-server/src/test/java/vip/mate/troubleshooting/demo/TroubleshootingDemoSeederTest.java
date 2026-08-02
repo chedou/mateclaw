@@ -49,13 +49,15 @@ class TroubleshootingDemoSeederTest {
             "/troubleshooting/evidence/recorded-replay-catalog.json";
 
     @Test
-    @DisplayName("演示种子覆盖固定 903001 与录制 IM1010 两条服务端场景")
+    @DisplayName("演示种子覆盖三条服务端场景：夹具 903001、录制 IM1010、无码场景 message_send_failed")
     void demoSelectorsAreOwnedByTheReplayCatalog() {
         assertThat(TroubleshootingDemoSeeder.selectors())
-                .containsExactly("csdp:903001", "csdp:IM1010");
+                .containsExactly("csdp:903001", "csdp:IM1010",
+                        "csdp:scenario:message_send_failed");
         assertThat(candidates())
                 .extracting(SopEntry::routingKey)
-                .containsExactly("csdp:903001", "csdp:IM1010");
+                .containsExactly("csdp:903001", "csdp:IM1010",
+                        "csdp:scenario:message_send_failed");
     }
 
     @Test
