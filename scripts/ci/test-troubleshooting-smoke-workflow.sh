@@ -98,7 +98,10 @@ assert_order "-pl mateclaw-plugin-api" "spring-boot:run"
 # before we spend the T7 intranet window on stale work.
 assert_contains "python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py"
 assert_contains "python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check"
+assert_contains "python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_owner_contract_intake.py"
+assert_contains "python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check"
 assert_order "t7_target_preparation.py --check" "-pl mateclaw-plugin-api"
+assert_order "t7_owner_contract_intake.py --check" "-pl mateclaw-plugin-api"
 
 assert_smoke_contains 'SMOKE_SERVICE:-csp-rpc-msg'
 assert_smoke_contains 'SMOKE_ERROR_CODE:-IM1010'

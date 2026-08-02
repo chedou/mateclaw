@@ -189,6 +189,19 @@ class GuanceRecordingTargetCatalogTest {
     }
 
     @Test
+    void refusesSemanticallyDuplicateQueriesEvenWhenTheirPublicIdentitiesDiffer()
+            throws Exception {
+        Map<String, Object> duplicateQuery = document(targets(2));
+        request(target(duplicateQuery, 1)).put(
+                "target", Map.of("search_term", "E1"));
+
+        assertThatThrownBy(() -> catalog(
+                duplicateQuery, selector -> true, selector -> false))
+                .hasRootCauseMessage(
+                        "recording target query semantics must be unique");
+    }
+
+    @Test
     void refusesCandidatesWithoutACompleteDeterministicRequestToDiagnosisChain()
             throws Exception {
         Map<String, Object> promotedCandidate = document(targets(1));

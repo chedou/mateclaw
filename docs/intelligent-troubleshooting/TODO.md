@@ -24,7 +24,7 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 准备队列已有 30 条：1 已录制、1 源质量阻断、28 待 owner 合同；server-owned 可执行目标仍为 `0` | §5 T7 |
+| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选已生成可填写/可校验包；待 owner 填满至少 20 条，server-owned 可执行目标仍为 `0` | §5 T7 |
 | 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
 | 3 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
 | 4 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
@@ -104,6 +104,19 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 ```bash
 python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --write
 python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check
+```
+
+Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md) 和
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。当前 28 条待合同候选分为
+`15 A_HINTED / 2 B_CONTEXT_ONLY / 11 C_SOURCE_GAPS`。首批低成本顺序是 15 条 A + 2 条 B，
+再优先核实有场景提示的 `csdp:101017 / csdp:101062 / csdp:301045`；这只是分工建议，
+不是可执行目标。完成文件用下列命令校验，成功结果仍必须是
+`PREPARED_NOT_EXECUTABLE / canAcceptT7=false / canWriteRuntimeCatalog=false`：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
+  --validate <受控本地目录>/t7-owner-contract-intake.local.json
 ```
 
 正式工作台和 acceptance API 已共同执行这个前置条件：目录少于 20 个可执行目标时，UI 显示
@@ -112,8 +125,11 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 
 动手顺序：
 
-1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，由 owner 为其余 28 条逐项核实责任团队、
-   真实运行 service、安全检索键、服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间。
+1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，owner 复制空白 intake 模板，
+   为其余 28 条中的 20–28 条逐项核实责任团队、真实运行 service、安全检索键、
+   服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间，再跑
+   `--validate`。校验器只接受安全引用，确定拒绝 DQL、URL、Key/Token 和 `rawLog`
+   等额外字段；人类自由文本也不得嵌入原始日志，工具不把自己写成任意日志分类器。
 2. 只把证据齐全的 20–30 条写入服务端 `guance-recording-targets.json`，冻结为
    **真实可执行且未录制**的目标；
    每项嵌入完整候选并选定正例 requestId；服务端重算精确 candidate/request 指纹，再要求三份
@@ -176,6 +192,13 @@ owner 准备队列也做了两次反向证明：把真实字段 `recordedEvidenc
 旧预检准确红在第 5 格；修复后严格接受 1–10 位十进制字符串，并把旧 number 形状加入反向拒绝。
 对当前 `18088` 服务重跑只读预检，前 4 格通过，随后如实报告
 `0 个可执行新目标（冻结 0 个）/ 20 required`。这才是本轮要带进 owner 协作前的真实 blocker。
+
+owner intake 门也做了反向证明：把最小选择数从 20 故意降为 19 时，19 条输入测试准确失败；
+关闭敏感内容检测时，DQL / URL / `DF-API-KEY` 三类坏输入准确变绿为红；把已生成模板的
+候选数从 28 改成 27 时，`--check` 准确报生成物陈旧。另外，当前只有 28 条可选时，
+新增的有效上限断言先准确暴露模板误写 `maximum=30`，修复后才与校验器一致为 28。
+最后把第 2 条的 service/search/window/bindings 改成与第 1 条完全相同、但保留不同公开引用和指纹，
+Python owner 门与 Java 运行目录新断言都先准确失败；修复后两层均拒绝这种“改名不改查询”的假批次。
 
 ---
 

@@ -212,6 +212,7 @@ public final class GuanceRecordingTargetCatalog {
         Set<String> selectors = new LinkedHashSet<>();
         Set<String> candidateFingerprints = new LinkedHashSet<>();
         Set<String> requestFingerprints = new LinkedHashSet<>();
+        Set<QueryIdentity> queryIdentities = new LinkedHashSet<>();
         List<Target> loaded = new ArrayList<>();
         for (JsonNode node : document.path("targets")) {
             Set<String> allowed = Set.of(
@@ -266,6 +267,14 @@ public final class GuanceRecordingTargetCatalog {
                     || !requestFingerprints.add(requestFingerprint)) {
                 throw invalid(
                         "recording target, selector, candidate and request identities must be unique");
+            }
+            if (!queryIdentities.add(new QueryIdentity(
+                    system,
+                    service,
+                    searchTerm,
+                    window,
+                    bindingRefs))) {
+                throw invalid("recording target query semantics must be unique");
             }
             loaded.add(new Target(
                     targetId,
@@ -410,6 +419,18 @@ public final class GuanceRecordingTargetCatalog {
 
     private IllegalArgumentException invalid(String message) {
         return new IllegalArgumentException(message);
+    }
+
+    private record QueryIdentity(
+            String system,
+            String service,
+            String searchTerm,
+            String window,
+            Map<String, String> bindingRefs) {
+
+        private QueryIdentity {
+            bindingRefs = Map.copyOf(bindingRefs);
+        }
     }
 
     public record Target(

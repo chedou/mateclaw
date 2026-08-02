@@ -309,6 +309,23 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 服务端查询合同、确定性异常判据/诊断规则、当前三份 bindingRef 和精确历史故障时间。只有这些证据齐全，
 才可将其中 20–30 条写进下面的服务端目录；不得根据日志签名提示猜 DQL 或复制 SendMsg 合同凑数。
 
+实际交接使用 [Owner 填写说明](./t7-owner-contract-intake.md) 和
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。模板由上述准备投影确定性生成，
+当前含 28 条待合同候选，分层为 `15 A_HINTED / 2 B_CONTEXT_ONLY / 11 C_SOURCE_GAPS`。
+Owner 在受控本地副本中选择 20–28 条并只填安全引用与经核实事实，完成文件不提交到仓库：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
+  --validate <受控本地目录>/t7-owner-contract-intake.local.json
+```
+
+校验会拒绝不足 20 条、陈旧准备指纹、篡改候选或提示、备用/未知 selector、未来时间、额外字段、
+DQL、HTTP(S) URL、API Key/Token、`rawLog` 等额外字段，以及只换引用名却重复
+`service + searchTerm + window + bindings` 的伪合同。通过时也只返回已选 selector 与分层计数，不回显 owner
+正文；状态恒为 `PREPARED_NOT_EXECUTABLE`，`canAcceptT7` 和 `canWriteRuntimeCatalog` 恒为 `false`。
+人类自由文本不得粘贴原始日志；本工具不声称能分类任意日志文本。这一步是 owner 输入完整性/安全门，
+不是查询正文审查、目标目录生成器或 T7 授权。
+
 服务端目录文件为
 `mateclaw-server/src/main/resources/troubleshooting/evidence/guance-recording-targets.json`。
 新增项必须先有真实合同证据，再按下面形状提交代码评审；此处的占位符不是可导入样例：
@@ -364,7 +381,8 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 
 上述是字段关系说明，不是可直接导入的有效 JSON 合同。目录启动时严格校验 128 KiB / 146 项上限、
 单一 JSON 根、键唯一、字段白名单、D1 成员关系、尚未录制、未验证候选、request → criterion → rule 链、
-target/selector/服务端派生 candidate/request 身份唯一以及 1 秒到 24 小时窗口；完整候选同时复用
+target/selector/服务端派生 candidate/request 身份唯一、
+`system + service + searchTerm + window + bindings` 查询语义唯一，以及 1 秒到 24 小时窗口；完整候选同时复用
 `ManualPlaybookContractValidator`，因此 title/cause/purpose、所有 request target、criterion/rule/action
 中的凭据、DQL/原始日志和危险自动生产动作都会 fail closed。坏目录会让服务启动失败，
 不会静默跳过。运行时 bindingRef 漂移则保留冻结数、把可执行数降为 0 并返回 blocker。

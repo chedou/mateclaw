@@ -918,6 +918,15 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   0 FROZEN_AWAITING_RUNTIME_VALIDATION`。它明确是 `PREPARATION_ONLY`，不生成可执行 target、DQL 或凭据；
   smoke workflow 已接入 7 条单测和生成物漂移检查。故意读取错误的单数字段时 3 条测试失败，故意把
   Markdown 分母从 146 改成 145 时 `--check` 失败；恢复后均通过。
+- Owner 可执行的接力面已生成为 `t7-owner-contract-intake.template.json` 和
+  `t7-owner-contract-intake.md`：28 条待合同候选分为 `15 A_HINTED / 2 B_CONTEXT_ONLY /
+  11 C_SOURCE_GAPS`，当前有效选择范围为 20–28。`l0/t7_owner_contract_intake.py --validate`
+  严格校验候选成员、准备指纹、完整合同字段、引用唯一性、时间边界和敏感内容，
+  不生成 candidate/目标目录、不调 Guance，不产生执行或 acceptance 权威；成功结果恒为
+  `PREPARED_NOT_EXECUTABLE`。完成文件默认名已加入 `.gitignore`。数量下限、DQL/URL/Key 拦截、
+  生成物漂移、当前 28 条有效上限和改名不改查询的语义重复均先经过故意改坏证明断言是活的；
+  Python 门与 Java 运行目录都拒绝相同 `system/service/searchTerm/window/bindings`。CI 接入 9 条单测和
+  模板 `--check`。下一个真实输入不是代码：owner 填满并校验至少 20 条。
 - 对当前 `18088` 运行服务执行只读预检，服务/认证、Adapter、三信号路由和 binding 指纹前 4 格通过，
   第 5 格准确停在 `0 个可执行新目标（冻结 0 个）/ 20 required`。首次真实运行同时发现 CI stub 把
   `asOfEpochSeconds` 错写为 number，而 Java 全局 Long 序列化实际返回十进制 string；改用真实形状后旧
@@ -929,7 +938,7 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
 - T0.9 已排在 T0.8 批量导入之前。下一步先在窗口外冻结 20–30 个真实可执行目标，再准备历史时间计划；
   预检通过后才由 owner 对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入真实种子。
   Challenger、单 Agent 基线比较和 §5.7 阈值标定继续等待这批数据，不提前实现。
-- 最终验证：排障域 + Skill Manifest 后端 `686` 项、前端 `24` 文件 / `181` 项、
+- 最终验证：排障域 + Skill Manifest 后端 `687` 项、前端 `24` 文件 / `181` 项、
   `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 owner 准备队列 `7` 项 Python
   回归、确定性生成物 `--check`、smoke workflow 静态合同与 T7 预检阻塞/就绪双向套件均通过。
   Standards 与 Spec 双轴复审最终均无 P0/P1/P2。
