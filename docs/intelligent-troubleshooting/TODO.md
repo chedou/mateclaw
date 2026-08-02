@@ -193,6 +193,44 @@ A6「不完整比编造更好」。被 `everyEvidenceRequestIsAnswerableByTheFix
 
 ---
 
+## 第三个证据适配器：Prometheus（2026-08-02）
+
+**为什么是它。** Guance 的真源验收卡在内网窗口上，而 Prometheus 是企业 IT 里最
+普遍的指标源。它给的是一条**不依赖那扇窗口**的真实证据通路：手里有 Prometheus
+的环境可以先拿到真数据，不必等 T7。兼容 VictoriaMetrics / Thanos / Mimir。
+
+- [x] 传输层加只读 `get`（`EvidenceHttpTransport`）。native-curl 的硬化选择
+      （config-file、`escapeConfig`、`-q` 优先、有界读取）一律没动，只把 method
+      参数化、`data-binary` 变成条件项。GET 传 `null` body 而不是空串——
+      只读调用不该被告知"要发一个负载"。
+- [x] `PrometheusEvidenceAdapter`：只服务 `metric`，只发
+      `GET /api/v1/query`，PromQL 来自 binding 配置。
+- [x] 7 条测试，**大多数走失败分支**：非 200 / 非 success / 非 JSON / NaN /
+      +Inf / 空 series / 多条 series / 网络异常 —— 全部 `MISSING`。
+      测试替身在 `postJson` 上直接抛异常，"只读"是被验证的，不是被声称的。
+
+### 契约和测试各改了我一次
+
+1. **`usable()` 原本接受部分字段映射** → health 会报 READY，而每次取证都
+   MISSING。canonical 的 `metric` 是一个整包不是一份菜单；现在要求映射覆盖
+   全部字段，否则 DEGRADED。**「看起来就绪、实则永远取不到」比诚实的
+   DEGRADED 糟得多。**
+2. **`reachable` 在契约里是 BOOLEAN，而 Prometheus 对一切都返回数字**（包括
+   `up`）。契约挡住了我。现在按声明类型转换，且 **0/1 之外的值判 MISSING**——
+   把 0.5 当成 true 就是替观测数据下了一个它没给的判断。类型知识加在
+   `CanonicalEvidenceSchema.isBooleanField`，**不在适配器里另抄一份**（A9）。
+
+### 还没做的
+
+- [ ] 把 Prometheus binding 接进 `EvidenceProperties` 与路由配置，
+      并在 `/evidence/sources` 与工作台里可见。**现在适配器可用但还没有配置入口**，
+      要用得先在代码里构造 Binding。
+- [ ] 日志类适配器（Elasticsearch / OpenSearch，服务 `log_search` / `log_count`）。
+      形状和这条一样，但 `log_search` 的 canonical 要求 `ps_id`——
+      ES 里有没有等价物是**环境相关的**，得先确认再动手，不能先写后凑。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。

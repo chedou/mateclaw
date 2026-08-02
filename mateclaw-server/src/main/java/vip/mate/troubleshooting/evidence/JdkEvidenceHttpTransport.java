@@ -29,4 +29,18 @@ final class JdkEvidenceHttpTransport implements EvidenceHttpTransport {
                 request.build(), HttpResponse.BodyHandlers.ofString());
         return new Response(response.statusCode(), response.body());
     }
+
+    @Override
+    public Response get(
+            java.net.URI uri,
+            Map<String, String> headers,
+            Duration timeout) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri)
+                .timeout(timeout)
+                .GET();
+        headers.forEach(request::header);
+        HttpResponse<String> response = httpClient.send(
+                request.build(), HttpResponse.BodyHandlers.ofString());
+        return new Response(response.statusCode(), response.body());
+    }
 }

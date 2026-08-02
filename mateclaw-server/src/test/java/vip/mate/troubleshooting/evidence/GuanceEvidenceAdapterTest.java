@@ -1089,6 +1089,15 @@ class GuanceEvidenceAdapterTest {
     }
 
     private static final class CapturingTransport implements EvidenceHttpTransport {
+        @Override
+        public Response get(
+                java.net.URI uri,
+                java.util.Map<String, String> headers,
+                java.time.Duration timeout) {
+            throw new UnsupportedOperationException(
+                    "this double serves the POST-based Guance chain only");
+        }
+
         private final int statusCode;
         private final String responseBody;
         private final AtomicInteger calls = new AtomicInteger();
