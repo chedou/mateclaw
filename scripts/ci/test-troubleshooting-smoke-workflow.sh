@@ -139,6 +139,25 @@ assert_evidence_contains '取证前不得确认'
 # list, and an empty list is what a wrong field name returns.
 assert_evidence_contains 'evidenceCitations'
 
+# The T7 window preflight and its own regression. The window is the single
+# most expensive, least repeatable step left (owner + intranet + controlled
+# key), and a preflight whose "ready" path was never exercised would be worse
+# than none — it would send someone in on a false green.
+assert_contains "./scripts/ci/test-troubleshooting-t7-preflight.sh"
+[[ -x "${ROOT_DIR}/scripts/troubleshooting-t7-preflight.sh" ]] \
+  || fail "T7 preflight must be executable"
+[[ -x "${ROOT_DIR}/scripts/ci/test-troubleshooting-t7-preflight.sh" ]] \
+  || fail "T7 preflight regression must be executable"
+# Read-only by construction: a preflight that could submit a credential is
+# worse than no preflight. (`grep -q | grep -v` would have been vacuous — -q
+# prints nothing, so the second grep receives an empty stream and never fires.)
+mutating="$(grep -nE -- '-X[[:space:]]*"?(POST|PUT|PATCH|DELETE)' \
+  "${ROOT_DIR}/scripts/troubleshooting-t7-preflight.sh" \
+  | grep -v 'auth/login' || true)"
+if [[ -n "${mutating}" ]]; then
+  fail "T7 preflight must stay read-only apart from login: ${mutating}"
+fi
+
 if grep -Eqi 'guance|fixtureMode[[:space:]]*:[[:space:]]*false' "${WORKFLOW}"; then
   fail "workflow must stay fixture-only and must not configure Guance"
 fi

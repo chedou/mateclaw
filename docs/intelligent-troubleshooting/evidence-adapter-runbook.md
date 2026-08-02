@@ -262,6 +262,19 @@ GET /api/v1/troubleshooting/evidence/sources
 
 ## 6. T7 内网验收清单
 
+**进窗口之前先跑预检。** 窗口是这条路上最贵、最难重来的一格；下面这支脚本只读、
+不发凭据，回答「现在进去会不会卡住、卡在哪一格、下一步做什么」：
+
+```bash
+MATECLAW_BASE_URL=<目标环境> MATECLAW_USERNAME=<owner> MATECLAW_PASSWORD=<...> \
+    ./scripts/troubleshooting-t7-preflight.sh
+```
+
+它卡住时会把服务端自己的 blockers 原样打出来。在没接真源的机器上跑，它**应当**
+停在第 2 格并报告真源采样仍然关着——那是正确答案，不是故障。
+通过后它会打印下面这份验收模板，七项一律 `false`：逐项真的核对过才改成 `true`。
+
+
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。
 2. 用「会话消息发送失败」历史时间窗执行 `log_search → log_trace_bundle`，保存脱敏后的原始响应结构，
    核对 `max-rows`、排序和多服务覆盖是否符合预期。

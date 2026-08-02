@@ -11,7 +11,9 @@ on:
       - 'scripts/troubleshooting-miss-path-smoke.sh'
       - 'scripts/troubleshooting-scenario-smoke.sh'
       - 'scripts/troubleshooting-scenario-evidence-smoke.sh'
+      - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
   push:
     branches:
       - dev
@@ -27,7 +29,9 @@ on:
       - 'scripts/troubleshooting-miss-path-smoke.sh'
       - 'scripts/troubleshooting-scenario-smoke.sh'
       - 'scripts/troubleshooting-scenario-evidence-smoke.sh'
+      - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
+      - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
   workflow_dispatch:
 
 permissions:
@@ -188,6 +192,14 @@ jobs:
           set -e
           exit "${evidence_status}"
 
+      # The preflight's whole value is that its "ready" verdict can be trusted
+      # on the one expensive intranet window. On any machine without a real
+      # observability binding it can only ever say "not ready", so its passing
+      # path would otherwise ship unexercised. The stub walks both directions.
+      - name: Verify the T7 window preflight on both paths
+        shell: bash
+        run: ./scripts/ci/test-troubleshooting-t7-preflight.sh
+
       - name: Record clone-to-diagnosis duration
         if: success()
         shell: bash
@@ -216,6 +228,7 @@ jobs:
             echo '- Nine-gate learning loop: PASS'
             echo '- Ten-gate single case to closure: PASS'
             echo '- Seven-gate symptom lane (scenario evidence run): PASS'
+            echo '- T7 window preflight (blocked + ready paths): PASS'
           } >> "${GITHUB_STEP_SUMMARY}"
           if (( elapsed_seconds > 300 )); then
             echo "::warning title=Troubleshooting startup regression::First diagnosis took ${elapsed_seconds}s; target is 300s"
