@@ -223,7 +223,7 @@ Commit the three migrations, entity, summary, persistence service, and their tes
 - Modify: `mateclaw-server/src/test/java/vip/mate/troubleshooting/projection/DiagnosisExperienceProjectionServiceTest.java`
 - Modify: `mateclaw-server/src/test/java/vip/mate/troubleshooting/controller/TroubleshootingControllerProjectionTest.java`
 
-- [ ] **Step 1: Write failing projection/API tests**
+- [x] **Step 1: Write failing projection/API tests**
 
 Add projection assertions:
 
@@ -240,11 +240,11 @@ Add an OPEN_DISCOVERY test that verifies `derivationService.explain` is never ca
 
 and verify persistence receives the typed enum.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run the three named test classes. Expected: failures for the missing projection field, list parameter, and the old route-mode derivation boundary.
 
-- [ ] **Step 3: Implement authoritative v4 reads**
+- [x] **Step 3: Implement authoritative v4 reads**
 
 Add `RouteSemanticsProvenance routeSemanticsProvenance` to `DeveloperEvidenceView` and require it in validation. Build it from `diagnosis.routeSemanticsProvenance()`.
 
@@ -262,7 +262,7 @@ Change current-domain safety judgments in `Diagnosis` to read `investigationMode
 Add typed `@RequestParam(required = false) InvestigationMode investigationMode` to the list controller and pass it to persistence.
 Delete the temporary four-argument persistence delegate added in Task 2 after the controller compiles against the typed five-argument method.
 
-- [ ] **Step 4: Verify GREEN and grep the server read boundary**
+- [x] **Step 4: Verify GREEN and grep the server read boundary**
 
 Run the Step 2 tests, then:
 
@@ -273,7 +273,7 @@ rg -n 'routeMode\\(\\)|routeMode ==|routeMode !=|RouteMode\\.(DETERMINISTIC|LLM_
 
 Expected: remaining matches are only compatibility mapping/factory persistence writes, never projection, filtering, confidence, action, derivation, or lifecycle business reads.
 
-- [ ] **Step 5: Commit the server read slice**
+- [x] **Step 5: Commit the server read slice**
 
 Commit the domain/projection/controller changes and tests with a Lore message and co-author trailer.
 
@@ -290,7 +290,7 @@ Commit the domain/projection/controller changes and tests with a Lore message an
 - Modify: `mateclaw-ui/src/views/Troubleshooting/__tests__/formalProjection.test.ts`
 - Modify: `mateclaw-ui/src/views/Troubleshooting/__tests__/derivationPresentation.test.ts`
 
-- [ ] **Step 1: Write failing pure TypeScript tests**
+- [x] **Step 1: Write failing pure TypeScript tests**
 
 Add tests proving:
 
@@ -304,7 +304,7 @@ expect(diagnosisSummaryRouteLabel('SCENARIO_PLAYBOOK', 'RULE_MATCHED', 'PERSISTE
   .toBe('场景 Playbook · 规则命中')
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Preferred command when dependencies are installed:
 
@@ -316,7 +316,7 @@ npm test -- \
 
 If registry DNS still prevents installation, run the dependency-free boundary module through Node 22 type stripping and record the full Vitest/typecheck gap; do not claim the Vue build passed.
 
-- [ ] **Step 3: Implement API types and UI route helpers**
+- [x] **Step 3: Implement API types and UI route helpers**
 
 Add:
 
@@ -328,13 +328,13 @@ Extend both `DiagnosisSummary` and `DiagnosisExperienceProjection.developerEvide
 
 Implement `supportsDeterministicDerivation(mode)` as true only for the two Playbook modes. Implement `diagnosisSummaryRouteLabel()` so legacy rows are visibly labeled and incomplete persisted rows fail closed as `路由字段缺失` rather than guessed.
 
-- [ ] **Step 4: Move component/store reads to investigationMode**
+- [x] **Step 4: Move component/store reads to investigationMode**
 
 In `DerivationChain.vue`, replace both the computed and watcher dependencies on `routeMode` with `investigationMode` and the new helper.
 
 Add `investigationModeFilter` to the Pinia store, pass it to `troubleshootingApi.list`, expose it, and bind an investigation-mode select in both the full list toolbar and queue toolbar. Add a route column to the full list using `diagnosisSummaryRouteLabel`; legacy rows remain visible when no filter is active.
 
-- [ ] **Step 5: Verify GREEN and remove UI RouteMode business reads**
+- [x] **Step 5: Verify GREEN and remove UI RouteMode business reads**
 
 Run the Step 2 tests plus, when dependencies are available:
 
@@ -350,7 +350,7 @@ rg -n 'routeMode' mateclaw-ui/src/views/Troubleshooting mateclaw-ui/src/stores/u
 
 Expected: zero business reads. The API compatibility field may remain in `Diagnosis` typing only.
 
-- [ ] **Step 6: Commit the UI slice**
+- [x] **Step 6: Commit the UI slice**
 
 Commit the API/store/component/helper/test changes with a Lore message and co-author trailer.
 
@@ -360,7 +360,7 @@ Commit the API/store/component/helper/test changes with a Lore message and co-au
 - Modify: `docs/intelligent-troubleshooting/TODO.md`
 - Modify: `docs/intelligent-troubleshooting/HANDOFF.md`
 
-- [ ] **Step 1: Run the focused server suite**
+- [x] **Step 1: Run the focused server suite**
 
 ```bash
 mvn --offline --batch-mode --no-transfer-progress \
@@ -371,7 +371,7 @@ mvn --offline --batch-mode --no-transfer-progress \
 
 Expected: 0 failures and 0 errors with BUILD SUCCESS.
 
-- [ ] **Step 2: Run UI and contract gates**
+- [x] **Step 2: Run UI and contract gates**
 
 Run the two focused UI tests and `npm run build` when dependencies are available. Independently run:
 
@@ -385,10 +385,10 @@ bash -n scripts/troubleshooting-scenario-evidence-smoke.sh
 
 Expected: script syntax and CI smoke-contract checks pass.
 
-- [ ] **Step 3: Update the ledger truthfully**
+- [x] **Step 3: Update the ledger truthfully**
 
 Mark the T10.5 downstream-read and history-provenance checkboxes complete. Keep the scenario-source statistics and final deprecation items unchecked until both RULE_MATCHED and MODEL_PROPOSED production paths exist and are counted in the same sample batch. Record the nullable-index migration and any frontend dependency verification gap in HANDOFF.
 
-- [ ] **Step 4: Run final staged checks and commit**
+- [x] **Step 4: Run final staged checks and commit**
 
 Run `git diff --check`, the RouteMode grep gates, and `git status --short`. Commit docs with a Lore message and required co-author trailer. Do not push until GitHub credentials are available; never force-update the remote branch.

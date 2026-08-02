@@ -1110,8 +1110,9 @@ Challenger 影子运行和两者对比仍未实现。
 
 ## 6.5 T10.5 · 收敛 `RouteMode`（不要无限期停在中间态）
 
-**现状（2026-08-02 复核）**：`Diagnosis` 里三个字段仍并存，但“所有新字段都由旧字段推导”已经不是
-当前新建路径的事实：
+**现状（2026-08-03 复核）**：`Diagnosis` 里三个字段仍并存，但 v4 的两个正交字段已经成为当前
+服务端与前端的读取权威。V191 将真实持久化的 `investigationMode / routeAuthority` 写入可索引列，
+1.3/1.4 历史行保持空值并投影为 `LEGACY_DERIVED`，没有从 `routeMode` 猜测回填：
 
 ```java
 initializeDeterministic        -> DETERMINISTIC + ERROR_CODE_PLAYBOOK + EXPLICIT
@@ -1119,15 +1120,17 @@ initializeScenarioAwaitingEvidence -> DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLIC
 initialAgentFallback           -> LLM_FALLBACK + OPEN_DISCOVERY + MODEL_PROPOSED
 ```
 
-`defaultInvestigationMode(routeMode)` / `defaultRouteAuthority(routeMode)` 仍存在于 `Diagnosis` 的旧签名兼容构造，
-用于读取没有新字段的 1.x 历史合同；它们不再是当前三个新建工厂的字段来源。真正尚未收敛的是：下游判断
-（含服务端 `DiagnosisExperienceProjectionService` 与前端 `DerivationChain.vue`）仍读取
-`routeMode == DETERMINISTIC | LLM_FALLBACK`，而历史推导值还没有独立 provenance。
+`defaultInvestigationMode(routeMode)` / `defaultRouteAuthority(routeMode)` 只保留在 `Diagnosis` 的旧签名兼容构造，
+用于读取没有新字段的 1.3/1.4 历史合同。服务端投影、生命周期不变量、索引列表筛选和前端
+`DerivationChain.vue` 均已改读 v4 字段；列表会明确显示“旧合同推导”，不会把兼容值混入持久化统计。
+真正尚未收敛的是生产侧还没有同时产生并统计 `RULE_MATCHED` 与 `MODEL_PROPOSED` 两类场景来源，
+因此 `RouteMode` 暂时仍保留为兼容字段，尚不能完成最终 deprecated-for-read 宣告。
 
 **为什么必须收敛**：D3 的原意是把"怎么查"和"为什么选中"拆成两个**独立**维度。
-当前已能区分人工显式场景 `EXPLICIT` 与 Agent miss-path 的 `MODEL_PROPOSED`，但还没有生产
-`RULE_MATCHED` 场景的入口，下游也没有真正消费这两个新维度。等 P4 的场景 Playbook 落地并开始同时出现
-规则命中与模型提议时，如果统计仍读 `routeMode`，两类权威就会被重新压扁；历史推导值也会与真实显式写入混显。
+当前下游已消费两个 v4 维度，也能区分人工显式场景 `EXPLICIT` 与 Agent miss-path 的
+`MODEL_PROPOSED`；但还没有生产 `RULE_MATCHED` 场景的入口，因此尚不能在同一批真实样本中分别统计
+规则命中与模型提议。等 P4 的场景 Playbook 落地并同时出现两类来源时，统计必须继续读取
+`routeAuthority`，不能退回 `routeMode` 把两类权威重新压扁，也不能让历史推导值与真实持久化值混显。
 
 v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 
@@ -1136,14 +1139,16 @@ v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 - [x] 当前诊断工厂已**显式**写入 `investigationMode` + `routeAuthority`：错误码、显式场景与 Agent fallback
       分别写入上表三种组合；`defaultXxx(routeMode)` 只保留在旧签名兼容读取路径，不再服务当前新建聚合。
 - [ ] 新增的场景路径按真实来源写 `RULE_MATCHED` / `MODEL_PROPOSED`；两者必须能在数据上分开统计。
-- [ ] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
+- [x] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
       `routeMode` 退化为纯持久化兼容字段。
-- [ ] 历史记录**不回填猜测值**：1.x 旧行保持由 `routeMode` 推导，并在投影上可辨识，
+- [x] 历史记录**不回填猜测值**：1.3/1.4 旧行保持由 `routeMode` 推导，并在投影上可辨识，
       不能让"推导来的"和"真实写入的"混在一张统计表里。
 - [ ] 收敛完成后，`RouteMode` 在契约文档里标注为 deprecated-for-read。
 
-**完成标准**：`grep routeMode ==` 在服务端与前端的业务判断中为 0 处；
-`RULE_MATCHED` 与 `MODEL_PROPOSED` 能在同一批样本上分别统计出条数。
+**读取迁移完成标准已满足**：服务端与前端业务判断中的 `routeMode` 读取为 0，聚焦后端 79 项、
+前端 24 文件 / 183 项、生产构建和 Scenario Smoke 合同均通过。T10.5 的最终完成标准仍是：
+`RULE_MATCHED` 与 `MODEL_PROPOSED` 能在同一批真实样本上分别统计出条数，再标记
+`RouteMode` deprecated-for-read。
 
 ---
 

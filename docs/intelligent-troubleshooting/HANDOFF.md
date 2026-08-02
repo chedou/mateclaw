@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-02
+> 更新时间：2026-08-03
 >
 > 仓库：`webonne/mateclaw`
 >
@@ -12,7 +12,7 @@
 >
 > 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.5 / 蓝图 v0.19**
 
-## 0. 当前总体进度（2026-08-02）
+## 0. 当前总体进度（2026-08-03）
 
 | 轴 | 当前事实 | 下一步 |
 |---|---|---|
@@ -22,7 +22,8 @@
 | Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；成功仍只是 `PREPARED_NOT_EXECUTABLE` |
 | 源质量 | `csdp:101014` 同时指向“一键授权登录”和“Pulsar 调度失败”，禁止代码猜测 | 保持隔离并行回源；不计入也不阻塞其余 28 条中的首批 20 条 |
 | T0.9 / 置信度 | 来源等级已先于 T0.8 落地；系统置信度由服务端事实派生并由人工 oracle 判分，拒绝 `0 / 0` | 等真实样本后再标定阈值 |
-| T0.10 结构账 | v4 §5 已逐项标明 `IMPLEMENTED / PARTIAL / NOT_IMPLEMENTED / PENDING-EVIDENCE`，并映射真实代码名 | 不新增空壳合同；selector 与 EvidenceBundle 分别等 T10.5/P4 和统一 plan/持久化边界后收敛 |
+| T0.10 结构账 | v4 §5 已逐项标明 `IMPLEMENTED / PARTIAL / NOT_IMPLEMENTED / PENDING-EVIDENCE`，并映射真实代码名 | 不新增空壳合同；selector 等 P4 真实场景来源，EvidenceBundle 等统一 plan/持久化边界后收敛 |
+| T10.5 路由语义 | V191、服务端投影/筛选和前端读取已统一到 `investigationMode / routeAuthority / provenance`；1.3/1.4 保持 `LEGACY_DERIVED` | 等真实场景同时产生 `RULE_MATCHED / MODEL_PROPOSED` 后做同批统计并最终弃读 `RouteMode` |
 | 暂停项 | T0.8 批量导入、Challenger 影子运行、基线比较、§5.7 阈值标定 | 等 T7 一次灌入 20–30 条 D19 聚合正例后再启动 |
 
 当前唯一关键路径不是继续开发新能力，而是把建议 20 条中的真实运行 service、查询合同、安全检索键、
@@ -982,6 +983,23 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
 - 本地 H2 已真实迁移到 V190；后端 PID `23903` 监听 `18088` 且 health 为 `UP`，前端 PID `25308`
   监听 `5173`。登录态页面确认正式队列可读取，详情开发证据台显示
   `T7 · 录制批次目标未就绪 · 0 / 20`；规则库仍为 `0 / 146`，legacy 903001 为“来源未核实”。
+
+T10.5 Route Semantics 读取迁移（2026-08-03）已完成，生产来源统计仍待真实样本：
+
+- H2/MySQL/Kingbase V191 为 Diagnosis 增加可索引的 `investigation_mode / route_authority`；迁移只复制
+  1.5+ 聚合中已真实存在的精确值。1.3/1.4 行保持两列为空，绝不从兼容 `routeMode` 推断回填。
+- `RouteSemanticsProvenance` 将当前合同标为 `PERSISTED`、旧合同标为 `LEGACY_DERIVED`。服务端
+  Diagnosis 不变量、开发证据投影、确定性判定链资格和队列筛选均读取 v4 字段；列表查询只访问索引列，
+  不解析完整聚合。
+- 前端 API 合同、Pinia Store、传统列表、队列筛选与 `DerivationChain.vue` 已同步迁移。
+  传统列表显示调查路径与权威，旧合同明确显示“旧合同推导 · 详情可见兼容值”；持久化字段不完整时
+  显示“路由字段缺失”，不回退猜测。排障前端和 Store 的 `routeMode` 业务读取现为 0。
+- TDD 先证明旧实现会让新增的 3 条断言失败；完成后前端聚焦 14 项和全量 24 文件 / 183 项通过，
+  `vue-tsc --noEmit`、Snowflake 精度守卫、Vite 生产构建、变更文件 ESLint（0 error）、Scenario
+  Smoke gates 与 workflow 合同均通过。后端迁移/持久化/合同/投影/controller 聚焦 79 项通过。
+- 本轮没有新增 `RULE_MATCHED` 或 `MODEL_PROPOSED` 生产来源，也没有改变 T7/T8、`fixtureMode`、
+  LLM 调用或生产写边界。只有同一批真实场景样本能分别统计两类来源后，才可在 RFC 中把
+  `RouteMode` 标为 deprecated-for-read。
 
 后端定向测试命令：
 
