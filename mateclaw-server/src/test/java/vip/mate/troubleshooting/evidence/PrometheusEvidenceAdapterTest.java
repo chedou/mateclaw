@@ -185,6 +185,57 @@ class PrometheusEvidenceAdapterTest {
                 .contains("connections_current", "slow_query_count");
     }
 
+
+    /**
+     * 指纹的价值全在「什么会让它变、什么不会」上。定错了，验收要么形同虚设
+     * （改了配置还认旧验收），要么天天作废（轮换个凭据就要重来，逼人把重新验收
+     * 当成走过场——那比不验收更糟）。
+     */
+    @Test
+    @DisplayName("端点或查询变了，指纹必须变——旧验收自动失效")
+    void changingWhatIsQueriedChangesTheFingerprint() {
+        String base = adapter(binding()).bindingFingerprint();
+        assertThat(base).as("可用绑定必须能算出指纹").isNotNull().hasSize(64);
+        Map<String, String> moved = new java.util.LinkedHashMap<>(binding().fieldQueries());
+        moved.put("slow_query_count", "sum(other_slow_total)");
+        assertThat(adapter(new PrometheusEvidenceAdapter.Binding(
+                URI.create("http://prom.internal:9090/"), moved, null)).bindingFingerprint())
+                .as("换了一条 PromQL，验收的就不是同一件事了")
+                .isNotEqualTo(base);
+
+        assertThat(adapter(new PrometheusEvidenceAdapter.Binding(
+                URI.create("http://other.internal:9090/"), binding().fieldQueries(), null))
+                .bindingFingerprint())
+                .as("换了端点同理")
+                .isNotEqualTo(base);
+    }
+
+    @Test
+    @DisplayName("轮换凭据不改变指纹，但从匿名改成带鉴权会改变")
+    void rotatingACredentialDoesNotInvalidateAcceptanceButChangingTheAuthPathDoes() {
+        var anon = binding();
+        var withToken = new PrometheusEvidenceAdapter.Binding(
+                anon.endpoint(), anon.fieldQueries(), "token-A");
+        var rotated = new PrometheusEvidenceAdapter.Binding(
+                anon.endpoint(), anon.fieldQueries(), "token-B");
+
+        assertThat(adapter(rotated).bindingFingerprint())
+                .as("轮换凭据查的还是同一个地方、同一批查询")
+                .isEqualTo(adapter(withToken).bindingFingerprint());
+        assertThat(adapter(withToken).bindingFingerprint())
+                .as("从匿名改成带鉴权，换掉的是授权路径")
+                .isNotEqualTo(adapter(anon).bindingFingerprint());
+        assertThat(adapter(withToken).bindingFingerprint())
+                .as("指纹里不得出现凭据本身")
+                .doesNotContain("token");
+    }
+
+    @Test
+    @DisplayName("绑定不可用时没有指纹——没有东西可供验收")
+    void anUnusableBindingHasNoFingerprint() {
+        assertThat(adapter(null).bindingFingerprint()).isNull();
+    }
+
     private EvidenceResult collectWith(RecordingTransport failing) {
         return new PrometheusEvidenceAdapter(
                 binding(), failing, objectMapper, fixedClock())

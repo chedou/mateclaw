@@ -166,8 +166,58 @@ public final class PrometheusEvidenceAdapter implements EvidenceSourceAdapter {
         }
         // verified stays false: a reachable endpoint is not a verified one, and
         // only an owner acceptance may claim otherwise.
+        // verified 恒 false，且**目前无法变成 true**——本适配器还没有 owner 验收
+        // 接缝（Guance 有 V184）。把指纹一并露出来，是为了让运维看得见「将来那次
+        // 验收要钉在哪一串上」，以及配置一改它就变。指纹不含凭据，可安全外露。
         return new EvidenceSourceHealth(PLATFORM, EvidenceSourceHealth.Status.READY,
-                false, "endpoint configured; field mapping bound");
+                false, "endpoint configured; field mapping bound"
+                        + "; binding=" + bindingFingerprint()
+                        + "; 未验收（本适配器尚无 owner 验收接缝）");
+    }
+
+
+    /**
+     * 这份绑定的指纹——owner 验收要钉在它上面。
+     *
+     * <p><b>放什么、不放什么，是这里唯一要想清楚的事。</b></p>
+     *
+     * <ul>
+     *   <li><b>放</b>：端点、每个 canonical 字段绑定的 PromQL。owner 验收的是「查这个地方、用这些查询」，
+     *       其中任何一项变了，之前那次验收就不再指向同一件事，必须自动失效。</li>
+     *   <li><b>不放 token 本身</b>：轮换凭据不改变被查的是什么，却会让每次轮换
+     *       都白白作废一次验收，逼人形成「重新验收 = 走个过场」的习惯——
+     *       那比不验收更糟。</li>
+     *   <li><b>但放「是否带鉴权」这个布尔</b>：从匿名改成带 Bearer（或反过来）
+     *       换掉的是授权路径，不是同一件事了。</li>
+     * </ul>
+     *
+     * <p>指纹本身不含凭据，可以安全地存进验收记录与日志。</p>
+     */
+    public String bindingFingerprint() {
+        if (binding == null || !binding.usable()) {
+            return null;
+        }
+        return sha256(PLATFORM + "\u001f" + binding.endpoint().toString()
+                + "\u001f" + (binding.bearerToken() == null ? "anon" : "bearer")
+                + "\u001f" + binding.fieldQueries().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .map(entry -> entry.getKey() + "=" + entry.getValue())
+                        .collect(java.util.stream.Collectors.joining("\u001e")));
+    }
+
+    private static String sha256(String canonical) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(64);
+            for (byte value : digest) {
+                hex.append(Character.forDigit((value >> 4) & 0xF, 16))
+                        .append(Character.forDigit(value & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is required", impossible);
+        }
     }
 
     /** @return the single finite scalar the query produced, or null — never a substitute */

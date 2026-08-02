@@ -145,6 +145,59 @@ class ElasticsearchEvidenceAdapterTest {
         assertThat(adapter.supports("log_trace_bundle")).isFalse();
     }
 
+
+    /**
+     * 指纹的价值全在「什么会让它变、什么不会」上。定错了，验收要么形同虚设
+     * （改了配置还认旧验收），要么天天作废（轮换个凭据就要重来，逼人把重新验收
+     * 当成走过场——那比不验收更糟）。
+     */
+    @Test
+    @DisplayName("端点或查询变了，指纹必须变——旧验收自动失效")
+    void changingWhatIsQueriedChangesTheFingerprint() {
+        String base = adapter(binding(), new RecordingTransport(200, "{}")).bindingFingerprint();
+        assertThat(base).as("可用绑定必须能算出指纹").isNotNull().hasSize(64);
+        assertThat(adapter(new ElasticsearchEvidenceAdapter.Binding(
+                URI.create("http://es.internal:9200/"), "app-logs-*",
+                "traceId", "message", null), new RecordingTransport(200, "{}"))
+                .bindingFingerprint())
+                .as("换了串联字段就是换了「哪两条日志算同一次请求」——最该失效的一项")
+                .isNotEqualTo(base);
+
+        assertThat(adapter(new ElasticsearchEvidenceAdapter.Binding(
+                URI.create("http://es.internal:9200/"), "other-logs-*",
+                "trace.id", "message", null), new RecordingTransport(200, "{}"))
+                .bindingFingerprint())
+                .as("换了索引同理")
+                .isNotEqualTo(base);
+    }
+
+    @Test
+    @DisplayName("轮换凭据不改变指纹，但从匿名改成带鉴权会改变")
+    void rotatingACredentialDoesNotInvalidateAcceptanceButChangingTheAuthPathDoes() {
+        var anon = binding();
+        var withToken = new ElasticsearchEvidenceAdapter.Binding(
+                anon.endpoint(), anon.index(), anon.correlationField(),
+                anon.messageField(), "token-A");
+        var rotated = new ElasticsearchEvidenceAdapter.Binding(
+                anon.endpoint(), anon.index(), anon.correlationField(),
+                anon.messageField(), "token-B");
+        RecordingTransport idle = new RecordingTransport(200, "{}");
+
+        assertThat(adapter(rotated, idle).bindingFingerprint())
+                .isEqualTo(adapter(withToken, idle).bindingFingerprint());
+        assertThat(adapter(withToken, idle).bindingFingerprint())
+                .isNotEqualTo(adapter(anon, idle).bindingFingerprint());
+        assertThat(adapter(withToken, idle).bindingFingerprint())
+                .as("指纹里不得出现凭据本身")
+                .doesNotContain("token");
+    }
+
+    @Test
+    @DisplayName("绑定不可用时没有指纹——没有东西可供验收")
+    void anUnusableBindingHasNoFingerprint() {
+        assertThat(adapter(null, new RecordingTransport(200, "{}")).bindingFingerprint()).isNull();
+    }
+
     private EvidenceResult collect(RecordingTransport transport) {
         return adapter(binding(), transport).collect(7L, request(), incident());
     }
