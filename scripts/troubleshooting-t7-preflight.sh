@@ -267,7 +267,11 @@ if ! jq -e \
   and $data.system == $system
   and $data.service == $service
   and ($data.catalogFingerprint | type == "string" and test("^[a-f0-9]{64}$"))
-  and ($data.asOfEpochSeconds | type == "number" and . > 0 and floor == .)
+  # The global Long serializer intentionally emits decimal strings for
+  # browser precision. Epoch seconds stay within ten digits for this contract;
+  # accepting a JSON number here would make the CI stub differ from production.
+  and ($data.asOfEpochSeconds
+       | type == "string" and test("^[1-9][0-9]{0,9}$"))
   and ($data.frozenTargetCount | type == "number" and . >= 0 and floor == .)
   and ($data.executableTargetCount | type == "number" and . >= 0 and floor == .)
   and $data.frozenTargetCount >= $data.executableTargetCount

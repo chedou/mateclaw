@@ -103,6 +103,11 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   计划都在字段读取前拒绝重复 JSON 键和尾随根值。当前随仓目录为 **0 个**：
   唯一已核实的 SendMsg 合同已经形成录制种子，其他错误码尚没有真实查询合同，因此现在报
   “不能约 20–30 条批次窗口”才是正确结果。
+- 窗口外 owner 准备清单已由代码确定性生成：[Markdown 队列](./t7-target-contract-preparation.md) ·
+  [JSON 合同](./t7-target-contract-preparation.json)。冻结 146 条 D1 中，清洗出 30 条只读候选：
+  **1 条已录制、1 条被源材料质量阻断、28 条待 owner 补查询合同、0 条已冻结待运行验证**。
+  该清单明确为 `PREPARATION_ONLY`，不生成 DQL、凭据或可执行 target；CI 会同时校验错误字段、
+  重复键/尾随根值和生成物漂移。
 - 正式工作台与 owner acceptance 写接口现在共用同一份服务端目标目录门禁。目录未达到
   **20 个可执行目标**时，页面明确显示 `0 / 20` 与 T7 `BLOCKED`，隐藏验收清单；即使绕过前端直接调用
   `POST /evidence/guance/acceptance`，服务端也会在发起 Guance 读链前返回冲突。单条查询合同验证仍可在

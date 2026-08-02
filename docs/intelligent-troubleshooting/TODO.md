@@ -24,7 +24,7 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 当前 server-owned 未录制目标为 `0`；先补真实 target 合同，再需要内网窗口 + owner 本人 | §5 T7 |
+| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 准备队列已有 30 条：1 已录制、1 源质量阻断、28 待 owner 合同；server-owned 可执行目标仍为 `0` | §5 T7 |
 | 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
 | 3 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
 | 4 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
@@ -95,22 +95,36 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 所以 T7 之前还有一项窗口外工作：为 20–30 个新 D1 selector 建立并复核精确查询合同。
 目录够数以后，才进入需要 owner、内网 `*.prd.sangfor.com` 与受控运行时 Key 的那一格。
 
+这项工作不再从 146 行源表手工挑选。确定性准备结果见
+[`t7-target-contract-preparation.md`](./t7-target-contract-preparation.md) 和同名 JSON：清洗后恰有
+**30 条只读候选**，其中 `csdp:IM1010` 已录制、`csdp:101014` 因源材料键冲突阻断，剩余
+**28 条待 owner 补合同**；目标目录仍为 **0**。它只投影安全提示和缺失字段，不含原始日志、DQL、
+凭据，也不能授予 T7。输入变化后运行：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --write
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
+```
+
 正式工作台和 acceptance API 已共同执行这个前置条件：目录少于 20 个可执行目标时，UI 显示
 `T7 BLOCKED · X / 20`、不展示 owner 清单；服务端也在 Guance 验证之前拒绝 acceptance。
 “验证单条查询合同”继续用于窗口外准备，不能再当成 T7 已就绪。
 
 动手顺序：
 
-1. 在服务端 `guance-recording-targets.json` 冻结 20–30 个**真实可执行且未录制**的目标；
+1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，由 owner 为其余 28 条逐项核实责任团队、
+   真实运行 service、安全检索键、服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间。
+2. 只把证据齐全的 20–30 条写入服务端 `guance-recording-targets.json`，冻结为
+   **真实可执行且未录制**的目标；
    每项嵌入完整候选并选定正例 requestId；服务端重算精确 candidate/request 指纹，再要求三份
    bindingRef 与目标环境相等。不能把
    任意 D1 selector 指到现有 SendMsg 查询，也不能把已录制 IM1010 重复计数。
-2. 从运行服务返回的 targetId 准备 20–30 条 `t7-recording-window-plan.v1` 本地计划，再运行
+3. 从运行服务返回的 targetId 准备 20–30 条 `t7-recording-window-plan.v1` 本地计划，再运行
    `T7_SEED_PLAN_FILE=<受控本地文件> ./scripts/troubleshooting-t7-preflight.sh`（只读，不发凭据）。
    - 卡住 → 按它打出的 blocker 在**窗口外**解决，比进去现查便宜得多。
    - 通过 → 它会打印验收模板（七项全 `false`）。这时才值得约 owner 的时间。
-3. 窗口里 owner 逐项核对后提交 `POST /evidence/guance/acceptance`（清单见 runbook §6）。
-4. **窗口目标不是"跑通一次验证"，是一次灌 20–30 条录制种子**——
+4. 窗口里 owner 逐项核对后提交 `POST /evidence/guance/acceptance`（清单见 runbook §6）。
+5. **窗口目标不是"跑通一次验证"，是一次灌 20–30 条录制种子**——
    D19 之后一条种子只要一份聚合正例，排除/弃权例由服务端生成。别浪费在单次验证上。
 
 ### 第二、第三优先：先决条件已经收口
@@ -152,6 +166,16 @@ T7 预检的三条断言就是这么验的，预检本身也因此配了双向�
 
 本轮又把服务端批次门禁故意改成永不执行，并把前端 `recordingBatchReady` 故意恒置为真：前者使
 acceptance 门禁测试准确失败，后者使 `0 / 20` 投影测试准确失败；恢复实现后两组测试全部通过。
+
+owner 准备队列也做了两次反向证明：把真实字段 `recordedEvidenceSeeds` 故意改成单数时，测试准确暴露
+已录制数 `1 → 0`、待合同数 `28 → 29`，共 3 条失败；把生成 Markdown 的 D1 分母故意从 146 改成
+145 时，`--check` 明确报 `stale T7 preparation Markdown`。两处恢复后均通过，并已接入 smoke workflow。
+
+真实服务预检还抓到第五次同形状问题：Java 全局 `Long → String` 让目录接口的
+`asOfEpochSeconds` 返回十进制字符串，CI stub 却一直伪造成 JSON number。先把 stub 改成真实形状后，
+旧预检准确红在第 5 格；修复后严格接受 1–10 位十进制字符串，并把旧 number 形状加入反向拒绝。
+对当前 `18088` 服务重跑只读预检，前 4 格通过，随后如实报告
+`0 个可执行新目标（冻结 0 个）/ 20 required`。这才是本轮要带进 owner 协作前的真实 blocker。
 
 ---
 

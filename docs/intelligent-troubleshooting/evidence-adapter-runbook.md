@@ -289,6 +289,26 @@ candidate/request 双 SHA-256、lookup/window，再冻结三份 bindingRef。接
 阻断，操作员不能用自带 selector/searchTerm 补数。当前随仓目录故意为 **0 项**：唯一已核实的
 SendMsg 合同已经录制，其他错误码尚没有经过真实 Guance 核实的查询合同。
 
+先使用确定性生成的窗口外准备清单，避免 owner 从 146 条源数据重新手工筛选：
+
+- [`t7-target-contract-preparation.md`](./t7-target-contract-preparation.md)：给人评审的 30 条队列；
+- [`t7-target-contract-preparation.json`](./t7-target-contract-preparation.json)：同一事实的机器可读投影；
+- 当前分布：`ALREADY_RECORDED=1`、`BLOCKED_SOURCE_QUALITY=1`、
+  `NEEDS_OWNER_CONTRACT=28`、`FROZEN_AWAITING_RUNTIME_VALIDATION=0`。
+
+清单从 L0、冻结 146 selector、录制套件和目标目录确定性生成，明确是 `PREPARATION_ONLY`：它不含
+原始日志、DQL、API Key，不写目标目录，也不能替代运行服务或 owner acceptance。输入有改动时先执行：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --write
+python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
+```
+
+先解决 `csdp:101014` 的源材料冲突，再由 owner 给其余候选补责任团队、真实运行 service、安全检索键、
+服务端查询合同、确定性异常判据/诊断规则、当前三份 bindingRef 和精确历史故障时间。只有这些证据齐全，
+才可将其中 20–30 条写进下面的服务端目录；不得根据日志签名提示猜 DQL 或复制 SendMsg 合同凑数。
+
 服务端目录文件为
 `mateclaw-server/src/main/resources/troubleshooting/evidence/guance-recording-targets.json`。
 新增项必须先有真实合同证据，再按下面形状提交代码评审；此处的占位符不是可导入样例：
@@ -373,7 +393,9 @@ searchTerm、DQL、原始日志或聚合结果。真实聚合事实仍须在 own
 批次时间必须不晚于运行服务返回的 `asOfEpochSeconds`；Guance 保留期下界目前未配置，仍须由 owner
 按目标环境核实。预检先把计划有界读取到 mode-600 临时快照，所有校验和 SHA-256 都只读该快照；
 即使原文件在运行中被替换，结果也不会换字节。窗口记录必须同时引用服务端目标目录 SHA-256 与
-本地计划 SHA-256。
+本地计划 SHA-256。受 MateClaw 全局 `Long → String` 序列化合同约束，HTTP 中的
+`asOfEpochSeconds` 必须是 1–10 位十进制字符串；预检会在比较历史时间前转为安全整数，旧 CI stub
+使用的 JSON number 形状现在明确拒绝，避免测试与真实接口各测一套合同。
 
 正式工作台、接入向导和 acceptance 写接口读取同一份运行时目标目录。少于 20 个可执行目标时，
 页面必须显示 `T7 BLOCKED · X / 20`、不展示 owner 验收清单；服务端必须在调用 Guance 和写入验收记录

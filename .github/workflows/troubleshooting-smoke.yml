@@ -14,6 +14,12 @@ on:
       - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
       - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
+      - 'docs/intelligent-troubleshooting/l0/clean_sop_kb.py'
+      - 'docs/intelligent-troubleshooting/l0/sop_kb.json'
+      - 'docs/intelligent-troubleshooting/l0/t7_target_preparation.py'
+      - 'docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py'
+      - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.json'
+      - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.md'
   push:
     branches:
       - dev
@@ -32,6 +38,12 @@ on:
       - 'scripts/troubleshooting-t7-preflight.sh'
       - 'scripts/ci/test-troubleshooting-smoke-workflow.sh'
       - 'scripts/ci/test-troubleshooting-t7-preflight.sh'
+      - 'docs/intelligent-troubleshooting/l0/clean_sop_kb.py'
+      - 'docs/intelligent-troubleshooting/l0/sop_kb.json'
+      - 'docs/intelligent-troubleshooting/l0/t7_target_preparation.py'
+      - 'docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py'
+      - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.json'
+      - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.md'
   workflow_dispatch:
 
 permissions:
@@ -71,6 +83,16 @@ jobs:
           fi
           command -v curl >/dev/null
           command -v jq >/dev/null
+
+      # This is deliberately preparation-only. It proves the committed owner
+      # queue still matches L0 + the frozen selector inventory + recorded seeds
+      # + the server-owned target catalog; it never contacts an external
+      # observability system or grants T7.
+      - name: Verify T7 owner contract preparation
+        shell: bash
+        run: |
+          python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py
+          python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 
       - name: Install plugin API
         run: >-
@@ -228,6 +250,7 @@ jobs:
             echo '- Nine-gate learning loop: PASS'
             echo '- Ten-gate single case to closure: PASS'
             echo '- Seven-gate symptom lane (scenario evidence run): PASS'
+            echo '- T7 owner contract preparation (deterministic + current): PASS'
             echo '- T7 window preflight (blocked + ready paths): PASS'
           } >> "${GITHUB_STEP_SUMMARY}"
           if (( elapsed_seconds > 300 )); then

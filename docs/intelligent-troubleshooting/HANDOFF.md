@@ -912,6 +912,16 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   未知/重复 target、额外字段、非法/超 128 KiB JSON、重复键与尾随根值均阻断；计划先读入 mode-600 有界快照，
   校验与 SHA 只覆盖同一字节。当前随仓目录为 **0 个新目标**：唯一已核实 SendMsg 合同已经录制，
   其他错误码尚无真实查询合同，因而现在不能诚实地约 20–30 条批次窗口。
+- 窗口外准备清单已由 `l0/t7_target_preparation.py` 确定性生成到
+  `t7-target-contract-preparation.{json,md}`：冻结 146 条 D1 中有 30 条只读候选，当前为
+  `1 ALREADY_RECORDED / 1 BLOCKED_SOURCE_QUALITY / 28 NEEDS_OWNER_CONTRACT /
+  0 FROZEN_AWAITING_RUNTIME_VALIDATION`。它明确是 `PREPARATION_ONLY`，不生成可执行 target、DQL 或凭据；
+  smoke workflow 已接入 7 条单测和生成物漂移检查。故意读取错误的单数字段时 3 条测试失败，故意把
+  Markdown 分母从 146 改成 145 时 `--check` 失败；恢复后均通过。
+- 对当前 `18088` 运行服务执行只读预检，服务/认证、Adapter、三信号路由和 binding 指纹前 4 格通过，
+  第 5 格准确停在 `0 个可执行新目标（冻结 0 个）/ 20 required`。首次真实运行同时发现 CI stub 把
+  `asOfEpochSeconds` 错写为 number，而 Java 全局 Long 序列化实际返回十进制 string；改用真实形状后旧
+  预检先失败，修复现严格接受 1–10 位十进制 string，并把 number 形状加入反向拒绝，双向套件恢复通过。
 - 正式工作台、接入向导和 `POST /evidence/guance/acceptance` 已共用目标目录门禁：少于 20 个
   可执行目标时，前端显示 `T7 BLOCKED · X / 20` 并隐藏 owner 清单，服务端在 Guance 读链和验收
   落库之前返回冲突。单条只读合同仍允许窗口外验证，但不再被命名为“进入 T7”。已有且指纹仍有效的
@@ -920,7 +930,8 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   预检通过后才由 owner 对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入真实种子。
   Challenger、单 Agent 基线比较和 §5.7 阈值标定继续等待这批数据，不提前实现。
 - 最终验证：排障域 + Skill Manifest 后端 `686` 项、前端 `24` 文件 / `181` 项、
-  `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 预检的阻塞/就绪双向套件通过。
+  `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 owner 准备队列 `7` 项 Python
+  回归、确定性生成物 `--check`、smoke workflow 静态合同与 T7 预检阻塞/就绪双向套件均通过。
   Standards 与 Spec 双轴复审最终均无 P0/P1/P2。
 - 本地 H2 已真实迁移到 V190；后端 PID `23903` 监听 `18088` 且 health 为 `UP`，前端 PID `25308`
   监听 `5173`。登录态页面确认正式队列可读取，详情开发证据台显示
@@ -946,7 +957,8 @@ mvn -pl mateclaw-server -am \
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
 5. P2 T6 授权机制、真源验证接缝、部署拓扑拨测场景入口和首条 CSDP SendMsg
-   `FULL_SPINE_OBSERVED` 已完成；下一主攻是在窗口外冻结 20–30 个真实可执行目标并通过预检，
+   `FULL_SPINE_OBSERVED` 已完成；下一主攻是按生成的 30 条准备队列先解决 1 条源质量冲突、由 owner
+   补齐 28 条查询合同，再从中冻结 20–30 个真实可执行目标并通过预检，
    然后才由 owner 对当前指纹提交 T7 acceptance，并在同一窗口灌入真实种子。CloudDial
    `synthetic_probe` 仍需核对空 `series` 的任务时间窗并完成独立验收。
 6. 部署拓扑 `MANUAL` 固定回放 Gate 已完成；示例导入、回放和人审是三个独立动作，不要自动批准候选，

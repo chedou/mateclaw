@@ -166,7 +166,7 @@ recording_catalog() { # count [mutation]
   ')"
   RECORDING_CATALOG="$(jq -n \
     --argjson targets "${targets}" \
-    --argjson asOf "${AS_OF_EPOCH}" \
+    --arg asOf "${AS_OF_EPOCH}" \
     --arg mutation "${mutation}" '
     {
       contractVersion: (if $mutation == "wrong-contract"
@@ -178,7 +178,8 @@ recording_catalog() { # count [mutation]
       frozenTargetCount: ($targets | length),
       executableTargetCount: ($targets | length),
       targets: $targets,
-      asOfEpochSeconds: $asOf,
+      asOfEpochSeconds: (if $mutation == "numeric-as-of"
+                         then ($asOf | tonumber) else $asOf end),
       blockers: (if ($targets | length) < 20
                  then ["fewer than 20 frozen targets"] else [] end)
     }
@@ -331,7 +332,7 @@ grep -Fq "仅有 0 个可执行新目标" "${OUT_FILE}" \
 printf 'ok  服务端没有 20 个新目标 → 不把任意 D1 selector 冒充可执行合同\n'
 
 for catalog_mutation in \
-  binding-mismatch invalid-window duplicate-selector duplicate-candidate extra-field wrong-contract; do
+  binding-mismatch invalid-window duplicate-selector duplicate-candidate extra-field wrong-contract numeric-as-of; do
   recording_catalog 30 "${catalog_mutation}"
   state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
   seed_plan 20
