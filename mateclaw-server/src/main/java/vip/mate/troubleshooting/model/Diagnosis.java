@@ -104,14 +104,15 @@ public record Diagnosis(
                     "an exact Playbook version requires a diagnosis selector");
         }
         if (CURRENT_CONTRACT_VERSION.equals(contractVersion)
-                && routeMode == RouteMode.DETERMINISTIC
+                && investigationMode != InvestigationMode.OPEN_DISCOVERY
                 && sourcePlaybookVersionRef == null) {
             throw new IllegalArgumentException(
-                    "diagnosis 1.8 deterministic routes require an exact Playbook version");
+                    "diagnosis 1.8 playbook routes require an exact Playbook version");
         }
-        if (routeMode == RouteMode.LLM_FALLBACK && sourcePlaybookVersionRef != null) {
+        if (investigationMode == InvestigationMode.OPEN_DISCOVERY
+                && sourcePlaybookVersionRef != null) {
             throw new IllegalArgumentException(
-                    "LLM fallback cannot claim an approved Playbook version");
+                    "OPEN_DISCOVERY cannot claim an approved Playbook version");
         }
         evidence = immutable(evidence);
         evidenceCitations = immutable(evidenceCitations);
@@ -128,7 +129,6 @@ public record Diagnosis(
         }
         validateExperienceClassification(
                 incident,
-                routeMode,
                 investigationMode,
                 routeAuthority,
                 conclusionType,
@@ -136,14 +136,14 @@ public record Diagnosis(
                 abstained,
                 legacyContract);
         validateEvidenceCitations(evidence, evidenceCitations);
-        if (routeMode == RouteMode.LLM_FALLBACK) {
+        if (investigationMode == InvestigationMode.OPEN_DISCOVERY) {
             if (!recommendedActions.isEmpty() || !pendingWrites.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "LLM fallback must not recommend or execute actions");
+                        "OPEN_DISCOVERY must not recommend or execute actions");
             }
             if (!abstained && evidenceCitations.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "non-abstained LLM fallback requires evidence citations");
+                        "non-abstained OPEN_DISCOVERY requires evidence citations");
             }
         }
         validateLifecycle(
@@ -625,7 +625,6 @@ public record Diagnosis(
 
     private static void validateExperienceClassification(
             IncidentContext incident,
-            RouteMode routeMode,
             InvestigationMode investigationMode,
             RouteAuthority routeAuthority,
             ConclusionType conclusionType,
@@ -653,22 +652,17 @@ public record Diagnosis(
         if (routeAuthority == RouteAuthority.MODEL_PROPOSED && confidence == Confidence.HIGH) {
             throw new IllegalArgumentException("MODEL_PROPOSED confidence cannot be HIGH");
         }
-        if (routeMode == RouteMode.LLM_FALLBACK) {
-            if (investigationMode != InvestigationMode.OPEN_DISCOVERY
-                    || routeAuthority != RouteAuthority.MODEL_PROPOSED) {
+        if (investigationMode == InvestigationMode.OPEN_DISCOVERY) {
+            if (routeAuthority != RouteAuthority.MODEL_PROPOSED) {
                 throw new IllegalArgumentException(
-                        "LLM_FALLBACK requires OPEN_DISCOVERY + MODEL_PROPOSED");
+                        "OPEN_DISCOVERY requires MODEL_PROPOSED authority");
             }
             if (conclusionType != ConclusionType.HYPOTHESIS
                     && conclusionType != ConclusionType.INSUFFICIENT_EVIDENCE) {
                 throw new IllegalArgumentException(
-                        "LLM_FALLBACK may only produce HYPOTHESIS or INSUFFICIENT_EVIDENCE");
+                        "OPEN_DISCOVERY may only produce HYPOTHESIS or INSUFFICIENT_EVIDENCE");
             }
             return;
-        }
-        if (investigationMode == InvestigationMode.OPEN_DISCOVERY) {
-            throw new IllegalArgumentException(
-                    "DETERMINISTIC route cannot masquerade as OPEN_DISCOVERY");
         }
         if (investigationMode == InvestigationMode.ERROR_CODE_PLAYBOOK) {
             if (incident.errorCode() == null || incident.errorCode().isBlank()) {

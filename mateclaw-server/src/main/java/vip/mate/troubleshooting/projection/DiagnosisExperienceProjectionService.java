@@ -15,7 +15,6 @@ import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.RecommendedAction;
-import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DeveloperEvidenceView;
@@ -98,6 +97,7 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.diagnosisId(),
                 diagnosis.investigationMode(),
                 authority,
+                diagnosis.routeSemanticsProvenance(),
                 playbookRef(diagnosis),
                 knowledgeEvidenceGrade(workspaceId, diagnosis),
                 scenarioAffordances(workspaceId, diagnosis),
@@ -142,7 +142,8 @@ public class DiagnosisExperienceProjectionService {
             Diagnosis diagnosis,
             long workspaceId,
             List<String> capabilityLimits) {
-        if (diagnosis.routeMode() != RouteMode.DETERMINISTIC || diagnosis.sopKey() == null) {
+        if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
+                || diagnosis.sopKey() == null) {
             capabilityLimits.add("开放调查路径没有可复算的确定性 SOP 判据链。 ");
             return null;
         }

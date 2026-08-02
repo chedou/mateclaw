@@ -214,11 +214,6 @@ public class TroubleshootingPersistenceService {
      * blank", because that is what an empty console filter box means.</p>
      */
     public java.util.List<DiagnosisSummary> list(
-            long workspaceId, String status, String system, int limit) {
-        return list(workspaceId, status, system, null, limit);
-    }
-
-    public java.util.List<DiagnosisSummary> list(
             long workspaceId,
             String status,
             String system,
