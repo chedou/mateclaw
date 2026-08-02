@@ -64,7 +64,7 @@ public record Diagnosis(
         if (incident == null || routeMode == null || status == null || confidence == null) {
             throw new IllegalArgumentException("incident, routeMode, status and confidence are required");
         }
-        boolean legacyContract = "1.3".equals(contractVersion) || "1.4".equals(contractVersion);
+        boolean legacyContract = isLegacyContractVersion(contractVersion);
         if (investigationMode == null) {
             if (!legacyContract) {
                 throw new IllegalArgumentException("investigationMode is required for diagnosis 1.5+");
@@ -157,6 +157,12 @@ public record Diagnosis(
                 actionOutcomes,
                 closure,
                 knowledgeCandidates);
+    }
+
+    public RouteSemanticsProvenance routeSemanticsProvenance() {
+        return isLegacyContractVersion(contractVersion)
+                ? RouteSemanticsProvenance.LEGACY_DERIVED
+                : RouteSemanticsProvenance.PERSISTED;
     }
 
     public static Diagnosis initial(
@@ -683,6 +689,10 @@ public record Diagnosis(
         return routeMode == RouteMode.DETERMINISTIC
                 ? InvestigationMode.ERROR_CODE_PLAYBOOK
                 : InvestigationMode.OPEN_DISCOVERY;
+    }
+
+    private static boolean isLegacyContractVersion(String version) {
+        return "1.3".equals(version) || "1.4".equals(version);
     }
 
     private static RouteAuthority defaultRouteAuthority(RouteMode routeMode) {

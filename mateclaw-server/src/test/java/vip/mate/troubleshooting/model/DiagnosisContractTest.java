@@ -77,6 +77,7 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.EXPLICIT, restored.routeAuthority());
         assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, restored.conclusionType());
         assertEquals(NorthStarTimings.unrecorded(), restored.timings());
+        assertEquals(RouteSemanticsProvenance.LEGACY_DERIVED, restored.routeSemanticsProvenance());
     }
 
     @Test
@@ -129,6 +130,7 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
         assertEquals(ConclusionType.LOCATED, restored.conclusionType());
         assertEquals(timings, restored.timings());
+        assertEquals(RouteSemanticsProvenance.PERSISTED, restored.routeSemanticsProvenance());
         assertEquals(
                 new PlaybookVersionRef("playbook-scenario", 4),
                 restored.sourcePlaybookVersionRef());
