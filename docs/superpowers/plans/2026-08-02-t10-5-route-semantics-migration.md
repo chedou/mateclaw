@@ -195,7 +195,14 @@ public List<DiagnosisSummary> list(
         int limit)
 ```
 
-and add an indexed equality condition when the typed filter is non-null.
+and add an indexed equality condition when the typed filter is non-null. Keep this build-preserving delegate only until Task 3 migrates the controller:
+
+```java
+public List<DiagnosisSummary> list(
+        long workspaceId, String status, String system, int limit) {
+    return list(workspaceId, status, system, null, limit);
+}
+```
 
 - [ ] **Step 8: Verify migration and persistence suites GREEN**
 
@@ -253,6 +260,7 @@ if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
 Change current-domain safety judgments in `Diagnosis` to read `investigationMode` and `routeAuthority`: exact Playbook versions are required for playbook modes; OPEN_DISCOVERY cannot claim a Playbook version or actions; MODEL_PROPOSED remains capped at MEDIUM. Keep `RouteMode` reads only in the 1.3/1.4 compatibility mapping and persisted record component.
 
 Add typed `@RequestParam(required = false) InvestigationMode investigationMode` to the list controller and pass it to persistence.
+Delete the temporary four-argument persistence delegate added in Task 2 after the controller compiles against the typed five-argument method.
 
 - [ ] **Step 4: Verify GREEN and grep the server read boundary**
 
