@@ -137,6 +137,16 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `synthetic_probe + deployment_topology + topology_synthetic_probe`；任一不匹配即 409，不创建弱权威 Diagnosis。
   场景幂等键独立于普通事件和其他场景；创建成功但详情/能力投影加载失败时，前端明确提示
   “Diagnosis 已创建”，不会误导用户重复提交。该增量不调模型、不执行拨测、不扩大生产写权限。
+- **P1.9 注册场景的无码在线闭环（2026-08-02）**：T0.16 的三方向已选择 (c) 的显式变体，
+  没让 `/incidents` 从自由文本猜场景。认证操作员通过
+  `POST /api/v1/troubleshooting/scenarios/{scenarioKey}/diagnoses` 明确选择 active-approved 场景，
+  服务端在同一事务锁定冻结版本并创建
+  `DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT` Diagnosis；它先诚实停在
+  `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`。随后无请求体的
+  `POST /api/v1/troubleshooting/diagnoses/{diagnosisId}/evidence-runs` 只执行该 Diagnosis 已冻结
+  Playbook 的 EvidenceRequest，证据命中或反证后才能进入人工环节；确认后重跑被拒。
+  `message_send_failed` 的七道闸门已进入 CI。未注册场景继续 fail closed；未来模型提议必须记
+  `MODEL_PROPOSED` 并走独立入口，不能冒充本入口的人工 `EXPLICIT` 权威。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only

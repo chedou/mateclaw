@@ -615,9 +615,9 @@ D19 为 MANUAL 建的"录制正例 + 判据形状生成反例"机制，看起来
 - [x] 服务用生产构造器（真实系统时钟，离固定时间戳数月），所以任何一层若用 `now()`
       顶替 session 边界，`eq(REPORTED_AT)` / `eq(READY_AT)` 会立刻失败。
 
-### T0.16 · 链身：在线 lane 对无码报障是关着的（契约缺口，需决策）
+### T0.16 · 链身：在线 lane 曾对无码报障关闭（历史缺口，方向 (c) 已落地）
 
-默认配置下：
+当时的默认配置下：
 
 ```
 无错误码报障 → POST /incidents → 409 "troubleshooting miss-path Agent is disabled"
@@ -707,11 +707,12 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
         查错字段返回空清单，于是「没有 MISSING 被引用」永远成立——**空转了一整轮**。
         现改为双向比对（引用必须恰好等于非 MISSING 的取证，空清单直接失败）。
         这是本轮第三次同型问题：闸门写错了对象，比没有闸门更糟。
-- [ ] 在此之前，其余无码故障的**可用产出仍然只有知识生产 lane**
-      （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
-      所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
+- [x] 这条“此前状态”已结束：知识生产 lane 仍保留，但注册过的无码场景现在还可走
+      `POST /scenarios/{scenarioKey}/diagnoses → POST /diagnoses/{id}/evidence-runs` 在线 lane；
+      只有证据命中/反证后才进入 `READY_FOR_HUMAN`。未注册场景仍 fail closed，不能把一个场景的通过
+      外推成任意无码现象都可在线诊断。
 
-**(c) 部分完成（2026-08-01）——场景入口已开，证据执行未做：**
+**(c) 已完成（2026-08-02）——显式场景入口与证据执行均已落地：**
 
 - [x] `POST /scenarios/{scenarioKey}/diagnoses` 通用场景入口。语义按 §3.1 分开：
       人显式指定记 `EXPLICIT`；模型提议注册键必须走别的路并记 `MODEL_PROPOSED`，
@@ -730,18 +731,18 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 实测：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，`errorCode=null`，
 `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`，绑定精确 approved 版本，零 LLM。
 
-- [ ] **仍需一个决定**（属 v4 §5.5，不擅自做）。三个方向：
-      - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条
-        `INSUFFICIENT_EVIDENCE` 的诊断，并把**确定性证据脊柱**（`log_search → PS ID →
-        log_trace_bundle`，零 LLM，已在 `/sops/synthesis/preview` 证明可跑）挂上去。
-        这是最贴合北极星的一条：人至少拿到证据，而不是一句拒绝。
-      - (b) 承认在线无码 lane 必须依赖 Agent，把"未配置 Agent 时不受理无码报障"
-        写成显式产品约束，并在 quickstart / runbook 里讲清楚。
-      - (c) 让 `/incidents` 支持按 **scenario selector** 确定性路由（现在只按 errorCode），
-        无码但已注册场景的报障走 `DETERMINISTIC + SCENARIO_PLAYBOOK`，不需要模型。
-        契约已支持这个形状，缺的是入口。
-- [ ] 决定之前，**不要**为了让 demo 好看而录制一整个 Agent 回合——
-      录一次结构化归纳与录一个带预算的循环，诚实程度不是一回事。
+- [x] **决定已落地：采用方向 (c) 的显式注册场景变体。** 没让 `/incidents` 根据自由文本猜场景，
+      而是增加需要认证操作员明确选择注册键的 `/scenarios/{scenarioKey}/diagnoses`：
+      服务端锁定 active-approved Playbook，写入
+      `DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，先停在
+      `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`；随后无请求体的 `evidence-runs` 只执行 Diagnosis
+      已冻结版本中的取证计划并重新裁决。这样保留了 (c) 的零 LLM / 强权威，又不把自由文本路由猜测
+      伪装成规则命中。
+      - (a) 未采用：不新增 `routeAuthority=NONE` 弱形状，避免“未路由”成为绕过 Playbook 权威的入口；
+      - (b) 仅保留为**未注册现象**的 fail-closed 边界，不能反过来关闭已经有 approved 场景的零 LLM 路；
+      - 模型未来若提议同一注册键必须走独立入口并记 `MODEL_PROPOSED`，不得复用这个 `EXPLICIT` 入口。
+- [x] 全程没有为了 demo 录制整个 Agent 回合：录制的是 server-owned 结构化证据与草稿响应，
+      路由、冻结版本、判据求值、证据到达转移和确认仍由生产代码执行。
 
 ---
 
