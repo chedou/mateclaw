@@ -276,23 +276,92 @@ MATECLAW_BASE_URL=<目标环境> MATECLAW_USERNAME=<owner> MATECLAW_PASSWORD=<..
 通过后它会打印下面这份验收模板，七项一律 `false`：逐项真的核对过才改成 `true`。
 
 预检不会只检查“单条读链能不能跑”。本次窗口目标是一次取得 20–30 份 D19 聚合正例，因此
-`T7_SEED_PLAN_FILE` 是第 5 格硬门：没有清单、少于 20 条、超过 30 条、重复 selector、清单外
-selector、已有录制种子、作用域不一致、时间/窗口不合法或出现任何额外字段都会阻断。
-计划只允许下面七个 lookup 元数据字段；它不是 `recordedEvidenceSeeds`、不会导入 Playbook、不会调用
-Guance，也不能携带 API Key、DQL、原始日志或聚合结果。真实聚合事实仍须在 owner 验收后的窗口里
-取得，再走 T0.8 的服务端录制种子审核/导入路径。
+第 5 格先读取**当前运行服务**的权威目标目录：
+
+```http
+GET /api/v1/troubleshooting/evidence/guance/recording-targets?system=CSDP&service=csdp-session-service
+X-Workspace-Id: 1
+```
+
+目录项嵌入完整 `SopEntry` 并选定 required `log_search` 请求；服务端据此派生 selector、
+candidate/request 双 SHA-256、lookup/window，再冻结三份 bindingRef。接口只投影派生身份且只返回
+与当前运行 binding 精确匹配、属于冻结 D1 且尚未录制的目标，不返回候选正文、DQL 或凭据。少于 20 项时预检直接
+阻断，操作员不能用自带 selector/searchTerm 补数。当前随仓目录故意为 **0 项**：唯一已核实的
+SendMsg 合同已经录制，其他错误码尚没有经过真实 Guance 核实的查询合同。
+
+服务端目录文件为
+`mateclaw-server/src/main/resources/troubleshooting/evidence/guance-recording-targets.json`。
+新增项必须先有真实合同证据，再按下面形状提交代码评审；此处的占位符不是可导入样例：
+
+```json
+{
+  "targetId": "<稳定安全 ID>",
+  "candidateReference": "<候选材料的稳定引用>",
+  "requiredEvidenceRequestId": "<正例所需 requestId>",
+  "bindingRefs": {
+    "log_search": "<当前 search bindingRef>",
+    "log_trace_bundle": "<当前 trace bindingRef>",
+    "contrast_sample": "<当前 contrast bindingRef>"
+  },
+  "candidate": {
+    "sopId": "<候选 ID>",
+    "contractVersion": "sop.v1",
+    "system": "CSDP",
+    "errorCode": "<冻结 D1 错误码>",
+    "service": "<已授权资产 service>",
+    "title": "<候选标题>",
+    "cause": "<待验证原因>",
+    "category": "<类别>",
+    "ownerTeam": "<负责团队>",
+    "status": "candidate",
+    "verified": false,
+    "evidenceRequests": [{
+      "requestId": "<与 requiredEvidenceRequestId 相同>",
+      "signalKind": "log_search",
+      "purpose": "<只读取证目的>",
+      "target": {"search_term": "<服务端安全查询键>"},
+      "window": "-15m",
+      "required": true
+    }],
+    "anomalyCriteria": [{
+      "signal": "failed_log_present",
+      "sourceRequestId": "<与 requiredEvidenceRequestId 相同>",
+      "description": "<确定性异常判据>",
+      "rule": {"kind": "numeric_gte", "field": "match_count", "threshold": 1}
+    }],
+    "diagnosisRules": [{
+      "ruleId": "<规则 ID>",
+      "requiredSignals": ["failed_log_present"],
+      "rootCause": "<待核实根因>",
+      "summary": "<只读排障摘要>",
+      "confidence": "MEDIUM",
+      "abstained": false
+    }],
+    "actions": []
+  }
+}
+```
+
+上述是字段关系说明，不是可直接导入的有效 JSON 合同。目录启动时严格校验 128 KiB / 146 项上限、
+单一 JSON 根、键唯一、字段白名单、D1 成员关系、尚未录制、未验证候选、request → criterion → rule 链、
+target/selector/服务端派生 candidate/request 身份唯一以及 1 秒到 24 小时窗口；完整候选同时复用
+`ManualPlaybookContractValidator`，因此 title/cause/purpose、所有 request target、criterion/rule/action
+中的凭据、DQL/原始日志和危险自动生产动作都会 fail closed。坏目录会让服务启动失败，
+不会静默跳过。运行时 bindingRef 漂移则保留冻结数、把可执行数降为 0 并返回 blocker。
+
+目录达到 20–30 项后，`T7_SEED_PLAN_FILE` 只负责选择 `targetId` 并补精确历史时间。没有计划、
+少于 20 条、超过 30 条、重复/未知 target、未来时间或任何额外字段都会阻断。计划不是
+`recordedEvidenceSeeds`、不会导入 Playbook、不会调用 Guance，也不能携带 API Key、selector、
+searchTerm、DQL、原始日志或聚合结果。真实聚合事实仍须在 owner 验收后的窗口取得，再走 T0.8
+服务端审核/导入路径。
 
 ```json
 {
   "contractVersion": "t7-recording-window-plan.v1",
   "seeds": [
     {
-      "system": "CSDP",
-      "service": "csdp-session-service",
-      "selectorKey": "csdp:<冻结 D1 selector>",
-      "searchTerm": "<安全查询键>",
+      "targetId": "<从运行服务目录选择>",
       "occurredAt": "<精确 UTC RFC3339 整秒故障时间>",
-      "window": "-15m",
       "sourceReference": "<唯一安全引用>"
     }
   ]
@@ -301,7 +370,10 @@ Guance，也不能携带 API Key、DQL、原始日志或聚合结果。真实聚
 
 上面只展示单条形状，故意不是可通过样例；真正计划必须在窗口外补齐 20–30 条。交互式单次验证允许
 清空 `occurredAt` 并回落执行时当前时间，批次计划不允许：没有精确历史时间的目标不能占用窗口分母。
-预检会输出该本地计划的完整 SHA-256；窗口记录必须引用同一指纹，避免预检之后悄悄换清单。
+批次时间必须不晚于运行服务返回的 `asOfEpochSeconds`；Guance 保留期下界目前未配置，仍须由 owner
+按目标环境核实。预检先把计划有界读取到 mode-600 临时快照，所有校验和 SHA-256 都只读该快照；
+即使原文件在运行中被替换，结果也不会换字节。窗口记录必须同时引用服务端目标目录 SHA-256 与
+本地计划 SHA-256。
 
 
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。

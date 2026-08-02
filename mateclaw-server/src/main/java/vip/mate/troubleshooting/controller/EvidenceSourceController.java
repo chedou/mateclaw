@@ -23,6 +23,7 @@ import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationReport;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationService;
+import vip.mate.troubleshooting.evidence.GuanceRecordingTargetCatalog;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.util.List;
@@ -40,6 +41,7 @@ public class EvidenceSourceController {
     private final GuanceEvidenceValidationService validationService;
     private final GuanceEvidenceSpinePreviewService spinePreviewService;
     private final GuanceEvidenceAcceptanceService acceptanceService;
+    private final GuanceRecordingTargetCatalog recordingTargetCatalog;
 
     /** Does not probe or query a source; returns its current fail-closed readiness snapshot. */
     @GetMapping("/sources")
@@ -60,6 +62,21 @@ public class EvidenceSourceController {
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(readinessService.inspect(
                 resolveWorkspace(workspaceId), system, service));
+    }
+
+    /**
+     * Returns the server-frozen, unrecorded targets that match this running
+     * Guance binding. It does not query Guance or expose DQL.
+     */
+    @GetMapping("/guance/recording-targets")
+    @RequireWorkspaceRole("viewer")
+    public R<GuanceRecordingTargetCatalog.View> guanceRecordingTargets(
+            @RequestParam String system,
+            @RequestParam String service,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        GuanceEvidenceReadiness readiness = readinessService.inspect(
+                resolveWorkspace(workspaceId), system, service);
+        return R.ok(recordingTargetCatalog.inspect(readiness));
     }
 
     /**

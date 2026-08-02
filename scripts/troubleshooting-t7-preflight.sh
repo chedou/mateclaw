@@ -20,8 +20,9 @@
 #      一个什么都没配还能通过的检查，就是一个空转的闸门。
 #   3. **验收清单模板一律输出 false。** 那七项是 owner 的书面确认，
 #      预填 true 等于机器替人签字。
-#   4. **没有 20–30 条目标清单就不报窗口就绪。** 单次读链不能替代本次窗口目标；
-#      清单只含安全 lookup 元数据，不导入聚合事实、不调用 Guance、不改变任何权威状态。
+#   4. **没有 20–30 条服务端冻结目标就不报窗口就绪。** 操作员计划只能引用服务端
+#      已绑定到精确 selector / candidate / request / query contract 的 targetId，再补历史时间；
+#      不能自己填写 searchTerm 来宣称某个 selector 可执行。
 #
 #   ./scripts/troubleshooting-t7-preflight.sh --gates
 #   T7_SEED_PLAN_FILE=/secure/local/t7-window-plan.json \
@@ -38,11 +39,11 @@ PASSWORD="${MATECLAW_PASSWORD:-}"
 WORKSPACE_ID="${MATECLAW_WORKSPACE_ID:-1}"
 SYSTEM="${T7_SYSTEM:-CSDP}"
 SERVICE="${T7_SERVICE:-csdp-session-service}"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SEED_PLAN_FILE="${T7_SEED_PLAN_FILE:-}"
-SELECTOR_INVENTORY="${ROOT_DIR}/mateclaw-server/src/main/resources/troubleshooting/knowledge/csdp-d1-error-code-selectors.json"
-RECORDED_SEED_CATALOG="${ROOT_DIR}/mateclaw-server/src/main/resources/troubleshooting/replay/manual-playbook-replay-suites.json"
 SEED_PLAN_COUNT=0
+PREFLIGHT_TEMP_DIR=""
+SEED_PLAN_SNAPSHOT=""
+HASH_TOOL=""
 API="${BASE_URL}/api/v1/troubleshooting"
 
 # The three the Evidence Spine actually needs. incident_impact is real but not on
@@ -54,6 +55,44 @@ red()  { printf '\033[31m%s\033[0m\n' "$1"; }
 dim()  { printf '\033[90m%s\033[0m\n' "$1"; }
 ok()   { printf '\033[32m  ✓\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m  !\033[0m %s\n' "$1"; }
+
+# jq accepts duplicate object keys by keeping the last value. That makes a
+# schema check look green even when the bytes also carry an overridden secret,
+# query, or contract value. Python's stdlib parser can reject duplicates at
+# every nesting level and json.load also rejects a second root value.
+strict_json() {
+  python3 -c '
+import json
+import sys
+
+def reject_duplicates(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+def reject_constant(value):
+    raise ValueError(f"non-standard JSON number: {value}")
+
+json.load(
+    sys.stdin,
+    object_pairs_hook=reject_duplicates,
+    parse_constant=reject_constant,
+)
+' >/dev/null 2>&1
+}
+
+cleanup() {
+  if [[ -n "${SEED_PLAN_SNAPSHOT}" ]]; then
+    rm -f "${SEED_PLAN_SNAPSHOT}" 2>/dev/null || true
+  fi
+  if [[ -n "${PREFLIGHT_TEMP_DIR}" ]]; then
+    rmdir "${PREFLIGHT_TEMP_DIR}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 blocked() {
   local stage="$1" why="$2" next="$3"
@@ -78,8 +117,9 @@ print_gates() {
                             routedToGuance；incident_impact 不在关键路上，不算阻塞
   4. binding 指纹可唯一计算    currentBindingFingerprint 不为 null。
                             算不出指纹就没有东西可供 owner 验收，窗口里再补最贵
-  5. 20–30 条种子清单        每条先冻结 selector、精确故障时间与安全查询键；缺清单时
-                            不能把单次 Demo 冒充窗口就绪，也不能进窗口后临时找样本
+  5. 20–30 条录制目标        运行服务必须先返回 20–30 个 server-owned target；每个
+                            target 已冻结 selector / candidate / request / binding。
+                            操作员计划只补精确历史时间和来源引用，不能自造查询映射
   6. owner 验收状态          NOT_ACCEPTED = 窗口要做的事；STALE = 配置变过，要重做；
                             ACCEPTED = 已完成，窗口只需做剩下的项
   7. 真源采样闸门            未验收前必须是关着的。这一格**期望它关着**——
@@ -95,9 +135,17 @@ if [[ "${1:-}" == "--gates" ]]; then
   exit 0
 fi
 
-for tool in curl jq; do
+for tool in curl jq head mktemp python3 wc; do
   command -v "${tool}" >/dev/null 2>&1 || { red "缺少 ${tool}"; exit 2; }
 done
+if command -v shasum >/dev/null 2>&1; then
+  HASH_TOOL="shasum"
+elif command -v sha256sum >/dev/null 2>&1; then
+  HASH_TOOL="sha256sum"
+else
+  red "缺少 shasum / sha256sum，无法冻结窗口计划指纹"
+  exit 2
+fi
 
 blue "MateClaw 智能排障 · T7 内网窗口预检（只读）"
 dim  "服务：${BASE_URL}   workspace=${WORKSPACE_ID}   目标=${SYSTEM}/${SERVICE}"
@@ -110,7 +158,9 @@ if [[ -z "${TOKEN}" && -n "${USERNAME}" ]]; then
       -H 'Content-Type: application/json' \
       --data "{\"username\":\"${USERNAME}\",\"password\":\"${PASSWORD}\"}" \
       2>/dev/null)"; then
-    TOKEN="$(jq -r '.data.token // empty' <<<"${login_response}" 2>/dev/null || true)"
+    if printf '%s' "${login_response}" | strict_json; then
+      TOKEN="$(jq -r '.data.token // empty' <<<"${login_response}" 2>/dev/null || true)"
+    fi
   fi
 fi
 [[ -n "${TOKEN}" ]] || blocked "服务可达且能认证" \
@@ -125,6 +175,11 @@ ok "服务可达，身份可用"
 
 # ── 格 2：Guance adapter 已启用 ─────────────────────────────────────
 readiness="$(get "/evidence/readiness?system=${SYSTEM}&service=${SERVICE}")"
+if ! printf '%s' "${readiness}" | strict_json; then
+  blocked "Guance adapter 已启用" \
+    "GET /evidence/readiness 未返回严格的单根 JSON（重复键或尾随根值会被拒绝）" \
+    "修复服务端响应或代理篡改；预检不会让 jq 静默覆盖同名字段"
+fi
 status="$(echo "${readiness}" | jq -r '.data.status // empty')"
 [[ -n "${status}" ]] || blocked "Guance adapter 已启用" \
   "GET /evidence/readiness 没有返回可读的 status" \
@@ -166,6 +221,11 @@ ok "三个核心 signal 均已路由且绑定可用"
 
 # ── 格 4：binding 指纹可唯一计算 ────────────────────────────────────
 acceptance="$(get "/evidence/guance/acceptance?system=${SYSTEM}&service=${SERVICE}")"
+if ! printf '%s' "${acceptance}" | strict_json; then
+  blocked "binding 指纹可唯一计算" \
+    "GET /evidence/guance/acceptance 未返回严格的单根 JSON" \
+    "修复服务端响应；重复键或尾随根值不能参与 owner 验收"
+fi
 fingerprint="$(echo "${acceptance}" | jq -r '.data.currentBindingFingerprint // empty')"
 accept_status="$(echo "${acceptance}" | jq -r '.data.status // empty')"
 [[ -n "${fingerprint}" ]] || blocked "binding 指纹可唯一计算" \
@@ -174,103 +234,80 @@ accept_status="$(echo "${acceptance}" | jq -r '.data.status // empty')"
              先让资产、核心路由和 binding 配置唯一确定下来"
 ok "binding 指纹可计算：${fingerprint:0:16}…"
 
-# ── 格 5：20–30 条种子清单 ─────────────────────────────────────────
-# This is an operator plan, not imported knowledge and not recorded evidence.
-# It deliberately contains only lookup metadata. Aggregate results enter D19
-# later through the server-owned recorded-seed review path.
-[[ -n "${SEED_PLAN_FILE}" ]] || blocked "20–30 条种子清单" \
-  "未设置 T7_SEED_PLAN_FILE；当前只能跑单次验证，不能完成本次窗口目标" \
-  "在窗口外准备 t7-recording-window-plan.v1 清单：20–30 个冻结 D1 selector，
-             每条带精确 occurredAt、安全 searchTerm、bounded window 与唯一 sourceReference"
-[[ -f "${SEED_PLAN_FILE}" && -r "${SEED_PLAN_FILE}" ]] || blocked "20–30 条种子清单" \
-  "计划文件不存在或不可读：${SEED_PLAN_FILE}" \
-  "修正 T7_SEED_PLAN_FILE；清单只保存在受控本地，不要把凭据或原始日志放进去"
-
-plan_bytes="$(wc -c < "${SEED_PLAN_FILE}" | tr -d '[:space:]')"
-if (( plan_bytes > 131072 )); then
-  blocked "20–30 条种子清单" \
-    "计划文件 ${plan_bytes} bytes，超过 128 KiB 上限" \
-    "计划只保存 20–30 条 lookup 元数据；删除正文、响应、日志和其他非合同内容"
+# ── 格 5：20–30 条服务端冻结录制目标 ──────────────────────────────
+# The running service, not the operator file and not this checkout, owns the
+# selector → candidate → request → Guance binding identity. The local plan may
+# only select a targetId and add a historical timestamp/reference.
+target_catalog="$(get "/evidence/guance/recording-targets?system=${SYSTEM}&service=${SERVICE}")"
+if ! printf '%s' "${target_catalog}" | strict_json; then
+  blocked "20–30 条服务端冻结录制目标" \
+    "GET /evidence/guance/recording-targets 未返回严格的单根 JSON" \
+    "修复服务端响应；重复键或尾随根值不能被 jq 覆盖后冒充冻结目录"
 fi
+search_binding="$(echo "${readiness}" | jq -r '
+  [.data.signals[]? | select(.signalKind == "log_search") | .bindingRef] | first // ""')"
+trace_binding="$(echo "${readiness}" | jq -r '
+  [.data.signals[]? | select(.signalKind == "log_trace_bundle") | .bindingRef] | first // ""')"
+contrast_binding="$(echo "${readiness}" | jq -r '
+  [.data.signals[]? | select(.signalKind == "contrast_sample") | .bindingRef] | first // ""')"
 
-if ! jq -e . "${SEED_PLAN_FILE}" >/dev/null 2>&1; then
-  blocked "20–30 条种子清单" \
-    "计划文件不是合法 JSON" \
-    "先在窗口外修复 JSON；不要进窗口后现场编辑"
-fi
-
-plan_contract="$(jq -r '.contractVersion // empty' "${SEED_PLAN_FILE}")"
-[[ "${plan_contract}" == "t7-recording-window-plan.v1" ]] || blocked "20–30 条种子清单" \
-  "contractVersion=${plan_contract:-<missing>}，只接受 t7-recording-window-plan.v1" \
-  "使用当前窗口计划合同，避免旧清单绕过新的安全/数量约束"
-
-if ! jq -e '
-  type == "object"
-  and ((keys - ["contractVersion", "seeds"]) | length == 0)
-  and (.seeds | type == "array")
-' "${SEED_PLAN_FILE}" >/dev/null; then
-  blocked "20–30 条种子清单" \
-    "根对象只允许 contractVersion / seeds，且 seeds 必须是数组" \
-    "删除额外字段；API Key、DQL、原始日志和聚合结果都不属于窗口计划"
-fi
-
-SEED_PLAN_COUNT="$(jq -r '.seeds | length' "${SEED_PLAN_FILE}")"
-if (( SEED_PLAN_COUNT < 20 || SEED_PLAN_COUNT > 30 )); then
-  blocked "20–30 条种子清单" \
-    "当前清单 ${SEED_PLAN_COUNT} 条；窗口目标必须在 20–30 条之间" \
-    "窗口不是单次 Demo；在预约 owner 前补齐可执行目标，超过 30 条则拆成下一批"
-fi
-
-if ! jq -e --arg system "${SYSTEM}" --arg service "${SERVICE}" '
-  all(.seeds[];
+if ! jq -e \
+  --arg system "${SYSTEM}" \
+  --arg service "${SERVICE}" \
+  --arg search "${search_binding}" \
+  --arg trace "${trace_binding}" \
+  --arg contrast "${contrast_binding}" '
+  .data as $data
+  | ($data | type == "object")
+  and (($data | keys) == [
+    "asOfEpochSeconds", "blockers", "catalogFingerprint", "contractVersion",
+    "executableTargetCount", "frozenTargetCount", "service", "system", "targets"
+  ])
+  and $data.contractVersion == "t7-guance-recording-target-catalog.v1"
+  and $data.system == $system
+  and $data.service == $service
+  and ($data.catalogFingerprint | type == "string" and test("^[a-f0-9]{64}$"))
+  and ($data.asOfEpochSeconds | type == "number" and . > 0 and floor == .)
+  and ($data.frozenTargetCount | type == "number" and . >= 0 and floor == .)
+  and ($data.executableTargetCount | type == "number" and . >= 0 and floor == .)
+  and $data.frozenTargetCount >= $data.executableTargetCount
+  and ($data.targets | type == "array")
+  and ($data.blockers | type == "array" and all(.[]; type == "string"))
+  and $data.executableTargetCount == ($data.targets | length)
+  and all($data.targets[];
     type == "object"
-    and ((keys - ["system", "service", "selectorKey", "searchTerm", "occurredAt", "window", "sourceReference"]) | length == 0)
-    and ([.system, .service, .selectorKey, .searchTerm, .occurredAt, .window, .sourceReference]
-         | all(type == "string" and length > 0))
+    and (keys == [
+      "bindingRefs", "candidateFingerprint", "candidateReference",
+      "requestFingerprint", "requiredEvidenceRequestId", "searchTerm", "selectorKey",
+      "service", "system", "targetId", "window"
+    ])
+    and ([.targetId, .system, .service, .selectorKey, .candidateReference,
+          .candidateFingerprint, .requiredEvidenceRequestId, .requestFingerprint,
+          .searchTerm, .window] | all(type == "string" and length > 0))
     and .system == $system
     and .service == $service
+    and (.targetId | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.selectorKey | test("^csdp:[A-Za-z0-9_]+$"))
+    and (.candidateReference | test("^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,255}$"))
+    and (.candidateFingerprint | test("^[a-f0-9]{64}$"))
+    and (.requiredEvidenceRequestId | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.requestFingerprint | test("^[a-f0-9]{64}$"))
     and (.searchTerm | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
-    and (.sourceReference | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
-    and (.occurredAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
-    and ((try (.occurredAt | fromdateiso8601) catch null) != null)
+    and (.window | test("^-[1-9][0-9]{0,5}(s|m|h|d)$"))
+    and (.bindingRefs | keys == ["contrast_sample", "log_search", "log_trace_bundle"])
+    and .bindingRefs.log_search == $search
+    and .bindingRefs.log_trace_bundle == $trace
+    and .bindingRefs.contrast_sample == $contrast
   )
-' "${SEED_PLAN_FILE}" >/dev/null; then
-  blocked "20–30 条种子清单" \
-    "条目字段越界、作用域不一致，或 searchTerm / occurredAt / sourceReference 不安全" \
-    "每条只保留七个白名单字段；system/service 必须等于 ${SYSTEM}/${SERVICE}，时间必须是有效的 UTC RFC3339 整秒"
+  and ([$data.targets[].targetId] | unique | length) == ($data.targets | length)
+  and ([$data.targets[].selectorKey] | unique | length) == ($data.targets | length)
+  and ([$data.targets[].candidateFingerprint] | unique | length) == ($data.targets | length)
+  and ([$data.targets[].requestFingerprint] | unique | length) == ($data.targets | length)
+' <<<"${target_catalog}" >/dev/null; then
+  blocked "20–30 条服务端冻结录制目标" \
+    "GET /evidence/guance/recording-targets 未返回与当前运行 binding 严格匹配的 v1 目录" \
+    "先修复服务端冻结目录或部署版本；操作者自带 selector/searchTerm 不能替代服务端查询合同"
 fi
-
-selector_count="$(jq -r '[.seeds[].selectorKey] | unique | length' "${SEED_PLAN_FILE}")"
-reference_count="$(jq -r '[.seeds[].sourceReference] | unique | length' "${SEED_PLAN_FILE}")"
-if (( selector_count != SEED_PLAN_COUNT || reference_count != SEED_PLAN_COUNT )); then
-  blocked "20–30 条种子清单" \
-    "selectorKey 或 sourceReference 存在重复" \
-    "一条 selector 只取一份聚合正例；重复目标不能凑 20–30 条分母"
-fi
-
-[[ -r "${SELECTOR_INVENTORY}" && -r "${RECORDED_SEED_CATALOG}" ]] || blocked "20–30 条种子清单" \
-  "服务端冻结 selector 清单或录制目录不可读" \
-  "保持仓库资源完整；预检不能信任操作者自带的成员清单"
-
-unknown_selectors="$(jq -nr \
-  --slurpfile plan "${SEED_PLAN_FILE}" \
-  --slurpfile inventory "${SELECTOR_INVENTORY}" '
-    [$plan[0].seeds[].selectorKey] - $inventory[0].selectors | join(", ")
-  ')"
-[[ -z "${unknown_selectors}" ]] || blocked "20–30 条种子清单" \
-  "不属于冻结 D1 清单：${unknown_selectors}" \
-  "只为服务端 146 条冻结错误码准备录制正例；场景或临时 selector 走各自合同"
-
-already_recorded="$(jq -nr \
-  --slurpfile plan "${SEED_PLAN_FILE}" \
-  --slurpfile catalog "${RECORDED_SEED_CATALOG}" '
-    [$plan[0].seeds[].selectorKey] as $wanted
-    | [$catalog[0].recordedEvidenceSeeds[]?.selectorKey] as $recorded
-    | [$wanted[] | select(. as $selector | $recorded | index($selector))] | join(", ")
-  ')"
-[[ -z "${already_recorded}" ]] || blocked "20–30 条种子清单" \
-  "这些 selector 已有录制种子：${already_recorded}" \
-  "窗口目标是新增覆盖，不要用已有 IM1010 或其他录制项凑数"
 
 invalid_window=""
 while IFS= read -r planned_window; do
@@ -289,22 +326,129 @@ while IFS= read -r planned_window; do
     invalid_window="${planned_window}"
     break
   fi
-done < <(jq -r '.seeds[].window' "${SEED_PLAN_FILE}")
-[[ -z "${invalid_window}" ]] || blocked "20–30 条种子清单" \
-  "window=${invalid_window} 不是 1 秒到 24 小时的有界相对时间" \
-  "使用 -5m / -15m / -1h / -24h 等服务端可验证窗口"
+done < <(jq -r '.data.targets[].window' <<<"${target_catalog}")
+[[ -z "${invalid_window}" ]] || blocked "20–30 条服务端冻结录制目标" \
+  "服务端 target window=${invalid_window} 不是 1 秒到 24 小时的有界相对时间" \
+  "修复服务端 target catalog；窗口计划不能覆盖 server-owned 查询预算"
+
+catalog_target_count="$(jq -r '.data.targets | length' <<<"${target_catalog}")"
+catalog_frozen_count="$(jq -r '.data.frozenTargetCount' <<<"${target_catalog}")"
+catalog_fingerprint="$(jq -r '.data.catalogFingerprint' <<<"${target_catalog}")"
+catalog_as_of="$(jq -r '.data.asOfEpochSeconds' <<<"${target_catalog}")"
+if (( catalog_target_count < 20 )); then
+  blocked "20–30 条服务端冻结录制目标" \
+    "当前 scope 仅有 ${catalog_target_count} 个可执行新目标（冻结 ${catalog_frozen_count} 个）。$(blockers_of "${target_catalog}")" \
+    "先在服务端目录为至少 20 个新 D1 selector 冻结精确 candidate/request 指纹、查询键和当前 binding；
+             现有 SendMsg 合同已录制，不能重复凑数，也不能用任意 D1 selector 复用同一查询"
+fi
+ok "服务端返回 ${catalog_target_count} 个与当前 binding 匹配的未录制目标"
+dim "目标目录 SHA-256：${catalog_fingerprint}"
+
+[[ -n "${SEED_PLAN_FILE}" ]] || blocked "20–30 条窗口执行计划" \
+  "未设置 T7_SEED_PLAN_FILE；服务端目标存在，但没有冻结本次历史故障批次" \
+  "准备 t7-recording-window-plan.v1：每条只含 targetId、精确 occurredAt 与唯一 sourceReference"
+[[ -f "${SEED_PLAN_FILE}" && -r "${SEED_PLAN_FILE}" ]] || blocked "20–30 条窗口执行计划" \
+  "计划文件不存在或不可读：${SEED_PLAN_FILE}" \
+  "修正 T7_SEED_PLAN_FILE；清单只保存在受控本地，不要放凭据、查询或原始日志"
+
+umask 077
+PREFLIGHT_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mateclaw-t7-preflight.XXXXXX")" \
+  || { red "无法创建权限受限的计划快照目录"; exit 2; }
+SEED_PLAN_SNAPSHOT="${PREFLIGHT_TEMP_DIR}/plan.json"
+if ! head -c 131073 "${SEED_PLAN_FILE}" > "${SEED_PLAN_SNAPSHOT}"; then
+  blocked "20–30 条窗口执行计划" \
+    "无法有界读取计划文件：${SEED_PLAN_FILE}" \
+    "检查文件权限；预检只会验证一次性 mode-600 快照"
+fi
+plan_bytes="$(wc -c < "${SEED_PLAN_SNAPSHOT}")"
+plan_bytes="${plan_bytes//[[:space:]]/}"
+if (( plan_bytes > 131072 )); then
+  blocked "20–30 条窗口执行计划" \
+    "计划文件至少 ${plan_bytes} bytes，超过 128 KiB 上限" \
+    "计划只保存 20–30 条 targetId / 时间 / 引用；删除正文、响应、日志和其他内容"
+fi
+
+if ! strict_json < "${SEED_PLAN_SNAPSHOT}"; then
+  blocked "20–30 条窗口执行计划" \
+    "计划快照不是严格的单根 JSON（重复键或尾随根值会被拒绝）" \
+    "先在窗口外修复 JSON；不要依赖 jq 的同名键覆盖行为"
+fi
+
+plan_contract="$(jq -r '.contractVersion // empty' "${SEED_PLAN_SNAPSHOT}")"
+[[ "${plan_contract}" == "t7-recording-window-plan.v1" ]] || blocked "20–30 条窗口执行计划" \
+  "contractVersion=${plan_contract:-<missing>}，只接受 t7-recording-window-plan.v1" \
+  "使用当前窗口计划合同，避免旧清单绕过服务端目标与历史时间约束"
+
+if ! jq -e '
+  type == "object"
+  and (keys == ["contractVersion", "seeds"])
+  and (.seeds | type == "array")
+' "${SEED_PLAN_SNAPSHOT}" >/dev/null; then
+  blocked "20–30 条窗口执行计划" \
+    "根对象只允许 contractVersion / seeds，且 seeds 必须是数组" \
+    "删除额外字段；API Key、DQL、selector、原始日志和聚合结果都不属于操作员计划"
+fi
+
+SEED_PLAN_COUNT="$(jq -r '.seeds | length' "${SEED_PLAN_SNAPSHOT}")"
+if (( SEED_PLAN_COUNT < 20 || SEED_PLAN_COUNT > 30 )); then
+  blocked "20–30 条窗口执行计划" \
+    "当前计划 ${SEED_PLAN_COUNT} 条；窗口目标必须在 20–30 条之间" \
+    "窗口不是单次 Demo；在预约 owner 前补齐目标，超过 30 条则拆成下一批"
+fi
+
+if ! jq -e '
+  all(.seeds[];
+    type == "object"
+    and (keys == ["occurredAt", "sourceReference", "targetId"])
+    and ([.targetId, .occurredAt, .sourceReference]
+         | all(type == "string" and length > 0))
+    and (.targetId | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.sourceReference | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.occurredAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    and ((try (.occurredAt | fromdateiso8601) catch null) != null)
+  )
+' "${SEED_PLAN_SNAPSHOT}" >/dev/null; then
+  blocked "20–30 条窗口执行计划" \
+    "条目字段越界，或 targetId / occurredAt / sourceReference 不安全" \
+    "每条只保留三个白名单字段；时间必须是有效的 UTC RFC3339 整秒"
+fi
+
+future_times="$(jq -r --argjson asOf "${catalog_as_of}" '
+  [.seeds[].occurredAt
+   | select((fromdateiso8601) > $asOf)]
+  | join(", ")
+' "${SEED_PLAN_SNAPSHOT}")"
+[[ -z "${future_times}" ]] || blocked "20–30 条窗口执行计划" \
+  "occurredAt 晚于运行服务时间：${future_times}" \
+  "批次只能引用已经发生的历史故障；若环境时钟错误，先校时再重跑"
+
+target_count="$(jq -r '[.seeds[].targetId] | unique | length' "${SEED_PLAN_SNAPSHOT}")"
+reference_count="$(jq -r '[.seeds[].sourceReference] | unique | length' "${SEED_PLAN_SNAPSHOT}")"
+if (( target_count != SEED_PLAN_COUNT || reference_count != SEED_PLAN_COUNT )); then
+  blocked "20–30 条窗口执行计划" \
+    "targetId 或 sourceReference 存在重复" \
+    "一个 server-owned target 只取一份聚合正例；重复目标不能凑批次分母"
+fi
+
+unknown_targets="$(jq -nr \
+  --slurpfile plan "${SEED_PLAN_SNAPSHOT}" \
+  --argjson catalog "${target_catalog}" '
+    [$plan[0].seeds[].targetId]
+    - [$catalog.data.targets[].targetId]
+    | join(", ")
+  ')"
+[[ -z "${unknown_targets}" ]] || blocked "20–30 条窗口执行计划" \
+  "计划引用了当前服务端目录之外的 targetId：${unknown_targets}" \
+  "只从 GET /evidence/guance/recording-targets 返回的 targetId 选取；不要手写 selector/searchTerm"
 
 plan_fingerprint=""
-if command -v shasum >/dev/null 2>&1; then
-  read -r plan_fingerprint _ < <(shasum -a 256 "${SEED_PLAN_FILE}")
-elif command -v sha256sum >/dev/null 2>&1; then
-  read -r plan_fingerprint _ < <(sha256sum "${SEED_PLAN_FILE}")
+if [[ "${HASH_TOOL}" == "shasum" ]]; then
+  read -r plan_fingerprint _ < <(shasum -a 256 "${SEED_PLAN_SNAPSHOT}")
 else
-  red "缺少 shasum / sha256sum，无法冻结窗口计划指纹"
-  exit 2
+  read -r plan_fingerprint _ < <(sha256sum "${SEED_PLAN_SNAPSHOT}")
 fi
-ok "${SEED_PLAN_COUNT} 条种子目标已冻结：selector / 故障时间 / 查询键均唯一且安全"
-dim "计划 SHA-256：${plan_fingerprint}（窗口记录应引用同一指纹）"
+ok "${SEED_PLAN_COUNT} 条窗口执行项已冻结：均引用服务端目标，历史时间与来源引用唯一"
+dim "计划 SHA-256：${plan_fingerprint}（窗口记录应同时引用目标目录与计划指纹）"
 
 # ── 格 6：owner 验收状态 ────────────────────────────────────────────
 case "${accept_status}" in

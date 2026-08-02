@@ -897,16 +897,23 @@ T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，�
   1/1/2/1/1/1/1/1/3 条失败；
   恢复后均通过。
   T7 预检也覆盖不可达服务、adapter 关闭、缺对照、空指纹、未接受、陈旧指纹和已接受双向路径，
-  先在窗口外暴露 blocker。
-- T7 预检现增加第 5 格“20–30 条种子目标清单”：没有 `T7_SEED_PLAN_FILE`、数量不在 20–30、
-  selector/sourceReference 重复、不是冻结 146 成员、已存在录制种子、作用域不符、时间/窗口不合法或
-  出现任何额外字段都会阻断。清单合同 `t7-recording-window-plan.v1` 只含安全 lookup 元数据，
-  不调用 Guance、不导入知识、不持久化聚合事实，也不替 owner 验收；它关闭的是“预检单条全绿，
-  进窗口后才发现没有 20–30 个目标”的假绿。
-- T0.9 已排在 T0.8 批量导入之前。下一步仍只有 owner 能推进：先跑 T7 预检，
-  对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入 20–30 条真实种子。
+  先在窗口外暴露 blocker。本轮又分别把服务端派生指纹改回伪哈希、关闭 Jackson duplicate/trailing
+  检测、把 Shell 严格解析降级为 `jq`、绕过共享候选安全合同：前三项分别触发 1 个 Java 失败、
+  1 个 Java 失败和 CI 捕获一次完整假绿，最后一项触发 1 个 Java 失败；恢复后全部通过。
+- T7 批次门禁复审后改成两层权威：运行服务先通过
+  `GET /evidence/guance/recording-targets` 投影未录制目标，每项必须冻结 D1 selector、
+  candidate/request 双 SHA-256、lookup/window，并与本次运行的三份 bindingRef 精确相等；这些身份由服务端
+  从目录内完整 `SopEntry` 与被选中的 required `log_search` 请求重新计算，不接受自报指纹；操作员
+  完整候选还必须复用与人工导入相同的 `ManualPlaybookContractValidator`，所以嵌套正文、非选中请求和
+  action 中的凭据、DQL/原始日志、危险自动生产动作也会在启动时 fail closed；
+  `t7-recording-window-plan.v1` 只引用 `targetId` 并补 `occurredAt/sourceReference`。未来时间、
+  未知/重复 target、额外字段、非法/超 128 KiB JSON、重复键与尾随根值均阻断；计划先读入 mode-600 有界快照，
+  校验与 SHA 只覆盖同一字节。当前随仓目录为 **0 个新目标**：唯一已核实 SendMsg 合同已经录制，
+  其他错误码尚无真实查询合同，因而现在不能诚实地约 20–30 条批次窗口。
+- T0.9 已排在 T0.8 批量导入之前。下一步先在窗口外冻结 20–30 个真实可执行目标，再准备历史时间计划；
+  预检通过后才由 owner 对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入真实种子。
   Challenger、单 Agent 基线比较和 §5.7 阈值标定继续等待这批数据，不提前实现。
-- 最终验证：排障域 + Skill Manifest 后端 `674` 项、前端 `24` 文件 / `180` 项、
+- 最终验证：排障域 + Skill Manifest 后端 `685` 项、前端 `24` 文件 / `180` 项、
   `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 预检的阻塞/就绪双向套件通过。
   Standards 与 Spec 双轴复审最终均无 P0/P1/P2。
 - 本地 H2 已真实迁移到 V190；后端 PID `21214` 监听 `18088`，前端 PID `25308` 监听 `5173`。

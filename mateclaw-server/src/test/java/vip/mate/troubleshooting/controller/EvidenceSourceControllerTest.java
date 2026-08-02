@@ -19,6 +19,7 @@ import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreviewService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationReport;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceValidationService;
+import vip.mate.troubleshooting.evidence.GuanceRecordingTargetCatalog;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.time.Instant;
@@ -56,7 +57,8 @@ class EvidenceSourceControllerTest {
                 readiness,
                 mock(GuanceEvidenceValidationService.class),
                 mock(GuanceEvidenceSpinePreviewService.class),
-                mock(GuanceEvidenceAcceptanceService.class));
+                mock(GuanceEvidenceAcceptanceService.class),
+                mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         when(readiness.inspect(7L, "CSDP", "session-svc"))
                 .thenReturn(readiness());
@@ -75,6 +77,40 @@ class EvidenceSourceControllerTest {
     }
 
     @Test
+    void exposesOnlyTheRunningServersFrozenRecordingTargets() throws Exception {
+        GuanceEvidenceReadinessService readiness = mock(GuanceEvidenceReadinessService.class);
+        GuanceRecordingTargetCatalog catalog = mock(GuanceRecordingTargetCatalog.class);
+        EvidenceSourceController controller = new EvidenceSourceController(
+                mock(EvidenceSourceRouter.class),
+                readiness,
+                mock(GuanceEvidenceValidationService.class),
+                mock(GuanceEvidenceSpinePreviewService.class),
+                mock(GuanceEvidenceAcceptanceService.class),
+                catalog);
+        MockMvc mvc = mvc(controller);
+        GuanceEvidenceReadiness current = readiness();
+        when(readiness.inspect(7L, "CSDP", "session-svc")).thenReturn(current);
+        when(catalog.inspect(current)).thenReturn(recordingTargets());
+
+        mvc.perform(get("/api/v1/troubleshooting/evidence/guance/recording-targets")
+                        .header("X-Workspace-Id", "7")
+                        .queryParam("system", "CSDP")
+                        .queryParam("service", "session-svc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contractVersion")
+                        .value("t7-guance-recording-target-catalog.v1"))
+                .andExpect(jsonPath("$.data.catalogFingerprint")
+                        .value("a".repeat(64)))
+                .andExpect(jsonPath("$.data.executableTargetCount").value(0))
+                .andExpect(jsonPath("$.data.targets").isEmpty())
+                .andExpect(jsonPath("$.data.dql").doesNotExist())
+                .andExpect(jsonPath("$.data.apiKey").doesNotExist());
+
+        verify(readiness).inspect(7L, "CSDP", "session-svc");
+        verify(catalog).inspect(current);
+    }
+
+    @Test
     void acceptsAnAdminTriggeredReadOnlyValidationRequest() throws Exception {
         GuanceEvidenceValidationService validation =
                 mock(GuanceEvidenceValidationService.class);
@@ -83,7 +119,8 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceReadinessService.class),
                 validation,
                 mock(GuanceEvidenceSpinePreviewService.class),
-                mock(GuanceEvidenceAcceptanceService.class));
+                mock(GuanceEvidenceAcceptanceService.class),
+                mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
         when(validation.validate(
@@ -124,7 +161,8 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceReadinessService.class),
                 mock(GuanceEvidenceValidationService.class),
                 previewService,
-                mock(GuanceEvidenceAcceptanceService.class));
+                mock(GuanceEvidenceAcceptanceService.class),
+                mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
         when(previewService.preview(
@@ -164,7 +202,8 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceReadinessService.class),
                 mock(GuanceEvidenceValidationService.class),
                 mock(GuanceEvidenceSpinePreviewService.class),
-                acceptanceService);
+                acceptanceService,
+                mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
         when(acceptanceService.inspect(7L, "CSDP", "session-svc"))
@@ -346,5 +385,18 @@ class EvidenceSourceControllerTest {
                 "b".repeat(64),
                 acceptance,
                 List.of());
+    }
+
+    private GuanceRecordingTargetCatalog.View recordingTargets() {
+        return new GuanceRecordingTargetCatalog.View(
+                "t7-guance-recording-target-catalog.v1",
+                "CSDP",
+                "session-svc",
+                "a".repeat(64),
+                0,
+                0,
+                List.of(),
+                Instant.parse("2026-08-02T00:00:00Z").getEpochSecond(),
+                List.of("only 0 server-frozen unrecorded targets exist for this scope; 20 required"));
     }
 }

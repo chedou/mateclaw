@@ -96,6 +96,13 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   Guance-only `log_search → log_trace_bundle` 只读验证。该入口不返回原始日志/DQL/密钥、
   不回退 Replay、不持久化验证数据；报告只增加应用侧每步与端到端 round-trip。页面分别显示 T6 授权、
   T7 真字段验收和 T8 20–30 条历史样本门禁，单次通过不代表 T7/T8 验收完成。
+- T7 批次预检不再接受操作员自填 `selector/searchTerm` 来宣称目标可执行。运行服务通过
+  `GET /evidence/guance/recording-targets` 返回精确绑定 selector、candidate、evidence request 与三份
+  Guance binding 的未录制目标；candidate/request 双指纹由服务端从目录内完整 `SopEntry` 与被选中的
+  `EvidenceRequest` 重新计算，不接受目录作者自填哈希。本地计划只引用 `targetId` 并补历史时间；目录响应与
+  计划都在字段读取前拒绝重复 JSON 键和尾随根值。当前随仓目录为 **0 个**：
+  唯一已核实的 SendMsg 合同已经形成录制种子，其他错误码尚没有真实查询合同，因此现在报
+  “不能约 20–30 条批次窗口”才是正确结果。
 - RFC v4.5 / D19 已关闭错误码晋升的机制缺口：安全有界的录制聚合正例按封闭判据形状生成
   排除/弃权例，不降低原晋升门；固定套件 fail-fast，坏生成种子按 selector 隔离。首个
   `CSDP / csp-rpc-msg / IM1010` 已通过真实 HTTP 登录、晋升、报障与投影链，结果为
