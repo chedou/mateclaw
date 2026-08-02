@@ -1110,26 +1110,31 @@ Challenger 影子运行和两者对比仍未实现。
 
 ## 6.5 T10.5 · 收敛 `RouteMode`（不要无限期停在中间态）
 
-**现状（2026-08-01 源码核对）**：`Diagnosis` 里三个字段并存，且新字段是从旧字段**推导**出来的——
+**现状（2026-08-02 复核）**：`Diagnosis` 里三个字段仍并存，但“所有新字段都由旧字段推导”已经不是
+当前新建路径的事实：
 
 ```java
-RouteMode routeMode,                                  // 旧的一维
-InvestigationMode investigationMode,                  // = defaultInvestigationMode(routeMode)
-RouteAuthority routeAuthority,                        // = defaultRouteAuthority(routeMode)
+initializeDeterministic        -> DETERMINISTIC + ERROR_CODE_PLAYBOOK + EXPLICIT
+initializeScenarioAwaitingEvidence -> DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT
+initialAgentFallback           -> LLM_FALLBACK + OPEN_DISCOVERY + MODEL_PROPOSED
 ```
 
-下游判断（含前端 `DerivationChain.vue`）仍在用 `routeMode == DETERMINISTIC | LLM_FALLBACK`。
+`defaultInvestigationMode(routeMode)` / `defaultRouteAuthority(routeMode)` 仍存在于 `Diagnosis` 的旧签名兼容构造，
+用于读取没有新字段的 1.x 历史合同；它们不再是当前三个新建工厂的字段来源。真正尚未收敛的是：下游判断
+（含服务端 `DiagnosisExperienceProjectionService` 与前端 `DerivationChain.vue`）仍读取
+`routeMode == DETERMINISTIC | LLM_FALLBACK`，而历史推导值还没有独立 provenance。
 
 **为什么必须收敛**：D3 的原意是把"怎么查"和"为什么选中"拆成两个**独立**维度。
-现在新维度没有独立信息量——`RULE_MATCHED` 与 `MODEL_PROPOSED` 在数据上无法区分，
-因为两者都由同一个 `DETERMINISTIC` 推导而来。等 P4 的场景 Playbook 落地、模型开始提议
-`scenarioKey` 时，会发现**可信等级根本没有地方存**，那时再改要动已入库的历史记录。
+当前已能区分人工显式场景 `EXPLICIT` 与 Agent miss-path 的 `MODEL_PROPOSED`，但还没有生产
+`RULE_MATCHED` 场景的入口，下游也没有真正消费这两个新维度。等 P4 的场景 Playbook 落地并开始同时出现
+规则命中与模型提议时，如果统计仍读 `routeMode`，两类权威就会被重新压扁；历史推导值也会与真实显式写入混显。
 
 v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 
 **收敛步骤**（建议随 P4 T11 一起做，不单独排期）：
 
-- [ ] 确定性诊断工厂**显式**写入 `investigationMode` + `routeAuthority`，不再走 `defaultXxx(routeMode)` 推导。
+- [x] 当前诊断工厂已**显式**写入 `investigationMode` + `routeAuthority`：错误码、显式场景与 Agent fallback
+      分别写入上表三种组合；`defaultXxx(routeMode)` 只保留在旧签名兼容读取路径，不再服务当前新建聚合。
 - [ ] 新增的场景路径按真实来源写 `RULE_MATCHED` / `MODEL_PROPOSED`；两者必须能在数据上分开统计。
 - [ ] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
       `routeMode` 退化为纯持久化兼容字段。
