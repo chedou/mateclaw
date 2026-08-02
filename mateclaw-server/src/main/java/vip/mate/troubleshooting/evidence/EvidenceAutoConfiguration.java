@@ -46,6 +46,49 @@ public class EvidenceAutoConfiguration {
                 properties.getGuance(), objectMapper, transport, Clock.systemUTC());
     }
 
+    /**
+     * 默认关闭。关闭时 binding 为 null，适配器 health 报 DISABLED，
+     * 且 {@code supports} 一律 false——它不会被路由选中，也不会假装能取证。
+     */
+    @Bean
+    PrometheusEvidenceAdapter prometheusEvidenceAdapter(
+            EvidenceProperties properties,
+            ObjectMapper objectMapper,
+            EvidenceHttpTransport transport) {
+        EvidenceProperties.Prometheus config = properties.getPrometheus();
+        PrometheusEvidenceAdapter.Binding binding = null;
+        if (config.isEnabled() && config.getBaseUrl() != null
+                && !config.getBaseUrl().isBlank()) {
+            binding = new PrometheusEvidenceAdapter.Binding(
+                    java.net.URI.create(config.getBaseUrl().trim()),
+                    config.getFieldQueries(),
+                    config.getBearerToken());
+        }
+        return new PrometheusEvidenceAdapter(
+                binding, transport, objectMapper, Clock.systemUTC());
+    }
+
+    /** 默认关闭；串联字段没配时 binding 不可用，health 诚实报 DEGRADED。 */
+    @Bean
+    ElasticsearchEvidenceAdapter elasticsearchEvidenceAdapter(
+            EvidenceProperties properties,
+            ObjectMapper objectMapper,
+            EvidenceHttpTransport transport) {
+        EvidenceProperties.Elasticsearch config = properties.getElasticsearch();
+        ElasticsearchEvidenceAdapter.Binding binding = null;
+        if (config.isEnabled() && config.getBaseUrl() != null
+                && !config.getBaseUrl().isBlank()) {
+            binding = new ElasticsearchEvidenceAdapter.Binding(
+                    java.net.URI.create(config.getBaseUrl().trim()),
+                    config.getIndex(),
+                    config.getCorrelationField(),
+                    config.getMessageField(),
+                    config.getBearerToken());
+        }
+        return new ElasticsearchEvidenceAdapter(
+                binding, transport, objectMapper, Clock.systemUTC());
+    }
+
     @Bean
     RecordedReplayAdapter recordedReplayAdapter(
             EvidenceProperties properties,

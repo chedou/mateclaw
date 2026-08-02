@@ -231,6 +231,56 @@ A6「不完整比编造更好」。被 `everyEvidenceRequestIsAnswerableByTheFix
 
 ---
 
+## 适配器从 2 个到 4 个，且都接进了配置（2026-08-02）
+
+| 适配器 | 服务信号 | 默认 | 备注 |
+|---|---|---|---|
+| `guance` | 全部 | 关 | 卡在 T7 内网窗口 |
+| `recorded-replay` | 全部 | 关 | 夹具 |
+| **`prometheus`** | `metric` | 关 | 兼容 VictoriaMetrics / Thanos / Mimir |
+| **`elasticsearch`** | `log_search` | 关 | 兼容 OpenSearch |
+
+**为什么加这两个**：它们是**不依赖内网窗口**的真源通路。手里有 Prometheus 或 ES
+的环境可以先拿到真数据，不必等 Guance 验收。
+
+- [x] 两个适配器 + 传输层只读 `get` + 接进 `EvidenceProperties` 与自动装配，
+      默认全关。`EvidenceAutoConfigurationTest` 现在点名四个平台——
+      **每加一个适配器都必须在那里登记，且默认必须是关的**。
+- [x] 各 7 条测试，**大多数走失败分支**。测试替身在用不到的那个 HTTP 动词上
+      直接抛异常，「只读」是被验证的不是被声称的。
+
+**ES 适配器里最要紧的一条**：`correlationField`（一次请求在跨服务日志里的串联键）
+**没有默认值**。各环境叫法不同（`trace.id` / `traceId` / `x_request_id`…），
+**猜错的后果不是取不到，是把两次不相干的请求当成同一次**，而下游的全链路日志包
+会照单全收，最后给出一条看起来完整、实则拼接自两次故障的证据链。没配就整个不可用。
+
+### 试图加两条新场景，被种子契约挡住了——原样记下
+
+想加 `db_pool_saturated`（`metric`）与 `mq_backlog`（`log_count`），
+覆盖场景侧从没用过的两个信号种类。两条都被
+`ManualPlaybookReplaySuiteCatalog` 隔离为 `INVALID_RECORDED_EVIDENCE_SEED`。
+
+排除过的：contractVersion / suiteVersion / `routingKey` 与 selectorKey 一致 /
+`requiredEvidenceRequestId` 属于候选且 required / positiveCase 是 MATCHED /
+Boolean 在安全聚合白名单里 / 换成 `numeric_gte` 判据后依旧被拒。
+
+**未确认的假设**（是假设，不是结论）：recorded-evidence 种子目前只支持以
+`log_search` 为锚的场景——D19 的「录制聚合正例 + 生成负例」模型是围绕日志检索
+建的，`metric` 与 `log_count` 可能走不通生成器。
+
+- [ ] 查清真实拒绝原因并决定：是扩展种子契约支持非 `log_search` 锚点，
+      还是明确写死「场景种子必须以 log_search 为锚」。**在查清之前不要再塞种子**。
+      本轮已把那两条连同回放记录一并回退——隔离是 fail-closed（种子根本不加载），
+      但把隔离的种子留在树里更糟：JSON 看着有、demo 里没有。
+
+### 还没做
+
+- [ ] 两个新适配器都还没有 owner 验收接缝（Guance 有 V184）。
+      在有之前，它们的 `health().verified()` 恒为 false——端点可达不等于已验证。
+- [ ] 新适配器没有进 `/evidence/readiness`（那个接口目前是 Guance 专用的）。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。
