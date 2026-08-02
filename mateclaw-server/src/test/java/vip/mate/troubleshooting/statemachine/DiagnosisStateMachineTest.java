@@ -44,6 +44,60 @@ class DiagnosisStateMachineTest {
                 prefix -> prefix + "-" + sequence.incrementAndGet());
     }
 
+    /**
+     * A scenario Diagnosis cannot currently leave {@code NEEDS_INVESTIGATION}.
+     *
+     * <p>{@code initializeScenarioAwaitingEvidence} creates it {@code abstained}
+     * on purpose — naming a scenario selects an evidence plan, it does not
+     * assert a cause — and {@link DiagnosisStateMachine#confirm} refuses any
+     * abstained diagnosis until new evidence arrives. Both halves are right.
+     * Their conjunction is that <b>no scenario Diagnosis can ever be confirmed,
+     * transferred to closure, or closed</b>, because nothing in the codebase
+     * supplies that evidence: the aggregate has no transition for it (its only
+     * mutations are confirm / transfer / actions / outcomes / close), and the
+     * deployment-topology probe writes to its own run table rather than back to
+     * the Diagnosis.</p>
+     *
+     * <p>This predates the generic scenario entry — the shipped topology
+     * scenario is stuck the same way. Closing it means adding an
+     * evidence-arrival transition to the {@code Diagnosis} aggregate and reusing
+     * the deterministic decision logic that {@code DeterministicDiagnosisService}
+     * already applies on the hit path (A9). That is a v4 §5.5 contract addition,
+     * so it is recorded rather than improvised: see TODO T0.17.</p>
+     *
+     * <p>The test pins today's behaviour instead of failing, so the gap is
+     * stated in code and a build stays honest about what does work.</p>
+     */
+    @Test
+    void aScenarioDiagnosisIsStuckUntilAnEvidenceArrivalTransitionExists() {
+        Diagnosis scenario = stateMachine.initializeScenarioAwaitingEvidence(
+                new vip.mate.troubleshooting.model.ScenarioDiagnosisDraft(
+                        "diag-scenario-1", "case-scenario-1", "run-scenario-1",
+                        scenarioIncident(), "message_send_failed", scenarioPlaybook(),
+                        new PlaybookVersionRef("playbook-scenario", 1),
+                        "operator",
+                        NorthStarTimings.concluded(
+                                Instant.parse("2026-07-25T01:00:00Z"),
+                                Instant.parse("2026-07-25T01:00:10Z"),
+                                Instant.parse("2026-07-25T01:00:10Z")),
+                        false, true,
+                        java.util.List.of("取证尚未执行")));
+
+        assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, scenario.status());
+        assertTrue(scenario.abstained(), "指定场景不等于断言原因，弃权是对的");
+
+        MateClawException blocked = assertThrows(
+                MateClawException.class, () -> stateMachine.confirm(scenario, "operator"));
+        assertTrue(blocked.getMessage().contains("requires new evidence"));
+
+        assertTrue(
+                java.util.Arrays.stream(Diagnosis.class.getDeclaredMethods())
+                        .map(java.lang.reflect.Method::getName)
+                        .noneMatch(name -> name.contains("evidenceRecorded")
+                                || name.contains("reevaluated")),
+                "一旦聚合有了证据到达的转移，这条断言就该失败——那正是修好的信号");
+    }
+
     @Test
     void fullHumanControlledFlowNeverExecutesTheManualWrite() {
         Diagnosis diagnosis = stateMachine.confirm(readyDiagnosis(), "on-call");
@@ -200,6 +254,36 @@ class DiagnosisStateMachineTest {
 
     private Diagnosis readyDiagnosis() {
         return readyDiagnosis(NorthStarTimings.unrecorded());
+    }
+
+    private IncidentContext scenarioIncident() {
+        return new IncidentContext(
+                "inc-message-send", "CSDP", "csdp-session-service", null,
+                "会话消息发送失败", "P1", "待确认", null,
+                Instant.parse("2026-07-25T01:00:00Z"), null,
+                "web:scenario", IncidentCompleteness.SYMPTOM, "会话消息发送失败");
+    }
+
+    private vip.mate.troubleshooting.model.SopEntry scenarioPlaybook() {
+        return new vip.mate.troubleshooting.model.SopEntry(
+                "playbook-scenario",
+                vip.mate.troubleshooting.model.SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP", "scenario:message_send_failed", "csdp-session-service",
+                "会话消息发送失败路径核查", "会话状态冲突", "message", "会话平台组",
+                "approved", true,
+                java.util.List.of(new vip.mate.troubleshooting.model.EvidenceRequest(
+                        "SYNTH-LOG-SEARCH", "log_search", "定位失败请求",
+                        Map.of("search_term", "message_send_failed"), "-15m", true)),
+                java.util.List.of(new vip.mate.troubleshooting.model.AnomalyCriterion(
+                        "send_failure_present", "SYNTH-LOG-SEARCH", "存在失败日志",
+                        new vip.mate.troubleshooting.engine.Criterion.NumericGte(
+                                "match_count", 1))),
+                java.util.List.of(new vip.mate.troubleshooting.model.DiagnosisRule(
+                        "RULE-MESSAGE-SEND-PATH",
+                        java.util.List.of("send_failure_present"),
+                        "消息发送路径异常待核查", "收敛到会话状态冲突特征",
+                        Confidence.MEDIUM, false)),
+                java.util.List.of());
     }
 
     private Diagnosis readyDiagnosis(NorthStarTimings timings) {

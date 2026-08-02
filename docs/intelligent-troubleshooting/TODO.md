@@ -475,13 +475,29 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 「在线 lane 能接住」并断言状态必须是 `NEEDS_INVESTIGATION`——
 **一个说过头的绿灯比没有灯更危险。**
 
-### T0.17 · 场景证据执行（在线 lane 的后半段，未做）
+### T0.17 · 场景诊断的证据到达转移（**既有缺陷**，不是新引入的）
 
-- [ ] 让场景 Diagnosis 能执行它自己 Playbook 的 evidencePlan。
-      `EvidenceSpineOrchestrator` 已经能零 LLM 跑三步脊柱（`/sops/synthesis/preview`
-      用的就是它），缺的是把结果**挂回 Diagnosis** 并重新求值判据/规则、推进状态。
-- [ ] 注意 A9：拓扑走的是独立运行表（V188），不是把证据写回 Diagnosis。
-      要么把那条路一并归位，要么明确写出两者为何不同——现在是"看起来该统一但没统一"。
+**查实后要把上一条的范围改大。** 这不只是"我新开的入口缺后半段"——
+
+- `initializeScenarioAwaitingEvidence` 建出的诊断是 `abstained=true`（对的：
+  指定场景是选证据计划，不是断言原因）；
+- `confirm` 对任何 abstained 诊断一律拒绝，要求"新证据"（也是对的）；
+- **而代码里没有任何路径会提供那份新证据。** `Diagnosis` 聚合的可变方法只有
+  confirm / transfer / actions / outcomes / close，**没有"证据到达"这一个**；
+  部署拓扑的探针写的是自己的运行表（V188），不写回 Diagnosis。
+
+两半都对，合取的结果是：**每一条场景诊断都永久停在 `NEEDS_INVESTIGATION`，
+无法确认、无法交接到关闭、无法关闭。这包括先于通用入口上线的部署拓扑场景。**
+
+- [x] `DiagnosisStateMachineTest.aScenarioDiagnosisIsStuckUntilAnEvidenceArrivalTransitionExists`
+      把当前行为钉住（不是让构建变红），并用反射断言聚合上还没有
+      `evidenceRecorded` / `reevaluated`——**一旦有了，这条断言就该失败，那正是修好的信号**。
+- [ ] 给 `Diagnosis` 聚合加"证据到达"转移：接收本次 EvidenceResult，
+      复用 `DeterministicDiagnosisService` 已有的判据/规则求值与结论合成（A9，别重写一套），
+      命中则清 `abstained`、推进到 `READY_FOR_HUMAN`；排除则 `EXCLUDED`；仍不足则保持弃权。
+      **属 v4 §5.5 契约新增，需要显式决定。**
+- [ ] 一并决定拓扑那条路：写回 Diagnosis 还是保留独立运行表。
+      现在是"看起来该统一但没统一"，而 A9 说一种能力只有一个实现。
 - [ ] 在此之前，无码故障的**可用产出仍然只有知识生产 lane**
       （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
       所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
