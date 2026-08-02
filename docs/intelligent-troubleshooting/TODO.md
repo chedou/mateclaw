@@ -29,8 +29,7 @@
 | 3 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
 | 4 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
 | 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
-| 6 | T0.10 v4 §5 与代码的命名分歧 | 结构账，不阻塞 | §3.5 |
-| 7 | P4 场景 Playbook / P5 知识治理 | 依赖 5 的真实时延与质量数据 | §7 §8 |
+| 6 | P4 场景 Playbook / P5 知识治理 | 依赖 5 的真实时延与质量数据 | §7 §8 |
 
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
@@ -155,7 +154,7 @@ python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
   但明确标为 `AUTHORED_FIXTURE`，不再与 IM1010 的真实聚合权威混显。
 - [ ] T0.8 剩余 145 条种子导入——保持暂停。先在 T7 窗口拿到 20–30 条真实种子，
   再分批导入并保留拒绝清单；学习环已通，其中一部分可能不需要手写。
-- [ ] T0.10 v4 §5 与代码的命名分歧（结构账）；T10.5 收敛 `RouteMode`（随 P4 T11）。
+- [x] T0.10 v4 §5 与代码的命名分歧（结构账）已完成；T10.5 收敛 `RouteMode` 仍随 P4 T11。
 
 ### 等数据，别提前做
 
@@ -429,7 +428,7 @@ D19 之后服务端目录与历史注册表同时存在两类容易被混淆的�
 的改写候选没有来源等级时晋升 fail closed。T0.9 已在 T0.8
 批量导入前完成。
 
-### T0.10 · v4 §5 与代码的命名分歧（结构账，不阻塞）
+### T0.10 · v4 §5 与代码的命名分歧（结构账，2026-08-02 已完成）
 
 v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
 `InvestigationPlan`、`EvidenceBundle`、`DiscoveryPolicy`、`LoopPolicy/LoopRun/LoopOutcome`、
@@ -440,11 +439,16 @@ v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
 其中 `LoopPolicy` / `AdversarialEvalReport` 已标 PENDING-EVIDENCE，未实现是**对的**。
 问题在另一半：文档声称是权威，代码事实上是另一套，下一个人按 §5.4 去找 `EvidenceBundle` 会找不到。
 
-- [ ] 逐条判定：**收敛代码** 还是 **RFC 记下真实命名**。
-      建议 `SopEntry → type + sealed selector` 收敛（它已经在用 `ScenarioSelector`，只差没进合同）；
-      `EvidenceBundle` 值得真的建（`completeness` / `missingRequired` 现在散在四个类里）；
-      其余标注"未实现，等 P4/P5"即可。
-- [ ] 在 §5 开头加一张**实现状态表**，让"设计"与"已实现"在同一页可分辨。
+- [x] 逐条判定：**收敛代码** 还是 **RFC 记下真实命名**。当前选择先校正文档事实：
+      `SopEntry → type + selector` 涉及 routing key、不可变版本与持久化兼容，随 T10.5 / P4 一次迁移；
+      `EvidenceBundle` 等 `InvestigationPlan`、bundle identity、plan 绑定、fixture 与持久化边界明确后一次收敛，
+      不先新增只包装裸列表的空壳；`DiscoveryPolicy`、Loop 与 Challenger 合同继续等待真实样本。
+- [x] 已在 v4 §5 开头加入**实现状态表**，覆盖 §5.1–§5.11，并补入跨章节的
+      `ScenarioProposal` 与 `ReadOnlyEvidenceToolRegistry`；“设计”与“已实现”现在可在同一页分辨。
+
+本项只关闭结构账，没有推进 T7、P4/P5，也没有新增接口、表结构或运行时类型。设计取舍和复核步骤见
+`docs/superpowers/specs/2026-08-02-t0-10-contract-ledger-design.md` 与
+`docs/superpowers/plans/2026-08-02-t0-10-contract-ledger.md`。
 
 ---
 
