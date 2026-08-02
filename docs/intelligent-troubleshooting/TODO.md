@@ -669,6 +669,30 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 
 ### T8 · 历史样本与性能基线
 
+**影子模式的前置件已补齐（2026-08-01）。** 底座此前能答「准不准」
+（HELPFUL / UNHELPFUL / HARMFUL_BLOCKED / TECHNICAL_FAILURE + p50/p95 + token），
+**但答不了「省不省时间」**——它量的全是机器耗时，样本上没有任何人工基线。
+而北极星量的是人的时间。本文 §4.5 早就写过这句：「P2 就无法回答"到底省了多少
+人的时间"——而那是北极星本身」。
+
+- [x] `EvidenceEvaluationSample.HumanBaseline{minutesToLocate, basis, note}`，
+      随人工 oracle 一起在 `PUT /{sampleId}/reference` 录入（可空：没有历史耗时
+      来源的样本仍值得评分对错，只是不参与耗时对照）。
+- [x] `basis` 分 `MEASURED`（工单/聊天时间戳读出）与 `ESTIMATED`（处置人回忆），
+      **两者分开统计、绝不合并**——合并会让弱证据借走强证据的可信度，
+      和 `EXCLUDED` / `UNEVALUATED` 不许混显是同一条纪律。
+- [x] `NorthStarComparison` + `GET /evaluation-samples/north-star`：人工基线与机器
+      耗时**并排列出**。
+- [x] **刻意不产出「节省了多少分钟」**。影子跑出来的结论人还得读、还得核，
+      那段成本就是北极星第三段 `adoptCost`，而影子模式按定义永远到不了那一步。
+      发布一个悄悄漏掉采纳侧的节省数字，会朝着所有人都希望它倾斜的方向夸大结果。
+      两个数并排给出，减法留给能看见少了什么的人做。测试用反射钉住：
+      对外不得出现 `savedMinutes` / `savingsMinutes` / `timeSaved` 字段。
+- [x] 每个 caveat 跟数字一起返回，而不是只写在设计文档里——
+      只活在文档里的注意事项，不会跟着被引用的那个数字走。
+
+
+
 - [x] 正式工作台增加 Guance-only 的单条完整 Evidence Spine 预览：复用唯一
       `EvidenceSpineOrchestrator` 执行 `log_search → log_trace_bundle → contrast_sample →
       deterministic compress`，只返回调用链骨架、异常数、对照比率、证据引用和应用侧总耗时；

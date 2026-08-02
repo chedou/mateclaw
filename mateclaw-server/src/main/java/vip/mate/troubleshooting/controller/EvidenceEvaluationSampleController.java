@@ -93,6 +93,7 @@ public class EvidenceEvaluationSampleController {
                 request.requiredStepIntents(),
                 request.forbiddenStepIntents(),
                 request.expectedDisposition(),
+                request.humanBaseline(),
                 currentActor()));
     }
 
@@ -116,6 +117,24 @@ public class EvidenceEvaluationSampleController {
     }
 
     /** Source-separated model latency, token and structural quality facts; no gate verdict. */
+    /**
+     * Answers 「省不省时间」 for a shadow cohort — and says what the number
+     * leaves out, next to the number.
+     */
+    @GetMapping("/north-star")
+    @RequireWorkspaceRole("admin")
+    public R<vip.mate.troubleshooting.evaluation.NorthStarComparison> northStar(
+            @RequestParam(required = false) String diagnosisId,
+            @RequestParam(required = false, defaultValue = "200") int limit,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        long resolved = resolveWorkspace(workspaceId);
+        return R.ok(service.northStar(
+                resolved,
+                diagnosisId,
+                limit,
+                baselineService.list(resolved, diagnosisId, limit).runs()));
+    }
+
     @GetMapping("/baseline-runs")
     @RequireWorkspaceRole("admin")
     public R<BaselineEvaluationLedger> listBaselineRuns(

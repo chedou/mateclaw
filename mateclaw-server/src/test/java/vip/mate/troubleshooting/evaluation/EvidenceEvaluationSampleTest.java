@@ -48,6 +48,7 @@ class EvidenceEvaluationSampleTest {
         EvidenceEvaluationSample finalized = captured.finalizeReference(
                 reference,
                 EvidenceEvaluationSample.ExpectedDisposition.ABSTAIN,
+                null,
                 outcome,
                 "reviewer@example.com",
                 NOW.plusSeconds(40));
