@@ -310,9 +310,11 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 才可将其中 20–30 条写进下面的服务端目录；不得根据日志签名提示猜 DQL 或复制 SendMsg 合同凑数。
 
 实际交接使用 [Owner 填写说明](./t7-owner-contract-intake.md) 和
-[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。模板由上述准备投影确定性生成，
-当前含 28 条待合同候选，分层为 `15 A_HINTED / 2 B_CONTEXT_ONLY / 11 C_SOURCE_GAPS`。
-Owner 在受控本地副本中选择 20–28 条并只填安全引用与经核实事实，完成文件不提交到仓库：
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。
+建议工作表由上述准备投影确定性生成，已选中 `15 A_HINTED + 2 B_CONTEXT_ONLY + 3 C_SOURCE_GAPS`
+共 20 条，并展开所有 owner 字段。每个 `<replace:...>` 占位符都故意无法通过校验；
+如 owner 需调整首批，再改用含全部 28 条候选的空白
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。完成文件不提交到仓库：
 
 ```bash
 python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \

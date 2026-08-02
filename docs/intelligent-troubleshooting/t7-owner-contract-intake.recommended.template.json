@@ -1,0 +1,961 @@
+{
+  "contractVersion": "t7-owner-contract-intake.v1",
+  "authorization": {
+    "kind": "OWNER_INPUT_TEMPLATE_ONLY",
+    "canAcceptT7": false,
+    "canWriteRuntimeCatalog": false,
+    "nextAuthority": "server-owned recording target catalog + T7 preflight + owner acceptance"
+  },
+  "preparationContractVersion": "t7-guance-contract-preparation.v1",
+  "preparationFingerprint": "ed0b972451fa6c6edee3b0d5a8fd2d4b7ee3f31d0640e95aeee0a68f2bdb0fe6",
+  "windowTargetRange": {
+    "minimum": 20,
+    "maximum": 28
+  },
+  "availableOwnerCandidateCount": 28,
+  "candidateTierCounts": {
+    "A_HINTED": 15,
+    "B_CONTEXT_ONLY": 2,
+    "C_SOURCE_GAPS": 11
+  },
+  "contracts": [
+    {
+      "selectorKey": "csdp:101004",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [
+          "客户登录"
+        ],
+        "signatureErrorCodes": [
+          "Customer_IMLoginDataFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:101010",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客户IM"
+        ],
+        "modules": [
+          "CTI排队系统"
+        ],
+        "scenarios": [
+          "Pulsar投递失败导致调度阻塞"
+        ],
+        "signatureErrorCodes": [
+          "Cti_DispatchPulsarFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:101015",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [
+          "排队入队失败"
+        ],
+        "signatureErrorCodes": [
+          "Cti_EnqueueFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:201003",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "渠道侧"
+        ],
+        "modules": [
+          "客户咨询"
+        ],
+        "scenarios": [
+          "渠道登录"
+        ],
+        "signatureErrorCodes": [
+          "Partner_IMLoginDataFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:201011",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客户IM"
+        ],
+        "modules": [
+          "会话"
+        ],
+        "scenarios": [
+          "坐席接单核心操作失败"
+        ],
+        "signatureErrorCodes": [
+          "Conversation_AcceptFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:401007",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "CTI侧"
+        ],
+        "modules": [
+          "客户咨询"
+        ],
+        "scenarios": [
+          "CSP IM登录接口"
+        ],
+        "signatureErrorCodes": [
+          "Conversation_CspLoginFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:901002",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [
+          "获取手机号码"
+        ],
+        "signatureErrorCodes": [
+          "Customer_GetOpenIdFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:IM2002",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客户IM"
+        ],
+        "modules": [
+          "消息处理链路"
+        ],
+        "scenarios": [
+          "Redis不可用导致消息静默丢失"
+        ],
+        "signatureErrorCodes": [
+          "Middleware_MsgCacheFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:IM3002",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P0"
+        ],
+        "sourceServices": [
+          "客户IM"
+        ],
+        "modules": [
+          "消息处理链路"
+        ],
+        "scenarios": [
+          "MongoDB不可用导致消息无法持久化"
+        ],
+        "signatureErrorCodes": [
+          "Middleware_MsgPersistDBFailed_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:301002",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [
+          "ICARE创建工单"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:501001",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "CTI侧"
+        ],
+        "modules": [
+          "客户咨询"
+        ],
+        "scenarios": [
+          "IM登录"
+        ],
+        "signatureErrorCodes": [
+          "Third_CTILoginDataFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:Workorder_CustomerDetailFail_004",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "csdp-wechat"
+        ],
+        "modules": [
+          "客户"
+        ],
+        "scenarios": [
+          "获取工单信息"
+        ],
+        "signatureErrorCodes": [
+          "Workorder_CustomerDetailFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:Workorder_CustomerListFail_003",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "csdp-wechat"
+        ],
+        "modules": [
+          "客户"
+        ],
+        "scenarios": [
+          "数据查询的异常"
+        ],
+        "signatureErrorCodes": [
+          "Workorder_CustomerListFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:Workorder_EmergencyCreateFail_005",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "csdp-wechat"
+        ],
+        "modules": [
+          "客户"
+        ],
+        "scenarios": [
+          "icare创建问题单"
+        ],
+        "signatureErrorCodes": [
+          "Workorder_EmergencyCreateFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:Workorder_UpgradeServiceFail_006",
+      "preparationTier": "A_HINTED",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "csdp-wechat"
+        ],
+        "modules": [
+          "客户"
+        ],
+        "scenarios": [
+          "icare创建问题单"
+        ],
+        "signatureErrorCodes": [
+          "Workorder_UpgradeServiceFail_001"
+        ]
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:901004",
+      "preparationTier": "B_CONTEXT_ONLY",
+      "sourceHints": {
+        "levels": [
+          "P1"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [
+          "工单分享登录"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:301035",
+      "preparationTier": "B_CONTEXT_ONLY",
+      "sourceHints": {
+        "levels": [
+          "P2"
+        ],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [
+          "Q单重开"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:101011",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:101017",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [
+          "快速登录"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:101031",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "登录"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:101062",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [
+          "工单详情"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:301012",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:301030",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:301032",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:301040",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "渠道侧"
+        ],
+        "modules": [
+          "服务工单"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:301042",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    },
+    {
+      "selectorKey": "csdp:301045",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "客服侧"
+        ],
+        "modules": [
+          "首页"
+        ],
+        "scenarios": [
+          "渠道是否越权"
+        ],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
+    },
+    {
+      "selectorKey": "csdp:903001",
+      "preparationTier": "C_SOURCE_GAPS",
+      "sourceHints": {
+        "levels": [],
+        "sourceServices": [
+          "csdp-wechat"
+        ],
+        "modules": [
+          "客户"
+        ],
+        "scenarios": [],
+        "signatureErrorCodes": []
+      },
+      "selectedForWindow": false,
+      "ownerContract": null
+    }
+  ]
+}

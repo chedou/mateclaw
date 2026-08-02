@@ -109,8 +109,10 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
   该清单明确为 `PREPARATION_ONLY`，不生成 DQL、凭据或可执行 target；CI 会同时校验错误字段、
   重复键/尾随根值和生成物漂移。
 - Owner 不再靠聊天补齐 28 条合同：[填写说明](./t7-owner-contract-intake.md) 和
-  [空白模板](./t7-owner-contract-intake.template.json) 已生成。当前分层为
-  `A_HINTED=15 / B_CONTEXT_ONLY=2 / C_SOURCE_GAPS=11`；owner 从中选 20–28 条填写，校验通过仍只是
+  [建议首批 20 条工作表](./t7-owner-contract-intake.recommended.template.json) 已生成；
+  [空白 28 条模板](./t7-owner-contract-intake.template.json) 供 owner 调整选择。当前分层为
+  `A_HINTED=15 / B_CONTEXT_ONLY=2 / C_SOURCE_GAPS=11`；工作表的占位符未全部替换时必须校验失败，
+  全部核实后校验通过仍只是
   `PREPARED_NOT_EXECUTABLE`，不会写 `guance-recording-targets.json`、不会调 Guance，也不能代替
   T7 预检或 owner `ACCEPTED`。完成文件携带环境运维元数据，不得提交到仓库。
 - 正式工作台与 owner acceptance 写接口现在共用同一份服务端目标目录门禁。目录未达到

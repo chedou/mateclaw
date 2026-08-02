@@ -57,10 +57,11 @@
 ## 使用顺序
 
 1. 先处理 `BLOCKED_SOURCE_QUALITY`，不能在冲突路由键上猜一个上下文。
-2. Owner 复制 `t7-owner-contract-intake.template.json`，按 `t7-owner-contract-intake.md` 从当前 28 条中选 20–28 条，逐项核对真实运行 service、服务端查询合同、安全 search term、判据/规则、bindingRef 和历史故障时间。
-3. 执行 `t7_owner_contract_intake.py --validate <受控文件>`；通过仍只表示 `PREPARED_NOT_EXECUTABLE`，不是 T7 授权。
-4. 开发者根据已核实引用编写完整、安全、未验证的 candidate，与当前三份 bindingRef 冻结进 `guance-recording-targets.json`；本报告和 owner 输入工具都不生成该文件。
-5. 重启运行服务并执行 `T7_SEED_PLAN_FILE=<受控计划> ./scripts/troubleshooting-t7-preflight.sh`。只有运行时返回 20–30 个可执行目标才可约窗口。
-6. 窗口里由 owner 完成清单并提交 `ACCEPTED`，随后一次灌入 20–30 份 D19 聚合正例。
+2. Owner 优先复制 `t7-owner-contract-intake.recommended.template.json`：它已按审核过的 15 A + 2 B + 3 C 选好 20 条并展开全部字段；如需调整批次再使用空白模板。
+3. 逐项替换所有 `<replace:...>` 占位符，核对真实运行 service、服务端查询合同、安全 search term、判据/规则、bindingRef 和历史故障时间。
+4. 执行 `t7_owner_contract_intake.py --validate <受控文件>`；通过仍只表示 `PREPARED_NOT_EXECUTABLE`，不是 T7 授权。
+5. 开发者根据已核实引用编写完整、安全、未验证的 candidate，与当前三份 bindingRef 冻结进 `guance-recording-targets.json`；本报告和 owner 输入工具都不生成该文件。
+6. 重启运行服务并执行 `T7_SEED_PLAN_FILE=<受控计划> ./scripts/troubleshooting-t7-preflight.sh`。只有运行时返回 20–30 个可执行目标才可约窗口。
+7. 窗口里由 owner 完成清单并提交 `ACCEPTED`，随后一次灌入 20–30 份 D19 聚合正例。
 
 本队列不含原始日志、DQL、凭据或 API Key；日志签名只投影是否存在及安全错误标识符。

@@ -107,11 +107,12 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check
 ```
 
-Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md) 和
-[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。当前 28 条待合同候选分为
-`15 A_HINTED / 2 B_CONTEXT_ONLY / 11 C_SOURCE_GAPS`。首批低成本顺序是 15 条 A + 2 条 B，
-再优先核实有场景提示的 `csdp:101017 / csdp:101062 / csdp:301045`；这只是分工建议，
-不是可执行目标。完成文件用下列命令校验，成功结果仍必须是
+Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md)。
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)
+已把首批低成本的 15 条 A + 2 条 B + `csdp:101017 / csdp:101062 / csdp:301045` 三条 C
+精确选中并展开 20 份合同；每个占位符都故意不能通过校验。
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json) 保留全部 28 条空白候选，
+仅在 owner 需要调整首批时使用。完成文件用下列命令校验，成功结果仍必须是
 `PREPARED_NOT_EXECUTABLE / canAcceptT7=false / canWriteRuntimeCatalog=false`：
 
 ```bash
@@ -125,8 +126,8 @@ python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
 
 动手顺序：
 
-1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，owner 复制空白 intake 模板，
-   为其余 28 条中的 20–28 条逐项核实责任团队、真实运行 service、安全检索键、
+1. 先处理准备清单：解决 `csdp:101014` 的源材料冲突，owner 复制建议 20 条工作表，
+   逐项替换所有占位符并核实责任团队、真实运行 service、安全检索键、
    服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间，再跑
    `--validate`。校验器只接受安全引用，确定拒绝 DQL、URL、Key/Token 和 `rawLog`
    等额外字段；人类自由文本也不得嵌入原始日志，工具不把自己写成任意日志分类器。
@@ -199,6 +200,8 @@ owner intake 门也做了反向证明：把最小选择数从 20 故意降为 19
 新增的有效上限断言先准确暴露模板误写 `maximum=30`，修复后才与校验器一致为 28。
 最后把第 2 条的 service/search/window/bindings 改成与第 1 条完全相同、但保留不同公开引用和指纹，
 Python owner 门与 Java 运行目录新断言都先准确失败；修复后两层均拒绝这种“改名不改查询”的假批次。
+推荐工作表接入后又故意只在自由文本 `ownerTeam / ownerScenario` 中保留 `<replace:...>`；新断言先准确失败，
+随后校验器统一拒绝任意字段中的未替换占位符，避免“结构填完但责任人与场景仍是模板文字”被放行。
 
 ---
 

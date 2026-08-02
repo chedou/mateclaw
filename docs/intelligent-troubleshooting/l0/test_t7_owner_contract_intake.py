@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from t7_owner_contract_intake import (
     OwnerInputError,
+    build_current_recommended_worksheet,
     build_current_template,
     render_json,
     validate_owner_input,
@@ -175,11 +176,79 @@ class T7OwnerContractIntakeTest(unittest.TestCase):
                 as_of=AS_OF,
             )
 
+    def test_recommended_worksheet_is_exactly_twenty_but_cannot_self_validate(self) -> None:
+        template = build_current_template(REPO)
+        worksheet = build_current_recommended_worksheet(REPO)
+        selected = [
+            row for row in worksheet["contracts"] if row["selectedForWindow"]
+        ]
+
+        self.assertEqual(20, len(selected))
+        self.assertEqual(
+            {"A_HINTED": 15, "B_CONTEXT_ONLY": 2, "C_SOURCE_GAPS": 3},
+            {
+                tier: sum(row["preparationTier"] == tier for row in selected)
+                for tier in ("A_HINTED", "B_CONTEXT_ONLY", "C_SOURCE_GAPS")
+            },
+        )
+        self.assertEqual(
+            {"csdp:101017", "csdp:101062", "csdp:301045"},
+            {
+                row["selectorKey"]
+                for row in selected
+                if row["preparationTier"] == "C_SOURCE_GAPS"
+            },
+        )
+        self.assertTrue(all(row["ownerContract"] is not None for row in selected))
+        self.assertTrue(
+            all(
+                row["ownerContract"] is None
+                for row in worksheet["contracts"]
+                if not row["selectedForWindow"]
+            )
+        )
+        with self.assertRaises(OwnerInputError):
+            validate_owner_input(worksheet, template, as_of=AS_OF)
+
+    def test_free_text_placeholders_must_be_replaced(self) -> None:
+        mutations = []
+
+        owner_team = self._completed()
+        owner_team["contracts"][0]["ownerContract"]["ownerTeam"] = (
+            "<replace:owner-team>"
+        )
+        mutations.append(owner_team)
+
+        owner_scenario = self._completed()
+        owner_scenario["contracts"][0]["ownerContract"]["ownerScenario"] = (
+            "still <replace:owner-verified-scenario>"
+        )
+        mutations.append(owner_scenario)
+
+        for document in mutations:
+            with self.subTest(document=document), self.assertRaisesRegex(
+                OwnerInputError,
+                "placeholder",
+            ):
+                validate_owner_input(
+                    document,
+                    build_current_template(REPO),
+                    as_of=AS_OF,
+                )
+
     def test_committed_template_is_generated_from_current_preparation(self) -> None:
         self.assertEqual(
             render_json(build_current_template(REPO)),
             (REPO / "docs/intelligent-troubleshooting/t7-owner-contract-intake.template.json")
             .read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            render_json(build_current_recommended_worksheet(REPO)),
+            (
+                REPO
+                / "docs/intelligent-troubleshooting/"
+                "t7-owner-contract-intake.recommended.template.json"
+            ).read_text(encoding="utf-8"),
         )
 
 

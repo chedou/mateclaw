@@ -14,17 +14,24 @@
 
 首批 20 条的低成本顺序建议是：15 条 `A_HINTED` 全部核实，加入 2 条 `B_CONTEXT_ONLY`，再从
 `C_SOURCE_GAPS` 优先核实已有场景提示的 `csdp:101017`、`csdp:101062`、`csdp:301045`。
+这 20 条已展开到
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。
 这只是分工顺序，不是查询合同或可执行目标；owner 可以基于真实资产调整选择。
 
 `csdp:101014` 因源材料冲突不进入模板，必须先回源解决；`csdp:IM1010` 已有录制权威，不能重复计数。
 
 ## 填写方法
 
-1. 将 [`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)
-   复制到受控本地目录。**完成后的文件不要提交到仓库**。
-2. 需要进入首批窗口的行设置 `selectedForWindow: true`，把 `ownerContract: null` 替换为下面的完整对象。
-3. 未选择的行必须保持 `selectedForWindow: false` 和 `ownerContract: null`；不能删除候选、修改 selector、
-   档位或来源提示。
+1. 优先将
+   [`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)
+   复制为受控本地目录下的 `t7-owner-contract-intake.local.json`。它已选中建议首批 20 条，
+   并展开每一份 `ownerContract`。**完成后的文件不要提交到仓库**。
+2. 逐项替换这 20 条中所有 `<replace:...>` 和 `<P0|P1|P2>` 占位符。工作表故意无法自己通过校验；
+   只填一部分也必须失败。
+3. 如果 owner 根据真实资产要替换首批成员，从
+   [`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json) 空白模板重新选择 20–28 条；
+   或在建议工作表中同时把被换出行还原为 `false/null`、把换入行设为 `true` 并补齐完整对象。
+4. 不能删除候选、修改 selector、档位或来源提示。
 
 ```json
 {
@@ -48,7 +55,8 @@
 }
 ```
 
-上面的尖括号是说明文字，故意不能通过校验。引用只指向受评审的服务端材料，不粘贴其正文。
+上面的尖括号与建议工作表中的占位符都是说明文字，故意不能通过校验。
+引用只指向受评审的服务端材料，不粘贴其正文。
 所有被选合同的 candidate、查询合同、判据、规则和历史来源引用都必须各自唯一，防止把一份 SendMsg
 合同复制 20 次冒充批次。仅改引用名也不能绕过：
 `verifiedRuntimeService + safeSearchTerm + window + 三份 bindingRef` 组成的实际查询语义同样必须唯一。

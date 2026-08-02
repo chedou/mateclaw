@@ -23,6 +23,7 @@ on:
       - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.json'
       - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.md'
       - 'docs/intelligent-troubleshooting/t7-owner-contract-intake.template.json'
+      - 'docs/intelligent-troubleshooting/t7-owner-contract-intake.recommended.template.json'
   push:
     branches:
       - dev
@@ -50,6 +51,7 @@ on:
       - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.json'
       - 'docs/intelligent-troubleshooting/t7-target-contract-preparation.md'
       - 'docs/intelligent-troubleshooting/t7-owner-contract-intake.template.json'
+      - 'docs/intelligent-troubleshooting/t7-owner-contract-intake.recommended.template.json'
   workflow_dispatch:
 
 permissions:

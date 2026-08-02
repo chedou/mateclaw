@@ -11,6 +11,7 @@ execution authorities.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -34,11 +35,22 @@ MIN_SELECTED = 20
 MAX_SELECTED = 30
 CORE_SIGNALS = {"log_search", "log_trace_bundle", "contrast_sample"}
 OWNER_LEVELS = {"P0", "P1", "P2"}
+RECOMMENDED_C_SELECTORS = frozenset(
+    {
+        "csdp:101017",
+        "csdp:101062",
+        "csdp:301045",
+    }
+)
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 SAFE_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,255}$")
 WINDOW = re.compile(r"^-([1-9][0-9]{0,5})(s|m|h|d)$")
 UTC_SECONDS = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 JWT = re.compile(r"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}")
+UNRESOLVED_PLACEHOLDER = re.compile(
+    r"<(?:replace:[^<>]+|P0\|P1\|P2)>",
+    re.IGNORECASE,
+)
 FORBIDDEN_TEXT = (
     re.compile(r"D::", re.IGNORECASE),
     re.compile(r"https?://", re.IGNORECASE),
@@ -158,6 +170,75 @@ def build_current_template(repo: Path) -> Dict[str, Any]:
     return build_template(build_current_report(repo.resolve()))
 
 
+def _placeholder_owner_contract() -> Dict[str, Any]:
+    return {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+            "log_search": "<replace:log-search-binding>",
+            "log_trace_bundle": "<replace:trace-binding>",
+            "contrast_sample": "<replace:contrast-binding>",
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>",
+    }
+
+
+def build_recommended_worksheet(template: Mapping[str, Any]) -> Dict[str, Any]:
+    contracts = template.get("contracts")
+    if (
+        not isinstance(contracts, list)
+        or any(not isinstance(row, dict) for row in contracts)
+        or any(
+            row.get("selectedForWindow") or row.get("ownerContract") is not None
+            for row in contracts
+        )
+    ):
+        raise OwnerInputError("recommended worksheet requires an empty owner template")
+
+    worksheet = copy.deepcopy(template)
+    selected = []
+    selected_c = set()
+    for row in worksheet["contracts"]:
+        tier = row["preparationTier"]
+        selector = row["selectorKey"]
+        recommended = tier in {"A_HINTED", "B_CONTEXT_ONLY"} or (
+            tier == "C_SOURCE_GAPS" and selector in RECOMMENDED_C_SELECTORS
+        )
+        if not recommended:
+            continue
+        row["selectedForWindow"] = True
+        row["ownerContract"] = _placeholder_owner_contract()
+        selected.append(row)
+        if tier == "C_SOURCE_GAPS":
+            selected_c.add(selector)
+
+    selected_tiers = Counter(row["preparationTier"] for row in selected)
+    if (
+        len(selected) != MIN_SELECTED
+        or selected_tiers != Counter(
+            {"A_HINTED": 15, "B_CONTEXT_ONLY": 2, "C_SOURCE_GAPS": 3}
+        )
+        or selected_c != RECOMMENDED_C_SELECTORS
+    ):
+        raise OwnerInputError(
+            "recommended worksheet selection drifted from the reviewed 15 + 2 + 3 batch"
+        )
+    return worksheet
+
+
+def build_current_recommended_worksheet(repo: Path) -> Dict[str, Any]:
+    return build_recommended_worksheet(build_current_template(repo))
+
+
 def _forbidden(value: str) -> bool:
     return JWT.search(value) is not None or any(
         pattern.search(value) is not None for pattern in FORBIDDEN_TEXT
@@ -168,6 +249,8 @@ def _string(value: Any, field: str, maximum: int) -> str:
     if not isinstance(value, str):
         raise OwnerInputError(field + " must be a string")
     normalized = value.strip()
+    if UNRESOLVED_PLACEHOLDER.search(normalized) is not None:
+        raise OwnerInputError(field + " contains an unresolved placeholder")
     if (
         not normalized
         or len(normalized) > maximum
@@ -419,14 +502,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     output_path = (
         args.repo / "docs/intelligent-troubleshooting/t7-owner-contract-intake.template.json"
     )
+    recommended_output_path = (
+        args.repo
+        / "docs/intelligent-troubleshooting/"
+        "t7-owner-contract-intake.recommended.template.json"
+    )
     try:
         template = build_current_template(args.repo)
         expected = render_json(template)
+        recommended = build_recommended_worksheet(template)
+        expected_recommended = render_json(recommended)
         if args.write:
             _write_atomic(output_path, expected)
+            _write_atomic(recommended_output_path, expected_recommended)
         elif args.check:
             if not output_path.exists() or output_path.read_text(encoding="utf-8") != expected:
                 print("stale T7 owner contract intake template", file=sys.stderr)
+                return 1
+            if (
+                not recommended_output_path.exists()
+                or recommended_output_path.read_text(encoding="utf-8")
+                != expected_recommended
+            ):
+                print(
+                    "stale T7 owner contract recommended worksheet",
+                    file=sys.stderr,
+                )
                 return 1
         elif args.validate is not None:
             result = validate_owner_input(
@@ -442,6 +543,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "availableOwnerCandidateCount"
                     ],
                     "candidateTierCounts": template["candidateTierCounts"],
+                    "recommendedWorksheetSelectedCount": sum(
+                        row["selectedForWindow"] for row in recommended["contracts"]
+                    ),
                     "canAcceptT7": False,
                 },
                 ensure_ascii=False,
