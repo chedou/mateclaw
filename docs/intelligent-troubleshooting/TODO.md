@@ -26,10 +26,9 @@
 |---|---|---|---|
 | 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选已生成可填写/可校验包；待 owner 填满至少 20 条，server-owned 可执行目标仍为 `0` | §5 T7 |
 | 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
-| 3 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
-| 4 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
-| 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
-| 6 | P4 场景 Playbook / P5 知识治理 | 依赖 5 的真实时延与质量数据 | §7 §8 |
+| 3 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
+| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
+| 5 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
@@ -352,7 +351,7 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
 且 `instance_unreachable` 是 **EXCLUDED（真的排除）而非 UNEVALUATED（没验过）**——
 D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
-### T0.7 · 待办
+### T0.7 · CI 首诊基线（2026-08-02 已建立）
 
 **现在做这些是有意义的：脚本第一次是绿的，可以当回归基线用。**
 
@@ -368,7 +367,23 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
       却从没量过自己跑通一次要多久；目标 5 分钟内。
       CI 从 checkout 前开始计时，在成功产出 Diagnosis 后写入 Job Summary；超过 300 秒先告警，不伪装为
       产品正确性失败。终点取脚本首次观测到 `diagnosisId` 的时刻，不含后续投影校验。
-- [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
+- [x] 用 GitHub 官方运行历史确认基线已实际产生，不再把“workflow 文件存在”冒充“CI 跑过”。
+      截至 2026-08-02 共 6 次运行，前两次失败后最近 4 次连续成功：
+
+      | Run | Commit / event | 结果 | 总耗时 |
+      |---|---|---|---|
+      | [#1](https://github.com/chedou/mateclaw/actions/runs/30685260971) | `e95e7be` push | FAILURE | 44s |
+      | [#2](https://github.com/chedou/mateclaw/actions/runs/30704422460) | `21de00d` push | FAILURE | 3m10s |
+      | [#3](https://github.com/chedou/mateclaw/actions/runs/30707108112) | `f24a603` push | SUCCESS | 1m27s |
+      | [#4](https://github.com/chedou/mateclaw/actions/runs/30737322529) | `aa6128b` pull request | SUCCESS | 1m23s |
+      | [#5](https://github.com/chedou/mateclaw/actions/runs/30737437300) | `9d4cdd6` push | SUCCESS | 1m15s |
+      | [#6](https://github.com/chedou/mateclaw/actions/runs/30745097839) | `5d54d5d` push | SUCCESS | 1m33s |
+
+      最新 run #6 的主 job 为 1m29s，并且成功状态证明“记录 clone-to-diagnosis 时长”步骤已通过；
+      首次 Diagnosis 发生在 job 完成之前，因此实际 clone-to-diagnosis 有严格的 **≤89s 上界**，
+      已满足 300s 目标。公开未登录页面不展示 Job Summary 中的精确秒数，所以这里只记录可独立复核的上界，
+      不把 93s 总运行时间冒充精确首诊时长。
+- [ ] **归 T7，不是 T0.7 的剩余实现：** T7 时把 demo 绑定替换为真实 Guance 绑定，而不是从零配置。
 
 ### T0.8 · 错误码 Playbook 的晋升路径（机制与首个切片已完成）
 
