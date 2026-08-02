@@ -30,6 +30,27 @@ public record DiagnosisSummary(
         LocalDateTime createTime,
         LocalDateTime updateTime) {
 
+    public DiagnosisSummary {
+        if (routeSemanticsProvenance == null) {
+            throw new IllegalArgumentException(
+                    "routeSemanticsProvenance must not be null");
+        }
+        switch (routeSemanticsProvenance) {
+            case PERSISTED -> {
+                if (investigationMode == null || routeAuthority == null) {
+                    throw new IllegalArgumentException(
+                            "PERSISTED diagnosis summaries require both typed route semantics");
+                }
+            }
+            case LEGACY_DERIVED -> {
+                if (investigationMode != null || routeAuthority != null) {
+                    throw new IllegalArgumentException(
+                            "LEGACY_DERIVED diagnosis summaries must not carry typed route semantics");
+                }
+            }
+        }
+    }
+
     public static DiagnosisSummary from(TroubleshootingDiagnosisEntity entity) {
         RouteSemantics semantics = routeSemantics(entity);
         return new DiagnosisSummary(

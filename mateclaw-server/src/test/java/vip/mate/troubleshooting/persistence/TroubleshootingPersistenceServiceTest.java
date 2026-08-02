@@ -397,6 +397,72 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
+    void diagnosisSummaryDirectConstructionRejectsMissingRouteSemanticsProvenance() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-current",
+                        "case-current",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        RouteAuthority.EXPLICIT,
+                        null,
+                        false,
+                        3,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("routeSemanticsProvenance"));
+    }
+
+    @Test
+    void diagnosisSummaryDirectConstructionRejectsPersistedRowsMissingTypedRouteSemantics() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-current",
+                        "case-current",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        null,
+                        RouteSemanticsProvenance.PERSISTED,
+                        false,
+                        3,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("PERSISTED"));
+    }
+
+    @Test
+    void diagnosisSummaryDirectConstructionRejectsLegacyDerivedRowsWithTypedRouteSemantics() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-legacy",
+                        "case-legacy",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        null,
+                        RouteSemanticsProvenance.LEGACY_DERIVED,
+                        false,
+                        1,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("LEGACY_DERIVED"));
+    }
+
+    @Test
     void diagnosisSummaryFailsClosedForCurrentRowsMissingIndexedRouteSemantics() {
         TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
         entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
