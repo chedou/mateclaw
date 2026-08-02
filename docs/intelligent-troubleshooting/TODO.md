@@ -303,6 +303,28 @@ Boolean 在安全聚合白名单里 / 换成 `numeric_gte` 判据后依旧被拒
 
 ---
 
+## ⚠️ HEAD 上有一条必现红的检查（2026-08-02 查实，非本轮引入）
+
+`scripts/ci/test-troubleshooting-t7-preflight.sh` 最后一格必现失败：
+
+```
+FAIL: did not observe the immutable plan snapshot before preflight completed
+```
+
+- **连跑三次全失败**，不是偶发竞态。
+- 该断言（脚本第 456–476 行）在后台跑预检的同时轮询
+  `${TMPDIR}/mateclaw-t7-preflight.*/plan.json`，要求它存在、字节数与原计划一致、
+  权限为 600 —— 这是一道 TOCTOU 守卫：防止计划快照在预检读取之后被换掉。
+- 当前 `scripts/troubleshooting-t7-preflight.sh` 没有在那个路径留下该快照。
+- **这两个脚本本轮未经我改动**，是并行会话推入的版本；很可能是那边尚未收尾。
+
+- [ ] 由改动方确认：是快照路径/命名对不上，还是快照功能尚未实现完。
+      **没有弄清设计意图之前不要盲改**——猜着修一个竞态守卫，比让它明显地红着更糟，
+      而最省事的"修法"是把断言删掉，那恰好毁掉这道守卫存在的理由。
+      在它变绿之前，T7 预检的 CI 合同不能算通过。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。
