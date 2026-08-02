@@ -155,6 +155,44 @@ A6「不完整比编造更好」。被 `everyEvidenceRequestIsAnswerableByTheFix
 
 ---
 
+## 投入使用前最要紧的一格：证据是真的 ≠ 知识是真的（2026-08-02）
+
+**`fixtureMode` 是一个全局编译期常量 `TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE`，
+含义只是「证据是夹具」。** T7 落地那天有人把它翻成 `false`，**每一条**诊断都会
+变成「真源」——包括那些由手写 Playbook 路由、判据阈值从没用真实历史故障标定过的。
+
+两个独立的轴此前被压成了一个布尔值，读起来像同一件事：
+
+| 轴 | 现在由什么表达 | 翻转 `EVIDENCE_IS_FIXTURE` 会不会改变它 |
+|---|---|---|
+| 证据成色（真源 / 回放） | `fixtureMode` | **会** |
+| 知识成色（归纳 / 手写） | 冻结版本的 `sourceOrigin` | **不会，也不应该** |
+
+这在投入使用时会直接伤人：拿着没人校准过的阈值，对真实故障给出「已定位」，
+而页面上什么都不说。
+
+- [x] provenance 增加「真实数据校准」一条否定句，**不看 `fixtureMode`**，
+      只看冻结 Playbook 的 `sourceOrigin` 是否手写。读不到冻结版本时挂
+      「知识来源判定」——判不出来就说判不出来，沉默会被读成「已校准」。
+- [x] 测试用 `fixtureMode=false` 构造，也就是**翻转之后的世界**，钉住这条警告仍在。
+- [x] `TroubleshootingSafetyPolicyTest`：此前**没有任何东西钉住那个常量**，
+      翻了没人会知道。加了守卫，并把三条前置清单写进它的 Javadoc——
+      目的不是让它永远为 true，是让翻转成为一次必须动手改测试、
+      因而必须先读清单的动作。
+
+### 顺带查实的一件事
+
+`manual-playbook-replay-suites.json` 里的键名 **`recordedEvidenceSeeds` 在暗示
+这些数字是录制来的**，而其中 `gateway_timeout`、`auth_token_rejected`、
+`message_send_failed` 的数字是手写的（seeder 把它们标成 `MANUAL`，数据是老实的，
+容器名不老实）。
+
+- [ ] 考虑把键名改成中性的（例如 `playbookSeeds`），或在契约里强制每条 seed
+      显式声明 `numbersOrigin`。**改键名要动契约与迁移，本轮没做**；
+      现在靠 `sourceOrigin` 与上面那条否定句兜住，读者不会被容器名误导。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。

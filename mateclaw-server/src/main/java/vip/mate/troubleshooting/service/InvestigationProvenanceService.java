@@ -45,7 +45,7 @@ public class InvestigationProvenanceService {
                 knowledge(workspaceId, diagnosis),
                 collectors(diagnosis),
                 reasoning(diagnosis),
-                abstentions(diagnosis));
+                abstentions(diagnosis, knowledge(workspaceId, diagnosis)));
     }
 
     private InvestigationProvenance.Knowledge knowledge(
@@ -119,10 +119,26 @@ public class InvestigationProvenanceService {
     }
 
     /**
+     * Hand-authored knowledge, whatever the registry calls it.
+     *
+     * <p>Being filed under {@code recordedEvidenceSeeds} does not make a
+     * Playbook's numbers recorded — several of those were authored by hand and
+     * the seeder marks them {@code MANUAL}. The marking is the fact; the
+     * container name is not.</p>
+     */
+    private boolean handWritten(InvestigationProvenance.Knowledge knowledge) {
+        String origin = knowledge.origin();
+        return origin != null
+                && origin.toUpperCase(java.util.Locale.ROOT).startsWith("MANUAL");
+    }
+
+    /**
      * The negatives. Each one is a mechanism a reviewer can go and check, not a
      * reassurance — "没有执行器" is falsifiable, "很安全" is not.
      */
-    private List<InvestigationProvenance.Abstention> abstentions(Diagnosis diagnosis) {
+    private List<InvestigationProvenance.Abstention> abstentions(
+            Diagnosis diagnosis,
+            InvestigationProvenance.Knowledge knowledge) {
         List<InvestigationProvenance.Abstention> abstentions = new ArrayList<>();
         if (diagnosis.routeMode() == RouteMode.DETERMINISTIC) {
             abstentions.add(new InvestigationProvenance.Abstention(
@@ -145,6 +161,22 @@ public class InvestigationProvenanceService {
                     "真实观测源",
                     "本次证据来自 fixture / 录制回放，未接入真实观测云；"
                             + "回放通过不等于真实数据已验证（A10）。"));
+        }
+        // 证据是真的 ≠ 知识是真的。这两件事此前被压在同一个 fixtureMode 布尔值
+        // 上：T7 落地那天有人把 EVIDENCE_IS_FIXTURE 翻成 false，每一条诊断都会
+        // 变成「真源」——包括那些由手写 Playbook 路由、阈值从没用真实历史故障
+        // 标定过的。所以这一条**不看 fixtureMode**，只看知识本身的来源。
+        if (handWritten(knowledge)) {
+            abstentions.add(new InvestigationProvenance.Abstention(
+                    "真实数据校准",
+                    "这份 Playbook 的判据与阈值是人手写的，从未用真实历史故障标定过。"
+                            + "证据是否来自真源、与知识是否被真实数据校准，是两件事；"
+                            + "接上真源不会让手写阈值变得可信。"));
+        } else if (!knowledge.readable()) {
+            abstentions.add(new InvestigationProvenance.Abstention(
+                    "知识来源判定",
+                    "读不到冻结的 Playbook 版本，无法判断这份知识是手写还是归纳产出；"
+                            + "在判定出来之前，不要把它当作已校准的知识。"));
         }
         if (diagnosis.rehearsal()) {
             abstentions.add(new InvestigationProvenance.Abstention(

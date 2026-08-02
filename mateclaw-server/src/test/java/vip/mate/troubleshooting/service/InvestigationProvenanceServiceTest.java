@@ -163,6 +163,65 @@ class InvestigationProvenanceServiceTest {
                 .hasMessageContaining("A1");
     }
 
+    /**
+     * 投入使用前最要紧的一格。
+     *
+     * <p>{@code fixtureMode} 是一个全局常量 {@code EVIDENCE_IS_FIXTURE}，含义是
+     * 「证据是夹具」。T7 落地那天有人把它翻成 false，每一条诊断都会变成「真源」
+     * ——包括那些由手写 Playbook 路由、阈值从没用真实历史故障标定过的。
+     * 证据是真的 ≠ 知识是真的：两个独立的轴，此前被压成一个布尔值。
+     *
+     * <p>所以这条断言用 {@code fixtureMode=false} 构造，也就是**翻转之后的世界**：
+     * 手写知识的警告必须仍然在。它一旦消失，这个产品就会拿着没人校准过的阈值
+     * 对真实故障下结论，而页面上什么都不说。</p>
+     */
+    @Test
+    @DisplayName("接上真源之后，手写知识的警告必须仍然在")
+    void connectingARealSourceDoesNotMakeHandWrittenThresholdsTrustworthy() {
+        stored(deterministic(false, false));
+        frozen();
+
+        List<InvestigationProvenance.Abstention> abstentions =
+                service.explain(7L, "diag-1").abstentions();
+
+        assertThat(abstentions)
+                .extracting(InvestigationProvenance.Abstention::capability)
+                .as("证据变真了，知识没有；这一条不看 fixtureMode")
+                .contains("真实数据校准")
+                .doesNotContain("真实观测源");
+        assertThat(abstentions)
+                .anyMatch(item -> item.reason().contains("接上真源不会让手写阈值变得可信"));
+    }
+
+    @Test
+    @DisplayName("归纳产出的知识不挂「未校准」的牌子")
+    void inducedKnowledgeIsNotFlaggedAsHandWritten() {
+        stored(deterministic(false, false));
+        when(versions.findByRef(eq(7L), any(PlaybookVersionRef.class)))
+                .thenReturn(Optional.of(new ApprovedPlaybookVersion(
+                        "playbook-1", 1, "csdp:903001", "APPROVED",
+                        "EVIDENCE_DERIVED", "record-1", null, null,
+                        "reviewer", "归纳后评审通过", null, null, null, null,
+                        playbook(), NOW.minusSeconds(600), NOW.minusSeconds(600))));
+
+        assertThat(service.explain(7L, "diag-1").abstentions())
+                .extracting(InvestigationProvenance.Abstention::capability)
+                .doesNotContain("真实数据校准");
+    }
+
+    @Test
+    @DisplayName("读不到冻结版本时，不许默认它是已校准的知识")
+    void unreadableKnowledgeIsNotAssumedCalibrated() {
+        stored(deterministic(false, false));
+        when(versions.findByRef(eq(7L), any(PlaybookVersionRef.class)))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.explain(7L, "diag-1").abstentions())
+                .extracting(InvestigationProvenance.Abstention::capability)
+                .as("判不出来就说判不出来，沉默会被读成「已校准」")
+                .contains("知识来源判定");
+    }
+
     @Test
     @DisplayName("演练必须标出来，否则会被当成一次真实处置")
     void aRehearsalSaysSo() {
