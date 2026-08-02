@@ -533,8 +533,9 @@ v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
       `scripts/ci/test-troubleshooting-smoke-workflow.sh` 增加静态合同：无码路入口存在、
       排在命中路之后、脚本可执行，且仍带 `NOT_ELIGIBLE` / `CANDIDATE_REUSED` 两道反向断言。
 - [x] `quickstart.md` 增加第二条主线：不仅"看见一次诊断"，还要"看见一条知识被生产出来"。
-- [ ] 只有无码路默认可跑之后，再回头做 T0.8 的 145 条批量导入——
-      学习环通了，其中一部分可能根本不需要手写。
+- [x] “无码路默认可跑”这个 T0.8 前置已经满足；学习环已通，其中一部分可能不需要手写。
+      **这不等于现在启动 145 条导入**：当前暂停原因已转为先在 T7 窗口取得 20–30 条真实种子，
+      再据真实供给/拒绝分布决定后续批次，见 T0.8 主条目。
 
 **实测**（`dev,troubleshooting-demo`，H2 默认库）：九道闸门全绿，
 `CANDIDATE_CREATED` → `reviewStatus=CANDIDATE` → `approvalEligibility=NOT_ELIGIBLE` →
