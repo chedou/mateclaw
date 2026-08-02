@@ -18,6 +18,7 @@ import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
+import vip.mate.troubleshooting.service.InvestigationProvenanceService;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
@@ -47,6 +48,7 @@ class TroubleshootingControllerProjectionTest {
                 mock(TroubleshootingIntakeService.class),
                 mock(DiagnosisLifecycleService.class),
                 mock(DiagnosisDerivationService.class),
+                mock(InvestigationProvenanceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 projectionService);
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
@@ -79,6 +81,7 @@ class TroubleshootingControllerProjectionTest {
                 intakeService,
                 mock(DiagnosisLifecycleService.class),
                 mock(DiagnosisDerivationService.class),
+                mock(InvestigationProvenanceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 mock(DiagnosisExperienceProjectionService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
@@ -120,6 +123,7 @@ class TroubleshootingControllerProjectionTest {
                 intakeService,
                 mock(DiagnosisLifecycleService.class),
                 mock(DiagnosisDerivationService.class),
+                mock(InvestigationProvenanceService.class),
                 mock(TroubleshootingPersistenceService.class),
                 mock(DiagnosisExperienceProjectionService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
@@ -190,6 +194,7 @@ class TroubleshootingControllerProjectionTest {
                 mock(TroubleshootingIntakeService.class),
                 mock(DiagnosisLifecycleService.class),
                 mock(DiagnosisDerivationService.class),
+                mock(InvestigationProvenanceService.class),
                 persistence,
                 mock(DiagnosisExperienceProjectionService.class));
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
