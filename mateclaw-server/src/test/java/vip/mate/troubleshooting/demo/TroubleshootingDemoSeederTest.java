@@ -53,11 +53,15 @@ class TroubleshootingDemoSeederTest {
     void demoSelectorsAreOwnedByTheReplayCatalog() {
         assertThat(TroubleshootingDemoSeeder.selectors())
                 .containsExactly("csdp:903001", "csdp:IM1010",
-                        "csdp:scenario:message_send_failed");
+                        "csdp:scenario:message_send_failed",
+                        "csdp:scenario:gateway_timeout",
+                        "csdp:scenario:auth_token_rejected");
         assertThat(candidates())
                 .extracting(SopEntry::routingKey)
                 .containsExactly("csdp:903001", "csdp:IM1010",
-                        "csdp:scenario:message_send_failed");
+                        "csdp:scenario:message_send_failed",
+                        "csdp:scenario:gateway_timeout",
+                        "csdp:scenario:auth_token_rejected");
     }
 
     @Test
