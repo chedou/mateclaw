@@ -717,6 +717,10 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       （2026-07-31）。`success` 终态标记的业务语义仍纳入下面 owner T7 acceptance。
 - [ ] 由 Workspace owner 完成索引、时间窗、DQL 延迟和旧 route 冲突复核，并对当前配置指纹提交
       `ACCEPTED`；提交前不得开放 T8 真源采样。
+      **代码侧已就绪**（V184 验收接缝、正式工作台向导、`GET/POST
+      /evidence/guance/acceptance`，清单见 runbook §6）。剩下的是**人和内网窗口**：
+      端点在 `*.prd.sangfor.com`，需要 owner 本人和受控运行时 Key。这一项不会因为
+      再写代码而前进。
 - [ ] 用当前受控运行时 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
       本地联调可按本次操作员明确授权临时开启 insecure HTTP，完成后立即关闭；正式部署仍须使用 HTTPS
       端点或受控 TLS 代理，不得提交 Key。
@@ -788,8 +792,29 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       owner acceptance，查询模板、字段映射、端点或路由配置变化后旧验收自动 `STALE`，任何真源请求前
       返回 409；Replay 仍保持独立 fixture capability，不受这条真源门禁混淆。
 - [ ] 建 20–30 条历史样本，保留人工结论、参考步骤和 outcome。
-- [ ] 统计 p50/p95 取证/压缩/模型/总时延、引用完整率、必需意图覆盖率、abstain 质量。
-- [ ] 分开统计“没帮上忙”和“引向错误方向”；有害动作、高置信错误为 0 才可继续放权。
+      **卡在 T7 owner `ACCEPTED` 与真实历史故障上，不是代码。**
+- [x] 统计口径补齐（2026-08-02）：耗时 p50/p95 早已有；**引用完整率、必需意图覆盖率、
+      abstain 质量、危险提议此前只逐条存着、从来没有被汇总过**。
+      `BaselineEvaluationLedger.CohortMetrics.QualityMetrics` 补上，仍按来源 ×
+      真实/fixture Diagnosis 分栏，绝不混成一个数。三条刻意的取舍：
+      - **只给计数与分母，不给率。** 2 分之 2 与 30 分之 30 渲染出来一模一样，
+        而这批样本就是 20–30 条，正好是这个差别决定一切的量级。除法留给能看见分母的人。
+      - **覆盖率给 p50 与最小值，不给 p95。** 它是下限条件；p95=1.0 与"有一条只覆盖 0.2"
+        完全兼容，而那一条正是阈值存在的理由。
+      - **`dangerFreeAcross(minimumRuns)` 把样本量写进签名。** 裸的
+        `dangerousProposalRuns == 0` 会被空队列满足，而"0 条里没有危险提议"
+        正是一次过早放权会呈现的样子。
+      **在样本落地之前写**：定义若在数据摆在眼前之后才写，就是照着数据挑的，
+      §5.7「退出条件是数据达标、不是排期到点」也就没有意义了。
+- [x] 分开统计"没帮上忙"和"引向错误方向"：`HELPFUL / UNHELPFUL / HARMFUL_BLOCKED /
+      TECHNICAL_FAILURE` 早已分栏，危险提议现在也有了汇总计数。
+- [ ] **「高置信错误为 0」目前不可测**（2026-08-02 查实）。不是没汇总——
+      `PlaybookDraft` 与 `DiagnosisHypothesis` 上**根本没有置信度字段**，
+      整个 evaluation 包里也搜不到 confidence。要让这条退出条件可评估，
+      需要先决定一件事，而这件事不该我替你定：
+      **是否让模型自报置信度，以及自报的置信度是否可信到能用来把关放权。**
+      在决定之前，§5.7 的这一项写在 RFC 里但落不了地——先把它记成一个空洞，
+      比让它看起来被覆盖了要好。
 - [x] Recorded Replay 与真实 Guance 结果分组展示和统计，并在每个来源内继续分开
       真实 Diagnosis / fixture Diagnosis，禁止混成一个成功率。
 - [ ] 在同一批样本上影子运行 Evidence Challenger + Safety Challenger，各一次调用、固定一轮。
