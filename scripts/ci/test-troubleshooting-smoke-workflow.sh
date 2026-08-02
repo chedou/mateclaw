@@ -8,6 +8,7 @@ MAVEN_SETTINGS="${ROOT_DIR}/mateclaw-server/settings.xml"
 SMOKE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-smoke.sh"
 MISS_PATH_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-miss-path-smoke.sh"
 SCENARIO_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-scenario-smoke.sh"
+EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-scenario-evidence-smoke.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -43,6 +44,12 @@ assert_scenario_contains() {
   local needle="$1"
   grep -Fq -- "${needle}" "${SCENARIO_SCRIPT}" \
     || fail "scenario smoke script must contain: ${needle}"
+}
+
+assert_evidence_contains() {
+  local needle="$1"
+  grep -Fq -- "${needle}" "${EVIDENCE_SCRIPT}" \
+    || fail "scenario evidence smoke script must contain: ${needle}"
 }
 
 assert_order() {
@@ -115,6 +122,22 @@ assert_order "./scripts/troubleshooting-miss-path-smoke.sh" "./scripts/troublesh
 [[ -x "${SCENARIO_SCRIPT}" ]] || fail "scenario smoke script must be executable"
 assert_scenario_contains 'APPROVED_NOT_EXECUTED'
 assert_scenario_contains 'executionStatus=${execution_status}，期望仍然是 BLOCKED'
+
+# The symptom lane. Without it, "报障人在线上能不能拿到结论" is proven for
+# exactly one scenario — deployment topology, which has its own probe endpoint —
+# and the general path can regress back to "waits forever" unnoticed.
+assert_contains "./scripts/troubleshooting-scenario-evidence-smoke.sh"
+assert_order "./scripts/troubleshooting-scenario-smoke.sh" \
+  "./scripts/troubleshooting-scenario-evidence-smoke.sh"
+[[ -x "${EVIDENCE_SCRIPT}" ]] || fail "scenario evidence smoke script must be executable"
+assert_evidence_contains '/diagnoses/${diagnosis_id}/evidence-runs'
+# The gate that makes the other six mean anything: confirm must be refused
+# BEFORE the evidence runs. Drop it and the script passes on a system that was
+# never stuck, which is indistinguishable from a system that was fixed.
+assert_evidence_contains '取证前不得确认'
+# Both directions of the citation check. A one-sided version passes on an empty
+# list, and an empty list is what a wrong field name returns.
+assert_evidence_contains 'evidenceCitations'
 
 if grep -Eqi 'guance|fixtureMode[[:space:]]*:[[:space:]]*false' "${WORKFLOW}"; then
   fail "workflow must stay fixture-only and must not configure Guance"

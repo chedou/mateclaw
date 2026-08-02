@@ -129,6 +129,41 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 
 ---
 
+## 1.7 第四次：从一句现象走到可确认的结论
+
+前三条都从一个 **errorCode** 或从知识生产开始。真正常见的报障不带错误码，
+而那条 lane 中间有个洞：选了场景会开出一个「等取证」的 Diagnosis，
+却没有任何东西去跑它的取证计划。部署拓扑因为有自己的探针入口，
+成了**唯一**能走完的场景，也正因此这个洞一直看不见。
+
+```bash
+MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
+    ./scripts/troubleshooting-scenario-evidence-smoke.sh
+```
+
+实测输出：
+
+```text
+  ✓ 已开案：diag-…（INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION）
+  ✓ 取证前确认被拒（409）：abstained diagnosis requires new evidence before confirmation
+  ✓ 取证已执行：3 条证据
+  ✓ 取证后已确认：READY_FOR_HUMAN → CONFIRMED
+  ✓ 结论出自 Playbook：消息发送路径异常待核查
+  ✓ 引用恰好等于取到的证据：SYNTH-CONTRAST-SAMPLE, SYNTH-LOG-SEARCH, SYNTH-TRACE-BUNDLE
+  ✓ 重跑被拒（409）：this investigation is no longer waiting for evidence…
+```
+
+### 闸门 2 是这条脚本存在的理由
+
+**取证之前 `confirm` 必须被拒。** 没有这一格，第 3、4 格就是在一个从未卡住的系统上
+通过的——那和"修好了"在输出上完全一样，修复也就无从证伪。
+
+闸门 6 有过一次真实的教训：它最初查的是 `citedEvidence`，而响应里的字段叫
+`evidenceCitations`。查错字段返回空清单，"没有 MISSING 被引用"于是永远成立，
+这道闸门空转了一整轮才在实跑响应里被抓到。现在它两个方向都查：
+引用必须**恰好等于**非 MISSING 的取证，空清单直接判失败。
+
+
 ## 2. `troubleshooting-demo` profile 做了什么（以及没做什么）
 
 | 做了 | 没做 |
@@ -210,8 +245,11 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 5. 再运行 `scripts/troubleshooting-scenario-smoke.sh`（单案十道闸门）。
    前两条各自停在环的前半段；这一条把一个案子走到关闭，
    并且是唯一一处真正行走「批准≠执行」肯定半边的地方；
-6. 把服务日志和三份冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
-7. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
+6. 最后运行 `scripts/troubleshooting-scenario-evidence-smoke.sh`（现象 lane 七道闸门）。
+   前三条都从错误码或知识生产开始；这一条从一句现象开始，
+   证明**任意**场景都能跑完取证并给出可确认的结论，而不只是自带探针入口的拓扑；
+7. 把服务日志和四份冒烟输出作为 `troubleshooting-smoke-logs-*` artifact 保留；
+8. 在 checkout 前启动计时，并在脚本首次读到 `diagnosisId` 时落下终点；Step Summary 记录
    `clone → 首次诊断` 耗时，超过 300 秒发 warning，不把后续投影校验耗时冒充为首诊耗时。
 
 超过五分钟只表示启动速度回退，不伪装成产品正确性失败。链路闸门失败才让任务失败；脚本还会
@@ -228,9 +266,10 @@ bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 ```
 
 它会检查触发范围、Java 版本、Maven 不强制仓库级镜像、plugin API 构建顺序、demo profile、
-有限等待、三条冒烟的入口与先后顺序、300 秒目标、清理步骤和无条件日志上传，并断言无码路脚本
+有限等待、四条冒烟的入口与先后顺序、300 秒目标、清理步骤和无条件日志上传，并断言无码路脚本
 仍带着 `NOT_ELIGIBLE` 与 `CANDIDATE_REUSED` 两道反向断言、场景脚本仍断言
-`APPROVED_NOT_EXECUTED` 之后 `executionStatus` 必须仍是 `BLOCKED`。
+`APPROVED_NOT_EXECUTED` 之后 `executionStatus` 必须仍是 `BLOCKED`、
+现象 lane 脚本仍保留「取证前不得确认」这一格与 `evidenceCitations` 的双向比对。
 这个静态合同不能代替 GitHub runner 实跑。
 
 ---
@@ -240,6 +279,7 @@ bash scripts/ci/test-troubleshooting-smoke-workflow.sh
 - 命中路闸门：`./scripts/troubleshooting-smoke.sh --gates`
 - 无码路闸门：`./scripts/troubleshooting-miss-path-smoke.sh --gates`
 - 单案场景闸门：`./scripts/troubleshooting-scenario-smoke.sh --gates`
+- 现象 lane 闸门：`./scripts/troubleshooting-scenario-evidence-smoke.sh --gates`
 - 真实 Guance 接入：`evidence-adapter-runbook.md`（T6/T7）
 - 未命中路 Agent：`agent-miss-path-runbook.md`
 - 现行架构：`../../rfcs/intelligent-troubleshooting-architecture-v4.md`

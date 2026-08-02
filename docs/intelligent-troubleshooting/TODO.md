@@ -508,9 +508,19 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
       - 覆盖不完整且未见失败时**不给出** `failed_probe_count`：判据只能是"未求值"，
         不能是"已反证"。否则控制台会拿没人看过的节点去宣告"网络已排除"。
       - 已进入人工环节后重跑只记录运行、不改写结论，并在 `conclusionUpdated` 上如实说明。
-- [ ] 仍缺：一个真正跑 Scenario Playbook `evidencePlan` 的在线编排
-      （`EvidenceSpineOrchestrator` → `recordScenarioEvidence`）。
-      拓扑是**唯一**已接通写回的场景，其余场景仍停在待取证。
+- [x] 通用在线编排已补上：`ScenarioEvidenceRunService` +
+      `POST /diagnoses/{id}/evidence-runs`。跑 Playbook 自己的 `evidenceRequests`
+      （复用从 intake 抽出的 `PlaybookEvidenceCollector`，A9），
+      按**冻结的那个版本**求值，再 `recordScenarioEvidence`。
+      - 已进入人工环节的诊断**拒绝重跑**（409）而不是悄悄改写结论。
+      - 必需证据属于资产工具（`target.assetType`，D18）的 Playbook 在此**拒绝执行**，
+        而不是走 Router 伪造一条 MISSING——那等于对一个从未问过的来源说「查过了，没有」。
+      - 端到端已实跑：`scripts/troubleshooting-scenario-evidence-smoke.sh` 七道闸门全绿，
+        并已接入 CI workflow 与静态合同校验。
+      - 教训记一笔：闸门 6 最初查 `citedEvidence`，真实字段是 `evidenceCitations`，
+        查错字段返回空清单，于是「没有 MISSING 被引用」永远成立——**空转了一整轮**。
+        现改为双向比对（引用必须恰好等于非 MISSING 的取证，空清单直接失败）。
+        这是本轮第三次同型问题：闸门写错了对象，比没有闸门更糟。
 - [ ] 在此之前，其余无码故障的**可用产出仍然只有知识生产 lane**
       （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
       所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
