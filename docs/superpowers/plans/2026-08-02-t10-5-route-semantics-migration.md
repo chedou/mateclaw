@@ -98,7 +98,7 @@ Commit only the enum, `Diagnosis.java`, and `DiagnosisContractTest.java` with a 
 - Modify: `mateclaw-server/src/test/java/vip/mate/troubleshooting/persistence/TroubleshootingMigrationTest.java`
 - Modify: `mateclaw-server/src/test/java/vip/mate/troubleshooting/persistence/TroubleshootingPersistenceServiceTest.java`
 
-- [ ] **Step 1: Write a failing H2 migration test**
+- [x] **Step 1: Write a failing H2 migration test**
 
 Add `h2V191IndexesOnlyPersistedRouteSemantics()` that applies V172, inserts one 1.4 aggregate without the two fields and one 1.8 aggregate containing:
 
@@ -116,7 +116,7 @@ assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_authority"));
 // 1.4 row: both columns null; 1.8 row: exact SCENARIO_PLAYBOOK/RULE_MATCHED.
 ```
 
-- [ ] **Step 2: Verify the migration test fails before V191 exists**
+- [x] **Step 2: Verify the migration test fails before V191 exists**
 
 Run:
 
@@ -129,7 +129,7 @@ mvn --offline --batch-mode --no-transfer-progress \
 
 Expected: failure loading `V191__troubleshooting_route_semantics.sql`.
 
-- [ ] **Step 3: Add cross-database migrations**
+- [x] **Step 3: Add cross-database migrations**
 
 Each migration adds nullable `investigation_mode VARCHAR(48)` and `route_authority VARCHAR(48)`, plus indexes `(workspace_id, investigation_mode, id)` and `(workspace_id, route_authority, id)`. The second index is required for the later same-cohort `RULE_MATCHED` / `MODEL_PROPOSED` count; this task does not fabricate those missing production paths.
 
@@ -152,11 +152,11 @@ WHERE contract_version NOT IN ('1.3', '1.4');
 
 MySQL copies `JSON_UNQUOTE(JSON_EXTRACT(aggregate_json, '$.investigationMode'))` and `$.routeAuthority`; Kingbase copies `aggregate_json::jsonb ->> 'investigationMode'` and `routeAuthority`. Both restrict the update to contracts other than 1.3/1.4 and non-null JSON members. No migration may infer values from `routeMode`.
 
-- [ ] **Step 4: Verify the migration test passes**
+- [x] **Step 4: Verify the migration test passes**
 
 Run the Step 2 command. Expected: all `TroubleshootingMigrationTest` tests pass.
 
-- [ ] **Step 5: Write failing persistence/index tests**
+- [x] **Step 5: Write failing persistence/index tests**
 
 Extend `TroubleshootingPersistenceServiceTest` to assert a newly created current diagnosis writes:
 
@@ -167,7 +167,7 @@ assertEquals("EXPLICIT", entity.getValue().getRouteAuthority());
 
 Add a legacy 1.4 create case from JSON and assert both indexed columns remain null. Add a list-query test that calls `list(7L, null, null, InvestigationMode.SCENARIO_PLAYBOOK, 100)` and verifies the captured MyBatis parameters contain `SCENARIO_PLAYBOOK` without inspecting aggregate JSON.
 
-- [ ] **Step 6: Verify the persistence tests fail for missing fields/signature**
+- [x] **Step 6: Verify the persistence tests fail for missing fields/signature**
 
 Run:
 
@@ -180,7 +180,7 @@ mvn --offline --batch-mode --no-transfer-progress \
 
 Expected: test compilation fails until entity fields and the typed list parameter exist.
 
-- [ ] **Step 7: Implement indexed persistence and summary provenance**
+- [x] **Step 7: Implement indexed persistence and summary provenance**
 
 Add `String investigationMode` and `String routeAuthority` to the entity. On create/update, write enum names only when `diagnosis.routeSemanticsProvenance() == PERSISTED`; write null for `LEGACY_DERIVED`. Extend `DiagnosisSummary` with nullable typed fields and mandatory `RouteSemanticsProvenance`. `DiagnosisSummary.from()` parses exact indexed enum names; it returns `LEGACY_DERIVED` only for a legacy contract with both index columns null and fails closed on incomplete/non-legacy indexed state.
 
@@ -204,11 +204,11 @@ public List<DiagnosisSummary> list(
 }
 ```
 
-- [ ] **Step 8: Verify migration and persistence suites GREEN**
+- [x] **Step 8: Verify migration and persistence suites GREEN**
 
 Run both tests from Steps 2 and 6 in one Maven invocation. Expected: 0 failures and 0 errors.
 
-- [ ] **Step 9: Commit the index slice**
+- [x] **Step 9: Commit the index slice**
 
 Commit the three migrations, entity, summary, persistence service, and their tests with a Lore message and required co-author trailer.
 
