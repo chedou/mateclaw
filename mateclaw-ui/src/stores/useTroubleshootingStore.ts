@@ -13,6 +13,7 @@ import {
   type GuanceRecordingTargetCatalogView,
   type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
+  type InvestigationMode,
   type RecordedReplayEvaluationCapability,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
@@ -62,6 +63,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   const projection = ref<DiagnosisExperienceProjection | null>(null)
   const topologyProbeRuns = ref<TopologyProbeEvidenceRun[]>([])
   const statusFilter = ref<DiagnosisStatus | ''>('')
+  const investigationModeFilter = ref<InvestigationMode | ''>('')
   const viewMode = ref<WorkbenchViewMode>('LIST')
 
   // ── search / filter / sort ──────────────────────────────────
@@ -246,7 +248,11 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   async function loadList(autoSelect = true) {
     listLoading.value = true
     try {
-      const { data } = await troubleshootingApi.list({ status: statusFilter.value || undefined, limit: 100 })
+      const { data } = await troubleshootingApi.list({
+        status: statusFilter.value || undefined,
+        investigationMode: investigationModeFilter.value || undefined,
+        limit: 100,
+      })
       rows.value = data ?? []
       if (autoSelect && !selectedId.value) {
         const queryId = typeof route.query.diagnosisId === 'string' ? route.query.diagnosisId : null
@@ -516,6 +522,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     projection,
     topologyProbeRuns,
     statusFilter,
+    investigationModeFilter,
     viewMode,
     // search / filter / sort
     searchKeyword,

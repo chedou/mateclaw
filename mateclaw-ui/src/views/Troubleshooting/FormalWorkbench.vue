@@ -33,6 +33,20 @@
         <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="store.loadList(false)">
           <el-option v-for="status in STATUSES" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
+        <el-select
+          v-model="investigationModeFilter"
+          size="small"
+          clearable
+          placeholder="全部调查模式"
+          @change="store.loadList(false)"
+        >
+          <el-option
+            v-for="mode in WORKBENCH_INVESTIGATION_MODES"
+            :key="mode"
+            :label="investigationModeLabel(mode)"
+            :value="mode"
+          />
+        </el-select>
         <div class="queue-action-row">
           <el-button
             v-if="canOperateTroubleshooting || canManageTroubleshooting"
@@ -546,6 +560,7 @@ import {
   guanceOwnerBlockerLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
+  investigationModeLabel,
 } from './formalProjection'
 import {
   buildFormalIncidentReport,
@@ -598,6 +613,7 @@ import {
 import {
   TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
+  WORKBENCH_INVESTIGATION_MODES,
   diagnosisSelectionMode,
   diagnosisStatusLabel as statusLabel,
   diagnosisStatusTone as statusTone,
@@ -619,7 +635,7 @@ const store = useTroubleshootingStore()
 const {
   canOperateTroubleshooting, canManageTroubleshooting, canAcceptGuanceOwner,
   rows, selectedId, current, projection,
-  topologyProbeRuns, statusFilter, viewMode,
+  topologyProbeRuns, statusFilter, investigationModeFilter, viewMode,
   listLoading, detailLoading, actionLoading, readinessLoading,
   guanceReadiness, guanceValidation, guanceSpinePreview,
   guanceOwnerAcceptance, guanceDiagnosisLookup, replayCapability, readinessError,
@@ -823,6 +839,7 @@ async function reportIncident() {
     incidentReportOpen.value = false
     resetIncidentReportForm()
     statusFilter.value = ''
+    investigationModeFilter.value = ''
     await store.loadList(false)
     await store.selectDiagnosis(data.diagnosis.diagnosisId)
     if (data.created) {
@@ -867,6 +884,7 @@ async function createDeploymentTopologyScenario() {
   deploymentTopologyScenarioOpen.value = false
   resetDeploymentTopologyScenarioForm()
   statusFilter.value = ''
+  investigationModeFilter.value = ''
   await store.loadList(false)
   await store.selectDiagnosis(stored.diagnosis.diagnosisId)
   const loadedDiagnosis = current.value

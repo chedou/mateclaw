@@ -11,6 +11,7 @@ import type {
   InvestigationMode,
   KnowledgeEvidenceGrade,
   RouteAuthority,
+  RouteSemanticsProvenance,
 } from '@/api'
 
 const CONCLUSION_LABEL: Record<ConclusionType, string> = {
@@ -116,6 +117,29 @@ export function closureOutcomeLabel(value: ClosureOutcome) {
 
 export function investigationLabel(mode: InvestigationMode, authority: RouteAuthority) {
   return `${INVESTIGATION_LABEL[mode]} · ${AUTHORITY_LABEL[authority]}`
+}
+
+export function investigationModeLabel(mode: InvestigationMode) {
+  return INVESTIGATION_LABEL[mode]
+}
+
+/**
+ * Queue rows must expose whether their v4 route semantics were persisted.
+ * Legacy rows stay visible, but the browser never guesses typed values from
+ * the compatibility-only RouteMode field.
+ */
+export function diagnosisSummaryRouteLabel(
+  mode: InvestigationMode | null,
+  authority: RouteAuthority | null,
+  provenance: RouteSemanticsProvenance,
+) {
+  if (provenance === 'LEGACY_DERIVED') {
+    return '旧合同推导 · 详情可见兼容值'
+  }
+  if (mode == null || authority == null) {
+    return '路由字段缺失'
+  }
+  return investigationLabel(mode, authority)
 }
 
 export function knowledgeEvidenceGradeLabel(value: KnowledgeEvidenceGrade) {

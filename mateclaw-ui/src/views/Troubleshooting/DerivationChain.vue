@@ -109,7 +109,10 @@ import {
   type EvidenceResult,
   type RuleEvaluation,
 } from '@/api'
-import { canRenderDeterministicDerivation } from './derivationPresentation'
+import {
+  canRenderDeterministicDerivation,
+  supportsDeterministicDerivation,
+} from './derivationPresentation'
 
 const props = defineProps<{ diagnosis: Diagnosis }>()
 
@@ -128,9 +131,14 @@ const OUTCOME_ORDER: Record<CriterionOutcome, number> = {
 const derivation = ref<DiagnosisDerivation | null>(null)
 const loadError = ref('')
 const loading = ref(false)
-const isDeterministic = computed(() => props.diagnosis.routeMode === 'DETERMINISTIC')
+const isDeterministic = computed(() =>
+  supportsDeterministicDerivation(props.diagnosis.investigationMode),
+)
 const showDeterministicDerivation = computed(() =>
-  canRenderDeterministicDerivation(isDeterministic.value, derivation.value !== null),
+  canRenderDeterministicDerivation(
+    props.diagnosis.investigationMode,
+    derivation.value !== null,
+  ),
 )
 let loadRevision = 0
 
@@ -181,9 +189,9 @@ async function load(diagnosisId: string) {
 }
 
 watch(
-  () => [props.diagnosis.diagnosisId, props.diagnosis.routeMode] as const,
-  ([id, routeMode]) => {
-    if (routeMode === 'DETERMINISTIC') {
+  () => [props.diagnosis.diagnosisId, props.diagnosis.investigationMode] as const,
+  ([id, investigationMode]) => {
+    if (supportsDeterministicDerivation(investigationMode)) {
       void load(id)
     } else {
       loadRevision += 1

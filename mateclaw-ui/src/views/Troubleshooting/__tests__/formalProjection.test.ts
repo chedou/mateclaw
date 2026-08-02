@@ -9,6 +9,7 @@ import type {
 import {
   closureOutcomeLabel,
   conclusionLabel,
+  diagnosisSummaryRouteLabel,
   formatDuration,
   guanceAcceptanceProgress,
   guanceAcceptanceStateLabel,
@@ -129,6 +130,15 @@ describe('formal troubleshooting projection formatting', () => {
       .toBe('错误码 Playbook · 显式命中')
     expect(investigationLabel('OPEN_DISCOVERY', 'MODEL_PROPOSED'))
       .toBe('开放调查 · 模型提议')
+  })
+
+  it('keeps persisted route semantics distinct from legacy reconstruction', () => {
+    expect(diagnosisSummaryRouteLabel(null, null, 'LEGACY_DERIVED'))
+      .toBe('旧合同推导 · 详情可见兼容值')
+    expect(diagnosisSummaryRouteLabel('SCENARIO_PLAYBOOK', 'RULE_MATCHED', 'PERSISTED'))
+      .toBe('场景 Playbook · 规则命中')
+    expect(diagnosisSummaryRouteLabel(null, 'RULE_MATCHED', 'PERSISTED'))
+      .toBe('路由字段缺失')
   })
 
   it('makes recorded knowledge and authored fixtures impossible to confuse', () => {

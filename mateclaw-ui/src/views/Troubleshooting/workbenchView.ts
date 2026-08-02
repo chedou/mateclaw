@@ -1,4 +1,4 @@
-import type { DiagnosisStatus } from '@/api'
+import type { DiagnosisStatus, InvestigationMode } from '@/api'
 
 export type WorkbenchViewSwitchMode = 'LIST' | 'QUEUE'
 export type WorkbenchViewMode = WorkbenchViewSwitchMode | 'DETAIL'
@@ -31,6 +31,12 @@ export const WORKBENCH_DIAGNOSIS_STATUSES: DiagnosisStatus[] = [
   'CONFIRMED',
   'TRANSFERRED',
   'CLOSED',
+]
+
+export const WORKBENCH_INVESTIGATION_MODES: InvestigationMode[] = [
+  'ERROR_CODE_PLAYBOOK',
+  'SCENARIO_PLAYBOOK',
+  'OPEN_DISCOVERY',
 ]
 
 export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{

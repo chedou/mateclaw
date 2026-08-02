@@ -2121,6 +2121,10 @@ export interface DiagnosisSummary {
   errorCode: string | null
   service: string
   status: DiagnosisStatus
+  /** Null only for 1.3/1.4 rows whose v4 route semantics were never persisted. */
+  investigationMode: InvestigationMode | null
+  routeAuthority: RouteAuthority | null
+  routeSemanticsProvenance: RouteSemanticsProvenance
   rehearsal: boolean
   version: number
   createTime: string
@@ -2172,6 +2176,7 @@ export type ConclusionType = 'LOCATED' | 'EXCLUDED' | 'HYPOTHESIS' | 'INSUFFICIE
 export type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
 export type InvestigationMode = 'ERROR_CODE_PLAYBOOK' | 'SCENARIO_PLAYBOOK' | 'OPEN_DISCOVERY'
 export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED'
+export type RouteSemanticsProvenance = 'PERSISTED' | 'LEGACY_DERIVED'
 export type EvidenceStepTone = 'NORMAL' | 'ANOMALY' | 'EXCLUDED' | 'UNEVALUATED'
 export type EvidenceStepKind = 'EVIDENCE' | 'CRITERION'
 export type DraftReviewStatus = 'DRAFT' | 'CANDIDATE'
@@ -2265,6 +2270,7 @@ export interface DeveloperEvidenceView {
   diagnosisId: string
   investigationMode: InvestigationMode
   routeAuthority: RouteAuthority
+  routeSemanticsProvenance: RouteSemanticsProvenance
   playbookRef: string | null
   /** Null only when no Playbook owns this Diagnosis. */
   knowledgeEvidenceGrade: KnowledgeEvidenceGrade | null
@@ -2847,7 +2853,12 @@ export const troubleshootingApi = {
       '/troubleshooting/scenarios/deployment-topology/diagnoses', data,
     ),
 
-  list: (params?: { status?: string; system?: string; limit?: number }) =>
+  list: (params?: {
+    status?: string
+    system?: string
+    investigationMode?: InvestigationMode
+    limit?: number
+  }) =>
     http.get<DiagnosisSummary[]>('/troubleshooting/diagnoses', { params }),
 
   get: (diagnosisId: string) =>
