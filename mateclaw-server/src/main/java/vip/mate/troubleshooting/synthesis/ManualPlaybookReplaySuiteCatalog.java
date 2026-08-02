@@ -109,8 +109,12 @@ public final class ManualPlaybookReplaySuiteCatalog {
                         RejectedSeed item = new RejectedSeed(
                                 reference, "INVALID_RECORDED_EVIDENCE_SEED");
                         rejected.add(item);
-                        log.warn("[manual-replay] quarantined recorded seed {} ({})",
-                                item.reference(), item.code());
+                        // 原因必须说出来。隔离本身是对的（fail-closed，种子不加载），
+                        // 但只报一个代码就等于逼作者去猜——猜的过程里最省事的做法
+                        // 是把校验放宽，而那正是这道闸门要挡住的事。
+                        // 消息脱敏并截断：种子里可能带业务串，日志不是它该去的地方。
+                        log.warn("[manual-replay] quarantined recorded seed {} ({}): {}",
+                                item.reference(), item.code(), safeReason(failure));
                     }
                 }
             }
@@ -166,6 +170,16 @@ public final class ManualPlaybookReplaySuiteCatalog {
         if (loaded.putIfAbsent(resolved.suite().selectorKey(), resolved) != null) {
             throw new IllegalArgumentException("manual replay selectors must be unique");
         }
+    }
+
+    /** Bounded, redacted reason so an author can act without reading this class. */
+    private static String safeReason(Exception failure) {
+        String message = failure.getMessage();
+        if (message == null || message.isBlank()) {
+            return failure.getClass().getSimpleName();
+        }
+        String redacted = TroubleshootingSecretRedactor.redact(message);
+        return redacted.length() > 300 ? redacted.substring(0, 300) + "…" : redacted;
     }
 
     private String seedReference(JsonNode node, int index) {

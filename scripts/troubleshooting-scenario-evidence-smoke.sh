@@ -69,7 +69,7 @@ print_gates() {
                           多列 = 拿「我们查过」当依据；空清单 = 这道闸门在空转（A1）
   7. 重跑被拒绝            人已看过结论之后再 POST evidence-runs 必须 409，
                           而不是悄悄改写一个别人可能已经据此行动的结论
-  8. 多场景且结局不同        同一条 lane 至少跑通三个场景，且**必须包含一个 EXCLUDED**。
+  8. 多场景且结局不同        同一条 lane 至少跑通五个场景，且**必须包含一个 EXCLUDED**。
                           只会产出 LOCATED 的 demo 会夸大——「排除」也是结论，
                           而且是更常见的那种：多数排查是一段段划掉可能性
 
@@ -230,6 +230,8 @@ declare -a EXPECTED=(
   "message_send_failed:csdp-session-service:LOCATED"
   "gateway_timeout:csdp-api-gateway:EXCLUDED"
   "auth_token_rejected:csdp-auth:LOCATED"
+  "mq_backlog:csdp-mq-consumer:EXCLUDED"
+  "db_pool_saturated:csdp-order-db:LOCATED"
 )
 seen_excluded=0
 for spec in "${EXPECTED[@]}"; do
@@ -257,7 +259,7 @@ done
 [[ "${seen_excluded}" == "1" ]] || gate_failed "多场景且结局不同" \
   "三个场景全部给出了非 EXCLUDED 的结论" \
   "至少要有一个场景走到「排除」；只会产出 LOCATED 的 demo 会夸大能力"
-ok "多场景通过：三个场景、两种结局，含一个真正的「排除」"
+ok "多场景通过：${#EXPECTED[@]} 个场景、两种结局，含真正的「排除」"
 
 echo
 blue "无错误码 lane 通过：从一句现象走到了可确认的结论。"

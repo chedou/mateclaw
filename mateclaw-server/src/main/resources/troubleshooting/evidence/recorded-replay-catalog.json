@@ -266,6 +266,47 @@
       },
       "source": "recorded-replay:auth-token-rejected",
       "collectedAt": "2026-08-02T03:20:11Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-order-db",
+      "requestId": "DBP-METRIC",
+      "signalKind": "metric",
+      "target": {
+        "metric_scope": "db_pool"
+      },
+      "namespace": "M",
+      "query": "recorded:scenario/db-pool-saturated/metric",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：连接池水位与慢查询计数",
+      "observed": {
+        "reachable": true,
+        "connections_current": 191,
+        "connections_available": 200,
+        "slow_query_count": 34,
+        "baseline_slow": 2
+      },
+      "source": "recorded-replay:db-pool-saturated",
+      "collectedAt": "2026-08-02T04:10:00Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-mq-consumer",
+      "requestId": "MQB-COUNT",
+      "signalKind": "log_count",
+      "target": {
+        "search_term": "mq_backlog"
+      },
+      "namespace": "L",
+      "query": "recorded:scenario/mq-backlog/log-count",
+      "status": "NORMAL",
+      "summary": "脱敏回放：窗口内积压告警计数远低于阈值——积压不成立",
+      "observed": {
+        "count": 120,
+        "trace_id": "synthetic-trace-mq-backlog"
+      },
+      "source": "recorded-replay:mq-backlog",
+      "collectedAt": "2026-08-02T04:10:00Z"
     }
   ]
 }

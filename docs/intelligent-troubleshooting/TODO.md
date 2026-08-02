@@ -254,7 +254,29 @@ A6「不完整比编造更好」。被 `everyEvidenceRequestIsAnswerableByTheFix
 **猜错的后果不是取不到，是把两次不相干的请求当成同一次**，而下游的全链路日志包
 会照单全收，最后给出一条看起来完整、实则拼接自两次故障的证据链。没配就整个不可用。
 
-### 试图加两条新场景，被种子契约挡住了——原样记下
+### 两条新场景已加上——原因查清了，是我写错
+
+`db_pool_saturated`（`metric`）与 `mq_backlog`（`log_count`）现已加载并跑通。
+**拒绝原因不是种子契约不支持这两个信号种类，是我把 `target` 写成了空 `{}`。**
+先前那条「种子只支持以 log_search 为锚」的假设是错的，已作废。
+
+查清它的办法本身值得留下：**隔离只报一个代码、不报原因，就是在逼作者去猜，
+而猜的过程里最省事的做法是把校验放宽——那正是这道闸门要挡住的事。**
+现在 `ManualPlaybookReplaySuiteCatalog` 会把异常消息（脱敏 + 截断 300 字）
+一并打出来。
+
+| 场景 | 信号种类 | 结局 |
+|---|---|---|
+| `message_send_failed` | log_search + trace + contrast | LOCATED |
+| `gateway_timeout` | log_search + contrast | **EXCLUDED** |
+| `auth_token_rejected` | log_search + contrast | LOCATED |
+| **`mq_backlog`** | **`log_count`** | **EXCLUDED** |
+| **`db_pool_saturated`** | **`metric`** | LOCATED |
+| `deployment_topology_probe` | synthetic_probe（资产工具） | 另一条路 |
+
+冒烟第 8 格已扩到五个场景并强制含 EXCLUDED，实跑全绿。
+
+### 旧记录（已作废，保留以免有人再按它去改契约）
 
 想加 `db_pool_saturated`（`metric`）与 `mq_backlog`（`log_count`），
 覆盖场景侧从没用过的两个信号种类。两条都被

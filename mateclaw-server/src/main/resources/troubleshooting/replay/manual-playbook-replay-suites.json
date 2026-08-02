@@ -896,6 +896,188 @@
           }
         ]
       }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-mq-backlog/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:mq_backlog",
+      "requiredEvidenceRequestId": "MQB-COUNT",
+      "sourceReference": "recorded-evidence-2026-08-02-mq-backlog",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-mq-backlog-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:mq_backlog",
+        "service": "csdp-mq-consumer",
+        "title": "消息积压路径核查",
+        "cause": "消费端积压量显著，需沿消费者健康度继续核查",
+        "category": "infra",
+        "ownerTeam": "消息平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "MQB-COUNT",
+            "signalKind": "log_count",
+            "purpose": "取窗口内积压告警日志计数",
+            "target": {
+              "search_term": "mq_backlog"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "backlog_present",
+            "sourceRequestId": "MQB-COUNT",
+            "description": "窗口内积压告警计数达到阈值",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "count",
+              "threshold": 1000
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-MQ-BACKLOG",
+            "requiredSignals": [
+              "backlog_present"
+            ],
+            "rootCause": "消费端积压",
+            "summary": "证据把异常收敛到消费端积压；这定位到环节，尚不足以证明消费者为何变慢。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "MQB-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系消息平台组核查消费者健康度",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-mq-backlog-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-MQ-BACKLOG",
+        "evidence": [
+          {
+            "requestId": "MQB-COUNT",
+            "status": "ANOMALY",
+            "observed": {
+              "count": 8400,
+              "trace_id": "synthetic-trace-mq-backlog"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-db-pool-saturated/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:db_pool_saturated",
+      "requiredEvidenceRequestId": "DBP-METRIC",
+      "sourceReference": "recorded-evidence-2026-08-02-db-pool-saturated",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-db-pool-saturated-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:db_pool_saturated",
+        "service": "csdp-order-db",
+        "title": "连接池打满路径核查",
+        "cause": "连接池占用逼近上限且慢查询显著偏高，需沿长事务来源继续核查",
+        "category": "database",
+        "ownerTeam": "数据库平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "DBP-METRIC",
+            "signalKind": "metric",
+            "purpose": "取连接池水位与慢查询计数",
+            "target": {
+              "metric_scope": "db_pool"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "pool_near_limit",
+            "sourceRequestId": "DBP-METRIC",
+            "description": "连接池占用逼近上限",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "connections_current",
+              "threshold": 150
+            }
+          },
+          {
+            "signal": "slow_query_spike",
+            "sourceRequestId": "DBP-METRIC",
+            "description": "慢查询数显著偏高",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "slow_query_count",
+              "threshold": 20
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-DB-POOL-SATURATED",
+            "requiredSignals": [
+              "pool_near_limit",
+              "slow_query_spike"
+            ],
+            "rootCause": "连接池被慢查询占满",
+            "summary": "证据把异常收敛到连接池与慢查询；这定位到环节，尚不足以证明具体长事务来源。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "DBP-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系数据库平台组核查长事务来源",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-db-pool-saturated-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-DB-POOL-SATURATED",
+        "evidence": [
+          {
+            "requestId": "DBP-METRIC",
+            "status": "ANOMALY",
+            "observed": {
+              "reachable": true,
+              "connections_current": 198,
+              "connections_available": 200,
+              "slow_query_count": 37,
+              "baseline_slow": 2
+            }
+          }
+        ]
+      }
     }
   ]
 }

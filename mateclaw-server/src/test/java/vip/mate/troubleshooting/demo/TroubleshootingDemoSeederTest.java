@@ -55,13 +55,17 @@ class TroubleshootingDemoSeederTest {
                 .containsExactly("csdp:903001", "csdp:IM1010",
                         "csdp:scenario:message_send_failed",
                         "csdp:scenario:gateway_timeout",
-                        "csdp:scenario:auth_token_rejected");
+                        "csdp:scenario:auth_token_rejected",
+                        "csdp:scenario:mq_backlog",
+                        "csdp:scenario:db_pool_saturated");
         assertThat(candidates())
                 .extracting(SopEntry::routingKey)
                 .containsExactly("csdp:903001", "csdp:IM1010",
                         "csdp:scenario:message_send_failed",
                         "csdp:scenario:gateway_timeout",
-                        "csdp:scenario:auth_token_rejected");
+                        "csdp:scenario:auth_token_rejected",
+                        "csdp:scenario:mq_backlog",
+                        "csdp:scenario:db_pool_saturated");
     }
 
     @Test
