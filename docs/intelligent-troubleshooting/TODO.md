@@ -33,6 +33,11 @@
 | 7 | T0.10 v4 §5 与代码的命名分歧 | 结构账，不阻塞 | §3.5 |
 | 8 | P4 场景 Playbook / P5 知识治理 | 依赖 6 的真实时延与质量数据 | §7 §8 |
 
+**P1.8（2026-08-01）**：第一个场景的**链头**（补问 → 补齐 → 调查）已走通，
+北极星第一段第一次从机器里产生出真实数值。**链身有一个契约缺口**：
+在线 lane 对无码报障关着，因为 `Diagnosis` 没有"未路由且无模型"的形状。
+这是 v4 §5.5 的决策，见 §3.8 T0.16。
+
 **P1.7 已打通（2026-08-01）**：一个案子从报障走到关闭，十道闸门全绿。
 其中闸门 6 第一次在 HTTP 边界上走通了「批准≠执行」的**肯定**半边——
 此前只有 `POST /execute` 的 409 那半边被演示过。详见 §3.7。
@@ -403,6 +408,66 @@ D19 为 MANUAL 建的"录制正例 + 判据形状生成反例"机制，看起来
 `OWNER_REQUIRED / POSITIVE_REPLAY_REQUIRED / NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED / FIXTURE_ONLY`
 四条挡住。其中 **`FIXTURE_ONLY` 是对的**（A10：回放不能冒充真实验证），
 所以"知识生产环走到晋升"在 fixture 下本来就不该通。不去动它。
+
+---
+
+## 3.8 P1.8 · 第一个场景的全链路（链头已通，链身有契约缺口）
+
+**第一性原理下，"第一个场景"是蓝图 §11.1 点名的那个**：无 error_code 的
+「会话消息发送失败」。北极星的原话也是「从一条**不完整**报障，到……」。
+所以全链路的头是**补问**，不是 `POST /incidents`——而此前所有冒烟都从一条
+字段齐全的报障开始。
+
+### T0.15 · 链头：补问 → 补齐 → 调查（已完成）
+
+- [x] `FirstScenarioIntakeChainTest`：不完整报障 → `AWAITING_INPUT` + 说明缺什么 →
+      三分钟后补齐 → `READY` → `report(session)`，并验证两个北极星时间戳被**原样**带进调查。
+- [x] **补上了一个从未被端到端产生过的指标**。北极星第一段「补问成本」此前在测试里
+      只有手工常量（30s / 1min / PT2S），唯一基于 session 的测试喂的是一条**首帧就完整**
+      的消息，于是 `readyAt == reportedAt`，跨度结构性恒为 0。
+      **只对着常量断言的指标等于没有被度量。** 现在这个数第一次从机器里出来。
+- [x] 服务用生产构造器（真实系统时钟，离固定时间戳数月），所以任何一层若用 `now()`
+      顶替 session 边界，`eq(REPORTED_AT)` / `eq(READY_AT)` 会立刻失败。
+
+### T0.16 · 链身：在线 lane 对无码报障是关着的（契约缺口，需决策）
+
+默认配置下：
+
+```
+无错误码报障 → POST /incidents → 409 "troubleshooting miss-path Agent is disabled"
+```
+
+蓝图点名的第一个场景，**在默认可运行配置下报不进在线 lane**。
+（冒烟脚本能跑无码路，是因为它走 `/sops/synthesis/*`——知识生产 lane，不需要 Agent。）
+
+**这不是路由代码偷懒，是契约没给它留位置。** `Diagnosis` 只有两种合法形状：
+
+| routeMode | investigationMode | routeAuthority | 前置 |
+|---|---|---|---|
+| `DETERMINISTIC` | `ERROR_CODE_PLAYBOOK` | EXPLICIT / RULE_MATCHED | **要求 errorCode** |
+| `LLM_FALLBACK` | `OPEN_DISCOVERY` | `MODEL_PROPOSED` | **要求模型提议** |
+
+**没有"路由未命中且没有模型参与"这个形状**，所以没有任何合法的 Diagnosis 可以落库，
+只能 409。
+
+fail-closed 本身是对的（A6：不完整比编造更好），报障人也确实会被告知——
+5 次重试后走终态通知：「只读调查未能安全完成，系统已停止自动判断……
+MateClaw 未执行任何生产变更」。所以链是完整且诚实的，**只是默认不产出结论**。
+
+- [x] `FirstScenarioIntakeChainTest` 第三例钉住这个行为：拒绝必须**指名**是
+      「这条路没开」，而不是抛一个泛化错误——操作员据此知道要改的是部署决策不是代码。
+- [ ] **需要一个决定**（属 v4 §5.5 契约变更，不擅自做）。三个方向：
+      - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条
+        `INSUFFICIENT_EVIDENCE` 的诊断，并把**确定性证据脊柱**（`log_search → PS ID →
+        log_trace_bundle`，零 LLM，已在 `/sops/synthesis/preview` 证明可跑）挂上去。
+        这是最贴合北极星的一条：人至少拿到证据，而不是一句拒绝。
+      - (b) 承认在线无码 lane 必须依赖 Agent，把"未配置 Agent 时不受理无码报障"
+        写成显式产品约束，并在 quickstart / runbook 里讲清楚。
+      - (c) 让 `/incidents` 支持按 **scenario selector** 确定性路由（现在只按 errorCode），
+        无码但已注册场景的报障走 `DETERMINISTIC + SCENARIO_PLAYBOOK`，不需要模型。
+        契约已支持这个形状，缺的是入口。
+- [ ] 决定之前，**不要**为了让 demo 好看而录制一整个 Agent 回合——
+      录一次结构化归纳与录一个带预算的循环，诚实程度不是一回事。
 
 ---
 
