@@ -4,6 +4,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import {
   troubleshootingApi,
   type SopEntry,
+  type KnowledgeEvidenceCoverage,
   type SopStatus,
   type SopSummary,
 } from '@/api'
@@ -36,6 +37,7 @@ const EMPTY_TEMPLATE = JSON.stringify({
 export function useSopRegistry() {
   const activeDesk = ref<'registry' | 'review'>('registry')
   const rows = ref<SopSummary[]>([])
+  const evidenceCoverage = ref<KnowledgeEvidenceCoverage | null>(null)
   const selectedSop = ref<SopEntry | null>(null)
   const selectedRouteKey = ref<string | null>(null)
   const statusFilter = ref<SopStatus | ''>('')
@@ -92,12 +94,19 @@ export function useSopRegistry() {
   async function loadList() {
     listLoading.value = true
     try {
-      const { data } = await troubleshootingApi.listSops({
-        status: statusFilter.value || undefined,
-        system: systemFilter.value.trim() || undefined,
-        limit: 500,
-      })
-      rows.value = data ?? []
+      const [listResult, coverageResult] = await Promise.allSettled([
+        troubleshootingApi.listSops({
+          status: statusFilter.value || undefined,
+          system: systemFilter.value.trim() || undefined,
+          limit: 500,
+        }),
+        troubleshootingApi.knowledgeEvidenceCoverage(),
+      ])
+      if (listResult.status === 'rejected') throw listResult.reason
+      rows.value = listResult.value.data ?? []
+      evidenceCoverage.value = coverageResult.status === 'fulfilled'
+        ? coverageResult.value.data
+        : null
       const selected = rows.value.find((row) => row.routeKey === selectedRouteKey.value)
       if (selected) return
       if (rows.value.length) {
@@ -258,6 +267,7 @@ export function useSopRegistry() {
     // state
     activeDesk,
     rows,
+    evidenceCoverage,
     selectedSop,
     selectedRouteKey,
     statusFilter,

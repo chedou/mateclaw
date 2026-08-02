@@ -9,6 +9,7 @@ import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
@@ -108,6 +109,7 @@ class TroubleshootingPlaybookVersionServiceTest {
                         KnowledgeOrigin.MANUAL,
                         "manual-candidate-1",
                         "csdp:903001",
+                        KnowledgeEvidenceGrade.AUTHORED_FIXTURE,
                         sop("manual-candidate-1", "candidate", false)),
                 "review-new",
                 1,
@@ -123,6 +125,8 @@ class TroubleshootingPlaybookVersionServiceTest {
         assertThat(approved.playbook().status()).isEqualTo("approved");
         assertThat(approved.playbook().verified()).isTrue();
         assertThat(approved.playbook().sopId()).isEqualTo(approved.playbookId());
+        assertThat(approved.knowledgeEvidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
 
         ArgumentCaptor<TroubleshootingPlaybookVersionEntity> inserted =
                 ArgumentCaptor.forClass(TroubleshootingPlaybookVersionEntity.class);
@@ -132,6 +136,8 @@ class TroubleshootingPlaybookVersionServiceTest {
         assertThat(inserted.getValue().getActiveSelectorKey()).isEqualTo("csdp:903001");
         assertThat(inserted.getValue().getSourceOrigin()).isEqualTo("MANUAL");
         assertThat(inserted.getValue().getSourceRecordId()).isEqualTo("manual-candidate-1");
+        assertThat(inserted.getValue().getKnowledgeEvidenceGrade())
+                .isEqualTo("AUTHORED_FIXTURE");
         assertThat(inserted.getValue().getReviewId()).isEqualTo("review-new");
         assertThat(inserted.getValue().getReviewVersion()).isEqualTo(1);
         assertThat(inserted.getValue().getApprovalSnapshotJson())

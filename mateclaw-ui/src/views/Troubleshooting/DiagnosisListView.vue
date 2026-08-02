@@ -37,6 +37,20 @@
         />
       </el-select>
       <el-select
+        v-model="store.investigationModeFilter"
+        clearable
+        placeholder="全部调查模式"
+        aria-label="按调查模式筛选"
+        @change="emit('refresh')"
+      >
+        <el-option
+          v-for="mode in WORKBENCH_INVESTIGATION_MODES"
+          :key="mode"
+          :label="investigationModeLabel(mode)"
+          :value="mode"
+        />
+      </el-select>
+      <el-select
         v-model="store.systemFilter"
         clearable
         placeholder="全部系统"
@@ -90,6 +104,18 @@
           <template #default="{ row }"><code>{{ row.system }}:{{ row.errorCode || 'NO-CODE' }}</code></template>
         </el-table-column>
         <el-table-column prop="service" label="服务" min-width="180" sortable="custom" show-overflow-tooltip />
+        <el-table-column label="调查路径" min-width="210" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span
+              class="route-semantics"
+              :class="{ legacy: row.routeSemanticsProvenance === 'LEGACY_DERIVED' }"
+            >{{ diagnosisSummaryRouteLabel(
+              row.investigationMode,
+              row.routeAuthority,
+              row.routeSemanticsProvenance,
+            ) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="150" sortable="custom">
           <template #default="{ row }">
             <span class="table-status" :class="diagnosisStatusTone(row.status)">
@@ -138,8 +164,13 @@ import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
+  diagnosisSummaryRouteLabel,
+  investigationModeLabel,
+} from './formalProjection'
+import {
   TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES,
+  WORKBENCH_INVESTIGATION_MODES,
   diagnosisStatusLabel,
   diagnosisStatusTone,
   formatWorkbenchTime,
@@ -224,6 +255,8 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .diagnosis-table :deep(.el-table__row:hover>td) { background:var(--mc-bg-muted)!important; }
 .diagnosis-table code { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; }
 .diagnosis-table time { color:var(--mc-text-tertiary); font:var(--mc-text-xs) var(--mc-mono,monospace); }
+.route-semantics { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
+.route-semantics.legacy { color:var(--mc-warning); }
 .table-status { display:inline-flex; align-items:center; padding:3px 8px; border-radius:12px; background:var(--mc-bg-muted); font-size:10px; font-weight:700; }
 .table-status.active { color:var(--mc-primary); background:var(--mc-status-info-bg); }.table-status.success { color:var(--mc-success); background:var(--mc-status-success-bg); }.table-status.warning { color:var(--mc-warning); background:var(--mc-status-warning-bg); }.table-status.muted { color:var(--mc-text-tertiary); }
 .rehearsal { padding:1px 6px; border-radius:var(--mc-radius-sm); color:var(--mc-status-purple-text); background:var(--mc-status-info-bg); font-size:9px; }

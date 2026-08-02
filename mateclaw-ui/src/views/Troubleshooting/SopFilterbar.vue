@@ -51,6 +51,11 @@
         @click="$emit('clearFilters')"
       >清除筛选</button>
       <span class="registry-count">{{ rowCount }} 条路由</span>
+      <span v-if="evidenceCoverage" class="evidence-coverage">
+        真实录制正例
+        <b>{{ evidenceCoverage.recordedAggregateSelectors }}</b>
+        / {{ evidenceCoverage.inventoryErrorCodeSelectors }}
+      </span>
       <div class="lifecycle" aria-label="SOP 生命周期">
         <span>candidate</span><i>→</i><span>qualification gate</span><i>→</i><span>approved version</span><i>→</i><span>deprecated</span>
       </div>
@@ -85,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import type { KnowledgeOrigin, SopStatus } from '@/api'
+import type { KnowledgeEvidenceCoverage, KnowledgeOrigin, SopStatus } from '@/api'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
 const STATUS_LABEL: Record<SopStatus, string> = {
@@ -97,6 +102,7 @@ const STATUS_LABEL: Record<SopStatus, string> = {
 defineProps<{
   activeDesk: 'registry' | 'review'
   rowCount: number
+  evidenceCoverage: KnowledgeEvidenceCoverage | null
   knowledgeRowCount: number
   statusFilter: SopStatus | ''
   systemFilter: string
@@ -152,6 +158,13 @@ defineEmits<{
 }
 .clear-filter:hover { color: var(--el-color-primary); }
 .registry-count { margin-left: 4px; font-size: 11.5px; color: var(--el-text-color-secondary); }
+.evidence-coverage {
+  display: inline-flex; align-items: baseline; gap: 3px; padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--el-color-success) 28%, var(--el-border-color-lighter));
+  border-radius: 999px; color: var(--el-text-color-secondary); font-size: 10.5px;
+  background: color-mix(in srgb, var(--el-color-success) 7%, var(--el-bg-color));
+}
+.evidence-coverage b { color: var(--el-color-success); font: 700 12px var(--mc-mono, monospace); }
 .lifecycle {
   margin-left: auto; display: flex; align-items: center; gap: 7px;
   color: var(--el-text-color-secondary); font: 10.5px var(--mc-mono, monospace);

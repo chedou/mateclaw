@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.evaluation;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 
 import java.time.Instant;
 import java.util.List;
@@ -156,6 +157,40 @@ class BaselineEvaluationLedgerQualityTest {
                 .isZero();
     }
 
+    @Test
+    @DisplayName("高置信错误给计数与分母，且 0 分之 0 不能通过")
+    void highConfidenceErrorsAreCountedWithoutLettingAnEmptyDenominatorPass() {
+        BaselineEvaluationLedger empty = BaselineEvaluationLedger.from(List.of());
+        assertThat(empty.summary().guance().realDiagnosis()
+                .highConfidenceErrorFreeAcross(1)).isFalse();
+
+        BaselineEvaluationLedger ledger = BaselineEvaluationLedger.from(List.of(
+                realGuanceFullSpine("high-helpful", BaselineEvaluationRun.Classification.HELPFUL),
+                realGuanceFullSpine("high-wrong", BaselineEvaluationRun.Classification.UNHELPFUL),
+                realGuanceCoreOnly("medium-wrong", BaselineEvaluationRun.Classification.UNHELPFUL)));
+
+        var quality = ledger.summary().guance().realDiagnosis().quality();
+        assertThat(quality.confidenceAssessedRuns()).isEqualTo(3);
+        assertThat(quality.highConfidenceRuns()).isEqualTo(2);
+        assertThat(quality.highConfidenceErrorRuns()).isEqualTo(1);
+        assertThat(ledger.summary().guance().realDiagnosis()
+                .highConfidenceErrorFreeAcross(2)).isFalse();
+    }
+
+    @Test
+    @DisplayName("只有足够多的独立 HIGH 运行且错误为零，闸门才成立")
+    void highConfidenceErrorGateRequiresItsOwnDenominator() {
+        BaselineEvaluationLedger one = BaselineEvaluationLedger.from(List.of(
+                realGuanceFullSpine("high-1", BaselineEvaluationRun.Classification.HELPFUL)));
+
+        assertThat(one.summary().guance().realDiagnosis()
+                .highConfidenceErrorFreeAcross(2))
+                .as("一条 HIGH 不能冒充两条，即使错误数为零")
+                .isFalse();
+        assertThat(one.summary().guance().realDiagnosis()
+                .highConfidenceErrorFreeAcross(1)).isTrue();
+    }
+
     private static BaselineEvaluationLedger.CohortMetrics replayCohort(
             BaselineEvaluationLedger ledger) {
         return ledger.summary().recordedReplay().fixtureDiagnosis();
@@ -191,6 +226,60 @@ class BaselineEvaluationLedgerQualityTest {
         return run(runId, BaselineEvaluationRun.Status.MODEL_REJECTED,
                 BaselineEvaluationRun.Classification.TECHNICAL_FAILURE,
                 null, null, List.of(), false);
+    }
+
+    private static BaselineEvaluationRun realGuanceFullSpine(
+            String runId,
+            BaselineEvaluationRun.Classification classification) {
+        return realGuance(runId, GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED,
+                classification);
+    }
+
+    private static BaselineEvaluationRun realGuanceCoreOnly(
+            String runId,
+            BaselineEvaluationRun.Classification classification) {
+        return realGuance(runId, GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED,
+                classification);
+    }
+
+    private static BaselineEvaluationRun realGuance(
+            String runId,
+            GuanceEvidenceSpinePreview.Stage evidenceStage,
+            BaselineEvaluationRun.Classification classification) {
+        return new BaselineEvaluationRun(
+                runId,
+                ("%08x".formatted(runId.hashCode()) + "0".repeat(64)).substring(0, 64),
+                "eval-" + runId,
+                "diag-" + runId,
+                1,
+                EvidenceEvaluationSample.SourcePlatform.GUANCE,
+                false,
+                false,
+                evidenceStage,
+                "b".repeat(64),
+                BaselineEvaluationRun.Status.SCORED,
+                List.of(),
+                new BaselineEvaluationRun.ValidationSnapshot(true, true, List.of()),
+                new BaselineEvaluationRun.QualitySnapshot(
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        BaselineEvaluationRun.ActualDisposition.DRAFT,
+                        classification,
+                        true,
+                        1.0d,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        false),
+                new BaselineEvaluationRun.ModelSnapshot(
+                        "openai", "fixed-model", "7:model-config-v1", NOW, 1,
+                        320L, 160L, 480L),
+                800,
+                150,
+                950,
+                "reviewer",
+                NOW);
     }
 
     private static BaselineEvaluationRun run(

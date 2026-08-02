@@ -68,7 +68,8 @@ class SopLifecycleTest {
     void setUp() {
         playbookVersions = mock(TroubleshootingPlaybookVersionService.class);
         service = new TroubleshootingSopPersistenceService(
-                sopMapper(), playbookVersions, objectMapper);
+                sopMapper(), playbookVersions,
+                new KnowledgeEvidenceSelectorInventory(objectMapper), objectMapper);
     }
 
     @Test
@@ -219,6 +220,7 @@ class SopLifecycleTest {
                 new TroubleshootingSopPersistenceService(
                         mapper,
                         mock(TroubleshootingPlaybookVersionService.class),
+                        new KnowledgeEvidenceSelectorInventory(objectMapper),
                         objectMapper);
 
         SopEntry found = direct.findBySopId(WORKSPACE_ID, source.sopId());

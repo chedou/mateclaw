@@ -20,6 +20,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.SopSummary;
+import vip.mate.troubleshooting.service.KnowledgeEvidenceCoverage;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.KnowledgeReviewInbox;
@@ -264,6 +265,15 @@ public class SopManagementController {
         return R.ok(sopPersistence.list(
                 resolveWorkspace(workspaceId), status, system,
                 limit == null ? DEFAULT_PAGE_SIZE : limit));
+    }
+
+    /** Counts recorded aggregate knowledge against the fixed 146-selector inventory. */
+    @GetMapping("/evidence-coverage")
+    @RequireWorkspaceRole("admin")
+    public R<KnowledgeEvidenceCoverage> evidenceCoverage(
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(sopPersistence.knowledgeEvidenceCoverage(
+                resolveWorkspace(workspaceId)));
     }
 
     /** Reads one SOP in full, including its criteria and rules. */

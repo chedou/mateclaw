@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.service;
 
 import vip.mate.troubleshooting.model.TroubleshootingSopEntity;
 import vip.mate.troubleshooting.model.TroubleshootingPlaybookVersionEntity;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 
 import java.time.LocalDateTime;
 
@@ -28,7 +29,38 @@ public record SopSummary(
         String sourceOrigin,
         String sourceRecordId,
         String reviewId,
-        Integer reviewVersion) {
+        Integer reviewVersion,
+        KnowledgeEvidenceGrade knowledgeEvidenceGrade) {
+
+    public SopSummary {
+        knowledgeEvidenceGrade = knowledgeEvidenceGrade == null
+                ? KnowledgeEvidenceGrade.UNVERIFIED
+                : knowledgeEvidenceGrade;
+    }
+
+    /** Compatibility constructor for the old versioned list shape. */
+    public SopSummary(
+            String sopId,
+            String routeKey,
+            String system,
+            String errorCode,
+            String service,
+            String status,
+            boolean verified,
+            boolean operational,
+            LocalDateTime createTime,
+            LocalDateTime updateTime,
+            Integer playbookVersion,
+            String sourceOrigin,
+            String sourceRecordId,
+            String reviewId,
+            Integer reviewVersion) {
+        this(
+                sopId, routeKey, system, errorCode, service, status,
+                verified, operational, createTime, updateTime, playbookVersion,
+                sourceOrigin, sourceRecordId, reviewId, reviewVersion,
+                KnowledgeEvidenceGrade.UNVERIFIED);
+    }
 
     /** Compatibility constructor for legacy registry rows and existing callers. */
     public SopSummary(
@@ -45,7 +77,7 @@ public record SopSummary(
         this(
                 sopId, routeKey, system, errorCode, service, status,
                 verified, operational, createTime, updateTime,
-                null, null, null, null, null);
+                null, null, null, null, null, KnowledgeEvidenceGrade.UNVERIFIED);
     }
 
     public static SopSummary from(TroubleshootingSopEntity entity) {
@@ -60,7 +92,9 @@ public record SopSummary(
                 verified,
                 verified && "approved".equals(entity.getStatus()),
                 entity.getCreateTime(),
-                entity.getUpdateTime());
+                entity.getUpdateTime(),
+                null, null, null, null, null,
+                KnowledgeEvidenceGrade.UNVERIFIED);
     }
 
     public static SopSummary from(TroubleshootingPlaybookVersionEntity entity) {
@@ -81,6 +115,7 @@ public record SopSummary(
                 entity.getSourceOrigin(),
                 entity.getSourceRecordId(),
                 entity.getReviewId(),
-                entity.getReviewVersion());
+                entity.getReviewVersion(),
+                KnowledgeEvidenceGrade.fromStored(entity.getKnowledgeEvidenceGrade()));
     }
 }

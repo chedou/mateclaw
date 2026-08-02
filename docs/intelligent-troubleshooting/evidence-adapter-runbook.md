@@ -267,12 +267,161 @@ GET /api/v1/troubleshooting/evidence/sources
 
 ```bash
 MATECLAW_BASE_URL=<目标环境> MATECLAW_USERNAME=<owner> MATECLAW_PASSWORD=<...> \
+    T7_SEED_PLAN_FILE=/secure/local/t7-recording-window-plan.json \
     ./scripts/troubleshooting-t7-preflight.sh
 ```
 
 它卡住时会把服务端自己的 blockers 原样打出来。在没接真源的机器上跑，它**应当**
 停在第 2 格并报告真源采样仍然关着——那是正确答案，不是故障。
 通过后它会打印下面这份验收模板，七项一律 `false`：逐项真的核对过才改成 `true`。
+
+预检不会只检查“单条读链能不能跑”。本次窗口目标是一次取得 20–30 份 D19 聚合正例，因此
+第 5 格先读取**当前运行服务**的权威目标目录：
+
+```http
+GET /api/v1/troubleshooting/evidence/guance/recording-targets?system=CSDP&service=csdp-session-service
+X-Workspace-Id: 1
+```
+
+目录项嵌入完整 `SopEntry` 并选定 required `log_search` 请求；服务端据此派生 selector、
+candidate/request 双 SHA-256、lookup/window，再冻结三份 bindingRef。接口只投影派生身份且只返回
+与当前运行 binding 精确匹配、属于冻结 D1 且尚未录制的目标，不返回候选正文、DQL 或凭据。少于 20 项时预检直接
+阻断，操作员不能用自带 selector/searchTerm 补数。当前随仓目录故意为 **0 项**：唯一已核实的
+SendMsg 合同已经录制，其他错误码尚没有经过真实 Guance 核实的查询合同。
+
+先使用确定性生成的窗口外准备清单，避免 owner 从 146 条源数据重新手工筛选：
+
+- [`t7-target-contract-preparation.md`](./t7-target-contract-preparation.md)：给人评审的 30 条队列；
+- [`t7-target-contract-preparation.json`](./t7-target-contract-preparation.json)：同一事实的机器可读投影；
+- 当前分布：`ALREADY_RECORDED=1`、`BLOCKED_SOURCE_QUALITY=1`、
+  `NEEDS_OWNER_CONTRACT=28`、`FROZEN_AWAITING_RUNTIME_VALIDATION=0`。
+
+清单从 L0、冻结 146 selector、录制套件和目标目录确定性生成，明确是 `PREPARATION_ONLY`：它不含
+原始日志、DQL、API Key，不写目标目录，也不能替代运行服务或 owner acceptance。输入有改动时先执行：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --write
+python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
+```
+
+`csdp:101014` 的两个真实业务上下文继续隔离并行回源，不纳入首批，也不阻塞剩余 28 条；owner 直接给
+建议 20 条补责任团队、真实运行 service、安全检索键、服务端查询合同、确定性异常判据/诊断规则、
+当前三份 bindingRef 和精确历史故障时间。只有这些证据齐全，才可写进下面的服务端目录；不得根据日志
+签名提示猜 DQL 或复制 SendMsg 合同凑数。
+
+实际交接使用 [Owner 填写说明](./t7-owner-contract-intake.md) 和
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。
+建议工作表由上述准备投影确定性生成，已选中 `15 A_HINTED + 2 B_CONTEXT_ONLY + 3 C_SOURCE_GAPS`
+共 20 条，并展开所有 owner 字段。每个 `<replace:...>` 占位符都故意无法通过校验；
+如 owner 需调整首批，再改用含全部 28 条候选的空白
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json)。完成文件不提交到仓库：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
+  --validate <受控本地目录>/t7-owner-contract-intake.local.json
+```
+
+校验会拒绝不足 20 条、陈旧准备指纹、篡改候选或提示、备用/未知 selector、未来时间、额外字段、
+DQL、HTTP(S) URL、API Key/Token、`rawLog` 等额外字段，以及只换引用名却重复
+`service + searchTerm + window + bindings` 的伪合同。通过时也只返回已选 selector 与分层计数，不回显 owner
+正文；状态恒为 `PREPARED_NOT_EXECUTABLE`，`canAcceptT7` 和 `canWriteRuntimeCatalog` 恒为 `false`。
+人类自由文本不得粘贴原始日志；本工具不声称能分类任意日志文本。这一步是 owner 输入完整性/安全门，
+不是查询正文审查、目标目录生成器或 T7 授权。
+
+服务端目录文件为
+`mateclaw-server/src/main/resources/troubleshooting/evidence/guance-recording-targets.json`。
+新增项必须先有真实合同证据，再按下面形状提交代码评审；此处的占位符不是可导入样例：
+
+```json
+{
+  "targetId": "<稳定安全 ID>",
+  "candidateReference": "<候选材料的稳定引用>",
+  "requiredEvidenceRequestId": "<正例所需 requestId>",
+  "bindingRefs": {
+    "log_search": "<当前 search bindingRef>",
+    "log_trace_bundle": "<当前 trace bindingRef>",
+    "contrast_sample": "<当前 contrast bindingRef>"
+  },
+  "candidate": {
+    "sopId": "<候选 ID>",
+    "contractVersion": "sop.v1",
+    "system": "CSDP",
+    "errorCode": "<冻结 D1 错误码>",
+    "service": "<已授权资产 service>",
+    "title": "<候选标题>",
+    "cause": "<待验证原因>",
+    "category": "<类别>",
+    "ownerTeam": "<负责团队>",
+    "status": "candidate",
+    "verified": false,
+    "evidenceRequests": [{
+      "requestId": "<与 requiredEvidenceRequestId 相同>",
+      "signalKind": "log_search",
+      "purpose": "<只读取证目的>",
+      "target": {"search_term": "<服务端安全查询键>"},
+      "window": "-15m",
+      "required": true
+    }],
+    "anomalyCriteria": [{
+      "signal": "failed_log_present",
+      "sourceRequestId": "<与 requiredEvidenceRequestId 相同>",
+      "description": "<确定性异常判据>",
+      "rule": {"kind": "numeric_gte", "field": "match_count", "threshold": 1}
+    }],
+    "diagnosisRules": [{
+      "ruleId": "<规则 ID>",
+      "requiredSignals": ["failed_log_present"],
+      "rootCause": "<待核实根因>",
+      "summary": "<只读排障摘要>",
+      "confidence": "MEDIUM",
+      "abstained": false
+    }],
+    "actions": []
+  }
+}
+```
+
+上述是字段关系说明，不是可直接导入的有效 JSON 合同。目录启动时严格校验 128 KiB / 146 项上限、
+单一 JSON 根、键唯一、字段白名单、D1 成员关系、尚未录制、未验证候选、request → criterion → rule 链、
+target/selector/服务端派生 candidate/request 身份唯一、
+`system + service + searchTerm + window + bindings` 查询语义唯一，以及 1 秒到 24 小时窗口；完整候选同时复用
+`ManualPlaybookContractValidator`，因此 title/cause/purpose、所有 request target、criterion/rule/action
+中的凭据、DQL/原始日志和危险自动生产动作都会 fail closed。坏目录会让服务启动失败，
+不会静默跳过。运行时 bindingRef 漂移则保留冻结数、把可执行数降为 0 并返回 blocker。
+
+目录达到 20–30 项后，`T7_SEED_PLAN_FILE` 只负责选择 `targetId` 并补精确历史时间。没有计划、
+少于 20 条、超过 30 条、重复/未知 target、未来时间或任何额外字段都会阻断。计划不是
+`recordedEvidenceSeeds`、不会导入 Playbook、不会调用 Guance，也不能携带 API Key、selector、
+searchTerm、DQL、原始日志或聚合结果。真实聚合事实仍须在 owner 验收后的窗口取得，再走 T0.8
+服务端审核/导入路径。
+
+```json
+{
+  "contractVersion": "t7-recording-window-plan.v1",
+  "seeds": [
+    {
+      "targetId": "<从运行服务目录选择>",
+      "occurredAt": "<精确 UTC RFC3339 整秒故障时间>",
+      "sourceReference": "<唯一安全引用>"
+    }
+  ]
+}
+```
+
+上面只展示单条形状，故意不是可通过样例；真正计划必须在窗口外补齐 20–30 条。交互式单次验证允许
+清空 `occurredAt` 并回落执行时当前时间，批次计划不允许：没有精确历史时间的目标不能占用窗口分母。
+批次时间必须不晚于运行服务返回的 `asOfEpochSeconds`；Guance 保留期下界目前未配置，仍须由 owner
+按目标环境核实。预检先把计划有界读取到 mode-600 临时快照，所有校验和 SHA-256 都只读该快照；
+即使原文件在运行中被替换，结果也不会换字节。窗口记录必须同时引用服务端目标目录 SHA-256 与
+本地计划 SHA-256。受 MateClaw 全局 `Long → String` 序列化合同约束，HTTP 中的
+`asOfEpochSeconds` 必须是 1–10 位十进制字符串；预检会在比较历史时间前转为安全整数，旧 CI stub
+使用的 JSON number 形状现在明确拒绝，避免测试与真实接口各测一套合同。
+
+正式工作台、接入向导和 acceptance 写接口读取同一份运行时目标目录。少于 20 个可执行目标时，
+页面必须显示 `T7 BLOCKED · X / 20`、不展示 owner 验收清单；服务端必须在调用 Guance 和写入验收记录
+之前拒绝 `POST /evidence/guance/acceptance`。单条合同验证可以继续作为窗口外准备动作，但其成功不改变
+批次状态。已有且当前 binding 指纹有效的 `ACCEPTED` 记录不因目标后续被录制消耗而自动失效。
 
 
 1. **先验证 PS ID 是否能贯穿同一次请求的跨服务日志**；不贯通就停止 P6，重新设计关联方案。

@@ -1600,6 +1600,10 @@ export type ClosureOutcome = 'RECOVERED' | 'FALSE_POSITIVE' | 'TRANSFERRED_OUT' 
 export type IncidentCompleteness = 'STRUCTURED' | 'LOG' | 'SYMPTOM'
 export type IncidentSeverity = 'P0' | 'P1' | 'P2' | 'P3'
 export type SopStatus = 'candidate' | 'approved' | 'deprecated'
+export type KnowledgeEvidenceGrade =
+  | 'RECORDED_AGGREGATE'
+  | 'AUTHORED_FIXTURE'
+  | 'UNVERIFIED'
 
 /**
  * Browser incident-intake boundary.
@@ -1666,6 +1670,17 @@ export interface SopSummary {
   sourceRecordId?: string | null
   reviewId?: string | null
   reviewVersion?: number | null
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade
+}
+
+/** Counts with the reviewed CSDP inventory denominator; deliberately no rate. */
+export interface KnowledgeEvidenceCoverage {
+  inventoryErrorCodeSelectors: number
+  registryErrorCodeSelectors: number
+  recordedAggregateSelectors: number
+  authoredFixtureSelectors: number
+  unverifiedSelectors: number
+  outsideInventorySelectors: number
 }
 
 export type KnowledgeOrigin = 'EVIDENCE_DERIVED' | 'OUTCOME_BACKED' | 'MANUAL'
@@ -1858,6 +1873,7 @@ export interface ApprovedPlaybookVersion {
   status: 'APPROVED' | 'DEPRECATED'
   sourceOrigin: KnowledgeOrigin | 'LEGACY'
   sourceRecordId: string
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade
   reviewId: string | null
   reviewVersion: number | null
   approvedBy: string
@@ -2105,6 +2121,10 @@ export interface DiagnosisSummary {
   errorCode: string | null
   service: string
   status: DiagnosisStatus
+  /** Null only for 1.3/1.4 rows whose v4 route semantics were never persisted. */
+  investigationMode: InvestigationMode | null
+  routeAuthority: RouteAuthority | null
+  routeSemanticsProvenance: RouteSemanticsProvenance
   rehearsal: boolean
   version: number
   createTime: string
@@ -2156,6 +2176,7 @@ export type ConclusionType = 'LOCATED' | 'EXCLUDED' | 'HYPOTHESIS' | 'INSUFFICIE
 export type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
 export type InvestigationMode = 'ERROR_CODE_PLAYBOOK' | 'SCENARIO_PLAYBOOK' | 'OPEN_DISCOVERY'
 export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED'
+export type RouteSemanticsProvenance = 'PERSISTED' | 'LEGACY_DERIVED'
 export type EvidenceStepTone = 'NORMAL' | 'ANOMALY' | 'EXCLUDED' | 'UNEVALUATED'
 export type EvidenceStepKind = 'EVIDENCE' | 'CRITERION'
 export type DraftReviewStatus = 'DRAFT' | 'CANDIDATE'
@@ -2249,7 +2270,10 @@ export interface DeveloperEvidenceView {
   diagnosisId: string
   investigationMode: InvestigationMode
   routeAuthority: RouteAuthority
+  routeSemanticsProvenance: RouteSemanticsProvenance
   playbookRef: string | null
+  /** Null only when no Playbook owns this Diagnosis. */
+  knowledgeEvidenceGrade: KnowledgeEvidenceGrade | null
   /** Keyed scenario capabilities; a new scenario adds a row, not a boolean. */
   scenarioAffordances: ScenarioAffordance[]
   callChain: CallChainView
@@ -2345,6 +2369,33 @@ export interface GuanceEvidenceAcceptanceView {
   service: string
   currentBindingFingerprint: string | null
   acceptance: GuanceEvidenceAcceptance | null
+  blockers: string[]
+}
+
+export interface GuanceRecordingTarget {
+  targetId: string
+  system: string
+  service: string
+  selectorKey: string
+  candidateReference: string
+  candidateFingerprint: string
+  requiredEvidenceRequestId: string
+  requestFingerprint: string
+  searchTerm: string
+  window: string
+  bindingRefs: Record<'log_search' | 'log_trace_bundle' | 'contrast_sample', string>
+}
+
+/** Server-owned T7 batch identities. Candidate bodies and Guance queries stay server-side. */
+export interface GuanceRecordingTargetCatalogView {
+  contractVersion: 't7-guance-recording-target-catalog.v1'
+  system: string
+  service: string
+  catalogFingerprint: string
+  frozenTargetCount: number
+  executableTargetCount: number
+  targets: GuanceRecordingTarget[]
+  asOfEpochSeconds: number
   blockers: string[]
 }
 
@@ -2711,6 +2762,7 @@ export interface BaselineEvaluationRun {
   sourcePlatform: EvaluationSampleSourcePlatform
   evidenceFixtureMode: boolean
   diagnosisFixtureMode: boolean
+  evidenceStage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
   modelInputHash: string
   status: BaselineEvaluationStatus
   modelErrorCodes: string[]
@@ -2743,6 +2795,23 @@ export interface BaselineCohortMetrics {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  quality: BaselineQualityMetrics
+}
+
+export interface BaselineQualityMetrics {
+  citationAssessedRuns: number
+  citationCompleteRuns: number
+  coverageAssessedRuns: number
+  coverageP50: number | null
+  coverageMin: number | null
+  fullCoverageRuns: number
+  abstentions: number
+  cleanAbstentions: number
+  abstainFailureCounts: Record<string, number>
+  dangerousProposalRuns: number
+  confidenceAssessedRuns: number
+  highConfidenceRuns: number
+  highConfidenceErrorRuns: number
 }
 
 export interface BaselineSourceMetrics {
@@ -2784,7 +2853,12 @@ export const troubleshootingApi = {
       '/troubleshooting/scenarios/deployment-topology/diagnoses', data,
     ),
 
-  list: (params?: { status?: string; system?: string; limit?: number }) =>
+  list: (params?: {
+    status?: string
+    system?: string
+    investigationMode?: InvestigationMode
+    limit?: number
+  }) =>
     http.get<DiagnosisSummary[]>('/troubleshooting/diagnoses', { params }),
 
   get: (diagnosisId: string) =>
@@ -2808,6 +2882,12 @@ export const troubleshootingApi = {
   guanceEvidenceAcceptance: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceAcceptanceView>(
       '/troubleshooting/evidence/guance/acceptance', { params },
+    ),
+
+  /** Server-frozen, unrecorded D1 targets that match the current three bindings. */
+  guanceRecordingTargets: (params: { system: string; service: string }) =>
+    http.get<GuanceRecordingTargetCatalogView>(
+      '/troubleshooting/evidence/guance/recording-targets', { params },
     ),
 
   /** Re-runs the canonical chain before recording the owner checklist. */
@@ -2920,6 +3000,9 @@ export const troubleshootingApi = {
 
   listSops: (params?: { status?: SopStatus; system?: string; limit?: number }) =>
     http.get<SopSummary[]>('/troubleshooting/sops', { params }),
+
+  knowledgeEvidenceCoverage: () =>
+    http.get<KnowledgeEvidenceCoverage>('/troubleshooting/sops/evidence-coverage'),
 
   /** Three source lanes plus their independent review states; no promotion side effect. */
   knowledgeReviewInbox: (params?: { limit?: number }) =>

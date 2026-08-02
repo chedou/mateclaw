@@ -10,8 +10,10 @@ import {
   type EvidenceChainPreviewRequest,
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceReadiness,
+  type GuanceRecordingTargetCatalogView,
   type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
+  type InvestigationMode,
   type RecordedReplayEvaluationCapability,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
@@ -61,6 +63,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   const projection = ref<DiagnosisExperienceProjection | null>(null)
   const topologyProbeRuns = ref<TopologyProbeEvidenceRun[]>([])
   const statusFilter = ref<DiagnosisStatus | ''>('')
+  const investigationModeFilter = ref<InvestigationMode | ''>('')
   const viewMode = ref<WorkbenchViewMode>('LIST')
 
   // ── search / filter / sort ──────────────────────────────────
@@ -84,6 +87,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
   const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
   const guanceOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
+  const guanceRecordingTargets = ref<GuanceRecordingTargetCatalogView | null>(null)
   const guanceDiagnosisLookup = ref<EvidenceChainPreviewRequest | null>(null)
   const replayCapability = ref<RecordedReplayEvaluationCapability | null>(null)
   const readinessError = ref('')
@@ -111,7 +115,11 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     return status ? canStartGuanceValidation(status) : false
   })
   const guanceAcceptance = computed(() => guanceReadiness.value
-    ? guanceAcceptanceProgress(guanceReadiness.value, guanceOwnerAcceptance.value)
+    ? guanceAcceptanceProgress(
+        guanceReadiness.value,
+        guanceOwnerAcceptance.value,
+        guanceRecordingTargets.value,
+      )
     : null)
   const currentDiagnosisEvidenceLookup = computed<EvidenceChainPreviewRequest | null>(() => {
     const incident = current.value?.diagnosis.incident
@@ -240,7 +248,11 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   async function loadList(autoSelect = true) {
     listLoading.value = true
     try {
-      const { data } = await troubleshootingApi.list({ status: statusFilter.value || undefined, limit: 100 })
+      const { data } = await troubleshootingApi.list({
+        status: statusFilter.value || undefined,
+        investigationMode: investigationModeFilter.value || undefined,
+        limit: 100,
+      })
       rows.value = data ?? []
       if (autoSelect && !selectedId.value) {
         const queryId = typeof route.query.diagnosisId === 'string' ? route.query.diagnosisId : null
@@ -271,6 +283,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     guanceSpinePreview.value = null
     guanceReadiness.value = null
     guanceOwnerAcceptance.value = null
+    guanceRecordingTargets.value = null
     guanceDiagnosisLookup.value = null
     replayCapability.value = null
     readinessError.value = ''
@@ -312,18 +325,21 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   async function loadGuanceReadiness(system: string, service: string, version = selectionVersion) {
     readinessLoading.value = true
     try {
-      const [readinessResponse, acceptanceResponse] = await Promise.all([
+      const [readinessResponse, acceptanceResponse, recordingTargetsResponse] = await Promise.all([
         troubleshootingApi.evidenceReadiness({ system, service }),
         troubleshootingApi.guanceEvidenceAcceptance({ system, service }),
+        troubleshootingApi.guanceRecordingTargets({ system, service }),
       ])
       if (version !== selectionVersion) return
       guanceReadiness.value = readinessResponse.data
       guanceOwnerAcceptance.value = acceptanceResponse.data
+      guanceRecordingTargets.value = recordingTargetsResponse.data
       readinessError.value = ''
     } catch {
       if (version !== selectionVersion) return
       guanceReadiness.value = null
       guanceOwnerAcceptance.value = null
+      guanceRecordingTargets.value = null
       readinessError.value = '真源就绪检查暂不可用；不影响当前 Diagnosis 的阅读和处置。'
     } finally {
       if (version === selectionVersion) readinessLoading.value = false
@@ -506,6 +522,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     projection,
     topologyProbeRuns,
     statusFilter,
+    investigationModeFilter,
     viewMode,
     // search / filter / sort
     searchKeyword,
@@ -528,6 +545,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     guanceValidation,
     guanceSpinePreview,
     guanceOwnerAcceptance,
+    guanceRecordingTargets,
     guanceDiagnosisLookup,
     replayCapability,
     readinessError,

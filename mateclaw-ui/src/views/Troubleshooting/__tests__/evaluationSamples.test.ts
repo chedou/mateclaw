@@ -191,6 +191,11 @@ describe('evaluation sample helpers', () => {
           promptTokens: 600,
           completionTokens: 240,
           totalTokens: 840,
+          quality: quality({
+            confidenceAssessedRuns: 3,
+            highConfidenceRuns: 2,
+            highConfidenceErrorRuns: 1,
+          }),
         },
         fixtureDiagnosis: emptyBaselineCohort(),
       },
@@ -206,6 +211,7 @@ describe('evaluation sample helpers', () => {
       modelLatency: 'P50 900 ms · P95 1400 ms',
       composedLatency: 'P50 980 ms · P95 1520 ms',
       tokens: '2 次可测 · 输入 600 · 输出 240 · 合计 840',
+      systemConfidence: '系统 HIGH 2 / 已评估 3 · 高置信错误 1',
     })
     expect(cards[1]).toMatchObject({
       source: 'Guance 真源',
@@ -261,5 +267,25 @@ function emptyBaselineCohort() {
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
+    quality: quality(),
+  }
+}
+
+function quality(overrides: Record<string, number> = {}) {
+  return {
+    citationAssessedRuns: 0,
+    citationCompleteRuns: 0,
+    coverageAssessedRuns: 0,
+    coverageP50: null,
+    coverageMin: null,
+    fullCoverageRuns: 0,
+    abstentions: 0,
+    cleanAbstentions: 0,
+    abstainFailureCounts: {},
+    dangerousProposalRuns: 0,
+    confidenceAssessedRuns: 0,
+    highConfidenceRuns: 0,
+    highConfidenceErrorRuns: 0,
+    ...overrides,
   }
 }

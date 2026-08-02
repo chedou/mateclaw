@@ -13,9 +13,11 @@ import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.RouteAuthority;
+import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
+import vip.mate.troubleshooting.service.DiagnosisSummary;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
@@ -25,6 +27,7 @@ import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,6 +63,8 @@ class TroubleshootingControllerProjectionTest {
                 .andExpect(jsonPath("$.data.businessSummary.fixtureMode").value(true))
                 .andExpect(jsonPath("$.data.businessSummary.timings.intakeCost").value("PT2S"))
                 .andExpect(jsonPath("$.data.businessSummary.timings.investigateCost").value("PT3S"))
+                .andExpect(jsonPath("$.data.developerEvidence.routeSemanticsProvenance")
+                        .value("PERSISTED"))
                 .andExpect(jsonPath("$.data.developerEvidence.routeAuthority").value("EXPLICIT"))
                 .andExpect(jsonPath("$.data.developerEvidence.scenarioAffordances").isEmpty())
                 .andExpect(jsonPath("$.data.developerEvidence.contrast.available").value(false));
@@ -163,6 +168,46 @@ class TroubleshootingControllerProjectionTest {
                 eq(arrivedAt));
     }
 
+    @Test
+    void forwardsTypedInvestigationModeFilterToIndexedQueueList() throws Exception {
+        TroubleshootingPersistenceService persistence = mock(TroubleshootingPersistenceService.class);
+        when(persistence.list(7L, null, null, InvestigationMode.SCENARIO_PLAYBOOK, 50))
+                .thenReturn(List.of(new DiagnosisSummary(
+                        "diag-1",
+                        "case-1",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.SCENARIO_PLAYBOOK,
+                        RouteAuthority.RULE_MATCHED,
+                        RouteSemanticsProvenance.PERSISTED,
+                        false,
+                        3,
+                        null,
+                        null)));
+        TroubleshootingController controller = new TroubleshootingController(
+                mock(TroubleshootingIntakeService.class),
+                mock(DiagnosisLifecycleService.class),
+                mock(DiagnosisDerivationService.class),
+                persistence,
+                mock(DiagnosisExperienceProjectionService.class));
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+
+        mvc.perform(get("/api/v1/troubleshooting/diagnoses")
+                        .header("X-Workspace-Id", "7")
+                        .param("investigationMode", "SCENARIO_PLAYBOOK"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].investigationMode").value("SCENARIO_PLAYBOOK"))
+                .andExpect(jsonPath("$.data[0].routeSemanticsProvenance").value("PERSISTED"));
+
+        verify(persistence).list(7L, null, null, InvestigationMode.SCENARIO_PLAYBOOK, 50);
+    }
+
     private DiagnosisExperienceProjection projection() {
         DiagnosisExperienceProjection.ImpactView impact =
                 new DiagnosisExperienceProjection.ImpactView(
@@ -187,6 +232,7 @@ class TroubleshootingControllerProjectionTest {
                         "diag-1",
                         InvestigationMode.ERROR_CODE_PLAYBOOK,
                         RouteAuthority.EXPLICIT,
+                        RouteSemanticsProvenance.PERSISTED,
                         "csdp:903001",
                         List.of(),
                         new DiagnosisExperienceProjection.CallChainView(

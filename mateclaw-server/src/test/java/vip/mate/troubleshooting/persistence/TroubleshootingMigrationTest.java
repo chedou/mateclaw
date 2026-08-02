@@ -5,6 +5,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
@@ -18,6 +19,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -613,10 +615,267 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void h2V190MakesKnowledgeEvidenceGradeExplicitAndLeavesHistoryFailClosed()
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v190;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V172__troubleshooting_domain.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V185__troubleshooting_knowledge_review.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V186__troubleshooting_playbook_version.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_playbook_version (
+                            id, workspace_id, playbook_id, selector_key,
+                            playbook_version, active_selector_key,
+                            system, error_code, service, status,
+                            source_origin, source_record_id, approved_by,
+                            approval_reason, contract_version, aggregate_json,
+                            version, deleted, create_time, update_time
+                        ) VALUES
+                            (31, 7, 'pb-im1010', 'csdp:IM1010', 1, 'csdp:IM1010',
+                             'CSDP', 'IM1010', 'csp-rpc-msg', 'APPROVED',
+                             'MANUAL', 'manual-csdp-im1010-v1', 'seed', 'recorded',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (32, 7, 'pb-903001', 'csdp:903001', 1, 'csdp:903001',
+                             'CSDP', '903001', 'order-svc', 'APPROVED',
+                             'MANUAL', 'manual-csdp-903001-v1', 'seed', 'fixture',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (33, 7, 'pb-unknown', 'csdp:999999', 1, 'csdp:999999',
+                             'CSDP', '999999', 'unknown', 'APPROVED',
+                             'LEGACY', 'legacy-unknown', 'migration', 'unknown',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (34, 7, 'pb-im1010-rogue', 'csdp:IM1010', 2, NULL,
+                             'CSDP', 'IM1010', 'csp-rpc-msg', 'DEPRECATED',
+                             'MANUAL', 'manual-im1010-rogue', 'seed', 'handwritten',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (35, 7, 'pb-903001-rogue', 'csdp:903001', 2, NULL,
+                             'CSDP', '903001', 'order-svc', 'DEPRECATED',
+                             'MANUAL', 'manual-903001-rogue', 'seed', 'unknown',
+                             'sop.v1', '{}', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V190__troubleshooting_knowledge_evidence_grade.sql");
+
+            Set<String> columns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_playbook_version");
+            assertTrue(columns.contains("knowledge_evidence_grade"));
+            assertFalse(isNullable(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_playbook_version",
+                    "knowledge_evidence_grade"));
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT source_record_id, knowledge_evidence_grade
+                    FROM mate_troubleshooting_playbook_version
+                    ORDER BY source_record_id
+                    """); ResultSet rows = query.executeQuery()) {
+                java.util.Map<String, String> grades = new java.util.LinkedHashMap<>();
+                while (rows.next()) {
+                    grades.put(rows.getString(1), rows.getString(2));
+                }
+                assertEquals("UNVERIFIED",
+                        grades.get("manual-csdp-903001-v1"));
+                assertEquals("UNVERIFIED",
+                        grades.get("manual-csdp-im1010-v1"));
+                assertEquals("UNVERIFIED", grades.get("legacy-unknown"));
+                assertEquals("UNVERIFIED", grades.get("manual-im1010-rogue"));
+                assertEquals("UNVERIFIED", grades.get("manual-903001-rogue"));
+            }
+        }
+    }
+
+    @Test
+    void h2V191IndexesOnlyPersistedRouteSemantics() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v191;MODE=MySQL;"
+                        + "DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V172__troubleshooting_domain.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO mate_troubleshooting_diagnosis (
+                            id, workspace_id, diagnosis_id, case_id, run_id,
+                            system, error_code, service, dedup_key, rehearsal,
+                            status, contract_version, aggregate_json, version, deleted,
+                            create_time, update_time
+                        ) VALUES
+                            (41, 7, 'diag-legacy', 'case-legacy', 'run-legacy',
+                             'CSDP', '903001', 'csdp-wechat',
+                             'legacydeduplegacydeduplegacydeduplegacydeduplegacydedup',
+                             FALSE, 'READY_FOR_HUMAN', '1.4',
+                             '{"diagnosisId":"diag-legacy","contractVersion":"1.4","caseId":"case-legacy","runId":"run-legacy","incident":{"incidentId":"inc-legacy","system":"CSDP","service":"csdp-wechat","errorCode":"903001","symptom":"legacy symptom","severity":"P1","environment":"prod","traceId":null,"occurredAt":"2026-07-25T01:02:00Z","additionalContext":null,"source":"manual","completeness":"STRUCTURED","customerRef":null},"routeMode":"DETERMINISTIC","conclusionType":"ROOT_CAUSE_CONFIRMED","status":"READY_FOR_HUMAN","summary":"legacy summary","rootCause":"legacy root cause","confidence":"HIGH","abstained":false,"sopKey":"csdp:903001","sopTitle":"903001 SOP","sourcePlaybookOwner":null,"evidence":[],"evidenceCitations":[],"triggeredSignals":[],"recommendedActions":[],"pendingWrites":[],"routeToTeam":null,"transfers":[],"actionOutcomes":[],"closure":null,"knowledgeCandidates":[],"timeline":[],"timings":{"observedAt":null,"firstActionAt":null,"concludedAt":null},"rehearsal":false,"fixtureMode":true,"writeExecutionEnabled":false,"warnings":[]}',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                            (42, 7, 'diag-persisted', 'case-persisted', 'run-persisted',
+                             'CSDP', '903001', 'csdp-wechat',
+                             'persisteddeduppersisteddeduppersisteddeduppersisteddedup',
+                             FALSE, 'NEEDS_INVESTIGATION', '1.8',
+                             '{
+                               "diagnosisId" : "diag-persisted",
+                               "contractVersion" : "1.8",
+                               "caseId" : "case-persisted",
+                               "runId" : "run-persisted",
+                               "incident" : {
+                                 "incidentId" : "inc-persisted",
+                                 "system" : "CSDP",
+                                 "service" : "csdp-wechat",
+                                 "errorCode" : "903001",
+                                 "symptom" : "persisted symptom",
+                                 "severity" : "P1",
+                                 "environment" : "prod",
+                                 "traceId" : null,
+                                 "occurredAt" : "2026-07-25T01:02:00Z",
+                                 "additionalContext" : null,
+                                 "source" : "manual",
+                                 "completeness" : "STRUCTURED",
+                                 "customerRef" : null
+                               },
+                               "routeMode" : "DETERMINISTIC",
+                               "investigationMode" : "SCENARIO_PLAYBOOK",
+                               "routeAuthority" : "RULE_MATCHED",
+                               "conclusionType" : "INSUFFICIENT_EVIDENCE",
+                               "status" : "NEEDS_INVESTIGATION",
+                               "summary" : "persisted summary",
+                               "rootCause" : "persisted root cause",
+                               "confidence" : "LOW",
+                               "abstained" : true,
+                               "sopKey" : "csdp:scenario:deployment_topology_probe",
+                               "sopTitle" : "Deployment Topology Probe",
+                               "sourcePlaybookOwner" : null,
+                               "sourcePlaybookVersionRef" : {
+                                 "playbookId" : "playbook-topology",
+                                 "version" : 3
+                               },
+                               "evidence" : [],
+                               "evidenceCitations" : [],
+                               "triggeredSignals" : [],
+                               "recommendedActions" : [],
+                               "pendingWrites" : [],
+                               "routeToTeam" : null,
+                               "transfers" : [],
+                               "actionOutcomes" : [],
+                               "closure" : null,
+                               "knowledgeCandidates" : [],
+                               "timeline" : [],
+                               "timings" : {
+                                 "observedAt" : "2026-07-25T01:02:00Z",
+                                 "firstActionAt" : "2026-07-25T01:02:01Z",
+                                 "concludedAt" : "2026-07-25T01:02:01Z"
+                               },
+                               "rehearsal" : false,
+                               "fixtureMode" : true,
+                               "writeExecutionEnabled" : false,
+                               "warnings" : []
+                             }',
+                             0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+            }
+
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V191__troubleshooting_route_semantics.sql");
+
+            Set<String> columns = columns(
+                    connection.getMetaData(), "mate_troubleshooting_diagnosis");
+            assertTrue(columns.contains("investigation_mode"));
+            assertTrue(columns.contains("route_authority"));
+            assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_investigation"));
+            assertEquals(1, countIndexes(connection, "idx_ts_diagnosis_authority"));
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT diagnosis_id, investigation_mode, route_authority
+                    FROM mate_troubleshooting_diagnosis
+                    WHERE workspace_id = 7
+                    ORDER BY id
+                    """);
+                    ResultSet rows = query.executeQuery()) {
+                assertTrue(rows.next());
+                assertEquals("diag-legacy", rows.getString("diagnosis_id"));
+                assertNull(rows.getString("investigation_mode"));
+                assertNull(rows.getString("route_authority"));
+                assertTrue(rows.next());
+                assertEquals("diag-persisted", rows.getString("diagnosis_id"));
+                assertEquals("SCENARIO_PLAYBOOK", rows.getString("investigation_mode"));
+                assertEquals("RULE_MATCHED", rows.getString("route_authority"));
+                assertFalse(rows.next());
+            }
+        }
+    }
+
+    @Test
+    void v191DialectResourcesGuardMysqlDdlAndWhitelistExplicitSemantics() throws Exception {
+        String mysql = resourceText("db/migration/mysql/V191__troubleshooting_route_semantics.sql");
+        String kingbase = resourceText("db/migration/kingbase/V191__troubleshooting_route_semantics.sql");
+        String mysqlLogic = stripSqlLineComments(mysql);
+        String kingbaseLogic = stripSqlLineComments(kingbase);
+
+        assertFalse(mysql.contains("ADD COLUMN IF NOT EXISTS"));
+        assertEquals(2, countOccurrences(mysql, "INFORMATION_SCHEMA.COLUMNS"));
+        assertTrue(mysql.contains("COLUMN_NAME = 'investigation_mode'"));
+        assertTrue(mysql.contains("COLUMN_NAME = 'route_authority'"));
+        assertEquals(2, countOccurrences(mysql, "INFORMATION_SCHEMA.STATISTICS"));
+        assertTrue(mysql.contains("INDEX_NAME = 'idx_ts_diagnosis_investigation'"));
+        assertTrue(mysql.contains("INDEX_NAME = 'idx_ts_diagnosis_authority'"));
+        assertTrue(countOccurrences(mysql, "PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;") >= 4);
+
+        assertFalse(mysqlLogic.contains("routeMode"));
+        assertTrue(mysqlLogic.contains("ERROR_CODE_PLAYBOOK"));
+        assertTrue(mysqlLogic.contains("SCENARIO_PLAYBOOK"));
+        assertTrue(mysqlLogic.contains("OPEN_DISCOVERY"));
+        assertTrue(mysqlLogic.contains("EXPLICIT"));
+        assertTrue(mysqlLogic.contains("RULE_MATCHED"));
+        assertTrue(mysqlLogic.contains("MODEL_PROPOSED"));
+        assertTrue(countOccurrences(mysqlLogic, "ELSE NULL") >= 2);
+        assertTrue(mysqlLogic.contains("contract_version NOT IN ('1.3', '1.4')"));
+
+        assertFalse(kingbaseLogic.contains("routeMode"));
+        assertTrue(kingbaseLogic.contains("ERROR_CODE_PLAYBOOK"));
+        assertTrue(kingbaseLogic.contains("SCENARIO_PLAYBOOK"));
+        assertTrue(kingbaseLogic.contains("OPEN_DISCOVERY"));
+        assertTrue(kingbaseLogic.contains("EXPLICIT"));
+        assertTrue(kingbaseLogic.contains("RULE_MATCHED"));
+        assertTrue(kingbaseLogic.contains("MODEL_PROPOSED"));
+        assertTrue(countOccurrences(kingbaseLogic, "ELSE NULL") >= 2);
+        assertTrue(kingbaseLogic.contains("contract_version NOT IN ('1.3', '1.4')"));
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,
                 new EncodedResource(new ClassPathResource(resourcePath), "UTF-8"));
+    }
+
+    private String resourceText(String resourcePath) throws Exception {
+        try (var inputStream = new ClassPathResource(resourcePath).getInputStream()) {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int fromIndex = 0;
+        while ((fromIndex = haystack.indexOf(needle, fromIndex)) >= 0) {
+            count++;
+            fromIndex += needle.length();
+        }
+        return count;
+    }
+
+    private String stripSqlLineComments(String sql) {
+        return sql.replaceAll("(?m)^\\s*--.*$", "");
     }
 
     private Set<String> tables(DatabaseMetaData metadata) throws Exception {

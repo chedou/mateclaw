@@ -13,6 +13,7 @@ import vip.mate.troubleshooting.evaluation.BaselineEvaluationRun;
 import vip.mate.troubleshooting.evaluation.BaselineEvaluationRunStore;
 import vip.mate.troubleshooting.evaluation.EvidenceEvaluationSample;
 import vip.mate.troubleshooting.evaluation.MybatisBaselineEvaluationRunStore;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.TroubleshootingBaselineEvaluationRunEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingBaselineEvaluationRunMapper;
 
@@ -69,6 +70,9 @@ class MybatisBaselineEvaluationRunStoreTest {
         assertThat(completed.created()).isTrue();
         assertThat(retry.state()).isEqualTo(BaselineEvaluationRunStore.ClaimState.COMPLETED);
         assertThat(retry.completedRun()).isEqualTo(run());
+        assertThat(retry.completedRun().systemConfidence())
+                .as("完整真源权威条件必须穿过 JSON 台账，不能在重启后降级或被伪造")
+                .isEqualTo(BaselineEvaluationRun.SystemConfidence.HIGH);
         assertThat(row.get().getRunStatus()).isEqualTo("SCORED");
         assertThat(row.get().getEvidenceFixtureMode()).isFalse();
         assertThat(row.get().getDiagnosisFixtureMode()).isFalse();
@@ -222,6 +226,7 @@ class MybatisBaselineEvaluationRunStoreTest {
                 EvidenceEvaluationSample.SourcePlatform.GUANCE,
                 false,
                 false,
+                GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED,
                 "b".repeat(64),
                 BaselineEvaluationRun.Status.SCORED,
                 List.of(),

@@ -10,6 +10,11 @@
         <span>调查路径</span>
         <b>{{ investigationLabel(developer.investigationMode, developer.routeAuthority) }}</b>
         <code>{{ developer.playbookRef || '未命中已审核 Playbook' }}</code>
+        <span
+          v-if="developer.knowledgeEvidenceGrade"
+          class="knowledge-grade"
+          :class="developer.knowledgeEvidenceGrade.toLowerCase()"
+        >判据来源 · {{ knowledgeEvidenceGradeLabel(developer.knowledgeEvidenceGrade) }}</span>
       </div>
 
       <div class="convergence-grid">
@@ -231,6 +236,7 @@ import {
   guanceSpinePreviewLabel,
   guanceValidationLabel,
   investigationLabel,
+  knowledgeEvidenceGradeLabel,
 } from './formalProjection'
 import {
   formatWorkbenchTime as shortTime,
@@ -418,6 +424,9 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 .route-card span { display:block; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
 .route-card b { display:block; margin:7px 0; font-size:var(--mc-text-sm); }
 .route-card code { color:var(--mc-primary); font-size:var(--mc-text-xs); word-break:break-all; }
+.route-card .knowledge-grade { display:inline-flex; margin-top:10px; padding:3px 8px; border:1px solid var(--mc-border); border-radius:999px; letter-spacing:0; text-transform:none; }
+.route-card .knowledge-grade.recorded_aggregate { color:var(--mc-success); background:var(--mc-status-success-bg); border-color:var(--mc-success); }
+.route-card .knowledge-grade.authored_fixture { color:var(--mc-warning); background:var(--mc-status-warning-bg); border-color:var(--mc-warning); }
 
 /* ── Convergence grid — simplified single-layer ── */
 .convergence-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(270px,.8fr); gap:14px; }

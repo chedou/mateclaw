@@ -42,6 +42,7 @@ import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingSopMapper;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.DeterministicDiagnosisService;
+import vip.mate.troubleshooting.service.KnowledgeEvidenceSelectorInventory;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
@@ -120,7 +121,9 @@ class Vertical903001Test {
 
         playbookVersions = mock(TroubleshootingPlaybookVersionService.class);
         sopPersistence = new TroubleshootingSopPersistenceService(
-                sopMapper(), playbookVersions, objectMapper);
+                sopMapper(), playbookVersions,
+                new KnowledgeEvidenceSelectorInventory(objectMapper),
+                objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
                 diagnosisMapper(), outboxMapper(), objectMapper);
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();

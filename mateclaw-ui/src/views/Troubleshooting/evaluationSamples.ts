@@ -52,6 +52,7 @@ export interface BaselineMetricCard {
   modelLatency: string
   composedLatency: string
   tokens: string
+  systemConfidence: string
 }
 
 export function parseEvaluationIntentKeys(input: string): ParsedIntentKeys {
@@ -194,6 +195,11 @@ function baselineCard(
     tokens: metrics.tokenMeasuredRuns <= 0
       ? 'Token 暂不可得'
       : `${metrics.tokenMeasuredRuns} 次可测 · 输入 ${metrics.promptTokens} · 输出 ${metrics.completionTokens} · 合计 ${metrics.totalTokens}`,
+    systemConfidence: metrics.quality.confidenceAssessedRuns <= 0
+      ? '系统置信度暂未评估'
+      : `系统 HIGH ${metrics.quality.highConfidenceRuns}`
+        + ` / 已评估 ${metrics.quality.confidenceAssessedRuns}`
+        + ` · 高置信错误 ${metrics.quality.highConfidenceErrorRuns}`,
   }
 }
 

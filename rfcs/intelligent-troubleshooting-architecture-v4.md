@@ -391,6 +391,34 @@ WeCom / Web / Alert adapters
 
 ## 5. 稳定契约
 
+本章同时记录**目标领域合同**和**当前运行时实现**；“稳定”表示字段语义与边界已经冻结，
+不表示每个伪代码名称都已经存在同名 Java 类型。以下台账是本章的实现状态权威：
+
+- `IMPLEMENTED`：运行时已有对应合同，且关键边界已落地；
+- `PARTIAL`：已有行为或较窄合同，但名称、聚合边界或生命周期尚未收敛；
+- `NOT_IMPLEMENTED`：仅为后续目标，当前代码不能依赖它；
+- `PENDING-EVIDENCE`：按 D16 故意不实现，必须先由真实失败样本决定形状。
+
+| 设计合同 | 状态 | 当前运行时事实 | 收敛决定 / 触发条件 |
+|---|---|---|---|
+| §5.1 `IntakeEnvelope / IntakeDecision` | `PARTIAL` | `IntakeMessageEnvelope`、`IntakeDecision`、`IntakeSession` 已承载入站、补问与事件时间；没有同名 `IntakeEnvelope` | RFC 记下真实命名，不为对齐伪代码迁移通道和持久化合同 |
+| §5.2 `IncidentContext` | `IMPLEMENTED` | 同名领域类型已存在，`IncidentImpact` 与 completeness 边界已落地 | 保持 |
+| §5.3 `InvestigationPlan` | `PARTIAL` | 固定证据脊柱使用 `EvidenceSpinePlan` 与 `ApprovedEvidenceSpineCatalog.ApprovedSpinePlan`；`InvestigationMode / RouteAuthority` 目前归属 Diagnosis | 不新增空聚合；等 P4 T11 的 Scenario / Discovery planning 需要统一预算和 route authority 时收敛 |
+| §5.4 `EvidenceBundle` | `PARTIAL` | canonical 结果仍以 `List<EvidenceResult>` 在 Diagnosis 流转；固定脊柱另有 `EvidenceSpineResult`，缺失必需证据由 `PlaybookEvidenceAssessment` 计算 | 暂不新增只包装列表的类型；等 `InvestigationPlan`、bundle identity、plan 绑定、fixture 与持久化边界能一次落地时收敛 |
+| §5.5 `Diagnosis` | `IMPLEMENTED` | 同名聚合、状态机、来源 Playbook 版本、双投影与持久化已落地 | 保持兼容字段，新增字段继续走版本合同 |
+| §5.6 `InvestigationPlaybook` | `PARTIAL` | 运行时权威名为 `SopEntry`；`ScenarioSelector` 独立存在，SCENARIO 仍由 `errorCode="scenario:..."` 编码，尚无统一 `type + selector` | 随 T10.5 / P4 一次迁移 selector、routing key、不可变版本和持久化兼容；本结构账不改线上身份 |
+| §5.6 `DiscoveryPolicy` | `NOT_IMPLEMENTED` | OPEN_DISCOVERY 仍受现有 Agent miss-path 的固定边界约束，没有独立 policy 聚合 | 等 P4 且真实样本给出迭代、预算与停止需求后实现 |
+| §5.7 `PlaybookDraft / KnowledgeRecord` | `IMPLEMENTED` | `PlaybookDraft`、`PlaybookKnowledgeRecord`、review inbox 与不可变版本晋升已落地；`SopSynthesisPreview` 保留兼容命名 | 新领域代码使用 Playbook 命名，兼容 API 不强制重命名 |
+| §5.8 `LoopPolicy / LoopRun / LoopOutcome` | `PENDING-EVIDENCE` | 无运行时类型，符合 D16 | 等 P2 真实样本暴露停止、超预算和恢复失败模式后再设计 |
+| §5.9 `AdversarialEvalReport` | `PENDING-EVIDENCE` | 无运行时类型，Challenger 尚未启动 | 等真实样本与等预算基线证明有增益后再设计 |
+| §5.10 北极星时间戳 | `IMPLEMENTED` | `NorthStarTimings`、`IntakeSession` 与 `Diagnosis` 已分别持有四阶段时间 | 保持三段指标分开统计 |
+| §5.11 `TopologyProbeEvidenceRun` | `IMPLEMENTED` | 同名不可变运行记录、持久化服务和 Diagnosis 关联已落地 | 保持为同一 Diagnosis 的证据运行，不另建诊断主流 |
+| §3.3 `ScenarioProposal` | `NOT_IMPLEMENTED` | 当前没有同名模型输出合同 | 随 P4 T11 的场景提议门实现；模型仍不得自选平台、DQL 或工具实现 |
+| §4.3 `ReadOnlyEvidenceToolRegistry` | `NOT_IMPLEMENTED` | 当前链路是唯一 `TroubleshootingEvidenceTool` → 服务端 approved 计划 → `EvidenceSourceRouter / Adapter`，没有语义 Tool 注册表 | 等真实 Tool 合同稳定后按 §11 第 6 步引入，不直接复用平台通用 Tool Registry |
+
+下列伪代码继续定义目标字段语义。状态为 `PARTIAL` 或 `NOT_IMPLEMENTED` 时，它不能被当作现成 API、
+数据库结构或类名；实现状态变化必须同时更新本表、TODO 和对应迁移/测试证据。
+
 ### 5.1 IntakeEnvelope / IntakeDecision
 
 ```text

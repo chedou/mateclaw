@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.springframework.stereotype.Component;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.security.MessageDigest;
@@ -32,6 +33,14 @@ public final class ManualPlaybookReplayFingerprint {
             throw new IllegalArgumentException("candidate is required");
         }
         return fingerprint(candidate);
+    }
+
+    /** Canonical identity for the exact evidence contract selected by a candidate. */
+    public String evidenceRequest(EvidenceRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("evidence request is required");
+        }
+        return fingerprint(request);
     }
 
     public String suite(ManualPlaybookReplaySuite suite) {

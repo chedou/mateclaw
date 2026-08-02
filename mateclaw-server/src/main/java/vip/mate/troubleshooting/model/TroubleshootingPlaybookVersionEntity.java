@@ -26,6 +26,7 @@ public class TroubleshootingPlaybookVersionEntity {
     private String status;
     private String sourceOrigin;
     private String sourceRecordId;
+    private String knowledgeEvidenceGrade;
     private String reviewId;
     private Integer reviewVersion;
     private String approvedBy;

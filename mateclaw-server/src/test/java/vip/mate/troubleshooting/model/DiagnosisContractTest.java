@@ -77,6 +77,7 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.EXPLICIT, restored.routeAuthority());
         assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, restored.conclusionType());
         assertEquals(NorthStarTimings.unrecorded(), restored.timings());
+        assertEquals(RouteSemanticsProvenance.LEGACY_DERIVED, restored.routeSemanticsProvenance());
     }
 
     @Test
@@ -129,6 +130,7 @@ class DiagnosisContractTest {
         assertEquals(RouteAuthority.RULE_MATCHED, restored.routeAuthority());
         assertEquals(ConclusionType.LOCATED, restored.conclusionType());
         assertEquals(timings, restored.timings());
+        assertEquals(RouteSemanticsProvenance.PERSISTED, restored.routeSemanticsProvenance());
         assertEquals(
                 new PlaybookVersionRef("playbook-scenario", 4),
                 restored.sourcePlaybookVersionRef());
@@ -211,6 +213,281 @@ class DiagnosisContractTest {
                         base.sopKey(), base.sopTitle(), base.evidence(),
                         base.triggeredSignals(), base.recommendedActions(), null,
                         false, true, List.of()));
+    }
+
+    @Test
+    void currentScenarioPlaybookRulesIgnoreConflictingLegacyRouteMode() {
+        Diagnosis conflicting = Diagnosis.initial(
+                "diag-scenario-conflict",
+                "case-scenario-conflict",
+                "run-scenario-conflict",
+                diagnosis().incident(),
+                RouteMode.LLM_FALLBACK,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.RULE_MATCHED,
+                ConclusionType.LOCATED,
+                NorthStarTimings.concluded(
+                        Instant.parse("2026-07-25T01:00:00Z"),
+                        Instant.parse("2026-07-25T01:00:30Z"),
+                        Instant.parse("2026-07-25T01:02:00Z")),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "scenario located",
+                "rule matched scenario",
+                Confidence.MEDIUM,
+                false,
+                "scenario:slow-api",
+                "Slow API",
+                "API 组",
+                new PlaybookVersionRef("playbook-scenario", 4),
+                diagnosis().evidence(),
+                List.of(),
+                List.of(),
+                "API 组",
+                false,
+                true,
+                List.of(),
+                List.of());
+
+        assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, conflicting.investigationMode());
+        assertEquals(RouteAuthority.RULE_MATCHED, conflicting.routeAuthority());
+        assertEquals(ConclusionType.LOCATED, conflicting.conclusionType());
+        assertEquals(Confidence.MEDIUM, conflicting.confidence());
+        assertEquals(
+                new PlaybookVersionRef("playbook-scenario", 4),
+                conflicting.sourcePlaybookVersionRef());
+    }
+
+    @Test
+    void currentOpenDiscoveryRulesIgnoreConflictingDeterministicRouteMode() {
+        Diagnosis conflicting = openDiscoveryDiagnosis(RouteMode.DETERMINISTIC, Confidence.MEDIUM);
+
+        assertEquals(InvestigationMode.OPEN_DISCOVERY, conflicting.investigationMode());
+        assertEquals(RouteAuthority.MODEL_PROPOSED, conflicting.routeAuthority());
+        assertEquals(ConclusionType.HYPOTHESIS, conflicting.conclusionType());
+        assertEquals(Confidence.MEDIUM, conflicting.confidence());
+        assertEquals(List.of(), conflicting.recommendedActions());
+        assertEquals(List.of(), conflicting.pendingWrites());
+        assertEquals(null, conflicting.sourcePlaybookVersionRef());
+    }
+
+    @Test
+    void currentOpenDiscoveryStillRejectsExactPlaybookVersionAndHighModelConfidence() {
+        Diagnosis base = diagnosis();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        "diag-open-exact-version",
+                        "case-open-exact-version",
+                        "run-open-exact-version",
+                        base.incident(),
+                        RouteMode.LLM_FALLBACK,
+                        InvestigationMode.OPEN_DISCOVERY,
+                        RouteAuthority.MODEL_PROPOSED,
+                        ConclusionType.HYPOTHESIS,
+                        NorthStarTimings.concluded(
+                                Instant.parse("2026-07-25T01:00:00Z"),
+                                Instant.parse("2026-07-25T01:00:30Z"),
+                                Instant.parse("2026-07-25T01:02:00Z")),
+                        DiagnosisStatus.READY_FOR_HUMAN,
+                        "open discovery hypothesis",
+                        "needs more evidence",
+                        Confidence.MEDIUM,
+                        false,
+                        "scenario:slow-api",
+                        "Slow API",
+                        null,
+                        new PlaybookVersionRef("playbook-scenario", 4),
+                        base.evidence(),
+                        List.of("hypothesis"),
+                        List.of(),
+                        "API 组",
+                        false,
+                        true,
+                        List.of(),
+                        List.of()));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        "diag-open-high-confidence",
+                        "case-open-high-confidence",
+                        "run-open-high-confidence",
+                        base.incident(),
+                        RouteMode.LLM_FALLBACK,
+                        InvestigationMode.OPEN_DISCOVERY,
+                        RouteAuthority.MODEL_PROPOSED,
+                        ConclusionType.HYPOTHESIS,
+                        NorthStarTimings.concluded(
+                                Instant.parse("2026-07-25T01:00:00Z"),
+                                Instant.parse("2026-07-25T01:00:30Z"),
+                                Instant.parse("2026-07-25T01:02:00Z")),
+                        DiagnosisStatus.READY_FOR_HUMAN,
+                        "open discovery hypothesis",
+                        "needs more evidence",
+                        Confidence.HIGH,
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                        base.evidence(),
+                        List.of("hypothesis"),
+                        List.of(),
+                        "API 组",
+                        false,
+                        true,
+                        List.of(),
+                        List.of()));
+    }
+
+    @Test
+    void currentScenarioPlaybookStillRejectsMissingExactVersion() {
+        Diagnosis base = diagnosis();
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> Diagnosis.initial(
+                        "diag-scenario-missing-version",
+                        "case-scenario-missing-version",
+                        "run-scenario-missing-version",
+                        base.incident(),
+                        RouteMode.LLM_FALLBACK,
+                        InvestigationMode.SCENARIO_PLAYBOOK,
+                        RouteAuthority.RULE_MATCHED,
+                        ConclusionType.LOCATED,
+                        NorthStarTimings.concluded(
+                                Instant.parse("2026-07-25T01:00:00Z"),
+                                Instant.parse("2026-07-25T01:00:30Z"),
+                                Instant.parse("2026-07-25T01:02:00Z")),
+                        DiagnosisStatus.READY_FOR_HUMAN,
+                        "scenario located",
+                        "rule matched scenario",
+                        Confidence.MEDIUM,
+                        false,
+                        "scenario:slow-api",
+                        "Slow API",
+                        "API 组",
+                        null,
+                        base.evidence(),
+                        List.of(),
+                        List.of(),
+                        "API 组",
+                        false,
+                        true,
+                        List.of(),
+                        List.of()));
+
+        assertTrue(error.getMessage().contains("exact Playbook version"));
+    }
+
+    @Test
+    void currentOpenDiscoveryStillRejectsRecommendedActionsAndPendingWrites() {
+        Diagnosis base = diagnosis();
+        RecommendedAction manualWrite =
+                RecommendedAction.manualWrite("manual-1", "restart", "external only");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new Diagnosis(
+                        "diag-open-actions",
+                        Diagnosis.CURRENT_CONTRACT_VERSION,
+                        "case-open-actions",
+                        "run-open-actions",
+                        base.incident(),
+                        RouteMode.DETERMINISTIC,
+                        InvestigationMode.OPEN_DISCOVERY,
+                        RouteAuthority.MODEL_PROPOSED,
+                        ConclusionType.HYPOTHESIS,
+                        DiagnosisStatus.READY_FOR_HUMAN,
+                        "open discovery hypothesis",
+                        "needs more evidence",
+                        Confidence.MEDIUM,
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(new EvidenceResult(
+                                "EV-1",
+                                "L",
+                                "L::open-discovery",
+                                EvidenceStatus.ANOMALY,
+                                "open discovery evidence",
+                                java.util.Map.of("count", 1),
+                                "recorded-replay",
+                                Instant.parse("2026-07-25T01:01:00Z"))),
+                        List.of("EV-1"),
+                        List.of("hypothesis"),
+                        List.of(manualWrite),
+                        List.of(manualWrite),
+                        "API 组",
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of(),
+                        NorthStarTimings.concluded(
+                                Instant.parse("2026-07-25T01:00:00Z"),
+                                Instant.parse("2026-07-25T01:00:30Z"),
+                                Instant.parse("2026-07-25T01:02:00Z")),
+                        false,
+                        true,
+                        false,
+                        List.of()));
+
+        assertTrue(error.getMessage().contains("OPEN_DISCOVERY"));
+        assertTrue(error.getMessage().contains("actions"));
+    }
+
+    private Diagnosis openDiscoveryDiagnosis(RouteMode routeMode, Confidence confidence) {
+        Diagnosis base = diagnosis();
+        return new Diagnosis(
+                "diag-open-conflict",
+                Diagnosis.CURRENT_CONTRACT_VERSION,
+                "case-open-conflict",
+                "run-open-conflict",
+                base.incident(),
+                routeMode,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.MODEL_PROPOSED,
+                ConclusionType.HYPOTHESIS,
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "open discovery hypothesis",
+                "needs more evidence",
+                confidence,
+                false,
+                null,
+                null,
+                null,
+                null,
+                List.of(new EvidenceResult(
+                        "EV-1",
+                        "L",
+                        "L::open-discovery",
+                        EvidenceStatus.ANOMALY,
+                        "open discovery evidence",
+                        java.util.Map.of("count", 1),
+                        "recorded-replay",
+                        Instant.parse("2026-07-25T01:01:00Z"))),
+                List.of("EV-1"),
+                List.of("hypothesis"),
+                List.of(),
+                List.of(),
+                "API 组",
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                NorthStarTimings.concluded(
+                        Instant.parse("2026-07-25T01:00:00Z"),
+                        Instant.parse("2026-07-25T01:00:30Z"),
+                        Instant.parse("2026-07-25T01:02:00Z")),
+                false,
+                true,
+                false,
+                List.of());
     }
 
     @Test

@@ -130,3 +130,7 @@ yarn.lock
 # are executed. Never commit or sync these.
 __pycache__/
 *.pyc
+
+# Completed T7 owner input carries environment-specific operational metadata.
+# Keep only the empty, generated *.template.json in Git.
+docs/intelligent-troubleshooting/t7-owner-contract-intake.local.json

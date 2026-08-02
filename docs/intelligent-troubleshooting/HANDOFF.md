@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-07-31
+> 更新时间：2026-08-03
 >
 > 仓库：`webonne/mateclaw`
 >
@@ -10,7 +10,25 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.4 / 蓝图 v0.18**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.5 / 蓝图 v0.19**
+
+## 0. 当前总体进度（2026-08-03）
+
+| 轴 | 当前事实 | 下一步 |
+|---|---|---|
+| 产品竖线 | Recorded Replay 的三次取证、确定性压缩、双投影及 P1 在线闭环已跑通 | Demo 继续只诚实展示这条竖线 |
+| T0.7 CI 基线 | GitHub Actions 6 次真实运行，前 2 次失败后最近 4 次连续成功；最新 run #6 总耗时 93s、主 job 89s | 89s 已严格上界证明 clone-to-diagnosis < 300s；继续作为默认路径回归，不冒充真源验收 |
+| T7 真源批次 | 本机真实只读预检前 4 格通过；服务端冻结未录制目标仍为 **0 / 20** | 窗口外先完成至少 20 份真实 owner 合同并冻结目标，再约内网窗口 |
+| Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；成功仍只是 `PREPARED_NOT_EXECUTABLE` |
+| 源质量 | `csdp:101014` 同时指向“一键授权登录”和“Pulsar 调度失败”，禁止代码猜测 | 保持隔离并行回源；不计入也不阻塞其余 28 条中的首批 20 条 |
+| T0.9 / 置信度 | 来源等级已先于 T0.8 落地；系统置信度由服务端事实派生并由人工 oracle 判分，拒绝 `0 / 0` | 等真实样本后再标定阈值 |
+| T0.10 结构账 | v4 §5 已逐项标明 `IMPLEMENTED / PARTIAL / NOT_IMPLEMENTED / PENDING-EVIDENCE`，并映射真实代码名 | 不新增空壳合同；selector 等 P4 真实场景来源，EvidenceBundle 等统一 plan/持久化边界后收敛 |
+| T10.5 路由语义 | V191、服务端投影/筛选和前端读取已统一到 `investigationMode / routeAuthority / provenance`；1.3/1.4 保持 `LEGACY_DERIVED` | 等真实场景同时产生 `RULE_MATCHED / MODEL_PROPOSED` 后做同批统计并最终弃读 `RouteMode` |
+| 暂停项 | T0.8 批量导入、Challenger 影子运行、基线比较、§5.7 阈值标定 | 等 T7 一次灌入 20–30 条 D19 聚合正例后再启动 |
+
+当前唯一关键路径不是继续开发新能力，而是把建议 20 条中的真实运行 service、查询合同、安全检索键、
+确定性判据/规则、当前 bindingRef 与保留期内历史时间交给 owner 核实。窗口目标仍是一次灌入 20–30 条，
+不是跑通一条验证。
 
 ## 1. 一句话
 
@@ -59,11 +77,12 @@ D12/D13 当前为 `PENDING-EVIDENCE`：在 P2 真实样本给出失败模式之�
 **红线不在本文维护。** 唯一权威清单是 v4 §9；本文与 TODO 只引用，不复述条目
 （此前四处各写一遍且条数措辞不一，见 `architecture-critique-v4.md` §2.5）。
 
-蓝图已升级到 v0.18：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
+蓝图已升级到 v0.19：v0.12 锁定通道复用，v0.13 校准正式工作台与双投影，
 v0.14 校正企微普通消息入站接缝与身份边界，v0.15 记录 P3 T10 前半段的持久化异步调查、
 幂等 Diagnosis、纯文本 BusinessSummary 与正式工作台深链，v0.16 记录 Diagnosis 关闭 outcome 的
 持久化原路 @ 通知与正式工作台最终处置卡；v0.17 冻结部署拓扑独立结果的中间态，v0.18 将其修正为
-Workspace 资产 + Diagnosis 场景 + 可插拔只读 Tool + 来源 Adapter + 同一证据详情。这些版本均不扩大
+Workspace 资产 + Diagnosis 场景 + 可插拔只读 Tool + 来源 Adapter + 同一证据详情；v0.19 冻结 D19
+“录制聚合正例 + 判据形状模板”的规模化规则。这些版本均不扩大
 P1：P2 才在历史样本上影子运行 Evidence Challenger /
 Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
@@ -119,6 +138,16 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   `synthetic_probe + deployment_topology + topology_synthetic_probe`；任一不匹配即 409，不创建弱权威 Diagnosis。
   场景幂等键独立于普通事件和其他场景；创建成功但详情/能力投影加载失败时，前端明确提示
   “Diagnosis 已创建”，不会误导用户重复提交。该增量不调模型、不执行拨测、不扩大生产写权限。
+- **P1.9 注册场景的无码在线闭环（2026-08-02）**：T0.16 的三方向已选择 (c) 的显式变体，
+  没让 `/incidents` 从自由文本猜场景。认证操作员通过
+  `POST /api/v1/troubleshooting/scenarios/{scenarioKey}/diagnoses` 明确选择 active-approved 场景，
+  服务端在同一事务锁定冻结版本并创建
+  `DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT` Diagnosis；它先诚实停在
+  `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`。随后无请求体的
+  `POST /api/v1/troubleshooting/diagnoses/{diagnosisId}/evidence-runs` 只执行该 Diagnosis 已冻结
+  Playbook 的 EvidenceRequest，证据命中或反证后才能进入人工环节；确认后重跑被拒。
+  `message_send_failed` 的七道闸门已进入 CI。未注册场景继续 fail closed；未来模型提议必须记
+  `MODEL_PROPOSED` 并走独立入口，不能冒充本入口的人工 `EXPLICIT` 权威。
 - **P2 真源验证接缝（2026-07-29）**：新增 workspace/system/service 级的秘密无关就绪投影，
   只在精确资产与两个核心信号绑定均通过后检查凭据是否存在；未授权时连 API Key 都不读取。
   管理员可从正式工作台的“P2 真源门”触发 Guance-only
@@ -862,6 +891,116 @@ P2 首条真实 Guance Evidence Spine（2026-07-31）已观测：
   不变。失败样本仍只有少量观测，不能外推为通用判据。下一步是 owner 复核索引、时间窗、DQL 延迟和当前 binding 指纹，提交 T7 acceptance，
   然后才能采集首条真实 T8 台账样本。CloudDial `synthetic_probe` 仍是独立未完成的真源合同。
 
+T0.9 知识权威分级与 T8 系统置信度口径（2026-08-02）已实现，但不改变 T7/T8 状态：
+
+- V190 为 H2/MySQL/Kingbase 的不可变 Playbook 版本增加
+  `knowledge_evidence_grade`。服务端受控回放目录只产生
+  `RECORDED_AGGREGATE / AUTHORED_FIXTURE / UNVERIFIED`，未知历史值保守落为
+  `UNVERIFIED`；只有 selector 与候选内容指纹都精确匹配服务端冻结示例时才授予目录等级，
+  同 selector 的改写候选不能继承权威。V190 SQL 将全部历史版本先置为 `UNVERIFIED`；启动
+  协调器从冻结聚合重建候选并复算相同指纹，坏 JSON、冒用公开 source ID 或内容不一致都不升级。
+  协调器按 ID keyset 分页，早期永久不匹配记录不会遮住后续精确候选。
+- 注册表列表/详情、冻结 Playbook 的 `DeveloperEvidenceView` 和前端标签都展示相同等级。
+  服务端目录中精确 `csdp:IM1010` 候选为真实录制聚合，精确 `csdp:903001` 候选为手写验证夹具；
+  只有该候选真正完成本 workspace 审核晋升后才进入注册表覆盖。内容不同的 legacy approved 版本
+  继续显示 `UNVERIFIED`，不会凭 selector 或公开 source ID 继承等级。
+- `GET /api/v1/troubleshooting/sops/evidence-coverage` 以固定 D1 错误码清单 146 为分母，
+  分开返回注册、真实聚合、手写夹具、未核实和清单外计数。146 个 selector 冻结在服务端
+  manifest 中，按成员关系统计；场景 selector 排除，清单外 CSDP 错误码不挤占分母，接口和 UI
+  都不发布遮住小样本的百分比。2026-08-02 本地以最终工作树迁移到 V190 并真实打开页面，当前注册表
+  显示 `0 / 146`：唯一 legacy 903001 保持“来源未核实”，目录中的 IM1010 尚未在该 workspace 形成
+  active-approved 版本。这是 fail-closed 的真实结果，不是回归。完整合同见
+  `knowledge-evidence-grade-contract.md`。
+- 已拍板 T8 `SystemConfidence` **不接收、不存储、不映射模型自报置信度**。旧 miss-path
+  `AgentTriageDraft.confidence` 只是服务端会降档的模型提议，不能进入本计数或 Gate。服务端只对形成有效草案的运行，
+  按真 Guance、证据/Diagnosis 双非 fixture、`FULL_SPINE_OBSERVED` 和引用完整性派生
+  `HIGH`，其他有效草案为 `MEDIUM`，拒绝/弃权/校验失败为 `NOT_ASSESSED`；冻结人工参考解
+  独立判定 `HELPFUL / UNHELPFUL / HARMFUL_BLOCKED / TECHNICAL_FAILURE`。
+- 台账新增 `confidenceAssessedRuns / highConfidenceRuns / highConfidenceErrorRuns`，
+  `highConfidenceErrorFreeAcross(minimumHighConfidenceRuns)` 要求显式、非零的 HIGH 分母，
+  因而 `0 / 0` 不会过门。完整合同见 `system-confidence-contract.md`。这里完成的是测量能力，
+  **不是** §5.7 阈值、T8 Gate 或生产放权结论。
+- 核心新断言均做过故意改坏验证：错标录制 lane、同 selector 冒充冻结候选、把 146 成员关系
+  弱化成行数、让历史记录绕过指纹直接升级、让坏历史挡住后续分页、未知等级错误升级、冻结版本
+  投影丢级、历史缺失阶段反推完整脊柱、以及把服务端 `HIGH` 降成 `MEDIUM`，分别触发
+  1/1/2/1/1/1/1/1/3 条失败；
+  恢复后均通过。
+  T7 预检也覆盖不可达服务、adapter 关闭、缺对照、空指纹、未接受、陈旧指纹和已接受双向路径，
+  先在窗口外暴露 blocker。本轮又分别把服务端派生指纹改回伪哈希、关闭 Jackson duplicate/trailing
+  检测、把 Shell 严格解析降级为 `jq`、绕过共享候选安全合同：前三项分别触发 1 个 Java 失败、
+  1 个 Java 失败和 CI 捕获一次完整假绿，最后一项触发 1 个 Java 失败；恢复后全部通过。
+  本轮再将 acceptance 的 20 目标服务端门禁故意改为永不执行、将前端批次就绪故意恒置为真，
+  分别使对应后端与 `0 / 20` 投影测试准确失败；恢复后全部通过。
+- T7 批次门禁复审后改成两层权威：运行服务先通过
+  `GET /evidence/guance/recording-targets` 投影未录制目标，每项必须冻结 D1 selector、
+  candidate/request 双 SHA-256、lookup/window，并与本次运行的三份 bindingRef 精确相等；这些身份由服务端
+  从目录内完整 `SopEntry` 与被选中的 required `log_search` 请求重新计算，不接受自报指纹；操作员
+  完整候选还必须复用与人工导入相同的 `ManualPlaybookContractValidator`，所以嵌套正文、非选中请求和
+  action 中的凭据、DQL/原始日志、危险自动生产动作也会在启动时 fail closed；
+  `t7-recording-window-plan.v1` 只引用 `targetId` 并补 `occurredAt/sourceReference`。未来时间、
+  未知/重复 target、额外字段、非法/超 128 KiB JSON、重复键与尾随根值均阻断；计划先读入 mode-600 有界快照，
+  校验与 SHA 只覆盖同一字节。当前随仓目录为 **0 个新目标**：唯一已核实 SendMsg 合同已经录制，
+  其他错误码尚无真实查询合同，因而现在不能诚实地约 20–30 条批次窗口。
+- 窗口外准备清单已由 `l0/t7_target_preparation.py` 确定性生成到
+  `t7-target-contract-preparation.{json,md}`：冻结 146 条 D1 中有 30 条只读候选，当前为
+  `1 ALREADY_RECORDED / 1 BLOCKED_SOURCE_QUALITY / 28 NEEDS_OWNER_CONTRACT /
+  0 FROZEN_AWAITING_RUNTIME_VALIDATION`。它明确是 `PREPARATION_ONLY`，不生成可执行 target、DQL 或凭据；
+  `BLOCKED_SOURCE_QUALITY` 保持隔离并行回源，不计入首批，也不阻塞从其余 28 条中完成建议 20 条；
+  smoke workflow 已接入 7 条单测和生成物漂移检查。故意读取错误的单数字段时 3 条测试失败，故意把
+  Markdown 分母从 146 改成 145 时 `--check` 失败；恢复后均通过。
+- Owner 可执行的接力面已生成为 `t7-owner-contract-intake.template.json`、
+  `t7-owner-contract-intake.recommended.template.json` 和 `t7-owner-contract-intake.md`：
+  28 条待合同候选分为 `15 A_HINTED / 2 B_CONTEXT_ONLY /
+  11 C_SOURCE_GAPS`，当前有效选择范围为 20–28。`l0/t7_owner_contract_intake.py --validate`
+  严格校验候选成员、准备指纹、完整合同字段、引用唯一性、时间边界和敏感内容，
+  不生成 candidate/目标目录、不调 Guance，不产生执行或 acceptance 权威；成功结果恒为
+  `PREPARED_NOT_EXECUTABLE`。完成文件默认名已加入 `.gitignore`。数量下限、DQL/URL/Key 拦截、
+  生成物漂移、当前 28 条有效上限和改名不改查询的语义重复均先经过故意改坏证明断言是活的；
+  Python 门与 Java 运行目录都拒绝相同 `system/service/searchTerm/window/bindings`。
+  建议工作表精确选中 15 A + 2 B + 3 条已有场景提示的 C，展开 20 份完整结构；
+  `sourceHints.hasLogSignatureHint` 只投影是否存在结构化日志提示，错误标识符提取为空时也不再伪装成无提示，
+  且仍不携带日志正文；
+  占位符未替换时必须校验失败。新测试先因 generator 尚未存在而准确变红，workflow 路径断言也先因
+  未监听建议工作表而变红；自由文本遗留占位符与日志提示布尔缺失断言也分别先暴露原校验缺口。
+  修复后 CI 接入 11 条单测和两份生成物 `--check`。
+  下一个真实输入不是代码：owner 替换建议工作表中 20 份合同的全部占位符并校验。
+- 对当前 `18088` 运行服务执行只读预检，服务/认证、Adapter、三信号路由和 binding 指纹前 4 格通过，
+  第 5 格准确停在 `0 个可执行新目标（冻结 0 个）/ 20 required`。首次真实运行同时发现 CI stub 把
+  `asOfEpochSeconds` 错写为 number，而 Java 全局 Long 序列化实际返回十进制 string；改用真实形状后旧
+  预检先失败，修复现严格接受 1–10 位十进制 string，并把 number 形状加入反向拒绝，双向套件恢复通过。
+- 正式工作台、接入向导和 `POST /evidence/guance/acceptance` 已共用目标目录门禁：少于 20 个
+  可执行目标时，前端显示 `T7 BLOCKED · X / 20` 并隐藏 owner 清单，服务端在 Guance 读链和验收
+  落库之前返回冲突。单条只读合同仍允许窗口外验证，但不再被命名为“进入 T7”。已有且指纹仍有效的
+  `ACCEPTED` 记录不会因为一批目标随后被录制消耗而失效。
+- T0.9 已排在 T0.8 批量导入之前。下一步先在窗口外冻结 20–30 个真实可执行目标，再准备历史时间计划；
+  预检通过后才由 owner 对当前 binding 指纹提交 `ACCEPTED`，并在同一次内网窗口灌入真实种子。
+  Challenger、单 Agent 基线比较和 §5.7 阈值标定继续等待这批数据，不提前实现。
+- 最终验证：排障域 + Skill Manifest 后端 `687` 项、前端 `24` 文件 / `181` 项、
+  `vue-tsc --noEmit`、变更文件 ESLint 与 Vite 生产构建全部通过；T7 owner 准备队列 `7` 项 +
+  owner intake `11` 项 Python 回归、确定性生成物 `--check`、smoke workflow 静态合同与
+  T7 预检阻塞/就绪双向套件均通过。
+  Standards 与 Spec 双轴复审最终均无 P0/P1/P2。
+- 本地 H2 已真实迁移到 V190；后端 PID `23903` 监听 `18088` 且 health 为 `UP`，前端 PID `25308`
+  监听 `5173`。登录态页面确认正式队列可读取，详情开发证据台显示
+  `T7 · 录制批次目标未就绪 · 0 / 20`；规则库仍为 `0 / 146`，legacy 903001 为“来源未核实”。
+
+T10.5 Route Semantics 读取迁移（2026-08-03）已完成，生产来源统计仍待真实样本：
+
+- H2/MySQL/Kingbase V191 为 Diagnosis 增加可索引的 `investigation_mode / route_authority`；迁移只复制
+  1.5+ 聚合中已真实存在的精确值。1.3/1.4 行保持两列为空，绝不从兼容 `routeMode` 推断回填。
+- `RouteSemanticsProvenance` 将当前合同标为 `PERSISTED`、旧合同标为 `LEGACY_DERIVED`。服务端
+  Diagnosis 不变量、开发证据投影、确定性判定链资格和队列筛选均读取 v4 字段；列表查询只访问索引列，
+  不解析完整聚合。
+- 前端 API 合同、Pinia Store、传统列表、队列筛选与 `DerivationChain.vue` 已同步迁移。
+  传统列表显示调查路径与权威，旧合同明确显示“旧合同推导 · 详情可见兼容值”；持久化字段不完整时
+  显示“路由字段缺失”，不回退猜测。排障前端和 Store 的 `routeMode` 业务读取现为 0。
+- TDD 先证明旧实现会让新增的 3 条断言失败；完成后前端聚焦 14 项和全量 24 文件 / 183 项通过，
+  `vue-tsc --noEmit`、Snowflake 精度守卫、Vite 生产构建、变更文件 ESLint（0 error）、Scenario
+  Smoke gates 与 workflow 合同均通过。后端迁移/持久化/合同/投影/controller 聚焦 79 项通过。
+- 本轮没有新增 `RULE_MATCHED` 或 `MODEL_PROPOSED` 生产来源，也没有改变 T7/T8、`fixtureMode`、
+  LLM 调用或生产写边界。只有同一批真实场景样本能分别统计两类来源后，才可在 RFC 中把
+  `RouteMode` 标为 deprecated-for-read。
+
 后端定向测试命令：
 
 ```bash
@@ -882,8 +1021,9 @@ mvn -pl mateclaw-server -am \
 4. P3 纯文本闭环已收口；交互卡片需单独平台评审，不阻塞 P2 真实数据验证。不新建入站，
    不把 BusinessSummary 伪装成 tool-guard ApprovalNotice。
 5. P2 T6 授权机制、真源验证接缝、部署拓扑拨测场景入口和首条 CSDP SendMsg
-   `FULL_SPINE_OBSERVED` 已完成；下一主攻是由 owner 对当前指纹提交 T7 acceptance，
-   再将真源运行持久化为首条 T8 台账样本，逐步积累 20–30 条。CloudDial
+   `FULL_SPINE_OBSERVED` 已完成；下一主攻是按生成的 30 条准备队列先解决 1 条源质量冲突、由 owner
+   补齐 28 条查询合同，再从中冻结 20–30 个真实可执行目标并通过预检，
+   然后才由 owner 对当前指纹提交 T7 acceptance，并在同一窗口灌入真实种子。CloudDial
    `synthetic_probe` 仍需核对空 `series` 的任务时间窗并完成独立验收。
 6. 部署拓扑 `MANUAL` 固定回放 Gate 已完成；示例导入、回放和人审是三个独立动作，不要自动批准候选，
    也不要拿这份 fixture 证明替代 T7/T8。

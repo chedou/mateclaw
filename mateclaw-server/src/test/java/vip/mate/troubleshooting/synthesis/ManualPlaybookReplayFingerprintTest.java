@@ -38,6 +38,32 @@ class ManualPlaybookReplayFingerprintTest {
         assertThat(changed).isNotEqualTo(left);
     }
 
+    @Test
+    void evidenceRequestFingerprintIsCanonicalAndChangesWithTheExactRequestContract() {
+        Map<String, Object> leftTarget = new LinkedHashMap<>();
+        leftTarget.put("search_term", "SendMsg");
+        leftTarget.put("component", "producer");
+        Map<String, Object> rightTarget = new LinkedHashMap<>();
+        rightTarget.put("component", "producer");
+        rightTarget.put("search_term", "SendMsg");
+
+        EvidenceRequest left = new EvidenceRequest(
+                "EV-SEARCH", "log_search", "find failed samples",
+                leftTarget, "-15m", true);
+        EvidenceRequest right = new EvidenceRequest(
+                "EV-SEARCH", "log_search", "find failed samples",
+                rightTarget, "-15m", true);
+        EvidenceRequest changed = new EvidenceRequest(
+                "EV-SEARCH", "log_search", "find failed samples",
+                rightTarget, "-30m", true);
+
+        assertThat(fingerprints.evidenceRequest(left))
+                .matches("[a-f0-9]{64}")
+                .isEqualTo(fingerprints.evidenceRequest(right));
+        assertThat(fingerprints.evidenceRequest(changed))
+                .isNotEqualTo(fingerprints.evidenceRequest(left));
+    }
+
     private SopEntry candidate(Map<String, Object> target, double threshold) {
         return new SopEntry(
                 "manual-topology-v1", "sop.v1", "CSDP",

@@ -83,6 +83,7 @@ const inbox: KnowledgeReviewInbox = {
     status: 'candidate',
     verified: false,
     operational: false,
+    knowledgeEvidenceGrade: 'UNVERIFIED',
     createTime: '2026-07-20T09:10:00Z',
     updateTime: '2026-07-20T09:10:00Z',
   }],

@@ -22,29 +22,39 @@ import java.util.Optional;
 public class GuanceEvidenceAcceptanceService {
 
     private final GuanceBindingFingerprintService fingerprintService;
+    private final GuanceEvidenceReadinessService readinessService;
     private final GuanceEvidenceValidationService validationService;
+    private final GuanceRecordingTargetCatalog recordingTargetCatalog;
     private final GuanceEvidenceAcceptanceStore store;
     private final Clock clock;
 
     @Autowired
     public GuanceEvidenceAcceptanceService(
             GuanceBindingFingerprintService fingerprintService,
+            GuanceEvidenceReadinessService readinessService,
             GuanceEvidenceValidationService validationService,
+            GuanceRecordingTargetCatalog recordingTargetCatalog,
             GuanceEvidenceAcceptanceStore store) {
         this(
                 fingerprintService,
+                readinessService,
                 validationService,
+                recordingTargetCatalog,
                 store,
                 Clock.systemUTC());
     }
 
     GuanceEvidenceAcceptanceService(
             GuanceBindingFingerprintService fingerprintService,
+            GuanceEvidenceReadinessService readinessService,
             GuanceEvidenceValidationService validationService,
+            GuanceRecordingTargetCatalog recordingTargetCatalog,
             GuanceEvidenceAcceptanceStore store,
             Clock clock) {
         this.fingerprintService = fingerprintService;
+        this.readinessService = readinessService;
         this.validationService = validationService;
+        this.recordingTargetCatalog = recordingTargetCatalog;
         this.store = store;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
@@ -120,6 +130,16 @@ public class GuanceEvidenceAcceptanceService {
             throw invalid("all T7 owner confirmations are required");
         }
         String safeActor = actor(actor);
+        GuanceRecordingTargetCatalog.View recordingTargets =
+                recordingTargetCatalog.inspect(readinessService.inspect(
+                        workspaceId, system, service));
+        if (!recordingTargets.readyForOwnerAcceptance()) {
+            throw conflict(
+                    "at least " + GuanceRecordingTargetCatalog.MIN_WINDOW_TARGETS
+                            + " server-frozen executable recording targets are required "
+                            + "before T7 owner acceptance; current="
+                            + recordingTargets.executableTargetCount());
+        }
         GuanceBindingFingerprintService.Snapshot before =
                 fingerprintService.current(workspaceId, system, service)
                         .orElseThrow(() -> conflict(

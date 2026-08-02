@@ -24,14 +24,11 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T0.9 让"哪条知识是真的"可见** | 无阻塞。IM1010（真实聚合）与 903001（手写夹具）在注册表里仍平级；903001 已因 P1.7 有了夹具定位，但注册表上看不出来 | §3.5 |
-| 2 | **T7 内网核实**：真实 Guance measurement / 字段 / 阈值 | 需要内网窗口 + owner 本人，**不是代码**。验收接缝、工作台向导、窗口预检均已就绪 | §5 T7 |
-| 3 | T0.8 剩余 145 条错误码录制种子导入 | 机制与首个 IM1010 切片已完成；**建议排在 P1.6 之后** | §3.5 |
-| 4 | T0.7 首诊耗时基线：CI 已挂，等待真实运行历史 | 需要 Actions 实跑数据 | §3.5 |
-| 5 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
-| 6 | T8 历史样本 20–30 条 + 性能基线 | 依赖 2。统计口径已补齐（含质量四项），缺的是样本本身 | §5 T8 |
-| 7 | T0.10 v4 §5 与代码的命名分歧 | 结构账，不阻塞 | §3.5 |
-| 8 | P4 场景 Playbook / P5 知识治理 | 依赖 6 的真实时延与质量数据 | §7 §8 |
+| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选已生成可填写/可校验包；待 owner 填满至少 20 条，server-owned 可执行目标仍为 `0` | §5 T7 |
+| 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
+| 3 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
+| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
+| 5 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
@@ -59,9 +56,20 @@
 现在默认可跑，九道闸门全绿，已进 CI。学习环第一次在 HTTP 边界上供出了一条可评审的知识。
 遗留：T0.8 的 145 条批量导入应当排在它之后重新评估——学习环通了，其中一部分可能不需要手写。
 
-**T0.9 排在 T7 前面的理由**：D19 让"知识规模化"成了可能，而规模化的第一个副作用是
-**真知识和编的知识开始混在一起**。现在只有 2 条，人还记得住；到 20 条就记不住了，
-而那正好是 T7 之后立刻会发生的事。这道标记必须在批量导入之前立好，不是之后补。
+**T0.9 已按顺序完成**：D19 让"知识规模化"成了可能，而规模化的第一个副作用是
+**真知识和编的知识开始混在一起**。V190 已把来源等级冻结到 Playbook 版本，
+并投影到注册表与开发证据视图。服务端目录中精确的 `IM1010` 候选属于
+`RECORDED_AGGREGATE`、精确的 `903001` 候选属于 `AUTHORED_FIXTURE`；但目录候选不等于
+当前 workspace 已批准版本。等级要求候选内容指纹精确匹配服务端冻结示例；固定清单按冻结的
+146 个 selector 成员统计。2026-08-02 对本地 V190 真实重启后，注册表如实显示 `0 / 146`：
+唯一 legacy 903001 内容不匹配冻结示例，保持 `UNVERIFIED`，没有为凑正例数误抬权威。
+这道标记已经立在 T0.8 批量导入之前。
+
+**「高置信错误为 0」的测量口径已拍板并实现**：T8 基线不接收或映射模型自报置信度；服务端根据
+真 Guance、双非 fixture、`FULL_SPINE_OBSERVED`、有效草案和引用完整性派生
+`HIGH / MEDIUM / NOT_ASSESSED`，再由冻结人工参考解独立判定正确性。
+门禁必须显式给出最小 HIGH 分母，因此 `0 / 0` 不能通过。详见
+`system-confidence-contract.md`；真实阈值仍必须等待 20–30 条样本，未提前标定。
 
 **T7 的目标应当改写**：不是"跑通一次验证"，而是**一次窗口灌 20–30 条录制种子**。
 D19 已经让这件事成为可能——一条种子只要一份聚合正例，排除/弃权例由服务端生成，
@@ -73,36 +81,79 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 
 按**能不能动手**排，不按重要性。
 
-### 第一优先：只有人能推的那一格
+### 第一优先：先补可执行目标，再约人和内网窗口
 
-**T7 内网窗口 → owner `ACCEPTED`。** 这一格不会因为再写代码而前进：
-端点在内网 `*.prd.sangfor.com`，需要 owner 本人和受控运行时 Key。
-它同时挡着 T8 真源采样、挡着"证据可信"这个**唯一还没被验证过的核心断言**、
-挡着 P4/P5。
+**当前不是只差 owner `ACCEPTED`。** 复审发现，原预检会让任意 20 个 D1 selector
+复用同一条硬编码 SendMsg 查询并报绿；这比没有门禁更危险。现已改为只接受运行服务返回的
+`t7-guance-recording-target-catalog.v1`。目录项必须冻结 selector、candidate/request 双指纹、
+安全 lookup、window 和当前三份 binding；其中双指纹、selector、lookup 与 window 必须由服务端从完整
+`SopEntry` 和被选中的 `EvidenceRequest` 派生，不能接受目录作者自报哈希；操作员不能自造映射。
+
+当前随仓未录制可执行目标数是 **0**：已验证的 SendMsg 合同已经录制，其他错误码查询合同尚未核实。
+所以 T7 之前还有一项窗口外工作：为 20–30 个新 D1 selector 建立并复核精确查询合同。
+目录够数以后，才进入需要 owner、内网 `*.prd.sangfor.com` 与受控运行时 Key 的那一格。
+
+这项工作不再从 146 行源表手工挑选。确定性准备结果见
+[`t7-target-contract-preparation.md`](./t7-target-contract-preparation.md) 和同名 JSON：清洗后恰有
+**30 条只读候选**，其中 `csdp:IM1010` 已录制、`csdp:101014` 因源材料键冲突阻断，剩余
+**28 条待 owner 补合同**；目标目录仍为 **0**。它只投影安全提示和缺失字段，不含原始日志、DQL、
+凭据，也不能授予 T7。输入变化后运行：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --write
+python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check
+```
+
+Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md)。
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)
+已把首批低成本的 15 条 A + 2 条 B + `csdp:101017 / csdp:101062 / csdp:301045` 三条 C
+精确选中并展开 20 份合同；每个占位符都故意不能通过校验。
+[`t7-owner-contract-intake.template.json`](./t7-owner-contract-intake.template.json) 保留全部 28 条空白候选，
+仅在 owner 需要调整首批时使用。`sourceHints.hasLogSignatureHint` 只表示存在结构化日志提示；即使没有
+提取出安全错误标识符也会明确显示，但不会带出日志正文。完成文件用下列命令校验，成功结果仍必须是
+`PREPARED_NOT_EXECUTABLE / canAcceptT7=false / canWriteRuntimeCatalog=false`：
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
+  --validate <受控本地目录>/t7-owner-contract-intake.local.json
+```
+
+正式工作台和 acceptance API 已共同执行这个前置条件：目录少于 20 个可执行目标时，UI 显示
+`T7 BLOCKED · X / 20`、不展示 owner 清单；服务端也在 Guance 验证之前拒绝 acceptance。
+“验证单条查询合同”继续用于窗口外准备，不能再当成 T7 已就绪。
 
 动手顺序：
 
-1. 在目标环境跑 `./scripts/troubleshooting-t7-preflight.sh`（只读，不发凭据）。
+1. `csdp:101014` 保持隔离并行回源，不计入或阻塞首批；owner 直接复制建议 20 条工作表，
+   逐项替换所有占位符并核实责任团队、真实运行 service、安全检索键、
+   服务端查询合同、确定性判据/规则、三份当前 bindingRef 和精确历史时间，再跑
+   `--validate`。校验器只接受安全引用，确定拒绝 DQL、URL、Key/Token 和 `rawLog`
+   等额外字段；人类自由文本也不得嵌入原始日志，工具不把自己写成任意日志分类器。
+2. 只把证据齐全的 20–30 条写入服务端 `guance-recording-targets.json`，冻结为
+   **真实可执行且未录制**的目标；
+   每项嵌入完整候选并选定正例 requestId；服务端重算精确 candidate/request 指纹，再要求三份
+   bindingRef 与目标环境相等。不能把
+   任意 D1 selector 指到现有 SendMsg 查询，也不能把已录制 IM1010 重复计数。
+3. 从运行服务返回的 targetId 准备 20–30 条 `t7-recording-window-plan.v1` 本地计划，再运行
+   `T7_SEED_PLAN_FILE=<受控本地文件> ./scripts/troubleshooting-t7-preflight.sh`（只读，不发凭据）。
    - 卡住 → 按它打出的 blocker 在**窗口外**解决，比进去现查便宜得多。
    - 通过 → 它会打印验收模板（七项全 `false`）。这时才值得约 owner 的时间。
-2. 窗口里 owner 逐项核对后提交 `POST /evidence/guance/acceptance`（清单见 runbook §6）。
-3. **窗口目标不是"跑通一次验证"，是一次灌 20–30 条录制种子**——
+4. 窗口里 owner 逐项核对后提交 `POST /evidence/guance/acceptance`（清单见 runbook §6）。
+5. **窗口目标不是"跑通一次验证"，是一次灌 20–30 条录制种子**——
    D19 之后一条种子只要一份聚合正例，排除/弃权例由服务端生成。别浪费在单次验证上。
 
-### 第二优先：我能做但需要你先拍板的
+### 第二、第三优先：先决条件已经收口
 
-**「高置信错误为 0」目前不可测。** 不是没汇总——`PlaybookDraft` 与
-`DiagnosisHypothesis` 上根本没有置信度字段，整个 evaluation 包搜不到 confidence。
-要让 v4 §5.7 这条退出条件可评估，得先定：
-**是否让模型自报置信度，以及自报值是否可信到能拿来把关放权。**
-定了我再动手；在此之前它是 RFC 里写着、落不了地的一项。
-
-### 第三优先：无阻塞，可随时插入
-
-- **T0.9 让"哪条知识是真的"可见**（§3.5）。要排在 T0.8 批量导入**之前**：
-  现在只有 2 条人还记得住，到 20 条就记不住了，而那正是 T7 之后立刻会发生的事。
-- T0.8 剩余 145 条种子导入——学习环通了之后应重新评估，其中一部分可能不需要手写。
-- T0.10 v4 §5 与代码的命名分歧（结构账）；T10.5 收敛 `RouteMode`（随 P4 T11）。
+- [x] **拍板“高置信错误为 0”如何测**：T8 `SystemConfidence` 不使用模型自报值；由服务端按独立、可复核事实
+  派生系统置信度，再由人工 oracle 评分。台账发布已评估数、HIGH 数和 HIGH 错误数；
+  `highConfidenceErrorFreeAcross(minimumHighConfidenceRuns)` 把非零分母写进方法签名。
+- [x] **T0.9 让“哪条知识是真的”可见**：来源等级已进入不可变 Playbook 版本、注册表、
+  `DeveloperEvidenceView` 和固定 146 条清单计数。`903001` 保留 approved 机制样例，
+  但明确标为 `AUTHORED_FIXTURE`，不再与 IM1010 的真实聚合权威混显。
+- [ ] T0.8 剩余 145 条种子导入——保持暂停。先在 T7 窗口拿到 20–30 条真实种子，
+  再分批导入并保留拒绝清单；学习环已通，其中一部分可能不需要手写。
+- [x] T0.10 v4 §5 与代码的命名分歧（结构账）已完成；T10.5 收敛 `RouteMode` 仍随 P4 T11。
 
 ### 等数据，别提前做
 
@@ -121,6 +172,37 @@ gate 5 位置放错（挡在了别的前置上）、gate 10 查 `.data.sources`�
 对策已经用上，建议延续：**新写的断言要用"故意改坏"验证一遍它是活的**。
 T7 预检的三条断言就是这么验的，预检本身也因此配了双向回归——
 它在本机只可能说"没就绪"，那条"就绪"路径本来会一次都没被走过就上线。
+
+本轮核心新增断言也逐一做了反向证明：错标录制 lane、让同 selector 的改写候选继承权威、
+按行数替代 146 成员关系、让历史记录绕过指纹直接升级、让坏历史挡住后续 keyset 分页、把未知等级
+升为真实录制、破坏冻结版本投影、把历史缺失 Evidence Spine 反推为完整脊柱，以及把服务端 `HIGH`
+降成 `MEDIUM`，均让各自测试准确失败（分别为 1、1、2、1、1、1、1、1、3 条）。恢复实现后
+全部通过。这不是“有测试文件”的
+旁证，而是核心断言确实会在对象被改坏时报警的证据。
+
+本轮又把服务端批次门禁故意改成永不执行，并把前端 `recordingBatchReady` 故意恒置为真：前者使
+acceptance 门禁测试准确失败，后者使 `0 / 20` 投影测试准确失败；恢复实现后两组测试全部通过。
+
+owner 准备队列也做了两次反向证明：把真实字段 `recordedEvidenceSeeds` 故意改成单数时，测试准确暴露
+已录制数 `1 → 0`、待合同数 `28 → 29`，共 3 条失败；把生成 Markdown 的 D1 分母故意从 146 改成
+145 时，`--check` 明确报 `stale T7 preparation Markdown`。两处恢复后均通过，并已接入 smoke workflow。
+
+真实服务预检还抓到第五次同形状问题：Java 全局 `Long → String` 让目录接口的
+`asOfEpochSeconds` 返回十进制字符串，CI stub 却一直伪造成 JSON number。先把 stub 改成真实形状后，
+旧预检准确红在第 5 格；修复后严格接受 1–10 位十进制字符串，并把旧 number 形状加入反向拒绝。
+对当前 `18088` 服务重跑只读预检，前 4 格通过，随后如实报告
+`0 个可执行新目标（冻结 0 个）/ 20 required`。这才是本轮要带进 owner 协作前的真实 blocker。
+
+owner intake 门也做了反向证明：把最小选择数从 20 故意降为 19 时，19 条输入测试准确失败；
+关闭敏感内容检测时，DQL / URL / `DF-API-KEY` 三类坏输入准确变绿为红；把已生成模板的
+候选数从 28 改成 27 时，`--check` 准确报生成物陈旧。另外，当前只有 28 条可选时，
+新增的有效上限断言先准确暴露模板误写 `maximum=30`，修复后才与校验器一致为 28。
+最后把第 2 条的 service/search/window/bindings 改成与第 1 条完全相同、但保留不同公开引用和指纹，
+Python owner 门与 Java 运行目录新断言都先准确失败；修复后两层均拒绝这种“改名不改查询”的假批次。
+推荐工作表接入后又故意只在自由文本 `ownerTeam / ownerScenario` 中保留 `<replace:...>`；新断言先准确失败，
+随后校验器统一拒绝任意字段中的未替换占位符，避免“结构填完但责任人与场景仍是模板文字”被放行。
+最后故意要求读取 `csdp:301002.sourceHints.hasLogSignatureHint`，旧模板因查不到字段准确失败；补入安全布尔
+投影后才恢复，避免 `A_HINTED` 在错误标识符提取为空时被误读成“无日志提示”。
 
 ---
 
@@ -269,7 +351,7 @@ P1 本身未改路由、企微或生产数据；其后 T15 已单独将双投影
 且 `instance_unreachable` 是 **EXCLUDED（真的排除）而非 UNEVALUATED（没验过）**——
 D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
-### T0.7 · 待办
+### T0.7 · CI 首诊基线（2026-08-02 已建立）
 
 **现在做这些是有意义的：脚本第一次是绿的，可以当回归基线用。**
 
@@ -285,7 +367,23 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
       却从没量过自己跑通一次要多久；目标 5 分钟内。
       CI 从 checkout 前开始计时，在成功产出 Diagnosis 后写入 Job Summary；超过 300 秒先告警，不伪装为
       产品正确性失败。终点取脚本首次观测到 `diagnosisId` 的时刻，不含后续投影校验。
-- [ ] T7 时把 demo 绑定**替换**为真实 Guance 绑定，而不是从零配置。
+- [x] 用 GitHub 官方运行历史确认基线已实际产生，不再把“workflow 文件存在”冒充“CI 跑过”。
+      截至 2026-08-02 共 6 次运行，前两次失败后最近 4 次连续成功：
+
+      | Run | Commit / event | 结果 | 总耗时 |
+      |---|---|---|---|
+      | [#1](https://github.com/chedou/mateclaw/actions/runs/30685260971) | `e95e7be` push | FAILURE | 44s |
+      | [#2](https://github.com/chedou/mateclaw/actions/runs/30704422460) | `21de00d` push | FAILURE | 3m10s |
+      | [#3](https://github.com/chedou/mateclaw/actions/runs/30707108112) | `f24a603` push | SUCCESS | 1m27s |
+      | [#4](https://github.com/chedou/mateclaw/actions/runs/30737322529) | `aa6128b` pull request | SUCCESS | 1m23s |
+      | [#5](https://github.com/chedou/mateclaw/actions/runs/30737437300) | `9d4cdd6` push | SUCCESS | 1m15s |
+      | [#6](https://github.com/chedou/mateclaw/actions/runs/30745097839) | `5d54d5d` push | SUCCESS | 1m33s |
+
+      最新 run #6 的主 job 为 1m29s，并且成功状态证明“记录 clone-to-diagnosis 时长”步骤已通过；
+      首次 Diagnosis 发生在 job 完成之前，因此实际 clone-to-diagnosis 有严格的 **≤89s 上界**，
+      已满足 300s 目标。公开未登录页面不展示 Job Summary 中的精确秒数，所以这里只记录可独立复核的上界，
+      不把 93s 总运行时间冒充精确首诊时长。
+- [ ] **归 T7，不是 T0.7 的剩余实现：** T7 时把 demo 绑定替换为真实 Guance 绑定，而不是从零配置。
 
 ### T0.8 · 错误码 Playbook 的晋升路径（机制与首个切片已完成）
 
@@ -310,29 +408,42 @@ D15 负对照在真实 HTTP 边界上第一次被验证成立。
 
 ### T0.9 · 把"哪条知识是真的"变成可见的数（D19 落地后新出现的问题）
 
-D19 之后仓库里同时躺着两条 approved 错误码 Playbook：
+D19 之后服务端目录与历史注册表同时存在两类容易被混淆的资产：
 
-| selector | 正例来源 | 阈值来源 |
-|---|---|---|
-| `csdp:IM1010` | 真实历史聚合（失败 2/2、成功 0/14047） | 真实数据 |
-| `csdp:903001` | 为跑通晋升链手写的 fixture | **从脱敏 xlsx 推的，未经任何核实** |
+| selector | 当前形态 | 正例来源 | 阈值来源 |
+|---|---|---|---|
+| `csdp:IM1010` | 服务端录制候选，当前 workspace 尚未形成 active-approved 版本 | 真实历史聚合（失败 2/2、成功 0/14047） | 真实数据 |
+| `csdp:903001` | legacy active-approved 版本 | 为跑通晋升链手写的 fixture | **从脱敏 xlsx 推的，未经任何核实** |
 
-**两者在注册表里是平级的，`status` 都是 `approved`，从外面分不出哪条的阈值是真的。**
+**历史问题是 approved 状态无法证明来源；目录里有录制候选也不能冒充该 workspace 已有真实知识。**
 
 这正是本架构在别处极其小心的那类错误：`EXCLUDED` 与 `UNEVALUATED` 严禁混显、
 `fixtureMode` 必须显式标记——但在**知识本身**这一层，同样的混显刚刚出现了。
 `fixtureMode` 说的是"这次取证是回放"，它没有回答"这条知识的判据是不是编的"。
 
-- [ ] 给录制种子引入**证据来源等级**（如 `RECORDED_AGGREGATE` / `AUTHORED_FIXTURE`），
-      在 Playbook 版本、注册表列表和 `DeveloperEvidenceView` 上都可见。
-      这是一个与 `fixtureMode` 正交的维度，不能复用同一个布尔。
-- [ ] 把**录制证据覆盖率**做成一等指标：146 条错误码里有几条有真实录制正例。
-      clone→首诊耗时被做成可见指标后效果很好；这个数现在没有任何地方在说。
-- [ ] **降级或显式标注 `csdp:903001`**。它已完成历史使命（证明晋升链能走通）。
-      现在它是仓库里唯一一条阈值凭空来的 approved 知识，平级留着就是在稀释 IM1010 的可信度。
-      降级前需确认它不再被 demo 主线依赖（默认 smoke 已切到 IM1010）。
+- [x] 给录制种子引入**证据来源等级**：`RECORDED_AGGREGATE / AUTHORED_FIXTURE /
+      UNVERIFIED` 已冻结到 V190 Playbook 版本，并在注册表列表、详情和
+      `DeveloperEvidenceView` 上可见。它与一次运行的 `fixtureMode` 正交，未知历史值保守回落
+      `UNVERIFIED`，不能抬高权威。
+- [x] 把**录制证据覆盖**做成一等计数：固定 D1 分母为 146，服务端返回注册数、
+      真实聚合数、手写夹具数、未核实数和清单外数。2026-08-02 本地 V190 重启后的实际注册表为
+      `0 / 146`：录制目录中的 IM1010 尚未在本 workspace 形成 approved 版本，legacy 903001 保持
+      `UNVERIFIED`。这正是 fail-closed 的预期，不用目录候选数冒充注册表覆盖。
+      146 个成员冻结在服务端 manifest 中，按成员关系而不是按行数统计；场景 selector 不进入
+      错误码分母，清单外 CSDP 错误码另计，接口与 UI 都刻意不发布百分比。
+- [x] **显式标注 `csdp:903001`** 为 `AUTHORED_FIXTURE`。它仍承担“人工批准不等于执行”
+      和固定回放 bootstrap 的机制证明；这个等级只授予服务端冻结的精确候选。内容不同的 legacy
+      903001 即使 approved 也保持 `UNVERIFIED`，不与 `IM1010=RECORDED_AGGREGATE` 平级展示或
+      计入真实录制覆盖。
 
-### T0.10 · v4 §5 与代码的命名分歧（结构账，不阻塞）
+权威合同见 `knowledge-evidence-grade-contract.md`。来源等级由服务端受控回放目录赋值，
+且 selector 与候选内容指纹必须同时精确匹配冻结示例；SQL 迁移不信任公开 source ID，
+历史版本由启动协调器重建候选并复算相同指纹后才升级。
+协调器按 ID keyset 分页，永久不匹配的坏历史不能让后续精确候选饥饿。未知 selector 或同 selector
+的改写候选没有来源等级时晋升 fail closed。T0.9 已在 T0.8
+批量导入前完成。
+
+### T0.10 · v4 §5 与代码的命名分歧（结构账，2026-08-02 已完成）
 
 v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
 `InvestigationPlan`、`EvidenceBundle`、`DiscoveryPolicy`、`LoopPolicy/LoopRun/LoopOutcome`、
@@ -343,11 +454,16 @@ v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
 其中 `LoopPolicy` / `AdversarialEvalReport` 已标 PENDING-EVIDENCE，未实现是**对的**。
 问题在另一半：文档声称是权威，代码事实上是另一套，下一个人按 §5.4 去找 `EvidenceBundle` 会找不到。
 
-- [ ] 逐条判定：**收敛代码** 还是 **RFC 记下真实命名**。
-      建议 `SopEntry → type + sealed selector` 收敛（它已经在用 `ScenarioSelector`，只差没进合同）；
-      `EvidenceBundle` 值得真的建（`completeness` / `missingRequired` 现在散在四个类里）；
-      其余标注"未实现，等 P4/P5"即可。
-- [ ] 在 §5 开头加一张**实现状态表**，让"设计"与"已实现"在同一页可分辨。
+- [x] 逐条判定：**收敛代码** 还是 **RFC 记下真实命名**。当前选择先校正文档事实：
+      `SopEntry → type + selector` 涉及 routing key、不可变版本与持久化兼容，随 T10.5 / P4 一次迁移；
+      `EvidenceBundle` 等 `InvestigationPlan`、bundle identity、plan 绑定、fixture 与持久化边界明确后一次收敛，
+      不先新增只包装裸列表的空壳；`DiscoveryPolicy`、Loop 与 Challenger 合同继续等待真实样本。
+- [x] 已在 v4 §5 开头加入**实现状态表**，覆盖 §5.1–§5.11，并补入跨章节的
+      `ScenarioProposal` 与 `ReadOnlyEvidenceToolRegistry`；“设计”与“已实现”现在可在同一页分辨。
+
+本项只关闭结构账，没有推进 T7、P4/P5，也没有新增接口、表结构或运行时类型。设计取舍和复核步骤见
+`docs/superpowers/specs/2026-08-02-t0-10-contract-ledger-design.md` 与
+`docs/superpowers/plans/2026-08-02-t0-10-contract-ledger.md`。
 
 ---
 
@@ -417,8 +533,9 @@ v4 §5 自称"稳定契约"，其中 **8 个在代码里不存在**：
       `scripts/ci/test-troubleshooting-smoke-workflow.sh` 增加静态合同：无码路入口存在、
       排在命中路之后、脚本可执行，且仍带 `NOT_ELIGIBLE` / `CANDIDATE_REUSED` 两道反向断言。
 - [x] `quickstart.md` 增加第二条主线：不仅"看见一次诊断"，还要"看见一条知识被生产出来"。
-- [ ] 只有无码路默认可跑之后，再回头做 T0.8 的 145 条批量导入——
-      学习环通了，其中一部分可能根本不需要手写。
+- [x] “无码路默认可跑”这个 T0.8 前置已经满足；学习环已通，其中一部分可能不需要手写。
+      **这不等于现在启动 145 条导入**：当前暂停原因已转为先在 T7 窗口取得 20–30 条真实种子，
+      再据真实供给/拒绝分布决定后续批次，见 T0.8 主条目。
 
 **实测**（`dev,troubleshooting-demo`，H2 默认库）：九道闸门全绿，
 `CANDIDATE_CREATED` → `reviewStatus=CANDIDATE` → `approvalEligibility=NOT_ELIGIBLE` →
@@ -499,9 +616,9 @@ D19 为 MANUAL 建的"录制正例 + 判据形状生成反例"机制，看起来
 - [x] 服务用生产构造器（真实系统时钟，离固定时间戳数月），所以任何一层若用 `now()`
       顶替 session 边界，`eq(REPORTED_AT)` / `eq(READY_AT)` 会立刻失败。
 
-### T0.16 · 链身：在线 lane 对无码报障是关着的（契约缺口，需决策）
+### T0.16 · 链身：在线 lane 曾对无码报障关闭（历史缺口，方向 (c) 已落地）
 
-默认配置下：
+当时的默认配置下：
 
 ```
 无错误码报障 → POST /incidents → 409 "troubleshooting miss-path Agent is disabled"
@@ -591,11 +708,12 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
         查错字段返回空清单，于是「没有 MISSING 被引用」永远成立——**空转了一整轮**。
         现改为双向比对（引用必须恰好等于非 MISSING 的取证，空清单直接失败）。
         这是本轮第三次同型问题：闸门写错了对象，比没有闸门更糟。
-- [ ] 在此之前，其余无码故障的**可用产出仍然只有知识生产 lane**
-      （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
-      所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
+- [x] 这条“此前状态”已结束：知识生产 lane 仍保留，但注册过的无码场景现在还可走
+      `POST /scenarios/{scenarioKey}/diagnoses → POST /diagnoses/{id}/evidence-runs` 在线 lane；
+      只有证据命中/反证后才进入 `READY_FOR_HUMAN`。未注册场景仍 fail closed，不能把一个场景的通过
+      外推成任意无码现象都可在线诊断。
 
-**(c) 部分完成（2026-08-01）——场景入口已开，证据执行未做：**
+**(c) 已完成（2026-08-02）——显式场景入口与证据执行均已落地：**
 
 - [x] `POST /scenarios/{scenarioKey}/diagnoses` 通用场景入口。语义按 §3.1 分开：
       人显式指定记 `EXPLICIT`；模型提议注册键必须走别的路并记 `MODEL_PROPOSED`，
@@ -614,18 +732,18 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 实测：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，`errorCode=null`，
 `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`，绑定精确 approved 版本，零 LLM。
 
-- [ ] **仍需一个决定**（属 v4 §5.5，不擅自做）。三个方向：
-      - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条
-        `INSUFFICIENT_EVIDENCE` 的诊断，并把**确定性证据脊柱**（`log_search → PS ID →
-        log_trace_bundle`，零 LLM，已在 `/sops/synthesis/preview` 证明可跑）挂上去。
-        这是最贴合北极星的一条：人至少拿到证据，而不是一句拒绝。
-      - (b) 承认在线无码 lane 必须依赖 Agent，把"未配置 Agent 时不受理无码报障"
-        写成显式产品约束，并在 quickstart / runbook 里讲清楚。
-      - (c) 让 `/incidents` 支持按 **scenario selector** 确定性路由（现在只按 errorCode），
-        无码但已注册场景的报障走 `DETERMINISTIC + SCENARIO_PLAYBOOK`，不需要模型。
-        契约已支持这个形状，缺的是入口。
-- [ ] 决定之前，**不要**为了让 demo 好看而录制一整个 Agent 回合——
-      录一次结构化归纳与录一个带预算的循环，诚实程度不是一回事。
+- [x] **决定已落地：采用方向 (c) 的显式注册场景变体。** 没让 `/incidents` 根据自由文本猜场景，
+      而是增加需要认证操作员明确选择注册键的 `/scenarios/{scenarioKey}/diagnoses`：
+      服务端锁定 active-approved Playbook，写入
+      `DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`，先停在
+      `INSUFFICIENT_EVIDENCE / NEEDS_INVESTIGATION`；随后无请求体的 `evidence-runs` 只执行 Diagnosis
+      已冻结版本中的取证计划并重新裁决。这样保留了 (c) 的零 LLM / 强权威，又不把自由文本路由猜测
+      伪装成规则命中。
+      - (a) 未采用：不新增 `routeAuthority=NONE` 弱形状，避免“未路由”成为绕过 Playbook 权威的入口；
+      - (b) 仅保留为**未注册现象**的 fail-closed 边界，不能反过来关闭已经有 approved 场景的零 LLM 路；
+      - 模型未来若提议同一注册键必须走独立入口并记 `MODEL_PROPOSED`，不得复用这个 `EXPLICIT` 入口。
+- [x] 全程没有为了 demo 录制整个 Agent 回合：录制的是 server-owned 结构化证据与草稿响应，
+      路由、冻结版本、判据求值、证据到达转移和确认仍由生产代码执行。
 
 ---
 
@@ -793,16 +911,26 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       再写代码而前进。
 - [x] 窗口预检 `scripts/troubleshooting-t7-preflight.sh`（2026-08-02）。
       §3 早就写过这条风险——「窗口拿到了也用不上，操作员卡在同样的配置迷宫里」，
-      而窗口是整条路上**最贵、最难重来**的一格。预检只读，走 6 格：
+      而窗口是整条路上**最贵、最难重来**的一格。预检只读，走 7 格：
       服务可达 → adapter 启用 → 三个核心 signal 已路由 → 指纹可唯一计算 →
-      验收状态 → 真源采样闸门；卡住时把**服务端自己的 blockers 原样打出来**，
-      再给下一步动作。三条刻意的约束：
+      20–30 条服务端冻结目标 + 历史执行计划 → 验收状态 → 真源采样闸门；卡住时把
+      **服务端自己的 blockers 原样打出来**，
+      再给下一步动作。四条刻意的约束：
       - **只读，只发 GET**（登录除外）。一支能顺手把 Key 提交出去的预检比没有更糟；
         CI 合同静态断言这一点，并已用「故意加一条 POST」验证该断言是活的。
       - **绝不在夹具环境里报就绪。** 本机跑必须停在第 2 格，且真源采样必须是关着的。
       - **验收清单模板七项一律 false。** 那是 owner 的书面确认，预填 true 等于机器替人签字。
+      - **没有 20–30 个 server-owned target 不报窗口就绪。** `GET
+        /evidence/guance/recording-targets` 只投影运行服务中未录制且与当前三份 binding 精确相等的目标；
+        每项从完整候选及选中请求派生 selector、candidate/request 双指纹、lookup 与 window，不接受自报哈希，
+        也不返回候选正文、DQL/凭据。当前随仓目录为 0，
+        因为唯一核实的 SendMsg 已录制，其他合同不能假造。
+      - 操作员 `t7-recording-window-plan.v1` 每条只允许 `targetId / occurredAt / sourceReference`；
+        未来时间、未知/重复目标、旧合同、额外字段、非法/超 128 KiB JSON 均阻断。文件先有界读取到
+        mode-600 临时快照，校验与 SHA-256 只读该快照，原文件中途替换不会改变结果；服务端响应与计划
+        在任何 `jq` 读取前先拒绝重复键和尾随根值。
       - 配套 `scripts/ci/test-troubleshooting-t7-preflight.sh` 用桩服务把
-        2→6 格双向走通。**理由**：本机永远只能让它说"没就绪"，
+        2→7 格双向走通。**理由**：本机永远只能让它说"没就绪"，
         那条「就绪」路径本来会一次都没被走过就上线——真进内网那天，
         没人知道它会不会因为一个字段名写错而误报通过。已进 CI。
 - [ ] 用当前受控运行时 API Key 跑通 CSP `synthetic_probe`，核对 `status_code/url/name`、时间排序和无数据语义；
@@ -892,13 +1020,15 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
       §5.7「退出条件是数据达标、不是排期到点」也就没有意义了。
 - [x] 分开统计"没帮上忙"和"引向错误方向"：`HELPFUL / UNHELPFUL / HARMFUL_BLOCKED /
       TECHNICAL_FAILURE` 早已分栏，危险提议现在也有了汇总计数。
-- [ ] **「高置信错误为 0」目前不可测**（2026-08-02 查实）。不是没汇总——
-      `PlaybookDraft` 与 `DiagnosisHypothesis` 上**根本没有置信度字段**，
-      整个 evaluation 包里也搜不到 confidence。要让这条退出条件可评估，
-      需要先决定一件事，而这件事不该我替你定：
-      **是否让模型自报置信度，以及自报的置信度是否可信到能用来把关放权。**
-      在决定之前，§5.7 的这一项写在 RFC 里但落不了地——先把它记成一个空洞，
-      比让它看起来被覆盖了要好。
+- [x] **「高置信错误为 0」已有可测口径**（2026-08-02 拍板）：T8 基线对模型自报置信度
+      **不接收、不存储、不映射到 `SystemConfidence`，也不让其参与放权**。旧 miss-path
+      `AgentTriageDraft.confidence` 只是被服务端降档的模型提议，不能进入本计数或 Gate。
+      `BaselineEvaluationRun` 由服务端根据真 Guance、
+      双非 fixture、`FULL_SPINE_OBSERVED`、确定性校验和引用完整性派生
+      `HIGH / MEDIUM / NOT_ASSESSED`；冻结人工参考解在另一条轴上独立产生质量分类。
+      `highConfidenceError = HIGH && classification != HELPFUL`，台账汇总已评估数、
+      HIGH 数和 HIGH 错误数。`highConfidenceErrorFreeAcross(minimumHighConfidenceRuns)`
+      要求显式非零 HIGH 分母，`0 / 0` 不能过门。详见 `system-confidence-contract.md`。
 - [x] Recorded Replay 与真实 Guance 结果分组展示和统计，并在每个来源内继续分开
       真实 Diagnosis / fixture Diagnosis，禁止混成一个成功率。
 - [ ] 在同一批样本上影子运行 Evidence Challenger + Safety Challenger，各一次调用、固定一轮。
@@ -913,7 +1043,8 @@ T8 20–30 条历史样本拆成三个明确门禁并给出下一步动作；单
 不是 20–30 条真实样本本身，更不是 T8 验收结论。`contrast_sample` 未绑定或不可用时仍保留核心
 同 PS ID 链路，显式标记对照缺失并继续校准期；Guance 与 Recorded Replay、证据 fixture 与关联
 Diagnosis fixture 分开记录。逐样本引用/意图覆盖、安全且证据落地的拒答原因、危险提议分类已经具备
-结构化存储；Recorded Replay 采集和基线执行已接入。当前只有一次真源预览事实，没有 owner 验收后持久化的
+结构化存储；Recorded Replay 采集和基线执行已接入。系统置信度计数只是让退出条件可测，
+不是退出阈值或 Gate verdict。当前只有一次真源预览事实，没有 owner 验收后持久化的
 T8 真实样本，仍不能产出质量结论；
 Challenger 影子运行和两者对比仍未实现。
 只有 owner 完成 T7、实际累积 20–30 条并跑完质量/完整性能统计后，
@@ -979,35 +1110,45 @@ Challenger 影子运行和两者对比仍未实现。
 
 ## 6.5 T10.5 · 收敛 `RouteMode`（不要无限期停在中间态）
 
-**现状（2026-08-01 源码核对）**：`Diagnosis` 里三个字段并存，且新字段是从旧字段**推导**出来的——
+**现状（2026-08-03 复核）**：`Diagnosis` 里三个字段仍并存，但 v4 的两个正交字段已经成为当前
+服务端与前端的读取权威。V191 将真实持久化的 `investigationMode / routeAuthority` 写入可索引列，
+1.3/1.4 历史行保持空值并投影为 `LEGACY_DERIVED`，没有从 `routeMode` 猜测回填：
 
 ```java
-RouteMode routeMode,                                  // 旧的一维
-InvestigationMode investigationMode,                  // = defaultInvestigationMode(routeMode)
-RouteAuthority routeAuthority,                        // = defaultRouteAuthority(routeMode)
+initializeDeterministic        -> DETERMINISTIC + ERROR_CODE_PLAYBOOK + EXPLICIT
+initializeScenarioAwaitingEvidence -> DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT
+initialAgentFallback           -> LLM_FALLBACK + OPEN_DISCOVERY + MODEL_PROPOSED
 ```
 
-下游判断（含前端 `DerivationChain.vue`）仍在用 `routeMode == DETERMINISTIC | LLM_FALLBACK`。
+`defaultInvestigationMode(routeMode)` / `defaultRouteAuthority(routeMode)` 只保留在 `Diagnosis` 的旧签名兼容构造，
+用于读取没有新字段的 1.3/1.4 历史合同。服务端投影、生命周期不变量、索引列表筛选和前端
+`DerivationChain.vue` 均已改读 v4 字段；列表会明确显示“旧合同推导”，不会把兼容值混入持久化统计。
+真正尚未收敛的是生产侧还没有同时产生并统计 `RULE_MATCHED` 与 `MODEL_PROPOSED` 两类场景来源，
+因此 `RouteMode` 暂时仍保留为兼容字段，尚不能完成最终 deprecated-for-read 宣告。
 
 **为什么必须收敛**：D3 的原意是把"怎么查"和"为什么选中"拆成两个**独立**维度。
-现在新维度没有独立信息量——`RULE_MATCHED` 与 `MODEL_PROPOSED` 在数据上无法区分，
-因为两者都由同一个 `DETERMINISTIC` 推导而来。等 P4 的场景 Playbook 落地、模型开始提议
-`scenarioKey` 时，会发现**可信等级根本没有地方存**，那时再改要动已入库的历史记录。
+当前下游已消费两个 v4 维度，也能区分人工显式场景 `EXPLICIT` 与 Agent miss-path 的
+`MODEL_PROPOSED`；但还没有生产 `RULE_MATCHED` 场景的入口，因此尚不能在同一批真实样本中分别统计
+规则命中与模型提议。等 P4 的场景 Playbook 落地并同时出现两类来源时，统计必须继续读取
+`routeAuthority`，不能退回 `routeMode` 把两类权威重新压扁，也不能让历史推导值与真实持久化值混显。
 
 v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 
 **收敛步骤**（建议随 P4 T11 一起做，不单独排期）：
 
-- [ ] 确定性诊断工厂**显式**写入 `investigationMode` + `routeAuthority`，不再走 `defaultXxx(routeMode)` 推导。
+- [x] 当前诊断工厂已**显式**写入 `investigationMode` + `routeAuthority`：错误码、显式场景与 Agent fallback
+      分别写入上表三种组合；`defaultXxx(routeMode)` 只保留在旧签名兼容读取路径，不再服务当前新建聚合。
 - [ ] 新增的场景路径按真实来源写 `RULE_MATCHED` / `MODEL_PROPOSED`；两者必须能在数据上分开统计。
-- [ ] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
+- [x] 下游判断（服务端 + `DerivationChain.vue` + 列表筛选）改读 `investigationMode`，
       `routeMode` 退化为纯持久化兼容字段。
-- [ ] 历史记录**不回填猜测值**：1.x 旧行保持由 `routeMode` 推导，并在投影上可辨识，
+- [x] 历史记录**不回填猜测值**：1.3/1.4 旧行保持由 `routeMode` 推导，并在投影上可辨识，
       不能让"推导来的"和"真实写入的"混在一张统计表里。
 - [ ] 收敛完成后，`RouteMode` 在契约文档里标注为 deprecated-for-read。
 
-**完成标准**：`grep routeMode ==` 在服务端与前端的业务判断中为 0 处；
-`RULE_MATCHED` 与 `MODEL_PROPOSED` 能在同一批样本上分别统计出条数。
+**读取迁移完成标准已满足**：服务端与前端业务判断中的 `routeMode` 读取为 0，聚焦后端 79 项、
+前端 24 文件 / 183 项、生产构建和 Scenario Smoke 合同均通过。T10.5 的最终完成标准仍是：
+`RULE_MATCHED` 与 `MODEL_PROPOSED` 能在同一批真实样本上分别统计出条数，再标记
+`RouteMode` deprecated-for-read。
 
 ---
 

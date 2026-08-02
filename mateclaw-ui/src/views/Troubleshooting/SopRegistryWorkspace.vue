@@ -25,6 +25,15 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="判据来源" width="126">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="knowledgeGradeTagType(row.knowledgeEvidenceGrade)"
+            >{{ knowledgeEvidenceGradeLabel(row.knowledgeEvidenceGrade) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="命中路" width="104">
           <template #default="{ row }">
             <span class="operational" :class="{ live: row.operational }">
@@ -88,6 +97,7 @@
             <div><dt>owner</dt><dd>{{ selectedSop.ownerTeam || '未指定' }}</dd></div>
             <div><dt>category</dt><dd>{{ selectedSop.category || '未分类' }}</dd></div>
             <div><dt>verified</dt><dd class="mono">{{ selectedSop.verified }}</dd></div>
+            <div><dt>判据来源</dt><dd>{{ selectedSopSummary ? knowledgeEvidenceGradeLabel(selectedSopSummary.knowledgeEvidenceGrade) : '来源未核实' }}</dd></div>
           </dl>
 
           <section class="contract-health">
@@ -177,7 +187,14 @@
 </template>
 
 <script setup lang="ts">
-import type { SopEntry, SopStatus, SopSummary } from '@/api'
+import type { KnowledgeEvidenceGrade, SopEntry, SopStatus, SopSummary } from '@/api'
+import { knowledgeEvidenceGradeLabel } from './formalProjection'
+
+function knowledgeGradeTagType(grade: KnowledgeEvidenceGrade) {
+  if (grade === 'RECORDED_AGGREGATE') return 'success'
+  if (grade === 'AUTHORED_FIXTURE') return 'warning'
+  return 'info'
+}
 
 const STATUS_LABEL: Record<SopStatus, string> = {
   candidate: '待审核',

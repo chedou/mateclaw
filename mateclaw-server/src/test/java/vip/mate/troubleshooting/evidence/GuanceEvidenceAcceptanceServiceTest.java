@@ -106,6 +106,30 @@ class GuanceEvidenceAcceptanceServiceTest {
     }
 
     @Test
+    void refusesOwnerAcceptanceUntilTheRecordingBatchHasTwentyExecutableTargets() {
+        Fixture fixture = fixture();
+        when(fixture.recordingTargetCatalog.inspect(any()))
+                .thenReturn(recordingTargets(0));
+
+        assertThatThrownBy(() -> fixture.service.accept(
+                7L,
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                "-15m",
+                NOW,
+                completeChecklist(),
+                "owner"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("at least 20 server-frozen executable recording targets")
+                .hasMessageContaining("current=0");
+        verify(fixture.validation, never()).validate(
+                anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.fingerprints, never()).current(
+                anyLong(), any(), any());
+    }
+
+    @Test
     void refusesAConfigChangeAcrossTheValidationBoundary() {
         Fixture fixture = fixture();
         GuanceBindingFingerprintService.Snapshot changed =
@@ -162,20 +186,32 @@ class GuanceEvidenceAcceptanceServiceTest {
                 mock(GuanceBindingFingerprintService.class);
         GuanceEvidenceValidationService validation =
                 mock(GuanceEvidenceValidationService.class);
+        GuanceEvidenceReadinessService readinessService =
+                mock(GuanceEvidenceReadinessService.class);
+        GuanceRecordingTargetCatalog recordingTargetCatalog =
+                mock(GuanceRecordingTargetCatalog.class);
         GuanceEvidenceAcceptanceStore store =
                 mock(GuanceEvidenceAcceptanceStore.class);
         when(fingerprints.scopeKey(7L, "CSDP", "session-svc"))
                 .thenReturn(SCOPE);
         when(fingerprints.current(7L, "CSDP", "session-svc"))
                 .thenReturn(Optional.of(snapshot()));
+        when(readinessService.inspect(7L, "CSDP", "session-svc"))
+                .thenReturn(readiness());
+        when(recordingTargetCatalog.inspect(any()))
+                .thenReturn(recordingTargets(20));
         return new Fixture(
                 new GuanceEvidenceAcceptanceService(
                         fingerprints,
+                        readinessService,
                         validation,
+                        recordingTargetCatalog,
                         store,
                         Clock.fixed(NOW, ZoneOffset.UTC)),
                 fingerprints,
+                readinessService,
                 validation,
+                recordingTargetCatalog,
                 store);
     }
 
@@ -250,10 +286,27 @@ class GuanceEvidenceAcceptanceServiceTest {
                 NOW);
     }
 
+    private GuanceRecordingTargetCatalog.View recordingTargets(int count) {
+        return new GuanceRecordingTargetCatalog.View(
+                GuanceRecordingTargetCatalog.CONTRACT_VERSION,
+                "CSDP",
+                "session-svc",
+                "e".repeat(64),
+                count,
+                count,
+                List.of(),
+                NOW.getEpochSecond(),
+                count < GuanceRecordingTargetCatalog.MIN_WINDOW_TARGETS
+                        ? List.of("recording target batch is incomplete")
+                        : List.of());
+    }
+
     private record Fixture(
             GuanceEvidenceAcceptanceService service,
             GuanceBindingFingerprintService fingerprints,
+            GuanceEvidenceReadinessService readinessService,
             GuanceEvidenceValidationService validation,
+            GuanceRecordingTargetCatalog recordingTargetCatalog,
             GuanceEvidenceAcceptanceStore store) {
     }
 }

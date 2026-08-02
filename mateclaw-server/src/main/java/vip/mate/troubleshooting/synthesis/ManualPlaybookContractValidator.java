@@ -20,8 +20,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Complete fail-closed contract boundary for browser-imported manual Playbooks. */
-final class ManualPlaybookContractValidator {
+/** Complete fail-closed contract boundary for server-owned or imported manual Playbooks. */
+public final class ManualPlaybookContractValidator {
 
     private static final Pattern SAFE_KEY =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]*");
@@ -43,7 +43,7 @@ final class ManualPlaybookContractValidator {
     private ManualPlaybookContractValidator() {
     }
 
-    static List<PlaybookDraft.ValidationError> validate(SopEntry sop) {
+    public static List<PlaybookDraft.ValidationError> validate(SopEntry sop) {
         List<PlaybookDraft.ValidationError> errors = new ArrayList<>();
         if (!SopEntry.CURRENT_CONTRACT_VERSION.equals(sop.contractVersion())) {
             add(errors, "UNSUPPORTED_CONTRACT_VERSION", "contractVersion",

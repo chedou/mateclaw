@@ -28,10 +28,12 @@ import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
+import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
+import vip.mate.troubleshooting.service.DiagnosisSummary;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -40,6 +42,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -96,8 +99,34 @@ class TroubleshootingPersistenceServiceTest {
         assertEquals("diag-1", entity.getValue().getDiagnosisId());
         assertEquals(64, entity.getValue().getDedupKey().length());
         assertTrue(entity.getValue().getAggregateJson().contains("diag-1"));
+        assertEquals(InvestigationMode.ERROR_CODE_PLAYBOOK.name(),
+                entity.getValue().getInvestigationMode());
+        assertEquals(RouteAuthority.EXPLICIT.name(),
+                entity.getValue().getRouteAuthority());
         assertEquals(0, stored.version());
         assertTrue(stored.created());
+    }
+
+    @Test
+    void legacyCreateKeepsRouteSemanticsIndexesNullEvenThoughDomainDerivesThem() throws Exception {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+
+        Diagnosis legacy = legacyDiagnosis();
+
+        service.createOrGet(
+                7L,
+                legacy,
+                Instant.parse("2026-07-25T01:04:59Z"));
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertEquals(RouteSemanticsProvenance.LEGACY_DERIVED, legacy.routeSemanticsProvenance());
+        assertEquals(InvestigationMode.ERROR_CODE_PLAYBOOK, legacy.investigationMode());
+        assertEquals(RouteAuthority.EXPLICIT, legacy.routeAuthority());
+        assertEquals(null, entity.getValue().getInvestigationMode());
+        assertEquals(null, entity.getValue().getRouteAuthority());
     }
 
     @Test
@@ -275,6 +304,206 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
+    void updateWritesPersistedRouteSemanticsIntoIndexedColumns() {
+        when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        service.update(7L, diagnosis(false), 2);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<TroubleshootingDiagnosisEntity>> update =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(diagnosisMapper).update(eq(null), update.capture());
+        String sqlSet = update.getValue().getSqlSet();
+        Map<String, Object> params = update.getValue().getParamNameValuePairs();
+        assertTrue(sqlSet.contains("investigation_mode"), sqlSet);
+        assertTrue(sqlSet.contains("route_authority"), sqlSet);
+        assertTrue(params.containsValue(InvestigationMode.ERROR_CODE_PLAYBOOK.name()), params.toString());
+        assertTrue(params.containsValue(RouteAuthority.EXPLICIT.name()), params.toString());
+    }
+
+    @Test
+    void typedListFiltersByIndexedInvestigationModeWithoutParsingAggregateJson() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setDiagnosisId("diag-scenario");
+        entity.setCaseId("case-scenario");
+        entity.setSystem("CSDP");
+        entity.setErrorCode("903001");
+        entity.setService("csdp-wechat");
+        entity.setStatus(DiagnosisStatus.NEEDS_INVESTIGATION.name());
+        entity.setRehearsal(false);
+        entity.setVersion(2);
+        entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
+        entity.setInvestigationMode(InvestigationMode.SCENARIO_PLAYBOOK.name());
+        entity.setRouteAuthority(RouteAuthority.RULE_MATCHED.name());
+        entity.setAggregateJson("{not-json");
+        when(diagnosisMapper.selectList(any())).thenReturn(List.of(entity));
+
+        List<DiagnosisSummary> rows = service.list(
+                7L, null, null, InvestigationMode.SCENARIO_PLAYBOOK, 100);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<TroubleshootingDiagnosisEntity>> query =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(diagnosisMapper).selectList(query.capture());
+        String sql = query.getValue().getCustomSqlSegment().toLowerCase();
+        assertTrue(sql.contains("investigation_mode"), sql);
+        assertTrue(query.getValue().getParamNameValuePairs().containsValue(
+                InvestigationMode.SCENARIO_PLAYBOOK.name()));
+        assertEquals(1, rows.size());
+        assertEquals("diag-scenario", rows.getFirst().diagnosisId());
+        assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, rows.getFirst().investigationMode());
+    }
+
+    @Test
+    void diagnosisSummaryReadsCurrentPersistedRouteSemanticsFromIndexedColumns() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setDiagnosisId("diag-current");
+        entity.setCaseId("case-current");
+        entity.setSystem("CSDP");
+        entity.setErrorCode("903001");
+        entity.setService("csdp-wechat");
+        entity.setStatus(DiagnosisStatus.READY_FOR_HUMAN.name());
+        entity.setRehearsal(false);
+        entity.setVersion(3);
+        entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
+        entity.setInvestigationMode(InvestigationMode.SCENARIO_PLAYBOOK.name());
+        entity.setRouteAuthority(RouteAuthority.RULE_MATCHED.name());
+
+        DiagnosisSummary summary = DiagnosisSummary.from(entity);
+
+        assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, summary.investigationMode());
+        assertEquals(RouteAuthority.RULE_MATCHED, summary.routeAuthority());
+        assertEquals(RouteSemanticsProvenance.PERSISTED, summary.routeSemanticsProvenance());
+    }
+
+    @Test
+    void diagnosisSummaryTreatsLegacyContractsWithNullIndexedRouteSemanticsAsDerived() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setDiagnosisId("diag-legacy");
+        entity.setCaseId("case-legacy");
+        entity.setSystem("CSDP");
+        entity.setErrorCode("903001");
+        entity.setService("csdp-wechat");
+        entity.setStatus(DiagnosisStatus.READY_FOR_HUMAN.name());
+        entity.setRehearsal(false);
+        entity.setVersion(1);
+        entity.setContractVersion("1.4");
+
+        DiagnosisSummary summary = DiagnosisSummary.from(entity);
+
+        assertEquals(null, summary.investigationMode());
+        assertEquals(null, summary.routeAuthority());
+        assertEquals(RouteSemanticsProvenance.LEGACY_DERIVED, summary.routeSemanticsProvenance());
+    }
+
+    @Test
+    void diagnosisSummaryDirectConstructionRejectsMissingRouteSemanticsProvenance() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-current",
+                        "case-current",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        RouteAuthority.EXPLICIT,
+                        null,
+                        false,
+                        3,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("routeSemanticsProvenance"));
+    }
+
+    @Test
+    void diagnosisSummaryDirectConstructionRejectsPersistedRowsMissingTypedRouteSemantics() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-current",
+                        "case-current",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        null,
+                        RouteSemanticsProvenance.PERSISTED,
+                        false,
+                        3,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("PERSISTED"));
+    }
+
+    @Test
+    void diagnosisSummaryDirectConstructionRejectsLegacyDerivedRowsWithTypedRouteSemantics() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DiagnosisSummary(
+                        "diag-legacy",
+                        "case-legacy",
+                        "CSDP",
+                        "903001",
+                        "csdp-wechat",
+                        DiagnosisStatus.READY_FOR_HUMAN.name(),
+                        InvestigationMode.ERROR_CODE_PLAYBOOK,
+                        null,
+                        RouteSemanticsProvenance.LEGACY_DERIVED,
+                        false,
+                        1,
+                        null,
+                        null));
+
+        assertTrue(error.getMessage().contains("LEGACY_DERIVED"));
+    }
+
+    @Test
+    void diagnosisSummaryFailsClosedForCurrentRowsMissingIndexedRouteSemantics() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
+        entity.setInvestigationMode(InvestigationMode.ERROR_CODE_PLAYBOOK.name());
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> DiagnosisSummary.from(entity));
+
+        assertTrue(error.getMessage().contains("route semantics"));
+    }
+
+    @Test
+    void diagnosisSummaryFailsClosedForLegacyRowsWithUnexpectedIndexedRouteSemantics() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setContractVersion("1.4");
+        entity.setInvestigationMode(InvestigationMode.ERROR_CODE_PLAYBOOK.name());
+        entity.setRouteAuthority(RouteAuthority.EXPLICIT.name());
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> DiagnosisSummary.from(entity));
+
+        assertTrue(error.getMessage().contains("legacy"));
+    }
+
+    @Test
+    void diagnosisSummaryFailsClosedForUnknownIndexedRouteSemanticsEnums() {
+        TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
+        entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
+        entity.setInvestigationMode("NOT_A_MODE");
+        entity.setRouteAuthority(RouteAuthority.EXPLICIT.name());
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> DiagnosisSummary.from(entity));
+
+        assertTrue(error.getMessage().contains("investigationMode"));
+    }
+
+    @Test
     void optimisticConflictReturns409AndDoesNotEnqueue() {
         when(diagnosisMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(0);
 
@@ -398,6 +627,17 @@ class TroubleshootingPersistenceServiceTest {
                 rehearsal,
                 true,
                 List.of());
+    }
+
+    private Diagnosis legacyDiagnosis() throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode json =
+                (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(
+                        objectMapper.writeValueAsString(diagnosis(false)));
+        json.put("contractVersion", "1.4");
+        json.remove("investigationMode");
+        json.remove("routeAuthority");
+        json.remove("sourcePlaybookVersionRef");
+        return objectMapper.treeToValue(json, Diagnosis.class);
     }
 
     private Diagnosis symptomDiagnosis(boolean rehearsal) {

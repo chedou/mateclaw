@@ -58,12 +58,14 @@
               <div><dt>模型调用</dt><dd>{{ card.modelLatency }}</dd></div>
               <div><dt>证据 + 模型</dt><dd>{{ card.composedLatency }}</dd></div>
               <div><dt>Token</dt><dd>{{ card.tokens }}</dd></div>
+              <div><dt>服务端系统置信度</dt><dd>{{ card.systemConfidence }}</dd></div>
             </dl>
           </article>
         </div>
         <p class="latency-note">
           每个结果只比较一条冻结样本与一个固定模型配置，不生成候选 SOP、不进入审批，也不改变 fixtureMode。
           “有帮助 / 无帮助 / 危险已拦截 / 技术失败”是逐样本分类，不能替代 20–30 条固定集和 owner Gate。
+          HIGH 由真源、真实 Diagnosis、完整三次取证、确定性校验和引用完整共同决定，不读取模型自报置信度。
         </p>
       </section>
 

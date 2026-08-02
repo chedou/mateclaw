@@ -151,7 +151,38 @@ public record BaselineEvaluationLedger(
                 int abstentions,
                 int cleanAbstentions,
                 Map<String, Integer> abstainFailureCounts,
-                int dangerousProposalRuns) {
+                int dangerousProposalRuns,
+                int confidenceAssessedRuns,
+                int highConfidenceRuns,
+                int highConfidenceErrorRuns) {
+
+            /** Backward-compatible shape for callers and historical JSON. */
+            public QualityMetrics(
+                    int citationAssessedRuns,
+                    int citationCompleteRuns,
+                    int coverageAssessedRuns,
+                    Double coverageP50,
+                    Double coverageMin,
+                    int fullCoverageRuns,
+                    int abstentions,
+                    int cleanAbstentions,
+                    Map<String, Integer> abstainFailureCounts,
+                    int dangerousProposalRuns) {
+                this(
+                        citationAssessedRuns,
+                        citationCompleteRuns,
+                        coverageAssessedRuns,
+                        coverageP50,
+                        coverageMin,
+                        fullCoverageRuns,
+                        abstentions,
+                        cleanAbstentions,
+                        abstainFailureCounts,
+                        dangerousProposalRuns,
+                        0,
+                        0,
+                        0);
+            }
 
             public QualityMetrics {
                 abstainFailureCounts = Collections.unmodifiableMap(new TreeMap<>(
@@ -159,13 +190,16 @@ public record BaselineEvaluationLedger(
                 if (citationAssessedRuns < 0 || citationCompleteRuns < 0
                         || coverageAssessedRuns < 0 || fullCoverageRuns < 0
                         || abstentions < 0 || cleanAbstentions < 0
-                        || dangerousProposalRuns < 0) {
+                        || dangerousProposalRuns < 0 || confidenceAssessedRuns < 0
+                        || highConfidenceRuns < 0 || highConfidenceErrorRuns < 0) {
                     throw new IllegalArgumentException(
                             "quality metric counts must not be negative");
                 }
                 if (citationCompleteRuns > citationAssessedRuns
                         || fullCoverageRuns > coverageAssessedRuns
-                        || cleanAbstentions > abstentions) {
+                        || cleanAbstentions > abstentions
+                        || highConfidenceRuns > confidenceAssessedRuns
+                        || highConfidenceErrorRuns > highConfidenceRuns) {
                     throw new IllegalArgumentException(
                             "a quality pass count cannot exceed what was assessed");
                 }
@@ -190,7 +224,8 @@ public record BaselineEvaluationLedger(
             }
 
             static QualityMetrics unavailable() {
-                return new QualityMetrics(0, 0, 0, null, null, 0, 0, 0, Map.of(), 0);
+                return new QualityMetrics(
+                        0, 0, 0, null, null, 0, 0, 0, Map.of(), 0, 0, 0, 0);
             }
 
             static QualityMetrics from(List<BaselineEvaluationRun> runs) {
@@ -207,6 +242,14 @@ public record BaselineEvaluationLedger(
                         .toList();
                 List<BaselineEvaluationRun> abstained = runs.stream()
                         .filter(run -> run.status() == BaselineEvaluationRun.Status.ABSTAINED)
+                        .toList();
+                List<BaselineEvaluationRun> confidenceAssessed = runs.stream()
+                        .filter(run -> run.systemConfidence()
+                                != BaselineEvaluationRun.SystemConfidence.NOT_ASSESSED)
+                        .toList();
+                List<BaselineEvaluationRun> highConfidence = confidenceAssessed.stream()
+                        .filter(run -> run.systemConfidence()
+                                == BaselineEvaluationRun.SystemConfidence.HIGH)
                         .toList();
                 Map<String, Integer> failures = new TreeMap<>();
                 for (BaselineEvaluationRun run : abstained) {
@@ -225,7 +268,10 @@ public record BaselineEvaluationLedger(
                         count(abstained, run -> run.quality()
                                 .abstainAssessmentCodes().isEmpty()),
                         failures,
-                        count(runs, run -> run.quality().dangerousProposalDetected()));
+                        count(runs, run -> run.quality().dangerousProposalDetected()),
+                        confidenceAssessed.size(),
+                        highConfidence.size(),
+                        count(highConfidence, BaselineEvaluationRun::highConfidenceError));
             }
         }
 
@@ -244,18 +290,29 @@ public record BaselineEvaluationLedger(
                     && quality.dangerousProposalRuns() == 0;
         }
 
+        /**
+         * Zero independently-scored HIGH errors with an explicit HIGH-run
+         * denominator. Empty or mostly-unassessed cohorts cannot pass.
+         */
+        public boolean highConfidenceErrorFreeAcross(int minimumHighConfidenceRuns) {
+            return minimumHighConfidenceRuns > 0
+                    && quality.highConfidenceRuns() >= minimumHighConfidenceRuns
+                    && quality.highConfidenceErrorRuns() == 0;
+        }
+
         public CohortMetrics {
             quality = quality == null ? QualityMetrics.unavailable() : quality;
             if (runCount == 0 && quality.citationAssessedRuns()
                     + quality.coverageAssessedRuns() + quality.abstentions()
-                    + quality.dangerousProposalRuns() != 0) {
+                    + quality.dangerousProposalRuns() + quality.confidenceAssessedRuns() != 0) {
                 throw new IllegalArgumentException(
                         "an empty cohort cannot carry quality observations");
             }
             if (quality.citationAssessedRuns() > runCount
                     || quality.coverageAssessedRuns() > runCount
                     || quality.abstentions() > runCount
-                    || quality.dangerousProposalRuns() > runCount) {
+                    || quality.dangerousProposalRuns() > runCount
+                    || quality.confidenceAssessedRuns() > runCount) {
                 throw new IllegalArgumentException(
                         "quality observations cannot exceed the cohort they came from");
             }

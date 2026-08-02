@@ -92,6 +92,18 @@ assert_contains "actions/upload-artifact@v7"
 assert_contains "kill"
 assert_order "-pl mateclaw-plugin-api" "spring-boot:run"
 
+# The owner preparation queue is committed evidence, not a hand-maintained
+# spreadsheet.  Any change to L0, the frozen selector inventory, recorded
+# seeds, or the server-owned target catalog must make CI regenerate-or-fail
+# before we spend the T7 intranet window on stale work.
+assert_contains "python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_target_preparation.py"
+assert_contains "python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check"
+assert_contains "python3 -m unittest docs/intelligent-troubleshooting/l0/test_t7_owner_contract_intake.py"
+assert_contains "python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check"
+assert_contains "docs/intelligent-troubleshooting/t7-owner-contract-intake.recommended.template.json"
+assert_order "t7_target_preparation.py --check" "-pl mateclaw-plugin-api"
+assert_order "t7_owner_contract_intake.py --check" "-pl mateclaw-plugin-api"
+
 assert_smoke_contains 'SMOKE_SERVICE:-csp-rpc-msg'
 assert_smoke_contains 'SMOKE_ERROR_CODE:-IM1010'
 

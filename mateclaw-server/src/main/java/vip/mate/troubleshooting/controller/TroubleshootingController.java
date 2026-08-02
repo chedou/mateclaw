@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import vip.mate.common.result.R;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.DiagnosisDerivation;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
@@ -95,12 +96,14 @@ public class TroubleshootingController {
     public R<List<DiagnosisSummary>> list(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String system,
+            @RequestParam(required = false) InvestigationMode investigationMode,
             @RequestParam(required = false) Integer limit,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(persistence.list(
                 resolveWorkspace(workspaceId),
                 status,
                 system,
+                investigationMode,
                 limit == null ? DEFAULT_PAGE_SIZE : limit));
     }
 

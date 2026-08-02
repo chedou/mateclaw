@@ -26,14 +26,17 @@ public class TroubleshootingSopPersistenceService {
 
     private final TroubleshootingSopMapper mapper;
     private final TroubleshootingPlaybookVersionService playbookVersions;
+    private final KnowledgeEvidenceSelectorInventory evidenceSelectorInventory;
     private final ObjectMapper objectMapper;
 
     public TroubleshootingSopPersistenceService(
             TroubleshootingSopMapper mapper,
             TroubleshootingPlaybookVersionService playbookVersions,
+            KnowledgeEvidenceSelectorInventory evidenceSelectorInventory,
             ObjectMapper objectMapper) {
         this.mapper = mapper;
         this.playbookVersions = playbookVersions;
+        this.evidenceSelectorInventory = evidenceSelectorInventory;
         this.objectMapper = objectMapper;
     }
 
@@ -107,6 +110,12 @@ public class TroubleshootingSopPersistenceService {
                 .sorted(Comparator.comparing(SopSummary::updateTime).reversed())
                 .limit(capped)
                 .toList();
+    }
+
+    /** Workspace registry numerator against the reviewed 146-selector inventory. */
+    public KnowledgeEvidenceCoverage knowledgeEvidenceCoverage(long workspaceId) {
+        return KnowledgeEvidenceCoverage.from(
+                list(workspaceId, null, null, 500), evidenceSelectorInventory);
     }
 
     /**

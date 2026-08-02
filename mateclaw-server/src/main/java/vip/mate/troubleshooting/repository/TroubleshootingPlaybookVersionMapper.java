@@ -17,7 +17,8 @@ public interface TroubleshootingPlaybookVersionMapper
     String COLUMNS = """
             id, workspace_id, playbook_id, selector_key, playbook_version,
             active_selector_key, system, error_code, service, status,
-            source_origin, source_record_id, review_id, review_version,
+            source_origin, source_record_id, knowledge_evidence_grade,
+            review_id, review_version,
             approved_by, approval_reason, approval_snapshot_json,
             deprecated_by, deprecation_reason, deprecated_at,
             contract_version, aggregate_json, version, deleted,
@@ -88,7 +89,8 @@ public interface TroubleshootingPlaybookVersionMapper
             SELECT pv.id, pv.workspace_id, pv.playbook_id, pv.selector_key,
                    pv.playbook_version, pv.active_selector_key, pv.system,
                    pv.error_code, pv.service, pv.status, pv.source_origin,
-                   pv.source_record_id, pv.review_id, pv.review_version,
+                   pv.source_record_id, pv.knowledge_evidence_grade,
+                   pv.review_id, pv.review_version,
                    pv.approved_by, pv.approval_reason,
                    pv.approval_snapshot_json, pv.deprecated_by,
                    pv.deprecation_reason, pv.deprecated_at, pv.contract_version,
@@ -120,6 +122,31 @@ public interface TroubleshootingPlaybookVersionMapper
             @Param("status") String status,
             @Param("system") String system,
             @Param("limit") int limit);
+
+    @Select(SELECT_COLUMNS + """
+              FROM mate_troubleshooting_playbook_version
+             WHERE source_origin = 'MANUAL'
+               AND knowledge_evidence_grade = 'UNVERIFIED'
+               AND deleted = 0
+               AND id > #{afterId}
+             ORDER BY id ASC
+             LIMIT #{limit}
+            """)
+    List<TroubleshootingPlaybookVersionEntity> listUnverifiedKnowledgeEvidenceGradesAfter(
+            @Param("afterId") long afterId,
+            @Param("limit") int limit);
+
+    @Update("""
+            UPDATE mate_troubleshooting_playbook_version
+               SET knowledge_evidence_grade = #{grade}
+             WHERE id = #{id}
+               AND source_origin = 'MANUAL'
+               AND knowledge_evidence_grade = 'UNVERIFIED'
+               AND deleted = 0
+            """)
+    int backfillKnowledgeEvidenceGrade(
+            @Param("id") long id,
+            @Param("grade") String grade);
 
     @Select("""
             SELECT COALESCE(MAX(playbook_version), 0)

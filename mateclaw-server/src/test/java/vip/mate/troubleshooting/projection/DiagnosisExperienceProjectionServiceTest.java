@@ -18,14 +18,17 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Instant;
@@ -34,6 +37,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +59,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
 
+    @Mock
+    private TroubleshootingPlaybookVersionService playbookVersions;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -62,7 +70,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 persistence,
                 derivationService,
                 new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()),
-                topologyScenarioPolicy);
+                topologyScenarioPolicy,
+                playbookVersions);
     }
 
     @Test
@@ -71,6 +80,9 @@ class DiagnosisExperienceProjectionServiceTest {
                 .thenReturn(new StoredDiagnosis(deterministicDiagnosis(), 2, false));
         when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(derivation());
+        when(playbookVersions.knowledgeEvidenceGradeByRef(
+                WORKSPACE_ID, new PlaybookVersionRef("playbook-903001", 3)))
+                .thenReturn(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
 
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
@@ -99,10 +111,15 @@ class DiagnosisExperienceProjectionServiceTest {
         DiagnosisExperienceProjection.DeveloperEvidenceView developer = result.developerEvidence();
         assertThat(developer.investigationMode())
                 .isEqualTo(InvestigationMode.ERROR_CODE_PLAYBOOK);
+        assertThat(developer.routeSemanticsProvenance())
+                .isEqualTo(RouteSemanticsProvenance.PERSISTED);
         assertThat(developer.routeAuthority())
                 .isEqualTo(RouteAuthority.EXPLICIT);
         assertThat(developer.playbookRef())
                 .isEqualTo("csdp:903001 · playbook-903001@v3");
+        assertThat(developer.knowledgeEvidenceGrade())
+                .as("903001 的夹具身份必须跟随冻结版本出现在开发证据台")
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
         assertThat(developer.scenarioAffordances()).isEmpty();
         assertThat(developer.callChain().psId()).isEqualTo("synthetic-trace-903001");
         assertThat(developer.callChain().hops()).hasSize(1);
@@ -316,9 +333,75 @@ class DiagnosisExperienceProjectionServiceTest {
 
         assertThat(result.developerEvidence().investigationMode())
                 .isEqualTo(InvestigationMode.SCENARIO_PLAYBOOK);
+        assertThat(result.developerEvidence().routeSemanticsProvenance())
+                .isEqualTo(RouteSemanticsProvenance.PERSISTED);
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.RULE_MATCHED);
         assertThat(result.developerEvidence().scenarioAffordances()).isEmpty();
+    }
+
+    @Test
+    void currentScenarioPlaybookStillExplainsWhenLegacyRouteModeClaimsFallback() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        deterministicDiagnosisWithSemantics(
+                                RouteMode.LLM_FALLBACK,
+                                InvestigationMode.SCENARIO_PLAYBOOK,
+                                RouteAuthority.RULE_MATCHED,
+                                ConclusionType.LOCATED,
+                                Confidence.MEDIUM,
+                                "scenario:message-send-failed",
+                                "会话消息发送失败",
+                                new PlaybookVersionRef("playbook-message-send-failed", 1)),
+                        0,
+                        true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection projection = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(projection.developerEvidence().investigationMode())
+                .isEqualTo(InvestigationMode.SCENARIO_PLAYBOOK);
+        assertThat(projection.developerEvidence().routeAuthority())
+                .isEqualTo(RouteAuthority.RULE_MATCHED);
+        assertThat(projection.developerEvidence().routeSemanticsProvenance())
+                .isEqualTo(RouteSemanticsProvenance.PERSISTED);
+        assertThat(projection.developerEvidence().steps())
+                .extracting(DiagnosisExperienceProjection.EvidenceStep::kind)
+                .contains(DiagnosisExperienceProjection.EvidenceStepKind.CRITERION);
+        verify(derivationService).explain(WORKSPACE_ID, DIAGNOSIS_ID);
+    }
+
+    @Test
+    void currentOpenDiscoveryNeverDerivesEvenWhenLegacyRouteModeClaimsDeterministic() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(
+                        deterministicDiagnosisWithSemantics(
+                                RouteMode.DETERMINISTIC,
+                                InvestigationMode.OPEN_DISCOVERY,
+                                RouteAuthority.MODEL_PROPOSED,
+                                ConclusionType.HYPOTHESIS,
+                                Confidence.MEDIUM,
+                                null,
+                                null,
+                                null),
+                        0,
+                        true));
+
+        DiagnosisExperienceProjection projection = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(projection.developerEvidence().investigationMode())
+                .isEqualTo(InvestigationMode.OPEN_DISCOVERY);
+        assertThat(projection.developerEvidence().routeAuthority())
+                .isEqualTo(RouteAuthority.MODEL_PROPOSED);
+        assertThat(projection.developerEvidence().routeSemanticsProvenance())
+                .isEqualTo(RouteSemanticsProvenance.PERSISTED);
+        assertThat(projection.developerEvidence().capabilityLimits())
+                .anyMatch(item -> item.contains("开放调查路径没有可复算的确定性 SOP 判据链"));
+        assertThat(projection.developerEvidence().steps())
+                .extracting(DiagnosisExperienceProjection.EvidenceStep::kind)
+                .doesNotContain(DiagnosisExperienceProjection.EvidenceStepKind.CRITERION);
+        verify(derivationService, never()).explain(WORKSPACE_ID, DIAGNOSIS_ID);
     }
 
     @Test
@@ -368,6 +451,72 @@ class DiagnosisExperienceProjectionServiceTest {
 
     private Diagnosis deterministicDiagnosis() {
         return deterministicDiagnosis("timeout", EvidenceStatus.NORMAL);
+    }
+
+    private Diagnosis deterministicDiagnosisWithSemantics(
+            RouteMode routeMode,
+            InvestigationMode investigationMode,
+            RouteAuthority routeAuthority,
+            ConclusionType conclusionType,
+            Confidence confidence,
+            String sopKey,
+            String sopTitle,
+            PlaybookVersionRef sourcePlaybookVersionRef) {
+        return new Diagnosis(
+                DIAGNOSIS_ID,
+                Diagnosis.CURRENT_CONTRACT_VERSION,
+                "case-1",
+                "run-1",
+                incident(),
+                routeMode,
+                investigationMode,
+                routeAuthority,
+                conclusionType,
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "route semantics override",
+                "route semantics override",
+                confidence,
+                conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE,
+                sopKey,
+                sopTitle,
+                routeAuthority == RouteAuthority.RULE_MATCHED ? "API 组" : null,
+                sourcePlaybookVersionRef,
+                List.of(
+                        new EvidenceResult(
+                                "EV-1", "L", "L::order-svc:(count,trace_id)",
+                                EvidenceStatus.ANOMALY,
+                                "错误码日志计数", Map.of(
+                                        "count", "148",
+                                        "trace_id", "synthetic-trace-903001"),
+                                "recorded-replay", NOW),
+                        new EvidenceResult(
+                                "EV-2", "M", "M::mongodb:(...)", EvidenceStatus.ANOMALY,
+                                "Mongo 连接池利用率达到 100%", Map.of("ratio", 1),
+                                "recorded-replay", NOW),
+                        new EvidenceResult(
+                                "EV-3", "T", "T::order-svc:(...)", EvidenceStatus.NORMAL,
+                                "失败调用链定位", Map.of(
+                                "failed_hop", "mongo.find",
+                                        "status", "timeout",
+                                        "duration_ms", "3001"),
+                                "recorded-replay", NOW)),
+                investigationMode == InvestigationMode.OPEN_DISCOVERY
+                        ? List.of("EV-1")
+                        : List.of(),
+                List.of("pool_exhausted"),
+                List.of(),
+                List.of(),
+                "DBA 组",
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
+                true,
+                true,
+                false,
+                List.of("Recorded replay fixture"));
     }
 
     private Diagnosis deterministicDiagnosis(
