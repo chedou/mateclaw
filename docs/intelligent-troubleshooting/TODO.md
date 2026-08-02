@@ -492,13 +492,26 @@ Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同�
 - [x] `DiagnosisStateMachineTest.aScenarioDiagnosisIsStuckUntilAnEvidenceArrivalTransitionExists`
       把当前行为钉住（不是让构建变红），并用反射断言聚合上还没有
       `evidenceRecorded` / `reevaluated`——**一旦有了，这条断言就该失败，那正是修好的信号**。
-- [ ] 给 `Diagnosis` 聚合加"证据到达"转移：接收本次 EvidenceResult，
-      复用 `DeterministicDiagnosisService` 已有的判据/规则求值与结论合成（A9，别重写一套），
-      命中则清 `abstained`、推进到 `READY_FOR_HUMAN`；排除则 `EXCLUDED`；仍不足则保持弃权。
-      **属 v4 §5.5 契约新增，需要显式决定。**
-- [ ] 一并决定拓扑那条路：写回 Diagnosis 还是保留独立运行表。
-      现在是"看起来该统一但没统一"，而 A9 说一种能力只有一个实现。
-- [ ] 在此之前，无码故障的**可用产出仍然只有知识生产 lane**
+- [x] 给 `Diagnosis` 聚合加"证据到达"转移（`Diagnosis.evidenceRecorded` +
+      `DiagnosisStateMachine.recordScenarioEvidence`）：命中则清 `abstained`、
+      推进到 `READY_FOR_HUMAN`；排除则 `EXCLUDED`（也是结论，也推进）；仍不足则保持弃权。
+      **用户已授权的 v4 §5.5 契约新增。**
+- [x] A9：把命中路径的判据/规则求值与结论合成抽成 `PlaybookEvidenceAssessment`，
+      `DeterministicDiagnosisService` 改为消费它，**两处求值合并为一处**。
+      副作用：错误码路径的文案由 "SOP" 统一为 "Playbook"（无测试/夹具钉住旧文案）。
+      注意一条被这次抽取补上的 A1 违规——引用清单原本会把 `MISSING` 的取证也列为结论依据，
+      现已按 `status() != MISSING` 过滤：「我们查过」不等于「我们查到了」。
+- [x] 拓扑那条路一并归位：**运行表保留**（它是工具运行的审计记录：原始观测、
+      相邻链路、执行人、耗时，比 EvidenceResult 更宽，本就该独立），
+      **缺的是写回**——`TopologyProbeEvidence` 把一次拨测翻译成 `EV-TOPOLOGY` 的
+      EvidenceResult，run 与被重新裁决的 Diagnosis 在**同一把行锁、同一个事务**里提交。
+      - 覆盖不完整且未见失败时**不给出** `failed_probe_count`：判据只能是"未求值"，
+        不能是"已反证"。否则控制台会拿没人看过的节点去宣告"网络已排除"。
+      - 已进入人工环节后重跑只记录运行、不改写结论，并在 `conclusionUpdated` 上如实说明。
+- [ ] 仍缺：一个真正跑 Scenario Playbook `evidencePlan` 的在线编排
+      （`EvidenceSpineOrchestrator` → `recordScenarioEvidence`）。
+      拓扑是**唯一**已接通写回的场景，其余场景仍停在待取证。
+- [ ] 在此之前，其余无码故障的**可用产出仍然只有知识生产 lane**
       （`/sops/synthesis/*`，已通）。蓝图 §11.1 的验收输出正是由它给出的，
       所以第一个场景的**验收**不受此缺口阻塞；受阻的是"报障人在线上能不能拿到结论"。
 

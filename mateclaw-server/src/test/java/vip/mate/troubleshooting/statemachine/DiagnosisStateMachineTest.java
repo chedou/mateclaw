@@ -7,6 +7,10 @@ import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.engine.PlaybookEvidenceAssessment;
+import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -45,32 +49,105 @@ class DiagnosisStateMachineTest {
     }
 
     /**
-     * A scenario Diagnosis cannot currently leave {@code NEEDS_INVESTIGATION}.
+     * The transition that unstuck every scenario Diagnosis in the system.
      *
-     * <p>{@code initializeScenarioAwaitingEvidence} creates it {@code abstained}
-     * on purpose — naming a scenario selects an evidence plan, it does not
-     * assert a cause — and {@link DiagnosisStateMachine#confirm} refuses any
-     * abstained diagnosis until new evidence arrives. Both halves are right.
-     * Their conjunction is that <b>no scenario Diagnosis can ever be confirmed,
-     * transferred to closure, or closed</b>, because nothing in the codebase
-     * supplies that evidence: the aggregate has no transition for it (its only
-     * mutations are confirm / transfer / actions / outcomes / close), and the
-     * deployment-topology probe writes to its own run table rather than back to
-     * the Diagnosis.</p>
-     *
-     * <p>This predates the generic scenario entry — the shipped topology
-     * scenario is stuck the same way. Closing it means adding an
-     * evidence-arrival transition to the {@code Diagnosis} aggregate and reusing
-     * the deterministic decision logic that {@code DeterministicDiagnosisService}
-     * already applies on the hit path (A9). That is a v4 §5.5 contract addition,
-     * so it is recorded rather than improvised: see TODO T0.17.</p>
-     *
-     * <p>The test pins today's behaviour instead of failing, so the gap is
-     * stated in code and a build stays honest about what does work.</p>
+     * <p>A scenario Diagnosis is created {@code abstained} on purpose — naming a
+     * scenario selects an evidence plan, it does not assert a cause — and
+     * {@code confirm} refuses an abstained Diagnosis until new evidence arrives.
+     * Both halves were right, and nothing supplied that evidence, so every
+     * scenario Diagnosis (including the shipped deployment-topology one) was
+     * permanently stuck in {@code NEEDS_INVESTIGATION}.</p>
      */
     @Test
-    void aScenarioDiagnosisIsStuckUntilAnEvidenceArrivalTransitionExists() {
-        Diagnosis scenario = stateMachine.initializeScenarioAwaitingEvidence(
+    void scenarioEvidenceUnlocksConfirmationOnceTheRulesActuallyMatch() {
+        Diagnosis scenario = awaitingScenario();
+        assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, scenario.status());
+        assertTrue(scenario.abstained(), "指定场景不等于断言原因，弃权是对的");
+        assertThrows(MateClawException.class, () -> stateMachine.confirm(scenario, "operator"));
+
+        List<EvidenceResult> evidence = List.of(scenarioEvidence(4));
+        Diagnosis investigated = stateMachine.recordScenarioEvidence(
+                scenario, scenarioPlaybook(), evidence,
+                PlaybookEvidenceAssessment.assess(
+                        scenarioPlaybook(), evidence,
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true),
+                "orchestrator");
+
+        assertEquals(DiagnosisStatus.READY_FOR_HUMAN, investigated.status());
+        assertFalse(investigated.abstained());
+        assertEquals(ConclusionType.LOCATED, investigated.conclusionType());
+        assertEquals("消息发送路径异常待核查", investigated.rootCause());
+        assertEquals(List.of("send_failure_present"), investigated.triggeredSignals());
+
+        Diagnosis confirmed = stateMachine.confirm(investigated, "operator");
+        assertEquals(DiagnosisStatus.CONFIRMED, confirmed.status());
+    }
+
+    /**
+     * Evidence that rules the cause out is an answer, and advances.
+     *
+     * <p>This is the {@code EXCLUDED} / {@code UNEVALUATED} distinction reaching
+     * the lifecycle: "we checked and it is not this" is a conclusion a human can
+     * act on — it closes a branch — while "we could not check" is not. Treating
+     * them the same in either direction would be wrong, and the tempting error
+     * is to hold an excluded result back as if nothing had been learned.</p>
+     */
+    @Test
+    void evidenceThatRulesTheCauseOutIsStillAnAnswerAndAdvances() {
+        List<EvidenceResult> ruledOut = List.of(scenarioEvidence(0));
+        Diagnosis investigated = stateMachine.recordScenarioEvidence(
+                awaitingScenario(), scenarioPlaybook(), ruledOut,
+                PlaybookEvidenceAssessment.assess(
+                        scenarioPlaybook(), ruledOut,
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true),
+                "orchestrator");
+
+        assertEquals(ConclusionType.EXCLUDED, investigated.conclusionType());
+        assertEquals(DiagnosisStatus.READY_FOR_HUMAN, investigated.status());
+        assertFalse(investigated.abstained(), "排除是结论，不是弃权");
+        assertTrue(investigated.warnings().stream()
+                .anyMatch(warning -> warning.contains("这是排除，不是定位")));
+    }
+
+    /**
+     * The half that matters more. Evidence arriving is not evidence answering:
+     * a required request that never came back leaves the investigation exactly
+     * where it was, or "we looked" would start reading as "we found".
+     */
+    @Test
+    void missingEvidenceLeavesTheInvestigationExactlyWhereItWas() {
+        List<EvidenceResult> nothing = List.of(new EvidenceResult(
+                "SYNTH-LOG-SEARCH", "L", "", EvidenceStatus.MISSING,
+                "取证失败", Map.of(), "recorded-replay",
+                Instant.parse("2026-07-25T01:00:30Z")));
+        Diagnosis investigated = stateMachine.recordScenarioEvidence(
+                awaitingScenario(), scenarioPlaybook(), nothing,
+                PlaybookEvidenceAssessment.assess(
+                        scenarioPlaybook(), nothing,
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true),
+                "orchestrator");
+
+        assertEquals(ConclusionType.INSUFFICIENT_EVIDENCE, investigated.conclusionType());
+        assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, investigated.status());
+        assertTrue(investigated.abstained());
+        assertThrows(
+                MateClawException.class,
+                () -> stateMachine.confirm(investigated, "operator"));
+    }
+
+    /** An error-code Diagnosis is not a scenario investigation and must not take this door. */
+    @Test
+    void onlyAScenarioInvestigationAcceptsScenarioEvidence() {
+        assertThrows(MateClawException.class, () -> stateMachine.recordScenarioEvidence(
+                readyDiagnosis(), scenarioPlaybook(), List.of(),
+                PlaybookEvidenceAssessment.assess(
+                        scenarioPlaybook(), List.of(),
+                        new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true),
+                "orchestrator"));
+    }
+
+    private Diagnosis awaitingScenario() {
+        return stateMachine.initializeScenarioAwaitingEvidence(
                 new vip.mate.troubleshooting.model.ScenarioDiagnosisDraft(
                         "diag-scenario-1", "case-scenario-1", "run-scenario-1",
                         scenarioIncident(), "message_send_failed", scenarioPlaybook(),
@@ -82,20 +159,15 @@ class DiagnosisStateMachineTest {
                                 Instant.parse("2026-07-25T01:00:10Z")),
                         false, true,
                         java.util.List.of("取证尚未执行")));
+    }
 
-        assertEquals(DiagnosisStatus.NEEDS_INVESTIGATION, scenario.status());
-        assertTrue(scenario.abstained(), "指定场景不等于断言原因，弃权是对的");
-
-        MateClawException blocked = assertThrows(
-                MateClawException.class, () -> stateMachine.confirm(scenario, "operator"));
-        assertTrue(blocked.getMessage().contains("requires new evidence"));
-
-        assertTrue(
-                java.util.Arrays.stream(Diagnosis.class.getDeclaredMethods())
-                        .map(java.lang.reflect.Method::getName)
-                        .noneMatch(name -> name.contains("evidenceRecorded")
-                                || name.contains("reevaluated")),
-                "一旦聚合有了证据到达的转移，这条断言就该失败——那正是修好的信号");
+    private EvidenceResult scenarioEvidence(int matchCount) {
+        return new EvidenceResult(
+                "SYNTH-LOG-SEARCH", "L", "recorded://message-send",
+                matchCount > 0 ? EvidenceStatus.ANOMALY : EvidenceStatus.NORMAL,
+                "会话消息发送失败日志计数",
+                Map.of("match_count", matchCount),
+                "recorded-replay", Instant.parse("2026-07-25T01:00:30Z"));
     }
 
     @Test

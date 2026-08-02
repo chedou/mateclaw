@@ -4,12 +4,23 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.engine.PlaybookEvidenceAssessment;
+import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
+import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.EvidenceResult;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingTopologyProbeRunEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingTopologyProbeRunMapper;
+import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -39,6 +50,9 @@ public class TopologyProbeEvidenceRunService {
     private final DeploymentTopologyScenarioPolicy scenarioPolicy;
     private final TroubleshootingTopologyProbeRunMapper mapper;
     private final TopologyProbeEvidenceRunPersistenceService runPersistence;
+    private final DiagnosisStateMachine stateMachine;
+    private final CriterionEvaluator criteria;
+    private final DiagnosisRuleEvaluator rules;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -49,6 +63,9 @@ public class TopologyProbeEvidenceRunService {
             DeploymentTopologyScenarioPolicy scenarioPolicy,
             TroubleshootingTopologyProbeRunMapper mapper,
             TopologyProbeEvidenceRunPersistenceService runPersistence,
+            DiagnosisStateMachine stateMachine,
+            CriterionEvaluator criteria,
+            DiagnosisRuleEvaluator rules,
             ObjectMapper objectMapper) {
         this(
                 persistence,
@@ -56,6 +73,9 @@ public class TopologyProbeEvidenceRunService {
                 scenarioPolicy,
                 mapper,
                 runPersistence,
+                stateMachine,
+                criteria,
+                rules,
                 objectMapper,
                 Clock.systemUTC());
     }
@@ -66,6 +86,9 @@ public class TopologyProbeEvidenceRunService {
             DeploymentTopologyScenarioPolicy scenarioPolicy,
             TroubleshootingTopologyProbeRunMapper mapper,
             TopologyProbeEvidenceRunPersistenceService runPersistence,
+            DiagnosisStateMachine stateMachine,
+            CriterionEvaluator criteria,
+            DiagnosisRuleEvaluator rules,
             ObjectMapper objectMapper,
             Clock clock) {
         this.persistence = persistence;
@@ -73,10 +96,14 @@ public class TopologyProbeEvidenceRunService {
         this.scenarioPolicy = scenarioPolicy;
         this.mapper = mapper;
         this.runPersistence = runPersistence;
+        this.stateMachine = stateMachine;
+        this.criteria = criteria;
+        this.rules = rules;
         this.objectMapper = objectMapper;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
+    @Transactional
     public TopologyProbeEvidenceRun run(
             long workspaceId,
             String diagnosisId,
@@ -85,24 +112,31 @@ public class TopologyProbeEvidenceRunService {
         String safeDiagnosisId = safeText(diagnosisId, "diagnosisId", 128);
         String safeTopologyId = safeText(topologyId, "topologyId", 128);
         String safeActor = safeText(actorRef, "actorRef", 192);
-        var diagnosis = persistence.get(workspaceId, safeDiagnosisId).diagnosis();
+        StoredDiagnosis stored = persistence.get(workspaceId, safeDiagnosisId);
+        Diagnosis diagnosis = stored.diagnosis();
         if (diagnosis.status() == DiagnosisStatus.CLOSED) {
             throw new MateClawException(
                     "err.troubleshooting.topology_probe_diagnosis_closed",
                     409,
                     "closed diagnosis cannot accept new topology evidence");
         }
-        if (!scenarioPolicy.requiresProbe(workspaceId, diagnosis)) {
-            throw new MateClawException(
-                    "err.troubleshooting.topology_probe_sop_not_matched",
-                    409,
-                    "diagnosis did not match the deployment topology probe scenario Playbook");
-        }
+        ApprovedPlaybookVersion frozen = scenarioPolicy
+                .probePlaybook(workspaceId, diagnosis)
+                .orElseThrow(() -> new MateClawException(
+                        "err.troubleshooting.topology_probe_sop_not_matched",
+                        409,
+                        "diagnosis did not match the deployment topology probe scenario Playbook"));
 
         Instant startedAt = Instant.now(clock);
         DeploymentTopologySopResult analysis = library.analyze(workspaceId, safeTopologyId);
         Instant completedAt = Instant.now(clock);
         DeploymentTopologySopResult persistedResult = persisted(analysis);
+
+        // The run and the conclusion it produces commit together. A run row
+        // without the matching Diagnosis update is what left every topology
+        // investigation stuck: the tool had answered and the aggregate never
+        // heard about it.
+        Diagnosis advanced = advance(frozen, diagnosis, safeTopologyId, analysis, safeActor);
         TopologyProbeEvidenceRun run = new TopologyProbeEvidenceRun(
                 "topology-run-" + UUID.randomUUID(),
                 safeDiagnosisId,
@@ -112,7 +146,8 @@ public class TopologyProbeEvidenceRunService {
                 persistedResult,
                 startedAt,
                 completedAt,
-                safeActor);
+                safeActor,
+                advanced != null);
 
         TroubleshootingTopologyProbeRunEntity entity = new TroubleshootingTopologyProbeRunEntity();
         entity.setWorkspaceId(workspaceId);
@@ -129,8 +164,42 @@ public class TopologyProbeEvidenceRunService {
         entity.setDeleted(0);
         entity.setCreateTime(LocalDateTime.ofInstant(completedAt, ZoneOffset.UTC));
         entity.setUpdateTime(LocalDateTime.ofInstant(completedAt, ZoneOffset.UTC));
-        runPersistence.insertIfDiagnosisOpen(workspaceId, safeDiagnosisId, entity);
+        runPersistence.insertIfDiagnosisOpen(
+                workspaceId, safeDiagnosisId, entity, advanced, stored.version());
         return run;
+    }
+
+    /**
+     * Turns the probe result into the evidence its request asked for and lets
+     * the Diagnosis re-decide.
+     *
+     * <p>Returns {@code null} when the Diagnosis is no longer waiting on
+     * evidence. A repeat probe on an investigation a human has already read is
+     * legitimate — someone wants to look again — but it must not silently
+     * rewrite a conclusion that person may have acted on. The run is still
+     * recorded; only the automatic re-decision is withheld, and the run says so
+     * rather than leaving the caller to guess.</p>
+     */
+    private Diagnosis advance(
+            ApprovedPlaybookVersion frozen,
+            Diagnosis diagnosis,
+            String topologyId,
+            DeploymentTopologySopResult analysis,
+            String actorRef) {
+        if (diagnosis.status() != DiagnosisStatus.NEEDS_INVESTIGATION) {
+            return null;
+        }
+        EvidenceRequest request = scenarioPolicy.requiredProbeRequest(frozen).orElse(null);
+        if (request == null) {
+            return null;
+        }
+        SopEntry playbook = frozen.playbook();
+        List<EvidenceResult> evidence = List.of(
+                TopologyProbeEvidence.from(request, topologyId, analysis));
+        PlaybookEvidenceAssessment assessment = PlaybookEvidenceAssessment.assess(
+                playbook, evidence, criteria, rules, false);
+        return stateMachine.recordScenarioEvidence(
+                diagnosis, playbook, evidence, assessment, actorRef);
     }
 
     public List<TopologyProbeEvidenceRun> list(

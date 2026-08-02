@@ -6,16 +6,12 @@ import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.engine.PlaybookEvidenceAssessment;
 import vip.mate.troubleshooting.model.ActionType;
-import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
-import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.DeterministicDiagnosisDraft;
 import vip.mate.troubleshooting.model.Diagnosis;
-import vip.mate.troubleshooting.model.DiagnosisRule;
-import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
-import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
@@ -28,9 +24,7 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -204,48 +198,17 @@ public class DeterministicDiagnosisService {
         }
         List<EvidenceResult> normalizedEvidence = List.copyOf(
                 evidence == null ? List.of() : evidence);
-        Map<String, EvidenceResult> evidenceByRequest = indexEvidence(normalizedEvidence);
-        List<String> missing = missingRequests(sop, evidenceByRequest, false);
-        List<String> requiredMissing = missingRequests(sop, evidenceByRequest, true);
+        // The same judgement the scenario lane reaches when evidence arrives
+        // later. Two evaluators would eventually give two answers to one set of
+        // evidence, which is the drift A9 forbids.
+        PlaybookEvidenceAssessment assessment = PlaybookEvidenceAssessment.assess(
+                sop, normalizedEvidence, evaluator, ruleEvaluator, fixtureMode);
 
-        Map<String, CriterionOutcome> outcomes = evaluator.outcomesBySignal(
-                sop.anomalyCriteria(), normalizedEvidence);
-        DiagnosisRuleEvaluator.Evaluation ruleEvaluation = ruleEvaluator.evaluate(
-                sop.diagnosisRules(), outcomes);
-        List<String> signals = ruleEvaluation.activeSignals();
-        Decision decision = synthesize(ruleEvaluation);
-        List<String> warnings = new ArrayList<>();
+        List<String> signals = assessment.activeSignals();
+        List<String> warnings = new ArrayList<>(assessment.warnings());
 
-        if (!requiredMissing.isEmpty()) {
-            decision = new Decision(
-                    "自动取证不完整，当前不能确认根因。",
-                    "观测工具不可用，已降级为 SOP 文本与人工取证指引。",
-                    Confidence.LOW,
-                    ConclusionType.INSUFFICIENT_EVIDENCE);
-        }
-        if (!sop.operational()) {
-            decision = new Decision(
-                    "SOP 尚未审核，当前仅完成影子取证，不输出正式根因。",
-                    "命中草案 SOP；结果仅用于离线比对，不能作为处置建议。",
-                    Confidence.LOW,
-                    ConclusionType.INSUFFICIENT_EVIDENCE);
-        }
-
-        if (fixtureMode) {
-            warnings.add("当前仅使用 fixture 证据；DQL 指标名与阈值尚未联调核实。");
-        }
-        if (!missing.isEmpty()) {
-            warnings.add("自动取证失败（" + String.join(", ", missing)
-                    + "）；请按 SOP 进行人工取证。");
-        }
-        if (!sop.operational()) {
-            warnings.add("SOP 仍为草案，禁止越过影子模式或输出恢复动作。");
-        }
-        if (decision.conclusionType() == ConclusionType.EXCLUDED) {
-            warnings.add("当前 SOP 的所有候选结论都被已取得证据反证；这是排除，不是定位。");
-        }
-
-        List<RecommendedAction> actions = decision.conclusionType() == ConclusionType.LOCATED
+        List<RecommendedAction> actions =
+                assessment.conclusionType() == ConclusionType.LOCATED
                 ? List.copyOf(sop.actions())
                 : List.of();
         String routeToTeam = actions.stream()
@@ -266,11 +229,11 @@ public class DeterministicDiagnosisService {
                 normalizedEvidence,
                 signals,
                 actions,
-                decision.summary(),
-                decision.rootCause(),
-                decision.confidence(),
-                decision.conclusionType(),
-                decision.conclusionType() == ConclusionType.INSUFFICIENT_EVIDENCE,
+                assessment.summary(),
+                assessment.rootCause(),
+                assessment.confidence(),
+                assessment.conclusionType(),
+                assessment.conclusionType() == ConclusionType.INSUFFICIENT_EVIDENCE,
                 timings,
                 routeToTeam,
                 rehearsal,
@@ -298,64 +261,4 @@ public class DeterministicDiagnosisService {
                 version.playbookId(), version.playbookVersion());
     }
 
-    private Map<String, EvidenceResult> indexEvidence(List<EvidenceResult> evidence) {
-        Map<String, EvidenceResult> indexed = new HashMap<>();
-        for (EvidenceResult result : evidence) {
-            if (indexed.putIfAbsent(result.queryId(), result) != null) {
-                throw new IllegalArgumentException(
-                        "duplicate evidence queryId: " + result.queryId());
-            }
-        }
-        return indexed;
-    }
-
-    private List<String> missingRequests(
-            SopEntry sop,
-            Map<String, EvidenceResult> evidenceByRequest,
-            boolean requiredOnly) {
-        return sop.evidenceRequests().stream()
-                .filter(request -> !requiredOnly || request.required())
-                .filter(request -> isMissing(request, evidenceByRequest))
-                .map(EvidenceRequest::requestId)
-                .toList();
-    }
-
-    private boolean isMissing(
-            EvidenceRequest request,
-            Map<String, EvidenceResult> evidenceByRequest) {
-        EvidenceResult result = evidenceByRequest.get(request.requestId());
-        return result == null || result.status() == EvidenceStatus.MISSING;
-    }
-
-    private Decision synthesize(DiagnosisRuleEvaluator.Evaluation evaluation) {
-        DiagnosisRule rule = evaluation.matchedRule();
-        if (rule != null) {
-            return new Decision(
-                    rule.rootCause(),
-                    rule.summary(),
-                    rule.confidence(),
-                    rule.abstained()
-                            ? ConclusionType.INSUFFICIENT_EVIDENCE
-                            : ConclusionType.LOCATED);
-        }
-        if (evaluation.disposition() == DiagnosisRuleEvaluator.Disposition.EXCLUDED) {
-            return new Decision(
-                    "当前 SOP 候选根因均被反证。",
-                    "现有证据已排除当前 SOP 中的候选结论。",
-                    Confidence.MEDIUM,
-                    ConclusionType.EXCLUDED);
-        }
-        return new Decision(
-                "证据不足，暂不能确认根因。",
-                "SOP 未提供与当前信号匹配的结论规则。",
-                Confidence.LOW,
-                ConclusionType.INSUFFICIENT_EVIDENCE);
-    }
-
-    private record Decision(
-            String rootCause,
-            String summary,
-            Confidence confidence,
-            ConclusionType conclusionType) {
-    }
 }
