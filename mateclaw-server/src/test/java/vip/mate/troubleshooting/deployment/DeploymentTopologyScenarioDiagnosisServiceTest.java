@@ -16,6 +16,7 @@ import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.service.ScenarioDiagnosisService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
@@ -55,14 +56,15 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
             new DeploymentTopologyScenarioPolicy(versions);
     private final DeploymentTopologyScenarioDiagnosisService service =
             new DeploymentTopologyScenarioDiagnosisService(
-                    versions,
-                    persistence,
-                    policy,
-                    new DiagnosisStateMachine(
+                    new ScenarioDiagnosisService(
+                            versions,
+                            persistence,
+                            new DiagnosisStateMachine(
+                                    Clock.fixed(NOW, ZoneOffset.UTC),
+                                    prefix -> prefix + "-event"),
                             Clock.fixed(NOW, ZoneOffset.UTC),
-                            prefix -> prefix + "-event"),
-                    Clock.fixed(NOW, ZoneOffset.UTC),
-                    () -> "correlation-1");
+                            () -> "correlation-1"),
+                    policy);
 
     @Test
     void createsAnExplicitScenarioDiagnosisThatWaitsForTopologyEvidence() {
@@ -117,17 +119,28 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 DeploymentTopologyScenarioPolicy.SCENARIO_KEY, REPORTED_AT);
     }
 
+    /**
+     * The transaction boundary moved with the generic half of this capability.
+     * Topology now delegates to {@link ScenarioDiagnosisService}, which is a
+     * separate bean, so the Spring proxy still opens the transaction and the
+     * authority lock and the Diagnosis insert remain inside one — the invariant
+     * this test exists for is unchanged, only its owner is.
+     */
     @Test
     void keepsTheAuthorityLockAndDiagnosisInsertInOneTransaction() throws Exception {
-        assertThat(DeploymentTopologyScenarioDiagnosisService.class
+        assertThat(ScenarioDiagnosisService.class
                 .getDeclaredMethod(
                         "create",
                         long.class,
                         IncidentContext.class,
+                        String.class,
                         boolean.class,
                         String.class,
-                        Instant.class)
+                        Instant.class,
+                        java.util.List.class,
+                        ScenarioDiagnosisService.AuthorityGuard.class)
                 .getAnnotation(Transactional.class))
+                .as("锁定权威版本与插入 Diagnosis 必须在同一事务内")
                 .isNotNull();
     }
 
@@ -142,7 +155,7 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 .isInstanceOf(MateClawException.class)
                 .satisfies(error -> assertThat(((MateClawException) error).getCode())
                         .isEqualTo(409))
-                .hasMessageContaining("approved deployment topology scenario Playbook");
+                .hasMessageContaining("no approved scenario Playbook is active for csdp:scenario:deployment_topology_probe");
 
         verify(versions, never()).lockActiveApprovedByPlaybookId(
                 eq(WORKSPACE_ID), any());

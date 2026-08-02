@@ -456,7 +456,28 @@ MateClaw 未执行任何生产变更」。所以链是完整且诚实的，**只
 
 - [x] `FirstScenarioIntakeChainTest` 第三例钉住这个行为：拒绝必须**指名**是
       「这条路没开」，而不是抛一个泛化错误——操作员据此知道要改的是部署决策不是代码。
-- [ ] **需要一个决定**（属 v4 §5.5 契约变更，不擅自做）。三个方向：
+**方向 (c) 的承重部分已完成（2026-08-01）**：`ScenarioDiagnosisService` 从
+`DeploymentTopologyScenarioDiagnosisService` 里抽出来了。此前这个能力是通用的
+（`ScenarioDiagnosisDraft`、`initializeScenarioAwaitingEvidence`、
+`createOrGetForScenario` 都以 scenarioKey 为参数），**只有入口被绑死在拓扑一个场景上**。
+拓扑现在是调用方，只保留它自己那条专属检查（Playbook 必须要求 synthetic probe），
+守住 A9。事务边界随通用半边一起移走，但拓扑通过**注入的 bean** 调用它，
+Spring 代理照常生效——锁定权威版本与插入 Diagnosis 仍在同一事务内，测试已改为
+钉住新的持有者。612 tests 全绿。
+
+**因此 §5.5 的"契约缺口"结论要修正**：`DETERMINISTIC + SCENARIO_PLAYBOOK + EXPLICIT`
+本来就是合法形状，不要 errorCode、不要模型。缺的从来不是契约，是入口。
+
+仍待完成（(c) 的剩余部分）：
+
+- [ ] 一个通用的场景入口（`POST /scenarios/{scenarioKey}/diagnoses` 或给 `/incidents`
+      加可选 `scenarioKey`）。注意语义：人显式指定 → `EXPLICIT`；模型提议注册键 →
+      `MODEL_PROPOSED`，两者必须能在数据上分开。
+- [ ] 为 `csdp:scenario:message_send_failed` 注册一条 SCENARIO Playbook 及其回放套件，
+      证据计划就是那三步脊柱（`log_search → log_trace_bundle → contrast_sample`）。
+- [ ] demo 种子 + 冒烟，让第一个场景的**在线 lane** 也默认可跑。
+
+- [ ] **仍需一个决定**（属 v4 §5.5，不擅自做）。三个方向：
       - (a) 给契约加一个"未路由"形状（如 `routeAuthority=NONE`），让无码报障能落一条
         `INSUFFICIENT_EVIDENCE` 的诊断，并把**确定性证据脊柱**（`log_search → PS ID →
         log_trace_bundle`，零 LLM，已在 `/sops/synthesis/preview` 证明可跑）挂上去。

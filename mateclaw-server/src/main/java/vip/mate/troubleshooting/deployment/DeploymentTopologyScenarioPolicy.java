@@ -46,7 +46,7 @@ public class DeploymentTopologyScenarioPolicy {
         return new ScenarioSelector(system, SCENARIO_KEY).routingKey();
     }
 
-    boolean supportsRequiredProbe(
+    public boolean supportsRequiredProbe(
             ApprovedPlaybookVersion version,
             String expectedSelector) {
         if (version == null
