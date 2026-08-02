@@ -39,6 +39,13 @@ public class TroubleshootingDiagnosisEntity {
     private String status;
     private String contractVersion;
     private String aggregateJson;
+
+    @TableField(value = "investigation_mode", updateStrategy = FieldStrategy.ALWAYS)
+    private String investigationMode;
+
+    @TableField(value = "route_authority", updateStrategy = FieldStrategy.ALWAYS)
+    private String routeAuthority;
+
     private Integer version;
 
     private String closureNotificationStatus;

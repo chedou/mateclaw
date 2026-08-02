@@ -13,6 +13,8 @@ import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeCandidate;
 import vip.mate.troubleshooting.model.KnowledgePublicationStatus;
+import vip.mate.troubleshooting.model.RouteAuthority;
+import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.ScenarioSelector;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
@@ -213,6 +215,15 @@ public class TroubleshootingPersistenceService {
      */
     public java.util.List<DiagnosisSummary> list(
             long workspaceId, String status, String system, int limit) {
+        return list(workspaceId, status, system, null, limit);
+    }
+
+    public java.util.List<DiagnosisSummary> list(
+            long workspaceId,
+            String status,
+            String system,
+            InvestigationMode investigationMode,
+            int limit) {
         validateWorkspace(workspaceId);
         int capped = Math.min(Math.max(limit, 1), 200);
         LambdaQueryWrapper<TroubleshootingDiagnosisEntity> query =
@@ -226,6 +237,11 @@ public class TroubleshootingPersistenceService {
         }
         if (system != null && !system.isBlank()) {
             query.eq(TroubleshootingDiagnosisEntity::getSystem, system.trim());
+        }
+        if (investigationMode != null) {
+            query.eq(
+                    TroubleshootingDiagnosisEntity::getInvestigationMode,
+                    investigationMode.name());
         }
         return diagnosisMapper.selectList(query).stream()
                 .map(DiagnosisSummary::from)
@@ -333,6 +349,12 @@ public class TroubleshootingPersistenceService {
                         .set(TroubleshootingDiagnosisEntity::getStatus, diagnosis.status().name())
                         .set(TroubleshootingDiagnosisEntity::getContractVersion, diagnosis.contractVersion())
                         .set(TroubleshootingDiagnosisEntity::getAggregateJson, json(diagnosis))
+                        .set(
+                                TroubleshootingDiagnosisEntity::getInvestigationMode,
+                                persistedInvestigationMode(diagnosis))
+                        .set(
+                                TroubleshootingDiagnosisEntity::getRouteAuthority,
+                                persistedRouteAuthority(diagnosis))
                         .set(TroubleshootingDiagnosisEntity::getVersion, expectedVersion + 1)
                         .set(TroubleshootingDiagnosisEntity::getUpdateTime, now));
         if (changed != 1) {
@@ -414,6 +436,8 @@ public class TroubleshootingPersistenceService {
         entity.setStatus(diagnosis.status().name());
         entity.setContractVersion(diagnosis.contractVersion());
         entity.setAggregateJson(json(diagnosis));
+        entity.setInvestigationMode(persistedInvestigationMode(diagnosis));
+        entity.setRouteAuthority(persistedRouteAuthority(diagnosis));
         entity.setVersion(0);
         entity.setDeleted(0);
         entity.setCreateTime(now);
@@ -449,6 +473,22 @@ public class TroubleshootingPersistenceService {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
+    }
+
+    private String persistedInvestigationMode(Diagnosis diagnosis) {
+        if (diagnosis.routeSemanticsProvenance() != RouteSemanticsProvenance.PERSISTED) {
+            return null;
+        }
+        InvestigationMode investigationMode = diagnosis.investigationMode();
+        return investigationMode == null ? null : investigationMode.name();
+    }
+
+    private String persistedRouteAuthority(Diagnosis diagnosis) {
+        if (diagnosis.routeSemanticsProvenance() != RouteSemanticsProvenance.PERSISTED) {
+            return null;
+        }
+        RouteAuthority routeAuthority = diagnosis.routeAuthority();
+        return routeAuthority == null ? null : routeAuthority.name();
     }
 
     private LocalDateTime utcNow() {
