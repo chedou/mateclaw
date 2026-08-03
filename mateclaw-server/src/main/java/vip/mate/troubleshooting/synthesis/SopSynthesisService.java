@@ -1,18 +1,17 @@
 package vip.mate.troubleshooting.synthesis;
 
-import vip.mate.troubleshooting.model.NorthStarTimings;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
-import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.evidence.EvidenceProperties;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
 import vip.mate.troubleshooting.evidence.EvidenceSpineResult;
 import vip.mate.troubleshooting.evidence.EvidenceSpineStage;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
@@ -202,7 +201,13 @@ public final class SopSynthesisService {
                 evidenceReference(trace),
                 contrast == null ? null : evidenceReference(contrast),
                 skeleton,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                // 从这批证据自己身上读，而不是问一个全局常量。这条 lane 目前被硬
+                // 限定在 recorded-replay 上，所以答案仍然是 fixture；但一旦有人放宽
+                // FIXTURE_ONLY_SOURCES，这个字段会跟着证据走，而不是停在一个没人
+                // 记得去改的编译期真值上。
+                EvidenceProvenance.fixtureMode(contrast == null
+                        ? List.of(search, trace)
+                        : List.of(search, trace, contrast)),
                 skeleton.sourceEntryCount(),
                 spine.sourceRequestCount(),
                 spine.timings().observedWorkDurationMs(),

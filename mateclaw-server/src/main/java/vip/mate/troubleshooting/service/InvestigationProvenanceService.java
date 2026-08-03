@@ -162,10 +162,11 @@ public class InvestigationProvenanceService {
                     "本次证据来自 fixture / 录制回放，未接入真实观测云；"
                             + "回放通过不等于真实数据已验证（A10）。"));
         }
-        // 证据是真的 ≠ 知识是真的。这两件事此前被压在同一个 fixtureMode 布尔值
-        // 上：T7 落地那天有人把 EVIDENCE_IS_FIXTURE 翻成 false，每一条诊断都会
-        // 变成「真源」——包括那些由手写 Playbook 路由、阈值从没用真实历史故障
-        // 标定过的。所以这一条**不看 fixtureMode**，只看知识本身的来源。
+        // 证据是真的 ≠ 知识是真的。这两件事此前被压在同一个 fixtureMode 布尔值上。
+        // 那个全局常量已经删掉，成色改为从每批证据自己身上推导；但危险没有消失，
+        // 只是换了形状：T7 真源接通那天，fixtureMode 会**自动**变 false，而那些由
+        // 手写 Playbook 路由、阈值从没用真实历史故障标定过的诊断，会跟着一起变成
+        // 「真源」。所以这一条**不看 fixtureMode**，只看知识本身的来源。
         if (handWritten(knowledge)) {
             abstentions.add(new InvestigationProvenance.Abstention(
                     "真实数据校准",

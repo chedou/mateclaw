@@ -166,12 +166,13 @@ class InvestigationProvenanceServiceTest {
     /**
      * 投入使用前最要紧的一格。
      *
-     * <p>{@code fixtureMode} 是一个全局常量 {@code EVIDENCE_IS_FIXTURE}，含义是
-     * 「证据是夹具」。T7 落地那天有人把它翻成 false，每一条诊断都会变成「真源」
-     * ——包括那些由手写 Playbook 路由、阈值从没用真实历史故障标定过的。
+     * <p>{@code fixtureMode} 现在从每批证据自己身上推导——全局常量
+     * {@code EVIDENCE_IS_FIXTURE} 已经删掉。危险没有消失，只是换了形状：T7 真源
+     * 接通那天它会**自动**变 false，每一条诊断都会变成「真源」，包括那些由手写
+     * Playbook 路由、阈值从没用真实历史故障标定过的。
      * 证据是真的 ≠ 知识是真的：两个独立的轴，此前被压成一个布尔值。
      *
-     * <p>所以这条断言用 {@code fixtureMode=false} 构造，也就是**翻转之后的世界**：
+     * <p>所以这条断言用 {@code fixtureMode=false} 构造，也就是**接通真源之后的世界**：
      * 手写知识的警告必须仍然在。它一旦消失，这个产品就会拿着没人校准过的阈值
      * 对真实故障下结论，而页面上什么都不说。</p>
      */

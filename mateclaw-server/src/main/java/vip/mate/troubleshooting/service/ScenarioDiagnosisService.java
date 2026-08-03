@@ -5,8 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
-import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
@@ -144,7 +144,10 @@ public class ScenarioDiagnosisService {
                 safeActor,
                 NorthStarTimings.concluded(reportedAt, readyAt, readyAt),
                 rehearsal,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                // 此刻一条证据都还没取——「什么都没取到」不得自称真源，所以这里
+                // 必然是 true。写成推导而不是常量，是因为它会在证据到达时被
+                // Diagnosis.evidenceRecorded 按真实来源重算；常量做不到那件事。
+                EvidenceProvenance.fixtureMode(List.of()),
                 warnings == null ? List.of() : List.copyOf(warnings));
         return persistence.createOrGetForScenario(
                 workspaceId,

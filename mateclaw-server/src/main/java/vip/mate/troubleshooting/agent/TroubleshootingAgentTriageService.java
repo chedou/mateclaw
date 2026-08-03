@@ -8,8 +8,8 @@ import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.context.ChatOrigin;
 import vip.mate.agent.model.AgentEntity;
 import vip.mate.exception.MateClawException;
-import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.model.AgentTriageDraft;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -312,7 +312,11 @@ public final class TroubleshootingAgentTriageService {
                 forcedAbstention,
                 NorthStarTimings.concluded(reportedAt, readyAt, clock.instant()),
                 rehearsal,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                // 从这批证据自己身上读。第二个参数不能省：会话快照里既有 Agent
+                // 自己通过取证脊柱取回来的，也有**调用方随请求自带的**，而后者的
+                // `source` 是它自己写上去的——写成 "guance" 就能让整条诊断自称真源。
+                EvidenceProvenance.fixtureMode(
+                        snapshot.evidence(), sanitizedSuppliedEvidence),
                 warnings);
         Diagnosis diagnosis = stateMachine.initializeAgentFallback(draft);
         return intakeSessionId == null
