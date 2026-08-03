@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -41,6 +42,8 @@ public class EvidenceSourceController {
     private final GuanceEvidenceValidationService validationService;
     private final GuanceEvidenceSpinePreviewService spinePreviewService;
     private final GuanceEvidenceAcceptanceService acceptanceService;
+    private final vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService
+            sourceAcceptanceService;
     private final GuanceRecordingTargetCatalog recordingTargetCatalog;
 
     /** Does not probe or query a source; returns its current fail-closed readiness snapshot. */
@@ -114,6 +117,37 @@ public class EvidenceSourceController {
                 request.searchTerm(),
                 request.window(),
                 request.occurredAt()));
+    }
+
+    /**
+     * 平台无关的证据源验收状态（Prometheus / Elasticsearch 等）。
+     *
+     * <p>与下面的 Guance 专用接口并存而不是取代它：V184 已经承载了真实验收记录，
+     * 把它迁走是另一件事，不该混在加一个适配器里做。</p>
+     */
+    @GetMapping("/sources/{platform}/acceptance")
+    @RequireWorkspaceRole("viewer")
+    public R<vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceView> sourceAcceptance(
+            @PathVariable String platform,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(sourceAcceptanceService.inspect(resolveWorkspace(workspaceId), platform));
+    }
+
+    /**
+     * 记录一次 owner 验收。
+     *
+     * <p>请求体里**只有清单**。指纹由适配器算、验证事实由服务端自己重跑一次只读
+     * 取证得到、actor 取自鉴权上下文——任何一项若接受提交方传入，验收就退化成一句
+     * 可以随手写下的声明。</p>
+     */
+    @PostMapping("/sources/{platform}/acceptance")
+    @RequireWorkspaceRole("owner")
+    public R<vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceView> acceptSource(
+            @PathVariable String platform,
+            @Valid @RequestBody EvidenceSourceAcceptanceRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(sourceAcceptanceService.accept(
+                resolveWorkspace(workspaceId), platform, request.toChecklist(), currentActor()));
     }
 
     /** Returns whether an owner accepted the exact current binding fingerprint. */
