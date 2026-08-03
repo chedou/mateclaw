@@ -5,7 +5,7 @@
     width="min(720px, calc(100vw - 32px))"
     class="troubleshooting-scenario-dialog"
   >
-    <p class="scenario-intro">从业务场景进入同一个智能排障工作台；每个场景继续遵守自己的数据与权限边界。</p>
+    <p class="scenario-intro">先聚焦打通一条竖线：“会话消息发送失败”已接入创建排障单、三次只读取证和详情审计。</p>
     <div class="scenario-grid">
       <button
         v-for="(scenario, index) in WORKBENCH_TROUBLESHOOTING_SCENARIOS"
@@ -25,7 +25,7 @@
       </button>
     </div>
     <el-alert type="info" :closable="false" class="scenario-boundary">
-      部署拓扑拨测会先创建或复用受控 Scenario Diagnosis；只读结果归属该 Diagnosis，且不执行任何生产变更。
+      选择场景只是选择已审核的排查指南，不代表已经找到根因。所有取证只读，不执行任何生产变更。
     </el-alert>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>

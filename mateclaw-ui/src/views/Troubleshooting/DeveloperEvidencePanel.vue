@@ -201,7 +201,10 @@
         </section>
         <section class="side-card side-card--provenance">
           <span class="section-label">调查参与者</span><h3>谁参与了，谁没参与</h3>
-          <InvestigationProvenancePanel :diagnosis-id="current.diagnosis.diagnosisId" />
+          <InvestigationProvenancePanel
+            :diagnosis-id="current.diagnosis.diagnosisId"
+            :diagnosis-version="current.version"
+          />
         </section>
         <section
           v-if="supportsDeterministicDerivation(current.diagnosis.investigationMode)"

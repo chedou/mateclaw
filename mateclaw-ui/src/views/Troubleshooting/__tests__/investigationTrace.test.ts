@@ -6,6 +6,7 @@ import {
   investigationStageSummaryLabel,
   investigationStagePresentation,
   investigationStageStatusLabel,
+  investigationProvenanceRefreshKey,
   relationUpstreamPath,
   traceDisplay,
 } from '../investigationTrace'
@@ -104,6 +105,12 @@ describe('seven-stage investigation trace presentation', () => {
     expect(traceDisplay('')).toBe('未记录')
     expect(traceDisplay('guance')).toBe('guance')
     expect(investigationStageStatusLabel('UNRECORDED')).toBe('未记录')
+  })
+
+  it('refreshes participant provenance when the same diagnosis advances', () => {
+    expect(investigationProvenanceRefreshKey('diag-1', 4)).toBe('diag-1@4')
+    expect(investigationProvenanceRefreshKey('diag-1', 5))
+      .not.toBe(investigationProvenanceRefreshKey('diag-1', 4))
   })
 
   it('never presents legacy compatibility route values as persisted facts', () => {

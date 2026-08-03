@@ -62,18 +62,24 @@ describe('troubleshooting workbench view mode', () => {
     const commands = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.command)
     const labels = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.label)
 
-    expect(commands).toEqual(['playbooks', 'synthesis', 'guance', 'ledger'])
+    expect(commands).toEqual(['playbooks', 'synthesis', 'guance', 'ledger', 'case-knowledge'])
     expect(labels).toEqual([
       '排障规则库',
       '无码场景预演',
       '观测云接入与验收',
       '诊断效果评估',
+      '历史案例入库',
     ])
     expect(new Set(commands).size).toBe(commands.length)
   })
 
   it('treats deployment topology analysis as a troubleshooting scenario', () => {
     expect(WORKBENCH_TROUBLESHOOTING_SCENARIOS).toEqual([
+      expect.objectContaining({
+        command: 'message-send-failed',
+        label: '会话消息发送失败',
+        outcome: '三次只读取证',
+      }),
       expect.objectContaining({ command: 'incident', label: '通用事件排障' }),
       expect.objectContaining({
         command: 'deployment',
@@ -89,11 +95,13 @@ describe('troubleshooting workbench view mode', () => {
       launch: '发起排障',
       scenarioPicker: '选择排障场景',
       incident: '通用事件排障',
+      messageSendFailed: '会话消息发送失败',
       rules: '排障规则库',
       noCodePreview: '无码场景预演',
       guanceOnboarding: '观测云接入与验收',
       deploymentTopology: '部署拓扑拨测分析',
       evaluation: '诊断效果评估',
+      caseKnowledge: '历史案例入库',
     })
   })
 })

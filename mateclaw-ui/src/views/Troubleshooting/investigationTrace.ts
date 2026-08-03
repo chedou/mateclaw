@@ -53,6 +53,14 @@ export function traceDisplay(value: string | null | undefined) {
   return value?.trim() || '未记录'
 }
 
+/** A provenance read is tied to an aggregate version, not just its stable id. */
+export function investigationProvenanceRefreshKey(
+  diagnosisId: string,
+  aggregateVersion: number,
+) {
+  return `${diagnosisId}@${aggregateVersion}`
+}
+
 export function investigationStageStatusLabel(status: InvestigationStageStatus) {
   return STATUS_LABELS[status]
 }

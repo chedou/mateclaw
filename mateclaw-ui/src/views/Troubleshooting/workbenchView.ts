@@ -3,8 +3,13 @@ import type { DiagnosisStatus, InvestigationMode } from '@/api'
 export type WorkbenchViewSwitchMode = 'LIST' | 'QUEUE'
 export type WorkbenchViewMode = WorkbenchViewSwitchMode | 'DETAIL'
 export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
-export type WorkbenchCapabilityCommand = 'playbooks' | 'synthesis' | 'guance' | 'ledger'
-export type TroubleshootingScenarioCommand = 'incident' | 'deployment'
+export type WorkbenchCapabilityCommand =
+  | 'playbooks'
+  | 'synthesis'
+  | 'guance'
+  | 'ledger'
+  | 'case-knowledge'
+export type TroubleshootingScenarioCommand = 'message-send-failed' | 'incident' | 'deployment'
 export type TroubleshootingScenarioDefinition = {
   command: TroubleshootingScenarioCommand
   label: string
@@ -17,12 +22,14 @@ export const TROUBLESHOOTING_UI_LABELS = {
   launch: '发起排障',
   scenarioPicker: '选择排障场景',
   incident: '通用事件排障',
+  messageSendFailed: '会话消息发送失败',
   rules: '排障规则库',
   noCodePreview: '无码场景预演',
   guanceOnboarding: '观测云接入与验收',
   guanceValidation: '观测云只读验收',
   deploymentTopology: '部署拓扑拨测分析',
   evaluation: '诊断效果评估',
+  caseKnowledge: '历史案例入库',
 } as const
 
 export const WORKBENCH_DIAGNOSIS_STATUSES: DiagnosisStatus[] = [
@@ -47,9 +54,17 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
   { command: 'synthesis', label: TROUBLESHOOTING_UI_LABELS.noCodePreview },
   { command: 'guance', label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding },
   { command: 'ledger', label: TROUBLESHOOTING_UI_LABELS.evaluation },
+  { command: 'case-knowledge', label: TROUBLESHOOTING_UI_LABELS.caseKnowledge },
 ]
 
 export const WORKBENCH_TROUBLESHOOTING_SCENARIOS: ReadonlyArray<TroubleshootingScenarioDefinition> = [
+  {
+    command: 'message-send-failed',
+    label: TROUBLESHOOTING_UI_LABELS.messageSendFailed,
+    description: '首条完整竖线：先查失败请求，再沿 PS ID 还原调用链，最后对比成功与失败样本。',
+    outcome: '三次只读取证',
+    manageOnly: false,
+  },
   {
     command: 'incident',
     label: TROUBLESHOOTING_UI_LABELS.incident,

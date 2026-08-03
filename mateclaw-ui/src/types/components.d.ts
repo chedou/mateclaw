@@ -27,6 +27,7 @@ declare module 'vue' {
     ElIcon: typeof import('element-plus/es/components/icon/index')['ElIcon']
     ElImageViewer: typeof import('element-plus/es/components/image-viewer/index')['ElImageViewer']
     ElInput: typeof import('element-plus/es/components/input/index')['ElInput']
+    ElInputNumber: typeof import('element-plus/es/components/input-number/index')['ElInputNumber']
     ElOption: typeof import('element-plus/es/components/select/index')['ElOption']
     ElPagination: typeof import('element-plus/es/components/pagination/index')['ElPagination']
     ElPopover: typeof import('element-plus/es/components/popover/index')['ElPopover']

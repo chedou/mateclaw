@@ -1634,6 +1634,52 @@ export interface CreateDeploymentTopologyScenarioRequest {
   rehearsal: boolean
 }
 
+/** Explicit no-error-code scenario intake; evidence plan and Playbook stay server-owned. */
+export interface ScenarioDiagnosisRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  traceId?: string
+  customerRef?: string
+  rehearsal: boolean
+}
+
+export type HistoricalCaseKnowledgeImportState =
+  | 'IMPORTED_VECTOR_READY'
+  | 'IMPORTED_VECTOR_PENDING'
+  | 'REUSED_VECTOR_READY'
+  | 'REUSED_VECTOR_PENDING'
+  | 'FAILED'
+
+/** Safe receipt only. Case payloads and original evidence are never echoed here. */
+export interface HistoricalCaseKnowledgeImportItem {
+  diagnosisId: string
+  caseId: string
+  slug: string | null
+  state: HistoricalCaseKnowledgeImportState
+  authoritativeResolution: boolean
+  chunkCount: number
+  embeddedChunkCount: number
+  error: string | null
+}
+
+export interface HistoricalCaseKnowledgeImportResult {
+  knowledgeBaseId: string | number
+  discovered: number
+  imported: number
+  reused: number
+  vectorReady: number
+  vectorPending: number
+  failed: number
+  items: HistoricalCaseKnowledgeImportItem[]
+}
+
+export interface HistoricalCaseKnowledgeImportRequest {
+  knowledgeBaseId: string | number
+  limit: number
+}
+
 /** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
 export interface SopEntry {
   sopId: string
@@ -2992,6 +3038,24 @@ export const troubleshootingApi = {
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
+
+  /** Opens one exact approved scenario without claiming a cause. */
+  createScenarioDiagnosis: (scenarioKey: string, data: ScenarioDiagnosisRequest) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/scenarios/${encodeURIComponent(scenarioKey)}/diagnoses`, data,
+    ),
+
+  /** Executes only the evidence contract frozen on the waiting Diagnosis. */
+  runScenarioEvidence: (diagnosisId: string) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/evidence-runs`,
+    ),
+
+  /** Backfills safe Diagnosis snapshots into one existing Wiki knowledge base. */
+  importHistoricalCases: (data: HistoricalCaseKnowledgeImportRequest) =>
+    http.post<HistoricalCaseKnowledgeImportResult>(
+      '/troubleshooting/knowledge/case-imports', data, { timeout: 120000 },
+    ),
 
   /** Creates the Diagnosis owner before any deployment-topology evidence Tool may run. */
   createDeploymentTopologyScenario: (data: CreateDeploymentTopologyScenarioRequest) =>
