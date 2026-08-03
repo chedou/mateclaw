@@ -78,6 +78,22 @@ public class TroubleshootingPlaybookVersionService {
                 workspaceId, safePrefix + "%", Math.min(Math.max(limit, 1), 50));
     }
 
+    /**
+     * Reads one immutable version by its own identity, at whatever version it is.
+     *
+     * <p>Unlike {@link #findByRef} this does not demand a known version number:
+     * it answers「这个 playbookId 是什么」for a caller that was handed the id and
+     * nothing else — which is exactly what the registry listing hands out.</p>
+     */
+    public Optional<ApprovedPlaybookVersion> findByPlaybookId(
+            long workspaceId,
+            String playbookId) {
+        validateWorkspace(workspaceId);
+        TroubleshootingPlaybookVersionEntity entity = mapper.findByPlaybookId(
+                workspaceId, required(playbookId, "playbookId"));
+        return entity == null ? Optional.empty() : Optional.of(read(entity));
+    }
+
     /** Reads one immutable authority by the identity frozen into a Diagnosis. */
     public Optional<ApprovedPlaybookVersion> findByRef(
             long workspaceId,

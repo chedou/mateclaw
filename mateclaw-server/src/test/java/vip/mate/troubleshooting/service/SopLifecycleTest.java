@@ -298,6 +298,60 @@ class SopLifecycleTest {
         assertThat(listed).containsExactly(versioned);
     }
 
+    /**
+     * 列表发出去的 id，详情接口必须认得——两个接口要么一起对，要么就是坏的。
+     *
+     * <p>{@code list} 会用版本行覆盖同一 selector 的注册行，于是 {@code sopId}
+     * 装的是版本表的 {@code playbook-*}；而 {@code findBySopId} 此前只查注册表。
+     * 结果是浏览知识库时**恰好是最重要的那些行（operational）点不开**。</p>
+     *
+     * <p>断言写成「遍历列表拿到的每一个 id」而不是写死某一种，正是因为这里有两个
+     * 身份空间：只钉一种，另一种坏掉时这条测试照样绿。</p>
+     */
+    @Test
+    void everyIdTheRegistryListingHandsOutCanBeResolvedByTheDetailLookup() {
+        service.register(WORKSPACE_ID, sop("candidate", false));
+        // 另一条 selector：同一条 selector 上的注册行会被版本行盖掉，只留一种身份，
+        // 那样这条测试就退化成「只钉了 playbook-*」。
+        service.register(WORKSPACE_ID, sopOnOtherSelector("manual-other-2"));
+        SopSummary versioned = new SopSummary(
+                "playbook-v2", "csdp:903001", "CSDP", "903001",
+                "order-svc", "approved", true, true,
+                LocalDateTime.parse("2026-07-29T10:00:00"),
+                LocalDateTime.parse("2026-07-29T10:00:00"),
+                2, "MANUAL", "sop-903001", "review-2", 1);
+        when(playbookVersions.listLatest(WORKSPACE_ID, null, null, 50))
+                .thenReturn(List.of(versioned));
+        when(playbookVersions.findByPlaybookId(WORKSPACE_ID, "playbook-v2"))
+                .thenReturn(Optional.of(new ApprovedPlaybookVersion(
+                        "playbook-v2", 2, "csdp:903001", "APPROVED",
+                        "MANUAL", "sop-903001", "review-2", 1,
+                        "reviewer-a", "固定回放通过", null,
+                        sopWithId("sop-903001", "approved", true),
+                        java.time.Instant.parse("2026-07-29T10:00:00Z"),
+                        java.time.Instant.parse("2026-07-29T10:00:00Z"))));
+
+        List<SopSummary> listed = service.list(WORKSPACE_ID, null, null, 50);
+
+        assertThat(listed).extracting(SopSummary::sopId)
+                .as("两个身份空间都要出现，否则这条测试证明不了什么")
+                .containsExactlyInAnyOrder("playbook-v2", "manual-other-2");
+        for (SopSummary row : listed) {
+            assertThat(service.findBySopId(WORKSPACE_ID, row.sopId()))
+                    .as("列表发出了 %s，详情就必须认得它", row.sopId())
+                    .isNotNull();
+        }
+    }
+
+    /** 认两种身份不等于认所有字符串：查不到仍然是查不到。 */
+    @Test
+    void anIdFromNeitherIdentitySpaceStillResolvesToNothing() {
+        when(playbookVersions.findByPlaybookId(WORKSPACE_ID, "playbook-nonexistent"))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.findBySopId(WORKSPACE_ID, "playbook-nonexistent")).isNull();
+    }
+
     @Test
     void statusFilterCannotResurrectASourceCandidateBehindAnApprovedVersion() {
         service.register(WORKSPACE_ID, sop("candidate", false));
@@ -355,6 +409,20 @@ class SopLifecycleTest {
                         new Criterion.NumericGte("count", 1))),
                 List.of(new DiagnosisRule("R-a", List.of("error_present"),
                         "Mongo 连接池打满", "连接可用数归零", Confidence.HIGH, false)),
+                List.of());
+    }
+
+    /** A candidate on a selector no versioned authority owns, so it survives the merge. */
+    private SopEntry sopOnOtherSelector(String sopId) {
+        return new SopEntry(
+                sopId, SopEntry.CURRENT_CONTRACT_VERSION, "CSDP", "903002", "order-svc",
+                "订单服务会话超时", "会话超时", "network", "会话组", "candidate", false,
+                List.of(new EvidenceRequest("EV-1", "log_count", "确认发生",
+                        Map.of("service", "order-svc"), "-15m", true)),
+                List.of(new AnomalyCriterion("error_present", "EV-1", "错误码日志出现",
+                        new Criterion.NumericGte("count", 1))),
+                List.of(new DiagnosisRule("R-a", List.of("error_present"),
+                        "会话超时", "连接中断", Confidence.HIGH, false)),
                 List.of());
     }
 
