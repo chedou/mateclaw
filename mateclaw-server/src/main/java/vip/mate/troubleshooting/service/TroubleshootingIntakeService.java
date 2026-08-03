@@ -8,6 +8,7 @@ import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.model.EvidenceRequest;
@@ -223,6 +224,10 @@ public class TroubleshootingIntakeService {
                         sop,
                         sanitizedIncident,
                         sanitizedSuppliedEvidence));
+        // 证据成色从**这批证据自己**身上读，不再问一个全局开关：翻那个开关会让
+        // 每一条诊断同时改口，包括同一时刻仍走录制回放的那些。
+        boolean fixtureMode = EvidenceProvenance.fixtureMode(
+                collectedEvidence, sanitizedSuppliedEvidence);
         if (intakeSessionId == null) {
             return diagnosisService.diagnoseAndPersist(
                     workspaceId,
@@ -230,7 +235,7 @@ public class TroubleshootingIntakeService {
                     sop,
                     collectedEvidence,
                     rehearsal,
-                    TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                    fixtureMode,
                     reportedAt,
                     readyAt);
         }
@@ -240,7 +245,7 @@ public class TroubleshootingIntakeService {
                 sop,
                 collectedEvidence,
                 rehearsal,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                fixtureMode,
                 reportedAt,
                 readyAt,
                 intakeSessionId);

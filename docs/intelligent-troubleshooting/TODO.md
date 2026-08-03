@@ -365,6 +365,38 @@ FAIL: did not observe the immutable plan snapshot before preflight completed
 
 ---
 
+## fixtureMode 不再是全局开关（2026-08-03）
+
+**它此前是编译期常量 `EVIDENCE_IS_FIXTURE`：谁翻一下，每一条诊断都同时改口**
+——包括同一时刻仍走录制回放的那些；反过来只要它还是 true，一条真从 Prometheus
+取到数据的诊断也只能自称夹具。两种错来自同一件事：**把一条诊断的事实，交给了
+一个全局状态去回答。**
+
+`EvidenceProvenance.fixtureMode(collected, supplied)` 从证据自己身上读。三条
+在实现过程中被测试逼出来的判断：
+
+1. **只列真源，其余一律按夹具。** 我第一版反过来写（列夹具），理由是"漏登记
+   真源比较安全"——**推理是反的**：把夹具标成真源是夸大，把真源标成夹具只是
+   保守。两种疏忽代价不对称，默认必须落在保守那一侧。
+2. **调用方自带的证据不能自证成色。** `source` 是它自己写上去的，写成 `guance`
+   就能让整条诊断自称真源。这与验收那条纪律同源——提交方声称的事实一律不接受。
+   是 `Vertical903001Test` 抓到的。
+3. **混一条夹具进来，整批算夹具。** 读者不会逐条分辨，而"部分真实"最容易被读成
+   "真实"。MISSING 不提供成色信息（既不证明夹具也不证明真源）。
+
+场景 lane 的证据是后到的，所以 `Diagnosis.evidenceRecorded` 里一并重算——沿用
+建立时的旧值会让一条真实取到的证据永远被标成夹具。
+
+**这条改动的实际意义**：接一个真 Prometheus/ES 并跑通 owner 验收之后，
+那条诊断会自己变成 `fixtureMode=false`，**不需要任何人去翻常量**。
+demo 档实跑仍是 `fixtureMode=true`（来源 `recorded-replay:*`），符合预期。
+
+- [ ] `TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE` 现在只剩 Agent 与
+      synthesis 两处在用，且那两处的证据来源同样可以推导。**清理它是下一步**；
+      在清理之前它的守卫测试保留。
+
+---
+
 ## 下一步做什么（2026-08-02 交接）
 
 按**能不能动手**排，不按重要性。

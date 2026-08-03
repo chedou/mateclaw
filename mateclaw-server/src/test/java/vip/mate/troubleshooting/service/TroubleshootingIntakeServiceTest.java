@@ -295,7 +295,9 @@ class TroubleshootingIntakeServiceTest {
                 WORKSPACE_ID, sop.evidenceRequests().getFirst(), incident);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+        // fixtureMode 现在由证据自己决定：这一条是 router 从真源取回来的，
+        // 所以不是夹具。调用方自带的证据仍一律按夹具（它不能自证成色）。
+                eq(false), eq(false), eq(NOW), eq(NOW));
     }
 
     @Test
