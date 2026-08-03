@@ -133,10 +133,14 @@
           </div>
         </header>
 
-        <div v-if="business.fixtureMode" class="fixture-banner">
+        <div
+          v-if="evidenceSourcePresentation.showBanner"
+          class="fixture-banner"
+          :class="`source-${evidenceSourcePresentation.kind.toLowerCase()}`"
+        >
           <span class="fixture-dot" />
-          <b>Recorded Replay · 非真实观测云</b>
-          <span>当前数据来自受控回放；页面不会把演练证据描述成真实生产观测。</span>
+          <b>{{ evidenceSourcePresentation.title }}</b>
+          <span>{{ evidenceSourcePresentation.detail }}</span>
         </div>
 
         <BusinessSummaryCard
@@ -176,15 +180,12 @@
           :guance-readiness="guanceReadiness"
           :guance-acceptance="guanceAcceptance"
           :guance-owner-acceptance="guanceOwnerAcceptance"
-          :guance-validation="guanceValidation"
-          :guance-spine-preview="guanceSpinePreview"
           :readiness-loading="readinessLoading"
           :readiness-error="readinessError"
           :can-manage="canManageTroubleshooting"
-          :can-validate-guance="canValidateGuance"
           :can-approve-action="canApprove"
           :can-record-outcome-action="canRecordOutcome"
-          @open-guance-validation="openGuanceValidation"
+          @open-guance-onboarding="openGuanceOnboarding"
           @open-evaluation="openEvaluationLedger"
           @approve="openApprove"
           @record-outcome="openOutcome"
@@ -355,6 +356,17 @@
               placeholder="仅填写安全标识符"
             />
           </el-form-item>
+          <el-form-item label="故障发生时间（可选）">
+            <el-date-picker
+              v-model="messageSendScenarioForm.occurredAt"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
+              placeholder="不选则取当前时间"
+              clearable
+              style="width:100%"
+            />
+            <p class="form-hint">真实 Guance 查询会围绕这个时间读取 Playbook 规定的窗口；不选择时由服务端取当前时间。</p>
+          </el-form-item>
         </div>
         <el-form-item label="故障现象" required>
           <el-input
@@ -379,8 +391,9 @@
           <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。浏览器不能指定查询或判据。</p>
         </div>
         <el-checkbox v-model="messageSendScenarioForm.rehearsal" class="incident-rehearsal">
-          演练记录（当前竖线使用 Recorded Replay 受控回放）
+          演练记录（仅影响事件去重，不决定证据来源）
         </el-checkbox>
+        <p class="form-hint">证据来源由工作区的服务端绑定决定，页面不能强制选择 Guance 或回放；执行后以详情中每条证据记录的实际来源为准。</p>
       </el-form>
       <template #footer>
         <el-button text @click="handleCapabilityCommand('playbooks')">查看排查指南</el-button>
@@ -688,8 +701,6 @@ import {
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
-  type GuanceReadinessStatus,
-  type GuanceSignalStatus,
   type GuanceSpinePreviewStepStatus,
   type HistoricalCaseKnowledgeImportResult,
   type RecommendedAction,
@@ -698,7 +709,7 @@ import {
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import {
-  canStartGuanceValidation,
+  diagnosisEvidenceSourcePresentation,
   guanceOwnerBlockerLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
@@ -724,11 +735,6 @@ import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPr
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
-import {
-  deploymentAnalysisLabel,
-  observationStatusLabel,
-  shouldShowDeploymentTopologyProbe,
-} from './deploymentTopologySop'
 import DiagnosisListView from './DiagnosisListView.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
@@ -744,15 +750,9 @@ import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
   normalizeEvidenceChainPreviewRequest,
-  sameEvidenceChainLookup,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
 } from './guanceOnboarding'
-import {
-  type EvaluationSampleCaptureContext,
-  replayEvaluationCaptureContext,
-  suggestedEvaluationScenarioKey,
-} from './evaluationSamples'
 import {
   EMPTY_MESSAGE_SEND_SCENARIO,
   MESSAGE_SEND_SCENARIO_KEY,
@@ -774,18 +774,14 @@ import {
   TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
   WORKBENCH_INVESTIGATION_MODES,
-  diagnosisSelectionMode,
   diagnosisStatusLabel as statusLabel,
   diagnosisStatusTone as statusTone,
   formatWorkbenchTime as shortTime,
   isDiagnosisViewMode,
   resolveWorkbenchView,
   shouldShowQueuePanel,
-  workbenchViewQuery,
   type TroubleshootingScenarioCommand,
   type WorkbenchCapabilityCommand,
-  type WorkbenchDiagnosisViewMode,
-  type WorkbenchViewMode,
   type WorkbenchViewSwitchMode,
 } from './workbenchView'
 
@@ -797,12 +793,12 @@ const {
   rows, selectedId, current, projection,
   topologyProbeRuns, statusFilter, investigationModeFilter, viewMode,
   listLoading, detailLoading, actionLoading, readinessLoading,
-  guanceReadiness, guanceValidation, guanceSpinePreview,
-  guanceOwnerAcceptance, guanceDiagnosisLookup, replayCapability, readinessError,
+  guanceReadiness,
+  guanceOwnerAcceptance, readinessError,
   guanceRecordingTargets,
   business, developer, closure,
-  deploymentTopologyRequired, latestTopologyProbeRun, impactMetricList,
-  canTransfer, canClose, canValidateGuance, guanceAcceptance,
+  deploymentTopologyRequired,
+  canTransfer, canClose, guanceAcceptance,
   currentDiagnosisEvidenceLookup, evaluationCaptureContext,
   replayEvaluationCaptureContextValue,
   canCaptureEvaluationSample, evaluationCaptureDisabledReason,
@@ -818,7 +814,6 @@ const deploymentTopologyScenarioLoading = ref(false)
 const validationLoading = ref(false)
 const spinePreviewLoading = ref(false)
 const acceptanceLoading = ref(false)
-const replayCapabilityLoading = ref(false)
 const validationDialogReport = ref<GuanceEvidenceValidationReport | null>(null)
 const validationDialogSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
 const validationDialogOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
@@ -869,6 +864,9 @@ const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() 
     occurredAt: null,
   }
 })
+const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresentation(
+  current.value?.diagnosis.evidence ?? [],
+))
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
 const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
@@ -943,7 +941,7 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   } else if (command === 'synthesis') {
     openSynthesisPreview()
   } else if (command === 'guance') {
-    guanceOnboardingOpen.value = true
+    openGuanceOnboarding()
   } else if (command === 'ledger') {
     openEvaluationLedger()
   } else if (command === 'case-knowledge') {
@@ -1005,20 +1003,10 @@ async function importHistoricalCases() {
   }
 }
 
-function readinessTone(value: GuanceReadinessStatus) {
-  if (canStartGuanceValidation(value)) return 'active'
-  return 'warning'
+function openGuanceOnboarding() {
+  guanceOnboardingOpen.value = true
 }
-function signalTone(value: GuanceSignalStatus) {
-  if (value === 'CANONICAL_RESULT_OBSERVED') return 'success'
-  if (value === 'READY_FOR_VALIDATION') return 'active'
-  return 'warning'
-}
-function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
-  if (value === 'READY') return 'success'
-  if (value === 'OWNER_EVIDENCE_REQUIRED') return 'active'
-  return 'warning'
-}
+
 function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
   if (value === 'ACCEPTED') return '当前绑定已验收'
   if (value === 'STALE') return '配置变化，验收已过期'
@@ -1220,15 +1208,6 @@ async function createDeploymentTopologyScenario() {
   }
 }
 
-function openGuanceValidation() {
-  const request = currentDiagnosisEvidenceLookup.value
-  if (!request || !canValidateGuance.value) return
-  guanceValidation.value = null
-  guanceSpinePreview.value = null
-  guanceDiagnosisLookup.value = null
-  openGuanceValidationDialog(request, guanceOwnerAcceptance.value, 'DIAGNOSIS')
-}
-
 function openGuanceValidationDialog(
   request: EvidenceChainPreviewRequest,
   ownerAcceptance: GuanceEvidenceAcceptanceView | null,
@@ -1296,7 +1275,7 @@ async function validateGuance() {
       }
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) validationLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) validationLoading.value = false
   }
 }
 
@@ -1316,7 +1295,7 @@ async function acceptGuance() {
       ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) acceptanceLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) acceptanceLoading.value = false
   }
 }
 
@@ -1338,7 +1317,7 @@ async function previewGuanceSpine() {
       }
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) spinePreviewLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) spinePreviewLoading.value = false
   }
 }
 
@@ -1349,7 +1328,6 @@ function openSynthesisPreview() {
     query: { focus: EVIDENCE_SYNTHESIS_FOCUS },
   })
 }
-async function confirm() { await store.applyLifecycle(() => troubleshootingApi.confirm(selectedId.value!), '已确认诊断结论') }
 function canApprove(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'PENDING' && canTransfer.value }
 function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
 function openApprove(action: RecommendedAction) { targetAction.value = action; approveOpen.value = true }

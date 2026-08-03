@@ -103,6 +103,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { vLoading } from 'element-plus/es/components/loading/index'
 import { troubleshootingApi, type InvestigationProvenance } from '@/api'
 import { investigationProvenanceRefreshKey } from './investigationTrace'
 

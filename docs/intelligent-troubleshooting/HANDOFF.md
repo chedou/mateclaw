@@ -1023,6 +1023,32 @@ T15 七阶段调查轨迹与证据反查（2026-08-03）已完成：
   190 项通过；`vue-tsc --noEmit`、变更文件 ESLint、Snowflake 精度守卫和 Vite 生产构建通过。
   Standards / Spec 双轴 fixes-only 复审无剩余 P0/P1/P2。
 
+T16 真实 Guance 持久化场景接缝与首轮瘦身（2026-08-04）：
+
+- 会话消息发送失败的正式 `POST /diagnoses/{id}/evidence-runs` 已直接复用
+  `EvidenceSpineOrchestrator`。精确三请求 Playbook 由服务端选择实际证据源，
+  `log_search` 返回的真实 PS ID 是后两次取证的唯一 join 输入；不信任浏览器源选择
+  或 Playbook 内的占位 PS ID。
+- 场景开案已支持可选故障时间，为空时由服务端使用当前时间。
+- 正式页新建 `diag-655d4fde29c746d2abbe22b24dba02bf` 并发起三次只读取证；
+  真实 Guance 请求返回 HTTP 200，但当前时间窗的返回不满足 canonical scalar 合同。
+  Diagnosis 只保存 `MISSING` 并停在 `NEEDS_INVESTIGATION`，未运行依赖 PS ID 的后两步，
+  未回退 Recorded Replay。当前证明的是“真源调用 + 无样本弃权”，不是第一条
+  持久化三段成功样本。
+- 页面证据来源已改为从 evidence 的 `source/status` 判定。全 `MISSING` 显示
+  “尚未取得可用证据”，不再由保守 `fixtureMode` 误显示 Recorded Replay。
+- 智能排障域完成编译级死引用审计，已删除子组件拆分后留下的无效导入、
+  无消费者 Store 暴露、无效计算和未读取会话参数；Troubleshooting 域在
+  `noUnusedLocals/noUnusedParameters` 下无报告。原型路由、Replay 评测、T7/T8 治理
+  仍有实际入口或合同责任，不在首轮裁剪范围。
+- 最终回归：Java 21 下后端排障域 `786` 项、前端 `27` 文件 / `201` 项、
+  Snowflake 精度守卫、`vue-tsc --noEmit` 和 Vite 生产构建均通过。登录态浏览器已复核
+  全 `MISSING` 文案和开发证据台，0 error；同时补齐 `InvestigationProvenancePanel`
+  的 `v-loading` 指令注册，仅剩项目既有 intlify experimental warning。
+- 唯一必需的下一输入：一个仍在 Guance 保留期内的 SendMsg 失败精确时间，
+  或授权在测试环境触发一次失败。拿到后首先验收同一 Diagnosis 的 Guance-only
+  三段持久化，再做 owner T7 字段合同核对和成功/失败样本对照校准。
+
 后端定向测试命令：
 
 ```bash

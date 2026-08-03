@@ -1789,3 +1789,51 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
    不新建入站，不把 `BusinessSummary` 伪装成 tool-guard `ApprovalNotice`。
 5. 有真实样本和时延数据后再做 P4 场景路由；不要先搭空的通用 Planning 框架。
 6. P2 影子评测证明收益后，再把固定 Challenger 报告接入 P5；知识审核状态和版本替换须在 candidate 真实积累前完成。
+
+## 12. 真实 Guance 持久化竖线与瘦身收口（2026-08-04）
+
+### 12.1 已完成
+
+- [x] 会话消息发送失败场景的正式 `evidence-runs` 不再走只存在于验收弹窗的预览链：
+      `ScenarioEvidenceRunService` 在冻结 Playbook 精确包含
+      `log_search / log_trace_bundle / contrast_sample` 时，直接复用唯一
+      `EvidenceSpineOrchestrator`，并把 canonical evidence 保存回同一 Diagnosis。
+      浏览器不能选择 Guance 或 Replay，也不能提供 PS ID；
+      `log_search` 真实观测到的 PS ID 才能触发后续链路和样本对照。
+- [x] 场景开案新增可选“故障发生时间”；不选时由服务端以当前时间兜底。
+      查询窗口围绕该时间展开，不再要求用户为默认情况手工输入。
+- [x] 新建 Diagnosis `diag-655d4fde29c746d2abbe22b24dba02bf` 已经由正式入口到达真实
+      Guance endpoint 并获得 HTTP 200。本次窗口内返回未满足 canonical scalar
+      合同，因而只持久化 `MISSING`，保持 `NEEDS_INVESTIGATION`，没有伪造 PS ID，
+      也没有回退 Recorded Replay。这证明了真源边界与 fail-closed，
+      **不等于持久化三段已成功**。
+- [x] 证据来源文案改为读取已持久化 evidence 行：区分 Guance、Recorded Replay、
+      “已取证但无可用样本”与“尚未取证”。全 `MISSING` 不再因保守
+      `fixtureMode=true` 被误标为 Replay。
+- [x] 完成一次只限智能排障域的编译级引用审计：清理了已拆入子组件后遗留的
+      无效导入、计算属性、公开 Store 字段和从未读取的会话参数。
+      使用 `noUnusedLocals/noUnusedParameters` 复查后，Troubleshooting 域无剩余报告。
+      dev-only 原型、Recorded Replay 评测、T7/T8 治理和历史文档仍有入口或合同作用，
+      本轮不删除。
+- [x] Java 21 后端排障域 786 项、前端 27 文件 / 201 项、精度守卫、类型检查和
+      生产构建通过。浏览器实测全 `MISSING` 时页面无 Replay 文案、0 error；
+      `InvestigationProvenancePanel` 遗漏的 `v-loading` 注册已修复。
+
+### 12.2 当前唯一外部输入
+
+- [ ] 提供一个仍在 Guance 保留期内的真实 SendMsg 失败时间，或明确授权在测试环境
+      触发一次失败并记录精确时间。在没有这个输入之前，不用推测时间、放宽 DQL
+      或回放样本冒充真实持久化 `FULL_SPINE_OBSERVED`。
+
+### 12.3 下一阶段，按第一性原理排序
+
+1. 用精确失败时间跑出同一 Diagnosis 内的三段 Guance canonical evidence，
+   验证实测 PS ID 贯穿失败检索、链路查询和成功/失败对照，且全程无 Replay。
+2. 由 owner 核对 measurement、字段映射、索引、时间单位、PS ID join 和窗口语义；
+   这才是 T7 查询合同验收，HTTP 200 本身不是验收。
+3. 固结第一批真实成功/失败样本，校准“成功样本对照”是否真能提供区分力，
+   再讨论 T8 阈值与 20–30 条样本台账。
+4. 竖线连续可复现后，再建立“系统 → 模块 → 调查场景 → 证据合同 → 只读适配器”目录，
+   逐个扩展拨测、日志、Trace 和服务状态；不先搭一个空泛化平台。
+5. 等正式工作台和真实样本完全替代设计对照价值后，再做第二轮瘦身；
+   届时才评估开发原型和历史静态 Demo 是否可归档。

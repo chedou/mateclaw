@@ -37,6 +37,17 @@ describe('message-send-failed scenario vertical', () => {
     expect(errors).toContain('Trace / PS 线索只能包含字母、数字和 . _ : / -')
   })
 
+  it('submits a selected failure time and otherwise lets the server use now', () => {
+    expect(buildMessageSendScenarioRequest(EMPTY_MESSAGE_SEND_SCENARIO))
+      .not.toHaveProperty('occurredAt')
+    expect(buildMessageSendScenarioRequest({
+      ...EMPTY_MESSAGE_SEND_SCENARIO,
+      occurredAt: '2026-07-31T16:30:00+08:00',
+    })).toMatchObject({
+      occurredAt: '2026-07-31T16:30:00+08:00',
+    })
+  })
+
   it('offers evidence execution only to the waiting frozen scenario diagnosis', () => {
     const waiting = {
       investigationMode: 'SCENARIO_PLAYBOOK',

@@ -1,6 +1,7 @@
 import type {
   ClosureOutcome,
   ConclusionType,
+  EvidenceResult,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
   GuanceRecordingTargetCatalogView,
@@ -102,6 +103,28 @@ export interface GuanceAcceptanceProgress {
   nextAction: string
 }
 
+export type GuanceDetailSourceTone = 'success' | 'active' | 'warning' | 'muted'
+
+export interface GuanceDetailSourceState {
+  label: string
+  tone: GuanceDetailSourceTone
+}
+
+export type DiagnosisEvidenceSourceKind =
+  | 'GUANCE'
+  | 'RECORDED_REPLAY'
+  | 'MIXED'
+  | 'OTHER'
+  | 'NO_USABLE_EVIDENCE'
+  | 'UNRECORDED'
+
+export interface DiagnosisEvidenceSourcePresentation {
+  kind: DiagnosisEvidenceSourceKind
+  title: string
+  detail: string
+  showBanner: boolean
+}
+
 export type GuanceAcceptanceInput = Pick<
   GuanceEvidenceReadiness,
   'status' | 'uniqueAssetAuthorized' | 'signals'
@@ -165,6 +188,116 @@ export function guanceSpinePreviewLabel(value: GuanceSpinePreviewStage) {
 /** Keep unknown diagnostics visible while presenting known owner blockers in the UI language. */
 export function guanceOwnerBlockerLabel(value: string) {
   return GUANCE_OWNER_BLOCKER_LABEL[value] || value
+}
+
+/**
+ * Details only need the current environment gate, not the full governance
+ * ladder. Owner acceptance wins because it is bound to the current binding
+ * fingerprint; otherwise keep the T7 blocker visible in one compact label.
+ */
+export function guanceDetailSourceState(
+  readinessStatus: GuanceReadinessStatus | null,
+  ownerAcceptanceStatus: GuanceEvidenceAcceptanceView['status'] | null,
+  progress: GuanceAcceptanceProgress | null,
+): GuanceDetailSourceState {
+  if (ownerAcceptanceStatus === 'ACCEPTED') {
+    return { label: '当前绑定已验收', tone: 'success' }
+  }
+  if (ownerAcceptanceStatus === 'STALE') {
+    return { label: '配置变化，验收已过期', tone: 'warning' }
+  }
+  const t7 = progress?.stages.find(stage => stage.code === 'T7')
+  if (t7) {
+    return {
+      label: `T7 · ${t7.title}`,
+      tone: t7.state === 'READY' ? 'active' : 'warning',
+    }
+  }
+  if (readinessStatus) {
+    return {
+      label: guanceReadinessLabel(readinessStatus),
+      tone: canStartGuanceValidation(readinessStatus) ? 'active' : 'warning',
+    }
+  }
+  return { label: '状态暂不可用', tone: 'muted' }
+}
+
+/**
+ * Evidence-source copy must come from persisted evidence rows, not the
+ * conservative fixtureMode fallback. An empty or all-MISSING run proves
+ * neither Guance nor Recorded Replay produced usable evidence.
+ */
+export function diagnosisEvidenceSourcePresentation(
+  evidence: readonly Pick<EvidenceResult, 'source' | 'status'>[],
+): DiagnosisEvidenceSourcePresentation {
+  if (!evidence.length) {
+    return {
+      kind: 'UNRECORDED',
+      title: '证据尚未采集',
+      detail: '当前 Diagnosis 还没有记录证据来源，不能判定是真源还是回放。',
+      showBanner: true,
+    }
+  }
+
+  const usable = evidence.filter(item => item.status !== 'MISSING')
+  if (!usable.length) {
+    return {
+      kind: 'NO_USABLE_EVIDENCE',
+      title: '尚未取得可用证据',
+      detail: '只读取证已结束，但没有返回可进入判据计算的规范化样本；系统已按设计弃权。',
+      showBanner: true,
+    }
+  }
+
+  const hasGuance = usable.some(item => item.source.startsWith('guance:'))
+  const hasReplay = usable.some(item => item.source.startsWith('recorded-replay'))
+  if (hasGuance && hasReplay) {
+    return {
+      kind: 'MIXED',
+      title: '证据来源需要复核',
+      detail: '当前 Diagnosis 同时记录了 Guance 与 Recorded Replay 可用证据，不应直接作为真源结论。',
+      showBanner: true,
+    }
+  }
+  if (hasGuance) {
+    return {
+      kind: 'GUANCE',
+      title: 'Guance 真实只读证据',
+      detail: '当前 Diagnosis 包含 Guance 返回的可用规范化证据。',
+      showBanner: false,
+    }
+  }
+  if (hasReplay) {
+    return {
+      kind: 'RECORDED_REPLAY',
+      title: 'Recorded Replay · 非真实观测云',
+      detail: '当前数据来自受控回放；页面不会把回放证据描述成真实生产观测。',
+      showBanner: true,
+    }
+  }
+  return {
+    kind: 'OTHER',
+    title: '其他只读证据源',
+    detail: '当前 Diagnosis 包含可用证据，但来源不是 Guance 或 Recorded Replay。',
+    showBanner: false,
+  }
+}
+
+/** Makes environment governance impossible to confuse with this Diagnosis' evidence. */
+export function diagnosisGuanceUsageLabel(
+  evidence: readonly Pick<EvidenceResult, 'source' | 'status'>[],
+): string {
+  const state = diagnosisEvidenceSourcePresentation(evidence)
+  if (state.kind === 'GUANCE') return '当前 Diagnosis 包含观测云只读证据。'
+  if (state.kind === 'RECORDED_REPLAY') {
+    return '当前 Diagnosis 使用 Recorded Replay；接入状态仅说明 Workspace 环境能力。'
+  }
+  if (state.kind === 'NO_USABLE_EVIDENCE') {
+    return '当前 Diagnosis 只记录到缺失结果，尚未取得可用的观测云或回放证据。'
+  }
+  if (state.kind === 'UNRECORDED') return '当前 Diagnosis 尚未记录证据来源。'
+  if (state.kind === 'MIXED') return state.detail
+  return '当前 Diagnosis 未取得观测云证据；接入状态不会改变现有结论。'
 }
 
 /**

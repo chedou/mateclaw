@@ -31,6 +31,7 @@ public record ScenarioDiagnosisRequest(
                 message = "traceId must be a safe identifier")
         String traceId,
         @Size(max = 500) String customerRef,
+        Instant occurredAt,
         Boolean rehearsal) {
 
     public IncidentContext toIncidentContext(Instant reportedAt) {
@@ -45,7 +46,7 @@ public record ScenarioDiagnosisRequest(
                         ? "影响面待只读取证确认"
                         : "客户/影响对象: " + customerRef),
                 traceId,
-                reportedAt,
+                occurredAt == null ? reportedAt : occurredAt,
                 null,
                 "web:scenario",
                 IncidentCompleteness.SYMPTOM,

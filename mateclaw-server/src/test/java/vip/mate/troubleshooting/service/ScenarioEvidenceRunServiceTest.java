@@ -2,11 +2,13 @@ package vip.mate.troubleshooting.service;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -25,6 +27,7 @@ import vip.mate.troubleshooting.model.ScenarioDiagnosisDraft;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
+import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +35,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +44,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,6 +92,55 @@ class ScenarioEvidenceRunServiceTest {
         assertThat(advanced.evidence())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("SYNTH-LOG-SEARCH");
+    }
+
+    @Test
+    @DisplayName("三段证据方案把第一步真实 PS ID 传给后两步并写回同一 Diagnosis")
+    void evidenceSpineUsesTheObservedPsIdAndPersistsRealEvidence() {
+        SopEntry spinePlaybook = spinePlaybook();
+        Diagnosis waiting = awaitingDiagnosis(spinePlaybook);
+        when(persistence.get(7L, "diag-spine"))
+                .thenReturn(new StoredDiagnosis(waiting, 4, false));
+        when(versions.findByRef(eq(7L), any(PlaybookVersionRef.class)))
+                .thenReturn(Optional.of(approved(spinePlaybook)));
+        when(router.collect(
+                eq(7L), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq((Set<String>) null)))
+                .thenAnswer(call -> spineEvidence(call.getArgument(1)));
+        when(persistence.update(eq(7L), any(Diagnosis.class), eq(4)))
+                .thenAnswer(call -> new StoredDiagnosis(call.getArgument(1), 5, false));
+        ScenarioEvidenceRunService spineService = new ScenarioEvidenceRunService(
+                persistence, versions, stateMachine, criteria, rules,
+                new PlaybookEvidenceCollector(router),
+                new EvidenceSpineOrchestrator(
+                        router, new DeterministicLogTraceCompressor()));
+
+        Diagnosis advanced = spineService.run(7L, "diag-spine", "alice").diagnosis();
+
+        assertThat(advanced.status()).isEqualTo(DiagnosisStatus.READY_FOR_HUMAN);
+        assertThat(advanced.fixtureMode()).isFalse();
+        assertThat(advanced.evidence())
+                .extracting(EvidenceResult::source)
+                .containsExactly(
+                        "guance:log_search",
+                        "guance:log_trace_bundle",
+                        "guance:contrast_sample");
+        assertThat(advanced.warnings())
+                .noneMatch(warning -> warning.contains("fixture"));
+
+        ArgumentCaptor<EvidenceRequest> requests =
+                ArgumentCaptor.forClass(EvidenceRequest.class);
+        verify(router, times(3)).collect(
+                eq(7L), requests.capture(), any(IncidentContext.class),
+                eq((Set<String>) null));
+        assertThat(requests.getAllValues().get(0).target())
+                .containsExactlyEntriesOf(Map.of("search_term", "message_send_failed"));
+        assertThat(requests.getAllValues().get(1).target())
+                .containsExactlyEntriesOf(Map.of("ps_id", "real-ps-20260804"));
+        assertThat(requests.getAllValues().get(2).target())
+                .containsExactlyEntriesOf(Map.of(
+                        "scenario_key", "message_send_failed",
+                        "exclude_ps_id", "real-ps-20260804"));
     }
 
     @Test
@@ -207,9 +261,18 @@ class ScenarioEvidenceRunServiceTest {
     }
 
     private Diagnosis awaitingDiagnosis() {
+        return awaitingDiagnosis("diag-scenario", playbook());
+    }
+
+    private Diagnosis awaitingDiagnosis(SopEntry frozenPlaybook) {
+        return awaitingDiagnosis("diag-spine", frozenPlaybook);
+    }
+
+    private Diagnosis awaitingDiagnosis(String diagnosisId, SopEntry frozenPlaybook) {
         return stateMachine.initializeScenarioAwaitingEvidence(new ScenarioDiagnosisDraft(
-                "diag-scenario", "case-scenario", "run-scenario",
-                incident(), SCENARIO_KEY, playbook(),
+                diagnosisId,
+                "case-scenario", "run-scenario",
+                incident(), SCENARIO_KEY, frozenPlaybook,
                 new PlaybookVersionRef("playbook-scenario", 1),
                 "operator",
                 NorthStarTimings.concluded(
@@ -239,6 +302,22 @@ class ScenarioEvidenceRunServiceTest {
                 Map.of("search_term", "message_send_failed"), "-15m", true));
     }
 
+    private static SopEntry spinePlaybook() {
+        return playbook(List.of(
+                new EvidenceRequest(
+                        "SYNTH-LOG-SEARCH", "log_search", "定位失败请求",
+                        Map.of("search_term", "message_send_failed"), "-15m", true),
+                new EvidenceRequest(
+                        "SYNTH-TRACE-BUNDLE", "log_trace_bundle", "沿 PS ID 还原链路",
+                        Map.of("ps_id", "must-not-be-used"), "-15m", true),
+                new EvidenceRequest(
+                        "SYNTH-CONTRAST-SAMPLE", "contrast_sample", "对比成功与失败样本",
+                        Map.of(
+                                "scenario_key", "message_send_failed",
+                                "exclude_ps_id", "must-not-be-used"),
+                        "-15m", true)));
+    }
+
     private static SopEntry assetBackedPlaybook() {
         return playbook(new EvidenceRequest(
                 "SYNTH-LOG-SEARCH", "synthetic_probe", "执行资产工具取证",
@@ -247,13 +326,17 @@ class ScenarioEvidenceRunServiceTest {
     }
 
     private static SopEntry playbook(EvidenceRequest request) {
+        return playbook(List.of(request));
+    }
+
+    private static SopEntry playbook(List<EvidenceRequest> requests) {
         return new SopEntry(
                 "playbook-scenario",
                 SopEntry.CURRENT_CONTRACT_VERSION,
                 "CSDP", "scenario:" + SCENARIO_KEY, "csdp-session-service",
                 "会话消息发送失败路径核查", "会话状态冲突", "message", "会话平台组",
                 "approved", true,
-                List.of(request),
+                requests,
                 List.of(new AnomalyCriterion(
                         "send_failure_present", "SYNTH-LOG-SEARCH", "存在失败日志",
                         new Criterion.NumericGte("match_count", 1))),
@@ -263,6 +346,40 @@ class ScenarioEvidenceRunServiceTest {
                         "消息发送路径异常待核查", "收敛到会话状态冲突特征",
                         Confidence.MEDIUM, false)),
                 List.of());
+    }
+
+    private static EvidenceResult spineEvidence(EvidenceRequest request) {
+        Map<String, Object> observed = switch (request.signalKind()) {
+            case "log_search" -> Map.of(
+                    "match_count", 2,
+                    "ps_id", "real-ps-20260804",
+                    "sample_message", "sendmsg failed");
+            case "log_trace_bundle" -> Map.of(
+                    "ps_id", "real-ps-20260804",
+                    "entries", List.of(
+                            traceEntry(1_000, "csp-rpc-msg", "INFO", "accepted"),
+                            traceEntry(1_020, "csp-rpc-msg", "ERROR", "sendmsg failed")));
+            case "contrast_sample" -> Map.of(
+                    "discriminating_feature", "message_length_eq_2875",
+                    "failure_sample_count", 2,
+                    "failure_match_count", 2,
+                    "success_sample_count", 100,
+                    "success_match_count", 0);
+            default -> throw new IllegalArgumentException(request.signalKind());
+        };
+        return new EvidenceResult(
+                request.requestId(), "L", "withheld", EvidenceStatus.ANOMALY,
+                "canonical Guance evidence", observed,
+                "guance:" + request.signalKind(), NOW);
+    }
+
+    private static Map<String, Object> traceEntry(
+            long timestamp, String service, String level, String message) {
+        return Map.of(
+                "timestamp", timestamp,
+                "service", service,
+                "level", level,
+                "message", message);
     }
 
     private static ApprovedPlaybookVersion approved(SopEntry playbook) {

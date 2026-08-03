@@ -10,9 +10,12 @@ import {
   closureOutcomeLabel,
   conclusionLabel,
   diagnosisSummaryRouteLabel,
+  diagnosisGuanceUsageLabel,
+  diagnosisEvidenceSourcePresentation,
   formatDuration,
   guanceAcceptanceProgress,
   guanceAcceptanceStateLabel,
+  guanceDetailSourceState,
   guanceOwnerBlockerLabel,
   guanceReadinessLabel,
   guanceSignalLabel,
@@ -159,6 +162,64 @@ describe('formal troubleshooting projection formatting', () => {
       .toBe('完整 Evidence Spine 已观测（待 T7/T8 验收）')
     expect(guanceSpinePreviewLabel('CORE_CHAIN_OBSERVED')).toContain('成功样本对照缺失')
     expect(guanceAcceptanceStateLabel('OWNER_EVIDENCE_REQUIRED')).toBe('待 owner 证据')
+  })
+
+  it('projects Guance as a compact environment status instead of a diagnosis step', () => {
+    const blockedProgress = guanceAcceptanceProgress(
+      readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
+      acceptance('NOT_ACCEPTED'),
+      recordingTargets(0),
+    )
+    expect(guanceDetailSourceState(
+      'READY_FOR_VALIDATION',
+      'NOT_ACCEPTED',
+      blockedProgress,
+    )).toEqual({
+      label: 'T7 · 录制批次目标未就绪',
+      tone: 'warning',
+    })
+    expect(guanceDetailSourceState(
+      'READY_FOR_VALIDATION',
+      'ACCEPTED',
+      null,
+    )).toEqual({
+      label: '当前绑定已验收',
+      tone: 'success',
+    })
+    expect(guanceDetailSourceState(null, null, null)).toEqual({
+      label: '状态暂不可用',
+      tone: 'muted',
+    })
+  })
+
+  it('states whether Guance evidence belongs to the current Diagnosis', () => {
+    expect(diagnosisGuanceUsageLabel([{ source: 'guance:log_search', status: 'NORMAL' }]))
+      .toBe('当前 Diagnosis 包含观测云只读证据。')
+    expect(diagnosisGuanceUsageLabel([{ source: 'recorded-replay', status: 'ANOMALY' }]))
+      .toContain('当前 Diagnosis 使用 Recorded Replay')
+    expect(diagnosisGuanceUsageLabel([{ source: 'router:unavailable', status: 'MISSING' }]))
+      .toContain('只记录到缺失结果')
+    expect(diagnosisGuanceUsageLabel([]))
+      .toContain('尚未记录证据来源')
+  })
+
+  it('does not label an all-MISSING real attempt as Recorded Replay', () => {
+    const unavailable = diagnosisEvidenceSourcePresentation([
+      { source: 'router:unavailable', status: 'MISSING' },
+    ])
+
+    expect(unavailable).toMatchObject({
+      kind: 'NO_USABLE_EVIDENCE',
+      title: '尚未取得可用证据',
+      showBanner: true,
+    })
+    expect(unavailable.detail).not.toContain('Recorded Replay')
+    expect(diagnosisEvidenceSourcePresentation([
+      { source: 'recorded-replay:csdp', status: 'ANOMALY' },
+    ])).toMatchObject({ kind: 'RECORDED_REPLAY' })
+    expect(diagnosisEvidenceSourcePresentation([
+      { source: 'guance:log_search', status: 'ANOMALY' },
+    ])).toMatchObject({ kind: 'GUANCE', showBanner: false })
   })
 
   it('keeps T6 authorization, T7 field verification, and T8 samples as separate gates', () => {

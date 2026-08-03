@@ -14,6 +14,7 @@ export interface MessageSendScenarioForm {
   severity: IncidentSeverity
   traceId: string
   customerRef: string
+  occurredAt: string | null
   rehearsal: boolean
 }
 
@@ -24,6 +25,7 @@ export const EMPTY_MESSAGE_SEND_SCENARIO: MessageSendScenarioForm = {
   severity: 'P2',
   traceId: '',
   customerRef: '',
+  occurredAt: null,
   rehearsal: true,
 }
 
@@ -60,6 +62,7 @@ export function buildMessageSendScenarioRequest(
     severity: form.severity,
     ...(traceId ? { traceId } : {}),
     ...(customerRef ? { customerRef } : {}),
+    ...(form.occurredAt ? { occurredAt: form.occurredAt } : {}),
     rehearsal: form.rehearsal,
   }
 }

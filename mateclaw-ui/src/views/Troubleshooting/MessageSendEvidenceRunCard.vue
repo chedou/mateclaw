@@ -4,7 +4,7 @@
       <div>
         <span class="scenario-kicker">已选场景 · 会话消息发送失败</span>
         <h3>{{ waiting ? '等待开始只读取证' : '场景取证已进入详情链路' }}</h3>
-        <p>系统按排查指南（Playbook）固定的顺序读取证据；页面不能改查询、判据或根因。</p>
+        <p>系统按排查指南固定顺序读取证据；证据源由工作区服务端绑定，页面不能改查询、判据或根因。</p>
       </div>
       <div class="scenario-authority">
         <span>已冻结排查指南</span>
@@ -28,7 +28,7 @@
     </ol>
 
     <div class="scenario-foot">
-      <p v-if="waiting">开始后才会读取证据。如果来源不可用或证据不足，系统会诚实弃权。</p>
+      <p v-if="waiting">开始后才会读取证据，实际来源会逐条写入详情；来源不可用或证据不足时系统会诚实弃权。</p>
       <p v-else>完整过程已记录在下方“七阶段调查轨迹”和“证据关系”中。</p>
       <el-button
         v-if="waiting"

@@ -1642,6 +1642,7 @@ export interface ScenarioDiagnosisRequest {
   severity: IncidentSeverity
   traceId?: string
   customerRef?: string
+  occurredAt?: string | null
   rehearsal: boolean
 }
 

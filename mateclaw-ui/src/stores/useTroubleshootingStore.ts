@@ -12,23 +12,17 @@ import {
   type GuanceEvidenceReadiness,
   type GuanceRecordingTargetCatalogView,
   type GuanceEvidenceSpinePreview,
-  type GuanceEvidenceValidationReport,
   type InvestigationMode,
   type RecordedReplayEvaluationCapability,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
-import {
-  canStartGuanceValidation,
-  guanceAcceptanceProgress,
-  impactMetrics,
-} from '@/views/Troubleshooting/formalProjection'
+import { guanceAcceptanceProgress, impactMetrics } from '@/views/Troubleshooting/formalProjection'
 import {
   canAttachGuanceResultToDiagnosis,
   isActiveGuanceValidationSession,
   sameEvidenceChainLookup,
-  type GuanceValidationOrigin,
   type GuanceValidationSessionSnapshot,
 } from '@/views/Troubleshooting/guanceOnboarding'
 import {
@@ -84,7 +78,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
 
   // ── guance state ────────────────────────────────────────────
   const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
-  const guanceValidation = ref<GuanceEvidenceValidationReport | null>(null)
   const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
   const guanceOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
   const guanceRecordingTargets = ref<GuanceRecordingTargetCatalogView | null>(null)
@@ -110,10 +103,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   const canTransfer = computed(() => canOperateTroubleshooting.value
     && ['CONFIRMED', 'TRANSFERRED'].includes(current.value?.diagnosis.status || ''))
   const canClose = computed(() => canTransfer.value)
-  const canValidateGuance = computed(() => {
-    const status = guanceReadiness.value?.status
-    return status ? canStartGuanceValidation(status) : false
-  })
   const guanceAcceptance = computed(() => guanceReadiness.value
     ? guanceAcceptanceProgress(
         guanceReadiness.value,
@@ -239,7 +228,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
 
   function isCurrentGuanceValidationGeneration(
     version: number,
-    session: GuanceValidationSessionSnapshot,
   ) {
     return version === selectionVersion
   }
@@ -279,7 +267,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
 
     // reset shared guance state
     topologyProbeRuns.value = []
-    guanceValidation.value = null
     guanceSpinePreview.value = null
     guanceReadiness.value = null
     guanceOwnerAcceptance.value = null
@@ -372,7 +359,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
         currentDiagnosisEvidenceLookup.value,
         request,
       )) {
-        guanceValidation.value = response.data
         guanceReadiness.value = response.data.readiness
       }
       return response
@@ -542,8 +528,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     readinessLoading,
     // guance
     guanceReadiness,
-    guanceValidation,
-    guanceSpinePreview,
     guanceOwnerAcceptance,
     guanceRecordingTargets,
     guanceDiagnosisLookup,
@@ -558,7 +542,6 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     impactMetricList,
     canTransfer,
     canClose,
-    canValidateGuance,
     guanceAcceptance,
     currentDiagnosisEvidenceLookup,
     evaluationCaptureContext,
