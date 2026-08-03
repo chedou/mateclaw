@@ -80,8 +80,8 @@ public final class RecordedReplayEvaluationCapabilityService {
                     "SCOPE_NOT_REGISTERED",
                     "当前 Workspace / 系统 / 服务不在 Replay fixture 登记范围");
         }
-        if (!router.canRoute(system, "log_search", PLATFORM)
-                || !router.canRoute(system, "log_trace_bundle", PLATFORM)) {
+        if (!router.canRoute(workspaceId, system, "log_search", PLATFORM)
+                || !router.canRoute(workspaceId, system, "log_trace_bundle", PLATFORM)) {
             return RecordedReplayEvaluationCapability.unavailable(
                     "ADAPTER_NOT_READY",
                     "Recorded Replay 默认关闭，或核心 Evidence Spine 路由尚未就绪");

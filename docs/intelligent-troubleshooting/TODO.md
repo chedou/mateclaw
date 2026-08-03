@@ -70,6 +70,32 @@ workspace 内。测试写成「遍历列表拿到的每一个 id 都要能解开
 `getSop(system, errorCode)`，评审页拿到的一直是注册表 id。坏的是**接口对**本身，
 任何把这两个端点配起来用的客户端都会中招。
 
+**P2.1 取证路由不再是编译期事实（2026-08-03）**：P2.0 补上的那级梯子站上去之后是
+悬空的——新租户能注册、能批准、能开案、能跑取证计划，然后每条证据都回
+`MISSING/router:unconfigured`。原因是 `mateclaw.troubleshooting.evidence.routes`
+（system → signalKind → 有序源名）只存在于 `application.yml`：**接一个系统要改发布物
+里的文件并重新发版**。这和随包回放目录是同一种病，P2.0 只治了知识那一半。
+
+- V193 加 `mate_troubleshooting_evidence_route`，`PUT/GET/DELETE
+  /api/v1/troubleshooting/evidence/routes`（声明要 admin，改动必须带 actor 与原因）。
+- **workspace 声明优先，YAML 回落**。没人声明过时行为与本特性引入前完全一致。
+- 顺带收窄了一处跨租户问题：YAML 那张表**只按 system 名字索引**，任何 workspace 只要
+  把系统命名成 `CSDP` 就继承了 CSDP 的路由、打到 CSDP 的观测端点上。加 workspace 维度
+  是在收窄，不是放宽。
+- 租户只能在**已启用的源之间做选择**：端点与凭据仍然只在运维配置的适配器里。平台名
+  与 signal 词表都逐个校验，拒绝时把「有哪些」说出来。
+- 「声明了但列表为空」与「没声明过」是两个答案：前者是租户明说这一格不取证，不回落；
+  后者才回落。读成同一件事，就会出现「说了不要还是去问了生产观测系统」。
+- `router:unconfigured` 现在报出 system、signal 和下一步，并区分「你还没配路由」与
+  「这台部署根本没启用任何源」。
+
+现场验证：声明后取证从 `router:unconfigured` 变成 `router:unavailable`（适配器真的被
+调用了，只是 recorded-replay 没有 ACME 的录制）；撤回声明回落；声明为空不回落。
+773 个测试、四条冒烟全绿。把 workspace 条件改死成常量，跨租户那条用例确实变红。
+
+**注意别过度解读**：这解掉的是「不改发布物就配不了路由」，**不是**「新租户马上就有真
+证据」。真数据仍要一个装着他们数据的源，那条路通向 T7。
+
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
 **但当时对缺口的判断是错的，一并更正**：`Diagnosis` 的形状从来不缺

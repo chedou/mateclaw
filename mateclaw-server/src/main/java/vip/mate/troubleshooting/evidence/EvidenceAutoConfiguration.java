@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -100,10 +101,22 @@ public class EvidenceAutoConfiguration {
                 properties.getRecordedReplay(), objectMapper, resource, Clock.systemUTC());
     }
 
+    /**
+     * Workspace 声明的路由优先，部署级 YAML 作为回落。
+     *
+     * <p>用 {@code ObjectProvider} 而不是直接注入：路由服务要读适配器，而适配器和
+     * router 在同一份配置里组装，直接注入会绕成 Spring 循环依赖。取不到时退回
+     * {@link WorkspaceEvidenceRoutes#NONE}——行为与本特性引入之前完全一致。</p>
+     */
     @Bean
     EvidenceSourceRouter evidenceSourceRouter(
             List<EvidenceSourceAdapter> adapters,
-            EvidenceProperties properties) {
-        return new EvidenceSourceRouter(adapters, properties, Clock.systemUTC());
+            EvidenceProperties properties,
+            ObjectProvider<WorkspaceEvidenceRoutes> workspaceRoutes) {
+        return new EvidenceSourceRouter(
+                adapters,
+                properties,
+                workspaceRoutes.getIfAvailable(() -> WorkspaceEvidenceRoutes.NONE),
+                Clock.systemUTC());
     }
 }

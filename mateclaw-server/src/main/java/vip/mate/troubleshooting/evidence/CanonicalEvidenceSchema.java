@@ -108,6 +108,16 @@ public final class CanonicalEvidenceSchema {
     }
 
     /**
+     * The signal kinds this platform actually understands, sorted.
+     *
+     * <p>存在的理由是让拒绝能把清单说出来：一条指向词表之外的取证路由永远取不到
+     * 合法结果，那只可能是打错字，而只报「不认识」等于逼人去猜。</p>
+     */
+    public static List<String> signalKinds() {
+        return SCHEMAS.keySet().stream().sorted().toList();
+    }
+
+    /**
      * Detects the unique canonical signal shape without trusting a caller-supplied kind.
      * Canonical result shapes are intentionally disjoint; ambiguous or malformed input
      * is withheld from downstream model projections.
