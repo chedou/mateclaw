@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-08-02
+> 更新时间：2026-08-03
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -26,7 +26,7 @@
 |---|---|---|---|
 | 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选已生成可填写/可校验包；待 owner 填满至少 20 条，server-owned 可执行目标仍为 `0` | §5 T7 |
 | 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
-| 3 | T10.5 收敛 `RouteMode` | 无阻塞，随 P4 T11 一起做 | §6.5 |
+| 3 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
 | 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
 | 5 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
@@ -119,6 +119,9 @@ python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
   --validate <受控本地目录>/t7-owner-contract-intake.local.json
 ```
 
+校验失败时会一次列出所有已选合同的安全字段路径和原因，不回显 owner 填写值；
+修完整批后再校验，不必通过数百次“只看见第一个错误”的往返。
+
 正式工作台和 acceptance API 已共同执行这个前置条件：目录少于 20 个可执行目标时，UI 显示
 `T7 BLOCKED · X / 20`、不展示 owner 清单；服务端也在 Guance 验证之前拒绝 acceptance。
 “验证单条查询合同”继续用于窗口外准备，不能再当成 T7 已就绪。
@@ -153,7 +156,8 @@ python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
   但明确标为 `AUTHORED_FIXTURE`，不再与 IM1010 的真实聚合权威混显。
 - [ ] T0.8 剩余 145 条种子导入——保持暂停。先在 T7 窗口拿到 20–30 条真实种子，
   再分批导入并保留拒绝清单；学习环已通，其中一部分可能不需要手写。
-- [x] T0.10 v4 §5 与代码的命名分歧（结构账）已完成；T10.5 收敛 `RouteMode` 仍随 P4 T11。
+- [x] T0.10 v4 §5 与代码的命名分歧（结构账）已完成；T10.5 读取迁移已完成，
+  最终弃读 `RouteMode` 待 P4 真场景同批统计后收尾。
 
 ### 等数据，别提前做
 
@@ -1345,7 +1349,7 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
 0. **先跑一次**：`docs/intelligent-troubleshooting/quickstart.md`。
    在读任何设计文档之前先看见一份真实的诊断——T0.65 的教训是，
    写完不等于跑通，而"跑不通"在没有脚本之前只是一种感受。
-1. 先读现行录音基线、v4.4、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
+1. 先读现行录音基线、v4.5、HANDOFF 和本清单；正式 `/troubleshooting` 是实现权威，不再以 Demo 反推产品。
 2. 主攻 P2 真实 Guance measurement/字段/阈值核实和 20–30 条影子样本；当前 CloudDial 请求已到达真源，
    但样例查询尚未返回 series，必须保持 `INSUFFICIENT_EVIDENCE`，不得伪造健康结论。
 3. 沿同一 Evidence Spine 补结构化影响、完整 hop 与成功样本对照，不另建一套数据。

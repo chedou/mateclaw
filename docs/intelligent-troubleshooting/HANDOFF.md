@@ -2,7 +2,7 @@
 
 > 更新时间：2026-08-03
 >
-> 仓库：`webonne/mateclaw`
+> 仓库：`chedou/mateclaw`
 >
 > 分支：`claude/intelligent-troubleshooting-design`
 >
@@ -19,7 +19,7 @@
 | 产品竖线 | Recorded Replay 的三次取证、确定性压缩、双投影及 P1 在线闭环已跑通 | Demo 继续只诚实展示这条竖线 |
 | T0.7 CI 基线 | GitHub Actions 6 次真实运行，前 2 次失败后最近 4 次连续成功；最新 run #6 总耗时 93s、主 job 89s | 89s 已严格上界证明 clone-to-diagnosis < 300s；继续作为默认路径回归，不冒充真源验收 |
 | T7 真源批次 | 本机真实只读预检前 4 格通过；服务端冻结未录制目标仍为 **0 / 20** | 窗口外先完成至少 20 份真实 owner 合同并冻结目标，再约内网窗口 |
-| Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；成功仍只是 `PREPARED_NOT_EXECUTABLE` |
+| Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；校验会一次列出全部安全字段路径，成功仍只是 `PREPARED_NOT_EXECUTABLE` |
 | 源质量 | `csdp:101014` 同时指向“一键授权登录”和“Pulsar 调度失败”，禁止代码猜测 | 保持隔离并行回源；不计入也不阻塞其余 28 条中的首批 20 条 |
 | T0.9 / 置信度 | 来源等级已先于 T0.8 落地；系统置信度由服务端事实派生并由人工 oracle 判分，拒绝 `0 / 0` | 等真实样本后再标定阈值 |
 | T0.10 结构账 | v4 §5 已逐项标明 `IMPLEMENTED / PARTIAL / NOT_IMPLEMENTED / PENDING-EVIDENCE`，并映射真实代码名 | 不新增空壳合同；selector 等 P4 真实场景来源，EvidenceBundle 等统一 plan/持久化边界后收敛 |
@@ -287,12 +287,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 ### 尚未完成
 
-- 除 CSP CloudDial 试点外，其他真实 Guance 资产授权值尚未由 owner 配置；试点的
-  measurement/字段/返回结构也尚未用新密钥完成内网验证，其他场景的 PS ID/阈值同样未验证；
-  `fixtureMode` 仍应为 true。现在有可操作的单次验证入口，但没有 owner 验收和真实返回，
-  不得将“入口已实现”改写为“T7 已通过”。
-- V184 已把 T7 owner 决策做成可留痕且配置变化自动失效的门禁，但本地没有真实 Guance 返回，
-  当前不存在 `ACCEPTED` 记录；这仍是“验收装置已实现”，不是“owner 已验收”。
+- 除 CSDP SendMsg 的一次非持久化真源预览外，其他真实 Guance 资产授权值尚未由 owner 配置；
+  CSP CloudDial 试点的 measurement/字段/返回结构尚未完成内网验证，其他场景的
+  PS ID/阈值同样未验证。2026-07-31 的 `FULL_SPINE_OBSERVED` 只证明三次查询合同可在真源上运行；
+  没有 owner 验收、批次目标和持久化 T8 样本，`fixtureMode` 仍应为 true，不得改写为“T7 已通过”。
+- V184 已把 T7 owner 决策做成可留痕且配置变化自动失效的门禁；当前仍不存在 `ACCEPTED`
+  记录。一次非持久化真源预览不能替代 owner 验收和 20–30 条录制批次；这仍是“验收装置已实现”，
+  不是“owner 已验收”。
 - 真实模型的输出质量和延迟数据仍未取得；V182 已提供固定输入/固定模型版本的单 Agent 基线运行与
   结构化质量/Token/时延记录，本地未配模型时继续 fail closed，不能把“可运行”写成“已评估”。
 - 企微已完成消息接管、补问、READY 异步只读调查、幂等 Diagnosis、原路纯文本业务摘要与 Web 深链，
