@@ -237,6 +237,18 @@ class ManualPlaybookReplaySuiteCatalogTest {
         assertThat(catalog.evidenceGrade("csdp:IM1010", altered))
                 .as("复用 selector 但改写合同的 candidate 不能继承录制权威")
                 .isEmpty();
+
+        // 「继承不了录制权威」不等于「不许被批准」。这两件事此前共用同一个返回值：
+        // 改一个字，评审面板显示可批准，点批准得到 409——产品里没有「写一条自己的
+        // 知识」这条路。指纹比对是「什么成色」的正确答案，是「能不能批准」的错误答案。
+        assertThat(catalog.promotionGrade("csdp:IM1010", exact))
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(catalog.promotionGrade("csdp:IM1010", altered))
+                .as("有套件、阈值自撰：能批，但成色只到自撰夹具")
+                .isEqualTo(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
+        assertThat(catalog.promotionGrade("acme:scenario:gateway_timeout", altered))
+                .as("连套件都没有：没有任何东西证明过它")
+                .isEqualTo(KnowledgeEvidenceGrade.UNVERIFIED);
     }
 
     @Test

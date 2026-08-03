@@ -55,6 +55,29 @@ public class TroubleshootingPlaybookVersionService {
                         active.getPlaybookId(), active.getPlaybookVersion()));
     }
 
+    /**
+     * Selectors that are live right now under one prefix, for use in a refusal.
+     *
+     * <p>「没有这条路」如果不同时说出「有哪些路」，读者只能去猜，而猜的时候最省事
+     * 的做法是把闸门放宽。这个方法存在的唯一理由，就是让拒绝可以自带下一步。</p>
+     *
+     * <p>{@code %} 与 {@code _} 必须转义：selector 的前半段是租户自己填的 system，
+     * 一个叫 {@code a_b} 的系统会连带匹配到 {@code axb}。范围本来就锁在同一个
+     * workspace 内，泄不出去，但一条错的清单会把作者带向错的下一步。</p>
+     */
+    public List<String> activeSelectorsWithPrefix(
+            long workspaceId,
+            String prefix,
+            int limit) {
+        validateWorkspace(workspaceId);
+        String safePrefix = required(prefix, "prefix")
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return mapper.listActiveSelectorsLike(
+                workspaceId, safePrefix + "%", Math.min(Math.max(limit, 1), 50));
+    }
+
     /** Reads one immutable authority by the identity frozen into a Diagnosis. */
     public Optional<ApprovedPlaybookVersion> findByRef(
             long workspaceId,

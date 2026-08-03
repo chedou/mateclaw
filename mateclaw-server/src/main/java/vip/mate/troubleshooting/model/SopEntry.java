@@ -48,6 +48,22 @@ public record SopEntry(
         return verified && "approved".equals(status);
     }
 
+    /**
+     * 这条 Playbook 会不会自己给出根因结论。
+     *
+     * <p><b>为什么要单独命名。</b> 规则全部 {@code abstained} 的 Playbook，在引擎里
+     * 只可能落到 {@code INSUFFICIENT_EVIDENCE} 或 {@code EXCLUDED}——它选的是
+     * 「这个场景该取哪些证据」，而不是「答案是什么」。它和会下结论的 Playbook
+     * 承担的风险差着一个量级；凡是按风险设闸门的地方，都得先问这一句，否则闸门
+     * 就会指着错误的对象。</p>
+     *
+     * <p>注意方向：一条规则都没有时也算「不下结论」。契约校验另有一条要求
+     * {@code diagnosisRules} 非空，那是那道闸门的事，不该由这里替它回答。</p>
+     */
+    public boolean concludes() {
+        return diagnosisRules.stream().anyMatch(rule -> !rule.abstained());
+    }
+
     private static String required(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");

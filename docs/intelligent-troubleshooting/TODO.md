@@ -30,6 +30,38 @@
 | 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
 | 5 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
+**P2.0 新租户第一条路已打通（2026-08-03）**：按第一性原理核对「离落地推广还差什么」，
+在一个全新系统（`ACME`）上从零走了一遍，结论是**此前没有任何新租户能走通第一步**。
+两道拒绝各自都对，合取起来没有路——而且都没说出下一步。逐条：
+
+1. **手写知识根本无法被批准。** `ManualPlaybookReplaySuiteCatalog.evidenceGrade`
+   只在候选与随包示例**逐字节相同**时才返回成色，促成物读取器把「没有成色」当成
+   「没有可路由的 artifact」而拒绝。于是把示例改一个字：评审面板显示
+   `ELIGIBLE_FOR_APPROVAL`，点批准得到 409。**闸门指错了对象**——指纹比对是
+   「什么成色」的正确答案，是「能不能批准」的错误答案。已拆出 `promotionGrade`：
+   逐字节相同 → 继承套件成色；有套件、阈值自撰 → `AUTHORED_FIXTURE`；无套件 →
+   `UNVERIFIED`。能不能批准交回评审资格那道闸门，它会把原因写给作者看。
+2. **新 selector 永远拿不到回放套件。** 随包目录是 classpath 上固定的 8 条
+   CSDP selector，新系统、老系统的新场景都命中不了，`REPLAY_SUITE_UNAVAILABLE`
+   永远挂着。回放证明的是「答案对不对」；**规则全部 `abstained` 的 Playbook 没有
+   答案**，引擎里最多落到 `INSUFFICIENT_EVIDENCE` / `EXCLUDED`，永远出不了
+   `LOCATED`。这类只取证不下结论的 Playbook 现在可以批准，成色记 `UNVERIFIED`
+   （A13）。会下结论的那条仍照拦不误——放开的只有「不下结论」。这是那把梯子此前
+   缺掉的最下面一级：先只取证 → 跑出真实案例 → 再拿案例去证明结论规则。
+3. **两条门的 409 都没说下一步。** 场景路只报被拒的 selector，现在同时列出该系统
+   已批准的场景（打错字和从没接过，下一步完全不同）；错误码路把确定性未命中的原因
+   算出来传进 Agent，又被 Agent 自己的「miss-path Agent is disabled」整个覆盖掉，
+   现在两件事一起报，并给出两条出路。评审拒绝新增 `KnowledgeReviewBlockerAdvice`，
+   把资格代码翻成一句可执行的下一步——只加话，不改任何判定。
+
+现场验证（`dev,troubleshooting-demo`，全新系统 `ACME`）：注册 → 资格
+`ELIGIBLE_FOR_APPROVAL` → 批准得到 `approved / operational / UNVERIFIED` →
+同一条报障产出 `NEEDS_INVESTIGATION + INSUFFICIENT_EVIDENCE` 的 Diagnosis。
+三条轴仍然分开：**能路由 ≠ 会下结论 ≠ 已被证明**。758 个测试与四条冒烟全绿。
+
+遗留：`GET /sops` 列表里已批准行的 `sopId` 是版本表的 `playbook-*`，而
+`GET /sops/by-id/{sopId}` 只查注册表 → 知识库列表点进详情必 404。已定位未修。
+
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
 **但当时对缺口的判断是错的，一并更正**：`Diagnosis` 的形状从来不缺

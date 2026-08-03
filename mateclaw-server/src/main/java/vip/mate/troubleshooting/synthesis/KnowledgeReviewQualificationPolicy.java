@@ -124,10 +124,21 @@ public final class KnowledgeReviewQualificationPolicy {
         }
         ManualPlaybookReplayAttestation replay = replayQualification == null
                 ? null : replayQualification.attestation();
-        if (replayQualification == null || !replayQualification.suiteAvailable()) {
-            reasons.add(replayQualification == null
-                    ? "POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED"
-                    : "REPLAY_SUITE_UNAVAILABLE");
+        if (replayQualification == null) {
+            reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+        } else if (!replayQualification.suiteAvailable()) {
+            // 回放证明的是「这条 Playbook 给出的答案对不对」。一条规则全部弃权的
+            // Playbook 没有给出答案：它只声明这个场景该取哪些证据，引擎里最多落到
+            // INSUFFICIENT_EVIDENCE 或 EXCLUDED，永远出不了 LOCATED 和根因。没有
+            // 答案，就没有可证的对象——继续拦它，是让闸门指着错误的对象。
+            //
+            // 而拦下去的代价是致命的：随包回放目录是 classpath 上的固定 8 条
+            // selector，新系统、老系统的新场景都永远拿不到套件，于是**任何新租户
+            // 都不可能批准出第一条 Playbook**，两条门全是 409。这一格是那把梯子的
+            // 最下面一级：先只取证不下结论，跑出真实案例，再拿案例去证明结论规则。
+            if (sop.concludes()) {
+                reasons.add("REPLAY_SUITE_UNAVAILABLE");
+            }
         } else if (replay == null) {
             reasons.add("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
         } else if (!sameReplayIdentity(sop, replayQualification, replay)) {
