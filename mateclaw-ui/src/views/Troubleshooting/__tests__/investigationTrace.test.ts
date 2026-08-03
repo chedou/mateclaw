@@ -3,6 +3,7 @@ import type { InvestigationStageView, RelationEdge } from '@/api'
 import {
   defaultInvestigationStage,
   investigationRouteLabel,
+  investigationStageSummaryLabel,
   investigationStagePresentation,
   investigationStageStatusLabel,
   relationUpstreamPath,
@@ -56,6 +57,17 @@ describe('seven-stage investigation trace presentation', () => {
       .toContain('证据不足')
   })
 
+  it('explains Playbook as a reviewed troubleshooting plan in user-facing text', () => {
+    expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '开放调查，未命中已审核 Playbook'))
+      .toBe('开放调查，未命中已审核的排障方案')
+    expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '错误码 Playbook · 显式命中'))
+      .toBe('错误码排障方案 · 显式命中')
+    expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '场景 Playbook · 规则命中'))
+      .toBe('场景排障方案 · 规则命中')
+    expect(investigationStageSummaryLabel('INCIDENT', 'Playbook 服务报错'))
+      .toBe('Playbook 服务报错')
+  })
+
   it('selects a stopped stage before partial or completed stages', () => {
     const stages = [
       stage(1, 'INCIDENT', 'COMPLETED'),
@@ -105,7 +117,7 @@ describe('seven-stage investigation trace presentation', () => {
       investigationMode: 'ERROR_CODE_PLAYBOOK',
       routeAuthority: 'EXPLICIT',
       routeSemanticsProvenance: 'PERSISTED',
-    })).toBe('错误码 Playbook · 显式命中')
+    })).toBe('错误码排障方案 · 显式命中')
   })
 
   it('walks backwards from the conclusion through rules, criteria and evidence', () => {

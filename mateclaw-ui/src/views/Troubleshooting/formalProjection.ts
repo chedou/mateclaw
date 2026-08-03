@@ -29,8 +29,8 @@ const CLOSURE_OUTCOME_LABEL: Record<ClosureOutcome, string> = {
 }
 
 const INVESTIGATION_LABEL: Record<InvestigationMode, string> = {
-  ERROR_CODE_PLAYBOOK: '错误码 Playbook',
-  SCENARIO_PLAYBOOK: '场景 Playbook',
+  ERROR_CODE_PLAYBOOK: '错误码排障方案',
+  SCENARIO_PLAYBOOK: '场景排障方案',
   OPEN_DISCOVERY: '开放调查',
 }
 

@@ -25,7 +25,7 @@ const STAGE_PRESENTATIONS: Record<
   },
   PLAYBOOK_ROUTE: {
     title: '决定怎么排查',
-    description: '根据已知信息选择排查方法，并确认这套方法是否经过审核。',
+    description: '根据已知信息选择排障方案，并确认这套方案是否经过审核。',
   },
   EVIDENCE_CONTRACT: {
     title: '列出要查的数据',
@@ -59,6 +59,17 @@ export function investigationStageStatusLabel(status: InvestigationStageStatus) 
 
 export function investigationStagePresentation(key: InvestigationStageKey) {
   return STAGE_PRESENTATIONS[key]
+}
+
+export function investigationStageSummaryLabel(
+  key: InvestigationStageKey,
+  value: string,
+) {
+  if (key !== 'PLAYBOOK_ROUTE') return value
+  return value
+    .replaceAll('未命中已审核 Playbook', '未命中已审核的排障方案')
+    .replaceAll('错误码 Playbook', '错误码排障方案')
+    .replaceAll('场景 Playbook', '场景排障方案')
 }
 
 export function investigationRouteLabel(

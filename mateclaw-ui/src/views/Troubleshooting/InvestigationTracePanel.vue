@@ -27,7 +27,7 @@
           @click="selectedStageKey = stage.key"
         >
           <i>{{ stage.sequence }}</i>
-          <span><b>{{ investigationStagePresentation(stage.key).title }}</b><small>{{ stage.summary }}</small></span>
+          <span><b>{{ investigationStagePresentation(stage.key).title }}</b><small>{{ investigationStageSummaryLabel(stage.key, stage.summary) }}</small></span>
           <em>{{ investigationStageStatusLabel(stage.status) }}</em>
         </button>
       </nav>
@@ -49,7 +49,7 @@
 
         <section class="stage-run-summary">
           <span>本次实际记录</span>
-          <p>{{ selectedStage.summary }}</p>
+          <p>{{ investigationStageSummaryLabel(selectedStage.key, selectedStage.summary) }}</p>
         </section>
 
         <div class="stage-timing">
@@ -139,6 +139,7 @@ import EvidenceRelationGraph from './EvidenceRelationGraph.vue'
 import { formatDuration } from './formalProjection'
 import {
   defaultInvestigationStage,
+  investigationStageSummaryLabel,
   investigationStagePresentation,
   investigationStageStatusLabel,
   traceDisplay,

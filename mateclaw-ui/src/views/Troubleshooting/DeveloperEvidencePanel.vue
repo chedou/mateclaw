@@ -9,7 +9,10 @@
       <div class="route-card">
         <span>调查路径</span>
         <b>{{ investigationRouteLabel(developer) }}</b>
-        <code>{{ developer.playbookRef || '未命中已审核 Playbook' }}</code>
+        <code>{{ developer.playbookRef || '未命中已审核的排障方案' }}</code>
+        <p class="playbook-help">
+          <strong>排障方案（Playbook）</strong>：一套经过审核、可重复使用的排障方法，规定要查什么、怎么判断以及何时停止。
+        </p>
         <span
           v-if="developer.knowledgeEvidenceGrade"
           class="knowledge-grade"
@@ -446,6 +449,8 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 .route-card span { display:block; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
 .route-card b { display:block; margin:7px 0; font-size:var(--mc-text-sm); }
 .route-card code { color:var(--mc-primary); font-size:var(--mc-text-xs); word-break:break-all; }
+.route-card .playbook-help { margin:9px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.route-card .playbook-help strong { color:var(--mc-text-primary); }
 .route-card .knowledge-grade { display:inline-flex; margin-top:10px; padding:3px 8px; border:1px solid var(--mc-border); border-radius:999px; letter-spacing:0; text-transform:none; }
 .route-card .knowledge-grade.recorded_aggregate { color:var(--mc-success); background:var(--mc-status-success-bg); border-color:var(--mc-success); }
 .route-card .knowledge-grade.authored_fixture { color:var(--mc-warning); background:var(--mc-status-warning-bg); border-color:var(--mc-warning); }
