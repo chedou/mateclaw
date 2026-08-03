@@ -2,13 +2,13 @@
   <details v-if="developer && business && current" class="developer-fold">
     <summary>
       <span class="fold-caret" />
-      <div><b>展开开发证据台</b><small>证据、判据与能力边界，可复核但不展示模型私有思维链</small></div>
+      <div><b>展开开发证据台</b><small>按调查路径 → 证据链 → 判据 → 人工处置复核，不展示模型私有思维链</small></div>
       <span>{{ developer.steps.length }} 个证据 / 判据步骤</span>
     </summary>
     <div class="developer-body" :class="{ 'developer-body--empty-timeline': !developer.steps.length }">
       <div class="route-card">
         <span>调查路径</span>
-        <b>{{ investigationLabel(developer.investigationMode, developer.routeAuthority) }}</b>
+        <b>{{ investigationRouteLabel(developer) }}</b>
         <code>{{ developer.playbookRef || '未命中已审核 Playbook' }}</code>
         <span
           v-if="developer.knowledgeEvidenceGrade"
@@ -16,6 +16,13 @@
           :class="developer.knowledgeEvidenceGrade.toLowerCase()"
         >判据来源 · {{ knowledgeEvidenceGradeLabel(developer.knowledgeEvidenceGrade) }}</span>
       </div>
+
+      <InvestigationTracePanel
+        v-if="developer.investigationTrace"
+        class="investigation-trace-panel"
+        :trace="developer.investigationTrace"
+      />
+      <section v-else class="investigation-trace-panel empty-evidence">七阶段调查轨迹 · 未记录</section>
 
       <div class="convergence-grid">
         <section class="trace-summary">
@@ -235,13 +242,14 @@ import {
   guanceSignalLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
-  investigationLabel,
   knowledgeEvidenceGradeLabel,
 } from './formalProjection'
 import {
   formatWorkbenchTime as shortTime,
   TROUBLESHOOTING_UI_LABELS,
 } from './workbenchView'
+import InvestigationTracePanel from './InvestigationTracePanel.vue'
+import { investigationRouteLabel } from './investigationTrace'
 
 const STEP_TONE_LABEL: Record<EvidenceStepTone, string> = {
   NORMAL: '正常', ANOMALY: '异常 / 命中', EXCLUDED: '已排除', UNEVALUATED: '未求值',
@@ -404,7 +412,7 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 
 /* ── Body grid ── */
 .developer-body { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:20px; padding:22px; border-top:1px solid var(--mc-border); background:var(--mc-bg-elevated); }
-.developer-body>.route-card,.developer-body>.convergence-grid { grid-column:1/-1; }
+.developer-body>.route-card,.developer-body>.investigation-trace-panel,.developer-body>.convergence-grid { grid-column:1/-1; }
 .developer-body>.route-card { margin-top:0; }
 .developer-body>.convergence-grid { margin-top:16px; }
 .developer-body--empty-timeline>.evidence-timeline { grid-column:1/-1; }

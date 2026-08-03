@@ -126,6 +126,7 @@ public record DeveloperEvidenceView(
         List<ScenarioAffordance> scenarioAffordances,  // 场景能力，键控列表
         CallChainView callChain,
         List<EvidenceStep> steps,
+        InvestigationTraceView investigationTrace,    // 七阶段可观测轨迹 + 证据关系
         ContrastView contrast,
         DraftView draft,
         List<String> capabilityLimits,
@@ -183,6 +184,44 @@ public record DraftView(
 - `scenarioAffordances` 的 `scenarioKey` 必须唯一；查询用 `requiresScenario(key)`，
   **不得为具体场景在本记录上新增 boolean 字段**（2026-08-01 已把
   `deploymentTopologyProbeRequired` 按此收敛）。
+
+### 3.1 InvestigationTraceView（七阶段调查轨迹）
+
+`InvestigationTraceView` 是 `DeveloperEvidenceView` 内的**不可变只读投影**，不是第二套
+运行时流水或思维链。它只从同一份 `Diagnosis`、精确冻结的 Playbook 版本和
+`DiagnosisDerivation` 组装：
+
+```java
+public record InvestigationTraceView(
+        String diagnosisId,
+        Duration investigationDuration,
+        List<StageView> stages,                  // 固定 7 个，顺序不可变
+        List<EvidenceContractView> evidenceContracts,
+        List<AdapterAttemptView> adapterAttempts,
+        StopReasonView stopReason,
+        EvidenceRelationView evidenceRelation) { }
+```
+
+七阶段顺序固定为：**排障事件 → 调查路径 / Playbook → 证据合同 → 选择适配器 →
+获取只读证据 → 判据计算 → 结论或弃权**。边界如下：
+
+- 每个阶段都返回状态、安全技术字段、开始/完成时间、耗时和证据引用；
+  历史聚合未保存的事实必须是 `null` / `UNRECORDED`，前端统一显示「未记录」；
+- 当前运行时只持久化最终 canonical evidence，因此 `adapterAttempts` 诚实标记
+  `FINAL_RESULT_ONLY`；候选顺序、重试次数和逐次耗时显示「未记录」，不倒推、不伪造；
+- `stopReason` 只在冻结合同的 required request 没有非 `MISSING` 结果时标记
+  必需证据缺失；自由文本中的「不可用」不会被补猜成类型化停止原因；
+- `evidenceRelation` 只使用已持久的 evidence citation 和确定性 derivation，建立
+  `Evidence → Criterion → Rule → Conclusion` 的有向关系。Web 默认从结论沿入边反查，
+  `derivation.faithful=false` 时不连接结论入边，断链显示完整性原因，不用文案补链；
+- 阶段 7 只记录可确认的 `conclusionAt`；`readyAt → conclusionAt` 是跨阶段调查总耗时，
+  只放在顶层 `investigationDuration`，不冒充「结论或弃权」阶段耗时；
+- 「全展示」指展示投影中已持久的安全技术事实；query 原文和 Incident
+  rawInput 不进入该投影，observed 仅返回 canonical 白名单标量及日志条数，证据合同
+  target 递归脱敏。判据节点和旧证据时间线只展示 authored expression 与
+  deterministic outcome，不输出可能内嵌 `sample_message` 的 substitution；观测值
+  统一沿证据引用查看白名单安全字段。凭据、日志 `message`、原始日志正文和
+  模型私有思维链不进入该视图。
 
 ---
 

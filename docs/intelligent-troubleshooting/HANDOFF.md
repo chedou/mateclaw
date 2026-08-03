@@ -1002,6 +1002,27 @@ T10.5 Route Semantics 读取迁移（2026-08-03）已完成，生产来源统计
   LLM 调用或生产写边界。只有同一批真实场景样本能分别统计两类来源后，才可在 RFC 中把
   `RouteMode` 标为 deprecated-for-read。
 
+T15 七阶段调查轨迹与证据反查（2026-08-03）已完成：
+
+- 服务端在 `DeveloperEvidenceView` 内新增不可变 `InvestigationTraceView`，只从同一
+  Diagnosis、精确冻结 Playbook 和确定性 derivation 投影。固定七阶段不可缺位，
+  未持久化的候选适配器顺序、重试次数和逐次耗时统一投影为「未记录」；
+- 适配器尝试当前明确标记 `FINAL_RESULT_ONLY`，不把最终 canonical evidence 伪装成完整重试历史。
+  停止原因区分已结论、缺证据、来源不可用、弃权和未记录；
+- Web 开发证据台新增「执行轨迹 / 证据关系」双视图。关系视图默认从结论沿
+  `Evidence → Criterion → Rule → Conclusion` 入边反查，点击任一节点可切换反查目标；
+- 旧 Diagnosis 与断链事实已在浏览器实测明示「未记录」；冻结
+  `sop-csdp-903001-demo@v1` 的记录可从结论反查到命中规则、判据与证据请求。
+  1600 px 和 640 px 宽度已验证，窄屏仅关系画布内部滚动，页面无水平溢出；
+- query 原文和 Incident rawInput 不进入该投影；observed 仅展示 canonical 白名单标量及
+  日志条数，证据合同 target 在投影边界递归脱敏。关系节点与旧证据时间线都不输出
+  可能嵌入 `sample_message` 的 criterion substitution，只展示表达式、确定性结果和白名单证据。
+  没有放开凭据、日志 message、原始日志、模型私有思维链或生产写权限；
+  `derivation.faithful=false` 时不生成结论入边。
+- 本轮服务端排障域 + Skill Manifest 全量 717 项通过，前端 25 个测试文件 /
+  190 项通过；`vue-tsc --noEmit`、变更文件 ESLint、Snowflake 精度守卫和 Vite 生产构建通过。
+  Standards / Spec 双轴 fixes-only 复审无剩余 P0/P1/P2。
+
 后端定向测试命令：
 
 ```bash

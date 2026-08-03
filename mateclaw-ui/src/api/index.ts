@@ -2244,6 +2244,107 @@ export interface ProjectionEvidenceStep {
   tone: EvidenceStepTone
 }
 
+export type InvestigationStageKey =
+  | 'INCIDENT'
+  | 'PLAYBOOK_ROUTE'
+  | 'EVIDENCE_CONTRACT'
+  | 'ADAPTER_SELECTION'
+  | 'EVIDENCE_COLLECTION'
+  | 'CRITERION_EVALUATION'
+  | 'CONCLUSION'
+export type InvestigationStageStatus = 'COMPLETED' | 'PARTIAL' | 'STOPPED' | 'UNRECORDED'
+export type AdapterAttemptHistoryStatus = 'FINAL_RESULT_ONLY'
+export type InvestigationStopReasonCode =
+  | 'CONCLUSION_RECORDED'
+  | 'EVIDENCE_MISSING'
+  | 'SOURCE_UNAVAILABLE'
+  | 'ABSTAINED'
+  | 'UNRECORDED'
+export type RelationNodeKind = 'EVIDENCE' | 'CRITERION' | 'RULE' | 'CONCLUSION'
+export type RelationType = 'SUPPORTS' | 'REFUTES' | 'BLOCKS' | 'CITES'
+
+export interface InvestigationTraceField {
+  label: string
+  value: string
+}
+
+export interface InvestigationStageView {
+  sequence: number
+  key: InvestigationStageKey
+  title: string
+  status: InvestigationStageStatus
+  summary: string
+  startedAt: string | null
+  completedAt: string | null
+  duration: string | null
+  fields: InvestigationTraceField[]
+  evidenceRefs: string[]
+}
+
+export interface EvidenceContractView {
+  requestId: string
+  signalKind: string
+  purpose: string
+  target: Record<string, unknown>
+  window: string
+  required: boolean
+}
+
+export interface AdapterAttemptView {
+  evidenceRef: string
+  requestId: string
+  signalKind: string
+  adapterSource: string
+  status: EvidenceStatus
+  summary: string
+  query: string
+  observed: Record<string, unknown>
+  collectedAt: string | null
+  duration: string | null
+  historyStatus: AdapterAttemptHistoryStatus
+}
+
+export interface InvestigationStopReasonView {
+  code: InvestigationStopReasonCode
+  message: string
+  stoppedAt: string | null
+  evidenceRefs: string[]
+}
+
+export interface RelationNode {
+  nodeId: string
+  kind: RelationNodeKind
+  label: string
+  detail: string
+  status: string
+  ref: string
+}
+
+export interface RelationEdge {
+  edgeId: string
+  fromNodeId: string
+  toNodeId: string
+  relation: RelationType
+  label: string
+}
+
+export interface EvidenceRelationView {
+  available: boolean
+  nodes: RelationNode[]
+  edges: RelationEdge[]
+  emptyReason: string | null
+}
+
+export interface InvestigationTraceView {
+  diagnosisId: string
+  investigationDuration: string | null
+  stages: InvestigationStageView[]
+  evidenceContracts: EvidenceContractView[]
+  adapterAttempts: AdapterAttemptView[]
+  stopReason: InvestigationStopReasonView
+  evidenceRelation: EvidenceRelationView
+}
+
 export interface ContrastView {
   available: boolean
   failedSample: string | null
@@ -2278,6 +2379,7 @@ export interface DeveloperEvidenceView {
   scenarioAffordances: ScenarioAffordance[]
   callChain: CallChainView
   steps: ProjectionEvidenceStep[]
+  investigationTrace: InvestigationTraceView
   contrast: ContrastView
   draft: DraftView
   capabilityLimits: string[]
