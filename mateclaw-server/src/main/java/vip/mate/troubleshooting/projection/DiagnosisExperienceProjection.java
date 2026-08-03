@@ -136,6 +136,7 @@ public record DiagnosisExperienceProjection(
             List<ScenarioAffordance> scenarioAffordances,
             CallChainView callChain,
             List<EvidenceStep> steps,
+            InvestigationTraceView investigationTrace,
             ContrastView contrast,
             DraftView draft,
             List<String> capabilityLimits,
@@ -155,9 +156,15 @@ public record DiagnosisExperienceProjection(
                 knowledgeEvidenceGrade = KnowledgeEvidenceGrade.UNVERIFIED;
             }
             if (investigationMode == null || routeAuthority == null || callChain == null
+                    || investigationTrace == null
                     || contrast == null || draft == null) {
                 throw new IllegalArgumentException(
-                        "investigationMode, routeAuthority, callChain, contrast and draft are required");
+                        "investigationMode, routeAuthority, callChain, investigationTrace, "
+                                + "contrast and draft are required");
+            }
+            if (!diagnosisId.equals(investigationTrace.diagnosisId())) {
+                throw new IllegalArgumentException(
+                        "investigationTrace must describe the same diagnosis");
             }
             steps = List.copyOf(steps == null ? List.of() : steps);
             scenarioAffordances = List.copyOf(
@@ -168,6 +175,38 @@ public record DiagnosisExperienceProjection(
                     .count() != scenarioAffordances.size()) {
                 throw new IllegalArgumentException("scenarioAffordances must have unique scenarioKey");
             }
+        }
+
+        /** Compatibility shape for projections created before the seven-stage trace. */
+        public DeveloperEvidenceView(
+                String diagnosisId,
+                InvestigationMode investigationMode,
+                RouteAuthority routeAuthority,
+                RouteSemanticsProvenance routeSemanticsProvenance,
+                String playbookRef,
+                KnowledgeEvidenceGrade knowledgeEvidenceGrade,
+                List<ScenarioAffordance> scenarioAffordances,
+                CallChainView callChain,
+                List<EvidenceStep> steps,
+                ContrastView contrast,
+                DraftView draft,
+                List<String> capabilityLimits,
+                boolean fixtureMode) {
+            this(
+                    diagnosisId,
+                    investigationMode,
+                    routeAuthority,
+                    routeSemanticsProvenance,
+                    playbookRef,
+                    knowledgeEvidenceGrade,
+                    scenarioAffordances,
+                    callChain,
+                    steps,
+                    InvestigationTraceView.unrecorded(diagnosisId),
+                    contrast,
+                    draft,
+                    capabilityLimits,
+                    fixtureMode);
         }
 
         /** Compatibility shape for projections created before T0.9. */
@@ -194,6 +233,7 @@ public record DiagnosisExperienceProjection(
                     scenarioAffordances,
                     callChain,
                     steps,
+                    InvestigationTraceView.unrecorded(diagnosisId),
                     contrast,
                     draft,
                     capabilityLimits,

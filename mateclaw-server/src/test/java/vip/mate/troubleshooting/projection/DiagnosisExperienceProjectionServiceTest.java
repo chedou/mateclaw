@@ -13,6 +13,7 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisDerivation;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceResult;
+import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
@@ -24,20 +25,24 @@ import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,18 +76,30 @@ class DiagnosisExperienceProjectionServiceTest {
                 derivationService,
                 new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()),
                 topologyScenarioPolicy,
-                playbookVersions);
+                playbookVersions,
+                new InvestigationTraceProjector());
     }
 
     @Test
     void projectsOneDiagnosisForBusinessAndDeveloperWithoutInventingImpact() {
+        SopEntry frozenPlaybook = mock(SopEntry.class);
+        when(frozenPlaybook.routingKey()).thenReturn("csdp:903001");
+        when(frozenPlaybook.contractVersion()).thenReturn(SopEntry.CURRENT_CONTRACT_VERSION);
+        when(frozenPlaybook.evidenceRequests()).thenReturn(List.of(new EvidenceRequest(
+                "EV-2", "metric", "检查 Mongo 连接池利用率",
+                Map.of("service", "mongodb"), "5m", true)));
+        ApprovedPlaybookVersion frozenVersion = mock(ApprovedPlaybookVersion.class);
+        when(frozenVersion.selectorKey()).thenReturn("csdp:903001");
+        when(frozenVersion.playbook()).thenReturn(frozenPlaybook);
+        when(frozenVersion.knowledgeEvidenceGrade())
+                .thenReturn(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(deterministicDiagnosis(), 2, false));
         when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(derivation());
-        when(playbookVersions.knowledgeEvidenceGradeByRef(
+        when(playbookVersions.findByRef(
                 WORKSPACE_ID, new PlaybookVersionRef("playbook-903001", 3)))
-                .thenReturn(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
+                .thenReturn(Optional.of(frozenVersion));
 
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
@@ -135,9 +152,44 @@ class DiagnosisExperienceProjectionServiceTest {
                         DiagnosisExperienceProjection.StepTone.ANOMALY,
                         DiagnosisExperienceProjection.StepTone.EXCLUDED,
                         DiagnosisExperienceProjection.StepTone.UNEVALUATED);
+        assertThat(developer.investigationTrace().stages()).hasSize(7);
+        assertThat(developer.investigationTrace().adapterAttempts()).hasSize(3);
+        assertThat(developer.investigationTrace().evidenceContracts())
+                .extracting(InvestigationTraceView.EvidenceContractView::requestId)
+                .containsExactly("EV-2");
         assertThat(developer.contrast().available()).isFalse();
         assertThat(developer.capabilityLimits()).anyMatch(item -> item.contains("生产变更"));
         assertThat(developer.fixtureMode()).isTrue();
+    }
+
+    @Test
+    void withholdsObservedLogTextFromEveryDeveloperCriterionProjection() {
+        DiagnosisDerivation rawLogDerivation = new DiagnosisDerivation(
+                DIAGNOSIS_ID, "csdp:903001", true, null,
+                List.of(new DiagnosisDerivation.CriterionEvaluation(
+                        "send_failed", "EV-1", "日志命中失败特征", "contains_and_in",
+                        "sample_message ∋ send failed",
+                        "sample_message=\"raw customer body token=do-not-leak\"",
+                        CriterionOutcome.SATISFIED, EvidenceStatus.ANOMALY)),
+                List.of());
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(deterministicDiagnosis(), 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(rawLogDerivation);
+
+        DiagnosisExperienceProjection.DeveloperEvidenceView developer =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).developerEvidence();
+
+        assertThat(developer.steps())
+                .filteredOn(step -> step.kind()
+                        == DiagnosisExperienceProjection.EvidenceStepKind.CRITERION)
+                .singleElement()
+                .satisfies(step -> assertThat(step.detail())
+                        .contains("判据结果=SATISFIED", "沿证据引用查看安全字段")
+                        .doesNotContain("raw customer body", "do-not-leak"));
+        assertThat(developer.investigationTrace().evidenceRelation().nodes())
+                .noneMatch(node -> node.detail().contains("raw customer body")
+                        || node.detail().contains("do-not-leak"));
     }
 
     @Test

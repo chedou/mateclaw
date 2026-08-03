@@ -16,6 +16,7 @@ import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteAuthority;
+import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DeveloperEvidenceView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DraftView;
@@ -29,10 +30,12 @@ import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 
 /** Builds the formal business and developer views from one authoritative aggregate. */
 @Service
@@ -46,18 +49,21 @@ public class DiagnosisExperienceProjectionService {
     private final CanonicalEvidenceViewProjector evidenceProjector;
     private final DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
     private final TroubleshootingPlaybookVersionService playbookVersions;
+    private final InvestigationTraceProjector investigationTraceProjector;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
             DiagnosisDerivationService derivationService,
             CanonicalEvidenceViewProjector evidenceProjector,
             DeploymentTopologyScenarioPolicy topologyScenarioPolicy,
-            TroubleshootingPlaybookVersionService playbookVersions) {
+            TroubleshootingPlaybookVersionService playbookVersions,
+            InvestigationTraceProjector investigationTraceProjector) {
         this.persistence = persistence;
         this.derivationService = derivationService;
         this.evidenceProjector = evidenceProjector;
         this.topologyScenarioPolicy = topologyScenarioPolicy;
         this.playbookVersions = playbookVersions;
+        this.investigationTraceProjector = investigationTraceProjector;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -65,6 +71,8 @@ public class DiagnosisExperienceProjectionService {
         Diagnosis diagnosis = stored.diagnosis();
         List<String> capabilityLimits = new ArrayList<>();
         DiagnosisDerivation derivation = derivation(diagnosis, workspaceId, capabilityLimits);
+        ApprovedPlaybookVersion frozenVersion = frozenPlaybookVersion(workspaceId, diagnosis);
+        SopEntry frozenPlaybook = frozenVersion == null ? null : frozenVersion.playbook();
 
         ConclusionType conclusionType = diagnosis.conclusionType();
         RouteAuthority authority = diagnosis.routeAuthority();
@@ -99,10 +107,11 @@ public class DiagnosisExperienceProjectionService {
                 authority,
                 diagnosis.routeSemanticsProvenance(),
                 playbookRef(diagnosis),
-                knowledgeEvidenceGrade(workspaceId, diagnosis),
+                knowledgeEvidenceGrade(diagnosis, frozenVersion),
                 scenarioAffordances(workspaceId, diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
+                investigationTraceProjector.project(diagnosis, frozenPlaybook, derivation),
                 evidenceFacts.contrast(),
                 draft(diagnosis),
                 deduplicate(capabilityLimits),
@@ -111,17 +120,37 @@ public class DiagnosisExperienceProjectionService {
         return new DiagnosisExperienceProjection(business, developer);
     }
 
-    private KnowledgeEvidenceGrade knowledgeEvidenceGrade(
+    private ApprovedPlaybookVersion frozenPlaybookVersion(
             long workspaceId,
             Diagnosis diagnosis) {
+        if (diagnosis.sourcePlaybookVersionRef() == null) {
+            return null;
+        }
+        Optional<ApprovedPlaybookVersion> found = playbookVersions.findByRef(
+                workspaceId, diagnosis.sourcePlaybookVersionRef());
+        if (found == null || found.isEmpty()) {
+            return null;
+        }
+        ApprovedPlaybookVersion version = found.orElseThrow();
+        if (!version.selectorKey().equals(diagnosis.sopKey())
+                || !version.selectorKey().equals(version.playbook().routingKey())) {
+            return null;
+        }
+        return version;
+    }
+
+    private KnowledgeEvidenceGrade knowledgeEvidenceGrade(
+            Diagnosis diagnosis,
+            ApprovedPlaybookVersion frozenVersion) {
         if (diagnosis.sopKey() == null) {
             return null;
         }
         if (diagnosis.sourcePlaybookVersionRef() == null) {
             return KnowledgeEvidenceGrade.UNVERIFIED;
         }
-        return playbookVersions.knowledgeEvidenceGradeByRef(
-                workspaceId, diagnosis.sourcePlaybookVersionRef());
+        return frozenVersion == null
+                ? KnowledgeEvidenceGrade.UNVERIFIED
+                : frozenVersion.knowledgeEvidenceGrade();
     }
 
     private String playbookRef(Diagnosis diagnosis) {
@@ -252,13 +281,25 @@ public class DiagnosisExperienceProjectionService {
                         EvidenceStepKind.CRITERION,
                         null,
                         "判据 · " + fallback(criterion.description(), criterion.signal()),
-                        fallback(criterion.expression(), "未提供表达式")
-                                + "；" + fallback(criterion.substitution(), "未取得观测值"),
+                        safeCriterionDetail(criterion),
                         criterion.signal(),
                         criterionTone(criterion.outcome())));
             }
         }
         return List.copyOf(steps);
+    }
+
+    /**
+     * A rendered substitution can embed arbitrary observed strings such as a
+     * canonical log sample. DeveloperEvidenceView keeps the authored rule and
+     * deterministic verdict; operators inspect values through the separately
+     * bounded canonical evidence projection.
+     */
+    private String safeCriterionDetail(
+            DiagnosisDerivation.CriterionEvaluation criterion) {
+        return fallback(criterion.expression(), "未提供表达式")
+                + "；判据结果=" + criterion.outcome().name()
+                + "；实际观测值请沿证据引用查看安全字段";
     }
 
     private StepTone evidenceTone(EvidenceStatus status) {

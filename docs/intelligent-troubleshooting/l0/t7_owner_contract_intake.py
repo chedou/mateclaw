@@ -99,6 +99,25 @@ OWNER_CONTRACT_FIELDS = {
 class OwnerInputError(ValueError):
     """Owner input is stale, unsafe, incomplete, or structurally ambiguous."""
 
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        issues: Optional[Sequence[str]] = None,
+    ) -> None:
+        normalized = tuple(str(issue) for issue in (issues or ()) if str(issue))
+        if not normalized:
+            normalized = (message or "owner input is invalid",)
+        self.issues = normalized
+        if len(normalized) == 1:
+            rendered = normalized[0]
+        else:
+            rendered = "{0} validation issues:\n{1}".format(
+                len(normalized),
+                "\n".join("- " + issue for issue in normalized),
+            )
+        super().__init__(rendered)
+
 
 def _preparation_fingerprint(report: Mapping[str, Any]) -> str:
     return hashlib.sha256(render_preparation_json(report).encode("utf-8")).hexdigest()
@@ -310,58 +329,108 @@ def _owner_contract(
 ) -> Dict[str, str]:
     if not isinstance(value, dict) or set(value) != OWNER_CONTRACT_FIELDS:
         raise OwnerInputError(selector + " ownerContract fields are invalid")
-    level = _string(value["ownerLevel"], selector + ".ownerLevel", 2)
-    if level not in OWNER_LEVELS:
-        raise OwnerInputError(selector + ".ownerLevel must be P0, P1, or P2")
     binding_refs = value["bindingRefs"]
     if not isinstance(binding_refs, dict) or set(binding_refs) != CORE_SIGNALS:
         raise OwnerInputError(selector + ".bindingRefs must contain the three core signals")
-    return {
-        "ownerTeam": _string(value["ownerTeam"], selector + ".ownerTeam", 128),
-        "ownerLevel": level,
-        "ownerScenario": _string(
-            value["ownerScenario"], selector + ".ownerScenario", 160
-        ),
-        "verifiedRuntimeService": _identifier(
+
+    normalized: Dict[str, str] = {}
+    issues = []
+
+    def capture(key: str, validator: Any) -> None:
+        try:
+            normalized[key] = validator()
+        except OwnerInputError as failure:
+            issues.extend(failure.issues)
+
+    capture(
+        "ownerTeam",
+        lambda: _string(value["ownerTeam"], selector + ".ownerTeam", 128),
+    )
+    capture(
+        "ownerLevel",
+        lambda: _string(value["ownerLevel"], selector + ".ownerLevel", 2),
+    )
+    if "ownerLevel" in normalized and normalized["ownerLevel"] not in OWNER_LEVELS:
+        issues.append(selector + ".ownerLevel must be P0, P1, or P2")
+    capture(
+        "ownerScenario",
+        lambda: _string(value["ownerScenario"], selector + ".ownerScenario", 160),
+    )
+    capture(
+        "verifiedRuntimeService",
+        lambda: _identifier(
             value["verifiedRuntimeService"], selector + ".verifiedRuntimeService"
         ),
-        "candidateReference": _reference(
+    )
+    capture(
+        "candidateReference",
+        lambda: _reference(
             value["candidateReference"], selector + ".candidateReference"
         ),
-        "serverQueryContractReference": _reference(
+    )
+    capture(
+        "serverQueryContractReference",
+        lambda: _reference(
             value["serverQueryContractReference"],
             selector + ".serverQueryContractReference",
         ),
-        "safeSearchTerm": _identifier(
-            value["safeSearchTerm"], selector + ".safeSearchTerm"
-        ),
-        "window": _window(value["window"], selector + ".window"),
-        "anomalyCriterionReference": _reference(
+    )
+    capture(
+        "safeSearchTerm",
+        lambda: _identifier(value["safeSearchTerm"], selector + ".safeSearchTerm"),
+    )
+    capture("window", lambda: _window(value["window"], selector + ".window"))
+    capture(
+        "anomalyCriterionReference",
+        lambda: _reference(
             value["anomalyCriterionReference"],
             selector + ".anomalyCriterionReference",
         ),
-        "diagnosisRuleReference": _reference(
+    )
+    capture(
+        "diagnosisRuleReference",
+        lambda: _reference(
             value["diagnosisRuleReference"], selector + ".diagnosisRuleReference"
         ),
-        "log_search": _identifier(
+    )
+    capture(
+        "log_search",
+        lambda: _identifier(
             binding_refs["log_search"], selector + ".bindingRefs.log_search"
         ),
-        "log_trace_bundle": _identifier(
+    )
+    capture(
+        "log_trace_bundle",
+        lambda: _identifier(
             binding_refs["log_trace_bundle"],
             selector + ".bindingRefs.log_trace_bundle",
         ),
-        "contrast_sample": _identifier(
+    )
+    capture(
+        "contrast_sample",
+        lambda: _identifier(
             binding_refs["contrast_sample"],
             selector + ".bindingRefs.contrast_sample",
         ),
-        "historicalOccurredAt": _occurred_at(
-            value["historicalOccurredAt"], selector + ".historicalOccurredAt", as_of
+    )
+    capture(
+        "historicalOccurredAt",
+        lambda: _occurred_at(
+            value["historicalOccurredAt"],
+            selector + ".historicalOccurredAt",
+            as_of,
         ),
-        "historicalSourceReference": _reference(
+    )
+    capture(
+        "historicalSourceReference",
+        lambda: _reference(
             value["historicalSourceReference"],
             selector + ".historicalSourceReference",
         ),
-    }
+    )
+    if issues:
+        raise OwnerInputError(issues=issues)
+    return normalized
 
 
 def validate_owner_input(
@@ -410,6 +479,7 @@ def validate_owner_input(
     effective_as_of = effective_as_of.astimezone(timezone.utc)
     selected = []
     normalized_contracts = []
+    validation_issues = []
     for expected in expected_contracts:
         selector = expected["selectorKey"]
         row = actual_by_selector[selector]
@@ -417,9 +487,16 @@ def validate_owner_input(
             if row.get("ownerContract") is not None:
                 raise OwnerInputError(selector + " unselected row must not carry ownerContract")
             continue
-        normalized = _owner_contract(row.get("ownerContract"), selector, effective_as_of)
         selected.append(selector)
-        normalized_contracts.append(normalized)
+        try:
+            normalized_contracts.append(
+                _owner_contract(row.get("ownerContract"), selector, effective_as_of)
+            )
+        except OwnerInputError as failure:
+            validation_issues.extend(failure.issues)
+
+    if validation_issues:
+        raise OwnerInputError(issues=validation_issues)
 
     maximum = min(MAX_SELECTED, len(expected_contracts))
     if not MIN_SELECTED <= len(selected) <= maximum:

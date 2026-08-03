@@ -67,6 +67,9 @@
 
 ## 校验
 
+校验器会在一次运行中收集所有已选合同的字段错误，列出安全的 `selector.field`
+路径和原因，不回显 owner 填写值。因此建议每轮按整份问题清单修改后再重试，而不是逐项探测。
+
 ```bash
 python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
   --validate <受控本地目录>/t7-owner-contract-intake.local.json

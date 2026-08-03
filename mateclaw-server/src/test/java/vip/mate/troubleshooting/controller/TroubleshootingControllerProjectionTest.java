@@ -69,6 +69,14 @@ class TroubleshootingControllerProjectionTest {
                         .value("PERSISTED"))
                 .andExpect(jsonPath("$.data.developerEvidence.routeAuthority").value("EXPLICIT"))
                 .andExpect(jsonPath("$.data.developerEvidence.scenarioAffordances").isEmpty())
+                .andExpect(jsonPath("$.data.developerEvidence.investigationTrace.diagnosisId")
+                        .value("diag-1"))
+                .andExpect(jsonPath("$.data.developerEvidence.investigationTrace.stages.length()")
+                        .value(7))
+                .andExpect(jsonPath("$.data.developerEvidence.investigationTrace.stages[0].key")
+                        .value("INCIDENT"))
+                .andExpect(jsonPath("$.data.developerEvidence.investigationTrace.stages[0].summary")
+                        .value("未记录"))
                 .andExpect(jsonPath("$.data.developerEvidence.contrast.available").value(false));
 
         verify(projectionService).project(7L, "diag-1");

@@ -220,6 +220,59 @@ class T7OwnerContractIntakeTest(unittest.TestCase):
         with self.assertRaises(OwnerInputError):
             validate_owner_input(worksheet, template, as_of=AS_OF)
 
+    def test_recommended_worksheet_reports_every_placeholder_in_one_pass(self) -> None:
+        template = build_current_template(REPO)
+        worksheet = build_current_recommended_worksheet(REPO)
+        selected = [
+            row for row in worksheet["contracts"] if row["selectedForWindow"]
+        ]
+
+        with self.assertRaises(OwnerInputError) as raised:
+            validate_owner_input(worksheet, template, as_of=AS_OF)
+
+        self.assertEqual(300, len(raised.exception.issues))
+        self.assertIn(
+            selected[0]["selectorKey"]
+            + ".ownerTeam contains an unresolved placeholder",
+            raised.exception.issues,
+        )
+        self.assertIn(
+            selected[-1]["selectorKey"]
+            + ".historicalSourceReference contains an unresolved placeholder",
+            raised.exception.issues,
+        )
+        self.assertTrue(
+            all("<replace:" not in issue for issue in raised.exception.issues)
+        )
+
+    def test_invalid_fields_across_contracts_are_reported_together(self) -> None:
+        document = self._completed()
+        first_selector = document["contracts"][0]["selectorKey"]
+        second_selector = document["contracts"][1]["selectorKey"]
+        secret_marker = "do-not-echo-this-owner-value"
+        document["contracts"][0]["ownerContract"]["ownerTeam"] = (
+            "password=" + secret_marker
+        )
+        document["contracts"][1]["ownerContract"]["window"] = "-25h"
+
+        with self.assertRaises(OwnerInputError) as raised:
+            validate_owner_input(
+                document,
+                build_current_template(REPO),
+                as_of=AS_OF,
+            )
+
+        self.assertEqual(2, len(raised.exception.issues))
+        self.assertIn(
+            first_selector + ".ownerTeam is blank, unsafe, or too long",
+            raised.exception.issues,
+        )
+        self.assertIn(
+            second_selector + ".window exceeds 24 hours",
+            raised.exception.issues,
+        )
+        self.assertNotIn(secret_marker, str(raised.exception))
+
     def test_free_text_placeholders_must_be_replaced(self) -> None:
         mutations = []
 
