@@ -664,6 +664,420 @@
           }
         ]
       }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-gateway-timeout/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:gateway_timeout",
+      "requiredEvidenceRequestId": "GW-LOG-SEARCH",
+      "sourceReference": "recorded-evidence-2026-08-02-gateway-timeout",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-gateway-timeout-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:gateway_timeout",
+        "service": "csdp-api-gateway",
+        "title": "网关超时路径核查",
+        "cause": "失败样本命中网关超时特征，需与同窗口成功样本对照后再判定",
+        "category": "network",
+        "ownerTeam": "网关平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "GW-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "按现象搜索失败日志并取出 PS ID",
+            "target": {
+              "search_term": "gateway_timeout"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "GW-CONTRAST",
+            "signalKind": "contrast_sample",
+            "purpose": "与同窗口成功样本对照，区分特征与背景噪声",
+            "target": {
+              "scenario_key": "gateway_timeout"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "failure_present",
+            "sourceRequestId": "GW-LOG-SEARCH",
+            "description": "窗口内存在失败日志",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "feature_dominates",
+            "sourceRequestId": "GW-CONTRAST",
+            "description": "该特征主要出现在失败样本中，而非成功样本",
+            "rule": {
+              "kind": "ratio_of_sum_gt",
+              "numeratorField": "failure_match_count",
+              "addendField": "success_match_count",
+              "threshold": 0.5
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-GATEWAY-TIMEOUT",
+            "requiredSignals": [
+              "failure_present",
+              "feature_dominates"
+            ],
+            "rootCause": "网关超时特征成立",
+            "summary": "对照证据把异常收敛到网关超时特征上；这定位到环节，尚不足以证明具体根因。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "GW-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系网关平台组沿该特征继续核查",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-gateway-timeout-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-GATEWAY-TIMEOUT",
+        "evidence": [
+          {
+            "requestId": "GW-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 6
+            }
+          },
+          {
+            "requestId": "GW-CONTRAST",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "gateway_timeout",
+              "failure_sample_count": 100,
+              "failure_match_count": 91,
+              "success_sample_count": 100,
+              "success_match_count": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-auth-token-rejected/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:auth_token_rejected",
+      "requiredEvidenceRequestId": "AUTH-LOG-SEARCH",
+      "sourceReference": "recorded-evidence-2026-08-02-auth-token-rejected",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-auth-token-rejected-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:auth_token_rejected",
+        "service": "csdp-auth",
+        "title": "鉴权令牌被拒路径核查",
+        "cause": "失败样本命中令牌校验拒绝特征，需与同窗口成功样本对照后再判定",
+        "category": "network",
+        "ownerTeam": "鉴权平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "AUTH-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "按现象搜索失败日志并取出 PS ID",
+            "target": {
+              "search_term": "auth_token_rejected"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "AUTH-CONTRAST",
+            "signalKind": "contrast_sample",
+            "purpose": "与同窗口成功样本对照，区分特征与背景噪声",
+            "target": {
+              "scenario_key": "auth_token_rejected"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "failure_present",
+            "sourceRequestId": "AUTH-LOG-SEARCH",
+            "description": "窗口内存在失败日志",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "feature_dominates",
+            "sourceRequestId": "AUTH-CONTRAST",
+            "description": "该特征主要出现在失败样本中，而非成功样本",
+            "rule": {
+              "kind": "ratio_of_sum_gt",
+              "numeratorField": "failure_match_count",
+              "addendField": "success_match_count",
+              "threshold": 0.5
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-AUTH-TOKEN-REJECTED",
+            "requiredSignals": [
+              "failure_present",
+              "feature_dominates"
+            ],
+            "rootCause": "令牌校验拒绝特征成立",
+            "summary": "对照证据把异常收敛到令牌校验环节；这定位到环节，尚不足以证明具体根因。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "AUTH-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系鉴权平台组沿该特征继续核查",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-auth-token-rejected-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-AUTH-TOKEN-REJECTED",
+        "evidence": [
+          {
+            "requestId": "AUTH-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 6
+            }
+          },
+          {
+            "requestId": "AUTH-CONTRAST",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "auth_token_rejected",
+              "failure_sample_count": 100,
+              "failure_match_count": 91,
+              "success_sample_count": 100,
+              "success_match_count": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-mq-backlog/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:mq_backlog",
+      "requiredEvidenceRequestId": "MQB-COUNT",
+      "sourceReference": "recorded-evidence-2026-08-02-mq-backlog",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-mq-backlog-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:mq_backlog",
+        "service": "csdp-mq-consumer",
+        "title": "消息积压路径核查",
+        "cause": "消费端积压量显著，需沿消费者健康度继续核查",
+        "category": "infra",
+        "ownerTeam": "消息平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "MQB-COUNT",
+            "signalKind": "log_count",
+            "purpose": "取窗口内积压告警日志计数",
+            "target": {
+              "search_term": "mq_backlog"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "backlog_present",
+            "sourceRequestId": "MQB-COUNT",
+            "description": "窗口内积压告警计数达到阈值",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "count",
+              "threshold": 1000
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-MQ-BACKLOG",
+            "requiredSignals": [
+              "backlog_present"
+            ],
+            "rootCause": "消费端积压",
+            "summary": "证据把异常收敛到消费端积压；这定位到环节，尚不足以证明消费者为何变慢。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "MQB-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系消息平台组核查消费者健康度",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-mq-backlog-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-MQ-BACKLOG",
+        "evidence": [
+          {
+            "requestId": "MQB-COUNT",
+            "status": "ANOMALY",
+            "observed": {
+              "count": 8400,
+              "trace_id": "synthetic-trace-mq-backlog"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-db-pool-saturated/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:db_pool_saturated",
+      "requiredEvidenceRequestId": "DBP-METRIC",
+      "sourceReference": "recorded-evidence-2026-08-02-db-pool-saturated",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-db-pool-saturated-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:db_pool_saturated",
+        "service": "csdp-order-db",
+        "title": "连接池打满路径核查",
+        "cause": "连接池占用逼近上限且慢查询显著偏高，需沿长事务来源继续核查",
+        "category": "database",
+        "ownerTeam": "数据库平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "DBP-METRIC",
+            "signalKind": "metric",
+            "purpose": "取连接池水位与慢查询计数",
+            "target": {
+              "metric_scope": "db_pool"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "pool_near_limit",
+            "sourceRequestId": "DBP-METRIC",
+            "description": "连接池占用逼近上限",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "connections_current",
+              "threshold": 150
+            }
+          },
+          {
+            "signal": "slow_query_spike",
+            "sourceRequestId": "DBP-METRIC",
+            "description": "慢查询数显著偏高",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "slow_query_count",
+              "threshold": 20
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-DB-POOL-SATURATED",
+            "requiredSignals": [
+              "pool_near_limit",
+              "slow_query_spike"
+            ],
+            "rootCause": "连接池被慢查询占满",
+            "summary": "证据把异常收敛到连接池与慢查询；这定位到环节，尚不足以证明具体长事务来源。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "DBP-A1",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系数据库平台组核查长事务来源",
+            "description": "由该团队在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-db-pool-saturated-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-DB-POOL-SATURATED",
+        "evidence": [
+          {
+            "requestId": "DBP-METRIC",
+            "status": "ANOMALY",
+            "observed": {
+              "reachable": true,
+              "connections_current": 198,
+              "connections_available": 200,
+              "slow_query_count": 37,
+              "baseline_slow": 2
+            }
+          }
+        ]
+      }
     }
   ]
 }

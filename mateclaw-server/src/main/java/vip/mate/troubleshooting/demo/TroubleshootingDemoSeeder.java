@@ -58,7 +58,9 @@ public class TroubleshootingDemoSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TroubleshootingDemoSeeder.class);
 
     private static final List<String> SELECTORS =
-            List.of("csdp:903001", "csdp:IM1010", "csdp:scenario:message_send_failed");
+            List.of("csdp:903001", "csdp:IM1010", "csdp:scenario:message_send_failed",
+                    "csdp:scenario:gateway_timeout", "csdp:scenario:auth_token_rejected",
+                    "csdp:scenario:mq_backlog", "csdp:scenario:db_pool_saturated");
 
     /**
      * Deliberately not a person. Whoever reads the review ledger later must be

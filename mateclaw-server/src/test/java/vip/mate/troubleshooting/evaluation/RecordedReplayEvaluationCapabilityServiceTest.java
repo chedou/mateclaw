@@ -24,9 +24,9 @@ class RecordedReplayEvaluationCapabilityServiceTest {
     @Test
     void returnsTheExactApprovedPlanInsteadOfDerivingFieldsFromTheSearchFixture() {
         Fixture fixture = fixture();
-        when(fixture.router.canRoute("CSDP", "log_search", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_search", "recorded-replay"))
                 .thenReturn(true);
-        when(fixture.router.canRoute("CSDP", "log_trace_bundle", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_trace_bundle", "recorded-replay"))
                 .thenReturn(true);
         when(fixture.adapter.hasCoreFixture(
                 "CSDP", "session-svc", "catalog_lookup"))
@@ -52,9 +52,9 @@ class RecordedReplayEvaluationCapabilityServiceTest {
         assertThat(fixture.service.inspect(7L, "diag-1").reasonCode())
                 .isEqualTo("ADAPTER_NOT_READY");
 
-        when(fixture.router.canRoute("CSDP", "log_search", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_search", "recorded-replay"))
                 .thenReturn(true);
-        when(fixture.router.canRoute("CSDP", "log_trace_bundle", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_trace_bundle", "recorded-replay"))
                 .thenReturn(true);
         assertThat(fixture.service.inspect(7L, "diag-1").reasonCode())
                 .isEqualTo("FIXTURE_NOT_FOUND");
@@ -63,9 +63,9 @@ class RecordedReplayEvaluationCapabilityServiceTest {
     @Test
     void rejectsAnApprovedScenarioThatCannotEnterTheEvaluationSampleContract() {
         Fixture fixture = fixture();
-        when(fixture.router.canRoute("CSDP", "log_search", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_search", "recorded-replay"))
                 .thenReturn(true);
-        when(fixture.router.canRoute("CSDP", "log_trace_bundle", "recorded-replay"))
+        when(fixture.router.canRoute(7L, "CSDP", "log_trace_bundle", "recorded-replay"))
                 .thenReturn(true);
         when(fixture.adapter.hasCoreFixture("CSDP", "session-svc", "catalog_lookup"))
                 .thenReturn(true);

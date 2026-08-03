@@ -1,6 +1,6 @@
 # 待办清单 · IT 智能排障系统
 
-> 更新时间：2026-08-03
+> 更新时间：2026-08-03（P2.2 后）
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -18,17 +18,123 @@
 
 ---
 
-## 待办速览（2026-08-02）
+## 待办速览（2026-08-03）
 
 按"挡不挡住别人"排序，不按工作量。完整条目见对应小节。
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 批次准备 + 内网核实**：20–30 个真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选已生成可填写/可校验包；待 owner 填满至少 20 条，server-owned 可执行目标仍为 `0` | §5 T7 |
-| 2 | T0.8 剩余 145 条错误码录制种子导入 | T0.9 来源分级已完成；先用 T7 窗口一次灌入 20–30 条真实种子，再决定后续批次 | §3.5 |
-| 3 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
-| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1。系统置信度与质量统计口径已补齐，缺 target 目录、owner 验收与真源样本 | §5 T8 |
-| 5 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+| 1 | **T7 内网核实 + owner 验收**：真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选包已生成待填；server-owned 可执行目标仍为 `0`。**要内网窗口和人，不在代码这一侧** | §5 T7 |
+| 2 | 前端两颗回归钉子 | `cited === null`（本路径不维护引用清单）与 `false`（这条证据不支持结论）语义不同，前端没钉住；也没有守卫确认「调查过程」展示组件真的被挂载。**后端测试一条都拦不住这类缺陷** | 前端 |
+| 3 | 梯子的上一级：真实案例 → 结论规则可被证明 | 只取证的 Playbook 已能批准（P2.0），但从「攒够真实案例」到「结论规则获得回放证明」还没有路，replay suite 仍是 classpath 固定 8 条。正确材料是**已结案且结论被世界确认过**的 Diagnosis（答案不由作者自己写，不循环）。依赖 1 | §7 |
+| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1 | §5 T8 |
+| 5 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
+| 6 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
+| 7 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+
+### 本轮（2026-08-03）的位置
+
+起点是一个问题：**离真正落地推广还差什么**。做法不是读代码猜，而是起一台服务、用一个
+全新系统（`ACME`）从零走一遍。结论是此前**没有任何新租户能走通第一步**，四道坎依次
+拆掉（P2.0 / P2.1 / P2.2 + 一处接口对，详见下方各段）：
+
+```
+注册 Playbook → 批准 → 开案 → 跑取证计划 → 拿到证据
+   ✅P2.0      ✅P2.0  ✅已有   ✅已有        ⛔ 卡在 T7
+```
+
+最后一格**不是代码问题**：路由已经能配了（P2.1），但需要一个装着该租户数据的真实源，
+那条路通向 T7 内网窗口。
+
+一句必须留下的提醒：这一轮解掉的全是**「不改发布物就走不通」**类型的障碍，
+**不等于**新租户马上就有可信结论。三条轴始终分开——
+**能路由 ≠ 会下结论 ≠ 已被证明**。
+
+**P2.0 新租户第一条路已打通（2026-08-03）**：按第一性原理核对「离落地推广还差什么」，
+在一个全新系统（`ACME`）上从零走了一遍，结论是**此前没有任何新租户能走通第一步**。
+两道拒绝各自都对，合取起来没有路——而且都没说出下一步。逐条：
+
+1. **手写知识根本无法被批准。** `ManualPlaybookReplaySuiteCatalog.evidenceGrade`
+   只在候选与随包示例**逐字节相同**时才返回成色，促成物读取器把「没有成色」当成
+   「没有可路由的 artifact」而拒绝。于是把示例改一个字：评审面板显示
+   `ELIGIBLE_FOR_APPROVAL`，点批准得到 409。**闸门指错了对象**——指纹比对是
+   「什么成色」的正确答案，是「能不能批准」的错误答案。已拆出 `promotionGrade`：
+   逐字节相同 → 继承套件成色；有套件、阈值自撰 → `AUTHORED_FIXTURE`；无套件 →
+   `UNVERIFIED`。能不能批准交回评审资格那道闸门，它会把原因写给作者看。
+2. **新 selector 永远拿不到回放套件。** 随包目录是 classpath 上固定的 8 条
+   CSDP selector，新系统、老系统的新场景都命中不了，`REPLAY_SUITE_UNAVAILABLE`
+   永远挂着。回放证明的是「答案对不对」；**规则全部 `abstained` 的 Playbook 没有
+   答案**，引擎里最多落到 `INSUFFICIENT_EVIDENCE` / `EXCLUDED`，永远出不了
+   `LOCATED`。这类只取证不下结论的 Playbook 现在可以批准，成色记 `UNVERIFIED`
+   （A13）。会下结论的那条仍照拦不误——放开的只有「不下结论」。这是那把梯子此前
+   缺掉的最下面一级：先只取证 → 跑出真实案例 → 再拿案例去证明结论规则。
+3. **两条门的 409 都没说下一步。** 场景路只报被拒的 selector，现在同时列出该系统
+   已批准的场景（打错字和从没接过，下一步完全不同）；错误码路把确定性未命中的原因
+   算出来传进 Agent，又被 Agent 自己的「miss-path Agent is disabled」整个覆盖掉，
+   现在两件事一起报，并给出两条出路。评审拒绝新增 `KnowledgeReviewBlockerAdvice`，
+   把资格代码翻成一句可执行的下一步——只加话，不改任何判定。
+
+现场验证（`dev,troubleshooting-demo`，全新系统 `ACME`）：注册 → 资格
+`ELIGIBLE_FOR_APPROVAL` → 批准得到 `approved / operational / UNVERIFIED` →
+同一条报障产出 `NEEDS_INVESTIGATION + INSUFFICIENT_EVIDENCE` 的 Diagnosis。
+三条轴仍然分开：**能路由 ≠ 会下结论 ≠ 已被证明**。758 个测试与四条冒烟全绿。
+
+**同批修掉的第二件（2026-08-03）**：`GET /sops` 会用版本行覆盖同一 selector 的注册行，
+于是 `sopId` 一个字段装着两个身份空间的值——候选行装人工来源记录号，已生效行装版本表的
+`playbook-*`；而 `by-id` 只查注册表。**列表把 id 发出去，详情接口不认**，而且不认的
+恰好是最重要的那些行（operational 的）。`by-id` 现在两种身份都认，两次查询都锁在同一
+workspace 内。测试写成「遍历列表拿到的每一个 id 都要能解开」而不是钉死某一种——只钉
+一种，另一种坏掉时测试照样绿；把修复注掉验证过它确实变红。
+
+更正一句此前的说法：这条链路当前的 UI 并没有踩到——知识库列表页走的是
+`getSop(system, errorCode)`，评审页拿到的一直是注册表 id。坏的是**接口对**本身，
+任何把这两个端点配起来用的客户端都会中招。
+
+**P2.1 取证路由不再是编译期事实（2026-08-03）**：P2.0 补上的那级梯子站上去之后是
+悬空的——新租户能注册、能批准、能开案、能跑取证计划，然后每条证据都回
+`MISSING/router:unconfigured`。原因是 `mateclaw.troubleshooting.evidence.routes`
+（system → signalKind → 有序源名）只存在于 `application.yml`：**接一个系统要改发布物
+里的文件并重新发版**。这和随包回放目录是同一种病，P2.0 只治了知识那一半。
+
+- V193 加 `mate_troubleshooting_evidence_route`，`PUT/GET/DELETE
+  /api/v1/troubleshooting/evidence/routes`（声明要 admin，改动必须带 actor 与原因）。
+- **workspace 声明优先，YAML 回落**。没人声明过时行为与本特性引入前完全一致。
+- 顺带收窄了一处跨租户问题：YAML 那张表**只按 system 名字索引**，任何 workspace 只要
+  把系统命名成 `CSDP` 就继承了 CSDP 的路由、打到 CSDP 的观测端点上。加 workspace 维度
+  是在收窄，不是放宽。
+- 租户只能在**已启用的源之间做选择**：端点与凭据仍然只在运维配置的适配器里。平台名
+  与 signal 词表都逐个校验，拒绝时把「有哪些」说出来。
+- 「声明了但列表为空」与「没声明过」是两个答案：前者是租户明说这一格不取证，不回落；
+  后者才回落。读成同一件事，就会出现「说了不要还是去问了生产观测系统」。
+- `router:unconfigured` 现在报出 system、signal 和下一步，并区分「你还没配路由」与
+  「这台部署根本没启用任何源」。
+
+现场验证：声明后取证从 `router:unconfigured` 变成 `router:unavailable`（适配器真的被
+调用了，只是 recorded-replay 没有 ACME 的录制）；撤回声明回落；声明为空不回落。
+773 个测试、四条冒烟全绿。把 workspace 条件改死成常量，跨租户那条用例确实变红。
+
+**注意别过度解读**：这解掉的是「不改发布物就配不了路由」，**不是**「新租户马上就有真
+证据」。真数据仍要一个装着他们数据的源，那条路通向 T7。
+
+**P2.2 `EVIDENCE_IS_FIXTURE` 已删除（2026-08-03）**：`EvidenceProvenance` 早已能从证据
+自身推导成色，但 Agent 路、synthesis 路、场景开案三处仍在读那个编译期常量——**同一个
+系统里并存两套口径**，而且翻那一个字符会让每条诊断同时改口。三处都改成推导：
+
+- 场景开案：此刻一条证据都没取，`fixtureMode(List.of())` 必然为 true；写成推导是因为
+  它会在证据到达时被 `Diagnosis.evidenceRecorded` 按真实来源重算，常量做不到。
+- Agent 兜底路：用 `(collected, supplied)` 双参重载。会话快照里既有 Agent 自己取的，
+  也有**调用方自带的**——后者的 `source` 是它自己写上去的，写成 "guance" 就能让整条
+  诊断自称真源。
+- synthesis 预览：按 search/trace/contrast 三条证据推导。这条 lane 目前硬限定在
+  recorded-replay 上，答案不变；但有人放宽 `FIXTURE_ONLY_SOURCES` 时它会跟着走。
+
+**今天行为没有任何变化**（三处原本都是 true，推导出来也都是 true）。变的是能力：它们
+现在跟着事实走。
+
+杠杆没有消失，只是搬了家：往 `EvidenceProvenance.REAL_SOURCE_PREFIXES` 里加一个名字，
+就等于宣布那个源取回来的东西是真的。原先钉在常量上的三条前置清单（T7 owner 验收、
+真源真的能取到、**接真源不会让手写阈值变可信**）整份搬到了钉住这份白名单的测试里——
+守卫必须跟着杠杆走。把 `elasticsearch` 从名单里去掉验证过它确实变红。
 
 **P1.9 全链路已打通（2026-08-02）**：现象 lane 从一句话走到了可确认的结论，
 七道闸门全绿并已进 CI。这一轮补掉的是 P1.8 记录的那个缺口——
@@ -74,6 +180,326 @@
 **T7 的目标应当改写**：不是"跑通一次验证"，而是**一次窗口灌 20–30 条录制种子**。
 D19 已经让这件事成为可能——一条种子只要一份聚合正例，排除/弃权例由服务端生成，
 不需要人写三套用例。这是 v4.5 真正解锁的东西，别浪费在单次验证上。
+
+---
+
+## 排障过程透明化（2026-08-02）
+
+**「详情页看不出用了什么能力」查下来，问题不在记录，在装配和挂载。**
+
+- 判定链（证据 → 判据 → 规则，区分 SATISFIED / EXCLUDED / **UNEVALUATED**，
+  按冻结版本重建、对不上 fail closed）后端与 `DerivationChain.vue` **都早就写好了**，
+  但**这个组件没有被任何地方挂载**——建好了，页面从来没渲染过。
+- **排障链路一次都没经过 skills / tools 注册表**（grep 全空）。
+  所以「用了什么 skills」有确定答案：零。这不是记录缺失，是从没被说出来的事实。
+- Playbook 的来源（手写夹具 vs 真实归纳）在 `ApprovedPlaybookVersion.sourceOrigin`，
+  详情页不读——而 T0.9 问的正是这件事。现在在**用它下结论的地方**直接标出来。
+
+已落地：
+
+- [x] `InvestigationProvenance` + `GET /diagnoses/{id}/provenance`：知识（含来源与
+      冻结版本）、每条取证实际问了哪个适配器、是否有模型参与，以及一份 **abstentions**。
+      **契约层面拒绝一份没有否定句的 provenance**——这个产品的安全论证整个由否定句
+      构成（零模型、无生产写执行器、只读、fixture 而非真源），只列参与者的页面
+      会让读者自己补完剩下的，而他补出来的一定比真相更宽容。
+- [x] `cited` 改为可空。错误码路径根本不填引用清单（那是模型路径的要求），
+      恒 false 会被读成「这条证据没有支撑结论」。**「本路径不维护引用清单」
+      和「没有支撑结论」是两回事**，与 EXCLUDED / UNEVALUATED 同一条纪律。
+      测试先抓到的。
+- [x] `InvestigationProvenancePanel.vue` + **把 `DerivationChain.vue` 真正挂上**
+      开发证据台侧栏。
+- [x] 更正 `DiagnosisDerivation` 一处过时类注释（说按当前 SOP 重算，实际早已改成
+      按冻结版本、无冻结版本则 fail closed）。
+
+待办：
+
+- [ ] 前端把 `cited === null` 与 `false` 的区分做**回归测试**钉住。
+      现在只有后端有；前端渲染混淆了也不会红。
+- [ ] `DerivationChain.vue` 此前无人挂载却也无人发现——说明**组件挂没挂没有守卫**。
+      考虑加一条静态检查：Troubleshooting 下的展示组件必须被引用。
+
+---
+
+## 新增两条可跑通的场景（2026-08-02）
+
+场景从 2 条变成 4 条（含拓扑）。挑选标准不是「再来一个好看的案例」，
+而是**补上从没在 HTTP 边界上走出来过的结局**。
+
+| 场景 | service | 结局 | 它证明了什么 |
+|---|---|---|---|
+| `message_send_failed` | `csdp-session-service` | LOCATED | 原有 |
+| **`gateway_timeout`** | `csdp-api-gateway` | **EXCLUDED** | 排除也是结论，且此前只在单测里断言过 |
+| **`auth_token_rejected`** | `csdp-auth` | LOCATED | lane 没有被某一个场景特化 |
+| `deployment_topology_probe` | `network-path` | 资产工具路径 | 原有 |
+
+**`gateway_timeout` 是这两条里真正值钱的那个。** 它的对照样本显示该特征在成功
+样本里一样多（48 vs 52，比值 0.48 < 0.5），判据被反证，候选根因整体 `EXCLUDED`。
+没有对照的话，48 次失败命中看起来就像根因——**这正是 D15 对照/反例存在的理由**，
+而在此之前它从未被演示过。
+
+- [x] 两条 seed + 录制回放记录 + 接入 demo seeder。
+- [x] 冒烟加第 8 格「多场景且结局不同」，**强制其中至少一个是 EXCLUDED**：
+      只会产出 LOCATED 的 demo 会夸大能力，而多数真实排查是一段段划掉可能性。
+
+**路由键约束**（踩到才知道）：场景的 `errorCode` 为 null，回放记录键是
+`(system, errorCode, service, requestId, signalKind)`，所以**新场景必须换 service**，
+否则和已有场景撞键。
+
+### 被现有不变量拦下来的一件事，记在这里
+
+原本想让 `auth_token_rejected` **故意缺一条必需证据**，好在 HTTP 边界上演示
+A6「不完整比编造更好」。被 `everyEvidenceRequestIsAnswerableByTheFixture` 拦住了。
+
+**那条不变量是对的**——它抓的是「有人忘了放录制记录」。我的意图也是对的。
+它分不出「忘了」和「故意」。把它放宽成「允许缺」就毁掉了它。
+
+- [ ] 正确解法是让**故意留缺成为显式声明**：seed 里声明哪条请求故意不可答，
+      不变量改为「所有未被回答的请求都必须事先声明过」。这比现在**更严**：
+      忘放记录照样被抓，未声明的缺口也被抓，而声明过的缺口可以存在并且有据可查。
+      要动 schema + 目录读取 + 不变量三处；半途而废（只放宽不声明）比不做更糟，
+      所以这次没做，auth 场景先补全成可答。
+
+---
+
+## 投入使用前最要紧的一格：证据是真的 ≠ 知识是真的（2026-08-02）
+
+**`fixtureMode` 是一个全局编译期常量 `TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE`，
+含义只是「证据是夹具」。** T7 落地那天有人把它翻成 `false`，**每一条**诊断都会
+变成「真源」——包括那些由手写 Playbook 路由、判据阈值从没用真实历史故障标定过的。
+
+两个独立的轴此前被压成了一个布尔值，读起来像同一件事：
+
+| 轴 | 现在由什么表达 | 翻转 `EVIDENCE_IS_FIXTURE` 会不会改变它 |
+|---|---|---|
+| 证据成色（真源 / 回放） | `fixtureMode` | **会** |
+| 知识成色（归纳 / 手写） | 冻结版本的 `sourceOrigin` | **不会，也不应该** |
+
+这在投入使用时会直接伤人：拿着没人校准过的阈值，对真实故障给出「已定位」，
+而页面上什么都不说。
+
+- [x] provenance 增加「真实数据校准」一条否定句，**不看 `fixtureMode`**，
+      只看冻结 Playbook 的 `sourceOrigin` 是否手写。读不到冻结版本时挂
+      「知识来源判定」——判不出来就说判不出来，沉默会被读成「已校准」。
+- [x] 测试用 `fixtureMode=false` 构造，也就是**翻转之后的世界**，钉住这条警告仍在。
+- [x] `TroubleshootingSafetyPolicyTest`：此前**没有任何东西钉住那个常量**，
+      翻了没人会知道。加了守卫，并把三条前置清单写进它的 Javadoc——
+      目的不是让它永远为 true，是让翻转成为一次必须动手改测试、
+      因而必须先读清单的动作。
+
+### 顺带查实的一件事
+
+`manual-playbook-replay-suites.json` 里的键名 **`recordedEvidenceSeeds` 在暗示
+这些数字是录制来的**，而其中 `gateway_timeout`、`auth_token_rejected`、
+`message_send_failed` 的数字是手写的（seeder 把它们标成 `MANUAL`，数据是老实的，
+容器名不老实）。
+
+- [ ] 考虑把键名改成中性的（例如 `playbookSeeds`），或在契约里强制每条 seed
+      显式声明 `numbersOrigin`。**改键名要动契约与迁移，本轮没做**；
+      现在靠 `sourceOrigin` 与上面那条否定句兜住，读者不会被容器名误导。
+
+---
+
+## 第三个证据适配器：Prometheus（2026-08-02）
+
+**为什么是它。** Guance 的真源验收卡在内网窗口上，而 Prometheus 是企业 IT 里最
+普遍的指标源。它给的是一条**不依赖那扇窗口**的真实证据通路：手里有 Prometheus
+的环境可以先拿到真数据，不必等 T7。兼容 VictoriaMetrics / Thanos / Mimir。
+
+- [x] 传输层加只读 `get`（`EvidenceHttpTransport`）。native-curl 的硬化选择
+      （config-file、`escapeConfig`、`-q` 优先、有界读取）一律没动，只把 method
+      参数化、`data-binary` 变成条件项。GET 传 `null` body 而不是空串——
+      只读调用不该被告知"要发一个负载"。
+- [x] `PrometheusEvidenceAdapter`：只服务 `metric`，只发
+      `GET /api/v1/query`，PromQL 来自 binding 配置。
+- [x] 7 条测试，**大多数走失败分支**：非 200 / 非 success / 非 JSON / NaN /
+      +Inf / 空 series / 多条 series / 网络异常 —— 全部 `MISSING`。
+      测试替身在 `postJson` 上直接抛异常，"只读"是被验证的，不是被声称的。
+
+### 契约和测试各改了我一次
+
+1. **`usable()` 原本接受部分字段映射** → health 会报 READY，而每次取证都
+   MISSING。canonical 的 `metric` 是一个整包不是一份菜单；现在要求映射覆盖
+   全部字段，否则 DEGRADED。**「看起来就绪、实则永远取不到」比诚实的
+   DEGRADED 糟得多。**
+2. **`reachable` 在契约里是 BOOLEAN，而 Prometheus 对一切都返回数字**（包括
+   `up`）。契约挡住了我。现在按声明类型转换，且 **0/1 之外的值判 MISSING**——
+   把 0.5 当成 true 就是替观测数据下了一个它没给的判断。类型知识加在
+   `CanonicalEvidenceSchema.isBooleanField`，**不在适配器里另抄一份**（A9）。
+
+### 还没做的
+
+- [ ] 把 Prometheus binding 接进 `EvidenceProperties` 与路由配置，
+      并在 `/evidence/sources` 与工作台里可见。**现在适配器可用但还没有配置入口**，
+      要用得先在代码里构造 Binding。
+- [ ] 日志类适配器（Elasticsearch / OpenSearch，服务 `log_search` / `log_count`）。
+      形状和这条一样，但 `log_search` 的 canonical 要求 `ps_id`——
+      ES 里有没有等价物是**环境相关的**，得先确认再动手，不能先写后凑。
+
+---
+
+## 适配器从 2 个到 4 个，且都接进了配置（2026-08-02）
+
+| 适配器 | 服务信号 | 默认 | 备注 |
+|---|---|---|---|
+| `guance` | 全部 | 关 | 卡在 T7 内网窗口 |
+| `recorded-replay` | 全部 | 关 | 夹具 |
+| **`prometheus`** | `metric` | 关 | 兼容 VictoriaMetrics / Thanos / Mimir |
+| **`elasticsearch`** | `log_search` | 关 | 兼容 OpenSearch |
+
+**为什么加这两个**：它们是**不依赖内网窗口**的真源通路。手里有 Prometheus 或 ES
+的环境可以先拿到真数据，不必等 Guance 验收。
+
+- [x] 两个适配器 + 传输层只读 `get` + 接进 `EvidenceProperties` 与自动装配，
+      默认全关。`EvidenceAutoConfigurationTest` 现在点名四个平台——
+      **每加一个适配器都必须在那里登记，且默认必须是关的**。
+- [x] 各 7 条测试，**大多数走失败分支**。测试替身在用不到的那个 HTTP 动词上
+      直接抛异常，「只读」是被验证的不是被声称的。
+
+**ES 适配器里最要紧的一条**：`correlationField`（一次请求在跨服务日志里的串联键）
+**没有默认值**。各环境叫法不同（`trace.id` / `traceId` / `x_request_id`…），
+**猜错的后果不是取不到，是把两次不相干的请求当成同一次**，而下游的全链路日志包
+会照单全收，最后给出一条看起来完整、实则拼接自两次故障的证据链。没配就整个不可用。
+
+### 两条新场景已加上——原因查清了，是我写错
+
+`db_pool_saturated`（`metric`）与 `mq_backlog`（`log_count`）现已加载并跑通。
+**拒绝原因不是种子契约不支持这两个信号种类，是我把 `target` 写成了空 `{}`。**
+先前那条「种子只支持以 log_search 为锚」的假设是错的，已作废。
+
+查清它的办法本身值得留下：**隔离只报一个代码、不报原因，就是在逼作者去猜，
+而猜的过程里最省事的做法是把校验放宽——那正是这道闸门要挡住的事。**
+现在 `ManualPlaybookReplaySuiteCatalog` 会把异常消息（脱敏 + 截断 300 字）
+一并打出来。
+
+| 场景 | 信号种类 | 结局 |
+|---|---|---|
+| `message_send_failed` | log_search + trace + contrast | LOCATED |
+| `gateway_timeout` | log_search + contrast | **EXCLUDED** |
+| `auth_token_rejected` | log_search + contrast | LOCATED |
+| **`mq_backlog`** | **`log_count`** | **EXCLUDED** |
+| **`db_pool_saturated`** | **`metric`** | LOCATED |
+| `deployment_topology_probe` | synthetic_probe（资产工具） | 另一条路 |
+
+冒烟第 8 格已扩到五个场景并强制含 EXCLUDED，实跑全绿。
+
+### 旧记录（已作废，保留以免有人再按它去改契约）
+
+想加 `db_pool_saturated`（`metric`）与 `mq_backlog`（`log_count`），
+覆盖场景侧从没用过的两个信号种类。两条都被
+`ManualPlaybookReplaySuiteCatalog` 隔离为 `INVALID_RECORDED_EVIDENCE_SEED`。
+
+排除过的：contractVersion / suiteVersion / `routingKey` 与 selectorKey 一致 /
+`requiredEvidenceRequestId` 属于候选且 required / positiveCase 是 MATCHED /
+Boolean 在安全聚合白名单里 / 换成 `numeric_gte` 判据后依旧被拒。
+
+**未确认的假设**（是假设，不是结论）：recorded-evidence 种子目前只支持以
+`log_search` 为锚的场景——D19 的「录制聚合正例 + 生成负例」模型是围绕日志检索
+建的，`metric` 与 `log_count` 可能走不通生成器。
+
+- [ ] 查清真实拒绝原因并决定：是扩展种子契约支持非 `log_search` 锚点，
+      还是明确写死「场景种子必须以 log_search 为锚」。**在查清之前不要再塞种子**。
+      本轮已把那两条连同回放记录一并回退——隔离是 fail-closed（种子根本不加载），
+      但把隔离的种子留在树里更糟：JSON 看着有、demo 里没有。
+
+### 还没做
+
+- [x] **验收的地基已就位：`bindingFingerprint()`**（2026-08-02）。
+      指纹的价值全在「什么会让它变、什么不会」上，定错了会有两种坏法——
+      改了配置还认旧验收（形同虚设），或轮换个凭据就作废（逼人把重新验收
+      当成走过场，**那比不验收更糟**）。所以：
+      - **放**：端点、索引/PromQL、串联字段、正文字段。验收的是「查这个地方、
+        用这些查询」，任何一项变了就不再指向同一件事，必须自动失效。
+      - **不放 token 本身**，**但放「是否带鉴权」这个布尔**——轮换凭据查的还是
+        同一个地方，而匿名↔Bearer 换掉的是授权路径。
+      - 指纹不含凭据，因而可以安全地进日志、进 `/evidence/sources` 的 detail。
+      各 3 条测试钉住这三种变与不变。
+- [x] `health().detail()` 现在带上指纹，并明写「未验收（本适配器尚无 owner
+      验收接缝）」——运维看得见将来那次验收要钉在哪一串上。
+- [x] **持久化的 owner 验收已建成**（V192 `mate_troubleshooting_source_acceptance`，
+      h2 / mysql / kingbase 三方言）。**泛化而不是抄一份**：一张表按
+      `(workspace, platform, binding_fingerprint)` 服务所有适配器。
+      `GET/POST /evidence/sources/{platform}/acceptance`，POST 限 owner。
+      四条设计决定：
+      - **请求体里只有清单**。指纹由适配器算、验证事实由服务端**自己重跑一次
+        只读取证**得到、actor 取自鉴权上下文。一旦允许提交方自带其中任何一项，
+        验收就退化成一句可以随手写下的声明，而这张表存在的全部意义就是它不是。
+      - **服务端取不到证据就拒绝验收**（409）。「我确认过了」+「其实取不到」
+        不该产出一条有效记录——那正是最容易被走过场的组合。
+      - **五项清单缺一不可**，`@AssertTrue` 在进服务之前就挡掉
+        「先签了再说，回头补」。
+      - **`STALE` 独立成一档**，且 `acceptedForCurrentBinding()` 只认 `ACCEPTED`。
+        它不是「过期」，是「配置在验收之后被改过，那次验收不再指向同一件事」。
+        契约层面还堵死了「状态说 ACCEPTED、指纹却对不上」这种组合。
+      **失效不需要有人记得去做**：指纹一变旧行自然对不上，没有「记得作废」
+      这一步，也就没有忘记作废这种可能。
+      实跑四种状态：未配置→BLOCKED、未注册平台→BLOCKED（点名）、
+      半份清单→400、全确认但源未配置→409。
+
+- [ ] 把 Guance 的 V184 迁进这张泛化表。**本轮刻意没做**：V184 已经承载真实验收
+      记录，迁移它是一件独立的、需要数据搬运方案的事，混在「加一个适配器」里做
+      会把两件事的风险绑在一起。在迁移之前两套并存，Guance 仍走它自己的接口。
+- [ ] 旧记录（V184 表结构其实是通用的
+      （`scope_key` + `binding_fingerprint` + `aggregate_json`），只是名字绑了
+      Guance。做法应当是**泛化它而不是给每个适配器抄一份**（A9）：
+      加 `platform` 维度、迁移三种方言、owner-only 提交、服务端提交前重跑一次
+      只读链路、指纹不匹配即 `STALE`。
+      **在它建成之前，两个新适配器的 `verified()` 恒为 false 且无法变 true**——
+      这是它们真正可投入使用前的最后一环，不要在页面上另找地方把它标成已验证。
+- [ ] 新适配器没有进 `/evidence/readiness`（那个接口目前是 Guance 专用的）。
+
+---
+
+## ⚠️ HEAD 上有一条必现红的检查（2026-08-02 查实，非本轮引入）
+
+`scripts/ci/test-troubleshooting-t7-preflight.sh` 最后一格必现失败：
+
+```
+FAIL: did not observe the immutable plan snapshot before preflight completed
+```
+
+- **连跑三次全失败**，不是偶发竞态。
+- 该断言（脚本第 456–476 行）在后台跑预检的同时轮询
+  `${TMPDIR}/mateclaw-t7-preflight.*/plan.json`，要求它存在、字节数与原计划一致、
+  权限为 600 —— 这是一道 TOCTOU 守卫：防止计划快照在预检读取之后被换掉。
+- 当前 `scripts/troubleshooting-t7-preflight.sh` 没有在那个路径留下该快照。
+- **这两个脚本本轮未经我改动**，是并行会话推入的版本；很可能是那边尚未收尾。
+
+- [ ] 由改动方确认：是快照路径/命名对不上，还是快照功能尚未实现完。
+      **没有弄清设计意图之前不要盲改**——猜着修一个竞态守卫，比让它明显地红着更糟，
+      而最省事的"修法"是把断言删掉，那恰好毁掉这道守卫存在的理由。
+      在它变绿之前，T7 预检的 CI 合同不能算通过。
+
+---
+
+## fixtureMode 不再是全局开关（2026-08-03）
+
+**它此前是编译期常量 `EVIDENCE_IS_FIXTURE`：谁翻一下，每一条诊断都同时改口**
+——包括同一时刻仍走录制回放的那些；反过来只要它还是 true，一条真从 Prometheus
+取到数据的诊断也只能自称夹具。两种错来自同一件事：**把一条诊断的事实，交给了
+一个全局状态去回答。**
+
+`EvidenceProvenance.fixtureMode(collected, supplied)` 从证据自己身上读。三条
+在实现过程中被测试逼出来的判断：
+
+1. **只列真源，其余一律按夹具。** 我第一版反过来写（列夹具），理由是"漏登记
+   真源比较安全"——**推理是反的**：把夹具标成真源是夸大，把真源标成夹具只是
+   保守。两种疏忽代价不对称，默认必须落在保守那一侧。
+2. **调用方自带的证据不能自证成色。** `source` 是它自己写上去的，写成 `guance`
+   就能让整条诊断自称真源。这与验收那条纪律同源——提交方声称的事实一律不接受。
+   是 `Vertical903001Test` 抓到的。
+3. **混一条夹具进来，整批算夹具。** 读者不会逐条分辨，而"部分真实"最容易被读成
+   "真实"。MISSING 不提供成色信息（既不证明夹具也不证明真源）。
+
+场景 lane 的证据是后到的，所以 `Diagnosis.evidenceRecorded` 里一并重算——沿用
+建立时的旧值会让一条真实取到的证据永远被标成夹具。
+
+**这条改动的实际意义**：接一个真 Prometheus/ES 并跑通 owner 验收之后，
+那条诊断会自己变成 `fixtureMode=false`，**不需要任何人去翻常量**。
+demo 档实跑仍是 `fixtureMode=true`（来源 `recorded-replay:*`），符合预期。
+
+- [ ] `TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE` 现在只剩 Agent 与
+      synthesis 两处在用，且那两处的证据来源同样可以推导。**清理它是下一步**；
+      在清理之前它的守卫测试保留。
 
 ---
 

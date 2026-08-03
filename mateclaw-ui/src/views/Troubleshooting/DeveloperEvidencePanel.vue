@@ -196,6 +196,17 @@
           <span class="section-label">当前范围</span><h3>能力边界</h3>
           <ul class="capability-list"><li v-for="item in developer.capabilityLimits" :key="item">{{ item }}</li></ul>
         </section>
+        <section class="side-card side-card--provenance">
+          <span class="section-label">调查参与者</span><h3>谁参与了，谁没参与</h3>
+          <InvestigationProvenancePanel :diagnosis-id="current.diagnosis.diagnosisId" />
+        </section>
+        <section
+          v-if="supportsDeterministicDerivation(current.diagnosis.investigationMode)"
+          class="side-card side-card--derivation"
+        >
+          <span class="section-label">判定链</span><h3>结论怎么算出来的</h3>
+          <DerivationChain :diagnosis="current.diagnosis" />
+        </section>
         <section v-if="current.diagnosis.recommendedActions.length" class="side-card side-card--actions">
           <span class="section-label">人工处置动作</span><h3>平台不执行</h3>
           <article
@@ -218,6 +229,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { vLoading } from 'element-plus/es/components/loading/index'
+import DerivationChain from './DerivationChain.vue'
+import InvestigationProvenancePanel from './InvestigationProvenancePanel.vue'
+import { supportsDeterministicDerivation } from './derivationPresentation'
 import type {
   BusinessSummary,
   DeveloperEvidenceView,

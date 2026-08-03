@@ -73,6 +73,19 @@ public final class CanonicalEvidenceSchema {
         return schema(signalKind) != null;
     }
 
+    /**
+     * Whether a canonical field is declared boolean.
+     *
+     * <p>An adapter reading a numeric source (Prometheus returns numbers for
+     * everything, including {@code up}) has to know this to convert rather than
+     * guess. Keeping the answer here means there is still one declaration of
+     * what the field is, not one per adapter.</p>
+     */
+    static boolean isBooleanField(String signalKind, String field) {
+        SignalSchema schema = schema(signalKind);
+        return schema != null && schema.resultFields().get(field) == FieldType.BOOLEAN;
+    }
+
     static Set<String> fields(String signalKind) {
         SignalSchema schema = schema(signalKind);
         if (schema == null) {
@@ -92,6 +105,16 @@ public final class CanonicalEvidenceSchema {
         }
         return !"incident_impact".equals(normalize(signalKind))
                 || validIncidentImpact(observed);
+    }
+
+    /**
+     * The signal kinds this platform actually understands, sorted.
+     *
+     * <p>存在的理由是让拒绝能把清单说出来：一条指向词表之外的取证路由永远取不到
+     * 合法结果，那只可能是打错字，而只报「不认识」等于逼人去猜。</p>
+     */
+    public static List<String> signalKinds() {
+        return SCHEMAS.keySet().stream().sorted().toList();
     }
 
     /**

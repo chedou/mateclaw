@@ -182,6 +182,131 @@
       },
       "source": "recorded-replay:im1010",
       "collectedAt": "2026-07-31T09:12:04Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-api-gateway",
+      "requestId": "GW-LOG-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "gateway_timeout"
+      },
+      "namespace": "L",
+      "query": "recorded:gateway-timeout/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：gateway upstream timeout while proxying日志取样",
+      "observed": {
+        "match_count": 48,
+        "ps_id": "synthetic-ps-gateway-timeout-001",
+        "sample_message": "gateway upstream timeout while proxying"
+      },
+      "source": "recorded-replay:gateway-timeout",
+      "collectedAt": "2026-08-02T03:20:11Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-api-gateway",
+      "requestId": "GW-CONTRAST",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "gateway_timeout"
+      },
+      "namespace": "L",
+      "query": "recorded:gateway-timeout/contrast",
+      "status": "NORMAL",
+      "summary": "脱敏回放：同窗口成功样本对照——该特征在成功样本中同样常见",
+      "observed": {
+        "discriminating_feature": "gateway_timeout",
+        "failure_sample_count": 100,
+        "failure_match_count": 48,
+        "success_sample_count": 100,
+        "success_match_count": 52
+      },
+      "source": "recorded-replay:gateway-timeout",
+      "collectedAt": "2026-08-02T03:20:11Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-auth",
+      "requestId": "AUTH-LOG-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "auth_token_rejected"
+      },
+      "namespace": "L",
+      "query": "recorded:auth-token-rejected/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：token validation rejected by auth service日志取样",
+      "observed": {
+        "match_count": 31,
+        "ps_id": "synthetic-ps-auth-token-001",
+        "sample_message": "token validation rejected by auth service"
+      },
+      "source": "recorded-replay:auth-token-rejected",
+      "collectedAt": "2026-08-02T03:20:11Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-auth",
+      "requestId": "AUTH-CONTRAST",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "auth_token_rejected"
+      },
+      "namespace": "L",
+      "query": "recorded:auth-token-rejected/contrast",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：同窗口成功样本对照——该特征集中出现在失败样本",
+      "observed": {
+        "discriminating_feature": "auth_token_rejected",
+        "failure_sample_count": 100,
+        "failure_match_count": 88,
+        "success_sample_count": 100,
+        "success_match_count": 5
+      },
+      "source": "recorded-replay:auth-token-rejected",
+      "collectedAt": "2026-08-02T03:20:11Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-order-db",
+      "requestId": "DBP-METRIC",
+      "signalKind": "metric",
+      "target": {
+        "metric_scope": "db_pool"
+      },
+      "namespace": "M",
+      "query": "recorded:scenario/db-pool-saturated/metric",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：连接池水位与慢查询计数",
+      "observed": {
+        "reachable": true,
+        "connections_current": 191,
+        "connections_available": 200,
+        "slow_query_count": 34,
+        "baseline_slow": 2
+      },
+      "source": "recorded-replay:db-pool-saturated",
+      "collectedAt": "2026-08-02T04:10:00Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-mq-consumer",
+      "requestId": "MQB-COUNT",
+      "signalKind": "log_count",
+      "target": {
+        "search_term": "mq_backlog"
+      },
+      "namespace": "L",
+      "query": "recorded:scenario/mq-backlog/log-count",
+      "status": "NORMAL",
+      "summary": "脱敏回放：窗口内积压告警计数远低于阈值——积压不成立",
+      "observed": {
+        "count": 120,
+        "trace_id": "synthetic-trace-mq-backlog"
+      },
+      "source": "recorded-replay:mq-backlog",
+      "collectedAt": "2026-08-02T04:10:00Z"
     }
   ]
 }

@@ -58,6 +58,7 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceValidationService.class),
                 mock(GuanceEvidenceSpinePreviewService.class),
                 mock(GuanceEvidenceAcceptanceService.class),
+                mock(vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService.class),
                 mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         when(readiness.inspect(7L, "CSDP", "session-svc"))
@@ -86,6 +87,7 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceValidationService.class),
                 mock(GuanceEvidenceSpinePreviewService.class),
                 mock(GuanceEvidenceAcceptanceService.class),
+                mock(vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService.class),
                 catalog);
         MockMvc mvc = mvc(controller);
         GuanceEvidenceReadiness current = readiness();
@@ -120,6 +122,7 @@ class EvidenceSourceControllerTest {
                 validation,
                 mock(GuanceEvidenceSpinePreviewService.class),
                 mock(GuanceEvidenceAcceptanceService.class),
+                mock(vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService.class),
                 mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
@@ -162,6 +165,7 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceValidationService.class),
                 previewService,
                 mock(GuanceEvidenceAcceptanceService.class),
+                mock(vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService.class),
                 mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");
@@ -203,6 +207,7 @@ class EvidenceSourceControllerTest {
                 mock(GuanceEvidenceValidationService.class),
                 mock(GuanceEvidenceSpinePreviewService.class),
                 acceptanceService,
+                mock(vip.mate.troubleshooting.evidence.EvidenceSourceAcceptanceService.class),
                 mock(GuanceRecordingTargetCatalog.class));
         MockMvc mvc = mvc(controller);
         Instant occurredAt = Instant.parse("2026-07-29T08:00:00Z");

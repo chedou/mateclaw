@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -116,13 +117,13 @@ class EvidenceSourceRouterTest {
                         "log_search", List.of("recorded-replay"))),
                 replay);
 
-        assertThat(router.canRoute("csdp", "LOG_SEARCH", "RECORDED-REPLAY"))
+        assertThat(router.canRoute(WORKSPACE_ID, "csdp", "LOG_SEARCH", "RECORDED-REPLAY"))
                 .isTrue();
-        assertThat(router.canRoute("CSDP", "log_trace_bundle", "recorded-replay"))
+        assertThat(router.canRoute(WORKSPACE_ID, "CSDP", "log_trace_bundle", "recorded-replay"))
                 .isFalse();
-        assertThat(router.canRoute("another-system", "log_search", "recorded-replay"))
+        assertThat(router.canRoute(WORKSPACE_ID, "another-system", "log_search", "recorded-replay"))
                 .isFalse();
-        assertThat(router.canRoute("CSDP", "log_search", "guance"))
+        assertThat(router.canRoute(WORKSPACE_ID, "CSDP", "log_search", "guance"))
                 .isFalse();
 
         StubAdapter unsupported = StubAdapter.unsupported("recorded-replay");
@@ -131,7 +132,7 @@ class EvidenceSourceRouterTest {
                         "log_search", List.of("recorded-replay"))),
                 unsupported);
         assertThat(unsupportedRouter.canRoute(
-                "CSDP", "log_search", "recorded-replay"))
+                WORKSPACE_ID, "CSDP", "log_search", "recorded-replay"))
                 .isFalse();
     }
 
@@ -162,12 +163,90 @@ class EvidenceSourceRouterTest {
         assertThat(adapter.calls()).isZero();
     }
 
+    /**
+     * 部署级那张表**只按 system 名字索引**，不带 workspace。
+     *
+     * <p>后果是：另一个租户只要把自己的系统命名成 CSDP，就继承了 CSDP 的路由、
+     * 打到 CSDP 的观测端点上。让 workspace 级声明先答，正是为了收窄这一点——它不是
+     * 在放宽权限，而是第一次让「哪个租户」进入路由判断。</p>
+     */
+    @Test
+    void aWorkspaceDeclarationOutranksTheDeploymentWideRoute() {
+        StubAdapter shared = StubAdapter.returning("guance", result("EV-1", "guance"));
+        StubAdapter own = StubAdapter.returning(
+                "recorded-replay", result("EV-1", "recorded-replay"));
+        EvidenceSourceRouter router = new EvidenceSourceRouter(
+                List.of(shared, own),
+                deployment(Map.of("CSDP", Map.of("log_count", List.of("guance")))),
+                (workspaceId, system, signalKind) -> workspaceId == 7L
+                        ? Optional.of(List.of("recorded-replay"))
+                        : Optional.empty(),
+                CLOCK);
+
+        assertThat(router.collect(
+                7L, request("EV-1", "log_count"), incident("CSDP")).source())
+                .as("声明过的租户走自己的路")
+                .isEqualTo("recorded-replay");
+        assertThat(router.collect(
+                1L, request("EV-1", "log_count"), incident("CSDP")).source())
+                .as("没声明过的租户行为完全不变")
+                .isEqualTo("guance");
+    }
+
+    /**
+     * 「声明了但列表为空」是一个答案：这一格明确不取证。把它读成「没声明」而回落到
+     * 部署级路由，等于**租户说了不要，系统照样去问了生产观测系统**。
+     */
+    @Test
+    void anEmptyDeclarationMeansCollectNothingRatherThanFallBack() {
+        StubAdapter shared = StubAdapter.returning("guance", result("EV-1", "guance"));
+        EvidenceSourceRouter router = new EvidenceSourceRouter(
+                List.of(shared),
+                deployment(Map.of("CSDP", Map.of("log_count", List.of("guance")))),
+                (workspaceId, system, signalKind) -> Optional.of(List.of()),
+                CLOCK);
+
+        EvidenceResult collected = router.collect(
+                7L, request("EV-1", "log_count"), incident("CSDP"));
+
+        assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(shared.calls()).as("不能回落去问真源").isZero();
+    }
+
+    /** 拒绝要说出下一步，并且要能区分「没配路由」和「这台部署根本没启用源」。 */
+    @Test
+    void theUnconfiguredRefusalNamesTheWayForward() {
+        EvidenceResult withSources = new EvidenceSourceRouter(
+                List.of(StubAdapter.returning("recorded-replay", result("EV-1", "x"))),
+                deployment(Map.of()), CLOCK)
+                .collect(WORKSPACE_ID, request("EV-1", "log_count"), incident("ACME"));
+
+        assertThat(withSources.summary())
+                .contains("ACME")
+                .contains("log_count")
+                .contains("PUT /api/v1/troubleshooting/evidence/routes")
+                .contains("recorded-replay");
+
+        EvidenceResult noSources = new EvidenceSourceRouter(
+                List.of(), deployment(Map.of()), CLOCK)
+                .collect(WORKSPACE_ID, request("EV-1", "log_count"), incident("ACME"));
+
+        assertThat(noSources.summary())
+                .as("一台什么源都没启用的部署，下一步不是去配路由")
+                .contains("no evidence source is enabled")
+                .doesNotContain("PUT /api/v1/troubleshooting/evidence/routes");
+    }
+
+    private EvidenceProperties deployment(Map<String, Map<String, List<String>>> routes) {
+        EvidenceProperties properties = new EvidenceProperties();
+        properties.setRoutes(routes);
+        return properties;
+    }
+
     private EvidenceSourceRouter router(
             Map<String, Map<String, List<String>>> routes,
             EvidenceSourceAdapter... adapters) {
-        EvidenceProperties properties = new EvidenceProperties();
-        properties.setRoutes(routes);
-        return new EvidenceSourceRouter(List.of(adapters), properties, CLOCK);
+        return new EvidenceSourceRouter(List.of(adapters), deployment(routes), CLOCK);
     }
 
     private EvidenceRequest request(String requestId, String signalKind) {

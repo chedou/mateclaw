@@ -5,8 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
-import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
@@ -18,6 +18,7 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -50,6 +51,9 @@ import java.util.function.Supplier;
  */
 @Service
 public class ScenarioDiagnosisService {
+
+    /** A refusal that lists fifty neighbours has stopped being a refusal. */
+    private static final int MAX_LISTED_SCENARIOS = 12;
 
     private final TroubleshootingPlaybookVersionService versions;
     private final TroubleshootingPersistenceService persistence;
@@ -114,9 +118,11 @@ public class ScenarioDiagnosisService {
             throw invalid(unsafe.getMessage());
         }
 
-        String selector = new ScenarioSelector(safeIncident.system(), safeScenarioKey)
-                .routingKey();
-        ApprovedPlaybookVersion authority = lockAuthority(workspaceId, selector);
+        ScenarioSelector scenario = new ScenarioSelector(
+                safeIncident.system(), safeScenarioKey);
+        String selector = scenario.routingKey();
+        ApprovedPlaybookVersion authority = lockAuthority(
+                workspaceId, selector, scenario.system());
         if (guard != null) {
             String rejection = guard.rejectionReason(authority, selector);
             if (rejection != null) {
@@ -138,7 +144,10 @@ public class ScenarioDiagnosisService {
                 safeActor,
                 NorthStarTimings.concluded(reportedAt, readyAt, readyAt),
                 rehearsal,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                // 此刻一条证据都还没取——「什么都没取到」不得自称真源，所以这里
+                // 必然是 true。写成推导而不是常量，是因为它会在证据到达时被
+                // Diagnosis.evidenceRecorded 按真实来源重算；常量做不到那件事。
+                EvidenceProvenance.fixtureMode(List.of()),
                 warnings == null ? List.of() : List.copyOf(warnings));
         return persistence.createOrGetForScenario(
                 workspaceId,
@@ -147,10 +156,14 @@ public class ScenarioDiagnosisService {
                 reportedAt);
     }
 
-    private ApprovedPlaybookVersion lockAuthority(long workspaceId, String selector) {
+    private ApprovedPlaybookVersion lockAuthority(
+            long workspaceId,
+            String selector,
+            String system) {
         PlaybookVersionRef activeRef = versions.activeRef(workspaceId, selector)
                 .orElseThrow(() -> conflict(
-                        "no approved scenario Playbook is active for " + selector));
+                        "no approved scenario Playbook is active for " + selector
+                                + "; " + registeredScenarioAdvice(workspaceId, system)));
         ApprovedPlaybookVersion authority = versions.lockActiveApprovedByPlaybookId(
                         workspaceId, activeRef.playbookId())
                 .orElseThrow(() -> conflict(
@@ -165,6 +178,34 @@ public class ScenarioDiagnosisService {
             throw conflict("the scenario Playbook is not an operational authority");
         }
         return authority;
+    }
+
+    /**
+     * 「这里没有路」后面必须跟上「有哪些路，以及怎么加一条」。
+     *
+     * <p>只报被拒绝的那个 selector，读者分不清自己是打错了字、还是这个系统根本
+     * 没接过——两种情况的下一步完全不同。列不出来时也照样给出注册入口：新租户
+     * 第一次调用时看到的正是空清单，而那恰恰是他最需要下一步的时刻。</p>
+     */
+    private String registeredScenarioAdvice(long workspaceId, String system) {
+        List<String> registered;
+        try {
+            registered = versions.activeSelectorsWithPrefix(
+                    workspaceId,
+                    system.toLowerCase(Locale.ROOT) + ":scenario:",
+                    MAX_LISTED_SCENARIOS);
+        } catch (RuntimeException unavailable) {
+            // 这段只是为了把话说清楚。它自己出问题，不能把原本那条明确的拒绝
+            // 变成一个 500——读者会以为是服务坏了，而不是没有这条路。
+            return "register one via POST /api/v1/troubleshooting/sops, then approve it";
+        }
+        if (registered.isEmpty()) {
+            return "system '" + system + "' has no approved scenario Playbook at all;"
+                    + " register one via POST /api/v1/troubleshooting/sops,"
+                    + " then start and approve it under /sops/review-inbox/MANUAL/{sopId}";
+        }
+        return "approved scenarios for '" + system + "' are: "
+                + String.join(", ", registered);
     }
 
     private String required(String value, String field) {

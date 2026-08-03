@@ -12,7 +12,6 @@ import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -23,15 +22,15 @@ import static org.mockito.Mockito.when;
 class DefaultKnowledgePromotionMaterialReaderTest {
 
     @Test
-    void resolvesOnlyTheExactServerOwnedManualCandidate() {
+    void carriesTheGradeTheCatalogAssignsToThisExactCandidate() {
         TroubleshootingSopPersistenceService candidates =
                 mock(TroubleshootingSopPersistenceService.class);
         SopEntry candidate = candidate();
         when(candidates.findBySopId(7L, "sop-1")).thenReturn(candidate);
         ManualPlaybookReplaySuiteCatalog catalog =
                 mock(ManualPlaybookReplaySuiteCatalog.class);
-        when(catalog.evidenceGrade("csdp:903001", candidate))
-                .thenReturn(Optional.of(KnowledgeEvidenceGrade.AUTHORED_FIXTURE));
+        when(catalog.promotionGrade("csdp:903001", candidate))
+                .thenReturn(KnowledgeEvidenceGrade.AUTHORED_FIXTURE);
         DefaultKnowledgePromotionMaterialReader reader =
                 new DefaultKnowledgePromotionMaterialReader(candidates, catalog);
 
@@ -65,18 +64,53 @@ class DefaultKnowledgePromotionMaterialReaderTest {
                 org.mockito.ArgumentMatchers.anyString());
     }
 
+    /**
+     * 这条此前是反过来的：候选只要不与随包示例逐字节相同，这里就返回 empty，
+     * 上游把它翻成 409「eligible source has no server-owned routeable promotion
+     * artifact」。于是评审面板显示 ELIGIBLE_FOR_APPROVAL，点批准却被拒——**产品里
+     * 没有「写一条自己的知识」这条路**。指纹比对回答的是「什么成色」，不是「能不
+     * 能批准」；能不能批准由评审资格那道闸门判，它会把原因写给作者看。
+     */
     @Test
-    void manualCandidateWithoutAServerOwnedEvidenceGradeCannotBePromoted() {
+    void aCandidateThatIsNotTheBundledExampleIsStillPromotableAtALowerGrade() {
         TroubleshootingSopPersistenceService candidates =
                 mock(TroubleshootingSopPersistenceService.class);
         SopEntry candidate = candidate();
         when(candidates.findBySopId(7L, "sop-1")).thenReturn(candidate);
         ManualPlaybookReplaySuiteCatalog catalog =
                 mock(ManualPlaybookReplaySuiteCatalog.class);
-        when(catalog.evidenceGrade("csdp:903001", candidate))
-                .thenReturn(Optional.empty());
+        when(catalog.promotionGrade("csdp:903001", candidate))
+                .thenReturn(KnowledgeEvidenceGrade.UNVERIFIED);
         DefaultKnowledgePromotionMaterialReader reader =
                 new DefaultKnowledgePromotionMaterialReader(candidates, catalog);
+
+        assertThat(reader.find(7L, KnowledgeOrigin.MANUAL, "sop-1"))
+                .get()
+                .extracting(KnowledgePromotionMaterial::evidenceGrade)
+                .as("批准与否不在这里判，但成色必须如实记下来")
+                .isEqualTo(KnowledgeEvidenceGrade.UNVERIFIED);
+    }
+
+    /**
+     * 放开的只有指纹那一条。已经批过的、或已被标成 verified 的行仍然不是候选，
+     * 它们从这里出去会绕过整条评审。
+     */
+    @Test
+    void anAlreadyPublishedRowIsNotPromotionMaterial() {
+        TroubleshootingSopPersistenceService candidates =
+                mock(TroubleshootingSopPersistenceService.class);
+        SopEntry published = new SopEntry(
+                "sop-1", SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP", "903001", "order-svc", "连接池耗尽",
+                "连接池打满", "database", "DBA 组", "approved", true,
+                candidate().evidenceRequests(),
+                candidate().anomalyCriteria(),
+                candidate().diagnosisRules(),
+                List.of());
+        when(candidates.findBySopId(7L, "sop-1")).thenReturn(published);
+        DefaultKnowledgePromotionMaterialReader reader =
+                new DefaultKnowledgePromotionMaterialReader(
+                        candidates, mock(ManualPlaybookReplaySuiteCatalog.class));
 
         assertThat(reader.find(7L, KnowledgeOrigin.MANUAL, "sop-1")).isEmpty();
     }

@@ -285,6 +285,15 @@ class GuanceEvidenceValidationServiceTest {
     }
 
     private static final class SequenceTransport implements EvidenceHttpTransport {
+        @Override
+        public Response get(
+                java.net.URI uri,
+                java.util.Map<String, String> headers,
+                java.time.Duration timeout) {
+            throw new UnsupportedOperationException(
+                    "this double serves the POST-based Guance chain only");
+        }
+
         private final Deque<String> responses = new ArrayDeque<>();
         private final List<String> requestBodies = new ArrayList<>();
         private final AtomicInteger calls = new AtomicInteger();

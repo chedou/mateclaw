@@ -487,7 +487,13 @@ public record Diagnosis(
                 pendingWrites,
                 routeToTeam, transfers, actionOutcomes, closure, knowledgeCandidates,
                 advancedTimeline(newTimeline),
-                timings, rehearsal, fixtureMode, writeExecutionEnabled,
+                timings, rehearsal,
+                // 证据到达时重算成色：场景诊断建立时一条证据都没有（那时只能是
+                // 夹具），真正的答案要等适配器答完才知道。沿用建立时的旧值，
+                // 会让一条真实取到的证据永远被标成夹具。
+                vip.mate.troubleshooting.evidence.EvidenceProvenance
+                        .fixtureMode(immutable(newEvidence)),
+                writeExecutionEnabled,
                 immutable(newWarnings));
     }
 

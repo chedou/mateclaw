@@ -13,6 +13,16 @@ import java.time.LocalDateTime;
  * conjunction makes a SOP operational — a reviewer scanning the list needs to
  * see at a glance which entries can actually drive a diagnosis and which are
  * still drafts producing shadow results.</p>
+ *
+ * <p><b>{@code sopId} 装的是两个身份空间的值</b>，取决于这一行来自哪张表：注册行
+ * 装人工来源记录号（评审那几个接口收的就是它），已生效的版本行装版本表的
+ * {@code playbook-*}。{@link TroubleshootingSopPersistenceService#list} 会用版本行
+ * 覆盖同一 selector 的注册行，所以同一张列表里两种都会出现。</p>
+ *
+ * <p>这件事曾经把详情接口弄坏过：{@code by-id} 只查注册表，于是列表发出去的
+ * 已生效行 id 一律 404——**恰好是最重要的那些行打不开**。现在 {@code by-id} 两种
+ * 身份都认；要拿人工来源号请读 {@code sourceRecordId}（版本行才有，注册行的
+ * {@code sopId} 本身就是）。</p>
  */
 public record SopSummary(
         String sopId,

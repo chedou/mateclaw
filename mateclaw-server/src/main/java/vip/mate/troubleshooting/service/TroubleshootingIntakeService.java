@@ -5,9 +5,9 @@ import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
-import vip.mate.troubleshooting.TroubleshootingSafetyPolicy;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
+import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.model.EvidenceRequest;
@@ -49,6 +49,10 @@ import java.util.Map;
  */
 @Service
 public class TroubleshootingIntakeService {
+
+    /** The Agent's own key for "I am switched off / misconfigured", not "I failed". */
+    private static final String AGENT_MISCONFIGURED =
+            "err.troubleshooting.agent_misconfigured";
 
     /** Remains true until the read-only bindings and thresholds are live-verified. */
     private final TroubleshootingSopPersistenceService sopPersistence;
@@ -223,6 +227,10 @@ public class TroubleshootingIntakeService {
                         sop,
                         sanitizedIncident,
                         sanitizedSuppliedEvidence));
+        // 证据成色从**这批证据自己**身上读，不再问一个全局开关：翻那个开关会让
+        // 每一条诊断同时改口，包括同一时刻仍走录制回放的那些。
+        boolean fixtureMode = EvidenceProvenance.fixtureMode(
+                collectedEvidence, sanitizedSuppliedEvidence);
         if (intakeSessionId == null) {
             return diagnosisService.diagnoseAndPersist(
                     workspaceId,
@@ -230,7 +238,7 @@ public class TroubleshootingIntakeService {
                     sop,
                     collectedEvidence,
                     rehearsal,
-                    TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                    fixtureMode,
                     reportedAt,
                     readyAt);
         }
@@ -240,7 +248,7 @@ public class TroubleshootingIntakeService {
                 sop,
                 collectedEvidence,
                 rehearsal,
-                TroubleshootingSafetyPolicy.EVIDENCE_IS_FIXTURE,
+                fixtureMode,
                 reportedAt,
                 readyAt,
                 intakeSessionId);
@@ -287,25 +295,53 @@ public class TroubleshootingIntakeService {
         if (agentTriageService == null) {
             throw routeMiss(reason + "; read-only Agent miss path is disabled or unavailable");
         }
-        if (intakeSessionId == null) {
-            return agentTriageService.triage(
+        try {
+            if (intakeSessionId == null) {
+                return agentTriageService.triage(
+                        workspaceId,
+                        incident,
+                        evidence == null ? List.of() : evidence,
+                        rehearsal,
+                        reason,
+                        reportedAt,
+                        readyAt);
+            }
+            return agentTriageService.triageForIntake(
                     workspaceId,
                     incident,
                     evidence == null ? List.of() : evidence,
                     rehearsal,
                     reason,
                     reportedAt,
-                    readyAt);
+                    readyAt,
+                    intakeSessionId);
+        } catch (MateClawException refused) {
+            throw agentUnavailable(reason, refused);
         }
-        return agentTriageService.triageForIntake(
-                workspaceId,
-                incident,
-                evidence == null ? List.of() : evidence,
-                rehearsal,
-                reason,
-                reportedAt,
-                readyAt,
-                intakeSessionId);
+    }
+
+    /**
+     * 兜底路自己走不了时，把**先发生的那件事**还给调用方。
+     *
+     * <p>此前这里什么都不做：确定性路没命中的原因（比如「这个系统的这个错误码
+     * 没有已注册的 Playbook」）算出来、传进 Agent、然后被 Agent 自己的
+     * 「miss-path Agent is disabled」覆盖掉。新租户看到的是一句像基础设施故障的
+     * 话，而真正的事实是他还没有登记过这条知识——两件事的下一步完全不同。</p>
+     *
+     * <p>只接管 Agent 的配置类拒绝。Agent 真的跑了但失败，是另一回事，原样抛出。</p>
+     */
+    private MateClawException agentUnavailable(
+            String routeMissReason,
+            MateClawException refused) {
+        if (!AGENT_MISCONFIGURED.equals(refused.getMsgKey())) {
+            return refused;
+        }
+        return routeMiss(routeMissReason
+                + "; and the read-only miss-path Agent cannot run ("
+                + refused.getMessage()
+                + "). Either register a Playbook for this route via"
+                + " POST /api/v1/troubleshooting/sops and approve it, or enable"
+                + " mateclaw.troubleshooting.agent.enabled");
     }
 
     private MateClawException routeMiss(String message) {

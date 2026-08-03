@@ -17,9 +17,11 @@ import vip.mate.common.result.R;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.DiagnosisDerivation;
 import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.InvestigationProvenance;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
+import vip.mate.troubleshooting.service.InvestigationProvenanceService;
 import vip.mate.troubleshooting.service.DiagnosisLifecycleService;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
@@ -63,6 +65,7 @@ public class TroubleshootingController {
     private final TroubleshootingIntakeService intakeService;
     private final DiagnosisLifecycleService lifecycleService;
     private final DiagnosisDerivationService derivationService;
+    private final InvestigationProvenanceService provenanceService;
     private final TroubleshootingPersistenceService persistence;
     private final DiagnosisExperienceProjectionService projectionService;
 
@@ -130,6 +133,25 @@ public class TroubleshootingController {
             @PathVariable String diagnosisId,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         return R.ok(derivationService.explain(resolveWorkspace(workspaceId), diagnosisId));
+    }
+
+    /**
+     * 这次调查动用了什么，以及刻意没有动用什么。
+     *
+     * <p>Separate from the derivation because they answer different questions.
+     * The derivation is 「结论怎么算出来的」; this is 「谁参与了、谁没参与」 —
+     * which Playbook version was in force and where that knowledge came from,
+     * which adapter actually answered each request, whether a model ran at all.
+     * The facts existed already, spread across the aggregate, each evidence
+     * result, and the frozen Playbook version; nothing assembled them, so the
+     * console could only show fragments and the reader filled in the rest.</p>
+     */
+    @GetMapping("/diagnoses/{diagnosisId}/provenance")
+    @RequireWorkspaceRole("viewer")
+    public R<InvestigationProvenance> provenance(
+            @PathVariable String diagnosisId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(provenanceService.explain(resolveWorkspace(workspaceId), diagnosisId));
     }
 
     /**

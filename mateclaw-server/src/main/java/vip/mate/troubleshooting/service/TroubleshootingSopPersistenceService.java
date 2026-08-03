@@ -11,6 +11,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingSopEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingSopMapper;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -258,7 +259,18 @@ public class TroubleshootingSopPersistenceService {
         return entity == null ? null : read(entity);
     }
 
-    /** Finds a manual candidate by stable source ID inside one workspace. */
+    /**
+     * Resolves whichever identity {@link #list} handed out for this row.
+     *
+     * <p><b>为什么要认两种 id。</b> {@link #list} 会用版本行覆盖同一 selector 的
+     * 注册行，于是同一个 {@code sopId} 字段在两种行里装着两个身份空间的值：候选行
+     * 装的是人工来源记录号，已生效行装的是版本表的 {@code playbook-*}。而这里此前
+     * 只查注册表——**列表把已生效行的 id 发出去，详情接口不认**，浏览知识库时正好
+     * 是最重要的那些行（operational 的）打不开。</p>
+     *
+     * <p>两次查询都锁在同一个 workspace 内。顺序是注册表优先：它是人工来源的稳定
+     * 身份，评审那几个接口收的也是它，先认它可以让同一个 id 在两处含义一致。</p>
+     */
     public SopEntry findBySopId(long workspaceId, String sopId) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
@@ -266,9 +278,14 @@ public class TroubleshootingSopPersistenceService {
         if (sopId == null || sopId.isBlank()) {
             throw new IllegalArgumentException("sopId must not be blank");
         }
-        TroubleshootingSopEntity entity = findEntityBySopId(
-                workspaceId, sopId.trim());
-        return entity == null ? null : read(entity);
+        String normalized = sopId.trim();
+        TroubleshootingSopEntity entity = findEntityBySopId(workspaceId, normalized);
+        if (entity != null) {
+            return read(entity);
+        }
+        return playbookVersions.findByPlaybookId(workspaceId, normalized)
+                .map(ApprovedPlaybookVersion::playbook)
+                .orElse(null);
     }
 
     private SopEntry read(TroubleshootingSopEntity entity) {

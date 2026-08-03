@@ -25,6 +25,10 @@ public class EvidenceProperties {
 
     private RecordedReplay recordedReplay = new RecordedReplay();
 
+    private Prometheus prometheus = new Prometheus();
+
+    private Elasticsearch elasticsearch = new Elasticsearch();
+
     private SynthesisPreview synthesisPreview = new SynthesisPreview();
 
     @Getter
@@ -92,6 +96,44 @@ public class EvidenceProperties {
         private int seriesLimit = 20;
         private boolean disableSampling;
         private String timeZone = "Asia/Shanghai";
+    }
+
+    /**
+     * 只读 Prometheus 绑定（含 VictoriaMetrics / Thanos / Mimir）。
+     *
+     * <p>默认关闭。{@code fieldQueries} 必须覆盖 canonical {@code metric} 的
+     * 全部字段——那个信号是一个整包，缺一个字段的绑定永远产不出合法结果，
+     * 而 health 会诚实地报 DEGRADED 而不是 READY。</p>
+     */
+    @Getter
+    @Setter
+    public static class Prometheus {
+        private boolean enabled;
+        private String baseUrl;
+        /** 可选。留空表示端点不需要 Bearer 鉴权；这里不接受用户名密码。 */
+        private String bearerToken;
+        /** canonical 字段名 → PromQL。只来自配置，不接受报障文本或模型拼接。 */
+        private Map<String, String> fieldQueries = new LinkedHashMap<>();
+    }
+
+    /**
+     * 只读 Elasticsearch / OpenSearch 绑定，服务 {@code log_search}。
+     *
+     * <p>{@code correlationField} **没有默认值**：一次请求在跨服务日志里的
+     * 串联键各环境叫法不同（{@code trace.id} / {@code traceId} /
+     * {@code x_request_id}…）。猜错的后果不是取不到，是把两次不相干的请求
+     * 当成同一次，而下游会照单全收。没配就整个不可用。</p>
+     */
+    @Getter
+    @Setter
+    public static class Elasticsearch {
+        private boolean enabled;
+        private String baseUrl;
+        private String index;
+        /** 本环境用哪个字段串联一次请求。留空 = 适配器不可用。 */
+        private String correlationField;
+        private String messageField = "message";
+        private String bearerToken;
     }
 
     @Getter

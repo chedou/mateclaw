@@ -13,6 +13,16 @@ interface EvidenceHttpTransport {
             String body,
             Duration timeout) throws Exception;
 
+    /**
+     * A read-only GET. Some observability APIs (Prometheus and its
+     * compatibles) expose querying over GET, and forcing them through a JSON
+     * POST would mean inventing a body they never asked for.
+     */
+    Response get(
+            URI uri,
+            Map<String, String> headers,
+            Duration timeout) throws Exception;
+
     record Response(int statusCode, String body) {
         public Response {
             body = body == null ? "" : body;

@@ -453,8 +453,12 @@ TMPDIR="${TOCTOU_TMPDIR}" \
 toctou_pid=$!
 set -e
 
+# 轮询要跟着预检进程的生命周期走，不能按固定次数封顶：10000 次 glob 在快机器上
+# 不到一秒就跑完，而预检那时还在做 HTTP，快照根本还没建——于是这道 TOCTOU 守卫
+# 会在越快的机器上越必然地误报。守卫本身是对的，挂错的是终止条件。
 snapshot_seen=false
-for _ in $(seq 1 10000); do
+poll_deadline=$(( SECONDS + 120 ))
+while kill -0 "${toctou_pid}" 2>/dev/null && (( SECONDS < poll_deadline )); do
   for snapshot in "${TOCTOU_TMPDIR}"/mateclaw-t7-preflight.*/plan.json; do
     [[ -f "${snapshot}" ]] || continue
     snapshot_bytes="$(wc -c < "${snapshot}" | tr -d '[:space:]')"
@@ -473,7 +477,9 @@ for _ in $(seq 1 10000); do
   done
 done
 [[ "${snapshot_seen}" == "true" ]] \
-  || fail "did not observe the immutable plan snapshot before preflight completed"
+  || fail "did not observe the immutable plan snapshot before preflight completed.
+预检当时的输出（不打出来就只能靠猜，而猜的尽头通常是把断言删掉）：
+$(cat "${OUT_FILE}")"
 
 set +e
 wait "${toctou_pid}"

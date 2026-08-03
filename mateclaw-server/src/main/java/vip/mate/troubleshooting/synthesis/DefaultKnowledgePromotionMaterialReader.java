@@ -50,16 +50,14 @@ public class DefaultKnowledgePromotionMaterialReader
                 || candidate.verified()) {
             return Optional.empty();
         }
-        var evidenceGrade = replayCatalog.evidenceGrade(
-                candidate.routingKey(), candidate);
-        if (evidenceGrade.isEmpty()) {
-            return Optional.empty();
-        }
+        // 成色由目录判定，**能不能批准**不在这里判。此前这里读的是只在候选与随包
+        // 示例逐字节相同时才有值的 evidenceGrade，空值当成拒绝——于是「资格」说可以、
+        // 「促成」说不行，评审面板对作者撒了谎，而 409 里没有半个字提到真正的原因。
         return Optional.of(new KnowledgePromotionMaterial(
                 origin,
                 candidate.sopId(),
                 candidate.routingKey(),
-                evidenceGrade.get(),
+                replayCatalog.promotionGrade(candidate.routingKey(), candidate),
                 candidate));
     }
 }

@@ -16,13 +16,15 @@ class EvidenceAutoConfigurationTest {
             .withBean(ObjectMapper.class, ObjectMapper::new);
 
     @Test
-    void composesBothAdaptersAndKeepsThemDisabledByDefault() {
+    void composesEveryAdapterAndKeepsThemDisabledByDefault() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(EvidenceSourceRouter.class);
             EvidenceSourceRouter router = context.getBean(EvidenceSourceRouter.class);
             assertThat(router.health())
                     .extracting(EvidenceSourceHealth::platform)
-                    .containsExactlyInAnyOrder("guance", "recorded-replay");
+                    .as("每加一个适配器都要在这里点名——默认全关是这条断言的重点")
+                    .containsExactlyInAnyOrder(
+                            "guance", "recorded-replay", "prometheus", "elasticsearch");
             assertThat(router.health())
                     .allMatch(health -> health.status() == EvidenceSourceHealth.Status.DISABLED);
         });

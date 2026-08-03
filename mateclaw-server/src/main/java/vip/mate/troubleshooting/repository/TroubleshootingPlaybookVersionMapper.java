@@ -148,6 +148,29 @@ public interface TroubleshootingPlaybookVersionMapper
             @Param("id") long id,
             @Param("grade") String grade);
 
+    /**
+     * Active selectors under one prefix, so a refusal can name what does exist.
+     *
+     * <p>Scoped to the workspace and bounded by {@code limit}: listing the
+     * neighbourhood only helps if it stays short and cannot reach another
+     * tenant's registry.</p>
+     */
+    @Select("""
+            SELECT selector_key
+              FROM mate_troubleshooting_playbook_version
+             WHERE workspace_id = #{workspaceId}
+               AND active_selector_key = selector_key
+               AND status = 'APPROVED'
+               AND deleted = 0
+               AND selector_key LIKE #{prefixPattern} ESCAPE '\\'
+             ORDER BY selector_key
+             LIMIT #{limit}
+            """)
+    List<String> listActiveSelectorsLike(
+            @Param("workspaceId") long workspaceId,
+            @Param("prefixPattern") String prefixPattern,
+            @Param("limit") int limit);
+
     @Select("""
             SELECT COALESCE(MAX(playbook_version), 0)
               FROM mate_troubleshooting_playbook_version

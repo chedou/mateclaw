@@ -301,6 +301,66 @@ class KnowledgeReviewQualificationPolicyTest {
                 .containsExactly("POSITIVE_REPLAY_REQUIRED");
     }
 
+    /**
+     * 这一格是整把梯子的最下面一级，也是此前完全不存在的一级。
+     *
+     * <p>随包回放目录是 classpath 上固定的 8 条 selector。新系统、老系统的新场景，
+     * 都永远拿不到套件，于是 {@code REPLAY_SUITE_UNAVAILABLE} 永远挂着——**任何新
+     * 租户都不可能批出第一条 Playbook**，报障两条门全是 409。</p>
+     *
+     * <p>放行的对象很窄：规则全部弃权的 Playbook 不给根因，引擎里最多落到
+     * INSUFFICIENT_EVIDENCE 或 EXCLUDED。它没有答案，回放也就没有可证的对象——
+     * 继续拦它，是让闸门指着错误的对象。</p>
+     */
+    @Test
+    void aPlaybookThatConcludesNothingNeedsNoSuiteToProveItsAnswer() {
+        KnowledgeReviewSource source = policy.manual(
+                abstainingOnlySop(),
+                new ManualPlaybookReplayQualification("c".repeat(64), null, null));
+
+        assertThat(source.snapshot().eligibilityReasons()).isEmpty();
+        assertThat(source.snapshot().approvalEligibility())
+                .isEqualTo("ELIGIBLE_FOR_APPROVAL");
+    }
+
+    /** 反过来：会下结论的那条，没有套件就仍然拦住——放开的只有「不下结论」。 */
+    @Test
+    void aPlaybookThatConcludesStillNeedsASuiteToProveItsAnswer() {
+        KnowledgeReviewSource source = policy.manual(
+                manualSop(),
+                new ManualPlaybookReplayQualification("c".repeat(64), null, null));
+
+        assertThat(source.snapshot().eligibilityReasons())
+                .containsExactly("REPLAY_SUITE_UNAVAILABLE");
+    }
+
+    /** 有套件时「不下结论」不构成豁免：套件在，就得跑，跑过才算数。 */
+    @Test
+    void anAbstainingPlaybookStillRunsAReplayWhenASuiteDoesExist() {
+        KnowledgeReviewSource source = policy.manual(
+                abstainingOnlySop(),
+                new ManualPlaybookReplayQualification(
+                        "c".repeat(64), "d".repeat(64), null));
+
+        assertThat(source.snapshot().eligibilityReasons())
+                .containsExactly("POSITIVE_AND_NEGATIVE_REPLAY_REQUIRED");
+    }
+
+    private SopEntry abstainingOnlySop() {
+        SopEntry concluding = manualSop();
+        return new SopEntry(
+                concluding.sopId(), concluding.contractVersion(),
+                concluding.system(), concluding.errorCode(), concluding.service(),
+                concluding.title(), concluding.cause(), concluding.category(),
+                concluding.ownerTeam(), concluding.status(), concluding.verified(),
+                concluding.evidenceRequests(), concluding.anomalyCriteria(),
+                List.of(new DiagnosisRule(
+                        "R-1", List.of("error_present"),
+                        "证据已收齐，根因待人工判定", "只取证，不下结论",
+                        Confidence.LOW, true)),
+                concluding.actions());
+    }
+
     private SopEntry manualSop() {
         return new SopEntry(
                 "sop-1", SopEntry.CURRENT_CONTRACT_VERSION,

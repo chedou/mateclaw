@@ -219,9 +219,20 @@ class GuanceEvidenceReadinessServiceTest {
         return binding;
     }
 
+    /** Readiness inspection must not touch the network at all — either verb. */
     private EvidenceHttpTransport noCallTransport() {
-        return (uri, headers, body, timeout) -> {
-            throw new AssertionError("readiness inspection must not query Guance");
+        return new EvidenceHttpTransport() {
+            @Override
+            public Response postJson(java.net.URI uri, java.util.Map<String, String> headers,
+                    String body, java.time.Duration timeout) {
+                throw new AssertionError("readiness inspection must not query Guance");
+            }
+
+            @Override
+            public Response get(java.net.URI uri, java.util.Map<String, String> headers,
+                    java.time.Duration timeout) {
+                throw new AssertionError("readiness inspection must not query any source");
+            }
         };
     }
 

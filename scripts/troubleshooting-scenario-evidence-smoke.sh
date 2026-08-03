@@ -69,6 +69,9 @@ print_gates() {
                           多列 = 拿「我们查过」当依据；空清单 = 这道闸门在空转（A1）
   7. 重跑被拒绝            人已看过结论之后再 POST evidence-runs 必须 409，
                           而不是悄悄改写一个别人可能已经据此行动的结论
+  8. 多场景且结局不同        同一条 lane 至少跑通五个场景，且**必须包含一个 EXCLUDED**。
+                          只会产出 LOCATED 的 demo 会夸大——「排除」也是结论，
+                          而且是更常见的那种：多数排查是一段段划掉可能性
 
   第 2 格是这条脚本存在的理由。
 GATES
@@ -218,6 +221,45 @@ rerun="$(call POST "/diagnoses/${diagnosis_id}/evidence-runs")"
   "人已确认之后重跑取证返回 HTTP $(http_code)，期望 409" \
   "重跑不得悄悄改写一个别人可能已经据此行动的结论；那是一次新调查"
 ok "重跑被拒（409）：$(echo "${rerun}" | jq -r '.msg' | head -c 80)"
+
+# ── 闸门 8：多场景且结局不同 ────────────────────────────────────────
+# 这一格挡的是「lane 被某一个场景特化」和「demo 只会给好看的结论」两件事。
+# 排除（EXCLUDED）是这里唯一必须出现的结局：它此前只在单测里断言过，
+# 从没在 HTTP 边界上走出来过。
+declare -a EXPECTED=(
+  "message_send_failed:csdp-session-service:LOCATED"
+  "gateway_timeout:csdp-api-gateway:EXCLUDED"
+  "auth_token_rejected:csdp-auth:LOCATED"
+  "mq_backlog:csdp-mq-consumer:EXCLUDED"
+  "db_pool_saturated:csdp-order-db:LOCATED"
+)
+seen_excluded=0
+for spec in "${EXPECTED[@]}"; do
+  IFS=: read -r key service want <<<"${spec}"
+  body="$(call POST "/scenarios/${key}/diagnoses" \
+    "{\"system\":\"${SYSTEM}\",\"service\":\"${service}\",
+      \"title\":\"多场景冒烟 ${key} ${RUN_MARKER}\",\"severity\":\"P1\",
+      \"impactScope\":\"部分\",\"intakeSource\":\"scenario-evidence-smoke\",
+      \"rawInput\":\"multi\",\"rehearsal\":false}")"
+  [[ "$(http_code)" == "200" ]] || gate_failed "多场景且结局不同" \
+    "开案 ${key} 返回 HTTP $(http_code)：$(echo "${body}" | jq -r '.msg // .' | head -c 160)" \
+    "确认 demo 档已 seed 该场景的已审核 Playbook"
+  id="$(echo "${body}" | jq -r '.data.diagnosis.diagnosisId // empty')"
+  ran="$(call POST "/diagnoses/${id}/evidence-runs")"
+  [[ "$(http_code)" == "200" ]] || gate_failed "多场景且结局不同" \
+    "${key} 跑取证返回 HTTP $(http_code)：$(echo "${ran}" | jq -r '.msg // .' | head -c 160)" \
+    "该场景的录制证据可能缺失或与 Playbook 的 evidenceRequests 对不上"
+  got="$(echo "${ran}" | jq -r '.data.diagnosis.conclusionType')"
+  [[ "${got}" == "${want}" ]] || gate_failed "多场景且结局不同" \
+    "${key} 得到 ${got}，期望 ${want}" \
+    "结局变了要么是判据/规则被改，要么是录制证据被改；两者都该有人明确决定"
+  [[ "${got}" == "EXCLUDED" ]] && seen_excluded=1
+  ok "${key} → ${got}"
+done
+[[ "${seen_excluded}" == "1" ]] || gate_failed "多场景且结局不同" \
+  "三个场景全部给出了非 EXCLUDED 的结论" \
+  "至少要有一个场景走到「排除」；只会产出 LOCATED 的 demo 会夸大能力"
+ok "多场景通过：${#EXPECTED[@]} 个场景、两种结局，含真正的「排除」"
 
 echo
 blue "无错误码 lane 通过：从一句现象走到了可确认的结论。"

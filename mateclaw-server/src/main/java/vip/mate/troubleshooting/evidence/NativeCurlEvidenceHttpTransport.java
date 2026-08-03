@@ -54,9 +54,27 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
             Map<String, String> headers,
             String body,
             Duration timeout) throws Exception {
+        return execute("POST", uri, headers, validateBody(body), timeout);
+    }
+
+    @Override
+    public Response get(
+            URI uri,
+            Map<String, String> headers,
+            Duration timeout) throws Exception {
+        // null body, not an empty one: curl must not be told to send a payload
+        // at all on a read-only call.
+        return execute("GET", uri, headers, null, timeout);
+    }
+
+    private Response execute(
+            String method,
+            URI uri,
+            Map<String, String> headers,
+            String safeBody,
+            Duration timeout) throws Exception {
         URI safeUri = validateUri(uri);
         Map<String, String> safeHeaders = validateHeaders(headers);
-        String safeBody = validateBody(body);
         Duration safeTimeout = validateTimeout(timeout);
 
         // -q must be curl's first option so user-level .curlrc files are never loaded.
@@ -68,7 +86,7 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
                     () -> readBounded(process.getErrorStream(), MAX_STDERR_BYTES));
 
             try (var stdin = process.getOutputStream()) {
-                stdin.write(curlConfig(safeUri, safeHeaders, safeBody, safeTimeout)
+                stdin.write(curlConfig(method, safeUri, safeHeaders, safeBody, safeTimeout)
                         .getBytes(StandardCharsets.UTF_8));
             }
 
@@ -172,15 +190,16 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
     }
 
     private static String curlConfig(
+            String method,
             URI uri,
             Map<String, String> headers,
             String body,
             Duration timeout) {
         long timeoutSeconds = Math.max(1L, (timeout.toMillis() + 999L) / 1_000L);
-        StringBuilder config = new StringBuilder(512 + body.length());
+        StringBuilder config = new StringBuilder(512 + (body == null ? 0 : body.length()));
         config.append("silent\n")
                 .append("show-error\n")
-                .append("request = \"POST\"\n")
+                .append("request = \"").append(escapeConfig(method)).append("\"\n")
                 .append("url = \"").append(escapeConfig(uri.toASCIIString())).append("\"\n");
         headers.entrySet().stream()
                 .sorted(Comparator.comparing(Map.Entry::getKey))
@@ -189,10 +208,12 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
                         .append(": ")
                         .append(escapeConfig(entry.getValue()))
                         .append("\"\n"));
-        config.append("data-binary = \"")
-                .append(escapeConfig(body))
-                .append("\"\n")
-                .append("connect-timeout = 5\n")
+        if (body != null) {
+            config.append("data-binary = \"")
+                    .append(escapeConfig(body))
+                    .append("\"\n");
+        }
+        config.append("connect-timeout = 5\n")
                 .append("max-time = ").append(timeoutSeconds).append('\n')
                 .append("write-out = \"\\n__MATECLAW_HTTP_STATUS__:%{http_code}\"\n");
         return config.toString();

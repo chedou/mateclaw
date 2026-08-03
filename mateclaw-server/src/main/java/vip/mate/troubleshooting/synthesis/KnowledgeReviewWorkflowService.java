@@ -258,9 +258,14 @@ public class KnowledgeReviewWorkflowService {
         if (!"ELIGIBLE_FOR_APPROVAL".equals(
                 qualification.approvalEligibility())
                 || !qualification.eligibilityReasons().isEmpty()) {
+            List<String> nextSteps = KnowledgeReviewBlockerAdvice.nextSteps(
+                    qualification.eligibilityReasons());
             throw conflict(
                     "current source is not eligible for approval: "
-                            + String.join(",", qualification.eligibilityReasons()));
+                            + String.join(",", qualification.eligibilityReasons())
+                            + (nextSteps.isEmpty()
+                                    ? ""
+                                    : " | " + String.join(" | ", nextSteps)));
         }
 
         KnowledgePromotionMaterial material = promotionMaterials.find(

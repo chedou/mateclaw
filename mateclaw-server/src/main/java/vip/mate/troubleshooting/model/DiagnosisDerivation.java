@@ -12,11 +12,13 @@ import java.util.List;
  *
  * <p><b>On faithfulness.</b> A diagnosis records the evidence it saw and the
  * signals that fired, but not the criteria that produced them — those live in
- * the SOP, and SOPs evolve. So this projection recomputes the chain from the
- * SOP as it stands now and then checks its own work: if the recomputed signals
- * differ from the ones recorded at the time, the knowledge has changed since,
- * {@code faithful} is false and {@code note} says so. Showing a plausible but
- * wrong account of a past decision would be worse than showing none.</p>
+ * the Playbook. This projection therefore recomputes the chain from the
+ * <em>exact immutable version the Diagnosis froze</em>, never from today's
+ * active Playbook, and then checks its own work: if the recomputed signals
+ * differ from the ones recorded at the time, {@code faithful} is false and
+ * {@code note} says so. A diagnosis that froze no version fails closed rather
+ * than borrowing current knowledge. Showing a plausible but wrong account of a
+ * past decision would be worse than showing none.</p>
  *
  * @param diagnosisId  the diagnosis this explains
  * @param sopKey       routing key of the SOP used
