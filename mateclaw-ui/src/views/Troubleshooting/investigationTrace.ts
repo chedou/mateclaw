@@ -1,5 +1,6 @@
 import type {
   DeveloperEvidenceView,
+  InvestigationStageKey,
   InvestigationStageStatus,
   InvestigationStageView,
   RelationEdge,
@@ -14,12 +15,50 @@ const STATUS_LABELS: Record<InvestigationStageStatus, string> = {
   UNRECORDED: '未记录',
 }
 
+const STAGE_PRESENTATIONS: Record<
+  InvestigationStageKey,
+  Readonly<{ title: string; description: string }>
+> = {
+  INCIDENT: {
+    title: '先看发生了什么',
+    description: '确认哪个系统、哪个服务，在什么时间出现了什么问题。',
+  },
+  PLAYBOOK_ROUTE: {
+    title: '决定怎么排查',
+    description: '根据已知信息选择排查方法，并确认这套方法是否经过审核。',
+  },
+  EVIDENCE_CONTRACT: {
+    title: '列出要查的数据',
+    description: '固定本次要查询的数据、范围和时间窗口，并标明哪些必查、哪些可选。',
+  },
+  ADAPTER_SELECTION: {
+    title: '选择查询工具',
+    description: '为每项数据选择可用的只读数据源和查询方式。',
+  },
+  EVIDENCE_COLLECTION: {
+    title: '查询并拿回结果',
+    description: '执行只读查询，展示系统已经记录的结果和耗时。',
+  },
+  CRITERION_EVALUATION: {
+    title: '按规则判断结果',
+    description: '把查询结果代入固定规则，判断哪些条件成立。',
+  },
+  CONCLUSION: {
+    title: '给出结论，或明确不判断',
+    description: '证据足够就给出可复核结论；证据不足就明确停止，不猜答案。',
+  },
+}
+
 export function traceDisplay(value: string | null | undefined) {
   return value?.trim() || '未记录'
 }
 
 export function investigationStageStatusLabel(status: InvestigationStageStatus) {
   return STATUS_LABELS[status]
+}
+
+export function investigationStagePresentation(key: InvestigationStageKey) {
+  return STAGE_PRESENTATIONS[key]
 }
 
 export function investigationRouteLabel(

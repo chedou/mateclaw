@@ -3,6 +3,7 @@ import type { InvestigationStageView, RelationEdge } from '@/api'
 import {
   defaultInvestigationStage,
   investigationRouteLabel,
+  investigationStagePresentation,
   investigationStageStatusLabel,
   relationUpstreamPath,
   traceDisplay,
@@ -28,6 +29,33 @@ function stage(
 }
 
 describe('seven-stage investigation trace presentation', () => {
+  it('explains all seven stages as plain-language developer actions', () => {
+    expect([
+      investigationStagePresentation('INCIDENT').title,
+      investigationStagePresentation('PLAYBOOK_ROUTE').title,
+      investigationStagePresentation('EVIDENCE_CONTRACT').title,
+      investigationStagePresentation('ADAPTER_SELECTION').title,
+      investigationStagePresentation('EVIDENCE_COLLECTION').title,
+      investigationStagePresentation('CRITERION_EVALUATION').title,
+      investigationStagePresentation('CONCLUSION').title,
+    ]).toEqual([
+      '先看发生了什么',
+      '决定怎么排查',
+      '列出要查的数据',
+      '选择查询工具',
+      '查询并拿回结果',
+      '按规则判断结果',
+      '给出结论，或明确不判断',
+    ])
+
+    expect(investigationStagePresentation('EVIDENCE_CONTRACT').description)
+      .toBe('固定本次要查询的数据、范围和时间窗口，并标明哪些必查、哪些可选。')
+    expect(investigationStagePresentation('EVIDENCE_COLLECTION').description)
+      .toBe('执行只读查询，展示系统已经记录的结果和耗时。')
+    expect(investigationStagePresentation('CONCLUSION').description)
+      .toContain('证据不足')
+  })
+
   it('selects a stopped stage before partial or completed stages', () => {
     const stages = [
       stage(1, 'INCIDENT', 'COMPLETED'),
