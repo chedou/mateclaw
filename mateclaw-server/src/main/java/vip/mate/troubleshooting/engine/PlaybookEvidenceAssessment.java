@@ -35,7 +35,35 @@ public record PlaybookEvidenceAssessment(
         List<String> activeSignals,
         List<String> missingRequestIds,
         List<String> missingRequiredRequestIds,
-        List<String> warnings) {
+        List<String> warnings,
+        /**
+         * 产生这条结论的那条规则；只有 {@code LOCATED} 时才有值。
+         *
+         * <p><b>为什么要记下来。</b> 引擎本来就算出了它，然后扔掉。一次已结案且结论
+         * 被人确认的调查，正是一份**答案由世界给出**的回放案例，而回放案例的期望值
+         * 必须精确到规则 id（{@code ReplayCase} 的合同要求 MATCHED 必须指名规则）。
+         * 事后靠 rootCause 文本反查是猜——rootCause 并不保证唯一。</p>
+         *
+         * <p><b>为什么只在 LOCATED 时有值。</b> 规则匹配之后，缺必需证据、Playbook
+         * 仍是草案这两种情况都会把结论降级；那时结论不是那条规则给出的。弃权规则
+         * 匹配也不算——它落到 INSUFFICIENT_EVIDENCE，而回放合同里只有 MATCHED 才
+         * 允许指名规则。让这个字段与「这条规则确实产出了这条结论」严格对齐。</p>
+         */
+        String matchedRuleId) {
+
+    /** Compatibility shape for callers that do not name a producing rule. */
+    public PlaybookEvidenceAssessment(
+            ConclusionType conclusionType,
+            String rootCause,
+            String summary,
+            Confidence confidence,
+            List<String> activeSignals,
+            List<String> missingRequestIds,
+            List<String> missingRequiredRequestIds,
+            List<String> warnings) {
+        this(conclusionType, rootCause, summary, confidence, activeSignals,
+                missingRequestIds, missingRequiredRequestIds, warnings, null);
+    }
 
     public PlaybookEvidenceAssessment {
         activeSignals = List.copyOf(activeSignals == null ? List.of() : activeSignals);
@@ -46,6 +74,14 @@ public record PlaybookEvidenceAssessment(
         if (conclusionType == null || rootCause == null || confidence == null) {
             throw new IllegalArgumentException(
                     "assessment requires a conclusion type, root cause and confidence");
+        }
+        matchedRuleId = matchedRuleId == null || matchedRuleId.isBlank()
+                ? null : matchedRuleId.trim();
+        if (matchedRuleId != null && conclusionType != ConclusionType.LOCATED) {
+            // 只有 LOCATED 才是「某条规则产出了这条结论」。别处带上规则 id，会让
+            // 回放期望指向一条其实没有裁决过这次调查的规则。
+            throw new IllegalArgumentException(
+                    "only a LOCATED assessment may name the rule that produced it");
         }
     }
 
@@ -135,7 +171,12 @@ public record PlaybookEvidenceAssessment(
 
         return new PlaybookEvidenceAssessment(
                 conclusionType, rootCause, summary, confidence,
-                evaluation.activeSignals(), missing, missingRequired, warnings);
+                evaluation.activeSignals(), missing, missingRequired, warnings,
+                // 在所有降级判断**之后**才定：上面任何一条降级都意味着结论不再是
+                // 那条规则给出的，这时它不该留名。
+                conclusionType == ConclusionType.LOCATED && matched != null
+                        ? matched.ruleId()
+                        : null);
     }
 
     private static List<String> missing(

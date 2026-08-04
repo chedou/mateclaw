@@ -32,7 +32,34 @@
 | 6 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
 | 7 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
-### 待拍板：结案候选到底该变成什么（2026-08-03）
+### A 方案进行中（2026-08-03）：已确认可复用现有机制，第一步已落地
+
+**好消息：不需要造新的回放机制。** 随包目录里已经有 `recordedEvidenceSeeds` 这条路——
+`ManualPlaybookRecordedEvidenceSeed`（selectorKey + exampleCandidate + positiveCase）经
+`ManualPlaybookReplaySuiteTemplateFactory` **按判据形状自动生成反例**，正是 D19 说的
+「录制聚合正例 + 判据形状生成反例」。所以 A 方案 = 让一次已结案调查产出一份 seed，
+而不是新建一套并行的回放设施（A9）。
+
+映射几乎是一一对应的：
+
+| ReplayCase 需要 | 已结案诊断提供 |
+|---|---|
+| `exampleCandidate` | 该 selector 的冻结 Playbook |
+| `positiveCase.evidence` | 诊断实际取到的 `EvidenceResult`（queryId / status / observed） |
+| `expectedDisposition` | `MATCHED`（结论成立且人已确认、恢复已核实） |
+| `expectedRuleId` | **此前没有——引擎算出来就扔了** |
+
+**已完成（第一步）**：`PlaybookEvidenceAssessment` 记下 `matchedRuleId`。它严格与
+「这条规则确实产出了这条结论」对齐：只有 `LOCATED` 时才有值，缺必需证据降级、Playbook
+仍是草案、弃权规则匹配，三种情况一律不留名；合同本身也拒绝在非 LOCATED 上带规则 id。
+不这么钉，事后只能拿 rootCause 文本反查，而 rootCause 并不保证唯一——那是猜。
+
+**下一步需要你知道的一件事**：`matchedRuleId` 必须**持久化**才能在结案后取用，也就是
+要给 `Diagnosis` 加一个可空字段并把合同从 1.8 升到 1.9。那是持久化聚合 + 四个工厂 +
+严格校验器，改动面比一张新表大。老诊断没有这个字段，因而无法回溯成为 seed——与
+candidate v1/v2 的处理一致，是可接受的诚实代价。
+
+### 原始待拍板记录：结案候选到底该变成什么（2026-08-03）
 
 现场核对推翻了一个我先前的假设。原以为结案候选是「一次已解决故障提议的新知识」，
 所以缺的是把它投影成 Playbook。实际看下来：**12 条候选全部落在 `csdp:903001`，
