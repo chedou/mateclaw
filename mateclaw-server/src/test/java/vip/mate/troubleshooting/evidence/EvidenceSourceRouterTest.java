@@ -164,6 +164,30 @@ class EvidenceSourceRouterTest {
     }
 
     /**
+     * 系统认识、这条信号不认识——**不许拿别的源顶上**。
+     *
+     * <p>此前这里会落到一层全局默认源（{@code default-sources}）。它从没被设成过
+     * 非空值，所以一直没出事；但只要有人填了值，某个已知系统里所有未声明的信号
+     * 都会**静默**打到那些源上。取证是 fail-closed 的，路由必须显式。那一层已经
+     * 删掉，这条用例是为了它不会以「加个兜底更方便」的名义回来。</p>
+     */
+    @Test
+    void aKnownSystemWithAnUnroutedSignalCollectsNothing() {
+        StubAdapter adapter = StubAdapter.returning("guance", result("EV-1", "guance"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), adapter);
+
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "metric"), incident("CSDP"));
+
+        assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(collected.source()).isEqualTo("router:unconfigured");
+        assertThat(adapter.calls())
+                .as("这条信号没有被声明过，就不该有任何适配器被调用")
+                .isZero();
+    }
+
+    /**
      * 部署级那张表**只按 system 名字索引**，不带 workspace。
      *
      * <p>后果是：另一个租户只要把自己的系统命名成 CSDP，就继承了 CSDP 的路由、

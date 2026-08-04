@@ -15,11 +15,18 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "mateclaw.troubleshooting.evidence")
 public class EvidenceProperties {
 
-    /** Explicit {@code system -> signal kind -> ordered source names} routes. */
+    /**
+     * Explicit {@code system -> signal kind -> ordered source names} routes.
+     *
+     * <p>部署级回落。租户自己的声明优先，见 {@code WorkspaceEvidenceRoutes}。</p>
+     *
+     * <p>这里刻意没有「全局默认源」那一层。它曾经存在（{@code default-sources}），
+     * 从没被设成过非空值，却是 router 的最后兜底：而且 system 命中、signalKind
+     * 未命中时也会落到它身上——**一旦有人填了值，某个已知系统里所有未声明的信号
+     * 会静默打到那些源上**。取证是 fail-closed 的，路由必须显式；一个全局默认正是
+     * 这条原则的反面。</p>
+     */
     private Map<String, Map<String, List<String>>> routes = new LinkedHashMap<>();
-
-    /** Optional ordered fallback used only when an operator explicitly sets it. */
-    private List<String> defaultSources = List.of();
 
     private Guance guance = new Guance();
 
