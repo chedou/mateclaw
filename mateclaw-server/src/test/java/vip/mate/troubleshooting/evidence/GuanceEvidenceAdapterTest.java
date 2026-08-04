@@ -409,6 +409,221 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void normalizesAnErrorLogSkillAsAggregateFactsWithoutReturningRawRows() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "error_count", "affected_trace_count", "latest_trace_id"],
+                    "values": [[1753434723000, 12, 7, "trace-007"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "应用 ERROR 聚合巡检",
+                "L::`csp-rpc-msg`:(count(*) as error_count,"
+                        + "count_distinct(`@trace_id`) as affected_trace_count,"
+                        + "last(`@trace_id`) as latest_trace_id) "
+                        + "{ query_string(`message`, \"level:ERROR\") } "
+                        + "[{{window_span}}::{{window_span}}]",
+                Map.of(),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("error_log_scan", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-ERROR-SCAN",
+                "error_log_scan",
+                "scan application errors",
+                Map.of(),
+                "-24h",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.query()).isEmpty();
+        assertThat(result.source()).isEqualTo("guance:error_log_scan");
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "error_count", 12,
+                "affected_trace_count", 7,
+                "latest_trace_id", "trace-007"));
+        assertThat(result.observed())
+                .doesNotContainKeys("message", "content", "host");
+    }
+
+    @Test
+    void preservesARealZeroMonitorEventAggregateWithoutInventingAlertDetails() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "event_count", "latest_status", "latest_checker"],
+                    "values": [[1753434723000, 0, null, null]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "E",
+                "监控事件聚合巡检",
+                "E::monitor:(count(*) as event_count,last(`df_status`) as latest_status,"
+                        + "last(`df_monitor_checker_name`) as latest_checker) "
+                        + "{ `df_status` IN ['critical', 'error', 'warning'] "
+                        + "AND `df_monitor_checker_name` = '{{monitor_checker}}' } "
+                        + "[{{window_span}}::{{window_span}}]",
+                Map.of(),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("monitor_event_scan", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-MONITOR-SCAN",
+                "monitor_event_scan",
+                "scan monitor events",
+                Map.of("monitor_checker", "csdp-api-error-rate"),
+                "-15m",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsExactlyEntriesOf(Map.of("event_count", 0));
+        assertThat(result.observed())
+                .doesNotContainKeys("latest_status", "latest_checker", "df_message", "df_title");
+        assertThat(transport.body)
+                .contains("csdp-api-error-rate")
+                .doesNotContain("{{monitor_checker}}");
+    }
+
+    @Test
+    void mergesTheFourBoundedK8sSkillQueriesAndRejectsUnsafeTargets() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [
+                    {"series": [{
+                      "columns": ["time", "pod_count", "container_count"],
+                      "values": [[1753434723000, 3, 4]]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "running_container_count"],
+                      "values": [[1753434723000, 3]]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "unhealthy_container_count"],
+                      "values": [[1753434723000, 1]]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "max_cpu_percent", "max_memory_percent"],
+                      "values": [[1753434723000, 82.5, 76.25]]
+                    }]}
+                  ]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "O+M", "K8s 工作负载健康", "unused", Map.of(), 1);
+        binding.setQueryTemplate(null);
+        binding.setQueryTemplates(List.of(
+                "O::docker_containers:(count_distinct(`pod_name`) as pod_count,"
+                        + "count(*) as container_count) "
+                        + "{ `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' }",
+                "O::docker_containers:(count(*) as running_container_count) "
+                        + "{ `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' "
+                        + "AND `state` = 'running' }",
+                "O::docker_containers:(count(*) as unhealthy_container_count) "
+                        + "{ `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' "
+                        + "AND `state` != 'running' }",
+                "M::docker_containers:(max(`cpu_usage_percent`) as max_cpu_percent,"
+                        + "max(`mem_used_percent`) as max_memory_percent) "
+                        + "{ `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' } "
+                        + "[{{window_span}}::{{window_span}}]"));
+        EvidenceProperties.Guance config = guanceConfig("k8s_workload_health", binding);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-K8S-HEALTH",
+                "k8s_workload_health",
+                "inspect approved workload",
+                Map.of("deployment", "csdp-wechat", "namespace", "csdp"),
+                "-15m",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "pod_count", 3,
+                "container_count", 4,
+                "running_container_count", 3,
+                "unhealthy_container_count", 1,
+                "max_cpu_percent", 82.5,
+                "max_memory_percent", 76.25));
+        JsonNode queries = objectMapper.readTree(transport.body).path("queries");
+        assertThat(queries).hasSize(4);
+        for (JsonNode query : queries) {
+            assertThat(query.path("query").path("q").asText())
+                    .contains("csdp-wechat", "csdp")
+                    .doesNotContain("{{");
+        }
+
+        CapturingTransport multiRowTransport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [
+                    {"series": [{
+                      "columns": ["time", "pod_count", "container_count"],
+                      "values": [
+                        [1753434660000, 2, 3],
+                        [1753434723000, 3, 4]
+                      ]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "running_container_count"],
+                      "values": [[1753434723000, 3]]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "unhealthy_container_count"],
+                      "values": [[1753434723000, 1]]
+                    }]},
+                    {"series": [{
+                      "columns": ["time", "max_cpu_percent", "max_memory_percent"],
+                      "values": [[1753434723000, 82.5, 76.25]]
+                    }]}
+                  ]}
+                }
+                """);
+        GuanceEvidenceAdapter multiRowAdapter = new GuanceEvidenceAdapter(
+                config, objectMapper, multiRowTransport, CLOCK);
+
+        assertThat(multiRowAdapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode()).status())
+                .as("a scalar contract must not reinterpret the latest point as a window aggregate")
+                .isEqualTo(EvidenceStatus.MISSING);
+
+        CapturingTransport rejectedTransport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter rejectedAdapter = new GuanceEvidenceAdapter(
+                config, objectMapper, rejectedTransport, CLOCK);
+        EvidenceRequest unsafe = new EvidenceRequest(
+                "EV-K8S-UNSAFE",
+                "k8s_workload_health",
+                "reject unreviewed target",
+                Map.of("deployment", "csdp-wechat", "namespace", "csdp' OR 1=1"),
+                "-15m",
+                true);
+
+        assertThat(rejectedAdapter.collect(
+                WORKSPACE_ID, unsafe, incidentWithoutErrorCode()).status())
+                .isEqualTo(EvidenceStatus.MISSING);
+        assertThat(rejectedTransport.calls.get()).isZero();
+    }
+
+    @Test
     void rejectsFieldPerSeriesScalarResponsesWithDifferentObservationTimes() {
         CapturingTransport transport = new CapturingTransport(200, """
                 {

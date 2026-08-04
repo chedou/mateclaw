@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -115,6 +116,82 @@ class EvidenceQueryCatalogServiceTest {
         assertThat(contract.route().reason()).isEqualTo("maintenance window");
         assertThat(contract.runnable()).isFalse();
         assertThat(contract.blockers()).contains("当前 Workspace 明确停用了该证据路由");
+    }
+
+    @Test
+    void exposesTheSanitizedK8sSkillContractAsApprovedTargetParameters() throws Exception {
+        EvidenceProperties properties = configuredProperties();
+        EvidenceProperties.Binding workload = new EvidenceProperties.Binding();
+        workload.setNamespace("O+M");
+        workload.setSummary("Kubernetes 工作负载状态与资源聚合");
+        workload.setQueryTemplates(List.of(
+                "O::docker_containers:(count(*) as pod_count) "
+                        + "{deployment='{{deployment}}' AND namespace='{{namespace}}'}",
+                "O::docker_containers:(count(*) as container_count) "
+                        + "{deployment='{{deployment}}' AND namespace='{{namespace}}'}",
+                "O::docker_containers:(count(*) as running_container_count,"
+                        + "count(*) as unhealthy_container_count) "
+                        + "{deployment='{{deployment}}' AND namespace='{{namespace}}'}",
+                "M::docker_containers:(max(cpu_usage_percent) as max_cpu_percent,"
+                        + "max(mem_used_percent) as max_memory_percent) "
+                        + "{deployment='{{deployment}}' AND namespace='{{namespace}}'}"));
+        workload.setMaxRows(1);
+        properties.getGuance().setBindings(Map.of("csdp-k8s-health", workload));
+        EvidenceProperties.AssetBinding asset = new EvidenceProperties.AssetBinding();
+        asset.setWorkspaceId(7L);
+        asset.setSystem("CSDP");
+        asset.setService("session-svc");
+        asset.setSignalBindings(Map.of("k8s_workload_health", "csdp-k8s-health"));
+        properties.getGuance().setAssetBindings(List.of(asset));
+        properties.setRoutes(Map.of(
+                "CSDP", Map.of("k8s_workload_health", List.of("guance"))));
+
+        GuanceEvidenceAdapter adapter = adapter(properties);
+        EvidenceRouteService routes = mock(EvidenceRouteService.class);
+        GuanceEvidenceAcceptanceService acceptance = mock(GuanceEvidenceAcceptanceService.class);
+        when(routes.list(7L, null)).thenReturn(List.of());
+        when(acceptance.inspect(7L, "CSDP", "session-svc"))
+                .thenReturn(new GuanceEvidenceAcceptanceView(
+                        GuanceEvidenceAcceptanceView.Status.NOT_ACCEPTED,
+                        "CSDP",
+                        "session-svc",
+                        "binding-fingerprint",
+                        null,
+                        List.of()));
+
+        EvidenceQueryCatalogView.ContractView contract = new EvidenceQueryCatalogService(
+                properties, routes, List.of(adapter), adapter, acceptance)
+                .inspect(7L)
+                .systems().getFirst()
+                .modules().getFirst()
+                .contracts().getFirst();
+
+        assertThat(contract.signalKind()).isEqualTo("k8s_workload_health");
+        assertThat(contract.scenario()).isEqualTo("K8s 工作负载健康");
+        assertThat(contract.question()).contains("Deployment", "CPU", "内存");
+        assertThat(contract.parameters())
+                .extracting(EvidenceQueryCatalogView.ParameterView::name)
+                .containsExactly("occurred_at", "window", "deployment", "namespace");
+        assertThat(contract.parameters())
+                .filteredOn(parameter -> Set.of("deployment", "namespace")
+                        .contains(parameter.name()))
+                .allSatisfy(parameter -> {
+                    assertThat(parameter.source()).isEqualTo("EVIDENCE_REQUEST_TARGET");
+                    assertThat(parameter.description()).contains("已审核排障方案");
+                });
+        assertThat(contract.canonicalOutputs()).containsExactlyInAnyOrder(
+                "pod_count",
+                "container_count",
+                "running_container_count",
+                "unhealthy_container_count",
+                "max_cpu_percent",
+                "max_memory_percent");
+        assertThat(contract.budget().queryCount()).isEqualTo(4);
+        assertThat(contract.budget().maxRows()).isEqualTo(1);
+        assertThat(contract.runnable()).isTrue();
+
+        assertThat(new ObjectMapper().writeValueAsString(contract))
+                .doesNotContain("docker_containers", "{{deployment}}", "queryTemplates");
     }
 
     private EvidenceProperties configuredProperties() {

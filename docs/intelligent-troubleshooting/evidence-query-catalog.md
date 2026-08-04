@@ -73,12 +73,20 @@ DELETE /api/v1/troubleshooting/evidence/routes?system={system}&signalKind={signa
 
 ## 5. 当前覆盖与扩展方式
 
-当前 `csdp-guance-evidence-pilot` 提供会话消息发送失败场景的三份合同：
+当前 `csdp-guance-evidence-pilot` 提供会话消息发送失败主竖线和通用观测巡检合同：
 
 - `log_search`：失败日志检索；
 - `log_trace_bundle`：按 PS ID 还原链路；
-- `contrast_sample`：成功/失败样本对照。
+- `contrast_sample`：成功/失败样本对照；
+- `error_log_scan`：应用 ERROR 聚合巡检；
+- `monitor_event_scan`：warning 及以上监控事件聚合巡检；
+- `k8s_workload_health`：指定 Deployment/Namespace 的 Pod、容器和资源高水位。
 
 `csp-clouddial-pilot` 提供 `synthetic_probe` 合同。某个 Profile 或绑定未在当前部署启用时，页面不会伪装成已接入；它只展示当前服务端实际装配出的系统和合同。
+
+外部 Guance Skills 的完整安全映射、运行边界与待验收项见
+[Guance Skills 融合说明](./guance-skill-integration.md)。新增日志、告警与 K8s 合同已进入统一 Router/Adapter。
+`error_log_scan` 已通过真实 Guance 15 分钟聚合烟测；告警、K8s 与 24 小时日志扫描仍待
+owner 核对。这些事实均不等于 T7/T8 已通过。
 
 接入新系统时，先在 server-owned binding 中补齐系统、模块、场景、问题和查询合同，再由 Workspace 在页面声明路由，最后完成真实字段核对与 owner 验收。目录是接入控制面，不替代 Evidence Router、Adapter 或 Evidence Spine。

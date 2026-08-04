@@ -16,6 +16,9 @@ mateclaw:
           log_search: [guance]
           log_trace_bundle: [guance]
           contrast_sample: [guance]
+          error_log_scan: [guance]
+          monitor_event_scan: [guance]
+          k8s_workload_health: [guance]
       guance:
         base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:http://df-openapi.prd.sangfor.com}
         # The local TUN path closes Java HTTP sockets but accepts the same
@@ -34,6 +37,9 @@ mateclaw:
               log_search: csdp-message-send-log-search
               log_trace_bundle: csdp-message-send-trace-bundle
               contrast_sample: csdp-message-send-contrast
+              error_log_scan: csdp-application-error-scan
+              monitor_event_scan: csdp-monitor-event-scan
+              k8s_workload_health: csdp-k8s-workload-health
         bindings:
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
@@ -104,4 +110,93 @@ mateclaw:
                 [{{window_span}}::{{window_span}}]
             constant-fields:
               discriminating_feature: message_length_eq_2875
+            field-aliases: {}
+          # Sanitized import of guanceyun-error-logs. It exposes only aggregate
+          # canonical facts; raw message/content/host rows remain inside Guance.
+          csdp-application-error-scan:
+            namespace: L
+            summary: CSDP 应用 ERROR 聚合巡检
+            scenario: 应用错误日志巡检
+            question: 故障窗口内出现了多少应用 ERROR，涉及多少条调用链？
+            fixed-conditions:
+              - 日志源=csp-rpc-msg
+              - 业务日志级别=message JSON 中的 level:ERROR
+              - 仅返回聚合计数与最新关联 ID，不返回原始日志
+            max-rows: 1
+            query-template: >-
+              L::`csp-rpc-msg`:(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
+              { query_string(`message`, "level:ERROR") }
+              [{{window_span}}::{{window_span}}]
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: true
+              time-zone: Asia/Shanghai
+            field-aliases: {}
+          # Sanitized import of the E::monitor branch from
+          # guanceyun-error-logs. Alert messages/titles are deliberately not
+          # projected into Diagnosis evidence.
+          csdp-monitor-event-scan:
+            namespace: E
+            summary: CSDP warning 及以上监控事件聚合巡检
+            scenario: 监控告警巡检
+            question: 故障窗口内是否触发了 warning、error 或 critical 监控事件？
+            fixed-conditions:
+              - 事件源=monitor
+              - 级别=warning、error、critical
+              - 监控规则名必须来自已审核 Playbook 的精确目标
+              - 仅返回数量、最新级别与规则名，不返回告警正文
+            max-rows: 1
+            query-template: >-
+              E::monitor:(count(*) as event_count,last(`df_status`) as latest_status,last(`df_monitor_checker_name`) as latest_checker)
+              { `df_status` IN ['critical', 'error', 'warning'] AND `df_monitor_checker_name` = '{{monitor_checker}}' }
+              [{{window_span}}::{{window_span}}]
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: true
+              time-zone: Asia/Shanghai
+            field-aliases: {}
+          # Sanitized import of guanceyun-k8s-pod-info. Deployment and
+          # namespace must come from an approved Playbook evidence target.
+          # There is no runtime fallback across guessed Guance measurements.
+          csdp-k8s-workload-health:
+            namespace: O+M
+            summary: CSDP Kubernetes 工作负载状态与资源聚合
+            scenario: K8s 工作负载健康检查
+            question: 目标 Deployment 是否存在异常容器、CPU 或内存高水位？
+            fixed-conditions:
+              - 对象源=docker_containers
+              - 指标源=docker_containers
+              - 非 running 容器计入 unhealthy_container_count
+              - 资源结果取故障窗口内最大 CPU 与内存使用率
+            # Every component is an aggregate scalar. More than one row means
+            # the source result shape drifted; never reinterpret the latest
+            # point as the requested window aggregate.
+            max-rows: 1
+            query-templates:
+              - >-
+                O::docker_containers:(count_distinct(`pod_name`) as pod_count,count(*) as container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' }
+              - >-
+                O::docker_containers:(count(*) as running_container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' AND `state` = 'running' }
+              - >-
+                O::docker_containers:(count(*) as unhealthy_container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' AND `state` != 'running' }
+              - >-
+                M::docker_containers:(max(`cpu_usage_percent`) as max_cpu_percent,max(`mem_used_percent`) as max_memory_percent)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' }
+                [{{window_span}}::{{window_span}}]
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 50
+              disable-sampling: true
+              time-zone: Asia/Shanghai
             field-aliases: {}

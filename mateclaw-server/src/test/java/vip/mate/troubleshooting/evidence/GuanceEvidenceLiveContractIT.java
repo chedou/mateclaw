@@ -122,6 +122,48 @@ class GuanceEvidenceLiveContractIT {
         });
     }
 
+    @Test
+    @EnabledIfEnvironmentVariable(
+            named = "MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY",
+            matches = ".+")
+    void observesTheSanitizedApplicationErrorScanContract() {
+        contextRunner.run(context -> {
+            EvidenceRequest request = new EvidenceRequest(
+                    "EV-LIVE-ERROR-SCAN",
+                    "error_log_scan",
+                    "verify aggregate application error scan",
+                    Map.of(),
+                    "-15m",
+                    true);
+            IncidentContext incident = new IncidentContext(
+                    "inc-live-error-scan",
+                    "CSDP",
+                    "csdp-session-service",
+                    null,
+                    "application error scan contract verification",
+                    "P2",
+                    "read-only",
+                    null,
+                    Instant.now(),
+                    null,
+                    "manual",
+                    IncidentCompleteness.LOG,
+                    null);
+
+            var result = context.getBean(EvidenceSourceRouter.class)
+                    .collect(1L, request, incident, Set.of("guance"));
+
+            assertThat(result.status())
+                    .as(result.summary())
+                    .isEqualTo(EvidenceStatus.NORMAL);
+            assertThat(result.query()).isEmpty();
+            assertThat(result.observed())
+                    .containsKey("error_count")
+                    .doesNotContainKeys("message", "content", "host");
+            assertThat(number(result.observed().get("error_count"))).isNotNegative();
+        });
+    }
+
     private static boolean nonBlank(Object value) {
         return value instanceof String text && !text.isBlank();
     }

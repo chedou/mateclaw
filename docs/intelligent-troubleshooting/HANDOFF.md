@@ -1061,8 +1061,24 @@ T17 取证查询目录（2026-08-04）已按“方案 C 页面 + 方案 A 后端
 - 页面只复用现有 route API 维护 `系统 + 证据维度 → 有序适配器`；空列表仍表示 Workspace
   显式禁用，撤回声明才恢复部署默认；编辑器提供明确的上移/下移优先级。首版不提供在线 DQL、
   端点或凭据编辑，联调页只分别显示端点和凭据的配置状态。
-- 当前本机 `csdp-guance-evidence-pilot` 实测投影 1 个系统、1 个模块、3 份合同，三份均可运行；
+- 当前本机 `csdp-guance-evidence-pilot` 实测投影 1 个系统、1 个模块、6 份合同；
+  原三份 SendMsg 合同与本轮新增的三份巡检合同均由同一目录投影；
   页面无资源错误。后端排障域 789 项、前端 28 文件 / 205 项和生产构建均通过。
+
+T18 外部 Guance Skills 安全融合（2026-08-04）：
+
+- `skills.zip` 没有被安装成第二套 Python/Agent 运行时，而是作为查询能力输入映射到现有
+  `EvidenceRequest → EvidenceSourceRouter → GuanceEvidenceAdapter → CanonicalEvidenceSchema`。压缩包内的
+  明文 Key、自由 DQL、原始日志打印和数据源猜测逻辑均未复制。
+- 复用 `log_search / log_trace_bundle / contrast_sample / synthetic_probe`，新增
+  `error_log_scan / monitor_event_scan / k8s_workload_health`。三份新合同均有服务端精确资产绑定、
+  参数来源、canonical schema、模型投影白名单和七阶段轨迹白名单。监控必须精确绑定
+  `monitor_checker`，K8s 必须绑定 `deployment + namespace`，四个聚合 component 任一多行即 `MISSING`。
+- 结构、值域与投影聚焦回归 56 项、排障域 + Skill Manifest 全量 809 项通过。
+  `error_log_scan` 真实 Guance 15 分钟聚合烟测
+  1 项通过，耗时约 0.9 秒；24 小时扫描触发上游约 30 秒超时，未伪装为验收成功。
+- `monitor_event_scan` 与 `k8s_workload_health` 仍需 owner 给出真实规则名、Deployment/Namespace，
+  并核对 Guance 列名、单位、空数据和延迟。本轮不改变 T7/T8、`fixtureMode` 或生产写边界。
 
 后端定向测试命令：
 
