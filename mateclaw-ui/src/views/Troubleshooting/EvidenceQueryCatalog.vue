@@ -1,8 +1,51 @@
 <template>
   <div class="catalog-page">
+    <div class="catalog-layout">
+      <aside class="catalog-subnav" :class="{ collapsed: catalogNavCompact }">
+        <div v-if="!catalogNavCompact" class="subnav-intro">
+          <p>取证能力</p>
+          <h2>取证查询目录</h2>
+        </div>
+        <nav aria-label="取证查询目录工作区">
+          <el-tooltip
+            v-for="destination in EVIDENCE_CATALOG_DESTINATIONS"
+            :key="destination.tab"
+            :content="destination.label"
+            placement="right"
+            :disabled="!catalogNavCompact"
+          >
+            <button
+              type="button"
+              class="subnav-item"
+              :class="{ active: activeTab === destination.tab }"
+              :aria-current="activeTab === destination.tab ? 'page' : undefined"
+              @click="activeTab = destination.tab"
+            >
+              <el-icon class="subnav-icon">
+                <component :is="DESTINATION_ICONS[destination.tab]" />
+              </el-icon>
+              <span v-if="!catalogNavCompact" class="subnav-label">{{ destination.label }}</span>
+              <small v-if="!catalogNavCompact && destination.badge">{{ destination.badge }}</small>
+            </button>
+          </el-tooltip>
+        </nav>
+        <button
+          type="button"
+          class="subnav-collapse"
+          :class="{ 'mobile-hidden': forcedRailViewport }"
+          :title="navCollapsed ? '展开二级菜单' : '折叠二级菜单'"
+          :aria-label="navCollapsed ? '展开二级菜单' : '折叠二级菜单'"
+          @click="toggleCatalogNav"
+        >
+          <svg v-if="!navCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
+      </aside>
+
+      <section class="catalog-content">
     <header class="catalog-header">
       <div class="header-copy">
-        <el-button text class="back-button" @click="router.push('/troubleshooting')">
+        <el-button text class="back-button" @click="returnToWorkbench">
           ← 返回智能排障
         </el-button>
         <div class="title-row">
@@ -52,7 +95,7 @@
         </article>
       </section>
 
-      <el-tabs v-model="activeTab" class="catalog-tabs">
+      <el-tabs v-model="activeTab" class="catalog-tabs sidebar-controlled-tabs">
         <el-tab-pane label="系统与模块" name="systems">
           <div v-if="filteredRows.length" class="system-workspace">
             <aside class="catalog-tree">
@@ -293,7 +336,7 @@
                   {{ row.module.acceptance.acceptedBy }} · {{ row.module.acceptance.acceptedAt || '未记录时间' }}
                 </small>
               </article>
-              <el-button type="primary" plain @click="router.push('/troubleshooting')">
+              <el-button type="primary" plain @click="returnToWorkbench">
                 返回排障台执行只读联调
               </el-button>
             </div>
@@ -301,6 +344,8 @@
         </el-tab-pane>
       </el-tabs>
     </main>
+      </section>
+    </div>
 
     <el-dialog v-model="routeDialogOpen" title="修改 Workspace 取证路由" width="560px">
       <template v-if="routeTarget">
@@ -364,9 +409,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { vLoading } from 'element-plus/es/components/loading/index'
+import { Connection, DataLine, Document, Select } from '@element-plus/icons-vue'
+import { BREAKPOINTS, useMediaQuery } from '@/composables/useBreakpoint'
 import {
   troubleshootingApi,
   type EvidenceCatalogModule,
@@ -383,6 +431,12 @@ import {
   runtimeStateLabel,
   moveOrderedItem,
 } from './evidenceCatalog'
+import {
+  EVIDENCE_CATALOG_DESTINATIONS,
+  normalizeEvidenceCatalogTab,
+  safeTroubleshootingReturnPath,
+  type EvidenceCatalogTab,
+} from './workbenchCapabilityMenu'
 
 type ContractRow = {
   system: string
@@ -391,12 +445,25 @@ type ContractRow = {
   contract: EvidenceQueryContract
 }
 
+const route = useRoute()
 const router = useRouter()
+const storedNavPreference = localStorage.getItem('mc-evidence-catalog-nav-collapsed')
+const navCollapsed = ref(storedNavPreference === 'true')
+const navUserExplicit = ref(storedNavPreference !== null)
+const compactViewport = useMediaQuery(BREAKPOINTS.compact)
+const forcedRailViewport = useMediaQuery('(max-width: 900px)')
+const catalogNavCompact = computed(() => navCollapsed.value || forcedRailViewport.value)
+const DESTINATION_ICONS = {
+  systems: DataLine,
+  contracts: Document,
+  routes: Connection,
+  acceptance: Select,
+} as const
 const catalog = ref<EvidenceQueryCatalog | null>(null)
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
-const activeTab = ref('systems')
+const activeTab = ref<EvidenceCatalogTab>(normalizeEvidenceCatalogTab(route.query.tab))
 const selectedKey = ref('')
 const routeDialogOpen = ref(false)
 const routeSaving = ref(false)
@@ -470,6 +537,21 @@ function inspectRow(row: ContractRow) {
   activeTab.value = 'systems'
 }
 
+function returnToWorkbench() {
+  void router.push(safeTroubleshootingReturnPath(route.query.returnTo) || '/troubleshooting')
+}
+
+function toggleCatalogNav() {
+  navCollapsed.value = !navCollapsed.value
+  navUserExplicit.value = true
+  localStorage.setItem('mc-evidence-catalog-nav-collapsed', String(navCollapsed.value))
+}
+
+function recomputeAutoNav() {
+  if (navUserExplicit.value) return
+  navCollapsed.value = compactViewport.value
+}
+
 function openRouteEditor(row: ContractRow) {
   routeTarget.value = row
   routePlatforms.value = [...row.contract.route.platforms]
@@ -522,6 +604,24 @@ async function withdrawRoute(row: ContractRow) {
   }
 }
 
+watch(() => route.query.tab, value => {
+  const nextTab = normalizeEvidenceCatalogTab(value)
+  if (activeTab.value !== nextTab) activeTab.value = nextTab
+})
+
+watch(activeTab, tab => {
+  if (route.query.tab === tab) return
+  if (route.query.tab == null && tab === 'systems') return
+  void router.replace({
+    query: {
+      ...route.query,
+      tab,
+    },
+  })
+})
+
+watch(compactViewport, recomputeAutoNav, { immediate: true })
+
 onMounted(loadCatalog)
 </script>
 
@@ -530,13 +630,34 @@ onMounted(loadCatalog)
   --catalog-accent: var(--mc-primary, #d86f45);
   height: 100%;
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 28px clamp(20px, 3vw, 48px);
   color: var(--el-text-color-primary);
   background: color-mix(in srgb, var(--el-bg-color-page) 88%, #f5eee7);
 }
 
+.catalog-layout { display:flex; gap:18px; width:min(1420px,100%); height:100%; min-height:0; margin:0 auto; }
+.catalog-subnav { display:flex; align-self:stretch; flex-direction:column; width:210px; min-width:210px; padding:14px 10px; overflow-y:auto; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); transition:width .25s ease,min-width .25s ease; }
+.catalog-subnav.collapsed { width:56px; min-width:56px; padding:12px 8px; }
+.subnav-intro { padding:4px 8px 12px; margin-bottom:8px; border-bottom:1px solid var(--mc-border-light); }
+.subnav-intro p { margin:0 0 5px; color:var(--catalog-accent); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.subnav-intro h2 { margin:0; color:var(--mc-text-primary); font-size:20px; letter-spacing:-.03em; }
+.catalog-subnav nav { display:flex; flex-direction:column; gap:2px; }
+.subnav-item { display:flex; align-items:center; gap:8px; width:100%; min-height:38px; padding:8px 10px; border:0; border-radius:10px; color:var(--mc-text-secondary); background:transparent; font:inherit; font-size:13px; font-weight:500; text-align:left; cursor:pointer; transition:background .15s ease,color .15s ease; }
+.subnav-item:hover,.subnav-item:focus-visible { color:var(--mc-text-primary); background:var(--mc-bg-muted); outline:none; }
+.subnav-item.active { color:var(--catalog-accent); background:var(--mc-primary-bg); font-weight:650; box-shadow:inset 0 0 0 1px rgba(217,109,70,.08); }
+.subnav-icon { display:grid; place-items:center; flex:0 0 18px; width:18px; height:18px; font-size:17px; }
+.subnav-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.subnav-item small { margin-left:auto; padding:1px 5px; border-radius:999px; color:var(--catalog-accent); background:var(--mc-primary-bg); font-size:9px; white-space:nowrap; }
+.catalog-subnav.collapsed .subnav-item { justify-content:center; padding:10px 8px; }
+.subnav-collapse { display:flex; align-items:center; justify-content:center; position:sticky; bottom:8px; flex:0 0 auto; align-self:center; width:32px; height:32px; padding:0; margin-top:auto; margin-bottom:8px; border:1px solid rgba(217,109,70,.22); border-radius:50%; color:var(--catalog-accent); background:var(--mc-primary-bg); box-shadow:0 6px 16px rgba(217,109,70,.18); cursor:pointer; transition:background .18s ease,color .18s ease,transform .18s ease; }
+.subnav-collapse:hover,.subnav-collapse:focus-visible { color:#fff; background:var(--catalog-accent); outline:2px solid color-mix(in srgb,var(--catalog-accent) 30%,transparent); outline-offset:2px; transform:scale(1.05); }
+.catalog-content { flex:1; min-width:0; min-height:0; overflow-y:auto; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--el-bg-color); box-shadow:var(--mc-shadow-soft); }
+
 .catalog-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 32px;
   padding: 28px clamp(24px, 4vw, 64px) 22px;
@@ -544,13 +665,13 @@ onMounted(loadCatalog)
   background: var(--el-bg-color);
 }
 
-.header-copy { max-width: 820px; }
+.header-copy { flex: 1 1 520px; min-width: min(100%, 480px); max-width: 820px; }
 .back-button { margin: 0 0 14px -12px; color: var(--el-text-color-secondary); }
 .title-row { display: flex; align-items: center; gap: 14px; }
-.title-row h1 { margin: 2px 0 0; font-size: clamp(26px, 3vw, 38px); letter-spacing: -.04em; }
+.title-row h1 { margin: 2px 0 0; font-size: clamp(26px, 3vw, 38px); letter-spacing: -.04em; white-space: nowrap; }
 .eyebrow { margin: 0; color: var(--catalog-accent); font-size: 12px; font-weight: 700; letter-spacing: .16em; }
 .subtitle { margin: 12px 0 0; color: var(--el-text-color-secondary); line-height: 1.7; }
-.header-actions { display: flex; align-items: flex-end; gap: 10px; min-width: min(460px, 38vw); }
+.header-actions { display: flex; align-items: flex-end; flex: 1 1 360px; gap: 10px; min-width: min(100%, 360px); }
 .search-input { flex: 1; }
 
 .catalog-main { padding: 22px clamp(24px, 4vw, 64px) 48px; }
@@ -562,6 +683,8 @@ onMounted(loadCatalog)
 .summary-card.emphasis strong { color: var(--catalog-accent); }
 
 .catalog-tabs { padding: 0 20px 24px; border: 1px solid var(--el-border-color-lighter); border-radius: 14px; background: var(--el-bg-color); }
+.sidebar-controlled-tabs :deep(.el-tabs__header) { display:none; }
+.sidebar-controlled-tabs :deep(.el-tabs__content) { padding-top:20px; }
 .system-workspace { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); min-height: 620px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; overflow: hidden; }
 .catalog-tree { padding: 16px 12px; border-right: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-extra-light); overflow: auto; }
 .tree-system { padding: 8px 10px; color: var(--el-text-color-primary); font-size: 13px; font-weight: 800; letter-spacing: .04em; }
@@ -625,13 +748,27 @@ onMounted(loadCatalog)
 .priority-row em { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--catalog-accent); background: color-mix(in srgb, var(--catalog-accent) 10%, var(--el-bg-color)); font-style: normal; font-size: 11px; font-weight: 700; }
 
 @media (max-width: 1100px) {
-  .catalog-header { flex-direction: column; }
-  .header-actions { min-width: 0; width: 100%; }
+  .catalog-header { flex-direction: column; flex-wrap: nowrap; }
+  .header-copy, .header-actions { flex: 0 0 auto; min-width: 0; width: 100%; max-width: none; }
   .axis-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-strip { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
 }
 
+@media (max-width: 900px) {
+  .catalog-page { height: auto; min-height: 100%; overflow: auto; padding: 14px; }
+  .catalog-layout { height: auto; min-height: calc(100vh - 28px); align-items: stretch; }
+  .catalog-subnav { align-self: auto; width: 56px; min-width: 56px; max-height: none; padding: 12px 8px; overflow: visible; }
+  .catalog-subnav .subnav-intro,
+  .catalog-subnav .subnav-label,
+  .catalog-subnav .subnav-item small { display: none; }
+  .catalog-subnav .subnav-item { justify-content: center; padding: 10px 8px; }
+  .subnav-collapse.mobile-hidden { display: none; }
+  .catalog-content { min-height: 0; overflow: visible; }
+}
+
 @media (max-width: 760px) {
+  .catalog-page { padding: 10px; }
+  .catalog-layout { gap: 10px; }
   .catalog-header, .catalog-main { padding-left: 16px; padding-right: 16px; }
   .header-actions { align-items: stretch; flex-direction: column; }
   .system-workspace, .acceptance-layout { grid-template-columns: 1fr; }
