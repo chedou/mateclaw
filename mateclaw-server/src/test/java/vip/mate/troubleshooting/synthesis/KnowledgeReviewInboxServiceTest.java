@@ -75,7 +75,7 @@ class KnowledgeReviewInboxServiceTest {
         assertThat(inbox.sourceStates().getFirst().snapshot().eligibilityReasons())
                 .containsExactly(
                         "OUTCOME_VERIFICATION_NOT_PROJECTED",
-                        "POSITIVE_REPLAY_REQUIRED",
+                        "NO_ROUTEABLE_PLAYBOOK_PROJECTED",
                         "OWNER_REQUIRED");
         assertThat(inbox.sourceStates().getLast().snapshot().validationStatus())
                 .isEqualTo("VALID");

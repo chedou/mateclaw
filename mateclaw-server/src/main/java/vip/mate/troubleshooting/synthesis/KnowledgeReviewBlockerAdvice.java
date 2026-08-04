@@ -45,6 +45,12 @@ public final class KnowledgeReviewBlockerAdvice {
                     "缺 selector：没有路由键的知识无法被任何一条报障找到"),
             Map.entry("OUTCOME_VERIFICATION_NOT_PROJECTED",
                     "这条候选没有冻结的结案证明，只有 v2 记录会在结案同一笔事务里写下它"),
+            Map.entry("NO_ROUTEABLE_PLAYBOOK_PROJECTED",
+                    "结案候选记录的是一次已发生的调查，不是一份可执行的 Playbook"
+                            + "（evidenceIds 只有 id，没有 signalKind 与 target，拼不出取证计划），"
+                            + "所以它现在不能被批准成权威。它真正的用途是给它那条 selector 的既有"
+                            + " Playbook 提供一份**答案由世界给出**的案例——非循环的回放材料。"
+                            + "这条路径尚未实现，不是你少做了哪一步。"),
             Map.entry("REFERENCE_SOLUTION_DELTA",
                     "与参考解存在差异，先看 referenceComparison"));
 
