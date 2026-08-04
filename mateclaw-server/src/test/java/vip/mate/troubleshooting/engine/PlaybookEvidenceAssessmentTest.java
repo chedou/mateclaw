@@ -9,6 +9,7 @@ import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.time.Instant;
@@ -83,10 +84,71 @@ class PlaybookEvidenceAssessmentTest {
                 .hasMessageContaining("only a LOCATED assessment");
     }
 
+    /**
+     * 真源接通那一刻最要紧的一格。
+     *
+     * <p>证据成色会自己推导，接上真源就自动变真；**知识成色不会跟着变**。已审核的那几条
+     * Playbook 阈值是人手写的，从没被任何一次真实故障检验过。少了这一格，第一天系统就会
+     * 拿没人验证过的阈值输出 {@code LOCATED / HIGH}，而服务经理看到 HIGH 会当成系统有
+     * 把握。这不是新发明的谨慎：未命中路对**模型**的建议早就封顶到 MEDIUM，一条从没被
+     * 检验过的阈值没有理由比模型的猜测更有底气。</p>
+     */
+    @Test
+    @DisplayName("阈值没被真实故障标定过时，LOCATED 最高只能到 MEDIUM，并说出理由")
+    void uncalibratedKnowledgeCannotClaimHighConfidence() {
+        for (KnowledgeEvidenceGrade grade : List.of(
+                KnowledgeEvidenceGrade.UNVERIFIED, KnowledgeEvidenceGrade.AUTHORED_FIXTURE)) {
+            PlaybookEvidenceAssessment assessment = assess(playbook(), anomaly(), grade);
+
+            assertThat(assessment.conclusionType()).isEqualTo(ConclusionType.LOCATED);
+            assertThat(assessment.confidence())
+                    .as("%s 的阈值没有被真实历史故障标定过", grade)
+                    .isEqualTo(Confidence.MEDIUM);
+            assertThat(assessment.warnings())
+                    .as("封顶必须说出理由，否则读者只看到一个没来由的 MEDIUM")
+                    .anyMatch(w -> w.contains("从未用真实历史故障标定过"));
+        }
+    }
+
+    /** 反过来也要成立，否则「一律封顶」也能让上一条通过，而那会让标定变得毫无意义。 */
+    @Test
+    @DisplayName("阈值来自录制聚合时，不封顶")
+    void knowledgeCalibratedFromRecordedAggregatesKeepsItsConfidence() {
+        PlaybookEvidenceAssessment assessment = assess(
+                playbook(), anomaly(), KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+
+        assertThat(assessment.confidence()).isEqualTo(Confidence.HIGH);
+        assertThat(assessment.warnings())
+                .noneMatch(w -> w.contains("从未用真实历史故障标定过"));
+    }
+
+    /** 只压 LOCATED：EXCLUDED 说的是判据没成立，不依赖阈值标定得准不准。 */
+    @Test
+    @DisplayName("EXCLUDED 不受封顶影响")
+    void anExcludedConclusionIsNotCapped() {
+        PlaybookEvidenceAssessment assessment = assess(
+                playbook(),
+                List.of(new EvidenceResult(
+                        "EV-1", "L", "q", EvidenceStatus.NORMAL, "未命中",
+                        Map.of("count", 0), "recorded-replay:test",
+                        Instant.parse("2026-08-03T10:00:00Z"))),
+                KnowledgeEvidenceGrade.UNVERIFIED);
+
+        assertThat(assessment.conclusionType()).isEqualTo(ConclusionType.EXCLUDED);
+        assertThat(assessment.confidence()).isEqualTo(Confidence.MEDIUM);
+        assertThat(assessment.warnings())
+                .noneMatch(w -> w.contains("从未用真实历史故障标定过"));
+    }
+
     private PlaybookEvidenceAssessment assess(SopEntry playbook, List<EvidenceResult> evidence) {
+        return assess(playbook, evidence, KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+    }
+
+    private PlaybookEvidenceAssessment assess(
+            SopEntry playbook, List<EvidenceResult> evidence, KnowledgeEvidenceGrade grade) {
         return PlaybookEvidenceAssessment.assess(
                 playbook, evidence,
-                new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true);
+                new CriterionEvaluator(), new DiagnosisRuleEvaluator(), true, grade);
     }
 
     private List<EvidenceResult> anomaly() {

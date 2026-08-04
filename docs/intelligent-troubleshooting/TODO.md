@@ -4,6 +4,8 @@
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
+> **投产清单：`production-readiness.md`** —— 第一条真实报障进来之前必须为真的事。
+>
 > 唯一现行架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
@@ -24,15 +26,39 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 内网核实 + owner 验收**：真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选包已生成待填；server-owned 可执行目标仍为 `0`。**要内网窗口和人，不在代码这一侧** | §5 T7 |
-| ~~2~~ | ~~前端两颗回归钉子~~ | **已完成（2026-08-03）**：vitest 接上 `@vitejs/plugin-vue`，仓库第一次能真正渲染组件来测。`cited` 三态各自渲染成不同的话（把 `null` 并进 `false` 验证过会红），读不到时只说读不到、不猜；另一条钉住 provenance 面板确实被父组件 import 并放进模板、父组件也确实挂在正式工作台上 | 前端 |
-| 3 | 梯子的上一级：真实案例 → 结论规则可被证明 | **2026-08-03 现场核对后重新定性**：线上已有 12 条结案候选，**全部落在 `csdp:903001`——一条已有已审核 Playbook 的 selector 上**。它们不是在提议新知识，是在佐证既有知识。原先那句 `POSITIVE_REPLAY_REQUIRED` 指错了对象（候选身上没有可回放的 Playbook，`evidenceIds` 只有 id、没有 signalKind 与 target），已改为 `NO_ROUTEABLE_PLAYBOOK_PROJECTED` 并说明真实用途。**下一步的形态需要拍板**，见下 | §7 |
-| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1 | §5 T8 |
-| 5 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
-| 6 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
-| 7 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+| 1 | **填满 20–30 条录制目标** | **唯一的关键路径，且离线就能做、不用等窗口。** 目录 `guance-recording-targets.json` 目前 `targets: []`，即 `0 / 20`。要懂 Guance schema 的 owner 填；预检明写「不能自造查询映射」——编出来的映射会一路过闸门，然后在真实故障上给出看起来合理的错误答案 | 投产清单 A1 |
+| 2 | **一次内网窗口**：配 Guance 端点 + owner 验收 | 依赖 1。进窗口前先跑 `scripts/troubleshooting-t7-preflight.sh`，七格逐条 | 投产清单 B |
+| ~~3~~ | ~~前端两颗回归钉子~~ | **已完成（2026-08-03）**：vitest 接上 `@vitejs/plugin-vue`，仓库第一次能真正渲染组件来测。`cited` 三态各自渲染成不同的话（把 `null` 并进 `false` 验证过会红），读不到时只说读不到、不猜；另一条钉住 provenance 面板确实被父组件 import 并放进模板、父组件也确实挂在正式工作台上 | 前端 |
+| 4 | 梯子的上一级：真实案例 → 结论规则可被证明 | **2026-08-03 现场核对后重新定性**：线上已有 12 条结案候选，**全部落在 `csdp:903001`——一条已有已审核 Playbook 的 selector 上**。它们不是在提议新知识，是在佐证既有知识。原先那句 `POSITIVE_REPLAY_REQUIRED` 指错了对象（候选身上没有可回放的 Playbook，`evidenceIds` 只有 id、没有 signalKind 与 target），已改为 `NO_ROUTEABLE_PLAYBOOK_PROJECTED` 并说明真实用途。**下一步的形态需要拍板**，见下 | §7 |
+| 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1、2 | §5 T8 |
+| 6 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
+| 7 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
+| 8 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
-### A 方案进行中（2026-08-03）：已确认可复用现有机制，第一步已落地
+**P2.3 未标定知识的置信度封顶（2026-08-03）**：投产前的最后一格。证据成色会自己推导
+——接上真源那一刻自动变真；但**知识成色不会跟着变**。8 条已审核 Playbook 的阈值是人
+手写的，从没被任何一次真实故障检验过。少了封顶，真源接通的第一天系统就会输出
+`LOCATED / HIGH`，而服务经理看到 HIGH 会当成系统有把握。
+
+这不是新发明的谨慎，是把已有的一条纪律补齐：未命中路对**模型**的建议早就封顶到
+MEDIUM 并附警告；**我们给模型的猜测封了顶，却没给一条从没被检验过的阈值封顶**——
+这个不对称没有道理。
+
+- 成色不是 `RECORDED_AGGREGATE` 时，`LOCATED` 封顶 `MEDIUM` + 一条说明理由的 warning。
+- 只压 `LOCATED`：`EXCLUDED` 说的是判据没成立，不依赖阈值标定得准不准。
+- 成色取自**冻结的那一版**，与判据规则同源；调用方自带权威时按 `UNVERIFIED` 处理（保守侧）。
+- 线上核对：`{"concl":"LOCATED","confidence":"MEDIUM","cap":["…从未用真实历史故障标定过…"]}`
+- 把封顶去掉验证过会红两条（含 `Vertical903001Test` 整条纵切）。
+
+**这条 warning 什么时候不再出现，才是知识真正成熟的信号。**
+
+### A 方案暂缓（2026-08-03）：机制已确认可复用，第一步已落地，但**刻意停在这里**
+
+> **为什么停。** 它解决的是「投产**之后**知识如何越用越准」，而现在一条真实案例都还
+> 没有。继续做那个 `Diagnosis` 1.8 → 1.9 契约升级，就是在一条**没有被任何真实失败
+> 检验过的设计分支**上新增实现与表结构——A13 明确禁止。等第一批真实案例跑出来，它的
+> 形状会由真实数据决定，而不是由现在的推测决定。已落地的 `matchedRuleId` 是纯收益
+> （引擎本来就算了却扔掉），不构成负担。
 
 **好消息：不需要造新的回放机制。** 随包目录里已经有 `recordedEvidenceSeeds` 这条路——
 `ManualPlaybookRecordedEvidenceSeed`（selectorKey + exampleCandidate + positiveCase）经

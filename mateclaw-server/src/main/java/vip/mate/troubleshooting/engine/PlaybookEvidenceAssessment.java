@@ -6,6 +6,7 @@ import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.util.ArrayList;
@@ -85,18 +86,66 @@ public record PlaybookEvidenceAssessment(
         }
     }
 
+    /**
+     * 未标定的知识不得声称 HIGH。
+     *
+     * <p><b>为什么必须有这一格。</b> 证据成色（真源还是夹具）已经会自己推导；接上真源
+     * 那一刻它自动变真。但**知识成色不会跟着变**：那 8 条已审核 Playbook 的阈值是人
+     * 手写的，从没被任何一次真实故障检验过。少了这一格，真源接通的第一天，系统就会拿
+     * 没人验证过的阈值输出 {@code LOCATED / HIGH}——服务经理看到 HIGH 会当成系统有
+     * 把握，而系统只是在执行一句没人验证过的判断。</p>
+     *
+     * <p><b>这不是新发明的谨慎，是把已有的一条纪律补齐。</b> 未命中路对**模型**的建议
+     * 早就封顶到 MEDIUM 并附警告。我们给模型的猜测封了顶，却没给一条从没被检验过的
+     * 阈值封顶——这个不对称没有道理。</p>
+     *
+     * <p>只压 {@code LOCATED}：{@code EXCLUDED} 说的是「候选根因都被反证」，那是判据
+     * 没成立，不依赖阈值标定得准不准；{@code INSUFFICIENT_EVIDENCE} 本来就不声称。</p>
+     */
+    private static Confidence cap(
+            Confidence confidence,
+            ConclusionType conclusionType,
+            KnowledgeEvidenceGrade knowledgeGrade) {
+        boolean calibrated = knowledgeGrade == KnowledgeEvidenceGrade.RECORDED_AGGREGATE;
+        if (calibrated
+                || conclusionType != ConclusionType.LOCATED
+                || confidence != Confidence.HIGH) {
+            return confidence;
+        }
+        return Confidence.MEDIUM;
+    }
+
     /** A conclusion strong enough for a human to act on, rather than to keep investigating. */
     public boolean actionable() {
         return conclusionType == ConclusionType.LOCATED
                 || conclusionType == ConclusionType.EXCLUDED;
     }
 
+    /**
+     * Compatibility shape: knowledge whose grade is unknown is treated as
+     * uncalibrated, which is the conservative side.
+     */
     public static PlaybookEvidenceAssessment assess(
             SopEntry playbook,
             List<EvidenceResult> evidence,
             CriterionEvaluator criteria,
             DiagnosisRuleEvaluator rules,
             boolean fixtureMode) {
+        return assess(playbook, evidence, criteria, rules, fixtureMode,
+                KnowledgeEvidenceGrade.UNVERIFIED);
+    }
+
+    /**
+     * @param knowledgeGrade 这份 Playbook 的判据与阈值是怎么来的。它决定结论**最高
+     *                       能声称到什么程度**——见 {@link #cap}。
+     */
+    public static PlaybookEvidenceAssessment assess(
+            SopEntry playbook,
+            List<EvidenceResult> evidence,
+            CriterionEvaluator criteria,
+            DiagnosisRuleEvaluator rules,
+            boolean fixtureMode,
+            KnowledgeEvidenceGrade knowledgeGrade) {
         if (playbook == null || criteria == null || rules == null) {
             throw new IllegalArgumentException("playbook and evaluators are required");
         }
@@ -167,6 +216,15 @@ public record PlaybookEvidenceAssessment(
         }
         if (conclusionType == ConclusionType.EXCLUDED) {
             warnings.add("当前 Playbook 的所有候选结论都被已取得证据反证；这是排除，不是定位。");
+        }
+
+        // 阈值从没被真实历史故障标定过时，结论最高只能到 MEDIUM。放在所有降级之后，
+        // 这样它只可能把置信度往下压，不会把别处压低的再抬回来。
+        Confidence capped = cap(confidence, conclusionType, knowledgeGrade);
+        if (capped != confidence) {
+            warnings.add("这份 Playbook 的判据与阈值从未用真实历史故障标定过，"
+                    + "置信度已封顶为 MEDIUM，需人工确认。");
+            confidence = capped;
         }
 
         return new PlaybookEvidenceAssessment(

@@ -14,6 +14,7 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.RecommendedAction;
@@ -152,6 +153,8 @@ public class DeterministicDiagnosisService {
                 incident,
                 sop,
                 sourcePlaybookVersionRef,
+                // 调用方自带权威时，成色未知——落在保守那一侧。
+                KnowledgeEvidenceGrade.UNVERIFIED,
                 evidence,
                 rehearsal,
                 fixtureMode,
@@ -168,10 +171,12 @@ public class DeterministicDiagnosisService {
             boolean fixtureMode,
             Instant reportedAt,
             Instant readyAt) {
+        ApprovedPlaybookVersion locked = lockExactPlaybook(workspaceId, sop);
         return diagnose(
                 incident,
                 sop,
-                lockExactPlaybook(workspaceId, sop),
+                new PlaybookVersionRef(locked.playbookId(), locked.playbookVersion()),
+                locked.knowledgeEvidenceGrade(),
                 evidence,
                 rehearsal,
                 fixtureMode,
@@ -183,6 +188,7 @@ public class DeterministicDiagnosisService {
             IncidentContext incident,
             SopEntry sop,
             PlaybookVersionRef sourcePlaybookVersionRef,
+            KnowledgeEvidenceGrade knowledgeGrade,
             List<EvidenceResult> evidence,
             boolean rehearsal,
             boolean fixtureMode,
@@ -202,7 +208,9 @@ public class DeterministicDiagnosisService {
         // later. Two evaluators would eventually give two answers to one set of
         // evidence, which is the drift A9 forbids.
         PlaybookEvidenceAssessment assessment = PlaybookEvidenceAssessment.assess(
-                sop, normalizedEvidence, evaluator, ruleEvaluator, fixtureMode);
+                sop, normalizedEvidence, evaluator, ruleEvaluator, fixtureMode,
+                // 未标定的阈值不得声称 HIGH。成色与被锁定的那一版同源。
+                knowledgeGrade);
 
         List<String> signals = assessment.activeSignals();
         List<String> warnings = new ArrayList<>(assessment.warnings());
@@ -242,7 +250,7 @@ public class DeterministicDiagnosisService {
         return stateMachine.initializeDeterministic(draft);
     }
 
-    private PlaybookVersionRef lockExactPlaybook(long workspaceId, SopEntry sop) {
+    private ApprovedPlaybookVersion lockExactPlaybook(long workspaceId, SopEntry sop) {
         ApprovedPlaybookVersion version = playbookVersions.lockActiveApprovedByPlaybookId(
                         workspaceId, sop.sopId())
                 .orElseThrow(() -> new MateClawException(
@@ -257,8 +265,8 @@ public class DeterministicDiagnosisService {
                     409,
                     "the routeable Playbook no longer matches its immutable version record");
         }
-        return new PlaybookVersionRef(
-                version.playbookId(), version.playbookVersion());
+        // 返回整个版本：知识成色也冻结在这一版上，而它决定结论最高能声称到什么程度。
+        return version;
     }
 
 }
