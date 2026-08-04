@@ -15,7 +15,6 @@
       :can-manage="canManageTroubleshooting"
       @refresh="store.loadList(false)"
       @launch="openTroubleshootingScenario"
-      @capability-command="handleCapabilityCommand"
       @open-diagnosis="openDiagnosisFromList"
       @switch-view="switchWorkbenchView('QUEUE')"
     />
@@ -56,11 +55,6 @@
             :icon="Plus"
             @click="openTroubleshootingScenario"
           >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-          <WorkbenchCapabilityMenu
-            v-if="canManageTroubleshooting"
-            size="small"
-            @command="handleCapabilityCommand"
-          />
         </div>
       </div>
       <div v-loading="listLoading" class="queue-list">
@@ -133,10 +127,14 @@
           </div>
         </header>
 
-        <div v-if="business.fixtureMode" class="fixture-banner">
+        <div
+          v-if="evidenceSourcePresentation.showBanner"
+          class="fixture-banner"
+          :class="`source-${evidenceSourcePresentation.kind.toLowerCase()}`"
+        >
           <span class="fixture-dot" />
-          <b>Recorded Replay · 非真实观测云</b>
-          <span>当前数据来自受控回放；页面不会把演练证据描述成真实生产观测。</span>
+          <b>{{ evidenceSourcePresentation.title }}</b>
+          <span>{{ evidenceSourcePresentation.detail }}</span>
         </div>
 
         <BusinessSummaryCard
@@ -150,6 +148,14 @@
           @confirm="store.confirmDiagnosis"
           @transfer="transferOpen = true"
           @close="closeOpen = true"
+        />
+
+        <MessageSendEvidenceRunCard
+          v-if="messageSendScenarioActive"
+          :diagnosis="current.diagnosis"
+          :can-operate="canOperateTroubleshooting"
+          :loading="messageSendEvidenceLoading"
+          @run="runMessageSendEvidence"
         />
 
         <TopologyEvidenceCard
@@ -168,15 +174,12 @@
           :guance-readiness="guanceReadiness"
           :guance-acceptance="guanceAcceptance"
           :guance-owner-acceptance="guanceOwnerAcceptance"
-          :guance-validation="guanceValidation"
-          :guance-spine-preview="guanceSpinePreview"
           :readiness-loading="readinessLoading"
           :readiness-error="readinessError"
           :can-manage="canManageTroubleshooting"
-          :can-validate-guance="canValidateGuance"
           :can-approve-action="canApprove"
           :can-record-outcome-action="canRecordOutcome"
-          @open-guance-validation="openGuanceValidation"
+          @open-guance-onboarding="openGuanceOnboarding"
           @open-evaluation="openEvaluationLedger"
           @approve="openApprove"
           @record-outcome="openOutcome"
@@ -191,6 +194,68 @@
       :can-manage="canManageTroubleshooting"
       @select="startTroubleshootingScenario"
     />
+
+    <el-dialog
+      v-model="caseKnowledgeImportOpen"
+      :title="TROUBLESHOOTING_UI_LABELS.caseKnowledge"
+      width="min(680px, calc(100vw - 32px))"
+    >
+      <el-alert type="info" :closable="false" class="dialog-alert">
+        把已有排障单确定性转换为脱敏案例快照，写入现有 Wiki 知识库。未闭环案例只标记为“调查记录”，不作为根因依据。
+      </el-alert>
+      <el-form label-position="top" @submit.prevent="importHistoricalCases">
+        <el-form-item label="目标知识库" required>
+          <el-select
+            v-model="caseKnowledgeImportForm.knowledgeBaseId"
+            :loading="caseKnowledgeBasesLoading"
+            filterable
+            placeholder="选择当前工作区的知识库"
+            style="width:100%"
+          >
+            <el-option
+              v-for="kb in caseKnowledgeBases"
+              :key="String(kb.id)"
+              :label="`${kb.name} · ${kb.pageCount ?? 0} 页 / ${kb.rawCount ?? 0} 份素材`"
+              :value="String(kb.id)"
+              :disabled="kb.status !== 'active'"
+            />
+          </el-select>
+          <p v-if="!caseKnowledgeBasesLoading && !caseKnowledgeBases.length" class="form-hint">
+            当前工作区还没有知识库，请先到 Wiki 新建一个。
+          </p>
+        </el-form-item>
+        <el-form-item label="最多导入条数">
+          <el-input-number
+            v-model="caseKnowledgeImportForm.limit"
+            :min="1"
+            :max="MAX_CASE_KNOWLEDGE_IMPORT_LIMIT"
+            :step="10"
+          />
+          <p class="form-hint">从最新排障单开始；重复执行会复用同一版本的案例页面和原始素材。</p>
+        </el-form-item>
+      </el-form>
+
+      <div v-if="caseKnowledgeImportResult" class="case-knowledge-result">
+        <b>{{ caseKnowledgeImportSummary(caseKnowledgeImportResult) }}</b>
+        <p :class="caseKnowledgeVectorStatus.tone">
+          {{ caseKnowledgeVectorStatus.text }}
+        </p>
+        <small>
+          入库内容不包含原始日志、DQL、观测载荷或凭据；语义检索只对“向量已就绪”的案例生效。
+        </small>
+      </div>
+
+      <template #footer>
+        <el-button text @click="router.push('/wiki')">管理 Wiki 知识库</el-button>
+        <el-button @click="caseKnowledgeImportOpen = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="caseKnowledgeImportLoading"
+          :disabled="!canSubmitCaseKnowledgeImport"
+          @click="importHistoricalCases"
+        >导入历史案例</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="incidentReportOpen"
@@ -251,6 +316,88 @@
           :disabled="!canSubmitIncidentReport"
           @click="reportIncident"
         >创建 Diagnosis</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="messageSendScenarioOpen"
+      title="创建“会话消息发送失败”排障单"
+      width="min(640px, calc(100vw - 32px))"
+    >
+      <el-alert type="info" :closable="false" class="dialog-alert">
+        这是当前优先打通的单场景竖线。创建时只锁定排查指南，不会直接给出根因；进入详情后由你显式开始三次只读取证。
+      </el-alert>
+      <el-form label-position="top" @submit.prevent="createMessageSendScenario">
+        <div class="incident-form-grid">
+          <el-form-item label="故障系统">
+            <el-input v-model="messageSendScenarioForm.system" disabled />
+          </el-form-item>
+          <el-form-item label="故障服务">
+            <el-input v-model="messageSendScenarioForm.service" disabled />
+          </el-form-item>
+          <el-form-item label="严重级别" required>
+            <el-select v-model="messageSendScenarioForm.severity" style="width:100%">
+              <el-option label="P0 · 全局阻断" value="P0" />
+              <el-option label="P1 · 核心故障" value="P1" />
+              <el-option label="P2 · 一般故障" value="P2" />
+              <el-option label="P3 · 低优先级" value="P3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Trace / PS 线索（可选）">
+            <el-input
+              v-model="messageSendScenarioForm.traceId"
+              maxlength="128"
+              placeholder="仅填写安全标识符"
+            />
+          </el-form-item>
+          <el-form-item label="故障发生时间（可选）">
+            <el-date-picker
+              v-model="messageSendScenarioForm.occurredAt"
+              type="datetime"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
+              placeholder="不选则取当前时间"
+              clearable
+              style="width:100%"
+            />
+            <p class="form-hint">真实 Guance 查询会围绕这个时间读取 Playbook 规定的窗口；不选择时由服务端取当前时间。</p>
+          </el-form-item>
+        </div>
+        <el-form-item label="故障现象" required>
+          <el-input
+            v-model="messageSendScenarioForm.title"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="只描述用户可见现象，不粘贴日志、DQL 或凭据"
+          />
+        </el-form-item>
+        <el-form-item label="影响对象（可选）">
+          <el-input
+            v-model="messageSendScenarioForm.customerRef"
+            maxlength="500"
+            placeholder="例如：马来区域客户；不填人数或原始名单"
+          />
+        </el-form-item>
+        <div class="incident-route-preview scenario">
+          <span>已锁定排查指南</span>
+          <b>{{ MESSAGE_SEND_SCENARIO_SELECTOR }}</b>
+          <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。浏览器不能指定查询或判据。</p>
+        </div>
+        <el-checkbox v-model="messageSendScenarioForm.rehearsal" class="incident-rehearsal">
+          演练记录（仅影响事件去重，不决定证据来源）
+        </el-checkbox>
+        <p class="form-hint">证据来源由工作区的服务端绑定决定，页面不能强制选择 Guance 或回放；执行后以详情中每条证据记录的实际来源为准。</p>
+      </el-form>
+      <template #footer>
+        <el-button text @click="handleCapabilityCommand('playbooks')">查看排查指南</el-button>
+        <el-button @click="messageSendScenarioOpen = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="messageSendScenarioLoading"
+          :disabled="!canSubmitMessageSendScenario"
+          @click="createMessageSendScenario"
+        >创建排障单</el-button>
       </template>
     </el-dialog>
 
@@ -541,22 +688,22 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import {
   troubleshootingApi,
+  wikiApi,
   type DiagnosisSummary,
   type EvidenceChainPreviewRequest,
   type GuanceEvidenceAcceptanceChecklist,
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceSpinePreview,
   type GuanceEvidenceValidationReport,
-  type GuanceReadinessStatus,
-  type GuanceSignalStatus,
   type GuanceSpinePreviewStepStatus,
+  type HistoricalCaseKnowledgeImportResult,
   type RecommendedAction,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import {
-  canStartGuanceValidation,
+  diagnosisEvidenceSourcePresentation,
   guanceOwnerBlockerLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
@@ -579,53 +726,56 @@ import {
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
 import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import { normalizeWorkbenchOverlayCapability } from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
-import {
-  deploymentAnalysisLabel,
-  observationStatusLabel,
-  shouldShowDeploymentTopologyProbe,
-} from './deploymentTopologySop'
 import DiagnosisListView from './DiagnosisListView.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
-import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
 import CloseDiagnosisDialog from './CloseDiagnosisDialog.vue'
 import BusinessSummaryCard from './BusinessSummaryCard.vue'
+import MessageSendEvidenceRunCard from './MessageSendEvidenceRunCard.vue'
 import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
   normalizeEvidenceChainPreviewRequest,
-  sameEvidenceChainLookup,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
 } from './guanceOnboarding'
 import {
-  type EvaluationSampleCaptureContext,
-  replayEvaluationCaptureContext,
-  suggestedEvaluationScenarioKey,
-} from './evaluationSamples'
+  EMPTY_MESSAGE_SEND_SCENARIO,
+  MESSAGE_SEND_SCENARIO_KEY,
+  MESSAGE_SEND_SCENARIO_SELECTOR,
+  buildMessageSendScenarioRequest,
+  canRunMessageSendEvidence as canRunMessageSendEvidenceForDiagnosis,
+  isMessageSendScenarioDiagnosis,
+  messageSendScenarioFormErrors,
+  type MessageSendScenarioForm,
+} from './messageSendScenario'
+import {
+  DEFAULT_CASE_KNOWLEDGE_IMPORT_LIMIT,
+  MAX_CASE_KNOWLEDGE_IMPORT_LIMIT,
+  caseKnowledgeImportCanSubmit,
+  caseKnowledgeImportSummary,
+  caseKnowledgeVectorMessage,
+} from './caseKnowledgeImport'
 import {
   TROUBLESHOOTING_UI_LABELS,
   WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
   WORKBENCH_INVESTIGATION_MODES,
-  diagnosisSelectionMode,
   diagnosisStatusLabel as statusLabel,
   diagnosisStatusTone as statusTone,
   formatWorkbenchTime as shortTime,
   isDiagnosisViewMode,
   resolveWorkbenchView,
   shouldShowQueuePanel,
-  workbenchViewQuery,
   type TroubleshootingScenarioCommand,
   type WorkbenchCapabilityCommand,
-  type WorkbenchDiagnosisViewMode,
-  type WorkbenchViewMode,
   type WorkbenchViewSwitchMode,
 } from './workbenchView'
 
@@ -637,12 +787,12 @@ const {
   rows, selectedId, current, projection,
   topologyProbeRuns, statusFilter, investigationModeFilter, viewMode,
   listLoading, detailLoading, actionLoading, readinessLoading,
-  guanceReadiness, guanceValidation, guanceSpinePreview,
-  guanceOwnerAcceptance, guanceDiagnosisLookup, replayCapability, readinessError,
+  guanceReadiness,
+  guanceOwnerAcceptance, readinessError,
   guanceRecordingTargets,
   business, developer, closure,
-  deploymentTopologyRequired, latestTopologyProbeRun, impactMetricList,
-  canTransfer, canClose, canValidateGuance, guanceAcceptance,
+  deploymentTopologyRequired,
+  canTransfer, canClose, guanceAcceptance,
   currentDiagnosisEvidenceLookup, evaluationCaptureContext,
   replayEvaluationCaptureContextValue,
   canCaptureEvaluationSample, evaluationCaptureDisabledReason,
@@ -650,11 +800,14 @@ const {
 } = storeToRefs(store)
 
 const incidentReportLoading = ref(false)
+const messageSendScenarioLoading = ref(false)
+const messageSendEvidenceLoading = ref(false)
+const caseKnowledgeImportLoading = ref(false)
+const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
 const validationLoading = ref(false)
 const spinePreviewLoading = ref(false)
 const acceptanceLoading = ref(false)
-const replayCapabilityLoading = ref(false)
 const validationDialogReport = ref<GuanceEvidenceValidationReport | null>(null)
 const validationDialogSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
 const validationDialogOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
@@ -662,6 +815,8 @@ const guanceValidationOrigin = ref<GuanceValidationOrigin | null>(null)
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
+const messageSendScenarioOpen = ref(false)
+const caseKnowledgeImportOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
@@ -673,6 +828,22 @@ const outcomeOpen = ref(false)
 const closeOpen = ref(false)
 const targetAction = ref<RecommendedAction | null>(null)
 const incidentReportForm = reactive<FormalIncidentForm>({ ...EMPTY_FORMAL_INCIDENT })
+const messageSendScenarioForm = reactive<MessageSendScenarioForm>({
+  ...EMPTY_MESSAGE_SEND_SCENARIO,
+})
+type CaseKnowledgeBaseOption = {
+  id: string | number
+  name: string
+  status: string
+  pageCount?: number
+  rawCount?: number
+}
+const caseKnowledgeBases = ref<CaseKnowledgeBaseOption[]>([])
+const caseKnowledgeImportForm = reactive({
+  knowledgeBaseId: '',
+  limit: DEFAULT_CASE_KNOWLEDGE_IMPORT_LIMIT,
+})
+const caseKnowledgeImportResult = ref<HistoricalCaseKnowledgeImportResult | null>(null)
 const deploymentTopologyScenarioForm = reactive<DeploymentTopologyScenarioForm>({
   ...EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
 })
@@ -687,6 +858,9 @@ const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() 
     occurredAt: null,
   }
 })
+const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresentation(
+  current.value?.diagnosis.evidence ?? [],
+))
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
 const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
@@ -705,6 +879,20 @@ const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentRep
 const incidentRoutePreview = computed(() => formalIncidentRoutePreview(incidentReportForm))
 const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
   && incidentReportErrors.value.length === 0)
+const messageSendScenarioErrors = computed(() =>
+  messageSendScenarioFormErrors(messageSendScenarioForm))
+const canSubmitMessageSendScenario = computed(() => canOperateTroubleshooting.value
+  && messageSendScenarioErrors.value.length === 0)
+const messageSendScenarioActive = computed(() =>
+  isMessageSendScenarioDiagnosis(current.value?.diagnosis))
+const canSubmitCaseKnowledgeImport = computed(() => caseKnowledgeImportCanSubmit(
+  caseKnowledgeImportForm.knowledgeBaseId,
+  caseKnowledgeImportForm.limit,
+  canManageTroubleshooting.value,
+))
+const caseKnowledgeVectorStatus = computed(() => caseKnowledgeImportResult.value
+  ? caseKnowledgeVectorMessage(caseKnowledgeImportResult.value)
+  : { tone: 'warning' as const, text: '' })
 const deploymentTopologyScenarioErrors = computed(() =>
   deploymentTopologyScenarioFormErrors(deploymentTopologyScenarioForm))
 const deploymentTopologySelector = computed(() =>
@@ -744,29 +932,77 @@ async function openDiagnosisFromList(row: DiagnosisSummary) {
 function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   if (command === 'playbooks') {
     void router.push('/troubleshooting/sops')
+  } else if (command === 'evidence-catalog') {
+    void router.push('/troubleshooting/evidence-catalog')
   } else if (command === 'synthesis') {
     openSynthesisPreview()
   } else if (command === 'guance') {
-    guanceOnboardingOpen.value = true
+    openGuanceOnboarding()
   } else if (command === 'ledger') {
     openEvaluationLedger()
+  } else if (command === 'case-knowledge') {
+    void openCaseKnowledgeImport()
   }
 }
 
-function readinessTone(value: GuanceReadinessStatus) {
-  if (canStartGuanceValidation(value)) return 'active'
-  return 'warning'
+async function openCaseKnowledgeImport() {
+  if (!canManageTroubleshooting.value) return
+  caseKnowledgeImportOpen.value = true
+  caseKnowledgeImportResult.value = null
+  caseKnowledgeBasesLoading.value = true
+  try {
+    const response = await wikiApi.listKBs()
+    caseKnowledgeBases.value = (response.data || []).map((kb: CaseKnowledgeBaseOption) => ({
+      id: kb.id,
+      name: kb.name,
+      status: kb.status,
+      pageCount: kb.pageCount,
+      rawCount: kb.rawCount,
+    }))
+    const selectedStillExists = caseKnowledgeBases.value.some(
+      kb => String(kb.id) === caseKnowledgeImportForm.knowledgeBaseId && kb.status === 'active',
+    )
+    if (!selectedStillExists) {
+      const recommended = caseKnowledgeBases.value.find(
+        kb => kb.status === 'active' && kb.name.includes('排障'),
+      ) ?? caseKnowledgeBases.value.find(kb => kb.status === 'active')
+      caseKnowledgeImportForm.knowledgeBaseId = recommended ? String(recommended.id) : ''
+    }
+  } catch (error) {
+    caseKnowledgeBases.value = []
+    ElMessage.error(`知识库列表加载失败：${errorText(error)}`)
+  } finally {
+    caseKnowledgeBasesLoading.value = false
+  }
 }
-function signalTone(value: GuanceSignalStatus) {
-  if (value === 'CANONICAL_RESULT_OBSERVED') return 'success'
-  if (value === 'READY_FOR_VALIDATION') return 'active'
-  return 'warning'
+
+async function importHistoricalCases() {
+  if (!canSubmitCaseKnowledgeImport.value) return
+  caseKnowledgeImportLoading.value = true
+  caseKnowledgeImportResult.value = null
+  try {
+    const response = await troubleshootingApi.importHistoricalCases({
+      knowledgeBaseId: caseKnowledgeImportForm.knowledgeBaseId,
+      limit: caseKnowledgeImportForm.limit,
+    })
+    caseKnowledgeImportResult.value = response.data
+    const vectorStatus = caseKnowledgeVectorMessage(response.data)
+    if (vectorStatus.tone === 'success') {
+      ElMessage.success('历史案例已入库并完成向量化')
+    } else {
+      ElMessage.warning('历史案例素材已入库，部分向量待生成')
+    }
+  } catch (error) {
+    ElMessage.error(`历史案例导入失败：${errorText(error)}`)
+  } finally {
+    caseKnowledgeImportLoading.value = false
+  }
 }
-function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
-  if (value === 'READY') return 'success'
-  if (value === 'OWNER_EVIDENCE_REQUIRED') return 'active'
-  return 'warning'
+
+function openGuanceOnboarding() {
+  guanceOnboardingOpen.value = true
 }
+
 function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
   if (value === 'ACCEPTED') return '当前绑定已验收'
   if (value === 'STALE') return '配置变化，验收已过期'
@@ -790,6 +1026,10 @@ function errorText(error: unknown) { return error instanceof Error ? error.messa
 
 function resetIncidentReportForm() {
   Object.assign(incidentReportForm, EMPTY_FORMAL_INCIDENT)
+}
+
+function resetMessageSendScenarioForm() {
+  Object.assign(messageSendScenarioForm, EMPTY_MESSAGE_SEND_SCENARIO)
 }
 
 function resetDeploymentTopologyScenarioForm() {
@@ -816,10 +1056,60 @@ function openTroubleshootingScenario() {
 }
 
 function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
-  if (command === 'incident' && canOperateTroubleshooting.value) {
+  if (command === 'message-send-failed' && canOperateTroubleshooting.value) {
+    resetMessageSendScenarioForm()
+    messageSendScenarioOpen.value = true
+  } else if (command === 'incident' && canOperateTroubleshooting.value) {
     incidentReportOpen.value = true
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
     openDeploymentTopologyScenarioIntake()
+  }
+}
+
+async function createMessageSendScenario() {
+  if (!canSubmitMessageSendScenario.value) {
+    if (messageSendScenarioErrors.value[0]) {
+      ElMessage.warning(messageSendScenarioErrors.value[0])
+    }
+    return
+  }
+  messageSendScenarioLoading.value = true
+  try {
+    const request = buildMessageSendScenarioRequest(messageSendScenarioForm)
+    const { data } = await troubleshootingApi.createScenarioDiagnosis(
+      MESSAGE_SEND_SCENARIO_KEY,
+      request,
+    )
+    messageSendScenarioOpen.value = false
+    resetMessageSendScenarioForm()
+    statusFilter.value = ''
+    investigationModeFilter.value = ''
+    await store.loadList(false)
+    await store.selectDiagnosis(data.diagnosis.diagnosisId)
+    ElMessage.success(data.created
+      ? '排障单已创建，请在详情中开始三次只读取证'
+      : '命中五分钟幂等窗口，已打开原排障单')
+  } catch (error) {
+    ElMessage.error(
+      `场景排障单未创建：${errorText(error)} 请确认排查指南 ${MESSAGE_SEND_SCENARIO_SELECTOR} 已审核启用。`,
+    )
+  } finally {
+    messageSendScenarioLoading.value = false
+  }
+}
+
+async function runMessageSendEvidence() {
+  const diagnosis = current.value?.diagnosis
+  if (!diagnosis || !canRunMessageSendEvidenceForDiagnosis(diagnosis)) return
+  messageSendEvidenceLoading.value = true
+  try {
+    await troubleshootingApi.runScenarioEvidence(diagnosis.diagnosisId)
+    await store.reload()
+    ElMessage.success('三次只读取证已完成，结论与证据链已写入排障详情')
+  } catch (error) {
+    ElMessage.error(`只读取证未完成：${errorText(error)} 系统未伪造结论，排障单仍保持等待状态。`)
+  } finally {
+    messageSendEvidenceLoading.value = false
   }
 }
 
@@ -914,15 +1204,6 @@ async function createDeploymentTopologyScenario() {
   }
 }
 
-function openGuanceValidation() {
-  const request = currentDiagnosisEvidenceLookup.value
-  if (!request || !canValidateGuance.value) return
-  guanceValidation.value = null
-  guanceSpinePreview.value = null
-  guanceDiagnosisLookup.value = null
-  openGuanceValidationDialog(request, guanceOwnerAcceptance.value, 'DIAGNOSIS')
-}
-
 function openGuanceValidationDialog(
   request: EvidenceChainPreviewRequest,
   ownerAcceptance: GuanceEvidenceAcceptanceView | null,
@@ -990,7 +1271,7 @@ async function validateGuance() {
       }
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) validationLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) validationLoading.value = false
   }
 }
 
@@ -1010,7 +1291,7 @@ async function acceptGuance() {
       ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) acceptanceLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) acceptanceLoading.value = false
   }
 }
 
@@ -1032,7 +1313,7 @@ async function previewGuanceSpine() {
       }
     }
   } finally {
-    if (store.isCurrentGuanceValidationGeneration(version, session)) spinePreviewLoading.value = false
+    if (store.isCurrentGuanceValidationGeneration(version)) spinePreviewLoading.value = false
   }
 }
 
@@ -1043,7 +1324,6 @@ function openSynthesisPreview() {
     query: { focus: EVIDENCE_SYNTHESIS_FOCUS },
   })
 }
-async function confirm() { await store.applyLifecycle(() => troubleshootingApi.confirm(selectedId.value!), '已确认诊断结论') }
 function canApprove(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'PENDING' && canTransfer.value }
 function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
 function openApprove(action: RecommendedAction) { targetAction.value = action; approveOpen.value = true }
@@ -1060,6 +1340,32 @@ watch(
       && diagnosisId !== selectedId.value) {
       void store.selectDiagnosis(diagnosisId, false, nextMode)
     }
+  },
+  { immediate: true },
+)
+watch(
+  () => route.query.capability,
+  capability => {
+    const command = normalizeWorkbenchOverlayCapability(capability)
+    if (!command || !canManageTroubleshooting.value) return
+    handleCapabilityCommand(command)
+  },
+  { immediate: true },
+)
+watch(
+  [guanceOnboardingOpen, evaluationLedgerOpen, caseKnowledgeImportOpen],
+  ([guanceOpen, ledgerOpen, caseKnowledgeOpen]) => {
+    const command = normalizeWorkbenchOverlayCapability(route.query.capability)
+    if (!command) return
+    const stillOpen = command === 'guance'
+      ? guanceOpen
+      : command === 'ledger'
+        ? ledgerOpen
+        : caseKnowledgeOpen
+    if (stillOpen) return
+    const query = { ...route.query }
+    delete query.capability
+    void router.replace({ path: '/troubleshooting', query })
   },
 )
 onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
@@ -1191,6 +1497,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .incident-route-preview.bounded_discovery>b { color:var(--amber); }
 .incident-rehearsal { margin-top:2px; }
 .dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .dialog-validation-result>b { font-size:var(--mc-text-sm); } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:var(--mc-text-xs); } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:var(--mc-text-secondary); font-family:var(--mc-mono,monospace); font-size:var(--mc-text-xs); white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:var(--mc-text-xs); line-height:1.5; }
+.case-knowledge-result { margin-top:14px; padding:13px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .case-knowledge-result>b { font-size:var(--mc-text-sm); } .case-knowledge-result>p { margin:8px 0; font-size:var(--mc-text-xs); line-height:1.6; } .case-knowledge-result>p.success { color:var(--green); } .case-knowledge-result>p.warning { color:var(--amber); } .case-knowledge-result>small { display:block; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.6; }
 .t7-owner-checklist { display:grid; gap:7px; margin-top:12px; padding:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); } .t7-owner-checklist>b { margin-bottom:2px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); } .t7-owner-checklist .el-checkbox { height:auto; margin-right:0; white-space:normal; } .t7-owner-checklist .form-hint { margin-top:5px; line-height:1.6; }
 .spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
 .spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:var(--mc-text-xs); line-height:1.5; }

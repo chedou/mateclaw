@@ -41,21 +41,28 @@ import java.util.Set;
 @Component
 public final class InvestigationTraceProjector {
 
-    private static final Map<String, Set<String>> SAFE_OBSERVED_FIELDS = Map.of(
-            "synthetic_probe", Set.of("status_code", "probe_name"),
-            "log_count", Set.of("count", "trace_id"),
-            "metric", Set.of(
+    private static final Map<String, Set<String>> SAFE_OBSERVED_FIELDS = Map.ofEntries(
+            Map.entry("synthetic_probe", Set.of("status_code", "probe_name")),
+            Map.entry("log_count", Set.of("count", "trace_id")),
+            Map.entry("metric", Set.of(
                     "reachable", "connections_current", "connections_available",
-                    "slow_query_count", "baseline_slow"),
-            "trace", Set.of("failed_hop", "status", "duration_ms"),
-            "log_search", Set.of("match_count", "ps_id"),
-            "contrast_sample", Set.of(
+                    "slow_query_count", "baseline_slow")),
+            Map.entry("trace", Set.of("failed_hop", "status", "duration_ms")),
+            Map.entry("log_search", Set.of("match_count", "ps_id")),
+            Map.entry("contrast_sample", Set.of(
                     "discriminating_feature", "failure_sample_count",
-                    "failure_match_count", "success_sample_count", "success_match_count"),
-            "incident_impact", Set.of(
+                    "failure_match_count", "success_sample_count", "success_match_count")),
+            Map.entry("error_log_scan", Set.of(
+                    "error_count", "affected_trace_count", "latest_trace_id")),
+            Map.entry("monitor_event_scan", Set.of(
+                    "event_count", "latest_status", "latest_checker")),
+            Map.entry("k8s_workload_health", Set.of(
+                    "pod_count", "container_count", "running_container_count",
+                    "unhealthy_container_count", "max_cpu_percent", "max_memory_percent")),
+            Map.entry("incident_impact", Set.of(
                     "function_scope", "affected_customers", "affected_users",
-                    "blast_radius", "observed_at"),
-            "log_trace_bundle", Set.of("ps_id"));
+                    "blast_radius", "observed_at")),
+            Map.entry("log_trace_bundle", Set.of("ps_id")));
 
     public InvestigationTraceView project(
             Diagnosis diagnosis,

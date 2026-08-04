@@ -66,6 +66,8 @@ Loop 控制面：LoopPolicy → LoopRun → LoopOutcome
 - 路由：`/troubleshooting`、`/troubleshooting/sops`
 - Agent 启用与回滚：[agent-miss-path-runbook.md](./agent-miss-path-runbook.md)
 - 证据适配设计：[observability-abstraction-design.md](./observability-abstraction-design.md)
+- Guance Skills 安全融合：[guance-skill-integration.md](./guance-skill-integration.md)
+- 取证查询目录：[evidence-query-catalog.md](./evidence-query-catalog.md)
 
 ## 当前真实状态
 

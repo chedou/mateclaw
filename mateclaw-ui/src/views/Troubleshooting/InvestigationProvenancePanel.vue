@@ -103,9 +103,11 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { vLoading } from 'element-plus/es/components/loading/index'
 import { troubleshootingApi, type InvestigationProvenance } from '@/api'
+import { investigationProvenanceRefreshKey } from './investigationTrace'
 
-const props = defineProps<{ diagnosisId: string }>()
+const props = defineProps<{ diagnosisId: string; diagnosisVersion: number }>()
 
 const STATUS_LABEL: Record<string, string> = {
   NORMAL: '正常',
@@ -153,7 +155,11 @@ async function load(diagnosisId: string) {
   }
 }
 
-watch(() => props.diagnosisId, (id) => { if (id) void load(id) }, { immediate: true })
+watch(
+  () => investigationProvenanceRefreshKey(props.diagnosisId, props.diagnosisVersion),
+  () => { if (props.diagnosisId) void load(props.diagnosisId) },
+  { immediate: true },
+)
 </script>
 
 <style scoped>

@@ -228,6 +228,69 @@ class InvestigationTraceProjectorTest {
     }
 
     @Test
+    void exposesSanitizedImportedSkillFactsInTheTraceAndEvidenceRelation() {
+        List<EvidenceResult> skillEvidence = List.of(
+                new EvidenceResult(
+                        "EV-ERROR", "L", "", EvidenceStatus.ANOMALY,
+                        "aggregate error scan", Map.of(
+                                "error_count", 12,
+                                "affected_trace_count", 7,
+                                "latest_trace_id", "trace-007"),
+                        "guance:error_log_scan", CONCLUSION_AT),
+                new EvidenceResult(
+                        "EV-MONITOR", "E", "", EvidenceStatus.ANOMALY,
+                        "aggregate monitor scan", Map.of(
+                                "event_count", 2,
+                                "latest_status", "critical",
+                                "latest_checker", "csdp-api-error-rate"),
+                        "guance:monitor_event_scan", CONCLUSION_AT),
+                new EvidenceResult(
+                        "EV-K8S", "O+M", "", EvidenceStatus.NORMAL,
+                        "aggregate workload health", Map.of(
+                                "pod_count", 3,
+                                "container_count", 4,
+                                "running_container_count", 3,
+                                "unhealthy_container_count", 1,
+                                "max_cpu_percent", 82.5,
+                                "max_memory_percent", 76.25),
+                        "guance:k8s_workload_health", CONCLUSION_AT));
+
+        InvestigationTraceView view = projector.project(
+                deterministicDiagnosisWithEvidence(skillEvidence, List.of()), null, null);
+
+        assertThat(view.adapterAttempts())
+                .extracting(InvestigationTraceView.AdapterAttemptView::signalKind)
+                .containsExactly(
+                        "error_log_scan", "monitor_event_scan", "k8s_workload_health");
+        assertThat(view.adapterAttempts().get(0).observed())
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "error_count", 12,
+                        "affected_trace_count", 7,
+                        "latest_trace_id", "trace-007"));
+        assertThat(view.adapterAttempts().get(1).observed())
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "event_count", 2,
+                        "latest_status", "critical",
+                        "latest_checker", "csdp-api-error-rate"));
+        assertThat(view.adapterAttempts().get(2).observed())
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "pod_count", 3,
+                        "container_count", 4,
+                        "running_container_count", 3,
+                        "unhealthy_container_count", 1,
+                        "max_cpu_percent", 82.5,
+                        "max_memory_percent", 76.25));
+        assertThat(view.evidenceRelation().nodes())
+                .filteredOn(node -> node.kind()
+                        == InvestigationTraceView.RelationNodeKind.EVIDENCE)
+                .extracting(InvestigationTraceView.RelationNode::label)
+                .containsExactly(
+                        "error_log_scan 证据 · ANOMALY",
+                        "monitor_event_scan 证据 · ANOMALY",
+                        "k8s_workload_health 证据 · NORMAL");
+    }
+
+    @Test
     void keepsLegacyDerivedRouteSemanticsExplicitlyUnrecorded() {
         InvestigationTraceView view = projector.project(legacyDiagnosis(), null, null);
 

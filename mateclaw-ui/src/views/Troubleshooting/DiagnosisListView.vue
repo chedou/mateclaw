@@ -14,10 +14,6 @@
           :icon="Plus"
           @click="emit('launch')"
         >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-        <WorkbenchCapabilityMenu
-          v-if="canManage"
-          @command="emit('capability-command', $event)"
-        />
       </div>
     </header>
 
@@ -161,7 +157,6 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import type { DiagnosisStatus, DiagnosisSummary } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
-import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
   diagnosisSummaryRouteLabel,
@@ -174,7 +169,6 @@ import {
   diagnosisStatusLabel,
   diagnosisStatusTone,
   formatWorkbenchTime,
-  type WorkbenchCapabilityCommand,
 } from './workbenchView'
 
 const props = defineProps<{
@@ -189,7 +183,6 @@ const emit = defineEmits<{
   'update:statusFilter': [value: DiagnosisStatus | '']
   refresh: []
   launch: []
-  'capability-command': [command: WorkbenchCapabilityCommand]
   'open-diagnosis': [row: DiagnosisSummary]
   'switch-view': []
 }>()

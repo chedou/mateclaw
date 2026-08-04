@@ -9,7 +9,10 @@
       <div class="route-card">
         <span>调查路径</span>
         <b>{{ investigationRouteLabel(developer) }}</b>
-        <code>{{ developer.playbookRef || '未命中已审核 Playbook' }}</code>
+        <code>{{ developer.playbookRef || '未命中已审核的排障方案' }}</code>
+        <p class="playbook-help">
+          <strong>排障方案（Playbook）</strong>：一套经过审核、可重复使用的排障方法，规定要查什么、怎么判断以及何时停止。
+        </p>
         <span
           v-if="developer.knowledgeEvidenceGrade"
           class="knowledge-grade"
@@ -112,85 +115,28 @@
       </section>
 
       <aside class="developer-side">
-        <section class="side-card side-card--guance" v-loading="readinessLoading">
-          <div class="source-gate-head">
-            <div><span class="section-label">{{ TROUBLESHOOTING_UI_LABELS.guanceOnboarding }}</span><h3>Guance 只读证据适配器</h3></div>
-            <span v-if="guanceReadiness" class="source-gate-state" :class="readinessTone(guanceReadiness.status)">
-              {{ guanceReadinessLabel(guanceReadiness.status) }}
-            </span>
-          </div>
-          <template v-if="guanceReadiness">
-            <p class="source-scope"><code>{{ guanceReadiness.system }}</code><span>/</span><code>{{ guanceReadiness.service }}</code></p>
-            <div class="source-meta">
-              <span :class="guanceReadiness.endpointConfigured ? 'success' : 'warning'">端点 {{ guanceReadiness.endpointConfigured ? '已配置' : '未就绪' }}</span>
-              <span :class="guanceReadiness.uniqueAssetAuthorized ? 'success' : 'warning'">Workspace 资产 {{ guanceReadiness.uniqueAssetAuthorized ? '唯一授权' : '未唯一授权' }}</span>
+        <section class="source-status" v-loading="readinessLoading">
+          <div class="source-status-copy">
+            <span class="section-label">{{ TROUBLESHOOTING_UI_LABELS.guanceSourceStatus }}</span>
+            <div class="source-status-title">
+              <h3>Guance 只读证据源</h3>
+              <strong :class="`is-${sourceStatus.tone}`">{{ sourceStatus.label }}</strong>
             </div>
-            <p v-if="business.fixtureMode" class="source-context-note">
-              这是 Workspace 环境级能力，不代表当前 Recorded Replay Diagnosis 已使用 Guance 真源证据。
+            <p v-if="guanceReadiness" class="source-scope">
+              <code>{{ guanceReadiness.system }}</code><span>/</span><code>{{ guanceReadiness.service }}</code>
             </p>
-            <ol v-if="guanceAcceptance" class="acceptance-ladder">
-              <li v-for="stage in guanceAcceptance.stages" :key="stage.code">
-                <span>{{ stage.code }}</span>
-                <div><b>{{ stage.title }}</b><small>{{ stage.detail }}</small></div>
-                <strong :class="acceptanceTone(stage.state)">{{ guanceAcceptanceStateLabel(stage.state) }}</strong>
-              </li>
-            </ol>
-            <div
-              v-if="guanceOwnerAcceptance"
-              class="validation-result owner-acceptance-result"
-              :class="ownerAcceptanceTone(guanceOwnerAcceptance.status)"
-            >
-              <b>{{ ownerAcceptanceStateLabel(guanceOwnerAcceptance.status) }}</b>
-              <span v-if="guanceOwnerAcceptance.acceptance">
-                {{ guanceOwnerAcceptance.acceptance.acceptedBy }} ·
-                {{ shortTime(guanceOwnerAcceptance.acceptance.acceptedAt) }}
-              </span>
-              <small>
-                当前配置指纹
-                <code>{{ shortFingerprint(guanceOwnerAcceptance.currentBindingFingerprint) }}</code>
-                <template v-if="guanceOwnerAcceptance.acceptance">
-                  · 验收指纹
-                  <code>{{ shortFingerprint(guanceOwnerAcceptance.acceptance.bindingFingerprint) }}</code>
-                </template>
-              </small>
-              <small v-for="blocker in guanceOwnerAcceptance.blockers" :key="blocker">{{ guanceOwnerBlockerLabel(blocker) }}</small>
-            </div>
-            <p v-if="guanceAcceptance" class="next-source-action"><b>下一步</b>{{ guanceAcceptance.nextAction }}</p>
-            <ul class="signal-readiness-list">
-              <li v-for="signal in guanceReadiness.signals" :key="signal.signalKind">
-                <code>{{ signal.signalKind }}</code>
-                <span :class="signalTone(signal.status)">{{ guanceSignalLabel(signal.status) }}</span>
-                <small>{{ signal.bindingRef || '无 binding' }}</small>
-              </li>
-            </ul>
-            <p v-for="blocker in guanceReadiness.blockers" :key="blocker" class="source-blocker">{{ blocker }}</p>
-            <div v-if="guanceValidation" class="validation-result" :class="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED' ? 'passed' : 'blocked'">
-              <b>{{ guanceValidationLabel(guanceValidation.stage) }}</b>
-              <span v-if="guanceValidation.stage === 'CANONICAL_CHAIN_OBSERVED'">
-                {{ guanceValidation.matchCount }} 条命中 · PS {{ guanceValidation.psId }} · {{ guanceValidation.traceEntries }} 个链路节点 · 总耗时 {{ guanceValidation.totalDurationMs }} ms
-              </span>
-              <small>{{ guanceValidation.warnings[0] }}</small>
-            </div>
-            <div v-if="guanceSpinePreview" class="validation-result spine-preview-result" :class="guanceSpinePreview.stage === 'FULL_SPINE_OBSERVED' ? 'passed' : 'blocked'">
-              <b>{{ guanceSpinePreviewLabel(guanceSpinePreview.stage) }}</b>
-              <span v-if="guanceSpinePreview.stage !== 'BLOCKED'">
-                {{ guanceSpinePreview.serviceSequence.join(' → ') }} · {{ guanceSpinePreview.anomalyCount }} 个异常点 · {{ guanceSpinePreview.totalDurationMs }} ms
-              </span>
-              <span v-if="guanceSpinePreview.contrast.available">
-                失败 {{ percent(guanceSpinePreview.contrast.failureRate) }} ↔ 成功 {{ percent(guanceSpinePreview.contrast.successRate) }}
-              </span>
-              <small>{{ guanceSpinePreview.warnings[0] }}</small>
-            </div>
+            <p class="source-context-note">{{ sourceUsage }}</p>
+            <p v-if="readinessError" class="source-status-error">{{ readinessError }}</p>
+          </div>
+          <div class="source-status-governance">
+            <small>这是 Workspace 级治理状态，不是当前 Diagnosis 的调查步骤。</small>
             <el-button
               v-if="canManage"
               size="small"
               plain
-              :disabled="!canValidateGuance"
-              @click="$emit('openGuanceValidation')"
-            >打开真源验收</el-button>
-            <small class="gate-note">单次读链不会自动通过 T7。owner 验收会绑定当前配置指纹；配置变化后自动过期。T8 仍需 20–30 条真实样本，fixtureMode 不会自动关闭。</small>
-          </template>
-          <p v-else class="empty-evidence">{{ readinessError || '正在检查当前 Workspace 的真源绑定…' }}</p>
+              @click="$emit('openGuanceOnboarding')"
+            >前往接入验收</el-button>
+          </div>
         </section>
         <section class="side-card side-card--capability">
           <span class="section-label">当前范围</span><h3>能力边界</h3>
@@ -198,7 +144,10 @@
         </section>
         <section class="side-card side-card--provenance">
           <span class="section-label">调查参与者</span><h3>谁参与了，谁没参与</h3>
-          <InvestigationProvenancePanel :diagnosis-id="current.diagnosis.diagnosisId" />
+          <InvestigationProvenancePanel
+            :diagnosis-id="current.diagnosis.diagnosisId"
+            :diagnosis-version="current.version"
+          />
         </section>
         <section
           v-if="supportsDeterministicDerivation(current.diagnosis.investigationMode)"
@@ -239,23 +188,14 @@ import type {
   EvidenceStepTone,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
-  GuanceEvidenceSpinePreview,
-  GuanceEvidenceValidationReport,
-  GuanceReadinessStatus,
-  GuanceSignalStatus,
   RecommendedAction,
   StoredDiagnosis,
 } from '@/api'
 import {
-  canStartGuanceValidation,
   conclusionLabel,
+  diagnosisGuanceUsageLabel,
   guanceAcceptanceProgress,
-  guanceAcceptanceStateLabel,
-  guanceOwnerBlockerLabel,
-  guanceReadinessLabel,
-  guanceSignalLabel,
-  guanceSpinePreviewLabel,
-  guanceValidationLabel,
+  guanceDetailSourceState,
   knowledgeEvidenceGradeLabel,
 } from './formalProjection'
 import {
@@ -276,12 +216,9 @@ interface Props {
   guanceReadiness: GuanceEvidenceReadiness | null
   guanceAcceptance: ReturnType<typeof guanceAcceptanceProgress> | null
   guanceOwnerAcceptance: GuanceEvidenceAcceptanceView | null
-  guanceValidation: GuanceEvidenceValidationReport | null
-  guanceSpinePreview: GuanceEvidenceSpinePreview | null
   readinessLoading: boolean
   readinessError: string
   canManage: boolean
-  canValidateGuance: boolean
   canApproveAction: (action: RecommendedAction) => boolean
   canRecordOutcomeAction: (action: RecommendedAction) => boolean
 }
@@ -289,7 +226,7 @@ interface Props {
 const props = defineProps<Props>()
 
 defineEmits<{
-  openGuanceValidation: []
+  openGuanceOnboarding: []
   openEvaluation: []
   approve: [action: RecommendedAction]
   recordOutcome: [action: RecommendedAction]
@@ -314,6 +251,16 @@ const filteredSteps = computed(() => {
     default: return steps
   }
 })
+
+const sourceStatus = computed(() => guanceDetailSourceState(
+  props.guanceReadiness?.status ?? null,
+  props.guanceOwnerAcceptance?.status ?? null,
+  props.guanceAcceptance,
+))
+
+const sourceUsage = computed(() => diagnosisGuanceUsageLabel(
+  props.current?.diagnosis.evidence ?? [],
+))
 
 /* ── Monaco diff editor ── */
 const diffContainerRef = ref<HTMLElement | null>(null)
@@ -373,40 +320,6 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   return kind === 'CRITERION' ? '判据' : shortTime(value).slice(11)
 }
 
-function readinessTone(value: GuanceReadinessStatus) {
-  if (canStartGuanceValidation(value)) return 'active'
-  return 'warning'
-}
-
-function signalTone(value: GuanceSignalStatus) {
-  if (value === 'CANONICAL_RESULT_OBSERVED') return 'success'
-  if (value === 'READY_FOR_VALIDATION') return 'active'
-  return 'warning'
-}
-
-function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') {
-  if (value === 'READY') return 'success'
-  if (value === 'OWNER_EVIDENCE_REQUIRED') return 'active'
-  return 'warning'
-}
-
-function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return '当前绑定已验收'
-  if (value === 'STALE') return '配置变化，验收已过期'
-  if (value === 'NOT_ACCEPTED') return '尚未完成 owner 验收'
-  return '当前绑定不可验收'
-}
-
-function ownerAcceptanceTone(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return 'passed'
-  return value === 'STALE' ? 'blocked' : 'pending'
-}
-
-function shortFingerprint(value?: string | null) {
-  return value ? `${value.slice(0, 12)}…` : '不可用'
-}
-
-function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 </script>
 
 <style scoped>
@@ -446,6 +359,8 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 .route-card span { display:block; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
 .route-card b { display:block; margin:7px 0; font-size:var(--mc-text-sm); }
 .route-card code { color:var(--mc-primary); font-size:var(--mc-text-xs); word-break:break-all; }
+.route-card .playbook-help { margin:9px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.route-card .playbook-help strong { color:var(--mc-text-primary); }
 .route-card .knowledge-grade { display:inline-flex; margin-top:10px; padding:3px 8px; border:1px solid var(--mc-border); border-radius:999px; letter-spacing:0; text-transform:none; }
 .route-card .knowledge-grade.recorded_aggregate { color:var(--mc-success); background:var(--mc-status-success-bg); border-color:var(--mc-success); }
 .route-card .knowledge-grade.authored_fixture { color:var(--mc-warning); background:var(--mc-status-warning-bg); border-color:var(--mc-warning); }
@@ -523,55 +438,22 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 .capability-list { margin:13px 0 0; padding-left:17px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.6; }
 .capability-list li+li { margin-top:7px; }
 
-/* ── Source gate (Guance adapter) ── */
-.source-gate-card,.side-card--guance { min-height:120px; }
-.source-gate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-.source-gate-state { flex:none; padding:3px 7px; border-radius:var(--mc-radius-xs); background:var(--mc-bg-muted); font-size:var(--mc-text-xs); font-weight:700; }
-.source-scope { display:flex; align-items:center; gap:5px; margin:12px 0 8px; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
-.source-scope code { color:var(--mc-text-secondary); word-break:break-all; }
-.source-meta { display:flex; flex-wrap:wrap; gap:7px; font-size:var(--mc-text-xs); }
-.source-context-note { margin:10px 0 0; padding-left:10px; border-left:2px solid var(--mc-warning); color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
-
-/* ── Acceptance ladder ── */
-.acceptance-ladder { margin:12px 0 0; padding:0; list-style:none; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); overflow:hidden; }
-.acceptance-ladder li { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:start; gap:8px; padding:8px; background:var(--mc-bg-elevated); }
-.acceptance-ladder li+li { border-top:1px solid var(--mc-border); }
-.acceptance-ladder li>span { display:grid; place-items:center; width:25px; height:20px; border-radius:4px; color:var(--mc-text-secondary); background:var(--mc-border-light); font:700 var(--mc-text-xs) var(--mc-mono,monospace); }
-.acceptance-ladder b,.acceptance-ladder small { display:block; }
-.acceptance-ladder b { font-size:var(--mc-text-xs); }
-.acceptance-ladder small { margin-top:3px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.45; }
-.acceptance-ladder strong { font-size:var(--mc-text-xs); white-space:nowrap; }
-
-/* ── Next action ── */
-.next-source-action { margin:8px 0 0; padding:8px; border-radius:6px; color:var(--mc-text-secondary); background:var(--mc-status-info-bg); font-size:var(--mc-text-xs); line-height:1.5; }
-.next-source-action b { display:block; margin-bottom:2px; color:var(--mc-status-info-text); }
-
-/* ── Signal readiness ── */
-.signal-readiness-list { margin:12px 0; padding:0; list-style:none; }
-.signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid var(--mc-border-light); }
-.signal-readiness-list code { font-size:var(--mc-text-xs); }
-.signal-readiness-list span { font-size:var(--mc-text-xs); }
-.signal-readiness-list small { grid-column:1/-1; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); word-break:break-all; }
-
-/* ── Source blocker ── */
-.source-blocker { margin:7px 0; padding:7px 8px; border-radius:var(--mc-radius-xs); color:var(--mc-status-error-text); background:var(--mc-status-error-bg); font-size:var(--mc-text-xs); line-height:1.5; }
-.gate-note { display:block; margin-top:9px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
-
-/* ── Validation result ── */
-.validation-result { margin:9px 0; padding:9px; border-radius:var(--mc-radius-sm); font-size:var(--mc-text-xs); }
-.validation-result.passed { color:var(--mc-status-success-text); background:var(--mc-status-success-bg); }
-.validation-result.blocked { color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); }
-.validation-result.pending { color:var(--mc-status-info-text); background:var(--mc-status-info-bg); }
-.validation-result b,.validation-result span,.validation-result small { display:block; }
-.validation-result span { margin-top:4px; }
-.validation-result small { margin-top:5px; color:var(--mc-text-secondary); line-height:1.45; }
-
-/* ── Owner acceptance ── */
-.owner-acceptance-result code { font-size:var(--mc-text-xs); overflow-wrap:anywhere; }
-.owner-acceptance-result.passed { border-color:var(--mc-success); background:var(--mc-status-success-bg); }
-.owner-acceptance-result.blocked { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); }
-.owner-acceptance-result.pending { border-color:var(--mc-border-light); background:var(--mc-status-info-bg); }
-.spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
+/* ── Compact Guance environment status ── */
+.source-status { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:4px 2px 16px; border-bottom:1px solid var(--mc-border-light); }
+.source-status-copy { min-width:0; }
+.source-status-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:5px; }
+.source-status-title h3 { margin:0; }
+.source-status-title strong { padding:3px 7px; border-radius:var(--mc-radius-xs); font-size:var(--mc-text-xs); }
+.source-status-title strong.is-success { color:var(--mc-status-success-text); background:var(--mc-status-success-bg); }
+.source-status-title strong.is-active { color:var(--mc-status-info-text); background:var(--mc-status-info-bg); }
+.source-status-title strong.is-warning { color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); }
+.source-status-title strong.is-muted { color:var(--mc-text-secondary); background:var(--mc-bg-muted); }
+.source-scope { display:flex; align-items:center; gap:5px; margin:9px 0 0; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
+.source-scope code { color:var(--mc-text-secondary); overflow-wrap:anywhere; }
+.source-context-note,.source-status-error { margin:7px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.5; }
+.source-status-error { color:var(--mc-status-warning-text); }
+.source-status-governance { display:flex; max-width:180px; flex:none; flex-direction:column; align-items:flex-end; gap:8px; }
+.source-status-governance small { color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); line-height:1.45; text-align:right; }
 
 /* ── Action cards ── */
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); }
@@ -613,5 +495,8 @@ function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 @media(max-width:900px){
   .developer-body{grid-template-columns:1fr}
   .developer-body>.evidence-timeline,.developer-body>.developer-side{grid-column:1/-1}
+  .source-status{flex-direction:column}
+  .source-status-governance{max-width:none; align-items:flex-start}
+  .source-status-governance small{text-align:left}
 }
 </style>

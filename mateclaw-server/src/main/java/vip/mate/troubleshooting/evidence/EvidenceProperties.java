@@ -69,8 +69,16 @@ public class EvidenceProperties {
     @Getter
     @Setter
     public static class Binding {
+        /** Canonical signal served by this reviewed contract; required for catalog onboarding. */
+        private String signalKind = "";
         private String namespace = "UNKNOWN";
         private String summary = "";
+        /** Developer-facing scenario name; it never participates in a source query. */
+        private String scenario = "";
+        /** The operational question this reviewed contract answers. */
+        private String question = "";
+        /** Safe summaries of fixed server-owned filters; never raw DQL. */
+        private List<String> fixedConditions = List.of();
         private String queryTemplate;
         /** Ordered DQL components for one compound read-only evidence contract. */
         private List<String> queryTemplates = List.of();
@@ -84,6 +92,9 @@ public class EvidenceProperties {
 
         /** Server-owned canonical literals that describe a configured aggregate. */
         private Map<String, String> constantFields = new LinkedHashMap<>();
+
+        /** Query placeholders owned by the workspace asset, never by browser/model input. */
+        private List<String> assetParameters = List.of();
     }
 
     /** Optional Guance query envelope fields owned by one concrete binding. */

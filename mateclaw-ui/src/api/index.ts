@@ -1634,6 +1634,53 @@ export interface CreateDeploymentTopologyScenarioRequest {
   rehearsal: boolean
 }
 
+/** Explicit no-error-code scenario intake; evidence plan and Playbook stay server-owned. */
+export interface ScenarioDiagnosisRequest {
+  system: string
+  service: string
+  title: string
+  severity: IncidentSeverity
+  traceId?: string
+  customerRef?: string
+  occurredAt?: string | null
+  rehearsal: boolean
+}
+
+export type HistoricalCaseKnowledgeImportState =
+  | 'IMPORTED_VECTOR_READY'
+  | 'IMPORTED_VECTOR_PENDING'
+  | 'REUSED_VECTOR_READY'
+  | 'REUSED_VECTOR_PENDING'
+  | 'FAILED'
+
+/** Safe receipt only. Case payloads and original evidence are never echoed here. */
+export interface HistoricalCaseKnowledgeImportItem {
+  diagnosisId: string
+  caseId: string
+  slug: string | null
+  state: HistoricalCaseKnowledgeImportState
+  authoritativeResolution: boolean
+  chunkCount: number
+  embeddedChunkCount: number
+  error: string | null
+}
+
+export interface HistoricalCaseKnowledgeImportResult {
+  knowledgeBaseId: string | number
+  discovered: number
+  imported: number
+  reused: number
+  vectorReady: number
+  vectorPending: number
+  failed: number
+  items: HistoricalCaseKnowledgeImportItem[]
+}
+
+export interface HistoricalCaseKnowledgeImportRequest {
+  knowledgeBaseId: string | number
+  limit: number
+}
+
 /** Authoritative deterministic knowledge contract managed outside the diagnosis lifecycle. */
 export interface SopEntry {
   sopId: string
@@ -2471,6 +2518,187 @@ export interface GuanceEvidenceReadiness {
   blockers: string[]
 }
 
+export type EvidenceRouteOrigin = 'WORKSPACE' | 'DEPLOYMENT' | 'UNCONFIGURED'
+
+export interface EvidenceCatalogSource {
+  platform: string
+  status: string
+  verified: boolean
+  endpointStatus: string
+  credentialStatus: string
+  supportedSignals: string[]
+  detail: string
+}
+
+export interface EvidenceQueryEndpoint {
+  operationKind: string
+  method: string
+  path: string
+  qtype: string
+}
+
+export interface EvidenceQueryParameter {
+  name: string
+  source: string
+  required: boolean
+  description: string
+}
+
+export interface EvidenceQueryBudget {
+  queryCount: number
+  maxRows: number
+  requestLimit: number
+  timeoutMs: number
+  maxPointCount: number | null
+  intervalSeconds: number | null
+  seriesLimit: number | null
+  alignTime: boolean | null
+  disableSampling: boolean | null
+  timeZone: string | null
+}
+
+export interface EvidenceCatalogRoute {
+  origin: EvidenceRouteOrigin
+  platforms: string[]
+  explicitlyDisabled: boolean
+  updatedBy: string | null
+  reason: string | null
+  updatedAt: string | null
+}
+
+export interface EvidenceCatalogBinding {
+  status: string
+  bindingRef: string
+  lastObservedAt: string | null
+  detail: string
+}
+
+export interface EvidenceQueryContract {
+  contractRef: string
+  signalKind: string
+  scenario: string
+  question: string
+  summary: string
+  adapter: string
+  namespace: string
+  fixedConditions: string[]
+  endpoint: EvidenceQueryEndpoint
+  parameters: EvidenceQueryParameter[]
+  canonicalOutputs: string[]
+  budget: EvidenceQueryBudget
+  route: EvidenceCatalogRoute
+  binding: EvidenceCatalogBinding
+  runnable: boolean
+  blockers: string[]
+}
+
+export interface EvidenceCatalogAcceptance {
+  status: string
+  currentBindingFingerprint: string | null
+  acceptedBy: string | null
+  acceptedAt: string | null
+  blockers: string[]
+}
+
+export interface EvidenceCatalogModule {
+  service: string
+  status: string
+  runnableContracts: number
+  blockers: string[]
+  acceptance: EvidenceCatalogAcceptance
+  contracts: EvidenceQueryContract[]
+}
+
+export interface EvidenceCatalogSystem {
+  system: string
+  modules: EvidenceCatalogModule[]
+}
+
+/** Server-owned, secret-free directory; it contains no DQL, endpoint host or credential. */
+export interface EvidenceQueryCatalog {
+  contractVersion: 'evidence-query-catalog.v1'
+  workspaceId: number
+  sources: EvidenceCatalogSource[]
+  systems: EvidenceCatalogSystem[]
+}
+
+export interface EvidenceRoutePlatformState {
+  platform: string
+  available: boolean
+  detail: string
+}
+
+export interface EvidenceRouteDeclaration {
+  system: string
+  signalKind: string
+  platforms: string[]
+  platformStates: EvidenceRoutePlatformState[]
+  updatedBy: string
+  reason: string
+  updatedAt: string
+}
+
+export interface DeclareEvidenceRouteRequest {
+  system: string
+  signalKind: string
+  platforms: string[]
+  reason: string
+}
+
+export type ObservabilityAssetOrigin = 'WORKSPACE' | 'DEPLOYMENT'
+
+export interface ObservabilityAsset {
+  assetId: string | null
+  origin: ObservabilityAssetOrigin
+  workspaceId: number
+  system: string
+  service: string
+  displayName: string
+  platform: string
+  environment: string | null
+  region: string | null
+  cluster: string | null
+  namespace: string | null
+  enabled: boolean
+  signalBindings: Record<string, string>
+  parameters: Record<string, string>
+  version: number
+  changedBy: string | null
+  reason: string | null
+  changedAt: string | null
+}
+
+export interface ObservabilityAssetContractOption {
+  contractRef: string
+  signalKind: string
+  scenario: string
+  question: string
+  summary: string
+  requiredAssetParameters: string[]
+}
+
+export interface ObservabilityAssetCatalog {
+  workspaceId: number
+  assets: ObservabilityAsset[]
+  contracts: ObservabilityAssetContractOption[]
+}
+
+export interface DeclareObservabilityAssetRequest {
+  system: string
+  service: string
+  displayName: string
+  platform: 'guance'
+  environment: string
+  region?: string
+  cluster?: string
+  namespace?: string
+  enabled: boolean
+  signalBindings: Record<string, string>
+  parameters: Record<string, string>
+  expectedVersion?: number
+  reason: string
+}
+
 export type GuanceEvidenceAcceptanceStatus =
   | 'BLOCKED'
   | 'NOT_ACCEPTED'
@@ -2993,6 +3221,24 @@ export const troubleshootingApi = {
   report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
 
+  /** Opens one exact approved scenario without claiming a cause. */
+  createScenarioDiagnosis: (scenarioKey: string, data: ScenarioDiagnosisRequest) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/scenarios/${encodeURIComponent(scenarioKey)}/diagnoses`, data,
+    ),
+
+  /** Executes only the evidence contract frozen on the waiting Diagnosis. */
+  runScenarioEvidence: (diagnosisId: string) =>
+    http.post<StoredDiagnosis>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/evidence-runs`,
+    ),
+
+  /** Backfills safe Diagnosis snapshots into one existing Wiki knowledge base. */
+  importHistoricalCases: (data: HistoricalCaseKnowledgeImportRequest) =>
+    http.post<HistoricalCaseKnowledgeImportResult>(
+      '/troubleshooting/knowledge/case-imports', data, { timeout: 120000 },
+    ),
+
   /** Creates the Diagnosis owner before any deployment-topology evidence Tool may run. */
   createDeploymentTopologyScenario: (data: CreateDeploymentTopologyScenarioRequest) =>
     http.post<StoredDiagnosis>(
@@ -3025,6 +3271,30 @@ export const troubleshootingApi = {
   /** Inspects bindings for this exact workspace asset without probing Guance. */
   evidenceReadiness: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
+
+  /** Scenario-oriented contract directory; reads configuration without querying a source. */
+  evidenceCatalog: () => http.get<EvidenceQueryCatalog>(
+    '/troubleshooting/evidence/catalog',
+  ),
+
+  /** Replaces one system + signal route; an empty platform list explicitly disables it. */
+  declareEvidenceRoute: (data: DeclareEvidenceRouteRequest) =>
+    http.put<EvidenceRouteDeclaration>('/troubleshooting/evidence/routes', data),
+
+  /** Removes the workspace declaration and restores the deployment fallback. */
+  withdrawEvidenceRoute: (system: string, signalKind: string) =>
+    http.delete<void>('/troubleshooting/evidence/routes', {
+      params: { system, signalKind },
+    }),
+
+  /** Workspace-owned system/resource scopes; contains no endpoint, key or raw DQL. */
+  observabilityAssets: () => http.get<ObservabilityAssetCatalog>(
+    '/troubleshooting/evidence/assets',
+  ),
+
+  /** Adds the next immutable asset revision; existing versions remain auditable. */
+  declareObservabilityAsset: (data: DeclareObservabilityAssetRequest) =>
+    http.put<ObservabilityAsset>('/troubleshooting/evidence/assets', data),
 
   /** Persistent owner acceptance for the exact current Guance binding fingerprint. */
   guanceEvidenceAcceptance: (params: { system: string; service: string }) =>

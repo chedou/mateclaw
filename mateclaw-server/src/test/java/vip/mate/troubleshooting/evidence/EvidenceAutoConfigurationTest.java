@@ -164,6 +164,9 @@ class EvidenceAutoConfigurationTest {
                     EvidenceProperties.Binding binding = guance.getBindings()
                             .get("csp-prm-miniapp-synthetic-probe");
                     assertThat(binding.getNamespace()).isEqualTo("D");
+                    assertThat(binding.getScenario()).isEqualTo("部署拓扑拨测分析");
+                    assertThat(binding.getFixedConditions())
+                            .contains("拨测任务=客服数字化平台-首页-可用性监控");
                     assertThat(binding.getMaxRows()).isEqualTo(20);
                     assertThat(binding.getQueryTemplate())
                             .contains("http_dial_testing", "客服数字化平台-首页-可用性监控");
@@ -197,7 +200,10 @@ class EvidenceAutoConfigurationTest {
                     assertThat(properties.getRoutes().get("CSDP"))
                             .containsEntry("log_search", List.of("guance"))
                             .containsEntry("log_trace_bundle", List.of("guance"))
-                            .containsEntry("contrast_sample", List.of("guance"));
+                            .containsEntry("contrast_sample", List.of("guance"))
+                            .containsEntry("error_log_scan", List.of("guance"))
+                            .containsEntry("monitor_event_scan", List.of("guance"))
+                            .containsEntry("k8s_workload_health", List.of("guance"));
 
                     EvidenceProperties.Guance guance = properties.getGuance();
                     assertThat(guance.isEnabled()).isFalse();
@@ -219,14 +225,26 @@ class EvidenceAutoConfigurationTest {
                                                 "csdp-message-send-trace-bundle")
                                         .containsEntry(
                                                 "contrast_sample",
-                                                "csdp-message-send-contrast");
+                                                "csdp-message-send-contrast")
+                                        .containsEntry(
+                                                "error_log_scan",
+                                                "csdp-application-error-scan")
+                                        .containsEntry(
+                                                "monitor_event_scan",
+                                                "csdp-monitor-event-scan")
+                                        .containsEntry(
+                                                "k8s_workload_health",
+                                                "csdp-k8s-workload-health");
                             });
 
                     assertThat(guance.getBindings())
                             .containsKeys(
                                     "csdp-message-send-log-search",
                                     "csdp-message-send-trace-bundle",
-                                    "csdp-message-send-contrast");
+                                    "csdp-message-send-contrast",
+                                    "csdp-application-error-scan",
+                                    "csdp-monitor-event-scan",
+                                    "csdp-k8s-workload-health");
                     assertThat(guance.getBindings().get("csdp-message-send-log-search")
                             .getQueryTemplate())
                             .contains(
@@ -235,6 +253,8 @@ class EvidenceAutoConfigurationTest {
                                     "failed AND sendmsg",
                                     "@trace_id",
                                     "{{window_span}}");
+                    assertThat(guance.getBindings().get("csdp-message-send-log-search")
+                            .getQuestion()).contains("SendMsg 失败请求");
                     EvidenceProperties.Binding traceBinding = guance.getBindings()
                             .get("csdp-message-send-trace-bundle");
                     assertThat(traceBinding.getQueryTemplate())
@@ -269,6 +289,42 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry(
                                     "discriminating_feature",
                                     "message_length_eq_2875");
+                    EvidenceProperties.Binding errorScan = guance.getBindings()
+                            .get("csdp-application-error-scan");
+                    assertThat(errorScan.getNamespace()).isEqualTo("L");
+                    assertThat(errorScan.getQueryTemplate())
+                            .contains(
+                                    "error_count",
+                                    "affected_trace_count",
+                                    "latest_trace_id",
+                                    "level:ERROR",
+                                    "{{window_span}}")
+                            .doesNotContain("content", "host");
+                    assertThat(errorScan.getQueryOptions().isDisableSampling()).isTrue();
+
+                    EvidenceProperties.Binding monitorScan = guance.getBindings()
+                            .get("csdp-monitor-event-scan");
+                    assertThat(monitorScan.getNamespace()).isEqualTo("E");
+                    assertThat(monitorScan.getQueryTemplate())
+                            .contains(
+                                    "E::monitor",
+                                    "event_count",
+                                    "latest_status",
+                                    "latest_checker",
+                                    "{{monitor_checker}}")
+                            .doesNotContain("df_message", "df_title");
+
+                    EvidenceProperties.Binding workload = guance.getBindings()
+                            .get("csdp-k8s-workload-health");
+                    assertThat(workload.getNamespace()).isEqualTo("O+M");
+                    assertThat(workload.getMaxRows()).isEqualTo(1);
+                    assertThat(workload.getQueryTemplate()).isNull();
+                    assertThat(workload.getQueryTemplates())
+                            .hasSize(4)
+                            .allSatisfy(query -> assertThat(query)
+                                    .contains("docker_containers", "{{deployment}}", "{{namespace}}"));
+                    assertThat(workload.getQueryTemplates().get(3))
+                            .contains("max_cpu_percent", "max_memory_percent");
                 });
     }
 }

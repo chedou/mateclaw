@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -34,7 +35,6 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(GuanceEvidenceAdapter.class);
     private static final String PLATFORM = "guance";
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([A-Za-z0-9_]+)}}");
     private static final Pattern SAFE_VALUE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
     private static final Pattern WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
@@ -46,6 +46,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private final EvidenceProperties.Guance config;
     private final ObjectMapper objectMapper;
     private final EvidenceHttpTransport transport;
+    private final WorkspaceObservabilityAssets workspaceAssets;
     private final Clock clock;
     private final ConcurrentMap<ObservationKey, Instant> observations =
             new ConcurrentHashMap<>();
@@ -55,9 +56,20 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             ObjectMapper objectMapper,
             EvidenceHttpTransport transport,
             Clock clock) {
+        this(config, objectMapper, transport, WorkspaceObservabilityAssets.NONE, clock);
+    }
+
+    GuanceEvidenceAdapter(
+            EvidenceProperties.Guance config,
+            ObjectMapper objectMapper,
+            EvidenceHttpTransport transport,
+            WorkspaceObservabilityAssets workspaceAssets,
+            Clock clock) {
         this.config = config == null ? new EvidenceProperties.Guance() : config;
         this.objectMapper = objectMapper;
         this.transport = transport;
+        this.workspaceAssets = workspaceAssets == null
+                ? WorkspaceObservabilityAssets.NONE : workspaceAssets;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -82,9 +94,16 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
         }
-        EvidenceProperties.Binding binding = authorizedBinding(
-                workspaceId, incident.system(), incident.service(), request.signalKind());
-        if (binding == null) {
+        AuthorizedBinding authorized;
+        try {
+            authorized = authorizedBinding(
+                    workspaceId, incident.system(), incident.service(), request.signalKind());
+        } catch (RuntimeException resolutionFailure) {
+            log.warn("Guance workspace asset resolution failed ({})",
+                    resolutionFailure.getClass().getSimpleName());
+            return missing(request, "workspace asset resolution failed");
+        }
+        if (authorized == null) {
             return missing(request, "workspace asset or signal binding is not authorized");
         }
         if (!baseConfigured()) {
@@ -92,9 +111,11 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         }
 
         try {
+            EvidenceProperties.Binding binding = authorized.binding();
             WindowRange window = window(request.window(), incident.occurredAt());
             List<String> queries = configuredQueryTemplates(binding).stream()
-                    .map(template -> render(template, request, incident, window))
+                    .map(template -> render(
+                            template, request, incident, window, authorized.parameters()))
                     .toList();
             String body = requestBody(queries, window, binding);
             log.debug("Dispatching Guance evidence signal {} via {}",
@@ -210,8 +231,14 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             String service,
             String signalKind) {
         String normalizedSignal = normalizeKey(signalKind);
-        List<EvidenceProperties.AssetBinding> matches =
-                exactAssetScopes(workspaceId, system, service);
+        List<AssetScope> matches;
+        try {
+            matches = exactAssetScopes(workspaceId, system, service);
+        } catch (RuntimeException resolutionFailure) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    "", null, "workspace asset resolution failed");
+        }
         if (matches.isEmpty()) {
             return new SignalInspection(
                     GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
@@ -223,13 +250,18 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                     "", null, "workspace asset authorization is ambiguous");
         }
 
-        EvidenceProperties.AssetBinding asset = matches.getFirst();
-        if (asset.getSignalBindings() == null) {
+        AssetScope asset = matches.getFirst();
+        if (!asset.enabled() || !PLATFORM.equals(normalizeKey(asset.platform()))) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
+                    "", null, "workspace asset is disabled or belongs to another platform");
+        }
+        if (asset.signalBindings() == null) {
             return new SignalInspection(
                     GuanceEvidenceReadiness.SignalStatus.UNAUTHORIZED,
                     "", null, "signal binding is not authorized");
         }
-        List<Map.Entry<String, String>> signalEntries = asset.getSignalBindings().entrySet().stream()
+        List<Map.Entry<String, String>> signalEntries = asset.signalBindings().entrySet().stream()
                 .filter(entry -> normalizeKey(entry.getKey()).equals(normalizedSignal))
                 .toList();
         if (signalEntries.isEmpty()) {
@@ -262,6 +294,13 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                     GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
                     bindingRef, null, "canonical binding is missing or invalid");
         }
+        EvidenceProperties.Binding binding = bindingEntries.getFirst().getValue();
+        if (asset.workspaceOwned()
+                && !asset.parameters().keySet().containsAll(assetParameterNames(binding))) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    bindingRef, null, "required workspace asset parameters are missing");
+        }
 
         Instant observedAt = observations.get(new ObservationKey(
                 workspaceId,
@@ -280,11 +319,17 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     }
 
     private boolean hasAnyAuthorizedBinding() {
-        return assetBindings().stream()
+        boolean deployed = assetBindings().stream()
                 .filter(this::hasUniqueAssetScope)
+                .filter(this::deploymentScopeIsEffective)
                 .anyMatch(asset -> asset.getSignalBindings() != null
                         && asset.getSignalBindings().keySet().stream()
                                 .anyMatch(signal -> bindingFor(asset, signal) != null));
+        if (deployed) {
+            return true;
+        }
+        return CanonicalEvidenceSchema.signalKinds().stream()
+                .anyMatch(this::hasWorkspaceBinding);
     }
 
     private boolean hasAuthorizedBinding(String signalKind) {
@@ -293,30 +338,80 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         }
         return assetBindings().stream()
                 .filter(this::hasUniqueAssetScope)
-                .anyMatch(asset -> bindingFor(asset, signalKind) != null);
+                .filter(this::deploymentScopeIsEffective)
+                .anyMatch(asset -> bindingFor(asset, signalKind) != null)
+                || hasWorkspaceBinding(signalKind);
     }
 
-    private EvidenceProperties.Binding authorizedBinding(
+    private boolean deploymentScopeIsEffective(EvidenceProperties.AssetBinding asset) {
+        try {
+            return workspaceAssets.find(
+                    asset.getWorkspaceId(), asset.getSystem(), asset.getService()).isEmpty();
+        } catch (RuntimeException unavailableRegistry) {
+            // A registry outage must remove capability, never restore a broader fallback.
+            return false;
+        }
+    }
+
+    private boolean hasWorkspaceBinding(String signalKind) {
+        try {
+            return workspaceAssets.activeBindingReferences(normalizeKey(signalKind)).stream()
+                    .anyMatch(reference -> bindingFor(reference, signalKind) != null);
+        } catch (RuntimeException unavailableRegistry) {
+            return false;
+        }
+    }
+
+    private AuthorizedBinding authorizedBinding(
             long workspaceId,
             String system,
             String service,
             String signalKind) {
-        List<EvidenceProperties.AssetBinding> matches =
+        List<AssetScope> matches =
                 exactAssetScopes(workspaceId, system, service);
         if (matches.size() != 1) {
             return null;
         }
-        return bindingFor(matches.getFirst(), signalKind);
+        AssetScope asset = matches.getFirst();
+        if (!asset.enabled() || !PLATFORM.equals(normalizeKey(asset.platform()))) {
+            return null;
+        }
+        EvidenceProperties.Binding binding = bindingFor(asset, signalKind);
+        if (binding == null) {
+            return null;
+        }
+        Map<String, String> parameters = new LinkedHashMap<>();
+        if (asset.workspaceOwned()) {
+            for (String name : assetParameterNames(binding)) {
+                String value = asset.parameters().get(name);
+                if (!safeReference(value)) {
+                    return null;
+                }
+                parameters.put(name, value.trim());
+            }
+        }
+        return new AuthorizedBinding(binding, Map.copyOf(parameters));
     }
 
     private EvidenceProperties.Binding bindingFor(
             EvidenceProperties.AssetBinding asset,
             String signalKind) {
-        if (asset == null || !present(signalKind) || asset.getSignalBindings() == null) {
+        if (asset == null) {
+            return null;
+        }
+        return bindingFor(new AssetScope(
+                asset.getWorkspaceId(), asset.getSystem(), asset.getService(), PLATFORM,
+                true, asset.getSignalBindings(), Map.of(), false), signalKind);
+    }
+
+    private EvidenceProperties.Binding bindingFor(
+            AssetScope asset,
+            String signalKind) {
+        if (asset == null || !present(signalKind) || asset.signalBindings() == null) {
             return null;
         }
         String wantedSignal = normalizeKey(signalKind);
-        List<Map.Entry<String, String>> signalEntries = asset.getSignalBindings().entrySet().stream()
+        List<Map.Entry<String, String>> signalEntries = asset.signalBindings().entrySet().stream()
                 .filter(entry -> normalizeKey(entry.getKey()).equals(wantedSignal))
                 .toList();
         if (signalEntries.size() != 1
@@ -324,7 +419,16 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 || config.getBindings() == null) {
             return null;
         }
-        String wantedBinding = normalizeKey(signalEntries.getFirst().getValue());
+        return bindingFor(signalEntries.getFirst().getValue(), signalKind);
+    }
+
+    private EvidenceProperties.Binding bindingFor(
+            String bindingReference,
+            String signalKind) {
+        if (!safeReference(bindingReference) || config.getBindings() == null) {
+            return null;
+        }
+        String wantedBinding = normalizeKey(bindingReference);
         List<Map.Entry<String, EvidenceProperties.Binding>> bindingEntries =
                 config.getBindings().entrySet().stream()
                 .filter(entry -> safeReference(entry.getKey())
@@ -334,6 +438,10 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             return null;
         }
         EvidenceProperties.Binding binding = bindingEntries.getFirst().getValue();
+        if (present(binding.getSignalKind())
+                && !normalizeKey(binding.getSignalKind()).equals(normalizeKey(signalKind))) {
+            return null;
+        }
         return validBinding(signalKind, binding) ? binding : null;
     }
 
@@ -358,15 +466,26 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         return configured == null ? List.of() : configured;
     }
 
-    private List<EvidenceProperties.AssetBinding> exactAssetScopes(
+    private List<AssetScope> exactAssetScopes(
             long workspaceId,
             String system,
             String service) {
+        Optional<WorkspaceObservabilityAsset> declared =
+                workspaceAssets.find(workspaceId, system, service);
+        if (declared.isPresent()) {
+            WorkspaceObservabilityAsset asset = declared.get();
+            return List.of(new AssetScope(
+                    asset.workspaceId(), asset.system(), asset.service(), asset.platform(),
+                    asset.enabled(), asset.signalBindings(), asset.parameters(), true));
+        }
         return assetBindings().stream()
                 .filter(asset -> asset != null
                         && asset.getWorkspaceId() == workspaceId
                         && normalizeKey(asset.getSystem()).equals(normalizeKey(system))
                         && normalizeKey(asset.getService()).equals(normalizeKey(service)))
+                .map(asset -> new AssetScope(
+                        asset.getWorkspaceId(), asset.getSystem(), asset.getService(), PLATFORM,
+                        true, asset.getSignalBindings(), Map.of(), false))
                 .toList();
     }
 
@@ -380,6 +499,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                         && queryTemplates.size() != 1)
                 || binding.getMaxRows() < 1
                 || binding.getMaxRows() > MAX_BOUND_ROWS
+                || !validAssetParameters(binding, queryTemplates)
                 || !validQueryOptions(binding.getQueryOptions())) {
             return false;
         }
@@ -394,6 +514,37 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 canonicalFields.contains(entry.getKey())
                         && safeReference(entry.getValue()));
         return validAliases && validConstants;
+    }
+
+    private boolean validAssetParameters(
+            EvidenceProperties.Binding binding,
+            List<String> queryTemplates) {
+        List<String> rawNames = binding.getAssetParameters() == null
+                ? List.of() : binding.getAssetParameters();
+        List<String> names = rawNames.stream()
+                .filter(this::present)
+                .map(this::normalizeKey)
+                .toList();
+        if (names.size() != rawNames.size() || Set.copyOf(names).size() != names.size()) {
+            return false;
+        }
+        if (!EvidenceTemplateParameterPolicy.usesCanonicalLowercaseNames(queryTemplates)) {
+            return false;
+        }
+        Set<String> placeholders = EvidenceTemplateParameterPolicy.placeholders(queryTemplates);
+        return names.stream().allMatch(name -> safeReference(name)
+                && placeholders.contains(name)
+                && !EvidenceTemplateParameterPolicy.runtimeOwned(name));
+    }
+
+    private Set<String> assetParameterNames(EvidenceProperties.Binding binding) {
+        if (binding == null || binding.getAssetParameters() == null) {
+            return Set.of();
+        }
+        return binding.getAssetParameters().stream()
+                .filter(this::present)
+                .map(this::normalizeKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private String requestBody(
@@ -478,8 +629,18 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             String template,
             EvidenceRequest request,
             IncidentContext incident,
-            WindowRange window) {
+            WindowRange window,
+            Map<String, String> assetParameters) {
         Map<String, Object> values = new LinkedHashMap<>(request.target());
+        for (Map.Entry<String, String> entry : assetParameters.entrySet()) {
+            Object requested = values.get(entry.getKey());
+            if (requested != null
+                    && !entry.getValue().equals(String.valueOf(requested).trim())) {
+                throw new IllegalArgumentException(
+                        "request cannot override workspace asset parameter: " + entry.getKey());
+            }
+            values.put(entry.getKey(), entry.getValue());
+        }
         values.put("incident_id", incident.incidentId());
         values.put("system", incident.system());
         values.put("service", incident.service());
@@ -488,10 +649,10 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         values.put("window", window.expression());
         values.put("window_span", window.span());
 
-        Matcher matcher = PLACEHOLDER.matcher(template);
+        Matcher matcher = EvidenceTemplateParameterPolicy.matcher(template);
         StringBuilder rendered = new StringBuilder();
         while (matcher.find()) {
-            String key = matcher.group(1);
+            String key = normalizeKey(matcher.group(1));
             Object raw = values.get(key);
             if (raw == null) {
                 throw new IllegalArgumentException("missing query template value: " + key);
@@ -511,7 +672,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             matcher.appendReplacement(rendered, Matcher.quoteReplacement(value));
         }
         matcher.appendTail(rendered);
-        if (PLACEHOLDER.matcher(rendered).find()) {
+        if (EvidenceTemplateParameterPolicy.matcher(rendered.toString()).find()) {
             throw new IllegalArgumentException("unresolved query template placeholder");
         }
         return rendered.toString();
@@ -987,6 +1148,28 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     }
 
     private record WindowRange(String expression, String span, Instant start, Instant end) {
+    }
+
+    private record AuthorizedBinding(
+            EvidenceProperties.Binding binding,
+            Map<String, String> parameters) {
+    }
+
+    private record AssetScope(
+            long workspaceId,
+            String system,
+            String service,
+            String platform,
+            boolean enabled,
+            Map<String, String> signalBindings,
+            Map<String, String> parameters,
+            boolean workspaceOwned) {
+
+        private AssetScope {
+            signalBindings = Map.copyOf(
+                    signalBindings == null ? Map.of() : signalBindings);
+            parameters = Map.copyOf(parameters == null ? Map.of() : parameters);
+        }
     }
 
     record SignalInspection(

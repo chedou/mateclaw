@@ -78,6 +78,76 @@ class CanonicalEvidenceSchemaTest {
     }
 
     @Test
+    void acceptsSanitizedErrorAlertAndK8sSkillContracts() {
+        assertThat(CanonicalEvidenceSchema.isValid("error_log_scan", Map.of(
+                "error_count", 12,
+                "affected_trace_count", 7,
+                "latest_trace_id", "trace-007"))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("monitor_event_scan", Map.of(
+                "event_count", 3,
+                "latest_status", "critical",
+                "latest_checker", "CSDP API error rate"))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_workload_health", Map.of(
+                "pod_count", 3,
+                "container_count", 4,
+                "running_container_count", 3,
+                "unhealthy_container_count", 1,
+                "max_cpu_percent", 82.5,
+                "max_memory_percent", 76.25))).isTrue();
+    }
+
+    @Test
+    void rejectsMalformedSkillFactsInsteadOfTreatingThemAsHealthy() {
+        assertThat(CanonicalEvidenceSchema.isValid("error_log_scan", Map.of(
+                "error_count", 2,
+                "affected_trace_count", 3)))
+                .as("distinct affected traces cannot exceed matching errors")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("monitor_event_scan", Map.of(
+                "event_count", -1))).isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("monitor_event_scan", Map.of(
+                "event_count", 2,
+                "latest_status", "critical")))
+                .as("a non-empty alert aggregate must retain its exact checker")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("monitor_event_scan", Map.of(
+                "event_count", 2,
+                "latest_status", "healthy",
+                "latest_checker", "CSDP API error rate")))
+                .as("only the contract's warning-or-higher statuses are canonical")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("monitor_event_scan", Map.of(
+                "event_count", 0,
+                "latest_status", "warning",
+                "latest_checker", "stale checker")))
+                .as("a zero aggregate must not carry stale latest-event facts")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_workload_health", Map.of(
+                "pod_count", 2,
+                "container_count", 2,
+                "running_container_count", 3,
+                "unhealthy_container_count", 0,
+                "max_cpu_percent", 12,
+                "max_memory_percent", 20))).isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_workload_health", Map.of(
+                "pod_count", 2,
+                "container_count", 2,
+                "running_container_count", 2,
+                "unhealthy_container_count", 0,
+                "max_cpu_percent", -0.1,
+                "max_memory_percent", 20))).isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_workload_health", Map.of(
+                "pod_count", 3,
+                "container_count", 2,
+                "running_container_count", 2,
+                "unhealthy_container_count", 0,
+                "max_cpu_percent", 12,
+                "max_memory_percent", 20)))
+                .as("a workload cannot have more pods than observed containers")
+                .isFalse();
+    }
+
+    @Test
     void acceptsMeasuredImpactWithNullableCountsButRejectsUnknownOrFractionalFacts() {
         assertThat(CanonicalEvidenceSchema.isValid("incident_impact", Map.of(
                 "function_scope", "消息发送功能",

@@ -37,6 +37,13 @@ public final class TroubleshootingEvidenceModelProjector {
                     "slow_query_count", "baseline_slow"),
             "trace", Set.of("failed_hop", "status", "duration_ms"),
             "log_search", Set.of("match_count", "ps_id"),
+            "error_log_scan", Set.of(
+                    "error_count", "affected_trace_count", "latest_trace_id"),
+            "monitor_event_scan", Set.of(
+                    "event_count", "latest_status", "latest_checker"),
+            "k8s_workload_health", Set.of(
+                    "pod_count", "container_count", "running_container_count",
+                    "unhealthy_container_count", "max_cpu_percent", "max_memory_percent"),
             "contrast_sample", Set.of(
                     "discriminating_feature", "failure_sample_count",
                     "failure_match_count", "success_sample_count", "success_match_count"),

@@ -23,48 +23,67 @@ public final class CanonicalEvidenceSchema {
     private static final Map<String, FieldType> LOG_TRACE_ROW_FIELDS =
             withPsId(LOG_ENTRY_FIELDS);
 
-    private static final Map<String, SignalSchema> SCHEMAS = Map.of(
-            "synthetic_probe", scalar(Map.of(
+    private static final Map<String, SignalSchema> SCHEMAS = Map.ofEntries(
+            Map.entry("synthetic_probe", scalar(Map.of(
                     "status_code", FieldType.NUMBER,
                     "target_url", FieldType.STRING,
-                    "probe_name", FieldType.STRING)),
-            "log_count", scalar(Map.of(
+                    "probe_name", FieldType.STRING))),
+            Map.entry("log_count", scalar(Map.of(
                     "count", FieldType.NUMBER,
-                    "trace_id", FieldType.STRING)),
-            "metric", scalar(Map.of(
+                    "trace_id", FieldType.STRING))),
+            Map.entry("metric", scalar(Map.of(
                     "reachable", FieldType.BOOLEAN,
                     "connections_current", FieldType.NUMBER,
                     "connections_available", FieldType.NUMBER,
                     "slow_query_count", FieldType.NUMBER,
-                    "baseline_slow", FieldType.NUMBER)),
-            "trace", scalar(Map.of(
+                    "baseline_slow", FieldType.NUMBER))),
+            Map.entry("trace", scalar(Map.of(
                     "failed_hop", FieldType.STRING,
                     "status", FieldType.STRING,
-                    "duration_ms", FieldType.NUMBER)),
-            "log_search", scalar(Map.of(
+                    "duration_ms", FieldType.NUMBER))),
+            Map.entry("log_search", scalar(Map.of(
                     "match_count", FieldType.NUMBER,
                     "ps_id", FieldType.STRING,
-                    "sample_message", FieldType.STRING)),
-            "contrast_sample", scalar(Map.of(
+                    "sample_message", FieldType.STRING))),
+            Map.entry("contrast_sample", scalar(Map.of(
                     "discriminating_feature", FieldType.STRING,
                     "failure_sample_count", FieldType.NUMBER,
                     "failure_match_count", FieldType.NUMBER,
                     "success_sample_count", FieldType.NUMBER,
-                    "success_match_count", FieldType.NUMBER)),
-            "incident_impact", scalar(
+                    "success_match_count", FieldType.NUMBER))),
+            Map.entry("error_log_scan", scalar(
+                    Map.of(
+                            "error_count", FieldType.NUMBER,
+                            "affected_trace_count", FieldType.NUMBER,
+                            "latest_trace_id", FieldType.STRING),
+                    Set.of("affected_trace_count", "latest_trace_id"))),
+            Map.entry("monitor_event_scan", scalar(
+                    Map.of(
+                            "event_count", FieldType.NUMBER,
+                            "latest_status", FieldType.STRING,
+                            "latest_checker", FieldType.STRING),
+                    Set.of("latest_status", "latest_checker"))),
+            Map.entry("k8s_workload_health", scalar(Map.of(
+                    "pod_count", FieldType.NUMBER,
+                    "container_count", FieldType.NUMBER,
+                    "running_container_count", FieldType.NUMBER,
+                    "unhealthy_container_count", FieldType.NUMBER,
+                    "max_cpu_percent", FieldType.NUMBER,
+                    "max_memory_percent", FieldType.NUMBER))),
+            Map.entry("incident_impact", scalar(
                     Map.of(
                             "function_scope", FieldType.STRING,
                             "affected_customers", FieldType.NUMBER,
                             "affected_users", FieldType.NUMBER,
                             "blast_radius", FieldType.STRING,
                             "observed_at", FieldType.NUMBER),
-                    Set.of("affected_customers", "affected_users")),
-            "log_trace_bundle", rows(
+                    Set.of("affected_customers", "affected_users"))),
+            Map.entry("log_trace_bundle", rows(
                     Map.of(
                             "ps_id", FieldType.STRING,
                             "entries", FieldType.LOG_ENTRIES),
                     LOG_TRACE_ROW_FIELDS,
-                    OPTIONAL_LOG_ENTRY_FIELDS));
+                    OPTIONAL_LOG_ENTRY_FIELDS)));
 
     private CanonicalEvidenceSchema() {
     }
@@ -103,8 +122,13 @@ public final class CanonicalEvidenceSchema {
                         schema.resultFields(), schema.optionalResultFields(), observed)) {
             return false;
         }
-        return !"incident_impact".equals(normalize(signalKind))
-                || validIncidentImpact(observed);
+        return switch (normalize(signalKind)) {
+            case "incident_impact" -> validIncidentImpact(observed);
+            case "error_log_scan" -> validErrorLogScan(observed);
+            case "monitor_event_scan" -> validMonitorEventScan(observed);
+            case "k8s_workload_health" -> validK8sWorkloadHealth(observed);
+            default -> true;
+        };
     }
 
     /**
@@ -210,6 +234,81 @@ public final class CanonicalEvidenceSchema {
             return false;
         }
         return customers != null || users != null || radius != BlastRadius.UNKNOWN;
+    }
+
+    private static boolean validErrorLogScan(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(observed, "error_count", "affected_trace_count")) {
+            return false;
+        }
+        Long errorCount = CanonicalNumberParser.parseExactLong(observed.get("error_count"));
+        Long traceCount = observed.containsKey("affected_trace_count")
+                ? CanonicalNumberParser.parseExactLong(observed.get("affected_trace_count"))
+                : null;
+        return traceCount == null || traceCount <= errorCount;
+    }
+
+    private static boolean validMonitorEventScan(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(observed, "event_count")) {
+            return false;
+        }
+        Long eventCount = CanonicalNumberParser.parseExactLong(observed.get("event_count"));
+        boolean hasStatus = observed.containsKey("latest_status");
+        boolean hasChecker = observed.containsKey("latest_checker");
+        if (eventCount == 0) {
+            return !hasStatus && !hasChecker;
+        }
+        if (!hasStatus || !hasChecker) {
+            return false;
+        }
+        String status = String.valueOf(observed.get("latest_status"))
+                .trim().toLowerCase(Locale.ROOT);
+        return Set.of("critical", "error", "warning").contains(status);
+    }
+
+    private static boolean validK8sWorkloadHealth(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(
+                observed,
+                "pod_count",
+                "container_count",
+                "running_container_count",
+                "unhealthy_container_count")) {
+            return false;
+        }
+        Long pods = CanonicalNumberParser.parseExactLong(observed.get("pod_count"));
+        Long containers = CanonicalNumberParser.parseExactLong(observed.get("container_count"));
+        Long running = CanonicalNumberParser.parseExactLong(
+                observed.get("running_container_count"));
+        Long unhealthy = CanonicalNumberParser.parseExactLong(
+                observed.get("unhealthy_container_count"));
+        return pods <= containers
+                && running <= containers
+                && unhealthy <= containers
+                && running + unhealthy <= containers
+                && validNonNegativeFiniteNumber(observed.get("max_cpu_percent"))
+                && validNonNegativeFiniteNumber(observed.get("max_memory_percent"));
+    }
+
+    private static boolean validNonNegativeCounts(
+            Map<String, Object> observed,
+            String... fields) {
+        for (String field : fields) {
+            if (!observed.containsKey(field)) {
+                continue;
+            }
+            Long value = CanonicalNumberParser.parseExactLong(observed.get(field));
+            if (value == null || value < 0 || value > Integer.MAX_VALUE) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean validNonNegativeFiniteNumber(Object raw) {
+        if (!(raw instanceof Number number)) {
+            return false;
+        }
+        double value = number.doubleValue();
+        return Double.isFinite(value) && value >= 0d;
     }
 
     private static Map<String, FieldType> withPsId(Map<String, FieldType> fields) {

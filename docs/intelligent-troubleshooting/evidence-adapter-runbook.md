@@ -69,7 +69,7 @@ route miss
   只有显式激活 `csp-clouddial-pilot` Profile 并提供 workspace ID 后才会加载；
 - CSDP 日志竖线单独放在
   `mateclaw-server/src/main/resources/application-csdp-guance-evidence-pilot.yml`，只有显式激活
-  `csdp-guance-evidence-pilot` 才会加载三份 Guance-only 合同；
+  `csdp-guance-evidence-pilot` 才会加载六份 Guance-only 合同；
 - 该日志试点使用 `native-curl` transport 适配当前本机 TUN 网络。API Key 和请求体通过
   stdin 传给 curl，不进 argv、临时文件或子进程环境；启动参数 `-q` 禁用用户级 `.curlrc`，
   非零退出也不回显 stderr 或凭据；
@@ -80,8 +80,9 @@ route miss
   `客服数字化平台-首页-可用性监控`；它来自本次部署快照，真实返回列仍需 T7 核实；
 - curl 中的 `maxPointCount/interval/align_time/slimit/disable_sampling/tz` 作为该 binding 的
   `query-options` 保存；它们不会改变其他日志、指标或调用链 binding 的报文；
-- 除本次已运行的 CSDP SendMsg 三份合同外，其他 CSDP 查询模板仍是**未核实草案**，
-  measurement、返回列和阈值都要经过 T7。
+- CSDP SendMsg 三份合同已真源运行；`error_log_scan` 已通过 15 分钟聚合烟测。
+  `monitor_event_scan` 与 `k8s_workload_health` 仍是**未核实草案**，而 ERROR 扫描的
+  24 小时性能也未通过；其 measurement、返回列、单位和延迟均要经过 owner 验收。
 
 启用观测云前，在部署环境设置：
 

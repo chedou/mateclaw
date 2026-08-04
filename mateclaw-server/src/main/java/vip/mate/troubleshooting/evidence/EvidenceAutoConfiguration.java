@@ -42,9 +42,12 @@ public class EvidenceAutoConfiguration {
     GuanceEvidenceAdapter guanceEvidenceAdapter(
             EvidenceProperties properties,
             ObjectMapper objectMapper,
-            EvidenceHttpTransport transport) {
+            EvidenceHttpTransport transport,
+            ObjectProvider<WorkspaceObservabilityAssets> workspaceAssets) {
         return new GuanceEvidenceAdapter(
-                properties.getGuance(), objectMapper, transport, Clock.systemUTC());
+                properties.getGuance(), objectMapper, transport,
+                workspaceAssets.getIfAvailable(() -> WorkspaceObservabilityAssets.NONE),
+                Clock.systemUTC());
     }
 
     /**

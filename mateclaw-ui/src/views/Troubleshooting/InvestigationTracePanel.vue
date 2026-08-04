@@ -2,21 +2,21 @@
   <section class="trace-panel">
     <div class="trace-toolbar">
       <div>
-        <span>运行与审计</span>
-        <h3>七阶段调查轨迹</h3>
-        <p>只展示 Diagnosis、冻结 Playbook、规范化证据与确定性推导中已经记录的事实。</p>
+        <span>运行记录</span>
+        <h3>这次排障是怎么一步步推进的</h3>
+        <p>从收到问题到给出结论或明确停止共 7 步；只展示系统实际记录的事实，缺失就明确显示“未记录”。</p>
       </div>
       <div class="trace-actions">
-        <span>调查总耗时 <b>{{ traceDuration(trace.investigationDuration) }}</b></span>
+        <span>本次排障用时 <b>{{ traceDuration(trace.investigationDuration) }}</b></span>
         <div class="trace-tabs" role="tablist">
-          <button :class="{ active: activeView === 'trace' }" @click="activeView = 'trace'">执行轨迹</button>
+          <button :class="{ active: activeView === 'trace' }" @click="activeView = 'trace'">执行过程</button>
           <button :class="{ active: activeView === 'relation' }" @click="activeView = 'relation'">证据关系</button>
         </div>
       </div>
     </div>
 
     <div v-if="activeView === 'trace'" class="trace-workspace">
-      <nav class="stage-rail" aria-label="七阶段调查轨迹">
+      <nav class="stage-rail" aria-label="排障执行的七个步骤">
         <button
           v-for="stage in trace.stages"
           :key="stage.key"
@@ -27,7 +27,7 @@
           @click="selectedStageKey = stage.key"
         >
           <i>{{ stage.sequence }}</i>
-          <span><b>{{ stage.title }}</b><small>{{ stage.summary }}</small></span>
+          <span><b>{{ investigationStagePresentation(stage.key).title }}</b><small>{{ investigationStageSummaryLabel(stage.key, stage.summary) }}</small></span>
           <em>{{ investigationStageStatusLabel(stage.status) }}</em>
         </button>
       </nav>
@@ -35,14 +35,22 @@
       <article v-if="selectedStage" class="stage-inspector">
         <header>
           <div>
-            <span>阶段 {{ selectedStage.sequence }} / 7</span>
-            <h4>{{ selectedStage.title }}</h4>
-            <p>{{ selectedStage.summary }}</p>
+            <span>第 {{ selectedStage.sequence }} 步，共 7 步</span>
+            <h4>{{ investigationStagePresentation(selectedStage.key).title }}</h4>
+            <p>{{ investigationStagePresentation(selectedStage.key).description }}</p>
+            <small class="stage-technical">
+              技术标识 · {{ selectedStage.title }} · {{ selectedStage.key }}
+            </small>
           </div>
           <strong :class="`is-${selectedStage.status.toLowerCase()}`">
             {{ investigationStageStatusLabel(selectedStage.status) }}
           </strong>
         </header>
+
+        <section class="stage-run-summary">
+          <span>本次实际记录</span>
+          <p>{{ investigationStageSummaryLabel(selectedStage.key, selectedStage.summary) }}</p>
+        </section>
 
         <div class="stage-timing">
           <div><span>开始</span><b>{{ traceTime(selectedStage.startedAt) }}</b></div>
@@ -54,11 +62,11 @@
           <div v-for="field in selectedStage.fields" :key="field.label">
             <dt>{{ field.label }}</dt><dd>{{ traceDisplay(field.value) }}</dd>
           </div>
-          <div v-if="!selectedStage.fields.length"><dt>阶段字段</dt><dd>未记录</dd></div>
+          <div v-if="!selectedStage.fields.length"><dt>其他记录</dt><dd>未记录</dd></div>
         </dl>
 
         <section v-if="selectedStage.key === 'EVIDENCE_CONTRACT'" class="detail-block">
-          <div class="detail-block-head"><b>冻结证据合同</b><span>{{ trace.evidenceContracts.length }} 份</span></div>
+          <div class="detail-block-head"><b>本次固定要查的数据（证据合同）</b><span>{{ trace.evidenceContracts.length }} 份</span></div>
           <article v-for="contract in trace.evidenceContracts" :key="contract.requestId" class="contract-card">
             <header><code>{{ contract.requestId }}</code><span>{{ contract.required ? '必需' : '可选' }}</span></header>
             <b>{{ contract.purpose }}</b>
@@ -75,7 +83,7 @@
           v-if="selectedStage.key === 'ADAPTER_SELECTION' || selectedStage.key === 'EVIDENCE_COLLECTION'"
           class="detail-block"
         >
-          <div class="detail-block-head"><b>适配器结果与只读证据</b><span>{{ trace.adapterAttempts.length }} 份最终结果</span></div>
+          <div class="detail-block-head"><b>查询工具和只读结果</b><span>{{ trace.adapterAttempts.length }} 份最终结果</span></div>
           <article v-for="attempt in trace.adapterAttempts" :key="attempt.evidenceRef" class="attempt-card">
             <header>
               <div><code>{{ attempt.evidenceRef }}</code><b>{{ attempt.adapterSource }}</b></div>
@@ -131,6 +139,8 @@ import EvidenceRelationGraph from './EvidenceRelationGraph.vue'
 import { formatDuration } from './formalProjection'
 import {
   defaultInvestigationStage,
+  investigationStageSummaryLabel,
+  investigationStagePresentation,
   investigationStageStatusLabel,
   traceDisplay,
 } from './investigationTrace'
@@ -209,9 +219,13 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 .stage-inspector>header span{color:var(--mc-text-tertiary);font-size:var(--mc-text-xs)}
 .stage-inspector>header h4{margin:5px 0 0;font-size:var(--mc-text-base)}
 .stage-inspector>header p{margin:5px 0 0;color:var(--mc-text-secondary);font-size:var(--mc-text-xs);line-height:1.5}
+.stage-technical{display:block;margin-top:7px;color:var(--mc-text-tertiary);font-family:var(--mc-mono,monospace);font-size:10px;overflow-wrap:anywhere}
 .stage-inspector>header strong{padding:4px 8px;border-radius:999px;color:var(--mc-status-success-text);background:var(--mc-status-success-bg);font-size:var(--mc-text-xs);white-space:nowrap}
 .stage-inspector>header strong.is-partial,.stage-inspector>header strong.is-unrecorded{color:var(--mc-status-warning-text);background:var(--mc-status-warning-bg)}
 .stage-inspector>header strong.is-stopped{color:var(--mc-status-error-text);background:var(--mc-status-error-bg)}
+.stage-run-summary{margin-top:14px;padding:10px 12px;border-left:3px solid var(--mc-primary);border-radius:var(--mc-radius-xs);background:var(--mc-bg-elevated)}
+.stage-run-summary span{color:var(--mc-text-tertiary);font-size:10px;font-weight:700;letter-spacing:.06em}
+.stage-run-summary p{margin:5px 0 0;color:var(--mc-text-primary);font-size:var(--mc-text-xs);line-height:1.5}
 .stage-timing{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .stage-timing>div{padding:9px 10px;border:1px solid var(--mc-border-light);border-radius:var(--mc-radius-xs);background:var(--mc-bg-elevated)}
 .stage-timing span,.stage-timing b{display:block;font-size:var(--mc-text-xs)}
