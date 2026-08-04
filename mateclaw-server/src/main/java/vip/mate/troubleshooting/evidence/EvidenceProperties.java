@@ -71,6 +71,12 @@ public class EvidenceProperties {
     public static class Binding {
         private String namespace = "UNKNOWN";
         private String summary = "";
+        /** Developer-facing scenario name; it never participates in a source query. */
+        private String scenario = "";
+        /** The operational question this reviewed contract answers. */
+        private String question = "";
+        /** Safe summaries of fixed server-owned filters; never raw DQL. */
+        private List<String> fixedConditions = List.of();
         private String queryTemplate;
         /** Ordered DQL components for one compound read-only evidence contract. */
         private List<String> queryTemplates = List.of();

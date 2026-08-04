@@ -938,6 +938,8 @@ async function openDiagnosisFromList(row: DiagnosisSummary) {
 function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   if (command === 'playbooks') {
     void router.push('/troubleshooting/sops')
+  } else if (command === 'evidence-catalog') {
+    void router.push('/troubleshooting/evidence-catalog')
   } else if (command === 'synthesis') {
     openSynthesisPreview()
   } else if (command === 'guance') {

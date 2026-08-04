@@ -5,6 +5,7 @@ export type WorkbenchViewMode = WorkbenchViewSwitchMode | 'DETAIL'
 export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
 export type WorkbenchCapabilityCommand =
   | 'playbooks'
+  | 'evidence-catalog'
   | 'synthesis'
   | 'guance'
   | 'ledger'
@@ -24,6 +25,7 @@ export const TROUBLESHOOTING_UI_LABELS = {
   incident: '通用事件排障',
   messageSendFailed: '会话消息发送失败',
   rules: '排障规则库',
+  evidenceCatalog: '取证查询目录',
   noCodePreview: '无码场景预演',
   guanceOnboarding: '观测云接入与验收',
   guanceValidation: '观测云只读验收',
@@ -51,6 +53,7 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
   label: string
 }> = [
   { command: 'playbooks', label: TROUBLESHOOTING_UI_LABELS.rules },
+  { command: 'evidence-catalog', label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog },
   { command: 'synthesis', label: TROUBLESHOOTING_UI_LABELS.noCodePreview },
   { command: 'guance', label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding },
   { command: 'ledger', label: TROUBLESHOOTING_UI_LABELS.evaluation },

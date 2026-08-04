@@ -62,9 +62,17 @@ describe('troubleshooting workbench view mode', () => {
     const commands = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.command)
     const labels = WORKBENCH_CAPABILITY_ACTIONS.map(action => action.label)
 
-    expect(commands).toEqual(['playbooks', 'synthesis', 'guance', 'ledger', 'case-knowledge'])
+    expect(commands).toEqual([
+      'playbooks',
+      'evidence-catalog',
+      'synthesis',
+      'guance',
+      'ledger',
+      'case-knowledge',
+    ])
     expect(labels).toEqual([
       '排障规则库',
+      '取证查询目录',
       '无码场景预演',
       '观测云接入与验收',
       '诊断效果评估',
@@ -97,6 +105,7 @@ describe('troubleshooting workbench view mode', () => {
       incident: '通用事件排障',
       messageSendFailed: '会话消息发送失败',
       rules: '排障规则库',
+      evidenceCatalog: '取证查询目录',
       noCodePreview: '无码场景预演',
       guanceOnboarding: '观测云接入与验收',
       deploymentTopology: '部署拓扑拨测分析',

@@ -88,6 +88,12 @@ const router = createRouter({
           meta: { title: 'Troubleshooting SOPs', requiredCapability: 'manage:troubleshooting' },
         },
         {
+          path: 'troubleshooting/evidence-catalog',
+          name: 'TroubleshootingEvidenceCatalog',
+          component: () => import('@/views/Troubleshooting/EvidenceQueryCatalog.vue'),
+          meta: { title: 'Evidence Query Catalog', requiredCapability: 'manage:troubleshooting' },
+        },
+        {
           path: 'memory',
           name: 'Memory',
           component: () => import('@/views/Memory/index.vue'),

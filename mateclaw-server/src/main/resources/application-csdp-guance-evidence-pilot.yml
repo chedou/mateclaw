@@ -41,6 +41,11 @@ mateclaw:
           csdp-message-send-log-search:
             namespace: L
             summary: CSDP SendMsg 失败日志检索
+            scenario: 会话消息发送失败
+            question: 哪些 SendMsg 失败请求需要继续追踪？
+            fixed-conditions:
+              - 日志源=csp-rpc-msg
+              - 消息包含 failed AND sendmsg
             max-rows: 1
             query-template: >-
               L::`csp-rpc-msg`:(count(*) as match_count,last(`@trace_id`) as ps_id,last(`@msg`) as sample_message)
@@ -50,6 +55,11 @@ mateclaw:
           csdp-message-send-trace-bundle:
             namespace: L
             summary: CSDP SendMsg 关联 ID 日志链路
+            scenario: 会话消息发送失败
+            question: 失败请求的 PS ID 经过了哪些日志步骤？
+            fixed-conditions:
+              - 日志源=csp-rpc-msg
+              - PS ID 只能来自前一步规范化证据
             max-rows: 200
             query-template: >-
               L::`csp-rpc-msg`:(message)
@@ -68,6 +78,12 @@ mateclaw:
           csdp-message-send-contrast:
             namespace: L
             summary: CSDP SendMsg 失败与显式成功终态样本负对照
+            scenario: 会话消息发送失败
+            question: 成功与失败 SendMsg 样本之间是否存在稳定差异？
+            fixed-conditions:
+              - 失败终态=failed AND sendmsg
+              - 成功终态=success AND sendmsg AND NOT failed
+              - 对照特征=message_length_eq_2875
             max-rows: 1
             query-templates:
               - >-

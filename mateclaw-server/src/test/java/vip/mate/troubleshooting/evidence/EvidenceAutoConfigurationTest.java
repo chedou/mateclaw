@@ -164,6 +164,9 @@ class EvidenceAutoConfigurationTest {
                     EvidenceProperties.Binding binding = guance.getBindings()
                             .get("csp-prm-miniapp-synthetic-probe");
                     assertThat(binding.getNamespace()).isEqualTo("D");
+                    assertThat(binding.getScenario()).isEqualTo("部署拓扑拨测分析");
+                    assertThat(binding.getFixedConditions())
+                            .contains("拨测任务=客服数字化平台-首页-可用性监控");
                     assertThat(binding.getMaxRows()).isEqualTo(20);
                     assertThat(binding.getQueryTemplate())
                             .contains("http_dial_testing", "客服数字化平台-首页-可用性监控");
@@ -235,6 +238,8 @@ class EvidenceAutoConfigurationTest {
                                     "failed AND sendmsg",
                                     "@trace_id",
                                     "{{window_span}}");
+                    assertThat(guance.getBindings().get("csdp-message-send-log-search")
+                            .getQuestion()).contains("SendMsg 失败请求");
                     EvidenceProperties.Binding traceBinding = guance.getBindings()
                             .get("csdp-message-send-trace-bundle");
                     assertThat(traceBinding.getQueryTemplate())

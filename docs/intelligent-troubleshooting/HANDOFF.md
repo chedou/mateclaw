@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-03
+> 更新时间：2026-08-04
 >
 > 仓库：`chedou/mateclaw`
 >
@@ -1048,6 +1048,20 @@ T16 真实 Guance 持久化场景接缝与首轮瘦身（2026-08-04）：
 - 唯一必需的下一输入：一个仍在 Guance 保留期内的 SendMsg 失败精确时间，
   或授权在测试环境触发一次失败。拿到后首先验收同一 Diagnosis 的 Guance-only
   三段持久化，再做 owner T7 字段合同核对和成功/失败样本对照校准。
+
+T17 取证查询目录（2026-08-04）已按“方案 C 页面 + 方案 A 后端”实现：
+
+- 正式入口为“智能排障 → 更多能力 → 取证查询目录”，路由
+  `/troubleshooting/evidence-catalog`。页面按系统、模块和排障场景组织，并拆为“系统与模块、
+  查询合同、路由与绑定、联调与验收”四个工作区；完整说明见
+  `evidence-query-catalog.md`。
+- 新增只读 `GET /api/v1/troubleshooting/evidence/catalog`，由服务端现有查询绑定、Workspace
+  路由和 Guance 就绪/验收事实合成目录。返回参数来源、固定条件、canonical 输出、预算和阻断原因，
+  不发起 Guance 查询，也不返回 API Key、端点主机、原始 DQL 或原始日志。
+- 页面只复用现有 route API 维护 `系统 + 证据维度 → 有序适配器`；空列表仍表示 Workspace
+  显式禁用，撤回声明才恢复部署默认。首版不提供在线 DQL、端点或凭据编辑。
+- 当前本机 `csdp-guance-evidence-pilot` 实测投影 1 个系统、1 个模块、3 份合同，三份均可运行；
+  页面无资源错误。后端排障域 789 项、前端 28 文件 / 204 项和生产构建均通过。
 
 后端定向测试命令：
 

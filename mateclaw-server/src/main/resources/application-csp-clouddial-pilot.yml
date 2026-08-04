@@ -28,6 +28,11 @@ mateclaw:
           csp-prm-miniapp-synthetic-probe:
             namespace: D
             summary: CSP PRM 小程序拨测状态
+            scenario: 部署拓扑拨测分析
+            question: 客服数字化平台首页的观测云拨测任务是否异常？
+            fixed-conditions:
+              - 拨测数据集=http_dial_testing
+              - 拨测任务=客服数字化平台-首页-可用性监控
             max-rows: 20
             query-template: "D::http_dial_testing:(`status_code`, `url`, `name`) { `name` = '客服数字化平台-首页-可用性监控' }"
             query-options:
