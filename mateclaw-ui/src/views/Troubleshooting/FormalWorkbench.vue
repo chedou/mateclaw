@@ -15,7 +15,6 @@
       :can-manage="canManageTroubleshooting"
       @refresh="store.loadList(false)"
       @launch="openTroubleshootingScenario"
-      @capability-command="handleCapabilityCommand"
       @open-diagnosis="openDiagnosisFromList"
       @switch-view="switchWorkbenchView('QUEUE')"
     />
@@ -56,11 +55,6 @@
             :icon="Plus"
             @click="openTroubleshootingScenario"
           >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-          <WorkbenchCapabilityMenu
-            v-if="canManageTroubleshooting"
-            size="small"
-            @command="handleCapabilityCommand"
-          />
         </div>
       </div>
       <div v-loading="listLoading" class="queue-list">
@@ -732,12 +726,12 @@ import {
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
 import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import { normalizeWorkbenchOverlayCapability } from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
-import WorkbenchCapabilityMenu from './WorkbenchCapabilityMenu.vue'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
@@ -1348,6 +1342,31 @@ watch(
     }
   },
   { immediate: true },
+)
+watch(
+  () => route.query.capability,
+  capability => {
+    const command = normalizeWorkbenchOverlayCapability(capability)
+    if (!command || !canManageTroubleshooting.value) return
+    handleCapabilityCommand(command)
+  },
+  { immediate: true },
+)
+watch(
+  [guanceOnboardingOpen, evaluationLedgerOpen, caseKnowledgeImportOpen],
+  ([guanceOpen, ledgerOpen, caseKnowledgeOpen]) => {
+    const command = normalizeWorkbenchOverlayCapability(route.query.capability)
+    if (!command) return
+    const stillOpen = command === 'guance'
+      ? guanceOpen
+      : command === 'ledger'
+        ? ledgerOpen
+        : caseKnowledgeOpen
+    if (stillOpen) return
+    const query = { ...route.query }
+    delete query.capability
+    void router.replace({ path: '/troubleshooting', query })
+  },
 )
 onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 </script>

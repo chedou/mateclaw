@@ -20,7 +20,7 @@ Workspace → 系统 → 模块 → 排障场景 → 证据维度 → 查询合�
 
 ## 2. 产品入口
 
-- 菜单：`智能排障 → 更多能力 → 取证查询目录`
+- 菜单：`智能排障 → 二级菜单 → 取证查询目录`
 - 路由：`/troubleshooting/evidence-catalog`
 - 权限：`manage:troubleshooting`
 

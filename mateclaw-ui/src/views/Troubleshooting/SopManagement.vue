@@ -4,7 +4,7 @@
       :active-desk="registry.activeDesk.value"
       :list-loading="registry.listLoading.value"
       :review-loading="review.reviewLoading.value"
-      @back="router.push('/troubleshooting')"
+      @back="returnToWorkbench"
       @reload="reload"
       @open-register="registry.openRegister()"
       @open-synthesis="synthesisOpen = true"
@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useSopRegistry } from './useSopRegistry'
@@ -108,6 +108,7 @@ import { useKnowledgeReview } from './useKnowledgeReview'
 import type { KnowledgeReviewRow } from './knowledgeReview'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import { isEvidenceSynthesisFocus } from './synthesisPreview'
+import { safeTroubleshootingReturnPath } from './workbenchCapabilityMenu'
 import SopTopbar from './SopTopbar.vue'
 import SopFilterbar from './SopFilterbar.vue'
 import SopRegistryWorkspace from './SopRegistryWorkspace.vue'
@@ -117,6 +118,20 @@ import SopRegisterDialog from './SopRegisterDialog.vue'
 const router = useRouter()
 const route = useRoute()
 const synthesisOpen = ref(isEvidenceSynthesisFocus(route.query.focus))
+
+function returnToWorkbench() {
+  void router.push(safeTroubleshootingReturnPath(route.query.returnTo) || '/troubleshooting')
+}
+
+watch(() => route.query.focus, focus => {
+  synthesisOpen.value = isEvidenceSynthesisFocus(focus)
+})
+watch(synthesisOpen, open => {
+  if (open || !isEvidenceSynthesisFocus(route.query.focus)) return
+  const query = { ...route.query }
+  delete query.focus
+  void router.replace({ path: '/troubleshooting/sops', query })
+})
 
 const registry = useSopRegistry()
 const review = useKnowledgeReview()

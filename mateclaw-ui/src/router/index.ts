@@ -70,28 +70,34 @@ const router = createRouter({
           meta: { title: 'Enterprise Scenarios', requiredCapability: 'manage:agents' },
         },
         {
-          // Read access is enough to open the console. Driving a lifecycle
-          // transition needs operate:troubleshooting, enforced per endpoint on
-          // the backend rather than per route — the queue stays readable to
-          // anyone on duty even if they cannot act on a case.
           path: 'troubleshooting',
-          name: 'Troubleshooting',
-          component: () => import('@/views/Troubleshooting/FormalWorkbench.vue'),
-          meta: { title: 'Troubleshooting', requiredCapability: 'view:troubleshooting' },
-        },
-        {
-          // SOPs are executable knowledge for the deterministic hit path, so
-          // even browsing this registry stays behind the curator capability.
-          path: 'troubleshooting/sops',
-          name: 'TroubleshootingSops',
-          component: () => import('@/views/Troubleshooting/SopManagement.vue'),
-          meta: { title: 'Troubleshooting SOPs', requiredCapability: 'manage:troubleshooting' },
-        },
-        {
-          path: 'troubleshooting/evidence-catalog',
-          name: 'TroubleshootingEvidenceCatalog',
-          component: () => import('@/views/Troubleshooting/EvidenceQueryCatalog.vue'),
-          meta: { title: 'Evidence Query Catalog', requiredCapability: 'manage:troubleshooting' },
+          component: () => import('@/views/Troubleshooting/TroubleshootingLayout.vue'),
+          children: [
+            {
+              // Read access is enough to open the console. Driving a lifecycle
+              // transition needs operate:troubleshooting, enforced per endpoint on
+              // the backend rather than per route — the queue stays readable to
+              // anyone on duty even if they cannot act on a case.
+              path: '',
+              name: 'Troubleshooting',
+              component: () => import('@/views/Troubleshooting/FormalWorkbench.vue'),
+              meta: { title: 'Troubleshooting', requiredCapability: 'view:troubleshooting' },
+            },
+            {
+              // SOPs are executable knowledge for the deterministic hit path, so
+              // even browsing this registry stays behind the curator capability.
+              path: 'sops',
+              name: 'TroubleshootingSops',
+              component: () => import('@/views/Troubleshooting/SopManagement.vue'),
+              meta: { title: 'Troubleshooting SOPs', requiredCapability: 'manage:troubleshooting' },
+            },
+            {
+              path: 'evidence-catalog',
+              name: 'TroubleshootingEvidenceCatalog',
+              component: () => import('@/views/Troubleshooting/EvidenceQueryCatalog.vue'),
+              meta: { title: 'Evidence Query Catalog', requiredCapability: 'manage:troubleshooting' },
+            },
+          ],
         },
         {
           path: 'memory',

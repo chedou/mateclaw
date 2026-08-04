@@ -4,13 +4,20 @@ import {
   WORKBENCH_CAPABILITY_GROUPS,
   evidenceCatalogLocation,
   normalizeEvidenceCatalogTab,
+  normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
+  workbenchOverlayLocation,
 } from '../workbenchCapabilityMenu'
 
-describe('workbench capability panel information architecture', () => {
-  it('groups all six management capabilities and keeps evidence catalog expandable', () => {
+describe('troubleshooting secondary navigation information architecture', () => {
+  it('groups all six management capabilities in the persistent navigation', () => {
     const items = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
 
+    expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
+      '配置与接入',
+      '验证与演练',
+      '复盘与沉淀',
+    ])
     expect(items.map(item => item.command)).toEqual([
       'playbooks',
       'evidence-catalog',
@@ -19,7 +26,6 @@ describe('workbench capability panel information architecture', () => {
       'ledger',
       'case-knowledge',
     ])
-    expect(items.find(item => item.command === 'evidence-catalog')?.expandable).toBe(true)
     expect(items.find(item => item.command === 'guance')?.label).toBe('观测云接入与验收')
   })
 
@@ -57,6 +63,37 @@ describe('workbench capability panel information architecture', () => {
     expect(safeTroubleshootingReturnPath('https://example.com')).toBeNull()
     expect(safeTroubleshootingReturnPath('//example.com/troubleshooting')).toBeNull()
     expect(safeTroubleshootingReturnPath('/troubleshooting/evidence-catalog?tab=routes')).toBeNull()
+    expect(safeTroubleshootingReturnPath('/troubleshooting/sops')).toBeNull()
     expect(safeTroubleshootingReturnPath('/troubleshooting-other')).toBeNull()
+  })
+
+  it('only opens the three workbench overlay capabilities from a query parameter', () => {
+    expect(normalizeWorkbenchOverlayCapability('guance')).toBe('guance')
+    expect(normalizeWorkbenchOverlayCapability(['ledger'])).toBe('ledger')
+    expect(normalizeWorkbenchOverlayCapability('case-knowledge')).toBe('case-knowledge')
+    expect(normalizeWorkbenchOverlayCapability('synthesis')).toBeNull()
+    expect(normalizeWorkbenchOverlayCapability('unknown')).toBeNull()
+  })
+
+  it('returns from a management page to the same diagnosis before opening an overlay', () => {
+    expect(workbenchOverlayLocation(
+      'ledger',
+      '/troubleshooting?view=detail&diagnosisId=diag-1',
+    )).toEqual({
+      path: '/troubleshooting',
+      query: {
+        view: 'detail',
+        diagnosisId: 'diag-1',
+        capability: 'ledger',
+      },
+    })
+
+    expect(workbenchOverlayLocation('guance', '/troubleshooting/sops')).toEqual({
+      path: '/troubleshooting',
+      query: {
+        view: 'list',
+        capability: 'guance',
+      },
+    })
   })
 })

@@ -4,29 +4,25 @@ import {
 } from './workbenchView'
 
 export type EvidenceCatalogTab = 'systems' | 'contracts' | 'routes' | 'acceptance'
+export type WorkbenchOverlayCapability = 'guance' | 'ledger' | 'case-knowledge'
 
-export type WorkbenchCapabilityPanelItem = {
+export type WorkbenchCapabilityNavItem = {
   command: WorkbenchCapabilityCommand
   label: string
-  description: string
-  actionLabel: string
-  expandable?: boolean
 }
 
-export type WorkbenchCapabilityPanelGroup = {
+export type WorkbenchCapabilityNavGroup = {
   key: 'configuration' | 'validation' | 'learning'
   label: string
-  items: ReadonlyArray<WorkbenchCapabilityPanelItem>
+  items: ReadonlyArray<WorkbenchCapabilityNavItem>
 }
 
 export type EvidenceCatalogDestination = {
   tab: EvidenceCatalogTab
   label: string
-  description: string
-  badge?: string
 }
 
-export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityPanelGroup> = [
+export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGroup> = [
   {
     key: 'configuration',
     label: '配置与接入',
@@ -34,21 +30,14 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityPanel
       {
         command: 'playbooks',
         label: TROUBLESHOOTING_UI_LABELS.rules,
-        description: '管理已经审核、可供排障选用的排查指南。',
-        actionLabel: '打开排障规则库',
       },
       {
         command: 'evidence-catalog',
         label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog,
-        description: '按系统和模块维护查询合同、来源路由与验收状态。',
-        actionLabel: '打开取证查询目录',
-        expandable: true,
       },
       {
         command: 'guance',
         label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding,
-        description: '检查观测云真实数据源的全局连接和 Owner 验收状态。',
-        actionLabel: '打开观测云接入与验收',
       },
     ],
   },
@@ -59,8 +48,6 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityPanel
       {
         command: 'synthesis',
         label: TROUBLESHOOTING_UI_LABELS.noCodePreview,
-        description: '在不影响生产的前提下预览证据归纳和规则草稿。',
-        actionLabel: '开始无码场景预演',
       },
     ],
   },
@@ -71,14 +58,10 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityPanel
       {
         command: 'ledger',
         label: TROUBLESHOOTING_UI_LABELS.evaluation,
-        description: '复盘命中、弃权、人工接管和诊断效果。',
-        actionLabel: '打开诊断效果评估',
       },
       {
         command: 'case-knowledge',
         label: TROUBLESHOOTING_UI_LABELS.caseKnowledge,
-        description: '把已经闭环的故障案例沉淀为可检索知识。',
-        actionLabel: '导入历史案例',
       },
     ],
   },
@@ -88,29 +71,29 @@ export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestina
   {
     tab: 'systems',
     label: '系统与模块',
-    description: '按系统、模块和场景找到需要调查的证据。',
   },
   {
     tab: 'contracts',
     label: '查询合同',
-    description: '核对调用方式、参数来源、固定条件和规范输出。',
   },
   {
     tab: 'routes',
     label: '路由与绑定',
-    description: '选择只读取证来源并调整调用优先级。',
-    badge: '可配置',
   },
   {
     tab: 'acceptance',
     label: '联调与验收',
-    description: '检查端点、凭据、查询绑定、Owner 验收和阻断原因。',
   },
 ]
 
 const EVIDENCE_CATALOG_TABS = new Set<EvidenceCatalogTab>(
   EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab),
 )
+const WORKBENCH_OVERLAY_CAPABILITIES = new Set<WorkbenchOverlayCapability>([
+  'guance',
+  'ledger',
+  'case-knowledge',
+])
 
 function firstQueryValue(value: unknown): unknown {
   return Array.isArray(value) ? value[0] : value
@@ -126,9 +109,39 @@ export function normalizeEvidenceCatalogTab(value: unknown): EvidenceCatalogTab 
 export function safeTroubleshootingReturnPath(value: unknown): string | null {
   const candidate = firstQueryValue(value)
   if (typeof candidate !== 'string') return null
-  if (!/^\/troubleshooting(?:[/?#]|$)/.test(candidate)) return null
-  if (candidate.startsWith('/troubleshooting/evidence-catalog')) return null
+  if (!/^\/troubleshooting(?:[?#]|$)/.test(candidate)) return null
   return candidate
+}
+
+export function normalizeWorkbenchOverlayCapability(
+  value: unknown,
+): WorkbenchOverlayCapability | null {
+  const candidate = firstQueryValue(value)
+  return typeof candidate === 'string'
+    && WORKBENCH_OVERLAY_CAPABILITIES.has(candidate as WorkbenchOverlayCapability)
+    ? candidate as WorkbenchOverlayCapability
+    : null
+}
+
+export function workbenchOverlayLocation(
+  capability: WorkbenchOverlayCapability,
+  preferredReturnPath?: unknown,
+): { path: string; query: Record<string, string> } {
+  const returnPath = safeTroubleshootingReturnPath(preferredReturnPath)
+    || '/troubleshooting?view=list'
+  const [pathAndQuery] = returnPath.split('#', 1)
+  const queryStart = pathAndQuery.indexOf('?')
+  const path = queryStart >= 0 ? pathAndQuery.slice(0, queryStart) : pathAndQuery
+  const rawQuery = queryStart >= 0 ? pathAndQuery.slice(queryStart + 1) : ''
+  const query = Object.fromEntries(new URLSearchParams(rawQuery))
+
+  return {
+    path,
+    query: {
+      ...query,
+      capability,
+    },
+  }
 }
 
 export function evidenceCatalogLocation(
