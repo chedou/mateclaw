@@ -1,9 +1,20 @@
 -- V192: platform-agnostic, secret-free owner acceptance for one evidence source binding.
 --
--- Generalizes V184 (Guance-only) so a second adapter does not mean a second table
--- and a second half-remembered set of rules (A9). Endpoints, credentials, query
--- text and raw evidence are intentionally absent: only the binding fingerprint,
--- the owner's itemised attestation, and what the server itself re-observed.
+-- Carries the V184 discipline to adapters whose binding IS its fingerprint, so a
+-- second adapter does not mean a second table and a second half-remembered set of
+-- rules (A9). Endpoints, credentials, query text and raw evidence are intentionally
+-- absent: only the binding fingerprint, the owner's itemised attestation, and what
+-- the server itself re-observed.
+--
+-- It does NOT supersede V184, and this table is not a migration target for it.
+-- Here the subject is one platform's adapter binding (workspace, platform) --
+-- Prometheus and Elasticsearch, whose binding is an endpoint plus a field mapping.
+-- V184's subject is one system's observability asset (workspace, system, service),
+-- and it additionally demands a full live canonical chain, a fingerprint compared
+-- before and after, and enough frozen executable recording targets. That is the T7
+-- gate, an order of magnitude stronger. Folding V184 into this table would weaken
+-- T7 into "the adapter answered", and answering is not the same as querying the
+-- right thing.
 
 CREATE TABLE IF NOT EXISTS mate_troubleshooting_source_acceptance (
     id                   BIGINT       NOT NULL PRIMARY KEY,
