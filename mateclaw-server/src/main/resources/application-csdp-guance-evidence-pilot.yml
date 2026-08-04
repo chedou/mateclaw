@@ -45,6 +45,7 @@ mateclaw:
           # `message_send_failed` remains a server-owned scenario key; it is
           # never interpolated into DQL. The source filter is fixed here.
           csdp-message-send-log-search:
+            signal-kind: log_search
             namespace: L
             summary: CSDP SendMsg 失败日志检索
             scenario: 会话消息发送失败
@@ -59,6 +60,7 @@ mateclaw:
               [{{window_span}}::{{window_span}}]
             field-aliases: {}
           csdp-message-send-trace-bundle:
+            signal-kind: log_trace_bundle
             namespace: L
             summary: CSDP SendMsg 关联 ID 日志链路
             scenario: 会话消息发送失败
@@ -82,6 +84,7 @@ mateclaw:
             constant-fields:
               service: csp-rpc-msg
           csdp-message-send-contrast:
+            signal-kind: contrast_sample
             namespace: L
             summary: CSDP SendMsg 失败与显式成功终态样本负对照
             scenario: 会话消息发送失败
@@ -114,6 +117,7 @@ mateclaw:
           # Sanitized import of guanceyun-error-logs. It exposes only aggregate
           # canonical facts; raw message/content/host rows remain inside Guance.
           csdp-application-error-scan:
+            signal-kind: error_log_scan
             namespace: L
             summary: CSDP 应用 ERROR 聚合巡检
             scenario: 应用错误日志巡检
@@ -139,6 +143,7 @@ mateclaw:
           # guanceyun-error-logs. Alert messages/titles are deliberately not
           # projected into Diagnosis evidence.
           csdp-monitor-event-scan:
+            signal-kind: monitor_event_scan
             namespace: E
             summary: CSDP warning 及以上监控事件聚合巡检
             scenario: 监控告警巡检
@@ -161,10 +166,13 @@ mateclaw:
               disable-sampling: true
               time-zone: Asia/Shanghai
             field-aliases: {}
+            asset-parameters:
+              - monitor_checker
           # Sanitized import of guanceyun-k8s-pod-info. Deployment and
-          # namespace must come from an approved Playbook evidence target.
+          # namespace are fixed by the exact Workspace observability asset.
           # There is no runtime fallback across guessed Guance measurements.
           csdp-k8s-workload-health:
+            signal-kind: k8s_workload_health
             namespace: O+M
             summary: CSDP Kubernetes 工作负载状态与资源聚合
             scenario: K8s 工作负载健康检查
@@ -200,3 +208,6 @@ mateclaw:
               disable-sampling: true
               time-zone: Asia/Shanghai
             field-aliases: {}
+            asset-parameters:
+              - deployment
+              - namespace

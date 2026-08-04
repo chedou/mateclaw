@@ -24,12 +24,13 @@ Workspace → 系统 → 模块 → 排障场景 → 证据维度 → 查询合�
 - 路由：`/troubleshooting/evidence-catalog`
 - 权限：`manage:troubleshooting`
 
-页面分四个工作区：
+页面分五个工作区：
 
 1. **系统与模块**：按系统、模块、场景浏览合同；
-2. **查询合同**：统一检索场景、信号、合同和规范输出；
-3. **路由与绑定**：维护 `系统 + 证据维度 → 有序适配器`；
-4. **联调与验收**：查看端点、凭据、查询绑定和 owner 验收状态，以及当前阻断原因。
+2. **系统观测资产**：维护 `Workspace + 系统 + 模块 → 环境/集群/合同/资源标识`；
+3. **查询合同**：统一检索场景、信号、合同和规范输出；
+4. **路由与绑定**：维护 `系统 + 证据维度 → 有序适配器`；
+5. **联调与验收**：查看端点、凭据、查询绑定和 owner 验收状态，以及当前阻断原因。
 
 ## 3. 后端合同
 
@@ -59,14 +60,34 @@ DELETE /api/v1/troubleshooting/evidence/routes?system={system}&signalKind={signa
 
 语义保持不变：Workspace 声明优先于部署默认；显式保存空平台列表代表禁用，删除声明才恢复部署默认。
 
+系统观测资产接口：
+
+```http
+GET /api/v1/troubleshooting/evidence/assets
+PUT /api/v1/troubleshooting/evidence/assets
+```
+
+GET 返回当前 Workspace 的有效资产和可选的脱敏查询合同；PUT 只允许 admin 追加一个不可变版本。
+资产写入必须带变更原因和 `expectedVersion`，只能引用部署中已审核、signal 类型一致的合同。
+环境、区域、集群、Namespace 和合同要求的资源参数必须是有界安全标识。
+
 ## 4. 首版编辑边界
 
-首版只允许在页面维护 Workspace 取证路由，不允许在线编辑 DQL、端点或凭据。这是有意保留的安全和发布边界：
+首版允许维护 Workspace 取证路由与系统观测资产，但不允许在线编辑 DQL、端点或凭据。
+这是有意保留的安全和发布边界：
 
 - DQL 和字段映射仍由代码评审、测试和发布过程治理；
 - 端点与 API Key 仍由运维环境注入；
 - Workspace 只能在当前部署已装配的只读来源中选择路由；来源即使暂时不可用也允许预先声明，
   但可用性会作为独立事实标红，不能冒充“当前可运行”；
+- 资产只保存已审核合同引用和非秘密资源标识；每次修改追加版本。Workspace 声明存在时即遮蔽
+  部署 YAML，包括停用状态，避免停用后意外恢复旧授权；
+- 合同可声明资产所有参数。`monitor_checker / deployment / namespace` 由服务端资产固定，
+  Playbook 或浏览器不能把查询改到另一系统资源；
+- 页面不猜测环境、集群或资源值；顶层资产范围与同名查询参数必须一致，显示名和变更原因
+  同样不得夹带凭据；
+- Guance binding fingerprint v2 包含实际生效的 Workspace 资产版本、合同和参数；任一变更都会
+  使旧 T7 owner 验收变为 stale，新资源必须重新验收才能进入 T8；
 - 目录接口经过脱敏，并有测试保证序列化结果不出现 DQL、API Key 或 base URL。
 
 后续只有在真实系统接入证明“在线编辑查询合同”是阻塞点后，才引入版本化草稿、校验、试跑、审批和回滚能力；不能直接把自由文本 DQL 编辑器接到生产查询路径。
@@ -89,4 +110,6 @@ DELETE /api/v1/troubleshooting/evidence/routes?system={system}&signalKind={signa
 `error_log_scan` 已通过真实 Guance 15 分钟聚合烟测；告警、K8s 与 24 小时日志扫描仍待
 owner 核对。这些事实均不等于 T7/T8 已通过。
 
-接入新系统时，先在 server-owned binding 中补齐系统、模块、场景、问题和查询合同，再由 Workspace 在页面声明路由，最后完成真实字段核对与 owner 验收。目录是接入控制面，不替代 Evidence Router、Adapter 或 Evidence Spine。
+接入新系统时，先在 server-owned binding 中补齐 signal、场景、问题和查询合同，再由 Workspace
+登记系统观测资产并声明路由，最后完成真实字段核对与 owner 验收。目录是接入控制面，不替代
+Evidence Router、Adapter 或 Evidence Spine。

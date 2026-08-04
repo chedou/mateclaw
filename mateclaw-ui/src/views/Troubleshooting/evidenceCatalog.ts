@@ -62,6 +62,7 @@ export function parameterSourceLabel(source: string): string {
     EVIDENCE_REQUEST: '证据请求',
     PREVIOUS_EVIDENCE: '前一步证据',
     INCIDENT: '排障事件',
+    SYSTEM_ASSET: '系统观测资产',
     EVIDENCE_REQUEST_TARGET: '排查指南的证据目标',
   }[source] ?? source
 }

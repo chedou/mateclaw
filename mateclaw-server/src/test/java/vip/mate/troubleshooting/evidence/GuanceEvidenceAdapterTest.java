@@ -98,6 +98,85 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void workspaceAssetSuppliesServerOwnedQueryDimensions() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "event_count", "latest_status", "latest_checker"],
+                    "values": [[1753434723000, 2, "warning", "csdp-session-error-rate"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Guance config = monitorConfig();
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-1", WORKSPACE_ID, "csdp", "order-svc", "guance", true,
+                Map.of("monitor_event_scan", "monitor-binding"),
+                Map.of("monitor_checker", "csdp-session-error-rate"), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-ASSET-1", "monitor_event_scan", "check exact monitor",
+                Map.of(), "-15m", true);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsEntry("event_count", 2);
+        assertThat(transport.body).contains("csdp-session-error-rate");
+        assertThat(adapter.supports("monitor_event_scan")).isTrue();
+    }
+
+    @Test
+    void disabledWorkspaceAssetShadowsDeploymentAuthorization() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = monitorConfig();
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID, "CSDP", "order-svc",
+                Map.of("monitor_event_scan", "monitor-binding"))));
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-1", WORKSPACE_ID, "csdp", "order-svc", "guance", false,
+                Map.of("monitor_event_scan", "monitor-binding"),
+                Map.of("monitor_checker", "csdp-session-error-rate"), 2));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-ASSET-2", "monitor_event_scan", "disabled",
+                Map.of(), "-15m", true);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+        assertThat(adapter.supports("monitor_event_scan"))
+                .as("a disabled workspace declaration must also shadow YAML capability")
+                .isFalse();
+    }
+
+    @Test
+    void playbookCannotOverrideAWorkspaceOwnedQueryDimension() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = monitorConfig();
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-1", WORKSPACE_ID, "csdp", "order-svc", "guance", true,
+                Map.of("monitor_event_scan", "monitor-binding"),
+                Map.of("monitor_checker", "csdp-session-error-rate"), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-ASSET-3", "monitor_event_scan", "override",
+                Map.of("monitor_checker", "another-system-checker"), "-15m", true);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request, incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
     void failsClosedBeforeTransportForEveryUnauthorizedAssetScope() {
         CapturingTransport transport = new CapturingTransport(200, "{}");
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
@@ -1234,6 +1313,46 @@ class GuanceEvidenceAdapterTest {
                 "csdp-session-service",
                 Map.of(signalKind, signalKind))));
         return config;
+    }
+
+    private EvidenceProperties.Guance monitorConfig() {
+        EvidenceProperties.Binding binding = new EvidenceProperties.Binding();
+        binding.setSignalKind("monitor_event_scan");
+        binding.setNamespace("E");
+        binding.setSummary("精确监控事件");
+        binding.setQueryTemplate(
+                "E::monitor:(event_count,latest_status,latest_checker) "
+                        + "{checker='{{monitor_checker}}'} [{{window}}]");
+        binding.setAssetParameters(List.of("monitor_checker"));
+        binding.setMaxRows(1);
+        EvidenceProperties.Guance config = new EvidenceProperties.Guance();
+        config.setEnabled(true);
+        config.setBaseUrl("https://guance.example");
+        config.setApiKey("secret-key");
+        config.setQueryPath("/api/v1/df/query_data_v1");
+        config.setTimeout(Duration.ofSeconds(3));
+        config.setBindings(Map.of("monitor-binding", binding));
+        return config;
+    }
+
+    private WorkspaceObservabilityAssets assets(WorkspaceObservabilityAsset asset) {
+        return new WorkspaceObservabilityAssets() {
+            @Override
+            public java.util.Optional<WorkspaceObservabilityAsset> find(
+                    long workspaceId, String system, String service) {
+                return workspaceId == asset.workspaceId()
+                                && asset.system().equalsIgnoreCase(system)
+                                && asset.service().equalsIgnoreCase(service)
+                        ? java.util.Optional.of(asset) : java.util.Optional.empty();
+            }
+
+            @Override
+            public java.util.Set<String> activeBindingReferences(String signalKind) {
+                String reference = asset.signalBindings().get(signalKind);
+                return asset.enabled() && reference != null
+                        ? java.util.Set.of(reference) : java.util.Set.of();
+            }
+        };
     }
 
     private EvidenceProperties.Binding binding(

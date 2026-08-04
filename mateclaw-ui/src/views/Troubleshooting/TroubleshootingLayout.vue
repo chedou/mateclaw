@@ -118,6 +118,7 @@ import {
   DocumentAdd,
   MagicStick,
   Monitor,
+  OfficeBuilding,
   Operation,
   Select,
   TrendCharts,
@@ -157,6 +158,7 @@ const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
 
 const EVIDENCE_ICONS: Record<EvidenceCatalogTab, Component> = {
   systems: Monitor,
+  assets: OfficeBuilding,
   contracts: Document,
   routes: Operation,
   acceptance: Select,

@@ -1053,7 +1053,7 @@ T17 取证查询目录（2026-08-04）已按“方案 C 页面 + 方案 A 后端
 
 - 正式入口为“智能排障 → 二级菜单 → 取证查询目录”，路由
   `/troubleshooting/evidence-catalog`。页面按系统、模块和排障场景组织，并拆为“系统与模块、
-  查询合同、路由与绑定、联调与验收”四个工作区；完整说明见
+  系统观测资产、查询合同、路由与绑定、联调与验收”五个工作区；完整说明见
   `evidence-query-catalog.md`。
 - 新增只读 `GET /api/v1/troubleshooting/evidence/catalog`，由服务端现有查询绑定、Workspace
   路由和 Guance 就绪/验收事实合成目录。返回参数来源、固定条件、canonical 输出、预算和阻断原因，
@@ -1079,6 +1079,30 @@ T18 外部 Guance Skills 安全融合（2026-08-04）：
   1 项通过，耗时约 0.9 秒；24 小时扫描触发上游约 30 秒超时，未伪装为验收成功。
 - `monitor_event_scan` 与 `k8s_workload_health` 仍需 owner 给出真实规则名、Deployment/Namespace，
   并核对 Guance 列名、单位、空数据和延迟。本轮不改变 T7/T8、`fixtureMode` 或生产写边界。
+
+T19 系统观测资产注册表（2026-08-04）已进入正式主链：
+
+- H2/MySQL/Kingbase V194 新增 `mate_troubleshooting_observability_asset`。每次变更只追加版本，
+  唯一键为 `workspace_id + system + service + version`；旧版本不覆盖。表内只保存环境、区域、集群、
+  Namespace 等有界资源标识和已审核查询合同引用，不保存 API Key、端点主机、原始 DQL 或日志行。
+- 新增 viewer 只读 `GET /api/v1/troubleshooting/evidence/assets` 与 admin
+  `PUT /api/v1/troubleshooting/evidence/assets`。写入必须带鉴权 actor、变更原因和乐观版本；启用资产至少
+  绑定一份已安装合同，signal 类型必须一致，合同要求的资产参数缺失或含不安全值会在落库前拒绝。
+  顶层环境/Namespace 与同名查询参数必须一致；显示名和变更原因同样执行凭据检测。
+- `GuanceEvidenceAdapter` 先按精确 `workspace + system + service` 读取 Workspace 资产，只有没有声明时
+  才回落部署 YAML。Workspace 资产即使被停用也继续遮蔽 YAML，避免“已停用却意外恢复生产授权”。
+  `monitor_checker / deployment / namespace` 等资产所有参数由服务端覆盖；Playbook 只能传相同值，
+  不能改到另一系统或命名空间。
+- 取证查询目录新增“系统观测资产”工作区，可新增、接管部署默认或为既有资产追加版本；合同选择来自
+  服务端脱敏选项。CSDP/CloudDial 的部署 Profile 已声明 canonical `signal-kind`，CSDP 监控与 K8s
+  合同分别声明资产参数所有权；新增表单不预填 `prod`，真实环境必须由 owner 显式填写。
+- Guance binding fingerprint 已升级为 v2，指纹化实际生效的 Workspace 资产版本、合同引用与
+  资源参数。任一资产变更都会使旧 T7 owner 验收变为 stale，T8 不得沿用旧验收执行新资源。
+- 兼容边界：尚未登记 Workspace 资产时，现有部署 YAML 继续生效；本轮没有猜测或代填真实
+  `monitor_checker / deployment / namespace`。下一步由 owner 在页面登记第一份 CSDP 生产资产，
+  再对每个绑定做只读试跑和验收。
+- 本轮回归：后端排障域 + Skill Manifest `823/823`，前端 Vitest `211/211`，ESLint、
+  `vue-tsc --noEmit` 和生产 Vite build 均通过。
 
 后端定向测试命令：
 

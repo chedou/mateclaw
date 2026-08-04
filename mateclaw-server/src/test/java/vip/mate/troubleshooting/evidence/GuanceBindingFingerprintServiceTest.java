@@ -6,6 +6,9 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -71,6 +74,70 @@ class GuanceBindingFingerprintServiceTest {
         assertThat(service.current(7L, "CSDP", "session-svc")).isEmpty();
     }
 
+    @Test
+    void workspaceAssetRevisionAndParametersInvalidateTheAcceptedFingerprint() {
+        EvidenceProperties properties = properties();
+        AtomicReference<WorkspaceObservabilityAsset> current = new AtomicReference<>(
+                workspaceAsset(1, true, Map.of("namespace", "csdp-prod")));
+        WorkspaceObservabilityAssets assets = new WorkspaceObservabilityAssets() {
+            @Override
+            public Optional<WorkspaceObservabilityAsset> find(
+                    long workspaceId, String system, String service) {
+                return workspaceId == 7L
+                                && "csdp".equalsIgnoreCase(system)
+                                && "session-svc".equalsIgnoreCase(service)
+                        ? Optional.of(current.get()) : Optional.empty();
+            }
+
+            @Override
+            public Set<String> activeBindingReferences(String signalKind) {
+                return Set.copyOf(current.get().signalBindings().values());
+            }
+        };
+        GuanceBindingFingerprintService service =
+                new GuanceBindingFingerprintService(properties, assets);
+
+        String first = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+        current.set(workspaceAsset(2, true, Map.of("namespace", "csdp-prod")));
+        String afterRevision = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+        current.set(workspaceAsset(3, true, Map.of("namespace", "csdp-next")));
+        String afterParameter = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+        current.set(workspaceAsset(4, false, Map.of("namespace", "csdp-next")));
+
+        assertThat(afterRevision).isNotEqualTo(first);
+        assertThat(afterParameter).isNotEqualTo(afterRevision);
+        assertThat(service.current(7L, "CSDP", "session-svc")).isEmpty();
+    }
+
+    @Test
+    void bindingSignalAndAssetOwnershipPolicyInvalidateTheFingerprint() {
+        EvidenceProperties properties = properties();
+        EvidenceProperties.Binding search = properties.getGuance()
+                .getBindings().get("search-binding");
+        search.setSignalKind("log_search");
+        search.setQueryTemplate(
+                "L::logs:(message=@search) {deployment='{{deployment}}',"
+                        + "namespace='{{namespace}}'}");
+        search.setAssetParameters(List.of("deployment", "namespace"));
+        GuanceBindingFingerprintService service =
+                new GuanceBindingFingerprintService(properties);
+
+        String first = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+        search.setAssetParameters(List.of("deployment"));
+        String afterOwnershipChange = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+        search.setSignalKind("error_log_scan");
+        String afterSignalChange = service.current(7L, "CSDP", "session-svc")
+                .orElseThrow().bindingFingerprint();
+
+        assertThat(afterOwnershipChange).isNotEqualTo(first);
+        assertThat(afterSignalChange).isNotEqualTo(afterOwnershipChange);
+    }
+
     private EvidenceProperties properties() {
         EvidenceProperties properties = new EvidenceProperties();
         properties.setRoutes(new LinkedHashMap<>(Map.of(
@@ -127,5 +194,22 @@ class GuanceBindingFingerprintServiceTest {
                 "log_trace_bundle", "trace-binding",
                 "contrast_sample", "contrast-binding")));
         return asset;
+    }
+
+    private WorkspaceObservabilityAsset workspaceAsset(
+            int version, boolean enabled, Map<String, String> parameters) {
+        return new WorkspaceObservabilityAsset(
+                "asset-" + version,
+                7L,
+                "csdp",
+                "session-svc",
+                "guance",
+                enabled,
+                Map.of(
+                        "log_search", "search-binding",
+                        "log_trace_bundle", "trace-binding",
+                        "contrast_sample", "contrast-binding"),
+                parameters,
+                version);
     }
 }

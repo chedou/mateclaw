@@ -2645,6 +2645,60 @@ export interface DeclareEvidenceRouteRequest {
   reason: string
 }
 
+export type ObservabilityAssetOrigin = 'WORKSPACE' | 'DEPLOYMENT'
+
+export interface ObservabilityAsset {
+  assetId: string | null
+  origin: ObservabilityAssetOrigin
+  workspaceId: number
+  system: string
+  service: string
+  displayName: string
+  platform: string
+  environment: string | null
+  region: string | null
+  cluster: string | null
+  namespace: string | null
+  enabled: boolean
+  signalBindings: Record<string, string>
+  parameters: Record<string, string>
+  version: number
+  changedBy: string | null
+  reason: string | null
+  changedAt: string | null
+}
+
+export interface ObservabilityAssetContractOption {
+  contractRef: string
+  signalKind: string
+  scenario: string
+  question: string
+  summary: string
+  requiredAssetParameters: string[]
+}
+
+export interface ObservabilityAssetCatalog {
+  workspaceId: number
+  assets: ObservabilityAsset[]
+  contracts: ObservabilityAssetContractOption[]
+}
+
+export interface DeclareObservabilityAssetRequest {
+  system: string
+  service: string
+  displayName: string
+  platform: 'guance'
+  environment: string
+  region?: string
+  cluster?: string
+  namespace?: string
+  enabled: boolean
+  signalBindings: Record<string, string>
+  parameters: Record<string, string>
+  expectedVersion?: number
+  reason: string
+}
+
 export type GuanceEvidenceAcceptanceStatus =
   | 'BLOCKED'
   | 'NOT_ACCEPTED'
@@ -3232,6 +3286,15 @@ export const troubleshootingApi = {
     http.delete<void>('/troubleshooting/evidence/routes', {
       params: { system, signalKind },
     }),
+
+  /** Workspace-owned system/resource scopes; contains no endpoint, key or raw DQL. */
+  observabilityAssets: () => http.get<ObservabilityAssetCatalog>(
+    '/troubleshooting/evidence/assets',
+  ),
+
+  /** Adds the next immutable asset revision; existing versions remain auditable. */
+  declareObservabilityAsset: (data: DeclareObservabilityAssetRequest) =>
+    http.put<ObservabilityAsset>('/troubleshooting/evidence/assets', data),
 
   /** Persistent owner acceptance for the exact current Guance binding fingerprint. */
   guanceEvidenceAcceptance: (params: { system: string; service: string }) =>

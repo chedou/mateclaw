@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.evidence;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 
@@ -53,18 +54,32 @@ public class EvidenceQueryCatalogService {
     private final List<EvidenceSourceAdapter> adapters;
     private final GuanceEvidenceAdapter guanceAdapter;
     private final GuanceEvidenceAcceptanceService acceptanceService;
+    private final ObservabilityAssetService assetService;
 
+    @Autowired
     public EvidenceQueryCatalogService(
             EvidenceProperties properties,
             EvidenceRouteService routeService,
             List<EvidenceSourceAdapter> adapters,
             GuanceEvidenceAdapter guanceAdapter,
-            GuanceEvidenceAcceptanceService acceptanceService) {
+            GuanceEvidenceAcceptanceService acceptanceService,
+            ObservabilityAssetService assetService) {
         this.properties = properties == null ? new EvidenceProperties() : properties;
         this.routeService = routeService;
         this.adapters = List.copyOf(adapters == null ? List.of() : adapters);
         this.guanceAdapter = guanceAdapter;
         this.acceptanceService = acceptanceService;
+        this.assetService = assetService;
+    }
+
+    /** Keeps focused unit tests independent from persistence; production uses the wired registry. */
+    EvidenceQueryCatalogService(
+            EvidenceProperties properties,
+            EvidenceRouteService routeService,
+            List<EvidenceSourceAdapter> adapters,
+            GuanceEvidenceAdapter guanceAdapter,
+            GuanceEvidenceAcceptanceService acceptanceService) {
+        this(properties, routeService, adapters, guanceAdapter, acceptanceService, null);
     }
 
     /** Returns configuration and state only; it never contacts an evidence source. */
@@ -151,6 +166,35 @@ public class EvidenceQueryCatalogService {
     private List<EvidenceQueryCatalogView.SystemView> systems(
             long workspaceId,
             Map<RouteKey, EvidenceRouteView> declarations) {
+        Map<String, List<EvidenceQueryCatalogView.ModuleView>> grouped =
+                new LinkedHashMap<>();
+        for (AssetDescriptor asset : effectiveAssets(workspaceId)) {
+            EvidenceQueryCatalogView.ModuleView module = module(
+                    workspaceId, asset, declarations);
+            grouped.computeIfAbsent(asset.system(), ignored -> new ArrayList<>())
+                    .add(module);
+        }
+        return grouped.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+                .map(entry -> new EvidenceQueryCatalogView.SystemView(
+                        entry.getKey(),
+                        entry.getValue().stream()
+                                .sorted(Comparator.comparing(
+                                        EvidenceQueryCatalogView.ModuleView::service,
+                                        String.CASE_INSENSITIVE_ORDER))
+                                .toList()))
+                .toList();
+    }
+
+    private List<AssetDescriptor> effectiveAssets(long workspaceId) {
+        if (assetService != null) {
+            return assetService.catalog(workspaceId).assets().stream()
+                    .map(asset -> new AssetDescriptor(
+                            asset.system(), asset.service(), asset.enabled(),
+                            asset.signalBindings(), 1))
+                    .toList();
+        }
+
         Map<ScopeKey, List<EvidenceProperties.AssetBinding>> scopes = new LinkedHashMap<>();
         List<EvidenceProperties.AssetBinding> configured =
                 properties.getGuance().getAssetBindings();
@@ -166,39 +210,30 @@ public class EvidenceQueryCatalogService {
                     normalize(asset.getSystem()), normalize(asset.getService()));
             scopes.computeIfAbsent(key, ignored -> new ArrayList<>()).add(asset);
         }
-
-        Map<String, List<EvidenceQueryCatalogView.ModuleView>> grouped =
-                new LinkedHashMap<>();
-        for (List<EvidenceProperties.AssetBinding> assets : scopes.values()) {
-            EvidenceProperties.AssetBinding asset = assets.getFirst();
-            EvidenceQueryCatalogView.ModuleView module = module(
-                    workspaceId, asset, assets.size(), declarations);
-            grouped.computeIfAbsent(asset.getSystem().trim(), ignored -> new ArrayList<>())
-                    .add(module);
-        }
-        return grouped.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
-                .map(entry -> new EvidenceQueryCatalogView.SystemView(
-                        entry.getKey(),
-                        entry.getValue().stream()
-                                .sorted(Comparator.comparing(
-                                        EvidenceQueryCatalogView.ModuleView::service,
-                                        String.CASE_INSENSITIVE_ORDER))
-                                .toList()))
-                .toList();
+        return scopes.values().stream().map(matches -> {
+            EvidenceProperties.AssetBinding first = matches.getFirst();
+            return new AssetDescriptor(
+                    first.getSystem().trim(),
+                    first.getService().trim(),
+                    true,
+                    first.getSignalBindings() == null
+                            ? Map.of() : Map.copyOf(first.getSignalBindings()),
+                    matches.size());
+        }).toList();
     }
 
     private EvidenceQueryCatalogView.ModuleView module(
             long workspaceId,
-            EvidenceProperties.AssetBinding asset,
-            int scopeCount,
+            AssetDescriptor asset,
             Map<RouteKey, EvidenceRouteView> declarations) {
         List<String> moduleBlockers = new ArrayList<>();
-        if (scopeCount != 1) {
+        if (asset.scopeCount() != 1) {
             moduleBlockers.add("同一 Workspace 内的系统与模块绑定不唯一");
         }
-        Map<String, String> signalBindings = asset.getSignalBindings() == null
-                ? Map.of() : asset.getSignalBindings();
+        if (!asset.enabled()) {
+            moduleBlockers.add("系统观测资产已停用");
+        }
+        Map<String, String> signalBindings = asset.signalBindings();
         List<EvidenceQueryCatalogView.ContractView> contracts = signalBindings.entrySet()
                 .stream()
                 .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
@@ -218,15 +253,15 @@ public class EvidenceQueryCatalogService {
                 ? "READY"
                 : runnable > 0 ? "PARTIAL" : "BLOCKED";
         return new EvidenceQueryCatalogView.ModuleView(
-                asset.getService(), status, runnable,
+                asset.service(), status, runnable,
                 distinct(moduleBlockers),
-                acceptance(workspaceId, asset.getSystem(), asset.getService()),
+                acceptance(workspaceId, asset.system(), asset.service()),
                 contracts);
     }
 
     private EvidenceQueryCatalogView.ContractView contract(
             long workspaceId,
-            EvidenceProperties.AssetBinding asset,
+            AssetDescriptor asset,
             String rawSignalKind,
             String rawBindingRef,
             Map<RouteKey, EvidenceRouteView> declarations) {
@@ -236,9 +271,9 @@ public class EvidenceQueryCatalogService {
         EvidenceProperties.Binding displayBinding = configuredBinding == null
                 ? new EvidenceProperties.Binding() : configuredBinding;
         GuanceEvidenceAdapter.SignalInspection inspection = guanceAdapter.inspectSignal(
-                workspaceId, asset.getSystem(), asset.getService(), signalKind);
+                workspaceId, asset.system(), asset.service(), signalKind);
         EvidenceQueryCatalogView.RouteView route = route(
-                asset.getSystem(), signalKind, declarations);
+                asset.system(), signalKind, declarations);
         boolean routed = route.platforms().stream()
                 .anyMatch(platform -> GUANCE.equals(normalize(platform)));
         boolean bindingReady = inspection.status()
@@ -399,6 +434,11 @@ public class EvidenceQueryCatalogService {
             EvidenceProperties.Binding binding) {
         Map<String, EvidenceQueryCatalogView.ParameterView> parameters =
                 new LinkedHashMap<>();
+        Set<String> assetParameters = (binding.getAssetParameters() == null
+                ? List.<String>of() : binding.getAssetParameters()).stream()
+                .filter(value -> !blank(value))
+                .map(this::normalize)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         parameters.put("occurred_at", new EvidenceQueryCatalogView.ParameterView(
                 "occurred_at", "INCIDENT_OR_CURRENT_TIME", false,
                 "故障发生时间；未记录时由运行时使用当前时间"));
@@ -412,13 +452,19 @@ public class EvidenceQueryCatalogService {
                 if ("window".equals(name) || "window_span".equals(name)) {
                     continue;
                 }
-                parameters.putIfAbsent(name, parameter(name));
+                parameters.putIfAbsent(name, parameter(name, assetParameters));
             }
         }
         return List.copyOf(parameters.values());
     }
 
-    private EvidenceQueryCatalogView.ParameterView parameter(String name) {
+    private EvidenceQueryCatalogView.ParameterView parameter(
+            String name, Set<String> assetParameters) {
+        if (assetParameters.contains(normalize(name))) {
+            return new EvidenceQueryCatalogView.ParameterView(
+                    name, "SYSTEM_ASSET", true,
+                    "由系统观测资产管理员固定，运行时请求不能改成其他资源");
+        }
         if ("ps_id".equals(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
                     name, "PREVIOUS_EVIDENCE", true,
@@ -517,6 +563,19 @@ public class EvidenceQueryCatalogService {
     }
 
     private record ScopeKey(String system, String service) {
+    }
+
+    private record AssetDescriptor(
+            String system,
+            String service,
+            boolean enabled,
+            Map<String, String> signalBindings,
+            int scopeCount) {
+
+        private AssetDescriptor {
+            signalBindings = Map.copyOf(
+                    signalBindings == null ? Map.of() : signalBindings);
+        }
     }
 
     private record RouteKey(String system, String signalKind) {

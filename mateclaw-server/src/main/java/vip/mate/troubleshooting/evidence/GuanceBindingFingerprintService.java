@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.evidence;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 
@@ -31,12 +32,22 @@ public class GuanceBindingFingerprintService {
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
     private static final List<String> CORE_SIGNALS =
             List.of("log_search", "log_trace_bundle");
-    private static final String CONTRACT = "guance-binding/v1";
+    private static final String CONTRACT = "guance-binding/v2";
 
     private final EvidenceProperties properties;
+    private final WorkspaceObservabilityAssets workspaceAssets;
 
     public GuanceBindingFingerprintService(EvidenceProperties properties) {
+        this(properties, WorkspaceObservabilityAssets.NONE);
+    }
+
+    @Autowired
+    public GuanceBindingFingerprintService(
+            EvidenceProperties properties,
+            WorkspaceObservabilityAssets workspaceAssets) {
         this.properties = properties == null ? new EvidenceProperties() : properties;
+        this.workspaceAssets = workspaceAssets == null
+                ? WorkspaceObservabilityAssets.NONE : workspaceAssets;
     }
 
     /**
@@ -53,23 +64,51 @@ public class GuanceBindingFingerprintService {
         String normalizedSystem = normalize(safeSystem);
         String normalizedService = normalize(safeService);
 
-        List<EvidenceProperties.AssetBinding> assets =
-                properties.getGuance().getAssetBindings() == null
-                        ? List.of()
-                        : properties.getGuance().getAssetBindings().stream()
-                                .filter(candidate -> candidate.getWorkspaceId() == workspaceId)
-                                .filter(candidate -> normalizedSystem.equals(
-                                        normalize(candidate.getSystem())))
-                                .filter(candidate -> normalizedService.equals(
-                                        normalize(candidate.getService())))
-                                .toList();
-        if (assets.size() != 1) {
+        EffectiveAsset asset;
+        try {
+            Optional<WorkspaceObservabilityAsset> declared = workspaceAssets.find(
+                    workspaceId, normalizedSystem, normalizedService);
+            if (declared.isPresent()) {
+                WorkspaceObservabilityAsset workspaceAsset = declared.orElseThrow();
+                if (!workspaceAsset.enabled()
+                        || !"guance".equals(normalize(workspaceAsset.platform()))) {
+                    return Optional.empty();
+                }
+                asset = new EffectiveAsset(
+                        "workspace",
+                        workspaceAsset.version(),
+                        workspaceAsset.platform(),
+                        workspaceAsset.signalBindings(),
+                        workspaceAsset.parameters());
+            } else {
+                List<EvidenceProperties.AssetBinding> assets =
+                        properties.getGuance().getAssetBindings() == null
+                                ? List.of()
+                                : properties.getGuance().getAssetBindings().stream()
+                                        .filter(candidate ->
+                                                candidate.getWorkspaceId() == workspaceId)
+                                        .filter(candidate -> normalizedSystem.equals(
+                                                normalize(candidate.getSystem())))
+                                        .filter(candidate -> normalizedService.equals(
+                                                normalize(candidate.getService())))
+                                        .toList();
+                if (assets.size() != 1) {
+                    return Optional.empty();
+                }
+                asset = new EffectiveAsset(
+                        "deployment", 0, "guance",
+                        assets.getFirst().getSignalBindings(), Map.of());
+            }
+        } catch (RuntimeException registryFailure) {
             return Optional.empty();
         }
 
         Map<String, String> signalBindings =
-                normalizedStringMap(assets.getFirst().getSignalBindings());
+                normalizedStringMap(asset.signalBindings());
+        Map<String, String> assetParameters =
+                normalizedStringMap(asset.parameters());
         if (signalBindings == null
+                || assetParameters == null
                 || CORE_SIGNALS.stream().anyMatch(signal -> !signalBindings.containsKey(signal))) {
             return Optional.empty();
         }
@@ -99,6 +138,15 @@ public class GuanceBindingFingerprintService {
         digest.add("allowInsecureHttp",
                 Boolean.toString(properties.getGuance().isAllowInsecureHttp()));
         digest.add("timeout", String.valueOf(properties.getGuance().getTimeout()));
+        digest.add("asset.origin", asset.origin());
+        digest.add("asset.version", Integer.toString(asset.version()));
+        digest.add("asset.platform", normalize(asset.platform()));
+        assetParameters.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    digest.add("asset.parameter.name", entry.getKey());
+                    digest.add("asset.parameter.value", entry.getValue());
+                });
 
         routes.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -120,6 +168,17 @@ public class GuanceBindingFingerprintService {
                             configuredBindings.get(bindingRef);
                     digest.add("asset.signal", entry.getKey());
                     digest.add("asset.binding", bindingRef);
+                    digest.add("binding.signalKind", normalize(binding.getSignalKind()));
+                    List<String> assetParameterNames = binding.getAssetParameters() == null
+                            ? List.of()
+                            : binding.getAssetParameters().stream()
+                                    .map(this::normalize)
+                                    .sorted()
+                                    .toList();
+                    digest.add("binding.assetParameters.count",
+                            Integer.toString(assetParameterNames.size()));
+                    assetParameterNames.forEach(parameter ->
+                            digest.add("binding.assetParameters.item", parameter));
                     digest.add("binding.namespace", trim(binding.getNamespace()));
                     digest.add("binding.maxRows", Integer.toString(binding.getMaxRows()));
                     digest.add("binding.queryTemplate", trim(binding.getQueryTemplate()));
@@ -283,6 +342,20 @@ public class GuanceBindingFingerprintService {
 
     private String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private record EffectiveAsset(
+            String origin,
+            int version,
+            String platform,
+            Map<String, String> signalBindings,
+            Map<String, String> parameters) {
+
+        private EffectiveAsset {
+            signalBindings = Map.copyOf(
+                    signalBindings == null ? Map.of() : signalBindings);
+            parameters = Map.copyOf(parameters == null ? Map.of() : parameters);
+        }
     }
 
     public record Snapshot(

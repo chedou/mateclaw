@@ -26,6 +26,7 @@ mateclaw:
               synthetic_probe: csp-prm-miniapp-synthetic-probe
         bindings:
           csp-prm-miniapp-synthetic-probe:
+            signal-kind: synthetic_probe
             namespace: D
             summary: CSP PRM 小程序拨测状态
             scenario: 部署拓扑拨测分析

@@ -3,7 +3,7 @@ import {
   type WorkbenchCapabilityCommand,
 } from './workbenchView'
 
-export type EvidenceCatalogTab = 'systems' | 'contracts' | 'routes' | 'acceptance'
+export type EvidenceCatalogTab = 'systems' | 'assets' | 'contracts' | 'routes' | 'acceptance'
 export type WorkbenchOverlayCapability = 'guance' | 'ledger' | 'case-knowledge'
 
 export type WorkbenchCapabilityNavItem = {
@@ -71,6 +71,10 @@ export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestina
   {
     tab: 'systems',
     label: '系统与模块',
+  },
+  {
+    tab: 'assets',
+    label: '系统观测资产',
   },
   {
     tab: 'contracts',

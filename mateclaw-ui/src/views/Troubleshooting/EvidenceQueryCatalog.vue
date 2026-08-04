@@ -180,6 +180,69 @@
           <el-empty v-else description="当前 Workspace 没有匹配的取证查询合同" />
         </el-tab-pane>
 
+        <el-tab-pane label="系统观测资产" name="assets">
+          <div class="asset-toolbar">
+            <div>
+              <h2>系统观测资产</h2>
+              <p>把业务系统、运行环境和已审核查询合同精确关联起来。</p>
+            </div>
+            <el-button type="primary" @click="openNewAsset">新增资产</el-button>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            class="tab-alert"
+            title="这里只维护资源标识和合同引用；API Key、端点主机、原始 DQL 与原始日志不进入资产表。"
+          />
+          <el-table v-if="filteredAssets.length" :data="filteredAssets" class="catalog-table" stripe>
+            <el-table-column label="系统 / 模块" min-width="230">
+              <template #default="scope">
+                <b>{{ scope.row.system }} / {{ scope.row.service }}</b>
+                <small class="table-note">{{ scope.row.displayName }}</small>
+              </template>
+            </el-table-column>
+            <el-table-column label="运行范围" min-width="230">
+              <template #default="scope">
+                <span>{{ scope.row.environment || '未声明环境' }}</span>
+                <small class="table-note">
+                  {{ [scope.row.region, scope.row.cluster, scope.row.namespace].filter(Boolean).join(' / ') || '未声明区域、集群或命名空间' }}
+                </small>
+              </template>
+            </el-table-column>
+            <el-table-column label="已绑定查询合同" min-width="300">
+              <template #default="scope">
+                <div class="asset-contracts">
+                  <el-tag
+                    v-for="(contractRef, signalKind) in scope.row.signalBindings"
+                    :key="`${signalKind}/${contractRef}`"
+                    size="small"
+                    effect="plain"
+                  >{{ signalKind }} · {{ contractRef }}</el-tag>
+                  <span v-if="!Object.keys(scope.row.signalBindings).length" class="empty-inline">未绑定</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="来源 / 状态" width="150">
+              <template #default="scope">
+                <el-tag size="small" effect="plain">
+                  {{ scope.row.origin === 'WORKSPACE' ? `Workspace v${scope.row.version}` : '部署默认' }}
+                </el-tag>
+                <small class="table-note">{{ scope.row.enabled ? '已启用' : '已停用' }}</small>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="scope">
+                <el-button text type="primary" @click="openAssetEditor(scope.row)">
+                  {{ scope.row.origin === 'WORKSPACE' ? '新建版本' : '接管配置' }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="当前 Workspace 还没有系统观测资产">
+            <el-button type="primary" @click="openNewAsset">新增第一个资产</el-button>
+          </el-empty>
+        </el-tab-pane>
+
         <el-tab-pane label="查询合同" name="contracts">
           <el-table :data="filteredRows" class="catalog-table" stripe>
             <el-table-column prop="system" label="系统" min-width="120" />
@@ -362,6 +425,111 @@
         <el-button type="primary" :loading="routeSaving" @click="saveRoute">保存声明</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="assetDialogOpen"
+      :title="assetForm.expectedVersion ? '新建系统观测资产版本' : '登记系统观测资产'"
+      width="760px"
+      destroy-on-close
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        class="asset-dialog-alert"
+        title="保存会追加一个不可变版本；已停用的 Workspace 资产也会阻止回落到部署默认。"
+      />
+      <el-form label-position="top" class="asset-form">
+        <div class="asset-form-grid">
+          <el-form-item label="系统标识">
+            <el-input v-model="assetForm.system" :disabled="assetScopeLocked" placeholder="例如 CSDP" />
+          </el-form-item>
+          <el-form-item label="模块 / 服务标识">
+            <el-input v-model="assetForm.service" :disabled="assetScopeLocked" placeholder="例如 csdp-session-service" />
+          </el-form-item>
+          <el-form-item label="显示名称">
+            <el-input v-model="assetForm.displayName" placeholder="例如 CSDP 会话服务" />
+          </el-form-item>
+          <el-form-item label="观测平台">
+            <el-input v-model="assetForm.platform" disabled />
+          </el-form-item>
+          <el-form-item label="环境">
+            <el-input v-model="assetForm.environment" placeholder="prod / staging" />
+          </el-form-item>
+          <el-form-item label="区域（可选）">
+            <el-input v-model="assetForm.region" placeholder="cn-south-1" />
+          </el-form-item>
+          <el-form-item label="集群（可选）">
+            <el-input v-model="assetForm.cluster" placeholder="csdp-prod" />
+          </el-form-item>
+          <el-form-item label="命名空间（可选）">
+            <el-input v-model="assetForm.namespace" placeholder="csdp" />
+          </el-form-item>
+        </div>
+
+        <el-form-item label="绑定已审核查询合同">
+          <div v-if="contractGroups.length" class="contract-binding-grid">
+            <div v-for="group in contractGroups" :key="group.signalKind" class="contract-binding-row">
+              <div>
+                <b>{{ group.signalKind }}</b>
+                <small>{{ group.options[0]?.scenario }}</small>
+              </div>
+              <el-select
+                v-model="assetForm.contractRefs[group.signalKind]"
+                clearable
+                filterable
+                placeholder="不绑定该证据维度"
+              >
+                <el-option
+                  v-for="option in group.options"
+                  :key="option.contractRef"
+                  :label="`${option.contractRef} · ${option.question}`"
+                  :value="option.contractRef"
+                />
+              </el-select>
+            </div>
+          </div>
+          <el-empty v-else :image-size="56" description="当前部署没有可登记的已审核合同" />
+        </el-form-item>
+
+        <section v-if="editableAssetParameters.length" class="asset-parameter-section">
+          <div class="asset-parameter-heading">
+            <b>合同要求的精确资源标识</b>
+            <small>这些值由资产固定，排障运行时不能改成其他系统资源。</small>
+          </div>
+          <div class="asset-form-grid">
+            <el-form-item
+              v-for="parameter in editableAssetParameters"
+              :key="parameter"
+              :label="assetParameterLabel(parameter)"
+            >
+              <el-input
+                v-model="assetForm.parameters[parameter]"
+                :placeholder="`填写 ${parameter} 的精确值`"
+              />
+            </el-form-item>
+          </div>
+        </section>
+
+        <div class="asset-enabled-row">
+          <div><b>启用资产</b><small>停用后该系统模块不再回落到部署默认授权。</small></div>
+          <el-switch v-model="assetForm.enabled" />
+        </div>
+        <el-form-item label="变更原因">
+          <el-input
+            v-model="assetForm.reason"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="说明为什么接入、调整或停用这个生产观测资产"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assetDialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="assetSaving" @click="saveAsset">保存新版本</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -375,6 +543,9 @@ import {
   type EvidenceCatalogModule,
   type EvidenceQueryCatalog,
   type EvidenceQueryContract,
+  type ObservabilityAsset,
+  type ObservabilityAssetCatalog,
+  type ObservabilityAssetContractOption,
 } from '@/api'
 import {
   acceptanceStatusLabel,
@@ -399,9 +570,45 @@ type ContractRow = {
   contract: EvidenceQueryContract
 }
 
+type AssetForm = {
+  system: string
+  service: string
+  displayName: string
+  platform: 'guance'
+  environment: string
+  region: string
+  cluster: string
+  namespace: string
+  enabled: boolean
+  contractRefs: Record<string, string>
+  parameters: Record<string, string>
+  expectedVersion?: number
+  reason: string
+  scopeLocked: boolean
+}
+
+function emptyAssetForm(): AssetForm {
+  return {
+    system: '',
+    service: '',
+    displayName: '',
+    platform: 'guance',
+    environment: '',
+    region: '',
+    cluster: '',
+    namespace: '',
+    enabled: true,
+    contractRefs: {},
+    parameters: {},
+    reason: '',
+    scopeLocked: false,
+  }
+}
+
 const route = useRoute()
 const router = useRouter()
 const catalog = ref<EvidenceQueryCatalog | null>(null)
+const assetCatalog = ref<ObservabilityAssetCatalog | null>(null)
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
@@ -412,6 +619,9 @@ const routeSaving = ref(false)
 const routeTarget = ref<ContractRow | null>(null)
 const routePlatforms = ref<string[]>([])
 const routeReason = ref('')
+const assetDialogOpen = ref(false)
+const assetSaving = ref(false)
+const assetForm = ref<AssetForm>(emptyAssetForm())
 
 const allRows = computed<ContractRow[]>(() => (catalog.value?.systems || []).flatMap(system =>
   system.modules.flatMap(module => module.contracts.map(contract => ({
@@ -446,6 +656,47 @@ const selectedRow = computed(() => filteredRows.value.find(row =>
 const summary = computed(() => catalogSummary(catalog.value))
 const moduleRows = computed(() => (catalog.value?.systems || []).flatMap(system =>
   system.modules.map(module => ({ system: system.system, module }))))
+const filteredAssets = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  if (!keyword) return assetCatalog.value?.assets || []
+  return (assetCatalog.value?.assets || []).filter(asset => [
+    asset.system,
+    asset.service,
+    asset.displayName,
+    asset.environment || '',
+    asset.region || '',
+    asset.cluster || '',
+    asset.namespace || '',
+    ...Object.keys(asset.signalBindings),
+    ...Object.values(asset.signalBindings),
+  ].some(value => value.toLowerCase().includes(keyword)))
+})
+const contractGroups = computed(() => {
+  const grouped = new Map<string, ObservabilityAssetContractOption[]>()
+  for (const option of assetCatalog.value?.contracts || []) {
+    const options = grouped.get(option.signalKind) || []
+    options.push(option)
+    grouped.set(option.signalKind, options)
+  }
+  return [...grouped.entries()]
+    .map(([signalKind, options]) => ({
+      signalKind,
+      options: options.sort((left, right) => left.contractRef.localeCompare(right.contractRef)),
+    }))
+    .sort((left, right) => left.signalKind.localeCompare(right.signalKind))
+})
+const selectedAssetContracts = computed(() => {
+  const selected = new Set(Object.values(assetForm.value.contractRefs).filter(Boolean))
+  return (assetCatalog.value?.contracts || []).filter(option => selected.has(option.contractRef))
+})
+const requiredAssetParameters = computed(() => [...new Set(
+  selectedAssetContracts.value.flatMap(option => option.requiredAssetParameters),
+)].sort())
+const metadataAssetParameters = new Set(['namespace', 'cluster', 'region', 'environment'])
+const editableAssetParameters = computed(() => requiredAssetParameters.value.filter(
+  parameter => !metadataAssetParameters.has(parameter),
+))
+const assetScopeLocked = computed(() => assetForm.value.scopeLocked)
 
 function contractKey(system: string, service: string, contract: EvidenceQueryContract) {
   return `${system}/${service}/${contract.signalKind}/${contract.contractRef}`
@@ -460,8 +711,12 @@ async function loadCatalog() {
   loading.value = true
   error.value = ''
   try {
-    const response = await troubleshootingApi.evidenceCatalog()
-    catalog.value = response.data
+    const [catalogResponse, assetResponse] = await Promise.all([
+      troubleshootingApi.evidenceCatalog(),
+      troubleshootingApi.observabilityAssets(),
+    ])
+    catalog.value = catalogResponse.data
+    assetCatalog.value = assetResponse.data
     if (allRows.value.length && !allRows.value.some(row =>
       contractKey(row.system, row.service, row.contract) === selectedKey.value)) {
       const first = allRows.value[0]
@@ -471,6 +726,104 @@ async function loadCatalog() {
     error.value = failure instanceof Error ? failure.message : '取证查询目录加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+function openNewAsset() {
+  assetForm.value = emptyAssetForm()
+  assetDialogOpen.value = true
+}
+
+function openAssetEditor(asset: ObservabilityAsset) {
+  assetForm.value = {
+    system: asset.system,
+    service: asset.service,
+    displayName: asset.displayName || asset.service,
+    platform: 'guance',
+    environment: asset.environment || '',
+    region: asset.region || '',
+    cluster: asset.cluster || '',
+    namespace: asset.namespace || '',
+    enabled: asset.enabled,
+    contractRefs: { ...asset.signalBindings },
+    parameters: { ...asset.parameters },
+    expectedVersion: asset.origin === 'WORKSPACE' ? asset.version : undefined,
+    reason: '',
+    scopeLocked: true,
+  }
+  assetDialogOpen.value = true
+}
+
+function assetParameterLabel(parameter: string) {
+  return {
+    monitor_checker: '观测云监控规则标识（monitor_checker）',
+    deployment: 'Kubernetes Deployment',
+    namespace: 'Kubernetes Namespace',
+    cluster: '集群标识',
+    region: '区域标识',
+    environment: '环境标识',
+  }[parameter] || parameter
+}
+
+function metadataParameter(parameter: string): string {
+  return {
+    namespace: assetForm.value.namespace,
+    cluster: assetForm.value.cluster,
+    region: assetForm.value.region,
+    environment: assetForm.value.environment,
+  }[parameter] || ''
+}
+
+async function saveAsset() {
+  const form = assetForm.value
+  const signalBindings = Object.fromEntries(
+    Object.entries(form.contractRefs).filter(([, contractRef]) => Boolean(contractRef)),
+  )
+  if (!form.system.trim() || !form.service.trim() || !form.displayName.trim()
+    || !form.environment.trim() || !form.reason.trim()) {
+    ElMessage.warning('请填写系统、模块、显示名称、环境和变更原因')
+    return
+  }
+  if (form.enabled && !Object.keys(signalBindings).length) {
+    ElMessage.warning('启用资产前至少绑定一个已审核查询合同')
+    return
+  }
+  const parameters: Record<string, string> = {}
+  for (const parameter of requiredAssetParameters.value) {
+    const value = (metadataAssetParameters.has(parameter)
+      ? metadataParameter(parameter)
+      : form.parameters[parameter] || '').trim()
+    if (!value) {
+      ElMessage.warning(`请填写 ${assetParameterLabel(parameter)}`)
+      return
+    }
+    parameters[parameter] = value
+  }
+
+  assetSaving.value = true
+  try {
+    await troubleshootingApi.declareObservabilityAsset({
+      system: form.system.trim(),
+      service: form.service.trim(),
+      displayName: form.displayName.trim(),
+      platform: 'guance',
+      environment: form.environment.trim(),
+      region: form.region.trim() || undefined,
+      cluster: form.cluster.trim() || undefined,
+      namespace: form.namespace.trim() || undefined,
+      enabled: form.enabled,
+      signalBindings,
+      parameters,
+      expectedVersion: form.expectedVersion,
+      reason: form.reason.trim(),
+    })
+    assetDialogOpen.value = false
+    ElMessage.success(form.expectedVersion ? '系统观测资产已追加新版本' : '系统观测资产已登记')
+    await loadCatalog()
+  } catch (failure) {
+    ElMessage.error(failure instanceof Error ? failure.message : '系统观测资产保存失败')
+  } finally {
+    assetSaving.value = false
   }
 }
 
@@ -633,6 +986,21 @@ onMounted(loadCatalog)
 .catalog-table code { color: var(--catalog-accent); }
 .route-platforms { margin-left: 8px; }
 .tab-alert { margin-bottom: 14px; }
+.asset-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:14px; }
+.asset-toolbar h2 { margin:0; font-size:20px; }
+.asset-toolbar p { margin:6px 0 0; color:var(--el-text-color-secondary); font-size:13px; }
+.asset-contracts { display:flex; flex-wrap:wrap; gap:6px; }
+.asset-dialog-alert { margin-bottom:18px; }
+.asset-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; width:100%; }
+.contract-binding-grid { display:grid; gap:8px; width:100%; }
+.contract-binding-row { display:grid; grid-template-columns:minmax(180px,.65fr) minmax(280px,1.35fr); align-items:center; gap:16px; padding:12px; border:1px solid var(--el-border-color-lighter); border-radius:9px; }
+.contract-binding-row small { display:block; margin-top:4px; color:var(--el-text-color-secondary); }
+.contract-binding-row :deep(.el-select) { width:100%; }
+.asset-parameter-section { margin:2px 0 18px; padding:16px; border:1px solid color-mix(in srgb,var(--catalog-accent) 30%,var(--el-border-color)); border-radius:10px; background:color-mix(in srgb,var(--catalog-accent) 5%,var(--el-bg-color)); }
+.asset-parameter-heading { display:flex; flex-direction:column; margin-bottom:12px; }
+.asset-parameter-heading small { margin-top:5px; color:var(--el-text-color-secondary); }
+.asset-enabled-row { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:18px; padding:14px; border-radius:10px; background:var(--el-fill-color-extra-light); }
+.asset-enabled-row small { display:block; margin-top:4px; color:var(--el-text-color-secondary); }
 
 .acceptance-layout { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(420px, 1.3fr); gap: 18px; }
 .source-panel, .acceptance-panel { padding: 18px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; }
@@ -679,5 +1047,6 @@ onMounted(loadCatalog)
   .axis-grid, .detail-grid { grid-template-columns: 1fr; }
   .detail-card.parameter-card { grid-column: auto; overflow-x: auto; }
   .title-row { align-items: flex-start; flex-direction: column; }
+  .asset-form-grid, .contract-binding-row { grid-template-columns:1fr; }
 }
 </style>

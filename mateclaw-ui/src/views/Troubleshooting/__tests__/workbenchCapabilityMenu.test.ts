@@ -32,6 +32,7 @@ describe('troubleshooting secondary navigation information architecture', () => 
   it('offers a stable deep link for each evidence catalog workspace', () => {
     expect(EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab)).toEqual([
       'systems',
+      'assets',
       'contracts',
       'routes',
       'acceptance',
@@ -51,6 +52,7 @@ describe('troubleshooting secondary navigation information architecture', () => 
 
   it('normalizes invalid tab values without trusting arbitrary query values', () => {
     expect(normalizeEvidenceCatalogTab('routes')).toBe('routes')
+    expect(normalizeEvidenceCatalogTab('assets')).toBe('assets')
     expect(normalizeEvidenceCatalogTab(['acceptance'])).toBe('acceptance')
     expect(normalizeEvidenceCatalogTab('unknown')).toBe('systems')
     expect(normalizeEvidenceCatalogTab(null)).toBe('systems')
