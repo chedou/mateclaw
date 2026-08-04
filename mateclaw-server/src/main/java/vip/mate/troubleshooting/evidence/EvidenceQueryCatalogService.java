@@ -87,21 +87,59 @@ public class EvidenceQueryCatalogService {
 
     private EvidenceQueryCatalogView.SourceView safeHealth(
             EvidenceSourceAdapter adapter) {
+        List<String> supportedSignals = supportedSignals(adapter);
+        String endpointStatus = endpointStatus(adapter);
+        String credentialStatus = credentialStatus(adapter);
         try {
             EvidenceSourceHealth health = adapter.health();
             if (health == null) {
                 return new EvidenceQueryCatalogView.SourceView(
                         adapter.platform(), "DEGRADED", false,
+                        endpointStatus, credentialStatus, supportedSignals,
                         "source returned no health state");
             }
             return new EvidenceQueryCatalogView.SourceView(
                     health.platform(), health.status().name(), health.verified(),
+                    endpointStatus, credentialStatus, supportedSignals,
                     TroubleshootingSecretRedactor.redact(health.detail()));
         } catch (RuntimeException failure) {
             return new EvidenceQueryCatalogView.SourceView(
                     adapter.platform(), "DEGRADED", false,
+                    endpointStatus, credentialStatus, supportedSignals,
                     "health check failed: " + failure.getClass().getSimpleName());
         }
+    }
+
+    private List<String> supportedSignals(EvidenceSourceAdapter adapter) {
+        return CanonicalEvidenceSchema.signalKinds().stream()
+                .filter(signalKind -> safelySupports(adapter, signalKind))
+                .sorted()
+                .toList();
+    }
+
+    private boolean safelySupports(EvidenceSourceAdapter adapter, String signalKind) {
+        try {
+            return adapter.supports(signalKind);
+        } catch (RuntimeException failure) {
+            return false;
+        }
+    }
+
+    private String endpointStatus(EvidenceSourceAdapter adapter) {
+        if (!GUANCE.equals(normalize(adapter.platform()))) {
+            return "NOT_REPORTED";
+        }
+        return guanceAdapter != null && guanceAdapter.endpointConfigured()
+                ? "CONFIGURED" : "MISSING";
+    }
+
+    private String credentialStatus(EvidenceSourceAdapter adapter) {
+        if (!GUANCE.equals(normalize(adapter.platform()))) {
+            return "NOT_REPORTED";
+        }
+        return guanceAdapter == null
+                ? GuanceEvidenceReadiness.CredentialState.MISSING.name()
+                : guanceAdapter.credentialState().name();
     }
 
     private List<EvidenceQueryCatalogView.SystemView> systems(

@@ -35,6 +35,12 @@ class EvidenceQueryCatalogServiceTest {
                 .inspect(7L);
 
         assertThat(catalog.contractVersion()).isEqualTo("evidence-query-catalog.v1");
+        assertThat(catalog.sources()).singleElement().satisfies(source -> {
+            assertThat(source.platform()).isEqualTo("guance");
+            assertThat(source.endpointStatus()).isEqualTo("CONFIGURED");
+            assertThat(source.credentialStatus()).isEqualTo("CONFIGURED");
+            assertThat(source.supportedSignals()).contains("log_search");
+        });
         assertThat(catalog.systems()).singleElement().satisfies(system -> {
             assertThat(system.system()).isEqualTo("CSDP");
             assertThat(system.modules()).singleElement().satisfies(module -> {

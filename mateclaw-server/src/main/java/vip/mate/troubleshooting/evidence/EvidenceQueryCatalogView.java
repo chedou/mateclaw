@@ -25,10 +25,17 @@ public record EvidenceQueryCatalogView(
             String platform,
             String status,
             boolean verified,
+            String endpointStatus,
+            String credentialStatus,
+            List<String> supportedSignals,
             String detail) {
         public SourceView {
             platform = text(platform);
             status = text(status);
+            endpointStatus = text(endpointStatus);
+            credentialStatus = text(credentialStatus);
+            supportedSignals = List.copyOf(
+                    supportedSignals == null ? List.of() : supportedSignals);
             detail = text(detail);
         }
     }

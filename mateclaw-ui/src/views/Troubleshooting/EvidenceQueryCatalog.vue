@@ -263,6 +263,14 @@
                 <div>
                   <b>{{ source.platform }}</b>
                   <p>{{ source.detail }}</p>
+                  <dl class="source-runtime-grid">
+                    <div><dt>查询端点</dt><dd>{{ runtimeStateLabel(source.endpointStatus) }}</dd></div>
+                    <div><dt>运行凭据</dt><dd>{{ runtimeStateLabel(source.credentialStatus) }}</dd></div>
+                    <div class="source-signals">
+                      <dt>支持证据</dt>
+                      <dd>{{ source.supportedSignals.join('、') || '未报告' }}</dd>
+                    </div>
+                  </dl>
                 </div>
                 <el-tag :type="source.status === 'READY' ? 'success' : source.status === 'DISABLED' ? 'info' : 'warning'">
                   {{ source.status }}
@@ -313,7 +321,27 @@
                 <small>{{ source.status }}</small>
               </el-checkbox>
             </el-checkbox-group>
-            <p class="form-help">全部不选表示“该维度明确不取证”，不会回落到部署默认。</p>
+            <p class="form-help">
+              这里只会出现当前部署已装配的适配器；可以预先声明暂不可用来源，
+              但目录会继续标记为不可运行。全部不选表示“该维度明确不取证”，不会回落到部署默认。
+            </p>
+            <div v-if="routePlatforms.length" class="route-priority">
+              <p>调用顺序（前面的来源优先）</p>
+              <div v-for="(platform, index) in routePlatforms" :key="platform" class="priority-row">
+                <em>{{ index + 1 }}</em>
+                <b>{{ platform }}</b>
+                <el-button
+                  text
+                  :disabled="index === 0"
+                  @click="moveRoutePlatform(index, -1)"
+                >上移</el-button>
+                <el-button
+                  text
+                  :disabled="index === routePlatforms.length - 1"
+                  @click="moveRoutePlatform(index, 1)"
+                >下移</el-button>
+              </div>
+            </div>
           </el-form-item>
           <el-form-item label="变更原因">
             <el-input
@@ -352,6 +380,8 @@ import {
   contractMatches,
   parameterSourceLabel,
   routeOriginLabel,
+  runtimeStateLabel,
+  moveOrderedItem,
 } from './evidenceCatalog'
 
 type ContractRow = {
@@ -445,6 +475,10 @@ function openRouteEditor(row: ContractRow) {
   routePlatforms.value = [...row.contract.route.platforms]
   routeReason.value = ''
   routeDialogOpen.value = true
+}
+
+function moveRoutePlatform(index: number, offset: -1 | 1) {
+  routePlatforms.value = moveOrderedItem(routePlatforms.value, index, offset)
 }
 
 async function saveRoute() {
@@ -571,6 +605,11 @@ onMounted(loadCatalog)
 .source-card, .acceptance-card { padding: 14px; border-radius: 10px; background: var(--el-fill-color-extra-light); }
 .source-card { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
 .source-card p { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.source-runtime-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+.source-runtime-grid div { min-width: 0; }
+.source-runtime-grid dt { color: var(--el-text-color-secondary); font-size: 11px; }
+.source-runtime-grid dd { margin: 3px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.source-runtime-grid .source-signals { grid-column: 1 / -1; }
 .acceptance-card { margin-bottom: 10px; }
 .acceptance-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .acceptance-title small { display: block; margin-top: 5px; color: var(--el-text-color-secondary); }
@@ -580,6 +619,10 @@ onMounted(loadCatalog)
 .source-checkboxes { display: flex; flex-direction: column; align-items: flex-start; }
 .source-checkboxes small { margin-left: 8px; color: var(--el-text-color-secondary); }
 .form-help { margin: 8px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
+.route-priority { margin-top: 14px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 9px; }
+.route-priority>p { margin: 0 0 8px; color: var(--el-text-color-secondary); font-size: 12px; }
+.priority-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto; align-items: center; gap: 6px; min-height: 34px; }
+.priority-row em { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--catalog-accent); background: color-mix(in srgb, var(--catalog-accent) 10%, var(--el-bg-color)); font-style: normal; font-size: 11px; font-weight: 700; }
 
 @media (max-width: 1100px) {
   .catalog-header { flex-direction: column; }

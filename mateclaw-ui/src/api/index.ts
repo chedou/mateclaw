@@ -2524,6 +2524,9 @@ export interface EvidenceCatalogSource {
   platform: string
   status: string
   verified: boolean
+  endpointStatus: string
+  credentialStatus: string
+  supportedSignals: string[]
   detail: string
 }
 
@@ -3219,10 +3222,6 @@ export const troubleshootingApi = {
   evidenceCatalog: () => http.get<EvidenceQueryCatalog>(
     '/troubleshooting/evidence/catalog',
   ),
-
-  /** Workspace route declarations. Absence means deployment fallback remains effective. */
-  evidenceRoutes: (params?: { system?: string }) =>
-    http.get<EvidenceRouteDeclaration[]>('/troubleshooting/evidence/routes', { params }),
 
   /** Replaces one system + signal route; an empty platform list explicitly disables it. */
   declareEvidenceRoute: (data: DeclareEvidenceRouteRequest) =>

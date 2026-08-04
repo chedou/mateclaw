@@ -65,7 +65,8 @@ DELETE /api/v1/troubleshooting/evidence/routes?system={system}&signalKind={signa
 
 - DQL 和字段映射仍由代码评审、测试和发布过程治理；
 - 端点与 API Key 仍由运维环境注入；
-- Workspace 只能在部署已启用的只读来源中选择路由；
+- Workspace 只能在当前部署已装配的只读来源中选择路由；来源即使暂时不可用也允许预先声明，
+  但可用性会作为独立事实标红，不能冒充“当前可运行”；
 - 目录接口经过脱敏，并有测试保证序列化结果不出现 DQL、API Key 或 base URL。
 
 后续只有在真实系统接入证明“在线编辑查询合同”是阻塞点后，才引入版本化草稿、校验、试跑、审批和回滚能力；不能直接把自由文本 DQL 编辑器接到生产查询路径。

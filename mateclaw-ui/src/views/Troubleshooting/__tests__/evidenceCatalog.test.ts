@@ -4,7 +4,9 @@ import {
   bindingStatusLabel,
   catalogSummary,
   contractMatches,
+  moveOrderedItem,
   routeOriginLabel,
+  runtimeStateLabel,
 } from '../evidenceCatalog'
 
 const contract: EvidenceQueryContract = {
@@ -62,7 +64,15 @@ const contract: EvidenceQueryContract = {
 const catalog: EvidenceQueryCatalog = {
   contractVersion: 'evidence-query-catalog.v1',
   workspaceId: 1,
-  sources: [],
+  sources: [{
+    platform: 'guance',
+    status: 'READY',
+    verified: false,
+    endpointStatus: 'CONFIGURED',
+    credentialStatus: 'CONFIGURED',
+    supportedSignals: ['log_search'],
+    detail: 'ready',
+  }],
   systems: [{
     system: 'CSDP',
     modules: [{
@@ -105,5 +115,14 @@ describe('evidence query catalog presentation', () => {
     expect(routeOriginLabel('UNCONFIGURED')).toBe('未配置')
     expect(bindingStatusLabel('READY_FOR_VALIDATION')).toBe('可联调')
     expect(bindingStatusLabel('CANONICAL_RESULT_OBSERVED')).toBe('已观测到规范证据')
+    expect(runtimeStateLabel('CONFIGURED')).toBe('已配置')
+    expect(runtimeStateLabel('MISSING')).toBe('未配置')
+  })
+
+  it('keeps route priority explicit and leaves boundary moves unchanged', () => {
+    expect(moveOrderedItem(['guance', 'recorded-replay'], 1, -1))
+      .toEqual(['recorded-replay', 'guance'])
+    expect(moveOrderedItem(['guance', 'recorded-replay'], 0, -1))
+      .toEqual(['guance', 'recorded-replay'])
   })
 })

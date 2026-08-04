@@ -75,3 +75,23 @@ export function acceptanceStatusLabel(status: string): string {
     UNAVAILABLE: '状态不可用',
   }[status] ?? status
 }
+
+export function runtimeStateLabel(status: string): string {
+  return {
+    CONFIGURED: '已配置',
+    MISSING: '未配置',
+    NOT_REPORTED: '该适配器未提供',
+  }[status] ?? status
+}
+
+export function moveOrderedItem<T>(items: T[], index: number, offset: -1 | 1): T[] {
+  const target = index + offset
+  if (index < 0 || index >= items.length || target < 0 || target >= items.length) {
+    return [...items]
+  }
+  const moved = [...items]
+  const current = moved[index]
+  moved[index] = moved[target]
+  moved[target] = current
+  return moved
+}
