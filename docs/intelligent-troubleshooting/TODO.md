@@ -736,6 +736,30 @@ Python owner 门与 Java 运行目录新断言都先准确失败；修复后两�
 最后故意要求读取 `csdp:301002.sourceHints.hasLogSignatureHint`，旧模板因查不到字段准确失败；补入安全布尔
 投影后才恢复，避免 `A_HINTED` 在错误标识符提取为空时被误读成“无日志提示”。
 
+### 第六次同形状问题：闸门挂错了地方（2026-08-05）
+
+这一次坏的不是断言，是**断言所在的位置**。T7 交给 owner 的两组产物（录制目标队列
+`t7-target-contract-preparation.{json,md}`、owner 契约模板 `t7-owner-contract-intake*.json`）都是
+生成物，指纹由四份输入决定，其中三份在 `mateclaw-server/**` 的 resources 里。本分支把回放场景加到
+5 条（`cb5749d`）时改旧了**两组**产物，而两个 `--check` 都只挂在 smoke workflow 上。
+
+工作流的 `paths:` 过滤器**是对的**——`mateclaw-server/**` 在列，改回放套件确实会触发它。真正的缺口是
+触发条件：workflow 只在 PR 或 `dev / main / intelligent-troubleshooting / claude/*-design` 的 push 上跑，
+而改动发生在没有 PR 的会话分支上。**闸门存在、接线正确、却不在改动发生的地方**，于是产物一直陈旧，
+直到有人手工跑 `--check` 才发现第一组，第二组是被 `test_t7_target_preparation` 顺带逮到的。
+
+对策：把两个 `--check` 前移到 `scripts/troubleshooting-test.sh`，在 maven 之前跑（几百毫秒）。
+两个生成器都要跑——它们是两组独立的 committed 产物，各自有各自的 `--check`，**绿一个不代表另一个绿**，
+第一次修复只补了 owner 模板就是这么漏的。已确认全仓只有这两个 `--check` 生成器，闸门是完整的。
+
+反向证明照旧：把 `recordedSuitesSha256` 改坏后，脚本准确以退出码 3 停在 maven 之前，并指名
+`t7_target_preparation`；恢复后两份 `--check` 均通过，20 条 T7 工装测试与 818 条领域测试全绿。
+两次重新生成都只动了输入指纹（`preparationFingerprint`、`recordedSuitesSha256`），
+`counts` 与 owner 队列内容未变——即第 5 条场景没有改变 owner 要填的东西，这次陈旧纯属出处失真。
+
+留给下一次的教训：**问「这个检查跑在改动发生的地方吗」，而不是「这个检查存在吗」。**
+CI 上的绿灯只覆盖它被触发的那些路径。
+
 ---
 
 **已经不再是阻塞项**：「跑不通一个场景」。T0.5–T0.65 已完成，
