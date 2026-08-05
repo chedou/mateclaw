@@ -35,6 +35,32 @@
 | 7 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
 | 8 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
 
+**P2.4 排障模块瘦身（2026-08-03）**：按「去掉它，系统是不是既更简单、又不更危险」筛。
+
+删掉的（约 1600 行）：
+
+| 东西 | 为什么是腐朽 |
+|---|---|
+| 体验原型（Vue 1017 行 + 静态镜像 HTML 560 行 + dev 路由） | `projection-contracts.md` 早写好了删除清单，条件是「正式页覆盖所有降级场景」。**核对过条件成立**：`formalProjection.ts` 覆盖四种结论类型，provenance 面板渲染源故障态；选型 2026-07-28 已定，企微那支按 D17 改走通道纯文本。它是纯静态假数据（0 次 API 调用），其副本 `DeveloperEvidencePanel` 已和真面板漂开 **636 行**却仍像权威——没有任何东西会发现它过期 |
+| `publicPrototype` 路由标记与其守卫分支 | 删掉原型后没有任何路由再用它，但它仍会对设置了它的路由**直接放行鉴权**。一道被拆掉引信、等着被人捡起来复用的检查，比没有更糟 |
+| `DiagnosisStateMachine.executeAction` | 自称「为将来的 controller 预留的兼容接缝」。那个 controller 早就来了（`TroubleshootingController.execute`），而且没用这个接缝——同一个 409、同一个错误码、同一句话存在于两处。**两份同样的措辞会漂**，而这句话陈述的是一条红线 |
+| `TroubleshootingPlaybookVersionService.knowledgeEvidenceGradeByRef` | 零调用零测试。置信度封顶改从调用方已持有的冻结版本上直接读成色，更近也更省 |
+| `default-sources`、`TroubleshootingDomainEvent` | 见 P2.1 段与更早提交 |
+
+`/execute` 那条红线一点没弱：端点仍答 409，场景冒烟闸门 7 在批准之后仍然核验它，
+而且 `Diagnosis` 契约本身就拒绝 `writeExecutionEnabled`——删掉端点也开不了执行。
+
+**查了但刻意没删**（免得下一个人再来一遍）：
+
+- `docs/.../console-*.html`（328K）与 `versions/`（5.8M）：`index.html` 把它们编在
+  「历史原型 · 归档」里，`console-workbench.html` 已经是一个跳转桩——**有人是刻意留的**。
+  那是历史，不是腐朽。
+- **两套源验收（V184 Guance / V192 泛化）不是重复**：前者验收「一个系统的观测资产」
+  且要求跑完整条 canonical chain（T7 那道闸门），后者验收「一个平台的适配器绑定」，
+  服务 Prometheus 与 Elasticsearch。合并等于把 T7 的证明**降级**成「适配器答话了」。
+- 生产不可达的类、无引用的前端模块、孤儿表、未被引用的资源文件：**各扫一遍，都是空的**。
+  文件级计数一度多报了几个，逐个核实后是嵌套 record、Spring 端点和文件内私有助手。
+
 **P2.3 未标定知识的置信度封顶（2026-08-03）**：投产前的最后一格。证据成色会自己推导
 ——接上真源那一刻自动变真；但**知识成色不会跟着变**。8 条已审核 Playbook 的阈值是人
 手写的，从没被任何一次真实故障检验过。少了封顶，真源接通的第一天系统就会输出
