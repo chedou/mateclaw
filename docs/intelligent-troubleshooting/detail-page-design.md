@@ -16,15 +16,14 @@
 页面不能展示模型私有思维链，只展示可复算的证据链和判据。Recorded Replay、MODEL_PROPOSED、置信上限、
 candidate/approved 等权威差异必须可见，不能靠颜色暗示后让用户猜。
 
-## 2. 当前三套原型
+## 2. 三套原型的结局（已收口）
 
-开发环境：
+当时的三套是：A 服务经理摘要优先、B 开发证据优先、C 企微补问与原路闭环优先，
+建议组合为「A 做默认页，B 做 A 的展开层，C 定义企微交互」。
 
-- A：`/prototype/troubleshooting?variant=A`，服务经理摘要优先；
-- B：`/prototype/troubleshooting?variant=B`，开发证据优先；
-- C：`/prototype/troubleshooting?variant=C`，企微补问和原路闭环优先。
-
-推荐组合是 **A 做默认页，B 做 A 的开发证据展开层，C 用来定义企微交互**。这是当前建议，不替用户做最终选择。
+**2026-07-28 已选定并落地**：正式工作台 `FormalWorkbench.vue` 采用 A+B 的合并形态
+（业务摘要默认展开、开发证据默认折叠）；C 走了另一条路——按 D17，企微复用平台已有
+通道发纯文本，不做独立 UI 投影。三套原型页于 2026-08-03 删除，本节只留结论。
 
 ## 3. 稳定信息层级
 

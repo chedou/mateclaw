@@ -10,8 +10,9 @@
 >
 > 正式实现：服务端 `vip.mate.troubleshooting.projection` +
 > `mateclaw-ui/src/views/Troubleshooting/FormalWorkbench.vue`。
-> 原型：`mateclaw-ui/src/views/Troubleshooting/prototype/` +
-> `experience-prototype-demo.html`（暂留作降级结局对照，不再是实现权威）。
+> 原型已删除（2026-08-03）：正式页覆盖了四种结局（LOCATED / EXCLUDED / HYPOTHESIS /
+> INSUFFICIENT_EVIDENCE）与证据源故障态，删除条件成立。留着一份已经和真实面板漂开
+> 636 行的静态副本，只会让人把它当权威。
 >
 > 通道消费方式见 §5（v4.2 补）：IM 侧复用平台已有 `channel/wecom`、`channel/feishu`，
 > 不新建入站；出站交互卡片被 renderer 接缝形状挡住，先发纯文本。
@@ -322,6 +323,7 @@ Diagnosis 进入 `CLOSED` 后，最终通知**不改造 `BusinessSummary` 合同
 | P3（纯文本闭环已完成） | 调查回执消费 `BusinessSummary`；关闭回执组合 `BusinessSummary + ClosureRecord`，两者均原路纯文本投递并以平台 ACK 为完成信号。交互卡片仍待独立平台评审 |
 | P5 / T15（进行中） | 正式 `/troubleshooting` 已读真实投影 API；Diagnosis 1.5 已补 D14，1.6 已补结构化 `IncidentImpact`。投影可直接消费既有 `log_count` / `trace` / `log_trace_bundle` / `contrast_sample` / `incident_impact`；但在线真源仍待稳定产出完整 hop、对照与经引用的影响人数 |
 
-**删除清单（正式页覆盖所有降级场景后再删）**：
-`prototype/TroubleshootingExperiencePrototype.vue`、`prototype/DeveloperEvidencePanel.vue`、
-`experience-prototype-demo.html`、router 里的 dev-only 分支。
+**删除清单已执行（2026-08-03）**：`prototype/TroubleshootingExperiencePrototype.vue`、
+`prototype/DeveloperEvidencePanel.vue`、`experience-prototype-demo.html`、router 里的
+dev-only 分支，以及随之失去用处的 `publicPrototype` 鉴权旁路标记——一个没有任何路由再
+使用、却仍会对设置它的路由直接放行的分支。
