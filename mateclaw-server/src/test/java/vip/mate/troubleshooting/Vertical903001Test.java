@@ -159,7 +159,13 @@ class Vertical903001Test {
                 .as("the host answered its probe, so the outage hypothesis stays excluded")
                 .doesNotContain("node_unreachable");
         assertThat(diagnosis.rootCause()).contains("连接池");
-        assertThat(diagnosis.confidence()).isEqualTo(Confidence.HIGH);
+        // 这条规则自己写的是 HIGH。但 csdp:903001 的阈值是人手写的、从没被任何真实
+        // 历史故障标定过，所以结论被封顶到 MEDIUM——未命中路对**模型**的建议早就这样
+        // 封顶，一条从没被检验过的阈值没有理由比模型的猜测更有底气。
+        assertThat(diagnosis.confidence()).isEqualTo(Confidence.MEDIUM);
+        assertThat(diagnosis.warnings())
+                .as("封顶必须说出理由，否则读者只会看到一个没来由的 MEDIUM")
+                .anyMatch(w -> w.contains("从未用真实历史故障标定过"));
         assertThat(diagnosis.warnings())
                 .as("no source adapter has verified this evidence yet")
                 .anyMatch(w -> w.contains("fixture"));

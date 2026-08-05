@@ -55,6 +55,30 @@ case "${TIER}" in
 esac
 
 printf '\033[34m%s\033[0m\n' "${LABEL}"
+
+# T7 交给 owner 的东西是**生成物**：录制目标队列与 owner 契约模板，都由四份输入
+# 决定（sop_kb、selector 清单、回放套件、录制目标），其中三份就在 mateclaw-server
+# 的 resources 里。改一条回放种子就会让它们过期，而改的人没有任何理由想到自己动了
+# docs 下的一份模板。
+#
+# 这件事真的发生过：本分支把场景加到 5 条时同时改旧了两份，直到有人手工跑 --check
+# 才发现——而且**先只发现了一份**，另一份是被单元测试逮到的。所以这里两个生成器都
+# 要跑：它们是两组独立的 committed 产物，各自有各自的 --check，绿一个不代表另一个绿。
+#
+# 检查一直存在，只是挂在 GitHub workflow 上——**那不是改动发生的地方**。几百毫秒放
+# 在这里代价可忽略；漏掉的代价是 owner 带着过期指纹进内网窗口，而窗口很贵。
+if command -v python3 >/dev/null 2>&1; then
+  for generator in t7_owner_contract_intake t7_target_preparation; do
+    script="docs/intelligent-troubleshooting/l0/${generator}.py"
+    if ! python3 "${script}" --check >/dev/null 2>&1; then
+      printf '\033[31mT7 生成物已过期：%s\033[0m\n' "${generator}" >&2
+      printf '  指纹来自 sop_kb / selector 清单 / 回放套件 / 录制目标，你大概动了其中之一。\n' >&2
+      printf '  重新生成：python3 %s --write\n' "${script}" >&2
+      exit 3
+    fi
+  done
+fi
+
 started=$(date +%s)
 
 if [[ -n "${PATTERN}" ]]; then

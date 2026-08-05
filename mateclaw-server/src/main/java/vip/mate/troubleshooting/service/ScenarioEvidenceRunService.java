@@ -124,7 +124,8 @@ public class ScenarioEvidenceRunService {
                             + "re-running its plan would overwrite a conclusion a human has seen");
         }
 
-        SopEntry playbook = frozenPlaybook(workspaceId, diagnosis);
+        ApprovedPlaybookVersion frozen = frozenPlaybook(workspaceId, diagnosis);
+        SopEntry playbook = frozen.playbook();
         if (!PlaybookEvidenceCollector.servesEveryRequiredRequest(playbook)) {
             // Its evidence comes from a Workspace asset's own read-only tool
             // (D18). Running the Router here would return MISSING and file
@@ -137,7 +138,10 @@ public class ScenarioEvidenceRunService {
         List<EvidenceResult> evidence = collectEvidence(workspaceId, diagnosis, playbook);
         boolean fixtureMode = EvidenceProvenance.fixtureMode(evidence);
         PlaybookEvidenceAssessment assessment = PlaybookEvidenceAssessment.assess(
-                playbook, evidence, criteria, rules, fixtureMode);
+                playbook, evidence, criteria, rules, fixtureMode,
+                // 成色取自**冻结的那一版**，和判据规则同源：否则会拿今天的成色去评判
+                // 当时那套规则得出的结论。
+                frozen.knowledgeEvidenceGrade());
         Diagnosis advanced = stateMachine.recordScenarioEvidence(
                 diagnosis, playbook, evidence, assessment, safeActor);
         return persistence.update(workspaceId, advanced, stored.version());
@@ -234,7 +238,7 @@ public class ScenarioEvidenceRunService {
      * different Playbook, and judging old evidence by new rules is how a
      * conclusion stops matching the reasoning recorded beside it.
      */
-    private SopEntry frozenPlaybook(long workspaceId, Diagnosis diagnosis) {
+    private ApprovedPlaybookVersion frozenPlaybook(long workspaceId, Diagnosis diagnosis) {
         PlaybookVersionRef ref = diagnosis.sourcePlaybookVersionRef();
         if (ref == null) {
             throw conflict("the investigation carries no frozen Playbook version");
@@ -245,7 +249,9 @@ public class ScenarioEvidenceRunService {
         if (!version.playbook().routingKey().equals(diagnosis.sopKey())) {
             throw conflict("the frozen Playbook no longer matches the investigation selector");
         }
-        return version.playbook();
+        // 返回整个版本而不是只返回 SopEntry：知识成色也冻结在这一版上，而它决定结论
+        // 最高能声称到什么程度。只取 playbook() 会把那件事丢在这里。
+        return version;
     }
 
     private String required(String value, String field) {

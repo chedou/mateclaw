@@ -6,6 +6,7 @@ import vip.mate.troubleshooting.model.DiagnosisRule;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.util.ArrayList;
@@ -35,7 +36,35 @@ public record PlaybookEvidenceAssessment(
         List<String> activeSignals,
         List<String> missingRequestIds,
         List<String> missingRequiredRequestIds,
-        List<String> warnings) {
+        List<String> warnings,
+        /**
+         * 产生这条结论的那条规则；只有 {@code LOCATED} 时才有值。
+         *
+         * <p><b>为什么要记下来。</b> 引擎本来就算出了它，然后扔掉。一次已结案且结论
+         * 被人确认的调查，正是一份**答案由世界给出**的回放案例，而回放案例的期望值
+         * 必须精确到规则 id（{@code ReplayCase} 的合同要求 MATCHED 必须指名规则）。
+         * 事后靠 rootCause 文本反查是猜——rootCause 并不保证唯一。</p>
+         *
+         * <p><b>为什么只在 LOCATED 时有值。</b> 规则匹配之后，缺必需证据、Playbook
+         * 仍是草案这两种情况都会把结论降级；那时结论不是那条规则给出的。弃权规则
+         * 匹配也不算——它落到 INSUFFICIENT_EVIDENCE，而回放合同里只有 MATCHED 才
+         * 允许指名规则。让这个字段与「这条规则确实产出了这条结论」严格对齐。</p>
+         */
+        String matchedRuleId) {
+
+    /** Compatibility shape for callers that do not name a producing rule. */
+    public PlaybookEvidenceAssessment(
+            ConclusionType conclusionType,
+            String rootCause,
+            String summary,
+            Confidence confidence,
+            List<String> activeSignals,
+            List<String> missingRequestIds,
+            List<String> missingRequiredRequestIds,
+            List<String> warnings) {
+        this(conclusionType, rootCause, summary, confidence, activeSignals,
+                missingRequestIds, missingRequiredRequestIds, warnings, null);
+    }
 
     public PlaybookEvidenceAssessment {
         activeSignals = List.copyOf(activeSignals == null ? List.of() : activeSignals);
@@ -47,6 +76,43 @@ public record PlaybookEvidenceAssessment(
             throw new IllegalArgumentException(
                     "assessment requires a conclusion type, root cause and confidence");
         }
+        matchedRuleId = matchedRuleId == null || matchedRuleId.isBlank()
+                ? null : matchedRuleId.trim();
+        if (matchedRuleId != null && conclusionType != ConclusionType.LOCATED) {
+            // 只有 LOCATED 才是「某条规则产出了这条结论」。别处带上规则 id，会让
+            // 回放期望指向一条其实没有裁决过这次调查的规则。
+            throw new IllegalArgumentException(
+                    "only a LOCATED assessment may name the rule that produced it");
+        }
+    }
+
+    /**
+     * 未标定的知识不得声称 HIGH。
+     *
+     * <p><b>为什么必须有这一格。</b> 证据成色（真源还是夹具）已经会自己推导；接上真源
+     * 那一刻它自动变真。但**知识成色不会跟着变**：那 8 条已审核 Playbook 的阈值是人
+     * 手写的，从没被任何一次真实故障检验过。少了这一格，真源接通的第一天，系统就会拿
+     * 没人验证过的阈值输出 {@code LOCATED / HIGH}——服务经理看到 HIGH 会当成系统有
+     * 把握，而系统只是在执行一句没人验证过的判断。</p>
+     *
+     * <p><b>这不是新发明的谨慎，是把已有的一条纪律补齐。</b> 未命中路对**模型**的建议
+     * 早就封顶到 MEDIUM 并附警告。我们给模型的猜测封了顶，却没给一条从没被检验过的
+     * 阈值封顶——这个不对称没有道理。</p>
+     *
+     * <p>只压 {@code LOCATED}：{@code EXCLUDED} 说的是「候选根因都被反证」，那是判据
+     * 没成立，不依赖阈值标定得准不准；{@code INSUFFICIENT_EVIDENCE} 本来就不声称。</p>
+     */
+    private static Confidence cap(
+            Confidence confidence,
+            ConclusionType conclusionType,
+            KnowledgeEvidenceGrade knowledgeGrade) {
+        boolean calibrated = knowledgeGrade == KnowledgeEvidenceGrade.RECORDED_AGGREGATE;
+        if (calibrated
+                || conclusionType != ConclusionType.LOCATED
+                || confidence != Confidence.HIGH) {
+            return confidence;
+        }
+        return Confidence.MEDIUM;
     }
 
     /** A conclusion strong enough for a human to act on, rather than to keep investigating. */
@@ -55,12 +121,31 @@ public record PlaybookEvidenceAssessment(
                 || conclusionType == ConclusionType.EXCLUDED;
     }
 
+    /**
+     * Compatibility shape: knowledge whose grade is unknown is treated as
+     * uncalibrated, which is the conservative side.
+     */
     public static PlaybookEvidenceAssessment assess(
             SopEntry playbook,
             List<EvidenceResult> evidence,
             CriterionEvaluator criteria,
             DiagnosisRuleEvaluator rules,
             boolean fixtureMode) {
+        return assess(playbook, evidence, criteria, rules, fixtureMode,
+                KnowledgeEvidenceGrade.UNVERIFIED);
+    }
+
+    /**
+     * @param knowledgeGrade 这份 Playbook 的判据与阈值是怎么来的。它决定结论**最高
+     *                       能声称到什么程度**——见 {@link #cap}。
+     */
+    public static PlaybookEvidenceAssessment assess(
+            SopEntry playbook,
+            List<EvidenceResult> evidence,
+            CriterionEvaluator criteria,
+            DiagnosisRuleEvaluator rules,
+            boolean fixtureMode,
+            KnowledgeEvidenceGrade knowledgeGrade) {
         if (playbook == null || criteria == null || rules == null) {
             throw new IllegalArgumentException("playbook and evaluators are required");
         }
@@ -133,9 +218,23 @@ public record PlaybookEvidenceAssessment(
             warnings.add("当前 Playbook 的所有候选结论都被已取得证据反证；这是排除，不是定位。");
         }
 
+        // 阈值从没被真实历史故障标定过时，结论最高只能到 MEDIUM。放在所有降级之后，
+        // 这样它只可能把置信度往下压，不会把别处压低的再抬回来。
+        Confidence capped = cap(confidence, conclusionType, knowledgeGrade);
+        if (capped != confidence) {
+            warnings.add("这份 Playbook 的判据与阈值从未用真实历史故障标定过，"
+                    + "置信度已封顶为 MEDIUM，需人工确认。");
+            confidence = capped;
+        }
+
         return new PlaybookEvidenceAssessment(
                 conclusionType, rootCause, summary, confidence,
-                evaluation.activeSignals(), missing, missingRequired, warnings);
+                evaluation.activeSignals(), missing, missingRequired, warnings,
+                // 在所有降级判断**之后**才定：上面任何一条降级都意味着结论不再是
+                // 那条规则给出的，这时它不该留名。
+                conclusionType == ConclusionType.LOCATED && matched != null
+                        ? matched.ruleId()
+                        : null);
     }
 
     private static List<String> missing(

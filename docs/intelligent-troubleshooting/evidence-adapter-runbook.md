@@ -62,7 +62,9 @@ route miss
 
 - `routes.CSDP.{log_count,log_search,log_trace_bundle,incident_impact,metric,trace}`：顺序为
   `guance → recorded-replay`；
-- `default-sources: []`：其他系统没有显式路由时不会猜数据源；
+- 没有「全局默认源」这一层（原 `default-sources` 已于 2026-08-03 删除）：没有显式路由的
+  系统与信号一律不取证，也不猜数据源。取证是 fail-closed 的，路由必须显式；
+  租户可以用 `PUT /api/v1/troubleshooting/evidence/routes` 声明自己的路由；
 - Guance 与 replay 都默认 `enabled=false`；
 - `guance.asset-bindings: []` 默认仍为空，没有默认 workspace 或默认资产授权；
 - 试点配置单独放在 `mateclaw-server/src/main/resources/application-csp-clouddial-pilot.yml`，

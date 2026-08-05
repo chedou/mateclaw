@@ -4,6 +4,8 @@
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
+> **投产清单：`production-readiness.md`** —— 第一条真实报障进来之前必须为真的事。
+>
 > 唯一现行架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
 > 架构评审：`architecture-review-v4.md`，结论 **APPROVED FOR P1 IMPLEMENTATION**
@@ -24,13 +26,113 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **T7 内网核实 + owner 验收**：真实查询目标、measurement / 字段 / 阈值 | 28 条 owner 候选包已生成待填；server-owned 可执行目标仍为 `0`。**要内网窗口和人，不在代码这一侧** | §5 T7 |
-| 2 | 前端两颗回归钉子 | `cited === null`（本路径不维护引用清单）与 `false`（这条证据不支持结论）语义不同，前端没钉住；也没有守卫确认「调查过程」展示组件真的被挂载。**后端测试一条都拦不住这类缺陷** | 前端 |
-| 3 | 梯子的上一级：真实案例 → 结论规则可被证明 | 只取证的 Playbook 已能批准（P2.0），但从「攒够真实案例」到「结论规则获得回放证明」还没有路，replay suite 仍是 classpath 固定 8 条。正确材料是**已结案且结论被世界确认过**的 Diagnosis（答案不由作者自己写，不循环）。依赖 1 | §7 |
-| 4 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1 | §5 T8 |
-| 5 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
-| 6 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
-| 7 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+| 1 | **填满 20–30 条录制目标** | **唯一的关键路径，且离线就能做、不用等窗口。** 目录 `guance-recording-targets.json` 目前 `targets: []`，即 `0 / 20`。要懂 Guance schema 的 owner 填；预检明写「不能自造查询映射」——编出来的映射会一路过闸门，然后在真实故障上给出看起来合理的错误答案 | 投产清单 A1 |
+| 2 | **一次内网窗口**：配 Guance 端点 + owner 验收 | 依赖 1。进窗口前先跑 `scripts/troubleshooting-t7-preflight.sh`，七格逐条 | 投产清单 B |
+| ~~3~~ | ~~前端两颗回归钉子~~ | **已完成（2026-08-03）**：vitest 接上 `@vitejs/plugin-vue`，仓库第一次能真正渲染组件来测。`cited` 三态各自渲染成不同的话（把 `null` 并进 `false` 验证过会红），读不到时只说读不到、不猜；另一条钉住 provenance 面板确实被父组件 import 并放进模板、父组件也确实挂在正式工作台上 | 前端 |
+| 4 | 梯子的上一级：真实案例 → 结论规则可被证明 | **2026-08-03 现场核对后重新定性**：线上已有 12 条结案候选，**全部落在 `csdp:903001`——一条已有已审核 Playbook 的 selector 上**。它们不是在提议新知识，是在佐证既有知识。原先那句 `POSITIVE_REPLAY_REQUIRED` 指错了对象（候选身上没有可回放的 Playbook，`evidenceIds` 只有 id、没有 signalKind 与 target），已改为 `NO_ROUTEABLE_PLAYBOOK_PROJECTED` 并说明真实用途。**下一步的形态需要拍板**，见下 | §7 |
+| 5 | T8 历史样本 20–30 条 + 性能基线 | 依赖 1、2 | §5 T8 |
+| 6 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
+| 7 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
+| 8 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+
+**P2.4 排障模块瘦身（2026-08-03）**：按「去掉它，系统是不是既更简单、又不更危险」筛。
+
+删掉的（约 1600 行）：
+
+| 东西 | 为什么是腐朽 |
+|---|---|
+| 体验原型（Vue 1017 行 + 静态镜像 HTML 560 行 + dev 路由） | `projection-contracts.md` 早写好了删除清单，条件是「正式页覆盖所有降级场景」。**核对过条件成立**：`formalProjection.ts` 覆盖四种结论类型，provenance 面板渲染源故障态；选型 2026-07-28 已定，企微那支按 D17 改走通道纯文本。它是纯静态假数据（0 次 API 调用），其副本 `DeveloperEvidencePanel` 已和真面板漂开 **636 行**却仍像权威——没有任何东西会发现它过期 |
+| `publicPrototype` 路由标记与其守卫分支 | 删掉原型后没有任何路由再用它，但它仍会对设置了它的路由**直接放行鉴权**。一道被拆掉引信、等着被人捡起来复用的检查，比没有更糟 |
+| `DiagnosisStateMachine.executeAction` | 自称「为将来的 controller 预留的兼容接缝」。那个 controller 早就来了（`TroubleshootingController.execute`），而且没用这个接缝——同一个 409、同一个错误码、同一句话存在于两处。**两份同样的措辞会漂**，而这句话陈述的是一条红线 |
+| `TroubleshootingPlaybookVersionService.knowledgeEvidenceGradeByRef` | 零调用零测试。置信度封顶改从调用方已持有的冻结版本上直接读成色，更近也更省 |
+| `default-sources`、`TroubleshootingDomainEvent` | 见 P2.1 段与更早提交 |
+
+`/execute` 那条红线一点没弱：端点仍答 409，场景冒烟闸门 7 在批准之后仍然核验它，
+而且 `Diagnosis` 契约本身就拒绝 `writeExecutionEnabled`——删掉端点也开不了执行。
+
+**查了但刻意没删**（免得下一个人再来一遍）：
+
+- `docs/.../console-*.html`（328K）与 `versions/`（5.8M）：`index.html` 把它们编在
+  「历史原型 · 归档」里，`console-workbench.html` 已经是一个跳转桩——**有人是刻意留的**。
+  那是历史，不是腐朽。
+- **两套源验收（V184 Guance / V192 泛化）不是重复**：前者验收「一个系统的观测资产」
+  且要求跑完整条 canonical chain（T7 那道闸门），后者验收「一个平台的适配器绑定」，
+  服务 Prometheus 与 Elasticsearch。合并等于把 T7 的证明**降级**成「适配器答话了」。
+- 生产不可达的类、无引用的前端模块、孤儿表、未被引用的资源文件：**各扫一遍，都是空的**。
+  文件级计数一度多报了几个，逐个核实后是嵌套 record、Spring 端点和文件内私有助手。
+
+**P2.3 未标定知识的置信度封顶（2026-08-03）**：投产前的最后一格。证据成色会自己推导
+——接上真源那一刻自动变真；但**知识成色不会跟着变**。8 条已审核 Playbook 的阈值是人
+手写的，从没被任何一次真实故障检验过。少了封顶，真源接通的第一天系统就会输出
+`LOCATED / HIGH`，而服务经理看到 HIGH 会当成系统有把握。
+
+这不是新发明的谨慎，是把已有的一条纪律补齐：未命中路对**模型**的建议早就封顶到
+MEDIUM 并附警告；**我们给模型的猜测封了顶，却没给一条从没被检验过的阈值封顶**——
+这个不对称没有道理。
+
+- 成色不是 `RECORDED_AGGREGATE` 时，`LOCATED` 封顶 `MEDIUM` + 一条说明理由的 warning。
+- 只压 `LOCATED`：`EXCLUDED` 说的是判据没成立，不依赖阈值标定得准不准。
+- 成色取自**冻结的那一版**，与判据规则同源；调用方自带权威时按 `UNVERIFIED` 处理（保守侧）。
+- 线上核对：`{"concl":"LOCATED","confidence":"MEDIUM","cap":["…从未用真实历史故障标定过…"]}`
+- 把封顶去掉验证过会红两条（含 `Vertical903001Test` 整条纵切）。
+
+**这条 warning 什么时候不再出现，才是知识真正成熟的信号。**
+
+### A 方案暂缓（2026-08-03）：机制已确认可复用，第一步已落地，但**刻意停在这里**
+
+> **为什么停。** 它解决的是「投产**之后**知识如何越用越准」，而现在一条真实案例都还
+> 没有。继续做那个 `Diagnosis` 1.8 → 1.9 契约升级，就是在一条**没有被任何真实失败
+> 检验过的设计分支**上新增实现与表结构——A13 明确禁止。等第一批真实案例跑出来，它的
+> 形状会由真实数据决定，而不是由现在的推测决定。已落地的 `matchedRuleId` 是纯收益
+> （引擎本来就算了却扔掉），不构成负担。
+
+**好消息：不需要造新的回放机制。** 随包目录里已经有 `recordedEvidenceSeeds` 这条路——
+`ManualPlaybookRecordedEvidenceSeed`（selectorKey + exampleCandidate + positiveCase）经
+`ManualPlaybookReplaySuiteTemplateFactory` **按判据形状自动生成反例**，正是 D19 说的
+「录制聚合正例 + 判据形状生成反例」。所以 A 方案 = 让一次已结案调查产出一份 seed，
+而不是新建一套并行的回放设施（A9）。
+
+映射几乎是一一对应的：
+
+| ReplayCase 需要 | 已结案诊断提供 |
+|---|---|
+| `exampleCandidate` | 该 selector 的冻结 Playbook |
+| `positiveCase.evidence` | 诊断实际取到的 `EvidenceResult`（queryId / status / observed） |
+| `expectedDisposition` | `MATCHED`（结论成立且人已确认、恢复已核实） |
+| `expectedRuleId` | **此前没有——引擎算出来就扔了** |
+
+**已完成（第一步）**：`PlaybookEvidenceAssessment` 记下 `matchedRuleId`。它严格与
+「这条规则确实产出了这条结论」对齐：只有 `LOCATED` 时才有值，缺必需证据降级、Playbook
+仍是草案、弃权规则匹配，三种情况一律不留名；合同本身也拒绝在非 LOCATED 上带规则 id。
+不这么钉，事后只能拿 rootCause 文本反查，而 rootCause 并不保证唯一——那是猜。
+
+**下一步需要你知道的一件事**：`matchedRuleId` 必须**持久化**才能在结案后取用，也就是
+要给 `Diagnosis` 加一个可空字段并把合同从 1.8 升到 1.9。那是持久化聚合 + 四个工厂 +
+严格校验器，改动面比一张新表大。老诊断没有这个字段，因而无法回溯成为 seed——与
+candidate v1/v2 的处理一致，是可接受的诚实代价。
+
+### 原始待拍板记录：结案候选到底该变成什么（2026-08-03）
+
+现场核对推翻了一个我先前的假设。原以为结案候选是「一次已解决故障提议的新知识」，
+所以缺的是把它投影成 Playbook。实际看下来：**12 条候选全部落在 `csdp:903001`，
+而那条 selector 早就有已审核 Playbook。** 它们记录的是「既有 Playbook 跑了、
+给出结论、人确认结论对且恢复已核实」。
+
+于是它们的价值不是产出新 Playbook，而是**给既有 Playbook 提供一份答案由世界给出、
+而非作者自撰的案例**——正是非循环的回放材料。随包回放目录固定 8 条 selector 的问题，
+本来就该由这个来解。
+
+两种形态，代价与含义不同，需要拍板：
+
+- **A. 结案案例注册为该 selector 的回放用例**（推荐）。目录从 classpath 固定变成
+  「随包 + 工作区累积」。收益直接：真实运行会自己长出回放材料，手写 Playbook 第一次
+  能被真实历史故障检验，成色也才配从 `AUTHORED_FIXTURE` 往上走。代价：新表、目录语义
+  变更，且必须守住原有不变量——**案例与期望答案都只能由服务端从已持久化的诊断推导，
+  调用方一个字也不能提供**，否则证明就循环了。
+- **B. 只做展示**：在评审面板上把「这条 Playbook 已被 N 次真实结案佐证」显示出来，
+  不进入任何闸门。代价极小，但它不改变任何判定，也解不开回放目录那道坎。
+
+我倾向 A，但它动的是 T7 相邻的证明链，且是新表，所以先停在这里等一句话。
 
 ### 本轮（2026-08-03）的位置
 
@@ -633,6 +735,30 @@ Python owner 门与 Java 运行目录新断言都先准确失败；修复后两�
 随后校验器统一拒绝任意字段中的未替换占位符，避免“结构填完但责任人与场景仍是模板文字”被放行。
 最后故意要求读取 `csdp:301002.sourceHints.hasLogSignatureHint`，旧模板因查不到字段准确失败；补入安全布尔
 投影后才恢复，避免 `A_HINTED` 在错误标识符提取为空时被误读成“无日志提示”。
+
+### 第六次同形状问题：闸门挂错了地方（2026-08-05）
+
+这一次坏的不是断言，是**断言所在的位置**。T7 交给 owner 的两组产物（录制目标队列
+`t7-target-contract-preparation.{json,md}`、owner 契约模板 `t7-owner-contract-intake*.json`）都是
+生成物，指纹由四份输入决定，其中三份在 `mateclaw-server/**` 的 resources 里。本分支把回放场景加到
+5 条（`cb5749d`）时改旧了**两组**产物，而两个 `--check` 都只挂在 smoke workflow 上。
+
+工作流的 `paths:` 过滤器**是对的**——`mateclaw-server/**` 在列，改回放套件确实会触发它。真正的缺口是
+触发条件：workflow 只在 PR 或 `dev / main / intelligent-troubleshooting / claude/*-design` 的 push 上跑，
+而改动发生在没有 PR 的会话分支上。**闸门存在、接线正确、却不在改动发生的地方**，于是产物一直陈旧，
+直到有人手工跑 `--check` 才发现第一组，第二组是被 `test_t7_target_preparation` 顺带逮到的。
+
+对策：把两个 `--check` 前移到 `scripts/troubleshooting-test.sh`，在 maven 之前跑（几百毫秒）。
+两个生成器都要跑——它们是两组独立的 committed 产物，各自有各自的 `--check`，**绿一个不代表另一个绿**，
+第一次修复只补了 owner 模板就是这么漏的。已确认全仓只有这两个 `--check` 生成器，闸门是完整的。
+
+反向证明照旧：把 `recordedSuitesSha256` 改坏后，脚本准确以退出码 3 停在 maven 之前，并指名
+`t7_target_preparation`；恢复后两份 `--check` 均通过，20 条 T7 工装测试与 818 条领域测试全绿。
+两次重新生成都只动了输入指纹（`preparationFingerprint`、`recordedSuitesSha256`），
+`counts` 与 owner 队列内容未变——即第 5 条场景没有改变 owner 要填的东西，这次陈旧纯属出处失真。
+
+留给下一次的教训：**问「这个检查跑在改动发生的地方吗」，而不是「这个检查存在吗」。**
+CI 上的绿灯只覆盖它被触发的那些路径。
 
 ---
 

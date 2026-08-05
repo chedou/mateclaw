@@ -178,7 +178,6 @@ mateclaw:
           incident_impact: [guance, recorded-replay]
           metric: [guance, recorded-replay]
           trace: [guance, recorded-replay]
-      default-sources: []
       # The synthesis preview is fixture-only until a real workspace ->
       # observability asset mapping exists. The service also hard-confines this
       # path to recorded-replay before any adapter invocation.

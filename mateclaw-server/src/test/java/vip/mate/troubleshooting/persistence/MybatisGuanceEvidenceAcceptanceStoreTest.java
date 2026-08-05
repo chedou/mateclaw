@@ -16,7 +16,6 @@ import vip.mate.troubleshooting.model.TroubleshootingGuanceEvidenceAcceptanceEnt
 import vip.mate.troubleshooting.repository.TroubleshootingGuanceEvidenceAcceptanceMapper;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -78,7 +78,17 @@ public final class KnowledgeReviewQualificationPolicy {
             // adapter ever bypasses that boundary.
             reasons.add("OUTCOME_VERIFICATION_NOT_PROJECTED");
         }
-        reasons.add("POSITIVE_REPLAY_REQUIRED");
+        // 这条**不是**「还差一次回放」。结案候选身上根本没有可回放的对象：它记录的是
+        // 一次已发生的调查（来源诊断、证据 id、被确认的根因、恢复已核实），不是一份
+        // 可执行的 Playbook——`evidenceIds` 只有 id，没有 signalKind 也没有 target，
+        // 拼不出取证计划。此前这里报 POSITIVE_REPLAY_REQUIRED，会把人送去为一个不
+        // 存在的 Playbook 建回放设施；一道指着错误对象的闸门比没有闸门更糟。
+        //
+        // 真正缺的是「把这条来源投影成可路由制品」那一步。而且线上现有的结案候选
+        // **全部落在已有已审核 Playbook 的 selector 上**：它们的价值不是产出新知识，
+        // 是给既有知识提供一份**答案由世界给出、而非作者自撰**的案例——那恰好是
+        // 非循环的回放材料。它是材料，不是待证明的对象。
+        reasons.add("NO_ROUTEABLE_PLAYBOOK_PROJECTED");
         if (candidate.ownerTeam() == null || candidate.ownerTeam().isBlank()) {
             reasons.add("OWNER_REQUIRED");
         }

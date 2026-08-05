@@ -79,7 +79,7 @@ class DefaultKnowledgeReviewSourceReaderTest {
         assertThat(source.snapshot().eligibilityReasons())
                 .containsExactly(
                         "OUTCOME_VERIFICATION_NOT_PROJECTED",
-                        "POSITIVE_REPLAY_REQUIRED",
+                        "NO_ROUTEABLE_PLAYBOOK_PROJECTED",
                         "OWNER_REQUIRED");
     }
 

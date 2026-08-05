@@ -319,12 +319,9 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 
 开发环境路由只在 Vite dev 模式存在，不影响生产构建和真实 `/troubleshooting` 权限：
 
-- 合并页（开发证据原地展开）：`.../prototype/troubleshooting?view=INLINE`
-- 分屏（业务/开发切换）：`.../prototype/troubleshooting?view=SPLIT`
-- 企微独立 UI 投影（**原型暂缓**）：`.../prototype/troubleshooting?view=WECOM`
-
-**不启服务也能演示**：`docs/intelligent-troubleshooting/experience-prototype-demo.html`
-（Vue 组件的静态镜像，双击即开；Vue 仍是实现权威，两者一并删除）。
+原型（`/prototype/troubleshooting` 的三种 view 与静态镜像 HTML）**已于 2026-08-03
+删除**：选型早已落定并进入正式工作台，正式页覆盖了四种结局与证据源故障态。演示走真实
+`/troubleshooting`。
 
 **已选定（2026-07-28）**：集中兵力做**服务经理摘要 + 开发证据台**，业务摘要默认展开、
 开发证据默认折叠；企微独立 UI 投影原型保留结构但不再投入。这不表示通道 P3 暂缓：
@@ -348,12 +345,9 @@ P3 T9 与 T10 纯文本闭环已落地，含 leader 切换后的 DB 路由回源
 只演 happy path 的原型没有区分度——**「查不出来」才是这套系统最常产出的结局**，
 三种降级结局（弃权 / 排除 / 源故障）现在都能在同一版式下看到。
 
-原型文件（评审完与静态镜像一并删除）：
-
-- `mateclaw-ui/src/views/Troubleshooting/prototype/TroubleshootingExperiencePrototype.vue`
-- `mateclaw-ui/src/views/Troubleshooting/prototype/DeveloperEvidencePanel.vue`
-- `/prototype/troubleshooting` 是 dev-only publicPrototype 路由（`import.meta.env.DEV` 条件注册），
-  生产构建不含该分支；正式 `/troubleshooting` 鉴权和 capability gate 未放宽。
+原型文件已于 2026-08-03 全部删除（含 `publicPrototype` 那个鉴权旁路标记——删掉原型后
+没有任何路由再使用它，但它仍会对设置了它的路由直接放行）。正式 `/troubleshooting` 的
+鉴权与 capability gate 自始未放宽。
 
 ## 6. P1 已收口，下一门是 P2 真实证据
 

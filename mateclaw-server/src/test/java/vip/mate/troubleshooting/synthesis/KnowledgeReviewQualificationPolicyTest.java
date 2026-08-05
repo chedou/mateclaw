@@ -52,7 +52,7 @@ class KnowledgeReviewQualificationPolicyTest {
         assertThat(source.snapshot().approvalEligibility()).isEqualTo("NOT_ELIGIBLE");
         assertThat(source.snapshot().eligibilityReasons()).containsExactly(
                 "OUTCOME_VERIFICATION_NOT_PROJECTED",
-                "POSITIVE_REPLAY_REQUIRED",
+                "NO_ROUTEABLE_PLAYBOOK_PROJECTED",
                 "OWNER_REQUIRED");
     }
 
@@ -298,7 +298,8 @@ class KnowledgeReviewQualificationPolicyTest {
 
         assertThat(source.snapshot().eligibilityReasons())
                 .doesNotContain("OUTCOME_VERIFICATION_NOT_PROJECTED")
-                .containsExactly("POSITIVE_REPLAY_REQUIRED");
+                .as("结案候选缺的不是一次回放，是把它投影成可路由制品那一步")
+                .containsExactly("NO_ROUTEABLE_PLAYBOOK_PROJECTED");
     }
 
     /**

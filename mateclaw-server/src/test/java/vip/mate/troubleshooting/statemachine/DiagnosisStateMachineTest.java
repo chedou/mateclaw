@@ -298,16 +298,6 @@ class DiagnosisStateMachineTest {
     }
 
     @Test
-    void executeEndpointContractIsAlwaysAConflict() {
-        MateClawException error = assertThrows(
-                MateClawException.class,
-                () -> stateMachine.executeAction(readyDiagnosis(), "restart-mongodb", "dba"));
-
-        assertEquals(409, error.getCode());
-        assertTrue(error.getMessage().contains("not connected"));
-    }
-
-    @Test
     void firstHumanConfirmationRecordsHandoffAndAdoptionCostExactlyOnce() {
         Instant reportedAt = Instant.parse("2026-07-25T01:00:00Z");
         Instant readyAt = Instant.parse("2026-07-25T01:00:10Z");

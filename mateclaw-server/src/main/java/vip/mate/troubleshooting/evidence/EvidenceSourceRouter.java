@@ -193,27 +193,35 @@ public final class EvidenceSourceRouter {
         return deploymentRouteFor(system, signalKind);
     }
 
+    /**
+     * 部署级路由。没有这一格就是没有——**不再有全局默认源兜底**。
+     *
+     * <p>那一层（{@code default-sources}）从没被设成过非空值，却是最后兜底，而且
+     * system 命中、signalKind 未命中时也会落到它身上：一旦有人填了值，某个已知系统
+     * 里所有未声明的信号会**静默**打到那些源上。取证是 fail-closed 的，路由必须显式，
+     * 一个全局默认正是这条原则的反面。行为不变（它一直是空的），少掉的是那个洞。</p>
+     */
     private List<String> deploymentRouteFor(String system, String signalKind) {
         Map<String, Map<String, List<String>>> routes = properties.getRoutes();
-        if (routes != null) {
-            for (Map.Entry<String, Map<String, List<String>>> systemRoute : routes.entrySet()) {
-                if (!normalize(systemRoute.getKey()).equals(normalize(system))) {
-                    continue;
-                }
-                Map<String, List<String>> signalRoutes = systemRoute.getValue();
-                if (signalRoutes == null) {
-                    break;
-                }
-                for (Map.Entry<String, List<String>> signalRoute : signalRoutes.entrySet()) {
-                    if (normalize(signalRoute.getKey()).equals(normalize(signalKind))) {
-                        return signalRoute.getValue() == null ? List.of() : signalRoute.getValue();
-                    }
-                }
-                break;
-            }
+        if (routes == null) {
+            return List.of();
         }
-        List<String> defaults = properties.getDefaultSources();
-        return defaults == null ? List.of() : defaults;
+        for (Map.Entry<String, Map<String, List<String>>> systemRoute : routes.entrySet()) {
+            if (!normalize(systemRoute.getKey()).equals(normalize(system))) {
+                continue;
+            }
+            Map<String, List<String>> signalRoutes = systemRoute.getValue();
+            if (signalRoutes == null) {
+                return List.of();
+            }
+            for (Map.Entry<String, List<String>> signalRoute : signalRoutes.entrySet()) {
+                if (normalize(signalRoute.getKey()).equals(normalize(signalKind))) {
+                    return signalRoute.getValue() == null ? List.of() : signalRoute.getValue();
+                }
+            }
+            return List.of();
+        }
+        return List.of();
     }
 
     private boolean supports(EvidenceSourceAdapter adapter, String signalKind) {

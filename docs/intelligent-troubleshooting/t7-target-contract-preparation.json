@@ -12,7 +12,7 @@
   "inputs": {
     "sopKbSha256": "fbd3f64fcc1406490ca6f9abd6506fe7ea0cefcb8b3f28b69ef436bed3a5d55f",
     "selectorInventorySha256": "5e2b42baed0e614fb3f9b90aac20237102c120a86c08eda62463641b56a5283e",
-    "recordedSuitesSha256": "3ef2f6dfd5ee76a5df5c430442a1c78d0e45a09d22b4cc4717444098a31274de",
+    "recordedSuitesSha256": "0382e3a5715612367b3daa8607764962c452ccd417247b3568e4d8ec911ec085",
     "recordingTargetCatalogSha256": "855be00686e58a2ae3b3c1276177cd78eec222188877cf193fc6ceac31210075"
   },
   "counts": {

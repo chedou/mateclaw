@@ -397,17 +397,6 @@ public final class DiagnosisStateMachine {
                 timeline);
     }
 
-    /** Deliberate compatibility seam for a future controller: always maps to HTTP 409. */
-    public void executeAction(Diagnosis diagnosis, String actionId, String actor) {
-        requireDiagnosis(diagnosis);
-        required(actionId, "actionId");
-        requireActor(actor);
-        throw new MateClawException(
-                "err.troubleshooting.production_write_disabled",
-                409,
-                "production write executor is not connected; execute externally and record the outcome");
-    }
-
     private void requireSuccessfulVerifiedOutcomes(Diagnosis diagnosis) {
         List<String> approvedIds = diagnosis.recommendedActions().stream()
                 .filter(action -> action.actionType() == ActionType.MANUAL_WRITE)
