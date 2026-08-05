@@ -110,15 +110,6 @@ public class TroubleshootingPlaybookVersionService {
         return Optional.of(read(entity));
     }
 
-    /** Conservative projection used by a Diagnosis frozen to one exact version. */
-    public KnowledgeEvidenceGrade knowledgeEvidenceGradeByRef(
-            long workspaceId,
-            PlaybookVersionRef ref) {
-        return findByRef(workspaceId, ref)
-                .map(ApprovedPlaybookVersion::knowledgeEvidenceGrade)
-                .orElse(KnowledgeEvidenceGrade.UNVERIFIED);
-    }
-
     /**
      * Locks the exact active-approved authority for a persisted Diagnosis.
      * The caller must keep a surrounding transaction open through insertion.
