@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 import vip.mate.troubleshooting.synthesis.KnowledgeOrigin;
@@ -17,7 +16,7 @@ import vip.mate.troubleshooting.synthesis.ManualPlaybookReplayService;
 import java.util.List;
 
 /**
- * Seeds runnable demo scenarios so the system has a path a person can walk.
+ * Test fixture that seeds runnable demo scenarios for HTTP acceptance checks.
  *
  * <p><b>Why this exists.</b> Every gate in this domain is fail-closed on
  * purpose, and each one is individually right. Their conjunction, however, was
@@ -50,7 +49,6 @@ import java.util.List;
  * fixture and keeps both the fixed 903001 scenario and the recorded IM1010
  * scenario on one contract path.</p>
  */
-@Component
 @ConditionalOnProperty(prefix = "mateclaw.troubleshooting.demo", name = "enabled",
         havingValue = "true")
 public class TroubleshootingDemoSeeder implements ApplicationRunner {

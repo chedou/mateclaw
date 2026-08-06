@@ -9,6 +9,19 @@ SMOKE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-smoke.sh"
 MISS_PATH_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-miss-path-smoke.sh"
 SCENARIO_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-scenario-smoke.sh"
 EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/troubleshooting-scenario-evidence-smoke.sh"
+DEMO_FIXTURE_PACKAGER="${ROOT_DIR}/scripts/package-troubleshooting-demo-fixture.sh"
+MAIN_DEMO_SEEDER="${ROOT_DIR}/mateclaw-server/src/main/java/vip/mate/troubleshooting/demo/TroubleshootingDemoSeeder.java"
+MAIN_DEMO_PROPERTIES="${ROOT_DIR}/mateclaw-server/src/main/java/vip/mate/troubleshooting/demo/TroubleshootingDemoProperties.java"
+MAIN_RECORDED_INDUCER="${ROOT_DIR}/mateclaw-server/src/main/java/vip/mate/troubleshooting/synthesis/RecordedPlaybookDraftInducer.java"
+MAIN_DEMO_PROFILE="${ROOT_DIR}/mateclaw-server/src/main/resources/application-troubleshooting-demo.yml"
+MAIN_RECORDED_PROPOSALS="${ROOT_DIR}/mateclaw-server/src/main/resources/troubleshooting/synthesis/recorded-draft-proposals.json"
+TEST_DEMO_SEEDER="${ROOT_DIR}/mateclaw-server/src/test/java/vip/mate/troubleshooting/demo/TroubleshootingDemoSeeder.java"
+TEST_DEMO_PROPERTIES="${ROOT_DIR}/mateclaw-server/src/test/java/vip/mate/troubleshooting/demo/TroubleshootingDemoProperties.java"
+TEST_DEMO_AUTO_CONFIGURATION="${ROOT_DIR}/mateclaw-server/src/test/java/vip/mate/troubleshooting/demo/TroubleshootingDemoFixtureAutoConfiguration.java"
+TEST_RECORDED_INDUCER="${ROOT_DIR}/mateclaw-server/src/test/java/vip/mate/troubleshooting/synthesis/RecordedPlaybookDraftInducer.java"
+TEST_DEMO_PROFILE="${ROOT_DIR}/mateclaw-server/src/test/resources/application-troubleshooting-demo.yml"
+TEST_DEMO_AUTO_IMPORTS="${ROOT_DIR}/mateclaw-server/src/test/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
+TEST_RECORDED_PROPOSALS="${ROOT_DIR}/mateclaw-server/src/test/resources/troubleshooting/synthesis/recorded-draft-proposals.json"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -78,6 +91,10 @@ assert_contains "-pl mateclaw-plugin-api"
 assert_contains "-am -DskipTests install"
 assert_contains "spring-boot:run"
 assert_contains "dev,troubleshooting-demo"
+assert_contains "./scripts/package-troubleshooting-demo-fixture.sh"
+assert_contains "-Dspring-boot.run.additional-classpath-elements="
+assert_not_contains 'additional-classpath-elements="${GITHUB_WORKSPACE}/mateclaw-server/target/test-classes"'
+assert_not_contains "-Dspring-boot.run.useTestClasspath=true"
 assert_contains "{1..60}"
 assert_contains "sleep 2"
 assert_contains "/sops/csdp/IM1010"
@@ -91,6 +108,40 @@ assert_contains "if: always()"
 assert_contains "actions/upload-artifact@v7"
 assert_contains "kill"
 assert_order "-pl mateclaw-plugin-api" "spring-boot:run"
+assert_order "./scripts/package-troubleshooting-demo-fixture.sh" "spring-boot:run"
+
+# Demo fixture machinery belongs to the HTTP smoke harness, not the production
+# application artifact. The workflow must package only three fixture component
+# classes, one auto-configuration entry and three resources; adding all
+# target/test-classes would expose unrelated test code to component scanning.
+[[ -x "${DEMO_FIXTURE_PACKAGER}" ]] \
+  || fail "executable demo fixture packager is required"
+grep -Fq -- "troubleshooting-demo-fixture.jar" "${DEMO_FIXTURE_PACKAGER}" \
+  || fail "demo fixture packager must use the dedicated fixture jar"
+[[ ! -e "${MAIN_DEMO_SEEDER}" ]] \
+  || fail "demo seeder must not ship in src/main"
+[[ ! -e "${MAIN_DEMO_PROPERTIES}" ]] \
+  || fail "demo properties must not ship in src/main"
+[[ ! -e "${MAIN_RECORDED_INDUCER}" ]] \
+  || fail "recorded model inducer must not ship in src/main"
+[[ ! -e "${MAIN_DEMO_PROFILE}" ]] \
+  || fail "troubleshooting-demo profile must not ship in src/main resources"
+[[ ! -e "${MAIN_RECORDED_PROPOSALS}" ]] \
+  || fail "recorded model proposal must not ship in src/main resources"
+[[ -f "${TEST_DEMO_SEEDER}" ]] \
+  || fail "test-only demo seeder is required by the HTTP smoke"
+[[ -f "${TEST_DEMO_PROPERTIES}" ]] \
+  || fail "test-only demo properties are required by the HTTP smoke"
+[[ -f "${TEST_DEMO_AUTO_CONFIGURATION}" ]] \
+  || fail "test-only demo auto-configuration is required by the HTTP smoke"
+[[ -f "${TEST_RECORDED_INDUCER}" ]] \
+  || fail "test-only recorded inducer is required by the learning-loop smoke"
+[[ -f "${TEST_DEMO_PROFILE}" ]] \
+  || fail "test-only troubleshooting-demo profile is required by the HTTP smoke"
+[[ -f "${TEST_DEMO_AUTO_IMPORTS}" ]] \
+  || fail "test-only demo auto-configuration import is required by the HTTP smoke"
+[[ -f "${TEST_RECORDED_PROPOSALS}" ]] \
+  || fail "test-only recorded proposal is required by the learning-loop smoke"
 
 # The owner preparation queue is committed evidence, not a hand-maintained
 # spreadsheet.  Any change to L0, the frozen selector inventory, recorded

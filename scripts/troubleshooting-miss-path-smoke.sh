@@ -151,7 +151,7 @@ JSON
 preview="$(call POST "/sops/synthesis/preview" "${preview_body}")"
 case "$(http_code)" in
   000) gate_failed "服务可达 + 身份" "连不上 ${BASE_URL}" \
-        "先启动应用：mvn -pl mateclaw-server -DskipTests spring-boot:run -Dspring-boot.run.profiles=dev,troubleshooting-demo" ;;
+        "先 test-compile 并运行 package-troubleshooting-demo-fixture.sh，再把专用 fixture Jar 加入 additional-classpath-elements" ;;
   401) gate_failed "服务可达 + 身份" "HTTP 401，凭据被拒绝" \
         "设置 MATECLAW_TOKEN 或 MATECLAW_USERNAME/PASSWORD" ;;
   403) gate_failed "服务可达 + 身份" "HTTP 403：synthesis 端点要求 admin，不是 member" \
@@ -197,7 +197,7 @@ case "${stage}" in
       "弃权本身是合法输出，但 demo 的录制证据应当足以支撑一条草稿；核对录制响应与回放样本是否漂移" ;;
   MODEL_REJECTED) gate_failed "模型可用" \
       "模型不可用或响应不合法：${errors}" \
-      "demo 应当使用服务端录制响应（provider=recorded）；确认 troubleshooting-demo profile 已启用" ;;
+      "demo 应当使用专用 fixture Jar 的录制响应（provider=recorded）；确认 fixture Jar 与 troubleshooting-demo profile 均已启用" ;;
   VALIDATION_REJECTED) gate_failed "草稿通过确定性校验" \
       "确定性校验拒绝了草稿：${errors}" \
       "这是校验在做它该做的事。核对录制响应是否包含 DQL、原始日志、生产写动作或伪造引用" ;;

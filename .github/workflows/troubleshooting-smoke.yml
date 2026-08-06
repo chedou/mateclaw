@@ -113,9 +113,14 @@ jobs:
         shell: bash
         run: |
           server_log="${RUNNER_TEMP}/troubleshooting-server.log"
+          mvn --batch-mode --no-transfer-progress \
+            -pl mateclaw-server -DskipTests test-compile
+          fixture_jar="$(./scripts/package-troubleshooting-demo-fixture.sh)"
           nohup mvn --batch-mode --no-transfer-progress \
-            -pl mateclaw-server -DskipTests spring-boot:run \
+            -pl mateclaw-server -DskipTests \
+            -Dspring-boot.run.additional-classpath-elements="${fixture_jar}" \
             -Dspring-boot.run.profiles=dev,troubleshooting-demo \
+            spring-boot:run \
             >"${server_log}" 2>&1 &
           echo "TROUBLESHOOTING_SERVER_PID=$!" >> "${GITHUB_ENV}"
           echo "TROUBLESHOOTING_SERVER_LOG=${server_log}" >> "${GITHUB_ENV}"

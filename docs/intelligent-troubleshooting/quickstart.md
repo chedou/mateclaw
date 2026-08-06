@@ -19,8 +19,13 @@
 # 终端 A：先把父 POM 与 plugin API 装入本地库，再带 demo profile 启动
 mvn -pl mateclaw-plugin-api -am -DskipTests install
 
-mvn -pl mateclaw-server -DskipTests spring-boot:run \
-    -Dspring-boot.run.profiles=dev,troubleshooting-demo
+mvn -pl mateclaw-server -DskipTests test-compile
+fixture_jar="$(./scripts/package-troubleshooting-demo-fixture.sh)"
+
+mvn -pl mateclaw-server -DskipTests \
+    -Dspring-boot.run.additional-classpath-elements="${fixture_jar}" \
+    -Dspring-boot.run.profiles=dev,troubleshooting-demo \
+    spring-boot:run
 
 # 终端 B：走一次完整路径并断言结果
 MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
@@ -164,7 +169,13 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 引用必须**恰好等于**非 MISSING 的取证，空清单直接判失败。
 
 
-## 2. `troubleshooting-demo` profile 做了什么（以及没做什么）
+## 2. 测试专用的 `troubleshooting-demo` profile 做了什么（以及没做什么）
+
+这套 Seeder、录制模型响应和 profile 已全部移入 `src/test`，**不会进入生产 Jar**。
+本地验收与 CI 会把 3 个夹具组件、1 个自动配置入口和 3 个资源打成专用
+`troubleshooting-demo-fixture.jar` 后加载；
+不会把整个 `target/test-classes` 暴露给组件扫描。
+正式运行时仍只保留 Recorded Replay 适配器本身，不会自动种数据，也不会替代真实模型。
 
 | 做了 | 没做 |
 |---|---|
@@ -236,7 +247,7 @@ MATECLAW_USERNAME=admin MATECLAW_PASSWORD=admin123 \
 
 1. 配置 Java 21，以 Maven 标准配置和 `-am` 把父 POM 与
    `mateclaw-plugin-api` 一并安装进本地 Maven 仓库；
-2. 用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
+2. 只打包并加载专用 Demo fixture Jar，用 H2 默认库和 `dev,troubleshooting-demo` 启动服务，最多等待 120 秒，直到
    `csdp:IM1010` 已通过真实 demo 晋升链成为 approved Playbook；
 3. 运行同一份 `scripts/troubleshooting-smoke.sh`（命中路八道闸门）；
 4. 再运行 `scripts/troubleshooting-miss-path-smoke.sh`（学习环九道闸门）。
