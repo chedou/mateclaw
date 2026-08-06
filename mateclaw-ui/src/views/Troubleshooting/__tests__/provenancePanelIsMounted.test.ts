@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import developerEvidencePanelSource from '../DeveloperEvidencePanel.vue?raw'
+import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
 
 /**
  * 「组件写了，但没有挂到任何一个真实屏幕上」是一类后端完全看不见的缺陷。
@@ -18,24 +18,15 @@ describe('the investigation provenance panel is actually on a screen', () => {
   const CHILD = 'InvestigationProvenancePanel'
 
   it('is imported and placed by the developer evidence panel', () => {
-    const source = read('../DeveloperEvidencePanel.vue')
-
-    expect(source).toContain(`import ${CHILD} from './${CHILD}.vue'`)
-    expect(source).toMatch(new RegExp(`<${CHILD}[\\s>]`))
+    expect(developerEvidencePanelSource)
+      .toContain(`import ${CHILD} from './${CHILD}.vue'`)
+    expect(developerEvidencePanelSource).toMatch(new RegExp(`<${CHILD}[\\s>]`))
   })
 
   /** 父组件自己也必须挂在正式工作台上，否则这条链还是断的。 */
   it('reaches the formal workbench through the developer evidence panel', () => {
-    const workbench = read('../FormalWorkbench.vue')
-
-    expect(workbench).toContain("import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'")
-    expect(workbench).toMatch(/<DeveloperEvidencePanel[\s>]/)
+    expect(formalWorkbenchSource)
+      .toContain("import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'")
+    expect(formalWorkbenchSource).toMatch(/<DeveloperEvidencePanel[\s>]/)
   })
-
-  function read(relative: string): string {
-    return readFileSync(
-      fileURLToPath(new URL(relative, import.meta.url)),
-      'utf8',
-    )
-  }
 })

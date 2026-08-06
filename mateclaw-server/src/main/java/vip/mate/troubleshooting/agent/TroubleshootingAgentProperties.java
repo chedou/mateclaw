@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,9 @@ public class TroubleshootingAgentProperties {
 
     /** Hard character budget for the complete initial model prompt. */
     private int maxPromptChars = 32_000;
+
+    /** Wall-clock budget for one synchronous miss-path investigation. */
+    private Duration triageTimeout = Duration.ofSeconds(20);
 
     /**
      * Server-owned, approved scenario plans visible to the miss-path Agent.

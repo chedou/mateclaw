@@ -176,6 +176,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
     if (searchKeyword.value) {
       const kw = searchKeyword.value.toLowerCase()
       result = result.filter(r =>
+        r.diagnosisId.toLowerCase().includes(kw) ||
         r.service?.toLowerCase().includes(kw) ||
         r.errorCode?.toLowerCase().includes(kw) ||
         r.caseId?.toLowerCase().includes(kw) ||

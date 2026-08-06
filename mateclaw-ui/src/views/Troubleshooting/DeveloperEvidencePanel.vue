@@ -324,7 +324,7 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 
 <style scoped>
 /* ── Panel shell ── */
-.developer-fold { max-width:1320px; margin:0 auto; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); margin-top:14px; overflow:hidden; }
+.developer-fold { width:100%; max-width:none; margin:14px 0 0; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); overflow:hidden; }
 
 /* ── Summary / fold bar ── */
 .developer-fold>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; list-style:none; cursor:pointer; user-select:none; transition:background .15s; }

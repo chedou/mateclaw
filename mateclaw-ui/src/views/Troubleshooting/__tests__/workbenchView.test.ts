@@ -108,6 +108,7 @@ describe('troubleshooting workbench view mode', () => {
       evidenceCatalog: '取证查询目录',
       noCodePreview: '无码场景预演',
       guanceOnboarding: '观测云接入与验收',
+      guanceSourceStatus: '观测云真实数据源状态',
       deploymentTopology: '部署拓扑拨测分析',
       evaluation: '诊断效果评估',
       caseKnowledge: '历史案例入库',

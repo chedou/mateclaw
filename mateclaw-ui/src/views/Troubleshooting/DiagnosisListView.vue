@@ -63,7 +63,7 @@
       </el-select>
       <el-input
         v-model="store.searchKeyword"
-        placeholder="搜索服务、错误码、Case..."
+        placeholder="搜索排障单号、服务、错误码、Case..."
         clearable
         :prefix-icon="Search"
         style="max-width: 280px;"
@@ -92,6 +92,17 @@
         <el-table-column type="selection" width="40" />
         <el-table-column label="更新时间" width="170" sortable="custom">
           <template #default="{ row }"><time>{{ formatWorkbenchTime(row.updateTime) }}</time></template>
+        </el-table-column>
+        <el-table-column label="排障单号" min-width="220">
+          <template #default="{ row }">
+            <button
+              class="diagnosis-ticket-link"
+              type="button"
+              :title="row.diagnosisId"
+              :aria-label="`打开排障单 ${row.diagnosisId}`"
+              @click.stop="openDiagnosis(row)"
+            >{{ row.diagnosisId }}</button>
+          </template>
         </el-table-column>
         <el-table-column label="系统" width="100">
           <template #default="{ row }"><code>{{ row.system }}</code></template>
@@ -229,8 +240,8 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 </script>
 
 <style scoped>
-.traditional-list-page { min-height:100%; padding:30px clamp(20px,4vw,56px) 22px; background:var(--mc-bg-elevated); }
-.list-page-head,.list-page-toolbar,.traditional-table-card,.list-page-foot { width:min(1440px,100%); margin-right:auto; margin-left:auto; }
+.traditional-list-page { width:100%; min-width:0; min-height:100%; padding:30px clamp(20px,4vw,56px) 22px; background:var(--mc-bg-elevated); }
+.list-page-head,.list-page-toolbar,.traditional-table-card,.list-page-foot { width:100%; margin-right:0; margin-left:0; }
 .list-page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:28px; }
 .eyebrow { display:block; color:var(--mc-primary); font-size:10px; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
 .list-page-head h1 { margin:6px 0 4px; font-size:28px; letter-spacing:-.035em; }
@@ -240,7 +251,7 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .list-page-toolbar .el-select { width:190px; }
 .list-page-toolbar>span { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
 .list-page-toolbar>.el-button { margin-left:auto; }
-.batch-action-bar { display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:12px; width:min(1440px,100%); margin-right:auto; margin-left:auto; background:var(--mc-status-info-bg); border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); font-size:var(--mc-text-sm); }
+.batch-action-bar { display:flex; align-items:center; gap:12px; width:100%; padding:10px 14px; margin-right:0; margin-bottom:12px; margin-left:0; background:var(--mc-status-info-bg); border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); font-size:var(--mc-text-sm); }
 .traditional-table-card { min-height:320px; overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); }
 .diagnosis-table { width:100%; }
 .diagnosis-table :deep(.el-table__header th) { height:48px; color:var(--mc-text-tertiary); background:var(--mc-bg-elevated); font-size:var(--mc-text-xs); font-weight:700; }
@@ -248,6 +259,9 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .diagnosis-table :deep(.el-table__row:hover>td) { background:var(--mc-bg-muted)!important; }
 .diagnosis-table code { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; }
 .diagnosis-table time { color:var(--mc-text-tertiary); font:var(--mc-text-xs) var(--mc-mono,monospace); }
+.diagnosis-ticket-link { display:block; max-width:100%; overflow:hidden; padding:0; border:0; color:var(--mc-primary); background:none; font:700 var(--mc-text-xs) var(--mc-mono,monospace); text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.diagnosis-ticket-link:hover { text-decoration:underline; text-underline-offset:3px; }
+.diagnosis-ticket-link:focus-visible { border-radius:2px; outline:2px solid var(--mc-primary); outline-offset:3px; }
 .route-semantics { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
 .route-semantics.legacy { color:var(--mc-warning); }
 .table-status { display:inline-flex; align-items:center; padding:3px 8px; border-radius:12px; background:var(--mc-bg-muted); font-size:10px; font-weight:700; }

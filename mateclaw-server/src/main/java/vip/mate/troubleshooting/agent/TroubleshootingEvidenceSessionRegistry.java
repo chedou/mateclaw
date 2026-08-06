@@ -101,6 +101,8 @@ public final class TroubleshootingEvidenceSessionRegistry {
             } catch (RuntimeException rejected) {
                 state.markCoreFailure("online evidence plan request was rejected");
                 throw rejected;
+            } finally {
+                state.publishStableSnapshot();
             }
         }
     }
@@ -113,6 +115,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
         SessionState state = requireSession(conversationId, workspaceId);
         synchronized (state) {
             state.markCoreFailure("online evidence tool request was rejected");
+            state.publishStableSnapshot();
         }
     }
 
@@ -212,6 +215,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
         private final LinkedHashSet<String> toolCollectedQueryIds = new LinkedHashSet<>();
         private int requestCount;
         private String coreEvidenceFailure;
+        private volatile SessionSnapshot stableSnapshot;
 
         private SessionState(
                 long workspaceId,
@@ -227,15 +231,18 @@ public final class TroubleshootingEvidenceSessionRegistry {
                             "duplicate evidence queryId: " + queryId);
                 }
             }
+            publishStableSnapshot();
         }
 
         private SessionSnapshot snapshot() {
-            synchronized (this) {
-                return new SessionSnapshot(
-                        List.copyOf(evidence.values()),
-                        Set.copyOf(toolCollectedQueryIds),
-                        coreEvidenceFailure);
-            }
+            return stableSnapshot;
+        }
+
+        private void publishStableSnapshot() {
+            stableSnapshot = new SessionSnapshot(
+                    List.copyOf(evidence.values()),
+                    Set.copyOf(toolCollectedQueryIds),
+                    coreEvidenceFailure);
         }
 
         private void markCoreFailure(String reason) {
