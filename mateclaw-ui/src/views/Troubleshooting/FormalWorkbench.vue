@@ -136,286 +136,46 @@
       @select="startTroubleshootingScenario"
     />
 
-    <el-dialog
+    <CaseKnowledgeImportDialog
       v-model="caseKnowledgeImportOpen"
-      :title="TROUBLESHOOTING_UI_LABELS.caseKnowledge"
-      width="min(680px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        把已有排障单确定性转换为脱敏案例快照，写入现有 Wiki 知识库。未闭环案例只标记为“调查记录”，不作为根因依据。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="importHistoricalCases">
-        <el-form-item label="目标知识库" required>
-          <el-select
-            v-model="caseKnowledgeImportForm.knowledgeBaseId"
-            :loading="caseKnowledgeBasesLoading"
-            filterable
-            placeholder="选择当前工作区的知识库"
-            style="width:100%"
-          >
-            <el-option
-              v-for="kb in caseKnowledgeBases"
-              :key="String(kb.id)"
-              :label="`${kb.name} · ${kb.pageCount ?? 0} 页 / ${kb.rawCount ?? 0} 份素材`"
-              :value="String(kb.id)"
-              :disabled="kb.status !== 'active'"
-            />
-          </el-select>
-          <p v-if="!caseKnowledgeBasesLoading && !caseKnowledgeBases.length" class="form-hint">
-            当前工作区还没有知识库，请先到 Wiki 新建一个。
-          </p>
-        </el-form-item>
-        <el-form-item label="最多导入条数">
-          <el-input-number
-            v-model="caseKnowledgeImportForm.limit"
-            :min="1"
-            :max="MAX_CASE_KNOWLEDGE_IMPORT_LIMIT"
-            :step="10"
-          />
-          <p class="form-hint">从最新排障单开始；重复执行会复用同一版本的案例页面和原始素材。</p>
-        </el-form-item>
-      </el-form>
+      v-model:form="caseKnowledgeImportForm"
+      :knowledge-bases="caseKnowledgeBases"
+      :knowledge-bases-loading="caseKnowledgeBasesLoading"
+      :result="caseKnowledgeImportResult"
+      :vector-status="caseKnowledgeVectorStatus"
+      :loading="caseKnowledgeImportLoading"
+      :can-submit="canSubmitCaseKnowledgeImport"
+      @manage-wiki="router.push('/wiki')"
+      @submit="importHistoricalCases"
+    />
 
-      <div v-if="caseKnowledgeImportResult" class="case-knowledge-result">
-        <b>{{ caseKnowledgeImportSummary(caseKnowledgeImportResult) }}</b>
-        <p :class="caseKnowledgeVectorStatus.tone">
-          {{ caseKnowledgeVectorStatus.text }}
-        </p>
-        <small>
-          入库内容不包含原始日志、DQL、观测载荷或凭据；语义检索只对“向量已就绪”的案例生效。
-        </small>
-      </div>
-
-      <template #footer>
-        <el-button text @click="router.push('/wiki')">管理 Wiki 知识库</el-button>
-        <el-button @click="caseKnowledgeImportOpen = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :loading="caseKnowledgeImportLoading"
-          :disabled="!canSubmitCaseKnowledgeImport"
-          @click="importHistoricalCases"
-        >导入历史案例</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
+    <IncidentReportDialog
       v-model="incidentReportOpen"
-      :title="TROUBLESHOOTING_UI_LABELS.incident"
-      width="min(620px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        该入口调用正式 Incident API 并真实创建 Diagnosis 记录；只提交现象和标识符，不接收原始日志、DQL、凭据、影响人数或调用方证据，也不会执行生产变更。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="reportIncident">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统" required>
-            <el-input v-model="incidentReportForm.system" maxlength="128" placeholder="例如 CSDP" />
-          </el-form-item>
-          <el-form-item label="故障服务" required>
-            <el-input v-model="incidentReportForm.service" maxlength="128" placeholder="例如 csdp-session-service" />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="incidentReportForm.severity" style="width: 100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="错误码（可选）">
-            <el-input v-model="incidentReportForm.errorCode" maxlength="128" placeholder="例如 903001" />
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="incidentReportForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="描述用户可见现象；不要粘贴原始日志或密钥"
-          />
-        </el-form-item>
-        <el-form-item label="Trace / PS 线索（可选）">
-          <el-input v-model="incidentReportForm.traceId" maxlength="128" placeholder="只填写安全标识符，不粘贴链路正文" />
-        </el-form-item>
-        <div class="incident-route-preview" :class="incidentRoutePreview.tone.toLowerCase()">
-          <span>预期调查路径</span>
-          <b>{{ incidentRoutePreview.title }}</b>
-          <p>{{ incidentRoutePreview.detail }}</p>
-        </div>
-        <el-checkbox v-model="incidentReportForm.rehearsal" class="incident-rehearsal">
-          演练记录（推荐；不参与五分钟生产事件去重）
-        </el-checkbox>
-        <p class="form-hint">演练记录也会进入队列并明确标记；关闭演练标记后按正式事件启用五分钟幂等。两种模式都只读取证，生产处置仍由人工完成。</p>
-      </el-form>
-      <template #footer>
-        <el-button @click="incidentReportOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="incidentReportLoading"
-          :disabled="!canSubmitIncidentReport"
-          @click="reportIncident"
-        >创建 Diagnosis</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="incidentReportForm"
+      :route-preview="incidentRoutePreview"
+      :loading="incidentReportLoading"
+      :can-submit="canSubmitIncidentReport"
+      @submit="reportIncident"
+    />
 
-    <el-dialog
+    <MessageSendScenarioDialog
       v-model="messageSendScenarioOpen"
-      title="创建“会话消息发送失败”排障单"
-      width="min(640px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        这是当前优先打通的单场景竖线。创建时只锁定排查指南，不会直接给出根因；进入详情后由你显式开始三次只读取证。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="createMessageSendScenario">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统">
-            <el-input v-model="messageSendScenarioForm.system" disabled />
-          </el-form-item>
-          <el-form-item label="故障服务">
-            <el-input v-model="messageSendScenarioForm.service" disabled />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="messageSendScenarioForm.severity" style="width:100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Trace / PS 线索（可选）">
-            <el-input
-              v-model="messageSendScenarioForm.traceId"
-              maxlength="128"
-              placeholder="仅填写安全标识符"
-            />
-          </el-form-item>
-          <el-form-item label="故障发生时间（可选）">
-            <el-date-picker
-              v-model="messageSendScenarioForm.occurredAt"
-              type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ssZ"
-              placeholder="不选则取当前时间"
-              clearable
-              style="width:100%"
-            />
-            <p class="form-hint">真实 Guance 查询会围绕这个时间读取 Playbook 规定的窗口；不选择时由服务端取当前时间。</p>
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="messageSendScenarioForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="只描述用户可见现象，不粘贴日志、DQL 或凭据"
-          />
-        </el-form-item>
-        <el-form-item label="影响对象（可选）">
-          <el-input
-            v-model="messageSendScenarioForm.customerRef"
-            maxlength="500"
-            placeholder="例如：马来区域客户；不填人数或原始名单"
-          />
-        </el-form-item>
-        <div class="incident-route-preview scenario">
-          <span>已锁定排查指南</span>
-          <b>{{ MESSAGE_SEND_SCENARIO_SELECTOR }}</b>
-          <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。浏览器不能指定查询或判据。</p>
-        </div>
-        <el-checkbox v-model="messageSendScenarioForm.rehearsal" class="incident-rehearsal">
-          演练记录（仅影响事件去重，不决定证据来源）
-        </el-checkbox>
-        <p class="form-hint">证据来源由工作区的服务端绑定决定，页面不能强制选择 Guance 或回放；执行后以详情中每条证据记录的实际来源为准。</p>
-      </el-form>
-      <template #footer>
-        <el-button text @click="handleCapabilityCommand('playbooks')">查看排查指南</el-button>
-        <el-button @click="messageSendScenarioOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="messageSendScenarioLoading"
-          :disabled="!canSubmitMessageSendScenario"
-          @click="createMessageSendScenario"
-        >创建排障单</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="messageSendScenarioForm"
+      :loading="messageSendScenarioLoading"
+      :can-submit="canSubmitMessageSendScenario"
+      @open-playbooks="openPlaybooks"
+      @submit="createMessageSendScenario"
+    />
 
-    <el-dialog
+    <DeploymentTopologyScenarioDialog
       v-model="deploymentTopologyScenarioOpen"
-      title="创建部署拓扑拨测 Diagnosis"
-      width="min(620px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        先由服务端锁定已审核启用的部署拓扑 Scenario Playbook 并创建 Diagnosis；此时不调用模型、不执行拨测，也不提前判断网络根因。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="createDeploymentTopologyScenario">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统" required>
-            <el-input
-              v-model="deploymentTopologyScenarioForm.system"
-              maxlength="128"
-              placeholder="必须与已审核 Scenario Playbook 的系统一致"
-            />
-          </el-form-item>
-          <el-form-item label="故障服务" required>
-            <el-input
-              v-model="deploymentTopologyScenarioForm.service"
-              maxlength="128"
-              placeholder="例如 csp-prm-miniapp"
-            />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="deploymentTopologyScenarioForm.severity" style="width: 100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Trace / PS 线索（可选）">
-            <el-input
-              v-model="deploymentTopologyScenarioForm.traceId"
-              maxlength="128"
-              placeholder="只填写安全标识符"
-            />
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="deploymentTopologyScenarioForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="描述需要通过部署拓扑拨测核查的用户可见现象"
-          />
-        </el-form-item>
-        <div class="incident-route-preview scenario">
-          <span>服务端权威选择器</span>
-          <b>{{ deploymentTopologySelector }}</b>
-          <p>浏览器不能指定 Playbook 版本、Tool Key 或查询参数；服务端找不到精确权威版本时会 fail-closed。</p>
-        </div>
-        <el-checkbox
-          v-model="deploymentTopologyScenarioForm.rehearsal"
-          class="incident-rehearsal"
-        >
-          演练记录（推荐；每次生成独立 Diagnosis）
-        </el-checkbox>
-        <p class="form-hint">关闭演练标记后，相同系统、服务与现象在五分钟窗口内会复用既有 Diagnosis。创建成功后再选择 Workspace 拓扑并执行只读拨测。</p>
-      </el-form>
-      <template #footer>
-        <el-button text @click="handleCapabilityCommand('playbooks')">查看排障规则库</el-button>
-        <el-button @click="deploymentTopologyScenarioOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="deploymentTopologyScenarioLoading"
-          :disabled="!canSubmitDeploymentTopologyScenario"
-          @click="createDeploymentTopologyScenario"
-        >创建并选择拓扑</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="deploymentTopologyScenarioForm"
+      :selector="deploymentTopologySelector"
+      :loading="deploymentTopologyScenarioLoading"
+      :can-submit="canSubmitDeploymentTopologyScenario"
+      @open-playbooks="openPlaybooks"
+      @submit="createDeploymentTopologyScenario"
+    />
 
     <GuanceOnboardingDialog
       v-model="guanceOnboardingOpen"
@@ -673,6 +433,10 @@ import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
 import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
+import CaseKnowledgeImportDialog from './CaseKnowledgeImportDialog.vue'
+import IncidentReportDialog from './IncidentReportDialog.vue'
+import MessageSendScenarioDialog from './MessageSendScenarioDialog.vue'
+import DeploymentTopologyScenarioDialog from './DeploymentTopologyScenarioDialog.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
@@ -699,9 +463,7 @@ import {
 } from './messageSendScenario'
 import {
   DEFAULT_CASE_KNOWLEDGE_IMPORT_LIMIT,
-  MAX_CASE_KNOWLEDGE_IMPORT_LIMIT,
   caseKnowledgeImportCanSubmit,
-  caseKnowledgeImportSummary,
   caseKnowledgeVectorMessage,
 } from './caseKnowledgeImport'
 import {
@@ -879,6 +641,10 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   } else if (command === 'case-knowledge') {
     void openCaseKnowledgeImport()
   }
+}
+
+function openPlaybooks() {
+  handleCapabilityCommand('playbooks')
 }
 
 async function openCaseKnowledgeImport() {
@@ -1405,16 +1171,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .owner-acceptance-result code { font-size:var(--mc-text-xs); overflow-wrap:anywhere; } .owner-acceptance-result.passed { border-color:var(--mc-success); background:var(--mc-status-success-bg); } .owner-acceptance-result.blocked { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); } .owner-acceptance-result.pending { border-color:var(--mc-border); background:var(--mc-status-info-bg); }
 .spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
 .validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:var(--mc-text-xs); } .validation-scope code { margin-top:5px; color:var(--blue); font-size:var(--mc-text-xs); }
-.incident-form-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 14px; }
-.incident-route-preview { margin:4px 0 12px; padding:12px 13px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
-.incident-route-preview>span { display:block; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
-.incident-route-preview>b { display:block; margin-top:5px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); }
-.incident-route-preview>p { margin:5px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.65; }
-.incident-route-preview.bounded_discovery { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); }
-.incident-route-preview.bounded_discovery>b { color:var(--amber); }
-.incident-rehearsal { margin-top:2px; }
 .dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .dialog-validation-result>b { font-size:var(--mc-text-sm); } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:var(--mc-text-xs); } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:var(--mc-text-secondary); font-family:var(--mc-mono,monospace); font-size:var(--mc-text-xs); white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:var(--mc-text-xs); line-height:1.5; }
-.case-knowledge-result { margin-top:14px; padding:13px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .case-knowledge-result>b { font-size:var(--mc-text-sm); } .case-knowledge-result>p { margin:8px 0; font-size:var(--mc-text-xs); line-height:1.6; } .case-knowledge-result>p.success { color:var(--green); } .case-knowledge-result>p.warning { color:var(--amber); } .case-knowledge-result>small { display:block; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.6; }
 .t7-owner-checklist { display:grid; gap:7px; margin-top:12px; padding:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); } .t7-owner-checklist>b { margin-bottom:2px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); } .t7-owner-checklist .el-checkbox { height:auto; margin-right:0; white-space:normal; } .t7-owner-checklist .form-hint { margin-top:5px; line-height:1.6; }
 .spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
 .spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:var(--mc-text-xs); line-height:1.5; }
@@ -1423,5 +1180,5 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); } .action-card.write { border-color:var(--mc-border); } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:var(--mc-text-xs); }
 .action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:var(--mc-text-xs); }
 @media(max-width:1100px){.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.spine-facts p{grid-template-columns:1fr;gap:2px}}
 </style>
