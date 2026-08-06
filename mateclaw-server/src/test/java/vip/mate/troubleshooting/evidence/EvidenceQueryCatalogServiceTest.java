@@ -119,6 +119,49 @@ class EvidenceQueryCatalogServiceTest {
     }
 
     @Test
+    void marksContractsBlockedWhenTheEffectiveWorkspaceAssetIsDisabled() {
+        EvidenceProperties properties = configuredProperties();
+        GuanceEvidenceAdapter adapter = adapter(properties);
+        EvidenceRouteService routes = mock(EvidenceRouteService.class);
+        GuanceEvidenceAcceptanceService acceptance = mock(GuanceEvidenceAcceptanceService.class);
+        ObservabilityAssetService assets = mock(ObservabilityAssetService.class);
+        when(routes.list(7L, null)).thenReturn(List.of());
+        when(assets.catalog(7L)).thenReturn(new ObservabilityAssetCatalogView(
+                7L,
+                List.of(new ObservabilityAssetView(
+                        "asset-disabled", "WORKSPACE", 7L,
+                        "CSDP", "session-svc", "CSDP session service",
+                        "guance", "production", null, null, null,
+                        false,
+                        Map.of("log_search", "csdp-search"),
+                        Map.of(), 2, "owner", "maintenance",
+                        Instant.parse("2026-08-07T00:00:00Z"))),
+                List.of()));
+        when(acceptance.inspect(7L, "CSDP", "session-svc"))
+                .thenReturn(new GuanceEvidenceAcceptanceView(
+                        GuanceEvidenceAcceptanceView.Status.NOT_ACCEPTED,
+                        "CSDP",
+                        "session-svc",
+                        "binding-fingerprint",
+                        null,
+                        List.of()));
+
+        EvidenceQueryCatalogView.ModuleView module = new EvidenceQueryCatalogService(
+                properties, routes, List.of(adapter), adapter, acceptance, assets)
+                .inspect(7L)
+                .systems().getFirst()
+                .modules().getFirst();
+
+        assertThat(module.status()).isEqualTo("BLOCKED");
+        assertThat(module.runnableContracts()).isZero();
+        assertThat(module.blockers()).contains("系统观测资产已停用");
+        assertThat(module.contracts()).singleElement().satisfies(contract -> {
+            assertThat(contract.runnable()).isFalse();
+            assertThat(contract.blockers()).contains("系统观测资产已停用");
+        });
+    }
+
+    @Test
     void exposesTheSanitizedK8sSkillContractAsApprovedTargetParameters() throws Exception {
         EvidenceProperties properties = configuredProperties();
         EvidenceProperties.Binding workload = new EvidenceProperties.Binding();

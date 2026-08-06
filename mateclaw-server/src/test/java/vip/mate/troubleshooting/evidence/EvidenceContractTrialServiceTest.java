@@ -113,6 +113,35 @@ class EvidenceContractTrialServiceTest {
     }
 
     @Test
+    void explainsThatADeploymentFallbackMustBeRegisteredAsAWorkspaceAssetBeforeTrial() {
+        EvidenceQueryCatalogService catalog = mock(EvidenceQueryCatalogService.class);
+        when(catalog.inspect(WORKSPACE_ID)).thenReturn(catalog(contract(
+                "log_search",
+                List.of(parameter("search_term", "EVIDENCE_REQUEST_TARGET", true)))));
+        ObservabilityAssetService assets = mock(ObservabilityAssetService.class);
+        when(assets.find(WORKSPACE_ID, "csdp", "session-service"))
+                .thenReturn(Optional.empty());
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        TroubleshootingEvidenceContractTrialMapper mapper =
+                mock(TroubleshootingEvidenceContractTrialMapper.class);
+        EvidenceContractTrialService service = new EvidenceContractTrialService(
+                catalog, assets, router, mapper,
+                Clock.fixed(NOW, ZoneOffset.UTC), System::nanoTime);
+
+        assertThatThrownBy(() -> service.run(
+                WORKSPACE_ID,
+                new EvidenceContractTrialRequest(
+                        "csdp", "session-service", "csdp-log-search",
+                        Map.of("search_term", "safe-key"), "-15m", NOW),
+                "ops-admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("workspace system asset must be registered");
+
+        verify(router, never()).collect(anyLong(), any(), any(), any());
+        verify(mapper, never()).insert(any(TroubleshootingEvidenceContractTrialEntity.class));
+    }
+
+    @Test
     void listsOnlyThePersistedSafeProjectionAndDecodesCanonicalFieldNames() {
         TroubleshootingEvidenceContractTrialMapper mapper =
                 mock(TroubleshootingEvidenceContractTrialMapper.class);

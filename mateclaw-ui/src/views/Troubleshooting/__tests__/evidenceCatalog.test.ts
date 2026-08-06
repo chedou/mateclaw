@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { EvidenceQueryCatalog, EvidenceQueryContract } from '@/api'
+import type { EvidenceQueryCatalog, EvidenceQueryContract, ObservabilityAsset } from '@/api'
 import {
   bindingStatusLabel,
   catalogSummary,
@@ -93,6 +93,27 @@ const catalog: EvidenceQueryCatalog = {
   }],
 }
 
+const deploymentAsset: ObservabilityAsset = {
+  assetId: null,
+  origin: 'DEPLOYMENT',
+  workspaceId: 1,
+  system: 'csdp',
+  service: 'csdp-session-service',
+  displayName: 'csdp-session-service',
+  platform: 'guance',
+  environment: null,
+  region: null,
+  cluster: null,
+  namespace: null,
+  enabled: true,
+  signalBindings: { log_search: 'csdp-message-send-log-search' },
+  parameters: {},
+  version: 0,
+  changedBy: null,
+  reason: '随部署提供的兼容绑定',
+  changedAt: null,
+}
+
 describe('evidence query catalog presentation', () => {
   it('summarizes systems, modules, contracts and runnable contracts', () => {
     expect(catalogSummary(catalog)).toEqual({
@@ -150,5 +171,7 @@ describe('evidence query catalog presentation', () => {
         description: '错误标记的资源参数',
       }],
     })).toContain('系统观测资产')
+    expect(directTrialBlockReason(contract, deploymentAsset))
+      .toContain('接管为 Workspace 系统观测资产')
   })
 })

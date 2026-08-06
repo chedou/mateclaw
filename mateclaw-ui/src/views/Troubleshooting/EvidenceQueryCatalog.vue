@@ -49,7 +49,7 @@
           <span>查询规则</span><strong>{{ summary.contracts }}</strong>
         </article>
         <article class="summary-card emphasis">
-          <span>当前可运行</span><strong>{{ summary.runnable }}</strong>
+          <span>完整链路可运行</span><strong>{{ summary.runnable }}</strong>
         </article>
       </section>
 
@@ -418,6 +418,14 @@
           title="只验证这条查询规则能否返回规范证据，不会创建排障单，也不代表 T7/T8 已验收。"
           class="asset-dialog-alert"
         />
+        <el-alert
+          v-if="trialError"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="trialError"
+          class="asset-dialog-alert"
+        />
         <el-form label-position="top">
           <el-form-item
             v-for="parameter in trialParameters"
@@ -732,6 +740,7 @@ const trialParameterValues = ref<Record<string, string>>({})
 const trialWindow = ref('-15m')
 const trialOccurredAt = ref<Date | null>(null)
 const trialResult = ref<EvidenceContractTrial | null>(null)
+const trialError = ref('')
 const trialHistory = ref<EvidenceContractTrial[]>([])
 
 const allRows = computed<ContractRow[]>(() => (catalog.value?.systems || []).flatMap(system =>
@@ -814,8 +823,20 @@ const trialParameters = computed(() => (trialTarget.value?.contract.parameters |
       .includes(parameter.name))
     || (parameter.source === 'INCIDENT' && ['error_code', 'trace_id'].includes(parameter.name)),
 ))
+const selectedAsset = computed(() => {
+  const row = selectedRow.value
+  if (!row) return null
+  const system = row.system.trim().toLowerCase()
+  const service = row.service.trim().toLowerCase()
+  return (assetCatalog.value?.assets || []).find(asset =>
+    asset.system.trim().toLowerCase() === system
+      && asset.service.trim().toLowerCase() === service) || null
+})
 const directTrialBlocker = computed(() => {
-  return directTrialBlockReason(selectedRow.value?.contract || null)
+  return directTrialBlockReason(
+    selectedRow.value?.contract || null,
+    selectedAsset.value,
+  )
 })
 
 function contractKey(system: string, service: string, contract: EvidenceQueryContract) {
@@ -860,6 +881,7 @@ function openTrialDialog() {
   trialWindow.value = '-15m'
   trialOccurredAt.value = null
   trialResult.value = null
+  trialError.value = ''
   trialDialogOpen.value = true
 }
 
@@ -876,6 +898,7 @@ async function runTrial() {
     return
   }
   trialRunning.value = true
+  trialError.value = ''
   try {
     const response = await troubleshootingApi.runEvidenceContractTrial({
       system: target.system,
@@ -891,7 +914,9 @@ async function runTrial() {
       : '只读查询完成，但未拿到规范证据')
     await loadTrialHistory()
   } catch (failure) {
-    ElMessage.error(failure instanceof Error ? failure.message : '只读试跑失败')
+    const reason = failure instanceof Error ? failure.message : '只读试跑失败'
+    trialError.value = `本次试跑未完成：${reason}`
+    ElMessage.error(trialError.value)
   } finally {
     trialRunning.value = false
   }

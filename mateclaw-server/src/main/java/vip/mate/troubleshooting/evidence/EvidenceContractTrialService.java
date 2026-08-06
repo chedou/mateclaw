@@ -106,8 +106,11 @@ public class EvidenceContractTrialService {
         String window = safeWindow(request.window());
         Instant occurredAt = safeOccurredAt(request.occurredAt());
         WorkspaceObservabilityAsset asset = assetService.find(workspaceId, system, service)
-                .filter(WorkspaceObservabilityAsset::enabled)
-                .orElseThrow(() -> conflict("the selected system asset is not active"));
+                .orElseThrow(() -> conflict(
+                        "a workspace system asset must be registered before admin trial"));
+        if (!asset.enabled()) {
+            throw conflict("the selected workspace system asset is not active");
+        }
         if (!contract.contractRef().equals(asset.signalBindings().get(contract.signalKind()))) {
             throw conflict("the selected contract is not the current asset binding");
         }

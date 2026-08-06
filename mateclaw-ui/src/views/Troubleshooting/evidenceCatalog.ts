@@ -2,6 +2,7 @@ import type {
   EvidenceQueryCatalog,
   EvidenceQueryContract,
   EvidenceRouteOrigin,
+  ObservabilityAsset,
 } from '@/api'
 
 export function catalogSummary(catalog: EvidenceQueryCatalog | null) {
@@ -85,8 +86,17 @@ export function runtimeStateLabel(status: string): string {
   }[status] ?? status
 }
 
-export function directTrialBlockReason(contract: EvidenceQueryContract | null): string {
+export function directTrialBlockReason(
+  contract: EvidenceQueryContract | null,
+  asset?: ObservabilityAsset | null,
+): string {
   if (!contract) return '请先选择一条查询规则'
+  if (asset !== undefined && (!asset || asset.origin !== 'WORKSPACE')) {
+    return '请先到系统观测资产接管为 Workspace 系统观测资产，再执行管理员试跑'
+  }
+  if (asset !== undefined && !asset?.enabled) {
+    return 'Workspace 系统观测资产已停用，请先新建启用版本'
+  }
   if (!contract.runnable) return '查询规则当前不可运行，请先处理阻断点'
   if (contract.adapter.toLowerCase() !== 'guance') {
     return '当前只开放观测云只读适配器试跑'

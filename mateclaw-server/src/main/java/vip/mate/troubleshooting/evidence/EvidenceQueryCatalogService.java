@@ -283,8 +283,10 @@ public class EvidenceQueryCatalogService {
                 && guanceAdapter.endpointConfigured()
                 && guanceAdapter.credentialState()
                 == GuanceEvidenceReadiness.CredentialState.CONFIGURED;
-        boolean runnable = routed && bindingReady && runtimeReady;
-        List<String> blockers = blockers(route, routed, bindingReady, runtimeReady, inspection);
+        boolean assetReady = asset.enabled() && asset.scopeCount() == 1;
+        boolean runnable = assetReady && routed && bindingReady && runtimeReady;
+        List<String> blockers = blockers(
+                asset, route, routed, bindingReady, runtimeReady, inspection);
         Presentation fallback = PRESENTATIONS.getOrDefault(
                 signalKind, new Presentation(signalKind, "该查询合同要回答什么问题？"));
 
@@ -313,12 +315,19 @@ public class EvidenceQueryCatalogService {
     }
 
     private List<String> blockers(
+            AssetDescriptor asset,
             EvidenceQueryCatalogView.RouteView route,
             boolean routed,
             boolean bindingReady,
             boolean runtimeReady,
             GuanceEvidenceAdapter.SignalInspection inspection) {
         List<String> blockers = new ArrayList<>();
+        if (asset.scopeCount() != 1) {
+            blockers.add("同一 Workspace 内的系统与模块绑定不唯一");
+        }
+        if (!asset.enabled()) {
+            blockers.add("系统观测资产已停用");
+        }
         if (route.explicitlyDisabled()) {
             blockers.add("当前 Workspace 明确停用了该证据路由");
         } else if ("UNCONFIGURED".equals(route.origin())) {

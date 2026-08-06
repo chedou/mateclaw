@@ -41,6 +41,8 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(evidenceCatalogSource).toContain('管理员只读试跑')
     expect(evidenceCatalogSource).toContain('不会创建排障单，也不代表 T7/T8 已验收')
     expect(evidenceCatalogSource).toContain('最近只读试跑')
+    expect(evidenceCatalogSource).toContain('v-if="trialError"')
+    expect(evidenceCatalogSource).toContain('本次试跑未完成')
     expect(evidenceCatalogSource).not.toContain('查看原始日志')
   })
 })
