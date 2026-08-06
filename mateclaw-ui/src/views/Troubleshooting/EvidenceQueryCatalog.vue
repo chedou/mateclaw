@@ -319,10 +319,10 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="联调与验收" name="acceptance">
+        <el-tab-pane label="数据源联调" name="acceptance">
           <section class="acceptance-layout">
             <div class="source-panel">
-              <h3>运行时适配器</h3>
+              <h3>数据源状态</h3>
               <article v-for="source in catalog?.sources || []" :key="source.platform" class="source-card">
                 <div>
                   <b>{{ source.platform }}</b>
@@ -342,7 +342,7 @@
               </article>
             </div>
             <div class="acceptance-panel">
-              <h3>模块验收状态</h3>
+              <h3>系统联调状态</h3>
               <article v-for="row in moduleRows" :key="`${row.system}/${row.module.service}`" class="acceptance-card">
                 <div class="acceptance-title">
                   <div><b>{{ row.system }} / {{ row.module.service }}</b><small>{{ row.module.runnableContracts }}/{{ row.module.contracts.length }} 条查询规则可运行</small></div>
@@ -357,8 +357,8 @@
                   {{ row.module.acceptance.acceptedBy }} · {{ row.module.acceptance.acceptedAt || '未记录时间' }}
                 </small>
               </article>
-              <el-button type="primary" plain @click="returnToWorkbench">
-                返回排障台执行只读联调
+              <el-button type="primary" plain @click="openGuanceValidation">
+                执行观测云只读联调
               </el-button>
             </div>
           </section>
@@ -560,6 +560,7 @@ import {
 import {
   normalizeEvidenceCatalogTab,
   safeTroubleshootingReturnPath,
+  workbenchOverlayLocation,
   type EvidenceCatalogTab,
 } from './workbenchCapabilityMenu'
 
@@ -834,6 +835,12 @@ function inspectRow(row: ContractRow) {
 
 function returnToWorkbench() {
   void router.push(safeTroubleshootingReturnPath(route.query.returnTo) || '/troubleshooting')
+}
+
+function openGuanceValidation() {
+  const returnTo = safeTroubleshootingReturnPath(route.query.returnTo)
+    || '/troubleshooting?view=list'
+  void router.push(workbenchOverlayLocation('guance', returnTo))
 }
 
 function openRouteEditor(row: ContractRow) {

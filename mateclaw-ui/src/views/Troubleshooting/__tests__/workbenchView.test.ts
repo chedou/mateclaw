@@ -66,7 +66,6 @@ describe('troubleshooting workbench view mode', () => {
       'playbooks',
       'evidence-catalog',
       'synthesis',
-      'guance',
       'ledger',
       'case-knowledge',
     ])
@@ -74,7 +73,6 @@ describe('troubleshooting workbench view mode', () => {
       '排障规则库',
       '取证查询目录',
       '无码场景预演',
-      '观测云接入与验收',
       '诊断效果评估',
       '历史案例入库',
     ])
@@ -107,8 +105,9 @@ describe('troubleshooting workbench view mode', () => {
       rules: '排障规则库',
       evidenceCatalog: '取证查询目录',
       noCodePreview: '无码场景预演',
-      guanceOnboarding: '观测云接入与验收',
+      guanceOnboarding: '数据源联调',
       guanceSourceStatus: '观测云真实数据源状态',
+      guanceValidation: '真实数据验证',
       deploymentTopology: '部署拓扑拨测分析',
       evaluation: '诊断效果评估',
       caseKnowledge: '历史案例入库',

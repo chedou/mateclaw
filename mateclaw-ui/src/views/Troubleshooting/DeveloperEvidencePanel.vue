@@ -134,8 +134,8 @@
               v-if="canManage"
               size="small"
               plain
-              @click="$emit('openGuanceOnboarding')"
-            >前往接入验收</el-button>
+              @click="$emit('openDataSourceValidation')"
+            >前往数据源联调</el-button>
           </div>
         </section>
         <section class="side-card side-card--capability">
@@ -226,7 +226,7 @@ interface Props {
 const props = defineProps<Props>()
 
 defineEmits<{
-  openGuanceOnboarding: []
+  openDataSourceValidation: []
   openEvaluation: []
   approve: [action: RecommendedAction]
   recordOutcome: [action: RecommendedAction]

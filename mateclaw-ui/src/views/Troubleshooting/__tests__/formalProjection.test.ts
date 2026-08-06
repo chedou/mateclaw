@@ -150,18 +150,18 @@ describe('formal troubleshooting projection formatting', () => {
     expect(knowledgeEvidenceGradeLabel('UNVERIFIED')).toBe('来源未核实')
   })
 
-  it('keeps the real-source gate distinct from T7 acceptance', () => {
+  it('uses plain language for real-source validation while keeping gate states distinct', () => {
     expect(guanceReadinessLabel('READY_FOR_VALIDATION')).toBe('可执行单次验证')
     expect(guanceReadinessLabel('CANONICAL_SIGNALS_OBSERVED'))
       .toBe('核心规范化信号已分别观测')
     expect(guanceSignalLabel('NOT_ROUTED')).toBe('未路由到 Guance')
     expect(guanceSignalLabel('INVALID_BINDING')).toBe('绑定无效')
     expect(guanceValidationLabel('CANONICAL_CHAIN_OBSERVED'))
-      .toBe('单次规范化读链通过（待 T7 字段验收）')
+      .toBe('日志与调用链验证通过（待负责人确认）')
     expect(guanceSpinePreviewLabel('FULL_SPINE_OBSERVED'))
-      .toBe('完整 Evidence Spine 已观测（待 T7/T8 验收）')
+      .toBe('完整取证流程已验证（待负责人确认）')
     expect(guanceSpinePreviewLabel('CORE_CHAIN_OBSERVED')).toContain('成功样本对照缺失')
-    expect(guanceAcceptanceStateLabel('OWNER_EVIDENCE_REQUIRED')).toBe('待 owner 证据')
+    expect(guanceAcceptanceStateLabel('OWNER_EVIDENCE_REQUIRED')).toBe('待负责人确认')
   })
 
   it('projects Guance as a compact environment status instead of a diagnosis step', () => {
@@ -175,7 +175,7 @@ describe('formal troubleshooting projection formatting', () => {
       'NOT_ACCEPTED',
       blockedProgress,
     )).toEqual({
-      label: 'T7 · 录制批次目标未就绪',
+      label: '真实案例尚未准备好',
       tone: 'warning',
     })
     expect(guanceDetailSourceState(
@@ -222,7 +222,7 @@ describe('formal troubleshooting projection formatting', () => {
     ])).toMatchObject({ kind: 'GUANCE', showBanner: false })
   })
 
-  it('keeps T6 authorization, T7 field verification, and T8 samples as separate gates', () => {
+  it('keeps source authorization, owner confirmation, and real samples as separate gates', () => {
     expect(guanceAcceptanceProgress(readiness('UNAUTHORIZED'))).toEqual({
       stages: [
         expect.objectContaining({ code: 'T6', state: 'BLOCKED' }),
@@ -250,9 +250,9 @@ describe('formal troubleshooting projection formatting', () => {
       expect.objectContaining({ code: 'T7', state: 'OWNER_EVIDENCE_REQUIRED' }),
       expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
     ])
-    expect(observed.stages[1].detail).toContain('measurement')
+    expect(observed.stages[1].detail).toContain('数据集')
     expect(observed.stages[2].detail).toContain('20–30')
-    expect(observed.nextAction).toContain('fixtureMode')
+    expect(observed.nextAction).toContain('演示数据状态')
 
     const missingRuntime = guanceAcceptanceProgress(readiness(
       'CONFIGURATION_INCOMPLETE', 'READY_FOR_VALIDATION', true,
@@ -262,7 +262,7 @@ describe('formal troubleshooting projection formatting', () => {
       expect.objectContaining({ code: 'T7', state: 'BLOCKED' }),
       expect.objectContaining({ code: 'T8', state: 'BLOCKED' }),
     ])
-    expect(missingRuntime.stages[1].title).toBe('真源运行条件未就绪')
+    expect(missingRuntime.stages[1].title).toBe('真实数据源运行条件未就绪')
   })
 
   it('blocks T7 before the window when the server owns fewer than 20 executable targets', () => {
@@ -276,13 +276,13 @@ describe('formal troubleshooting projection formatting', () => {
     expect(progress.stages[1]).toEqual(expect.objectContaining({
       code: 'T7',
       state: 'BLOCKED',
-      title: '录制批次目标未就绪',
+      title: '真实案例尚未准备好',
     }))
     expect(progress.stages[1].detail).toContain('0 / 20')
-    expect(progress.nextAction).toContain('冻结至少 20 个')
+    expect(progress.nextAction).toContain('准备至少 20 个')
   })
 
-  it('unlocks T8 collection only for the current owner-accepted binding', () => {
+  it('unlocks real sample collection only for the current owner-confirmed data source', () => {
     const accepted = guanceAcceptanceProgress(
       readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
       acceptance('ACCEPTED'),
@@ -294,15 +294,15 @@ describe('formal troubleshooting projection formatting', () => {
       expect.objectContaining({
         code: 'T7',
         state: 'READY',
-        title: '当前绑定已完成 owner 验收',
+        title: '负责人已确认当前数据源配置',
       }),
       expect.objectContaining({
         code: 'T8',
         state: 'READY',
-        title: '真实历史样本采集已解锁',
+        title: '可以开始积累真实样本',
       }),
     ])
-    expect(accepted.stages[2].detail).toContain('不代表 T8 已通过')
+    expect(accepted.stages[2].detail).toContain('不代表效果已经达标')
     expect(accepted.nextAction).toContain('20–30')
 
     const stale = guanceAcceptanceProgress(
@@ -316,16 +316,16 @@ describe('formal troubleshooting projection formatting', () => {
     )
     expect(stale.stages[1]).toEqual(expect.objectContaining({
       state: 'OWNER_EVIDENCE_REQUIRED',
-      title: '绑定已变更，旧验收已过期',
+      title: '数据源配置已变化，原确认失效',
     }))
     expect(stale.stages[2].state).toBe('BLOCKED')
-    expect(stale.nextAction).toContain('配置指纹已变化')
+    expect(stale.nextAction).toContain('配置已经变化')
   })
 
   it('localizes known Guance owner blockers without hiding unknown diagnostics', () => {
     expect(guanceOwnerBlockerLabel(
       'the current Guance binding has not been explicitly accepted by an owner',
-    )).toBe('当前 Guance 绑定尚未由 Workspace owner 明确验收。')
+    )).toBe('当前数据源配置尚未由 Workspace 负责人确认。')
     expect(guanceOwnerBlockerLabel('custom owner diagnostic')).toBe('custom owner diagnostic')
   })
 })

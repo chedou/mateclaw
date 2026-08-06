@@ -5,7 +5,7 @@
     width="min(620px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="dialog-alert">
-      两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。
+      两种验证都只读取真实观测数据，不保存原始日志，也不会使用演示数据兜底。先验证日志与调用链，再验证成功样本对照和结构化归纳；验证结果仍需负责人确认。
     </el-alert>
     <el-form label-position="top">
       <div class="validation-scope">
@@ -64,7 +64,7 @@
         {{ formatWorkbenchTime(ownerAcceptance.acceptance.acceptedAt) }}
       </p>
       <small>
-        当前配置指纹
+        当前配置版本
         <code>{{ shortFingerprint(ownerAcceptance.currentBindingFingerprint) }}</code>
       </small>
       <small v-for="blocker in ownerAcceptance.blockers" :key="blocker">
@@ -77,8 +77,8 @@
       class="dialog-validation-result"
       :class="recordingBatchReady ? 'passed' : 'blocked'"
     >
-      <b>T7 窗口批次目标 · {{ recordingTargets.executableTargetCount }} / 20</b>
-      <p>服务端冻结 {{ recordingTargets.frozenTargetCount }} 个未录制 D1 目标；只有与当前三份 binding 精确匹配的目标才计入。</p>
+      <b>真实案例准备进度 · {{ recordingTargets.executableTargetCount }} / 20</b>
+      <p>服务端已固定 {{ recordingTargets.frozenTargetCount }} 个待采集案例；只有与当前三项查询绑定完全匹配的案例才计入。</p>
       <small v-for="blocker in recordingTargets.blockers" :key="blocker">{{ blocker }}</small>
     </div>
 
@@ -86,7 +86,7 @@
       v-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && canAcceptOwner && recordingBatchReady"
       class="t7-owner-checklist"
     >
-      <b>T7 owner 字段核实清单</b>
+      <b>负责人核实清单</b>
       <el-checkbox v-model="checklist.measurementAndFieldsVerified">已核实真实 measurement 与 canonical 字段映射</el-checkbox>
       <el-checkbox v-model="checklist.indexVerified">已核实索引、数据范围与查询资产</el-checkbox>
       <el-checkbox v-model="checklist.psIdJoinVerified">已确认 log_search 与 trace 使用同一 PS ID</el-checkbox>
@@ -94,16 +94,16 @@
       <el-checkbox v-model="checklist.timeWindowVerified">已核实时间窗口语义</el-checkbox>
       <el-checkbox v-model="checklist.dqlLatencyReviewed">已在 Guance 侧核对 DQL 延迟</el-checkbox>
       <el-checkbox v-model="checklist.legacyRouteConflictReviewed">已复核 903001 与历史 route key 冲突</el-checkbox>
-      <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
+      <p class="form-hint">提交时服务端会再次验证日志与调用链，并将确认记录绑定到当前查询模板、字段映射、端点和路由；不保存搜索键、PS ID 原文、查询语句、凭据或日志。</p>
     </div>
     <p
       v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
       class="source-blocker"
-    >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询规则；服务端不会记录 owner ACCEPTED。</p>
+    >真实案例尚未准备到 20 条，目前只能验证单条查询规则，不能完成负责人确认。</p>
     <p
       v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED'"
       class="source-blocker"
-    >只有当前 Workspace owner 可以提交 T7 验收；admin 可以执行只读验证，但不能替 owner 解锁真实 T8。</p>
+    >只有当前 Workspace 负责人可以确认；管理员可以执行只读验证，但不能代替负责人完成确认。</p>
 
     <div v-if="spinePreview" class="dialog-validation-result spine-dialog-result">
       <b>{{ guanceSpinePreviewLabel(spinePreview.stage) }}</b>
@@ -127,10 +127,10 @@
     <template #footer>
       <el-button @click="open = false">关闭</el-button>
       <el-button plain :loading="validationLoading" :disabled="!form.searchTerm" @click="$emit('validate')">
-        T7 两步读链
+        验证日志与调用链
       </el-button>
       <el-button type="primary" :loading="spinePreviewLoading" :disabled="!form.searchTerm" @click="$emit('preview-spine')">
-        完整 Evidence Spine
+        验证完整取证流程
       </el-button>
       <el-button
         v-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && canAcceptOwner"
@@ -138,7 +138,7 @@
         :loading="acceptanceLoading"
         :disabled="!canAccept"
         @click="$emit('accept')"
-      >确认当前绑定 T7 验收</el-button>
+      >确认当前数据源配置</el-button>
       <el-button
         v-if="spinePreview && spinePreview.stage !== 'BLOCKED' && canOpenEvaluation"
         type="success"
@@ -195,7 +195,7 @@ defineEmits<{
 function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
   if (value === 'ACCEPTED') return '当前绑定已验收'
   if (value === 'STALE') return '配置变化，验收已过期'
-  if (value === 'NOT_ACCEPTED') return '尚未完成 owner 验收'
+  if (value === 'NOT_ACCEPTED') return '尚未完成负责人确认'
   return '当前绑定不可验收'
 }
 

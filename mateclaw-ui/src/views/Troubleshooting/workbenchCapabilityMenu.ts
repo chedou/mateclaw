@@ -35,10 +35,6 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
         command: 'evidence-catalog',
         label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog,
       },
-      {
-        command: 'guance',
-        label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding,
-      },
     ],
   },
   {
@@ -86,7 +82,7 @@ export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestina
   },
   {
     tab: 'acceptance',
-    label: '联调与验收',
+    label: '数据源联调',
   },
 ]
 

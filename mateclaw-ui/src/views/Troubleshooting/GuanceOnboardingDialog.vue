@@ -5,7 +5,7 @@
     width="min(760px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="onboarding-alert">
-      向导只检查秘密无关的授权与 binding 状态，不接收、显示或保存 API Key。
+      此处只检查数据源授权和查询绑定状态，不接收、显示或保存 API Key。
       真实凭据必须由部署环境的密钥系统注入。
     </el-alert>
 
@@ -19,7 +19,7 @@
         </el-form-item>
       </div>
       <div class="scope-grid three">
-        <el-form-item label="T7 安全搜索键">
+        <el-form-item label="安全搜索键">
           <el-input v-model="form.searchTerm" maxlength="128" placeholder="message_send_failed" />
         </el-form-item>
         <el-form-item label="证据窗口">
@@ -46,7 +46,7 @@
       </div>
       <p class="time-fallback-hint">未选择故障时间时，服务端会在点击验证时取当前时间作为查询结束点；这不会改写 Diagnosis 的真实故障时间。</p>
       <p v-if="scopeErrors.length" class="scope-error">{{ scopeErrors.join('；') }}</p>
-      <p v-if="!safeSearchTerm" class="scope-error">T7 搜索键必须是 1–128 位安全资源标识符。</p>
+      <p v-if="!safeSearchTerm" class="scope-error">搜索键必须是 1–128 位安全资源标识符。</p>
     </el-form>
 
     <section v-if="guide" class="configuration-guide">
@@ -59,7 +59,7 @@
       </div>
       <pre>{{ guide.externalConfig }}</pre>
       <pre>{{ guide.runtimeEnvironment }}</pre>
-      <p>binding 名、measurement、字段映射与查询模板必须在 T7 内网核实；向导不会把占位符写回服务端。</p>
+      <p>查询绑定、数据集、字段映射与查询模板必须在真实环境核实；向导不会把占位符写回服务端。</p>
     </section>
 
     <section v-if="currentReadiness" class="readiness-result">
@@ -75,7 +75,7 @@
       </div>
       <ol v-if="acceptanceProgress" class="onboarding-ladder">
         <li v-for="stage in acceptanceProgress.stages" :key="stage.code">
-          <code>{{ stage.code }}</code>
+          <span>{{ stageLabel(stage.code) }}</span>
           <div><b>{{ stage.title }}</b><small>{{ stage.detail }}</small></div>
           <strong :class="acceptanceTone(stage.state)">{{ guanceAcceptanceStateLabel(stage.state) }}</strong>
         </li>
@@ -89,7 +89,7 @@
         <li v-for="signal in currentReadiness.signals" :key="signal.signalKind">
           <code>{{ signal.signalKind }}</code>
           <span>{{ guanceSignalLabel(signal.status) }}</span>
-          <small>{{ signal.bindingRef || signal.detail || '无 binding' }}</small>
+          <small>{{ signal.bindingRef || signal.detail || '无查询绑定' }}</small>
         </li>
       </ul>
       <p v-if="acceptanceProgress" class="next-action"><b>下一步</b>{{ acceptanceProgress.nextAction }}</p>
@@ -292,6 +292,12 @@ function acceptanceTone(value: 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED') 
   if (value === 'READY') return 'ready'
   if (value === 'OWNER_EVIDENCE_REQUIRED') return 'pending'
   return 'blocked'
+}
+
+function stageLabel(value: 'T6' | 'T7' | 'T8') {
+  if (value === 'T6') return '接入'
+  if (value === 'T7') return '确认'
+  return '样本'
 }
 </script>
 

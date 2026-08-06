@@ -120,7 +120,7 @@
           :can-manage="canManageTroubleshooting"
           :can-approve-action="canApprove"
           :can-record-outcome-action="canRecordOutcome"
-          @open-guance-onboarding="openGuanceOnboarding"
+          @open-data-source-validation="openDataSourceValidation"
           @open-evaluation="openEvaluationLedger"
           @approve="openApprove"
           @record-outcome="openOutcome"
@@ -289,7 +289,10 @@ import {
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
 import { EVIDENCE_SYNTHESIS_FOCUS } from './synthesisPreview'
-import { normalizeWorkbenchOverlayCapability } from './workbenchCapabilityMenu'
+import {
+  evidenceCatalogLocation,
+  normalizeWorkbenchOverlayCapability,
+} from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import GuanceValidationDialog from './GuanceValidationDialog.vue'
@@ -561,6 +564,13 @@ function openGuanceOnboarding() {
   guanceOnboardingOpen.value = true
 }
 
+function openDataSourceValidation() {
+  const query = { ...route.query }
+  delete query.capability
+  const returnTo = router.resolve({ path: '/troubleshooting', query }).fullPath
+  void router.push(evidenceCatalogLocation('acceptance', returnTo))
+}
+
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
 function resetIncidentReportForm() {
@@ -791,7 +801,7 @@ async function validateGuance() {
     if (response) {
       validationDialogReport.value = response.data
       if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
-        ElMessage.success('单次规范化读链已观测；待 T7 owner 字段验收，fixtureMode 保持开启')
+        ElMessage.success('日志与调用链验证通过；仍需负责人确认，演示数据状态保持不变')
       } else {
         ElMessage.warning('真源验证未通过：来源未就绪或返回数据格式校验未通过')
       }
@@ -814,7 +824,7 @@ async function acceptGuance() {
     const response = await store.acceptGuanceEvidence(request, session, version)
     if (response) {
       validationDialogOwnerAcceptance.value = response.data
-      ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
+      ElMessage.success('当前数据源配置已由负责人确认；配置变化后该记录会自动失效')
     }
   } finally {
     if (store.isCurrentGuanceValidationGeneration(version)) acceptanceLoading.value = false
@@ -831,11 +841,11 @@ async function previewGuanceSpine() {
     if (response) {
       validationDialogSpinePreview.value = response.data
       if (response.data.stage === 'FULL_SPINE_OBSERVED') {
-        ElMessage.success('真实三段 Evidence Spine 已观测；待 owner 完成 T7/T8 验收')
+        ElMessage.success('完整取证流程已验证；仍需负责人确认并积累真实样本')
       } else if (response.data.stage === 'CORE_CHAIN_OBSERVED') {
         ElMessage.warning('核心链路可压缩，但成功样本对照缺失，继续校准期')
       } else {
-        ElMessage.warning('真实 Evidence Spine 未通过：来源未就绪或返回数据格式校验未通过')
+        ElMessage.warning('完整取证流程未通过：数据源未就绪或返回数据格式校验未通过')
       }
     }
   } finally {

@@ -10,7 +10,7 @@ import {
 } from '../workbenchCapabilityMenu'
 
 describe('troubleshooting secondary navigation information architecture', () => {
-  it('groups all six management capabilities in the persistent navigation', () => {
+  it('keeps data-source validation inside the evidence catalog navigation', () => {
     const items = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
 
     expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
@@ -21,12 +21,11 @@ describe('troubleshooting secondary navigation information architecture', () => 
     expect(items.map(item => item.command)).toEqual([
       'playbooks',
       'evidence-catalog',
-      'guance',
       'synthesis',
       'ledger',
       'case-knowledge',
     ])
-    expect(items.find(item => item.command === 'guance')?.label).toBe('观测云接入与验收')
+    expect(items.find(item => item.command === 'guance')).toBeUndefined()
   })
 
   it('offers a stable deep link for each evidence catalog workspace', () => {
@@ -37,6 +36,8 @@ describe('troubleshooting secondary navigation information architecture', () => 
       'routes',
       'acceptance',
     ])
+    expect(EVIDENCE_CATALOG_DESTINATIONS.find(item => item.tab === 'acceptance')?.label)
+      .toBe('数据源联调')
 
     expect(evidenceCatalogLocation(
       'contracts',
@@ -69,7 +70,7 @@ describe('troubleshooting secondary navigation information architecture', () => 
     expect(safeTroubleshootingReturnPath('/troubleshooting-other')).toBeNull()
   })
 
-  it('only opens the three workbench overlay capabilities from a query parameter', () => {
+  it('keeps the legacy Guance overlay deep link only as a compatibility action', () => {
     expect(normalizeWorkbenchOverlayCapability('guance')).toBe('guance')
     expect(normalizeWorkbenchOverlayCapability(['ledger'])).toBe('ledger')
     expect(normalizeWorkbenchOverlayCapability('case-knowledge')).toBe('case-knowledge')
