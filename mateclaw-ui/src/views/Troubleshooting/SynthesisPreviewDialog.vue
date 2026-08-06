@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="TROUBLESHOOTING_UI_LABELS.noCodePreview"
+    :title="TROUBLESHOOTING_UI_LABELS.historyReplay"
     width="min(920px, calc(100vw - 32px))"
     destroy-on-close
     :teleported="false"
@@ -9,8 +9,8 @@
   >
     <el-alert type="warning" :closable="false" class="scope-alert">
       <template #title>
-        该入口调用正式后端的同一条 Evidence Router，但当前被服务端硬限制为
-        <b>Recorded Replay</b>。它不调用模型、不创建 candidate，也不能让知识直接生效。
+        这里使用服务端保存的 <b>Recorded Replay</b> 历史证据验证取证步骤。
+        它不会访问真实观测云、调用模型、创建排障规则或让规则直接生效。
       </template>
     </el-alert>
 
@@ -44,10 +44,10 @@
       <header class="result-head">
         <div>
           <span>Evidence Spine</span>
-          <h3>取证与确定性压缩已就绪</h3>
+          <h3>历史证据回放完成</h3>
           <p>
             {{ preview.system }} / {{ preview.service }} · {{ preview.searchTerm }} · {{ form.window }}；
-            尚未调用模型，也没有创建或批准任何 Playbook。
+            仅验证取证链路；没有创建或批准任何排障规则。
           </p>
         </div>
         <div class="result-facts">
@@ -189,7 +189,7 @@ async function runPreview() {
     )
     if (requestVersion !== previewRequestVersion || !visible.value) return
     preview.value = data
-    ElMessage.success('证据脊柱已完成只读回放与确定性压缩')
+    ElMessage.success('历史证据已完成只读回放与确定性压缩')
   } catch (error) {
     if (requestVersion !== previewRequestVersion || !visible.value) return
     preview.value = null

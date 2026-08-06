@@ -116,7 +116,6 @@ import {
   DataLine,
   Document,
   DocumentAdd,
-  MagicStick,
   Monitor,
   OfficeBuilding,
   Operation,
@@ -126,7 +125,6 @@ import {
 import { useMediaQuery } from '@/composables/useBreakpoint'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import type { WorkbenchCapabilityCommand } from './workbenchView'
-import { EVIDENCE_SYNTHESIS_FOCUS, isEvidenceSynthesisFocus } from './synthesisPreview'
 import {
   EVIDENCE_CATALOG_DESTINATIONS,
   WORKBENCH_CAPABILITY_GROUPS,
@@ -151,7 +149,6 @@ const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
   playbooks: Collection,
   'evidence-catalog': DataLine,
   guance: Connection,
-  synthesis: MagicStick,
   ledger: TrendCharts,
   'case-knowledge': DocumentAdd,
 }
@@ -166,9 +163,7 @@ const EVIDENCE_ICONS: Record<EvidenceCatalogTab, Component> = {
 
 const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
   if (route.path === '/troubleshooting/evidence-catalog') return 'evidence-catalog'
-  if (route.path === '/troubleshooting/sops') {
-    return isEvidenceSynthesisFocus(route.query.focus) ? 'synthesis' : 'playbooks'
-  }
+  if (route.path === '/troubleshooting/sops') return 'playbooks'
   return normalizeWorkbenchOverlayCapability(route.query.capability)
 })
 const workbenchActive = computed(() => route.path === '/troubleshooting' && !activeCommand.value)
@@ -196,13 +191,6 @@ function openCapability(command: WorkbenchCapabilityCommand) {
   }
   if (command === 'evidence-catalog') {
     void router.push(evidenceCatalogLocation(activeEvidenceTab.value, returnTo))
-    return
-  }
-  if (command === 'synthesis') {
-    void router.push({
-      path: '/troubleshooting/sops',
-      query: { focus: EVIDENCE_SYNTHESIS_FOCUS, returnTo },
-    })
     return
   }
   void router.push(workbenchOverlayLocation(command as WorkbenchOverlayCapability, returnTo))

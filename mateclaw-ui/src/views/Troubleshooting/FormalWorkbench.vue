@@ -222,7 +222,10 @@
       :replay-capture-enabled="canCaptureReplayEvaluationSample"
       :replay-capture-disabled-reason="replayCaptureDisabledReason"
       @open-diagnosis="openDiagnosisFromLedger"
+      @open-history-replay="openHistoricalReplay"
     />
+
+    <SynthesisPreviewDialog v-model="synthesisPreviewOpen" />
 
     <TransferDialog
       v-model="transferOpen"
@@ -288,12 +291,13 @@ import {
   EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
-import { EVIDENCE_SYNTHESIS_FOCUS } from './synthesisPreview'
+import { isEvidenceSynthesisFocus } from './synthesisPreview'
 import {
   evidenceCatalogLocation,
   normalizeWorkbenchOverlayCapability,
 } from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
+import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import GuanceValidationDialog from './GuanceValidationDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
@@ -378,6 +382,7 @@ const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
 const evaluationLedgerOpen = ref(false)
+const synthesisPreviewOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
 const outcomeOpen = ref(false)
@@ -491,8 +496,6 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
     void router.push('/troubleshooting/sops')
   } else if (command === 'evidence-catalog') {
     void router.push('/troubleshooting/evidence-catalog')
-  } else if (command === 'synthesis') {
-    openSynthesisPreview()
   } else if (command === 'guance') {
     openGuanceOnboarding()
   } else if (command === 'ledger') {
@@ -854,11 +857,9 @@ async function previewGuanceSpine() {
 }
 
 
-function openSynthesisPreview() {
-  router.push({
-    path: '/troubleshooting/sops',
-    query: { focus: EVIDENCE_SYNTHESIS_FOCUS },
-  })
+function openHistoricalReplay() {
+  if (!canManageTroubleshooting.value) return
+  synthesisPreviewOpen.value = true
 }
 function canApprove(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'PENDING' && canTransfer.value }
 function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
@@ -888,6 +889,21 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  () => route.query.focus,
+  focus => {
+    if (!isEvidenceSynthesisFocus(focus) || !canManageTroubleshooting.value) return
+    evaluationLedgerOpen.value = true
+    synthesisPreviewOpen.value = true
+  },
+  { immediate: true },
+)
+watch(synthesisPreviewOpen, open => {
+  if (open || !isEvidenceSynthesisFocus(route.query.focus)) return
+  const query = { ...route.query }
+  delete query.focus
+  void router.replace({ path: '/troubleshooting', query })
+})
 watch(
   [guanceOnboardingOpen, evaluationLedgerOpen, caseKnowledgeImportOpen],
   ([guanceOpen, ledgerOpen, caseKnowledgeOpen]) => {

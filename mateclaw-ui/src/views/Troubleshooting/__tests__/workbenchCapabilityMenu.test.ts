@@ -3,6 +3,7 @@ import {
   EVIDENCE_CATALOG_DESTINATIONS,
   WORKBENCH_CAPABILITY_GROUPS,
   evidenceCatalogLocation,
+  legacyEvidenceSynthesisLocation,
   normalizeEvidenceCatalogTab,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
@@ -15,17 +16,29 @@ describe('troubleshooting secondary navigation information architecture', () => 
 
     expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
       '配置与接入',
-      '验证与演练',
       '复盘与沉淀',
     ])
     expect(items.map(item => item.command)).toEqual([
       'playbooks',
       'evidence-catalog',
-      'synthesis',
       'ledger',
       'case-knowledge',
     ])
     expect(items.find(item => item.command === 'guance')).toBeUndefined()
+  })
+
+  it('redirects the legacy synthesis deep link into diagnosis evaluation', () => {
+    expect(legacyEvidenceSynthesisLocation(
+      '/troubleshooting?view=detail&diagnosisId=diag-1',
+    )).toEqual({
+      path: '/troubleshooting',
+      query: {
+        view: 'detail',
+        diagnosisId: 'diag-1',
+        capability: 'ledger',
+        focus: 'evidence-synthesis',
+      },
+    })
   })
 
   it('offers a stable deep link for each evidence catalog workspace', () => {

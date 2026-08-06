@@ -128,9 +128,10 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - **能力命名与场景入口统一（2026-07-30，2026-07-31 补齐 Diagnosis 前置创建）**：正式工作台主按钮统一为“发起排障”，先选择
   “通用事件排障”或“部署拓扑拨测分析”；前者复用 Incident API 创建 Diagnosis，后者由服务端先创建或复用
   专属的 `SCENARIO_PLAYBOOK + EXPLICIT` Diagnosis，再通过 `topology_synthetic_probe` 只读工具运行；安全结果写入 V188 不可变运行记录并在同一
-  排障详情展示。部署拓扑入口已从“更多能力”移出；该菜单只保留
-  “排障规则库 / 无码场景预演 / 观测云接入与验收 / 诊断效果评估”四个低频治理与校准入口。内部
-  Playbook、P2、T7、T8 合同名称不变，改动只作用于用户界面信息架构。
+  排障详情展示。部署拓扑入口已从“更多能力”移出。2026-08-06 再次收敛治理入口：
+  “观测云接入与验收”已并入“取证查询目录 → 数据源联调”，“无码场景预演”改名为“历史样本回放”
+  并并入“诊断效果评估”；二级菜单不再单列这两个工具。内部 Playbook、P2、T7、T8 合同名称不变，
+  改动只作用于用户界面信息架构。
 - **部署拓扑场景 Diagnosis 门禁（2026-07-31）**：新增
   `POST /api/v1/troubleshooting/scenarios/deployment-topology/diagnoses`，仅接收脱敏业务上下文；
   `scenarioKey/toolKey/selector/PlaybookRef` 均由服务端持有。创建事务锁定当前 active-approved 版本，
@@ -219,7 +220,9 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - `log_search` / `log_trace_bundle`，PS ID 一致性、时间排序、行数/字符/时间窗边界。
 - `DeterministicLogTraceCompressor`。
 - `SopSynthesisService.preview()`：fixture scope 中跑到 `READY_FOR_MODEL`，不调模型、不入 candidate。
-- **正式 Playbook 证据学习入口（2026-07-29）**：`/troubleshooting/sops` 已增加“无错误码证据预览”，
+- **正式 Playbook 证据学习入口（2026-07-29，2026-08-06 收敛入口）**：最初由
+  `/troubleshooting/sops` 提供“无错误码证据预览”，现已改名为“历史样本回放”并移入
+  “诊断效果评估”，规则库不再承担回放入口。该入口仍
   直接调用正式 `POST /api/v1/troubleshooting/sops/synthesis/preview`，可见固定
   `log_search → log_trace_bundle → contrast_sample` Evidence Spine、PS ID 调用链和成功样本对照。
   服务端继续把该接口硬限制在 Recorded Replay；本次预览入口与弹窗没有模型调用、candidate 创建、审核或
@@ -332,7 +335,8 @@ P3 T9 与 T10 纯文本闭环已落地，含 leader 切换后的 DB 路由回源
 **正式入口已吸收（2026-07-29）**：
 
 - 正式真实数据工作台：`http://127.0.0.1:5173/troubleshooting`
-- 正式 Playbook 管理与无错误码证据预览：`http://127.0.0.1:5173/troubleshooting/sops`
+- 正式 Playbook 管理：`http://127.0.0.1:5173/troubleshooting/sops`
+- 诊断效果评估（含历史样本回放）：`http://127.0.0.1:5173/troubleshooting?capability=ledger`
 - 旧版兼容处置台：`http://127.0.0.1:5173/troubleshooting/legacy`
 - dev-only 原型暂时保留用于降级结局对照；正式页补齐等价测试场景后再按删除清单移除。
 
@@ -1097,6 +1101,18 @@ T19 系统观测资产注册表（2026-08-04）已进入正式主链：
   再对每个绑定做只读试跑和验收。
 - 本轮回归：后端排障域 + Skill Manifest `823/823`，前端 Vitest `211/211`，ESLint、
   `vue-tsc --noEmit` 和生产 Vite build 均通过。
+
+T20 历史样本回放入口收敛（2026-08-06）：
+
+- “无码场景预演”已改名为“历史样本回放”。它的产品定位明确为管理员使用的 Recorded Replay
+  回归工具，不再暗示可以无码创建任意排障场景。
+- 二级菜单和排障规则库已移除独立入口；“诊断效果评估”内新增“回放一条历史样本”，继续复用
+  `POST /api/v1/troubleshooting/sops/synthesis/preview` 与唯一 Evidence Spine。
+- 历史 `/troubleshooting/sops?focus=evidence-synthesis` 深链自动转入诊断效果评估并打开同一回放，
+  不产生第二套页面、API 或证据实现。
+- 后端 `SopSynthesisService.preview()`、admin 权限、fixture scope、Recorded Replay 限制均未改变；
+  仍不访问真实 Guance、不调用模型、不创建 Diagnosis 或 Playbook candidate。
+- 前端 Vitest `235/235`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过。
 
 后端定向测试命令：
 

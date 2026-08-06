@@ -2,6 +2,7 @@ import {
   TROUBLESHOOTING_UI_LABELS,
   type WorkbenchCapabilityCommand,
 } from './workbenchView'
+import { EVIDENCE_SYNTHESIS_FOCUS } from './synthesisPreview'
 
 export type EvidenceCatalogTab = 'systems' | 'assets' | 'contracts' | 'routes' | 'acceptance'
 export type WorkbenchOverlayCapability = 'guance' | 'ledger' | 'case-knowledge'
@@ -12,7 +13,7 @@ export type WorkbenchCapabilityNavItem = {
 }
 
 export type WorkbenchCapabilityNavGroup = {
-  key: 'configuration' | 'validation' | 'learning'
+  key: 'configuration' | 'learning'
   label: string
   items: ReadonlyArray<WorkbenchCapabilityNavItem>
 }
@@ -34,16 +35,6 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
       {
         command: 'evidence-catalog',
         label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog,
-      },
-    ],
-  },
-  {
-    key: 'validation',
-    label: '验证与演练',
-    items: [
-      {
-        command: 'synthesis',
-        label: TROUBLESHOOTING_UI_LABELS.noCodePreview,
       },
     ],
   },
@@ -140,6 +131,19 @@ export function workbenchOverlayLocation(
     query: {
       ...query,
       capability,
+    },
+  }
+}
+
+export function legacyEvidenceSynthesisLocation(
+  preferredReturnPath?: unknown,
+): { path: string; query: Record<string, string> } {
+  const location = workbenchOverlayLocation('ledger', preferredReturnPath)
+  return {
+    ...location,
+    query: {
+      ...location.query,
+      focus: EVIDENCE_SYNTHESIS_FOCUS,
     },
   }
 }

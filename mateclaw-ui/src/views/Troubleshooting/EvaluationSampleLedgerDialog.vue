@@ -11,6 +11,17 @@
     </el-alert>
 
     <div v-loading="loading" class="ledger-body">
+      <section class="history-replay-panel">
+        <div class="panel-head">
+          <div><span>Recorded Replay</span><h3>{{ TROUBLESHOOTING_UI_LABELS.historyReplay }}</h3></div>
+          <el-button type="primary" plain @click="$emit('openHistoryReplay')">回放一条历史样本</el-button>
+        </div>
+        <p>
+          用服务端预置的历史证据检查“失败日志 → PS ID 调用链 → 成功样本对照”是否仍能稳定运行。
+          这是回归验证，不会访问真实观测云、创建排障单或生成排障规则。
+        </p>
+      </section>
+
       <section v-if="ledger" class="summary-panel">
         <div class="summary-grid">
           <article><span>累计样本</span><b>{{ ledger.summary.total }}</b><small>Guance {{ ledger.summary.guance }} · Replay {{ ledger.summary.recordedReplay }}</small></article>
@@ -325,6 +336,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'open-diagnosis': [diagnosisId: string]
+  openHistoryReplay: []
   captured: [sample: EvidenceEvaluationSample]
 }>()
 
@@ -555,8 +567,10 @@ function errorText(error: unknown) {
 <style scoped>
 .ledger-alert { margin-bottom: 14px; }
 .ledger-body { min-height: 220px; }
-.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
-.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { margin-top: 12px; }
+.history-replay-panel,.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
+.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { margin-top: 12px; }
+.history-replay-panel { border-color: #d8e2f5; background: #f8faff; }
+.history-replay-panel p { margin: 9px 0 0; color: #667085; font-size: 10.5px; line-height: 1.55; }
 .summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
 .summary-grid article { padding: 11px; border-radius: 8px; background: #f5f7fb; }
 .summary-grid span,.summary-grid small { display: block; color: #667085; font-size: 10px; }

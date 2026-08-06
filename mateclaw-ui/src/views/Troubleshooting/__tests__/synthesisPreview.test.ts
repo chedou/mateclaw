@@ -73,7 +73,7 @@ const preview: SopSynthesisPreview = {
 }
 
 describe('formal synthesis preview formatting', () => {
-  it('recognizes only the explicit no-code evidence preview focus', () => {
+  it('recognizes only the explicit historical replay focus', () => {
     expect(EVIDENCE_SYNTHESIS_FOCUS).toBe('evidence-synthesis')
     expect(isEvidenceSynthesisFocus('evidence-synthesis')).toBe(true)
     expect(isEvidenceSynthesisFocus(['other', 'evidence-synthesis'])).toBe(true)

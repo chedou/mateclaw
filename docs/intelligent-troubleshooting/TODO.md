@@ -1407,16 +1407,16 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
       四个时间戳往返不丢，未发生阶段保持 `null`。
 
-### T5.5 · 正式 Evidence Spine 开发入口
+### T5.5 · 正式 Evidence Spine 开发入口（2026-08-06 已并入诊断效果评估）
 
-- [x] 正式 `/troubleshooting/sops` 直接调用既有 synthesis preview API，不新增第二套取证实现。
+- [x] “诊断效果评估 → 历史样本回放”直接调用既有 synthesis preview API，不新增第二套取证实现。
 - [x] 页面显式展示 `log_search → log_trace_bundle → contrast_sample`、PS ID 确定性调用链和
       失败/成功样本差异；对照缺失时保持不可用状态，不伪造测量值。
 - [x] 该入口由服务端硬限制为 Recorded Replay，默认数据源仍关闭；不调用模型、不创建 candidate、
       不提供审核、晋升或生产写操作。
-- [x] 正式 `/troubleshooting` 队列增加“无码证据预览”深链；只跳转到
-      `/troubleshooting/sops?focus=evidence-synthesis` 并自动打开上述同一只读入口，不新建 API、
-      页面、Scenario 运行时或 candidate 通道（2026-07-30）。
+- [x] 独立“无码场景预演”菜单和规则库按钮已移除，用户名称改为“历史样本回放”；
+      历史 `/troubleshooting/sops?focus=evidence-synthesis` 深链自动转入诊断效果评估并打开同一
+      只读入口，不新建 API、Scenario 运行时或 candidate 通道（2026-08-06）。
 
 ## 5. P2 · 接真实 Guance 和影子评估
 
@@ -2014,3 +2014,12 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
 - [ ] 增加按“资产 + 查询合同”执行的 admin 只读试跑与审计记录；试跑只能使用服务端资产参数，
       结果继续走 canonical 投影，不返回原始 DQL/日志。
 - [ ] 第一份资产逐合同试跑通过后，再把部署 YAML 授权降为兼容回落；未验证前不删除现有 Profile。
+
+## 14. 历史样本回放入口收敛（2026-08-06）
+
+- [x] 将容易误解为“无码创建场景”的“无码场景预演”改名为“历史样本回放”。
+- [x] 从二级菜单和排障规则库移除独立入口，合并到“诊断效果评估”。
+- [x] 保留旧 `focus=evidence-synthesis` 深链兼容，自动转到评估台并打开回放。
+- [x] 保留并复用 `SopSynthesisService.preview()`；不改变 admin、fixture scope、Recorded Replay、
+      不调模型、不创建候选的服务端边界。
+- [x] 前端 Vitest `235/235`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。

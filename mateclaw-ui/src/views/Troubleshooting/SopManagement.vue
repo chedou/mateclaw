@@ -7,7 +7,6 @@
       @back="returnToWorkbench"
       @reload="reload"
       @open-register="registry.openRegister()"
-      @open-synthesis="synthesisOpen = true"
     />
 
     <SopFilterbar
@@ -94,21 +93,21 @@
       @register="registry.registerSop()"
       @load-template="registry.loadDeploymentTopologyTemplate()"
     />
-
-    <SynthesisPreviewDialog v-model="synthesisOpen" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useSopRegistry } from './useSopRegistry'
 import { useKnowledgeReview } from './useKnowledgeReview'
 import type { KnowledgeReviewRow } from './knowledgeReview'
-import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import { isEvidenceSynthesisFocus } from './synthesisPreview'
-import { safeTroubleshootingReturnPath } from './workbenchCapabilityMenu'
+import {
+  legacyEvidenceSynthesisLocation,
+  safeTroubleshootingReturnPath,
+} from './workbenchCapabilityMenu'
 import SopTopbar from './SopTopbar.vue'
 import SopFilterbar from './SopFilterbar.vue'
 import SopRegistryWorkspace from './SopRegistryWorkspace.vue'
@@ -117,21 +116,15 @@ import SopRegisterDialog from './SopRegisterDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
-const synthesisOpen = ref(isEvidenceSynthesisFocus(route.query.focus))
 
 function returnToWorkbench() {
   void router.push(safeTroubleshootingReturnPath(route.query.returnTo) || '/troubleshooting')
 }
 
 watch(() => route.query.focus, focus => {
-  synthesisOpen.value = isEvidenceSynthesisFocus(focus)
-})
-watch(synthesisOpen, open => {
-  if (open || !isEvidenceSynthesisFocus(route.query.focus)) return
-  const query = { ...route.query }
-  delete query.focus
-  void router.replace({ path: '/troubleshooting/sops', query })
-})
+  if (!isEvidenceSynthesisFocus(focus)) return
+  void router.replace(legacyEvidenceSynthesisLocation(route.query.returnTo))
+}, { immediate: true })
 
 const registry = useSopRegistry()
 const review = useKnowledgeReview()
