@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
 
 const INTAKE_DIALOGS = [
-  'CaseKnowledgeImportDialog',
   'IncidentReportDialog',
   'MessageSendScenarioDialog',
   'DeploymentTopologyScenarioDialog',

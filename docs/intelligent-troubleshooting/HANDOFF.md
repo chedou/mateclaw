@@ -1126,6 +1126,17 @@ T21 诊断效果评估工作区融合（2026-08-06）：
 - 前端 Vitest `237/237`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过；
   浏览器实测评估页打开时没有评估弹窗，正文独立滚动，历史回放和返回工作台路径正常。
 
+T22 复盘模块统一工作区（2026-08-06）：
+
+- “历史案例入库”不再通过 `CaseKnowledgeImportDialog` 弹出，改为
+  `CaseKnowledgeImportWorkspace` 直接占据智能排障主工作区；继续兼容
+  `/troubleshooting?capability=case-knowledge`。
+- 新增 `CapabilityWorkspaceShell` 作为“诊断效果评估”和“历史案例入库”的唯一页面外壳，统一标题、说明、
+  返回/刷新操作、正文间距、滚动与窄屏规则，避免两个复盘模块各自维护一套页面规范。
+- 知识库加载、推荐选择、导入上限、幂等导入、向量状态和脱敏边界均未改变；页面浏览器验收只读取知识库，
+  未执行案例导入写操作。
+- 前端 Vitest `238/238`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过。
+
 后端定向测试命令：
 
 ```bash

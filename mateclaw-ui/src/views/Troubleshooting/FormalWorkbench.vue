@@ -4,7 +4,7 @@
     :class="{
       'traditional-list-mode': viewMode === 'LIST',
       'full-detail-mode': viewMode === 'DETAIL',
-      'capability-workspace-mode': evaluationWorkspaceActive,
+      'capability-workspace-mode': capabilityWorkspaceActive,
     }"
   >
     <EvaluationSampleLedgerWorkspace
@@ -17,9 +17,24 @@
       :capture-disabled-reason="evaluationCaptureDisabledReason"
       :replay-capture-enabled="canCaptureReplayEvaluationSample"
       :replay-capture-disabled-reason="replayCaptureDisabledReason"
-      @back="closeEvaluationWorkspace"
+      @back="closeCapabilityWorkspace"
       @open-diagnosis="openDiagnosisFromEvaluation"
       @open-history-replay="openHistoricalReplay"
+    />
+
+    <CaseKnowledgeImportWorkspace
+      v-else-if="caseKnowledgeWorkspaceActive"
+      v-model:form="caseKnowledgeImportForm"
+      :knowledge-bases="caseKnowledgeBases"
+      :knowledge-bases-loading="caseKnowledgeBasesLoading"
+      :result="caseKnowledgeImportResult"
+      :vector-status="caseKnowledgeVectorStatus"
+      :loading="caseKnowledgeImportLoading"
+      :can-submit="canSubmitCaseKnowledgeImport"
+      @back="closeCapabilityWorkspace"
+      @refresh="prepareCaseKnowledgeWorkspace(false)"
+      @manage-wiki="router.push('/wiki')"
+      @submit="importHistoricalCases"
     />
 
     <DiagnosisListView
@@ -150,19 +165,6 @@
       :can-operate="canOperateTroubleshooting"
       :can-manage="canManageTroubleshooting"
       @select="startTroubleshootingScenario"
-    />
-
-    <CaseKnowledgeImportDialog
-      v-model="caseKnowledgeImportOpen"
-      v-model:form="caseKnowledgeImportForm"
-      :knowledge-bases="caseKnowledgeBases"
-      :knowledge-bases-loading="caseKnowledgeBasesLoading"
-      :result="caseKnowledgeImportResult"
-      :vector-status="caseKnowledgeVectorStatus"
-      :loading="caseKnowledgeImportLoading"
-      :can-submit="canSubmitCaseKnowledgeImport"
-      @manage-wiki="router.push('/wiki')"
-      @submit="importHistoricalCases"
     />
 
     <IncidentReportDialog
@@ -306,7 +308,7 @@ import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
 import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
-import CaseKnowledgeImportDialog from './CaseKnowledgeImportDialog.vue'
+import CaseKnowledgeImportWorkspace from './CaseKnowledgeImportWorkspace.vue'
 import IncidentReportDialog from './IncidentReportDialog.vue'
 import MessageSendScenarioDialog from './MessageSendScenarioDialog.vue'
 import DeploymentTopologyScenarioDialog from './DeploymentTopologyScenarioDialog.vue'
@@ -379,7 +381,6 @@ const deploymentTopologyScenarioLoading = ref(false)
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
 const messageSendScenarioOpen = ref(false)
-const caseKnowledgeImportOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
@@ -471,6 +472,10 @@ const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
 const evaluationWorkspaceActive = computed(() => canManageTroubleshooting.value
   && normalizeWorkbenchOverlayCapability(route.query.capability) === 'ledger')
+const caseKnowledgeWorkspaceActive = computed(() => canManageTroubleshooting.value
+  && normalizeWorkbenchOverlayCapability(route.query.capability) === 'case-knowledge')
+const capabilityWorkspaceActive = computed(() => evaluationWorkspaceActive.value
+  || caseKnowledgeWorkspaceActive.value)
 
 async function switchWorkbenchView(mode: WorkbenchViewSwitchMode) {
   viewMode.value = mode
@@ -504,7 +509,7 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   } else if (command === 'ledger') {
     void prepareEvaluationWorkspace()
   } else if (command === 'case-knowledge') {
-    void openCaseKnowledgeImport()
+    void prepareCaseKnowledgeWorkspace()
   }
 }
 
@@ -512,10 +517,9 @@ function openPlaybooks() {
   handleCapabilityCommand('playbooks')
 }
 
-async function openCaseKnowledgeImport() {
+async function prepareCaseKnowledgeWorkspace(resetResult = true) {
   if (!canManageTroubleshooting.value) return
-  caseKnowledgeImportOpen.value = true
-  caseKnowledgeImportResult.value = null
+  if (resetResult) caseKnowledgeImportResult.value = null
   caseKnowledgeBasesLoading.value = true
   try {
     const response = await wikiApi.listKBs()
@@ -796,7 +800,7 @@ async function prepareEvaluationWorkspace() {
   if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
 }
 
-function closeEvaluationWorkspace() {
+function closeCapabilityWorkspace() {
   void router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
 }
 
@@ -924,20 +928,13 @@ watch(synthesisPreviewOpen, open => {
   delete query.focus
   void router.replace({ path: '/troubleshooting', query })
 })
-watch(
-  [guanceOnboardingOpen, caseKnowledgeImportOpen],
-  ([guanceOpen, caseKnowledgeOpen]) => {
-    const command = normalizeWorkbenchOverlayCapability(route.query.capability)
-    if (!command || command === 'ledger') return
-    const stillOpen = command === 'guance'
-      ? guanceOpen
-      : caseKnowledgeOpen
-    if (stillOpen) return
+watch(guanceOnboardingOpen, open => {
+  const command = normalizeWorkbenchOverlayCapability(route.query.capability)
+  if (command !== 'guance' || open) return
     const query = { ...route.query }
     delete query.capability
     void router.replace({ path: '/troubleshooting', query })
-  },
-)
+})
 onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 </script>
 
