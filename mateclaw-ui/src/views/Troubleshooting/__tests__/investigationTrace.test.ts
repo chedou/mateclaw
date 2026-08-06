@@ -118,7 +118,7 @@ describe('seven-stage investigation trace presentation', () => {
       investigationMode: 'ERROR_CODE_PLAYBOOK',
       routeAuthority: 'EXPLICIT',
       routeSemanticsProvenance: 'LEGACY_DERIVED',
-    })).toBe('旧合同推导 · 调查模式与路由权威未记录')
+    })).toBe('旧版记录推导 · 调查模式与路由权威未记录')
 
     expect(investigationRouteLabel({
       investigationMode: 'ERROR_CODE_PLAYBOOK',

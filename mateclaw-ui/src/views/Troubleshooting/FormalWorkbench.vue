@@ -793,7 +793,7 @@ async function validateGuance() {
       if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
         ElMessage.success('单次规范化读链已观测；待 T7 owner 字段验收，fixtureMode 保持开启')
       } else {
-        ElMessage.warning('真源验证被就绪门或规范化合同阻断')
+        ElMessage.warning('真源验证未通过：来源未就绪或返回数据格式校验未通过')
       }
     }
   } finally {
@@ -835,7 +835,7 @@ async function previewGuanceSpine() {
       } else if (response.data.stage === 'CORE_CHAIN_OBSERVED') {
         ElMessage.warning('核心链路可压缩，但成功样本对照缺失，继续校准期')
       } else {
-        ElMessage.warning('真实 Evidence Spine 被就绪门或规范化合同阻断')
+        ElMessage.warning('真实 Evidence Spine 未通过：来源未就绪或返回数据格式校验未通过')
       }
     }
   } finally {

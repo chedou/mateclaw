@@ -99,7 +99,7 @@
     <p
       v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
       class="source-blocker"
-    >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询合同；服务端不会记录 owner ACCEPTED。</p>
+    >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询规则；服务端不会记录 owner ACCEPTED。</p>
     <p
       v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED'"
       class="source-blocker"

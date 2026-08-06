@@ -71,7 +71,7 @@
 
       <section v-if="captureContext || replayCaptureContext" class="capture-panel">
         <div class="panel-head">
-          <div><span>T8 样本采集</span><h3>按来源重放同一 Evidence Spine 合同</h3></div>
+          <div><span>T8 样本采集</span><h3>按来源重放同一套取证步骤</h3></div>
           <el-tag v-if="displayCaptureContext" size="small" type="info">{{ displayCaptureContext.system }} / {{ displayCaptureContext.service }}</el-tag>
         </div>
         <p>不会保存当前浏览器预览；每次都重新执行服务端读链。输入指纹未变时复用既有样本，发生漂移时自动新增不可变 revision，绝不覆盖旧 oracle。</p>

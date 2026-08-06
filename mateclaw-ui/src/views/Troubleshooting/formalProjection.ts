@@ -157,7 +157,7 @@ export function diagnosisSummaryRouteLabel(
   provenance: RouteSemanticsProvenance,
 ) {
   if (provenance === 'LEGACY_DERIVED') {
-    return '旧合同推导 · 详情可见兼容值'
+    return '旧版记录推导 · 详情可见兼容值'
   }
   if (mode == null || authority == null) {
     return '路由字段缺失'

@@ -105,7 +105,7 @@
         type="primary"
         :disabled="!canEnterValidation"
         @click="startValidation"
-      >验证单条查询合同</el-button>
+      >验证单条查询规则</el-button>
     </template>
   </el-dialog>
 </template>

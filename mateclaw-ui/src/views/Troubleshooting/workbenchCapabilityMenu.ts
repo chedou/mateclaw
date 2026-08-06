@@ -78,7 +78,7 @@ export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestina
   },
   {
     tab: 'contracts',
-    label: '查询合同',
+    label: '查询规则',
   },
   {
     tab: 'routes',

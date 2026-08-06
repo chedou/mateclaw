@@ -137,7 +137,7 @@ describe('formal troubleshooting projection formatting', () => {
 
   it('keeps persisted route semantics distinct from legacy reconstruction', () => {
     expect(diagnosisSummaryRouteLabel(null, null, 'LEGACY_DERIVED'))
-      .toBe('旧合同推导 · 详情可见兼容值')
+      .toBe('旧版记录推导 · 详情可见兼容值')
     expect(diagnosisSummaryRouteLabel('SCENARIO_PLAYBOOK', 'RULE_MATCHED', 'PERSISTED'))
       .toBe('场景排障方案 · 规则命中')
     expect(diagnosisSummaryRouteLabel(null, 'RULE_MATCHED', 'PERSISTED'))

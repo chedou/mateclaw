@@ -66,7 +66,7 @@
         </dl>
 
         <section v-if="selectedStage.key === 'EVIDENCE_CONTRACT'" class="detail-block">
-          <div class="detail-block-head"><b>本次固定要查的数据（证据合同）</b><span>{{ trace.evidenceContracts.length }} 份</span></div>
+          <div class="detail-block-head"><b>本次固定要查的数据（取证要求）</b><span>{{ trace.evidenceContracts.length }} 项</span></div>
           <article v-for="contract in trace.evidenceContracts" :key="contract.requestId" class="contract-card">
             <header><code>{{ contract.requestId }}</code><span>{{ contract.required ? '必需' : '可选' }}</span></header>
             <b>{{ contract.purpose }}</b>
@@ -91,7 +91,7 @@
             </header>
             <p>{{ attempt.summary }}</p>
             <dl>
-              <div><dt>合同请求</dt><dd>{{ traceDisplay(attempt.requestId) }}</dd></div>
+              <div><dt>对应查询</dt><dd>{{ traceDisplay(attempt.requestId) }}</dd></div>
               <div><dt>信号类型</dt><dd>{{ traceDisplay(attempt.signalKind) }}</dd></div>
               <div><dt>采集时间</dt><dd>{{ traceTime(attempt.collectedAt) }}</dd></div>
               <div><dt>本次耗时</dt><dd>{{ traceDuration(attempt.duration) }}</dd></div>

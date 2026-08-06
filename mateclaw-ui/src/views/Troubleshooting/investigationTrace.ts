@@ -87,7 +87,7 @@ export function investigationRouteLabel(
   >,
 ) {
   if (developer.routeSemanticsProvenance === 'LEGACY_DERIVED') {
-    return '旧合同推导 · 调查模式与路由权威未记录'
+    return '旧版记录推导 · 调查模式与路由权威未记录'
   }
   return investigationLabel(developer.investigationMode, developer.routeAuthority)
 }

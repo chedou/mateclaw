@@ -30,7 +30,7 @@
     <div class="validation" :class="{ valid: importValidation.sop }">
       <template v-if="importValidation.sop">
         <span class="validation-dot" />
-        合同可提交：<code>{{ importValidation.sop.system }}:{{ importValidation.sop.errorCode }}</code>
+        排障规则可提交：<code>{{ importValidation.sop.system }}:{{ importValidation.sop.errorCode }}</code>
         · {{ importValidation.sop.evidenceRequests.length }} 取证
         · {{ importValidation.sop.diagnosisRules.length }} 规则
       </template>

@@ -11,10 +11,10 @@
             <p class="eyebrow">运行与治理</p>
             <h1>取证查询目录</h1>
           </div>
-          <el-tag effect="plain" type="info">服务端审核合同</el-tag>
+          <el-tag effect="plain" type="info">服务端已审核规则</el-tag>
         </div>
         <p class="subtitle">
-          按系统和模块查看“要查什么、传什么、从哪里来、返回什么”，
+          系统用它确定去哪里查询、需要哪些参数、返回哪些数据，
           并维护 Workspace 层的只读取证路由。
         </p>
       </div>
@@ -22,7 +22,7 @@
         <el-input
           v-model="query"
           clearable
-          placeholder="搜索场景、信号、合同或输出字段"
+          placeholder="搜索场景、信号、查询规则或返回字段"
           class="search-input"
         />
         <el-button :loading="loading" @click="loadCatalog">刷新目录</el-button>
@@ -46,7 +46,7 @@
           <span>模块</span><strong>{{ summary.modules }}</strong>
         </article>
         <article class="summary-card">
-          <span>查询合同</span><strong>{{ summary.contracts }}</strong>
+          <span>查询规则</span><strong>{{ summary.contracts }}</strong>
         </article>
         <article class="summary-card emphasis">
           <span>当前可运行</span><strong>{{ summary.runnable }}</strong>
@@ -173,18 +173,18 @@
                 class="boundary-note"
                 type="info"
                 :closable="false"
-                title="目录展示合同元数据和脱敏请求轮廓；API Key、端点主机、原始 DQL 和原始日志仍由服务端保管。"
+                title="目录只展示查询规则摘要和脱敏请求轮廓；API Key、端点主机、原始 DQL 和原始日志仍由服务端保管。"
               />
             </section>
           </div>
-          <el-empty v-else description="当前 Workspace 没有匹配的取证查询合同" />
+          <el-empty v-else description="当前 Workspace 没有匹配的取证查询规则" />
         </el-tab-pane>
 
         <el-tab-pane label="系统观测资产" name="assets">
           <div class="asset-toolbar">
             <div>
               <h2>系统观测资产</h2>
-              <p>把业务系统、运行环境和已审核查询合同精确关联起来。</p>
+              <p>把业务系统、运行环境和已审核查询规则精确关联起来。</p>
             </div>
             <el-button type="primary" @click="openNewAsset">新增资产</el-button>
           </div>
@@ -192,7 +192,7 @@
             type="info"
             :closable="false"
             class="tab-alert"
-            title="这里只维护资源标识和合同引用；API Key、端点主机、原始 DQL 与原始日志不进入资产表。"
+            title="这里只维护资源标识和查询规则引用；API Key、端点主机、原始 DQL 与原始日志不进入资产表。"
           />
           <el-table v-if="filteredAssets.length" :data="filteredAssets" class="catalog-table" stripe>
             <el-table-column label="系统 / 模块" min-width="230">
@@ -209,7 +209,7 @@
                 </small>
               </template>
             </el-table-column>
-            <el-table-column label="已绑定查询合同" min-width="300">
+            <el-table-column label="已绑定查询规则" min-width="300">
               <template #default="scope">
                 <div class="asset-contracts">
                   <el-tag
@@ -243,7 +243,7 @@
           </el-empty>
         </el-tab-pane>
 
-        <el-tab-pane label="查询合同" name="contracts">
+        <el-tab-pane label="查询规则" name="contracts">
           <el-table :data="filteredRows" class="catalog-table" stripe>
             <el-table-column prop="system" label="系统" min-width="120" />
             <el-table-column prop="service" label="模块" min-width="170" />
@@ -345,7 +345,7 @@
               <h3>模块验收状态</h3>
               <article v-for="row in moduleRows" :key="`${row.system}/${row.module.service}`" class="acceptance-card">
                 <div class="acceptance-title">
-                  <div><b>{{ row.system }} / {{ row.module.service }}</b><small>{{ row.module.runnableContracts }}/{{ row.module.contracts.length }} 个合同可运行</small></div>
+                  <div><b>{{ row.system }} / {{ row.module.service }}</b><small>{{ row.module.runnableContracts }}/{{ row.module.contracts.length }} 条查询规则可运行</small></div>
                   <el-tag :type="row.module.acceptance.status === 'ACCEPTED' ? 'success' : 'warning'">
                     {{ acceptanceStatusLabel(row.module.acceptance.status) }}
                   </el-tag>
@@ -466,7 +466,7 @@
           </el-form-item>
         </div>
 
-        <el-form-item label="绑定已审核查询合同">
+        <el-form-item label="绑定已审核查询规则">
           <div v-if="contractGroups.length" class="contract-binding-grid">
             <div v-for="group in contractGroups" :key="group.signalKind" class="contract-binding-row">
               <div>
@@ -488,12 +488,12 @@
               </el-select>
             </div>
           </div>
-          <el-empty v-else :image-size="56" description="当前部署没有可登记的已审核合同" />
+          <el-empty v-else :image-size="56" description="当前部署没有可登记的已审核查询规则" />
         </el-form-item>
 
         <section v-if="editableAssetParameters.length" class="asset-parameter-section">
           <div class="asset-parameter-heading">
-            <b>合同要求的精确资源标识</b>
+            <b>查询规则需要的资源标识</b>
             <small>这些值由资产固定，排障运行时不能改成其他系统资源。</small>
           </div>
           <div class="asset-form-grid">
@@ -785,7 +785,7 @@ async function saveAsset() {
     return
   }
   if (form.enabled && !Object.keys(signalBindings).length) {
-    ElMessage.warning('启用资产前至少绑定一个已审核查询合同')
+    ElMessage.warning('启用资产前至少绑定一条已审核查询规则')
     return
   }
   const parameters: Record<string, string> = {}

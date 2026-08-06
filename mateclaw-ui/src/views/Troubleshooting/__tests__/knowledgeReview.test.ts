@@ -310,7 +310,7 @@ describe('knowledge review projection', () => {
 
     expect(missingKnowledgeOwnerLabel(legacy)).toContain('历史 v1')
     expect(missingOutcomeProofLabel(legacy)).toBe('LEGACY_NOT_PROJECTED')
-    expect(missingKnowledgeOwnerLabel(current)).toContain('当前合同缺口')
+    expect(missingKnowledgeOwnerLabel(current)).toContain('当前记录不完整')
     expect(missingOutcomeProofLabel(current)).toBe('CURRENT_CONTRACT_INVALID')
   })
 
