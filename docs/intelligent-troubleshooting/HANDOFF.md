@@ -1114,6 +1114,18 @@ T20 历史样本回放入口收敛（2026-08-06）：
   仍不访问真实 Guance、不调用模型、不创建 Diagnosis 或 Playbook candidate。
 - 前端 Vitest `235/235`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过。
 
+T21 诊断效果评估工作区融合（2026-08-06）：
+
+- “诊断效果评估”不再通过 `EvaluationSampleLedgerDialog` 弹出，而是由
+  `EvaluationSampleLedgerWorkspace` 直接占据智能排障主工作区；标题栏、滚动区域、二级菜单选中态与
+  规则库、取证查询目录保持同一页面层级。
+- 继续兼容 `/troubleshooting?capability=ledger`。从详情页、真源验收或历史深链进入时保留当前
+  Diagnosis 上下文；可从评估页返回原工作台，也可从样本直接打开对应 Diagnosis。
+- 样本采集、人工参考解、单 Agent 基线和 Recorded Replay API 均未改变；“历史样本回放”仍是评估页
+  内的受限动作，不新增第二套评估或取证实现。
+- 前端 Vitest `237/237`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过；
+  浏览器实测评估页打开时没有评估弹窗，正文独立滚动，历史回放和返回工作台路径正常。
+
 后端定向测试命令：
 
 ```bash

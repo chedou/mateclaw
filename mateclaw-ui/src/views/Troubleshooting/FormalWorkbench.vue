@@ -4,10 +4,26 @@
     :class="{
       'traditional-list-mode': viewMode === 'LIST',
       'full-detail-mode': viewMode === 'DETAIL',
+      'capability-workspace-mode': evaluationWorkspaceActive,
     }"
   >
+    <EvaluationSampleLedgerWorkspace
+      v-if="evaluationWorkspaceActive"
+      :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
+      :current-diagnosis-status="current?.diagnosis.status || null"
+      :capture-context="evaluationCaptureContext"
+      :replay-capture-context="replayEvaluationCaptureContextValue"
+      :capture-enabled="canCaptureEvaluationSample"
+      :capture-disabled-reason="evaluationCaptureDisabledReason"
+      :replay-capture-enabled="canCaptureReplayEvaluationSample"
+      :replay-capture-disabled-reason="replayCaptureDisabledReason"
+      @back="closeEvaluationWorkspace"
+      @open-diagnosis="openDiagnosisFromEvaluation"
+      @open-history-replay="openHistoricalReplay"
+    />
+
     <DiagnosisListView
-      v-if="viewMode === 'LIST'"
+      v-else-if="viewMode === 'LIST'"
       v-model:status-filter="statusFilter"
       :rows="rows"
       :loading="listLoading"
@@ -211,20 +227,6 @@
       @open-evaluation="openEvaluationLedger"
     />
 
-    <EvaluationSampleLedgerDialog
-      v-model="evaluationLedgerOpen"
-      :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
-      :current-diagnosis-status="current?.diagnosis.status || null"
-      :capture-context="evaluationCaptureContext"
-      :replay-capture-context="replayEvaluationCaptureContextValue"
-      :capture-enabled="canCaptureEvaluationSample"
-      :capture-disabled-reason="evaluationCaptureDisabledReason"
-      :replay-capture-enabled="canCaptureReplayEvaluationSample"
-      :replay-capture-disabled-reason="replayCaptureDisabledReason"
-      @open-diagnosis="openDiagnosisFromLedger"
-      @open-history-replay="openHistoricalReplay"
-    />
-
     <SynthesisPreviewDialog v-model="synthesisPreviewOpen" />
 
     <TransferDialog
@@ -296,7 +298,7 @@ import {
   evidenceCatalogLocation,
   normalizeWorkbenchOverlayCapability,
 } from './workbenchCapabilityMenu'
-import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
+import EvaluationSampleLedgerWorkspace from './EvaluationSampleLedgerWorkspace.vue'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import GuanceValidationDialog from './GuanceValidationDialog.vue'
@@ -381,7 +383,6 @@ const caseKnowledgeImportOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
-const evaluationLedgerOpen = ref(false)
 const synthesisPreviewOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
@@ -468,6 +469,8 @@ const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && recordingBatchReady.value
   && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
+const evaluationWorkspaceActive = computed(() => canManageTroubleshooting.value
+  && normalizeWorkbenchOverlayCapability(route.query.capability) === 'ledger')
 
 async function switchWorkbenchView(mode: WorkbenchViewSwitchMode) {
   viewMode.value = mode
@@ -499,7 +502,7 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   } else if (command === 'guance') {
     openGuanceOnboarding()
   } else if (command === 'ledger') {
-    openEvaluationLedger()
+    void prepareEvaluationWorkspace()
   } else if (command === 'case-knowledge') {
     void openCaseKnowledgeImport()
   }
@@ -784,14 +787,32 @@ function captureGuanceValidationSession() {
 
 async function openEvaluationLedger() {
   if (!canManageTroubleshooting.value) return
-  const diagnosisId = current.value?.diagnosis.diagnosisId
-  if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
-  evaluationLedgerOpen.value = true
+  const query = { ...route.query, capability: 'ledger' }
+  await router.push({ path: '/troubleshooting', query })
 }
 
-async function openDiagnosisFromLedger(diagnosisId: string) {
-  evaluationLedgerOpen.value = false
-  await store.selectDiagnosis(diagnosisId)
+async function prepareEvaluationWorkspace() {
+  const diagnosisId = current.value?.diagnosis.diagnosisId
+  if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
+}
+
+function closeEvaluationWorkspace() {
+  void router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
+}
+
+async function openDiagnosisFromEvaluation(diagnosisId: string) {
+  const query = workbenchQueryWithoutCapability()
+  query.view = 'detail'
+  query.diagnosisId = diagnosisId
+  await router.push({ path: '/troubleshooting', query })
+  await store.selectDiagnosis(diagnosisId, false, 'DETAIL')
+}
+
+function workbenchQueryWithoutCapability() {
+  const query = { ...route.query }
+  delete query.capability
+  delete query.focus
+  return query
 }
 
 async function validateGuance() {
@@ -893,7 +914,6 @@ watch(
   () => route.query.focus,
   focus => {
     if (!isEvidenceSynthesisFocus(focus) || !canManageTroubleshooting.value) return
-    evaluationLedgerOpen.value = true
     synthesisPreviewOpen.value = true
   },
   { immediate: true },
@@ -905,15 +925,13 @@ watch(synthesisPreviewOpen, open => {
   void router.replace({ path: '/troubleshooting', query })
 })
 watch(
-  [guanceOnboardingOpen, evaluationLedgerOpen, caseKnowledgeImportOpen],
-  ([guanceOpen, ledgerOpen, caseKnowledgeOpen]) => {
+  [guanceOnboardingOpen, caseKnowledgeImportOpen],
+  ([guanceOpen, caseKnowledgeOpen]) => {
     const command = normalizeWorkbenchOverlayCapability(route.query.capability)
-    if (!command) return
+    if (!command || command === 'ledger') return
     const stillOpen = command === 'guance'
       ? guanceOpen
-      : command === 'ledger'
-        ? ledgerOpen
-        : caseKnowledgeOpen
+      : caseKnowledgeOpen
     if (stillOpen) return
     const query = { ...route.query }
     delete query.capability
@@ -927,6 +945,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:clamp(236px,18vw,320px) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
 .formal-workbench.traditional-list-mode { display:block; width:100%; overflow-y:auto; }
 .formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); width:100%; }
+.formal-workbench.capability-workspace-mode { display:block; width:100%; overflow:hidden; }
 .eyebrow { display:block; color:var(--blue); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
 .work-area { width:100%; min-width:0; overflow-y:auto; padding:20px clamp(20px,3vw,40px) 40px; }
 .detail-empty { display:grid; place-items:center; align-content:center; min-height:70vh; color:var(--muted); text-align:center; }

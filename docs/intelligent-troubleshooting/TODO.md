@@ -2023,3 +2023,11 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
 - [x] 保留并复用 `SopSynthesisService.preview()`；不改变 admin、fixture scope、Recorded Replay、
       不调模型、不创建候选的服务端边界。
 - [x] 前端 Vitest `235/235`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。
+
+## 15. 诊断效果评估工作区融合（2026-08-06）
+
+- [x] 将评估台从弹窗改为智能排障主工作区内嵌页面，二级菜单和标题层级与其他管理模块一致。
+- [x] 保留 `capability=ledger` 深链、当前 Diagnosis 上下文、样本跳转和返回工作台流程。
+- [x] 保留样本采集、参考解冻结、单 Agent 基线与历史样本回放的既有服务端合同和权限边界。
+- [x] 增加内嵌呈现回归测试，并用真实浏览器验证页面无评估弹窗、工作区滚动和返回流程。
+- [x] 前端 Vitest `237/237`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。

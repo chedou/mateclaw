@@ -1,11 +1,18 @@
 <template>
-  <el-dialog
-    :model-value="modelValue"
-    :title="TROUBLESHOOTING_UI_LABELS.evaluation"
-    width="min(980px, calc(100vw - 32px))"
-    class="evaluation-ledger-dialog"
-    @update:model-value="updateOpen"
-  >
+  <section class="evaluation-ledger-workspace">
+    <header class="evaluation-workspace-head">
+      <div>
+        <span>复盘与沉淀</span>
+        <h1>{{ TROUBLESHOOTING_UI_LABELS.evaluation }}</h1>
+        <p>使用真实故障和历史样本验证取证链、诊断结论与版本稳定性。</p>
+      </div>
+      <div class="evaluation-workspace-actions">
+        <el-button text @click="$emit('back')">返回排障工作台</el-button>
+        <el-button :loading="loading" plain @click="loadLedger">刷新</el-button>
+      </div>
+    </header>
+
+    <div class="evaluation-workspace-content">
     <el-alert type="warning" :closable="false" class="ledger-alert">
       台账只积累脱敏的 Evidence Spine 结构事实与人工参考解。达到 20–30 条不等于 T8 通过，且不会自动关闭 fixtureMode。
     </el-alert>
@@ -277,14 +284,12 @@
       </section>
     </div>
 
-    <template #footer>
-      <el-button @click="updateOpen(false)">关闭</el-button>
-    </template>
-  </el-dialog>
+    </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import {
@@ -313,7 +318,6 @@ import {
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 const props = withDefaults(defineProps<{
-  modelValue: boolean
   currentDiagnosisId?: string | null
   currentDiagnosisStatus?: DiagnosisStatus | null
   captureContext?: EvaluationSampleCaptureContext | null
@@ -334,7 +338,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
+  back: []
   'open-diagnosis': [diagnosisId: string]
   openHistoryReplay: []
   captured: [sample: EvidenceEvaluationSample]
@@ -393,8 +397,7 @@ const referenceError = computed(() => {
   return overlap ? `intent key 不能同时为必须与禁止：${overlap}` : ''
 })
 
-watch(() => props.modelValue, (open) => {
-  if (!open) return
+onMounted(() => {
   syncCaptureForm()
   referenceSample.value = null
   void loadLedger()
@@ -403,10 +406,6 @@ watch(() => props.captureContext, syncCaptureForm, { deep: true })
 
 function syncCaptureForm() {
   captureForm.scenarioKey = props.captureContext?.scenarioKey || ''
-}
-
-function updateOpen(value: boolean) {
-  emit('update:modelValue', value)
 }
 
 async function loadLedger() {
@@ -565,6 +564,13 @@ function errorText(error: unknown) {
 </script>
 
 <style scoped>
+.evaluation-ledger-workspace { display:flex; flex-direction:column; width:100%; height:100%; min-width:0; min-height:0; color:var(--mc-text-primary); background:var(--mc-bg); }
+.evaluation-workspace-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex:0 0 auto; padding:22px 26px 18px; border-bottom:1px solid var(--mc-border-light); background:var(--mc-bg-elevated); }
+.evaluation-workspace-head span { color:var(--mc-primary); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.evaluation-workspace-head h1 { margin:4px 0 5px; color:var(--mc-text-primary); font-size:22px; letter-spacing:-.03em; }
+.evaluation-workspace-head p { margin:0; color:var(--mc-text-secondary); font-size:12px; line-height:1.5; }
+.evaluation-workspace-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+.evaluation-workspace-content { flex:1; min-height:0; padding:18px 22px 30px; overflow-y:auto; }
 .ledger-alert { margin-bottom: 14px; }
 .ledger-body { min-height: 220px; }
 .history-replay-panel,.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
@@ -626,6 +632,6 @@ function errorText(error: unknown) {
 .disposition-field { grid-column: 1 / -1; }
 .reference-error { margin: 8px 0 0; color: #d92d20; font-size: 10px; }
 .reference-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
-@media(max-width:760px){.summary-grid,.latency-grid,.baseline-grid{grid-template-columns:1fr 1fr}.progress-row,.capture-form,.reference-form{grid-template-columns:1fr}.capture-actions{align-items:stretch;flex-direction:column}.sample-row{grid-template-columns:1fr}.sample-actions,.baseline-result{align-items:flex-start;text-align:left}}
+@media(max-width:760px){.evaluation-workspace-head{align-items:flex-start;flex-direction:column;padding:18px}.evaluation-workspace-actions{width:100%;justify-content:space-between}.evaluation-workspace-content{padding:14px}.summary-grid,.latency-grid,.baseline-grid{grid-template-columns:1fr 1fr}.progress-row,.capture-form,.reference-form{grid-template-columns:1fr}.capture-actions{align-items:stretch;flex-direction:column}.sample-row{grid-template-columns:1fr}.sample-actions,.baseline-result{align-items:flex-start;text-align:left}}
 @media(max-width:520px){.summary-grid,.latency-grid,.baseline-grid{grid-template-columns:1fr}}
 </style>
