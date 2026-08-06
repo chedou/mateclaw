@@ -4,6 +4,7 @@ import {
   bindingStatusLabel,
   catalogSummary,
   contractMatches,
+  directTrialBlockReason,
   moveOrderedItem,
   routeOriginLabel,
   runtimeStateLabel,
@@ -124,5 +125,30 @@ describe('evidence query catalog presentation', () => {
       .toEqual(['recorded-replay', 'guance'])
     expect(moveOrderedItem(['guance', 'recorded-replay'], 0, -1))
       .toEqual(['guance', 'recorded-replay'])
+  })
+
+  it('allows only runnable direct Guance queries without previous-evidence inputs', () => {
+    expect(directTrialBlockReason(contract)).toBe('')
+    expect(directTrialBlockReason({
+      ...contract,
+      signalKind: 'log_trace_bundle',
+      parameters: [{
+        name: 'ps_id',
+        source: 'PREVIOUS_EVIDENCE',
+        required: true,
+        description: '由前一步失败日志提取',
+      }],
+    })).toContain('运行完整证据链')
+    expect(directTrialBlockReason({ ...contract, runnable: false }))
+      .toContain('当前不可运行')
+    expect(directTrialBlockReason({
+      ...contract,
+      parameters: [{
+        name: 'deployment',
+        source: 'EVIDENCE_REQUEST_TARGET',
+        required: true,
+        description: '错误标记的资源参数',
+      }],
+    })).toContain('系统观测资产')
   })
 })

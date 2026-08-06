@@ -20,6 +20,8 @@ import type {
   EvidenceEvaluationSample,
   EvidenceEvaluationSampleLedger,
   EvidenceQueryCatalog,
+  EvidenceContractTrial,
+  EvidenceContractTrialRequest,
   EvidenceRouteDeclaration,
   FinalizeEvaluationSampleReferenceRequest,
   GuanceEvidenceAcceptanceView,
@@ -116,6 +118,20 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Scenario-oriented contract directory; reads configuration without querying a source. */
   evidenceCatalog: () => http.get<EvidenceQueryCatalog>(
     '/troubleshooting/evidence/catalog',
+  ),
+
+  /** Admin-only bounded read-only query; the response and audit contain no raw evidence. */
+  runEvidenceContractTrial: (data: EvidenceContractTrialRequest) =>
+    http.post<EvidenceContractTrial>('/troubleshooting/evidence/contract-trials', data),
+
+  /** Reads immutable secret-free trial audits for one catalog selection. */
+  evidenceContractTrials: (params?: {
+    system?: string
+    service?: string
+    contractRef?: string
+    limit?: number
+  }) => http.get<EvidenceContractTrial[]>(
+    '/troubleshooting/evidence/contract-trials', { params },
   ),
 
   /** Replaces one system + signal route; an empty platform list explicitly disables it. */

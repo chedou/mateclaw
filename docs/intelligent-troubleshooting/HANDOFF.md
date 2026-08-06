@@ -1114,6 +1114,20 @@ T20 历史样本回放入口收敛（2026-08-06）：
   仍不访问真实 Guance、不调用模型、不创建 Diagnosis 或 Playbook candidate。
 - 前端 Vitest `235/235`、ESLint（0 error）、Snowflake 精度守卫、`vue-tsc --noEmit` 与生产构建通过。
 
+T21 系统观测资产逐规则只读试跑（2026-08-06）：
+
+- 新增 admin `POST /api/v1/troubleshooting/evidence/contract-trials` 与 viewer
+  `GET /api/v1/troubleshooting/evidence/contract-trials`。POST 必须精确命中当前 Workspace 的可运行
+  资产绑定，只允许已装配的 Guance 只读适配器；系统资产参数仍由服务端合并和校验。
+- 依赖 `PREVIOUS_EVIDENCE` 的查询规则不能在页面直接试跑，尤其不能手填 `ps_id`；页面明确引导从
+  排障详情运行完整证据链。直接试跑只接受规则声明的非资源运行参数、受限时间窗口和可选故障时间；
+  所有资源范围必须来自系统观测资产，即使规则误标为浏览器输入也会 fail-closed。
+- V195 三方言新增不可变审计表。成功、无证据和源查询失败都会留下安全状态与停止原因；只保存
+  canonical 字段名、资产 ID/版本、耗时、actor 和完成时间，不保存查询词、字段值、原始日志、DQL、
+  端点或凭据。
+- “取证查询目录”的规则详情增加“管理员只读试跑”和最近审计列表。它只证明单条规则能返回规范证据，
+  不创建排障单，也不等同于 T7/T8 或 owner 生产验收。
+
 T21 诊断效果评估工作区融合（2026-08-06）：
 
 - “诊断效果评估”不再通过 `EvaluationSampleLedgerDialog` 弹出，而是由

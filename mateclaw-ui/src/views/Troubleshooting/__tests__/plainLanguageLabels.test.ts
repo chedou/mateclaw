@@ -36,4 +36,11 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(guanceOnboardingSource).not.toContain('<code>{{ stage.code }}</code>')
     expect(guanceValidationSource).not.toContain('Evidence Spine')
   })
+
+  it('explains the bounded admin trial and keeps raw evidence out of the catalog', () => {
+    expect(evidenceCatalogSource).toContain('管理员只读试跑')
+    expect(evidenceCatalogSource).toContain('不会创建排障单，也不代表 T7/T8 已验收')
+    expect(evidenceCatalogSource).toContain('最近只读试跑')
+    expect(evidenceCatalogSource).not.toContain('查看原始日志')
+  })
 })

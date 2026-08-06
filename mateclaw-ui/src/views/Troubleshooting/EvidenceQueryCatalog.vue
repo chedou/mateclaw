@@ -91,9 +91,21 @@
                   <h2>{{ selectedRow.contract.scenario }}</h2>
                   <p>{{ selectedRow.contract.question }}</p>
                 </div>
-                <el-tag :type="selectedRow.contract.runnable ? 'success' : 'danger'">
-                  {{ selectedRow.contract.runnable ? '可运行' : '暂不可运行' }}
-                </el-tag>
+                <div class="inspector-actions">
+                  <el-tag :type="selectedRow.contract.runnable ? 'success' : 'danger'">
+                    {{ selectedRow.contract.runnable ? '可运行' : '暂不可运行' }}
+                  </el-tag>
+                  <el-tooltip :content="directTrialBlocker" :disabled="!directTrialBlocker">
+                    <span>
+                      <el-button
+                        type="primary"
+                        :disabled="Boolean(directTrialBlocker)"
+                        @click="openTrialDialog"
+                      >管理员只读试跑</el-button>
+                    </span>
+                  </el-tooltip>
+                  <small v-if="directTrialBlocker" class="trial-blocker">{{ directTrialBlocker }}</small>
+                </div>
               </div>
 
               <div class="axis-grid">
@@ -175,6 +187,32 @@
                 :closable="false"
                 title="目录只展示查询规则摘要和脱敏请求轮廓；API Key、端点主机、原始 DQL 和原始日志仍由服务端保管。"
               />
+
+              <section class="trial-history">
+                <div class="trial-history-heading">
+                  <div><small>AUDIT</small><h3>最近只读试跑</h3></div>
+                  <el-button text :loading="trialHistoryLoading" @click="loadTrialHistory">刷新</el-button>
+                </div>
+                <el-table v-if="trialHistory.length" :data="trialHistory" size="small">
+                  <el-table-column label="结果" width="110">
+                    <template #default="scope">
+                      <el-tag :type="scope.row.status === 'OBSERVED' ? 'success' : scope.row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
+                        {{ trialStatusLabel(scope.row.status) }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="资产版本" width="120">
+                    <template #default="scope">v{{ scope.row.assetVersion }}</template>
+                  </el-table-column>
+                  <el-table-column label="返回字段" min-width="220">
+                    <template #default="scope">{{ scope.row.canonicalFields.join('、') || '无' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="durationMs" label="耗时（毫秒）" width="120" />
+                  <el-table-column prop="actor" label="操作人" width="130" />
+                  <el-table-column prop="completedAt" label="完成时间" min-width="180" />
+                </el-table>
+                <el-empty v-else :image-size="48" description="这条查询规则还没有只读试跑记录" />
+              </section>
             </section>
           </div>
           <el-empty v-else description="当前 Workspace 没有匹配的取证查询规则" />
@@ -367,6 +405,67 @@
     </main>
     </section>
 
+    <el-dialog v-model="trialDialogOpen" title="管理员只读试跑" width="620px" destroy-on-close>
+      <template v-if="trialTarget">
+        <div class="route-scope">
+          <span>本次只查询</span>
+          <b>{{ trialTarget.system }} / {{ trialTarget.service }} / {{ trialTarget.contract.contractRef }}</b>
+          <small>系统资产中的资源范围和服务端查询条件不可在此修改。</small>
+        </div>
+        <el-alert
+          type="warning"
+          :closable="false"
+          title="只验证这条查询规则能否返回规范证据，不会创建排障单，也不代表 T7/T8 已验收。"
+          class="asset-dialog-alert"
+        />
+        <el-form label-position="top">
+          <el-form-item
+            v-for="parameter in trialParameters"
+            :key="parameter.name"
+            :label="`${trialParameterLabel(parameter.name)}${parameter.required ? '（必填）' : ''}`"
+          >
+            <el-input
+              v-model="trialParameterValues[parameter.name]"
+              maxlength="256"
+              :placeholder="parameter.description"
+            />
+          </el-form-item>
+          <div class="trial-time-grid">
+            <el-form-item label="查询时间范围">
+              <el-select v-model="trialWindow">
+                <el-option label="最近 5 分钟" value="-5m" />
+                <el-option label="最近 15 分钟" value="-15m" />
+                <el-option label="最近 30 分钟" value="-30m" />
+                <el-option label="最近 1 小时" value="-1h" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="故障发生时间（不选则用当前时间）">
+              <el-date-picker
+                v-model="trialOccurredAt"
+                type="datetime"
+                placeholder="使用当前时间"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </div>
+        </el-form>
+        <section v-if="trialResult" class="trial-result">
+          <div>
+            <b>{{ trialResult.status === 'OBSERVED' ? '已拿到规范证据' : '查询完成，但未拿到规范证据' }}</b>
+            <small>资产 v{{ trialResult.assetVersion }} · {{ trialResult.durationMs }} 毫秒 · {{ trialResult.source }}</small>
+          </div>
+          <div class="tag-list output-tags">
+            <el-tag v-for="field in trialResult.canonicalFields" :key="field" effect="plain">{{ field }}</el-tag>
+          </div>
+          <p>{{ trialResult.warning }}</p>
+        </section>
+      </template>
+      <template #footer>
+        <el-button @click="trialDialogOpen = false">关闭</el-button>
+        <el-button type="primary" :loading="trialRunning" @click="runTrial">执行只读查询</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="routeDialogOpen" title="修改 Workspace 取证路由" width="560px">
       <template v-if="routeTarget">
         <div class="route-scope">
@@ -541,6 +640,7 @@ import { vLoading } from 'element-plus/es/components/loading/index'
 import {
   troubleshootingApi,
   type EvidenceCatalogModule,
+  type EvidenceContractTrial,
   type EvidenceQueryCatalog,
   type EvidenceQueryContract,
   type ObservabilityAsset,
@@ -552,6 +652,7 @@ import {
   bindingStatusLabel,
   catalogSummary,
   contractMatches,
+  directTrialBlockReason,
   parameterSourceLabel,
   routeOriginLabel,
   runtimeStateLabel,
@@ -623,6 +724,15 @@ const routeReason = ref('')
 const assetDialogOpen = ref(false)
 const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
+const trialDialogOpen = ref(false)
+const trialRunning = ref(false)
+const trialHistoryLoading = ref(false)
+const trialTarget = ref<ContractRow | null>(null)
+const trialParameterValues = ref<Record<string, string>>({})
+const trialWindow = ref('-15m')
+const trialOccurredAt = ref<Date | null>(null)
+const trialResult = ref<EvidenceContractTrial | null>(null)
+const trialHistory = ref<EvidenceContractTrial[]>([])
 
 const allRows = computed<ContractRow[]>(() => (catalog.value?.systems || []).flatMap(system =>
   system.modules.flatMap(module => module.contracts.map(contract => ({
@@ -698,6 +808,15 @@ const editableAssetParameters = computed(() => requiredAssetParameters.value.fil
   parameter => !metadataAssetParameters.has(parameter),
 ))
 const assetScopeLocked = computed(() => assetForm.value.scopeLocked)
+const trialParameters = computed(() => (trialTarget.value?.contract.parameters || []).filter(
+  parameter => (parameter.source === 'EVIDENCE_REQUEST_TARGET'
+    && !['monitor_checker', 'deployment', 'namespace', 'cluster', 'region', 'environment']
+      .includes(parameter.name))
+    || (parameter.source === 'INCIDENT' && ['error_code', 'trace_id'].includes(parameter.name)),
+))
+const directTrialBlocker = computed(() => {
+  return directTrialBlockReason(selectedRow.value?.contract || null)
+})
 
 function contractKey(system: string, service: string, contract: EvidenceQueryContract) {
   return `${system}/${service}/${contract.signalKind}/${contract.contractRef}`
@@ -706,6 +825,98 @@ function contractKey(system: string, service: string, contract: EvidenceQueryCon
 function formatDuration(milliseconds: number) {
   if (milliseconds >= 1000) return `${milliseconds / 1000} 秒`
   return `${milliseconds} 毫秒`
+}
+
+function trialParameterLabel(name: string) {
+  return {
+    search_term: '安全检索键',
+    error_code: '错误码',
+    trace_id: '链路标识',
+    deployment: 'Deployment 名称',
+    namespace: '命名空间',
+    monitor_checker: '拨测任务标识',
+  }[name] || name
+}
+
+function trialStatusLabel(status: EvidenceContractTrial['status']) {
+  return {
+    OBSERVED: '拿到规范证据',
+    NO_EVIDENCE: '未拿到证据',
+    FAILED: '查询失败',
+  }[status]
+}
+
+function openTrialDialog() {
+  if (!selectedRow.value || directTrialBlocker.value) return
+  trialTarget.value = selectedRow.value
+  trialParameterValues.value = Object.fromEntries(
+    trialTarget.value.contract.parameters
+      .filter(parameter => (parameter.source === 'EVIDENCE_REQUEST_TARGET'
+        && !['monitor_checker', 'deployment', 'namespace', 'cluster', 'region', 'environment']
+          .includes(parameter.name))
+        || (parameter.source === 'INCIDENT' && ['error_code', 'trace_id'].includes(parameter.name)))
+      .map(parameter => [parameter.name, '']),
+  )
+  trialWindow.value = '-15m'
+  trialOccurredAt.value = null
+  trialResult.value = null
+  trialDialogOpen.value = true
+}
+
+async function runTrial() {
+  const target = trialTarget.value
+  if (!target) return
+  const parameters = Object.fromEntries(Object.entries(trialParameterValues.value)
+    .map(([name, value]) => [name, value.trim()])
+    .filter(([, value]) => Boolean(value)))
+  const missing = trialParameters.value.find(parameter =>
+    parameter.required && !parameters[parameter.name])
+  if (missing) {
+    ElMessage.warning(`请填写${trialParameterLabel(missing.name)}`)
+    return
+  }
+  trialRunning.value = true
+  try {
+    const response = await troubleshootingApi.runEvidenceContractTrial({
+      system: target.system,
+      service: target.service,
+      contractRef: target.contract.contractRef,
+      parameters,
+      window: trialWindow.value,
+      occurredAt: trialOccurredAt.value?.toISOString(),
+    })
+    trialResult.value = response.data
+    ElMessage.success(response.data.status === 'OBSERVED'
+      ? '只读查询已拿到规范证据'
+      : '只读查询完成，但未拿到规范证据')
+    await loadTrialHistory()
+  } catch (failure) {
+    ElMessage.error(failure instanceof Error ? failure.message : '只读试跑失败')
+  } finally {
+    trialRunning.value = false
+  }
+}
+
+async function loadTrialHistory() {
+  const row = selectedRow.value
+  if (!row) {
+    trialHistory.value = []
+    return
+  }
+  trialHistoryLoading.value = true
+  try {
+    const response = await troubleshootingApi.evidenceContractTrials({
+      system: row.system,
+      service: row.service,
+      contractRef: row.contract.contractRef,
+      limit: 20,
+    })
+    trialHistory.value = response.data
+  } catch {
+    trialHistory.value = []
+  } finally {
+    trialHistoryLoading.value = false
+  }
 }
 
 async function loadCatalog() {
@@ -911,6 +1122,10 @@ watch(activeTab, tab => {
   })
 })
 
+watch(selectedKey, () => {
+  void loadTrialHistory()
+})
+
 onMounted(loadCatalog)
 </script>
 
@@ -969,6 +1184,8 @@ onMounted(loadCatalog)
 
 .contract-inspector { min-width: 0; padding: clamp(20px, 3vw, 34px); overflow: auto; }
 .inspector-heading { display: flex; justify-content: space-between; gap: 24px; }
+.inspector-actions { display:flex; flex-direction:column; align-items:flex-end; gap:10px; flex:0 0 auto; }
+.trial-blocker { max-width:240px; color:var(--el-text-color-secondary); font-size:11px; line-height:1.45; text-align:right; }
 .inspector-heading h2 { margin: 5px 0 8px; font-size: 24px; }
 .inspector-heading p { margin: 0; color: var(--el-text-color-secondary); line-height: 1.6; }
 .scope-line { color: var(--catalog-accent) !important; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -989,6 +1206,15 @@ onMounted(loadCatalog)
 .output-tags :deep(.el-tag) { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .empty-inline, .table-note { display: block; margin-top: 5px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .boundary-note { margin-top: 16px; }
+.trial-history { margin-top:16px; padding:18px; border:1px solid var(--el-border-color-lighter); border-radius:10px; }
+.trial-history-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.trial-history-heading small { color:var(--catalog-accent); font-weight:700; letter-spacing:.14em; }
+.trial-history-heading h3 { margin:3px 0 0; font-size:15px; }
+.trial-time-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.trial-time-grid :deep(.el-select) { width:100%; }
+.trial-result { display:grid; gap:12px; padding:16px; border:1px solid var(--el-color-success-light-7); border-radius:10px; background:var(--el-color-success-light-9); }
+.trial-result small { display:block; margin-top:5px; color:var(--el-text-color-secondary); }
+.trial-result p { margin:0; color:var(--el-text-color-secondary); font-size:12px; line-height:1.6; }
 .catalog-table { width: 100%; }
 .catalog-table code { color: var(--catalog-accent); }
 .route-platforms { margin-left: 8px; }
@@ -1054,6 +1280,9 @@ onMounted(loadCatalog)
   .axis-grid, .detail-grid { grid-template-columns: 1fr; }
   .detail-card.parameter-card { grid-column: auto; overflow-x: auto; }
   .title-row { align-items: flex-start; flex-direction: column; }
-  .asset-form-grid, .contract-binding-row { grid-template-columns:1fr; }
+  .asset-form-grid, .contract-binding-row, .trial-time-grid { grid-template-columns:1fr; }
+  .inspector-heading { flex-direction:column; }
+  .inspector-actions { align-items:flex-start; }
+  .trial-blocker { text-align:left; }
 }
 </style>

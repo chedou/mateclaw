@@ -1041,6 +1041,35 @@ export interface EvidenceQueryCatalog {
   systems: EvidenceCatalogSystem[]
 }
 
+export interface EvidenceContractTrialRequest {
+  system: string
+  service: string
+  contractRef: string
+  parameters: Record<string, string>
+  window?: string
+  occurredAt?: string
+}
+
+/** Secret-free audit projection. Query terms, raw rows, DQL and credentials are never returned. */
+export interface EvidenceContractTrial {
+  trialId: string
+  workspaceId: number
+  system: string
+  service: string
+  contractRef: string
+  signalKind: string
+  assetId: string
+  assetVersion: number
+  status: 'OBSERVED' | 'NO_EVIDENCE' | 'FAILED'
+  stopReason: 'COMPLETED' | 'NO_CANONICAL_EVIDENCE' | 'SOURCE_QUERY_FAILED'
+  source: string
+  canonicalFields: string[]
+  durationMs: number
+  actor: string
+  completedAt: string
+  warning: string
+}
+
 export interface EvidenceRoutePlatformState {
   platform: string
   available: boolean

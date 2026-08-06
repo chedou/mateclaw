@@ -85,6 +85,27 @@ export function runtimeStateLabel(status: string): string {
   }[status] ?? status
 }
 
+export function directTrialBlockReason(contract: EvidenceQueryContract | null): string {
+  if (!contract) return '请先选择一条查询规则'
+  if (!contract.runnable) return '查询规则当前不可运行，请先处理阻断点'
+  if (contract.adapter.toLowerCase() !== 'guance') {
+    return '当前只开放观测云只读适配器试跑'
+  }
+  if (contract.parameters.some(parameter =>
+    parameter.required && parameter.source === 'PREVIOUS_EVIDENCE')) {
+    return '这一步依赖前一步证据，请从排障详情运行完整证据链'
+  }
+  const resourceParameters = new Set([
+    'monitor_checker', 'deployment', 'namespace', 'cluster', 'region', 'environment',
+  ])
+  if (contract.parameters.some(parameter => parameter.required
+    && parameter.source === 'EVIDENCE_REQUEST_TARGET'
+    && resourceParameters.has(parameter.name))) {
+    return '资源范围必须先登记到系统观测资产，不能在试跑时临时填写'
+  }
+  return ''
+}
+
 export function moveOrderedItem<T>(items: T[], index: number, offset: -1 | 1): T[] {
   const target = index + offset
   if (index < 0 || index >= items.length || target < 0 || target >= items.length) {
