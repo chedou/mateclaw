@@ -52,6 +52,12 @@ Diagnosis 选择。这一轮没有改路由、请求字段、业务投影或安�
 守卫，避免组件存在但入口失联。`FormalWorkbench.vue` 从 1427 行降至约 1180 行，Guance 验收弹窗因
 仍与验收会话状态高度耦合，留待下一批单独拆分。
 
+**P2.8 Guance 验收会话边界（2026-08-06）**：T7 两步读链、完整 Evidence Spine、owner 核实清单
+及批次状态已抽为 `GuanceValidationDialog.vue`；弹窗只展示服务端安全投影并发出验证命令，不直接持有
+HTTP client。`useGuanceValidationDialog.ts` 只管理一次弹窗的规范化请求快照、来源、加载态和结果清空，
+真实 Router 调用、Workspace 权限、录制批次门与 T7/T8 fail-closed 判断仍由原 store/API 流程执行。
+`FormalWorkbench.vue` 已降到约 1000 行；下一批应处理 `api/troubleshooting.ts` 内类型合同与 client 的分离。
+
 **P2.4 排障模块瘦身（2026-08-03）**：按「去掉它，系统是不是既更简单、又不更危险」筛。
 
 删掉的（约 1600 行）：

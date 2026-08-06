@@ -190,154 +190,26 @@
       @completed="handleTopologyProbeCompleted"
     />
 
-    <el-dialog v-model="guanceValidationOpen" :title="TROUBLESHOOTING_UI_LABELS.guanceValidation" width="min(620px, calc(100vw - 32px))">
-      <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
-      <el-form label-position="top">
-        <div class="validation-scope">
-          <span>Workspace 资产</span>
-          <code>{{ guanceValidationForm.system }} / {{ guanceValidationForm.service }}</code>
-        </div>
-        <el-form-item label="可安全插入 DQL 模板的搜索键">
-          <el-input v-model="guanceValidationForm.searchTerm" placeholder="例如 message_send_failed" />
-          <p class="form-hint">仅允许资源标识符字符；未提供 errorCode 时不会用自由文本故障描述自动填充。</p>
-        </el-form-item>
-        <el-form-item label="时间窗口">
-          <el-select v-model="guanceValidationForm.window" style="width: 100%">
-            <el-option
-              v-for="option in EVIDENCE_WINDOW_OPTIONS"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="故障时间（可选）">
-          <el-date-picker
-            v-model="guanceValidationForm.occurredAt"
-            type="datetime"
-            format="YYYY-MM-DD HH:mm:ss"
-            value-format="YYYY-MM-DDTHH:mm:ssZ"
-            placeholder="不选择则使用当前时间"
-            clearable
-            style="width: 100%"
-          />
-          <p class="form-hint">默认带入当前 Diagnosis 的故障时间；清空后，服务端会以点击验证时的当前时间作为查询结束点，不会改写 Diagnosis。</p>
-        </el-form-item>
-      </el-form>
-      <div v-if="validationDialogReport" class="dialog-validation-result">
-        <b>{{ guanceValidationLabel(validationDialogReport.stage) }}</b>
-        <ul>
-          <li v-for="step in validationDialogReport.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span><time>{{ step.durationMs == null ? '未执行' : `${step.durationMs} ms` }}</time></li>
-        </ul>
-        <p>端到端 {{ validationDialogReport.totalDurationMs }} ms</p>
-        <small v-for="warning in validationDialogReport.warnings" :key="warning">{{ warning }}</small>
-      </div>
-      <div
-        v-if="validationDialogOwnerAcceptance"
-        class="dialog-validation-result owner-acceptance-result"
-        :class="ownerAcceptanceTone(validationDialogOwnerAcceptance.status)"
-      >
-        <b>{{ ownerAcceptanceStateLabel(validationDialogOwnerAcceptance.status) }}</b>
-        <p v-if="validationDialogOwnerAcceptance.acceptance">
-          {{ validationDialogOwnerAcceptance.acceptance.acceptedBy }} ·
-          {{ shortTime(validationDialogOwnerAcceptance.acceptance.acceptedAt) }}
-        </p>
-        <small>
-          当前配置指纹
-          <code>{{ shortFingerprint(validationDialogOwnerAcceptance.currentBindingFingerprint) }}</code>
-        </small>
-        <small v-for="blocker in validationDialogOwnerAcceptance.blockers" :key="blocker">
-          {{ guanceOwnerBlockerLabel(blocker) }}
-        </small>
-      </div>
-      <div v-if="guanceRecordingTargets" class="dialog-validation-result" :class="recordingBatchReady ? 'passed' : 'blocked'">
-        <b>T7 窗口批次目标 · {{ guanceRecordingTargets.executableTargetCount }} / 20</b>
-        <p>服务端冻结 {{ guanceRecordingTargets.frozenTargetCount }} 个未录制 D1 目标；只有与当前三份 binding 精确匹配的目标才计入。</p>
-        <small v-for="blocker in guanceRecordingTargets.blockers" :key="blocker">{{ blocker }}</small>
-      </div>
-      <div
-        v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner && recordingBatchReady"
-        class="t7-owner-checklist"
-      >
-        <b>T7 owner 字段核实清单</b>
-        <el-checkbox v-model="guanceAcceptanceChecklist.measurementAndFieldsVerified">
-          已核实真实 measurement 与 canonical 字段映射
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.indexVerified">
-          已核实索引、数据范围与查询资产
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.psIdJoinVerified">
-          已确认 log_search 与 trace 使用同一 PS ID
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.timestampUnitVerified">
-          已核实时间戳单位
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.timeWindowVerified">
-          已核实时间窗口语义
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.dqlLatencyReviewed">
-          已在 Guance 侧核对 DQL 延迟
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.legacyRouteConflictReviewed">
-          已复核 903001 与历史 route key 冲突
-        </el-checkbox>
-        <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
-      </div>
-      <p
-        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
-        class="source-blocker"
-      >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询合同；服务端不会记录 owner ACCEPTED。</p>
-      <p
-        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED'"
-        class="source-blocker"
-      >只有当前 Workspace owner 可以提交 T7 验收；admin 可以执行只读验证，但不能替 owner 解锁真实 T8。</p>
-      <div v-if="validationDialogSpinePreview" class="dialog-validation-result spine-dialog-result">
-        <b>{{ guanceSpinePreviewLabel(validationDialogSpinePreview.stage) }}</b>
-        <ul>
-          <li v-for="step in validationDialogSpinePreview.steps" :key="step.signalKind">
-            <code>{{ step.signalKind }}</code>
-            <span>{{ spineStepStatusLabel(step.status) }}</span>
-            <time>{{ step.collectedAt ? shortTime(step.collectedAt).slice(11) : '未执行' }}</time>
-          </li>
-        </ul>
-        <div v-if="validationDialogSpinePreview.stage !== 'BLOCKED'" class="spine-facts">
-          <p><span>调用链骨架</span><b>{{ validationDialogSpinePreview.serviceSequence.join(' → ') }}</b></p>
-          <p><span>核心样本</span><b>{{ validationDialogSpinePreview.matchCount }} 条命中 · {{ validationDialogSpinePreview.traceEntries }} 个节点 · {{ validationDialogSpinePreview.anomalyCount }} 个异常点</b></p>
-          <p v-if="validationDialogSpinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ validationDialogSpinePreview.contrast.failureMatchCount }}/{{ validationDialogSpinePreview.contrast.failureSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.failureRate) }}） ↔ {{ validationDialogSpinePreview.contrast.successMatchCount }}/{{ validationDialogSpinePreview.contrast.successSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.successRate) }}）</b></p>
-          <p v-else><span>失败 ↔ 成功对照</span><b>未取得，继续校准期</b></p>
-          <p><span>应用侧总耗时</span><b>{{ validationDialogSpinePreview.totalDurationMs }} ms</b></p>
-        </div>
-        <small v-for="warning in validationDialogSpinePreview.warnings" :key="warning">{{ warning }}</small>
-      </div>
-      <template #footer>
-        <el-button @click="guanceValidationOpen = false">关闭</el-button>
-        <el-button
-          plain
-          :loading="validationLoading"
-          :disabled="!guanceValidationForm.searchTerm"
-          @click="validateGuance"
-        >T7 两步读链</el-button>
-        <el-button
-          type="primary"
-          :loading="spinePreviewLoading"
-          :disabled="!guanceValidationForm.searchTerm"
-          @click="previewGuanceSpine"
-        >完整 Evidence Spine</el-button>
-        <el-button
-          v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
-          type="success"
-          :loading="acceptanceLoading"
-          :disabled="!canAcceptGuance"
-          @click="acceptGuance"
-        >确认当前绑定 T7 验收</el-button>
-        <el-button
-          v-if="validationDialogSpinePreview && validationDialogSpinePreview.stage !== 'BLOCKED' && validationCanOpenCurrentEvaluationLedger"
-          type="success"
-          plain
-          @click="openEvaluationLedger"
-        >进入{{ TROUBLESHOOTING_UI_LABELS.evaluation }}</el-button>
-      </template>
-    </el-dialog>
+    <GuanceValidationDialog
+      v-model="guanceValidationOpen"
+      v-model:form="guanceValidationForm"
+      v-model:checklist="guanceAcceptanceChecklist"
+      :report="validationDialogReport"
+      :spine-preview="validationDialogSpinePreview"
+      :owner-acceptance="validationDialogOwnerAcceptance"
+      :recording-targets="guanceRecordingTargets"
+      :recording-batch-ready="recordingBatchReady"
+      :can-accept-owner="canAcceptGuanceOwner"
+      :can-accept="canAcceptGuance"
+      :can-open-evaluation="validationCanOpenCurrentEvaluationLedger"
+      :validation-loading="validationLoading"
+      :spine-preview-loading="spinePreviewLoading"
+      :acceptance-loading="acceptanceLoading"
+      @validate="validateGuance"
+      @preview-spine="previewGuanceSpine"
+      @accept="acceptGuance"
+      @open-evaluation="openEvaluationLedger"
+    />
 
     <EvaluationSampleLedgerDialog
       v-model="evaluationLedgerOpen"
@@ -392,23 +264,14 @@ import {
   wikiApi,
   type DiagnosisSummary,
   type EvidenceChainPreviewRequest,
-  type GuanceEvidenceAcceptanceChecklist,
   type GuanceEvidenceAcceptanceView,
-  type GuanceEvidenceSpinePreview,
-  type GuanceEvidenceValidationReport,
-  type GuanceSpinePreviewStepStatus,
   type HistoricalCaseKnowledgeImportResult,
   type RecommendedAction,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
-import {
-  diagnosisEvidenceSourcePresentation,
-  guanceOwnerBlockerLabel,
-  guanceSpinePreviewLabel,
-  guanceValidationLabel,
-} from './formalProjection'
+import { diagnosisEvidenceSourcePresentation } from './formalProjection'
 import {
   buildFormalIncidentReport,
   EMPTY_FORMAL_INCIDENT,
@@ -425,10 +288,11 @@ import {
   EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
-import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
+import { EVIDENCE_SYNTHESIS_FOCUS } from './synthesisPreview'
 import { normalizeWorkbenchOverlayCapability } from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
+import GuanceValidationDialog from './GuanceValidationDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
 import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
@@ -447,10 +311,10 @@ import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
-  normalizeEvidenceChainPreviewRequest,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
 } from './guanceOnboarding'
+import { useGuanceValidationDialog } from './useGuanceValidationDialog'
 import {
   EMPTY_MESSAGE_SEND_SCENARIO,
   MESSAGE_SEND_SCENARIO_KEY,
@@ -468,7 +332,6 @@ import {
 } from './caseKnowledgeImport'
 import {
   TROUBLESHOOTING_UI_LABELS,
-  formatWorkbenchTime as shortTime,
   isDiagnosisViewMode,
   resolveWorkbenchView,
   shouldShowQueuePanel,
@@ -503,13 +366,6 @@ const messageSendEvidenceLoading = ref(false)
 const caseKnowledgeImportLoading = ref(false)
 const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
-const validationLoading = ref(false)
-const spinePreviewLoading = ref(false)
-const acceptanceLoading = ref(false)
-const validationDialogReport = ref<GuanceEvidenceValidationReport | null>(null)
-const validationDialogSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
-const validationDialogOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
-const guanceValidationOrigin = ref<GuanceValidationOrigin | null>(null)
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
@@ -518,7 +374,6 @@ const caseKnowledgeImportOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
-const guanceValidationOpen = ref(false)
 const evaluationLedgerOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
@@ -546,7 +401,20 @@ const deploymentTopologyScenarioForm = reactive<DeploymentTopologyScenarioForm>(
   ...EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
 })
 
-const guanceValidationForm = reactive({ system: '', service: '', searchTerm: '', window: '-15m', occurredAt: null as string | null })
+const {
+  open: guanceValidationOpen,
+  validationLoading,
+  spinePreviewLoading,
+  acceptanceLoading,
+  report: validationDialogReport,
+  spinePreview: validationDialogSpinePreview,
+  ownerAcceptance: validationDialogOwnerAcceptance,
+  origin: guanceValidationOrigin,
+  form: guanceValidationForm,
+  checklist: guanceAcceptanceChecklist,
+  begin: beginGuanceValidationSession,
+  capture: captureValidationSession,
+} = useGuanceValidationDialog()
 const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() => {
   return currentDiagnosisEvidenceLookup.value || {
     system: 'CSDP',
@@ -561,18 +429,6 @@ const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresent
 ))
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
-const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
-  measurementAndFieldsVerified: false,
-  indexVerified: false,
-  psIdJoinVerified: false,
-  timestampUnitVerified: false,
-  timeWindowVerified: false,
-  dqlLatencyReviewed: false,
-  legacyRouteConflictReviewed: false,
-}
-const guanceAcceptanceChecklist = reactive<GuanceEvidenceAcceptanceChecklist>({
-  ...EMPTY_T7_CHECKLIST,
-})
 const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentReportForm))
 const incidentRoutePreview = computed(() => formalIncidentRoutePreview(incidentReportForm))
 const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
@@ -705,25 +561,6 @@ function openGuanceOnboarding() {
   guanceOnboardingOpen.value = true
 }
 
-function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return '当前绑定已验收'
-  if (value === 'STALE') return '配置变化，验收已过期'
-  if (value === 'NOT_ACCEPTED') return '尚未完成 owner 验收'
-  return '当前绑定不可验收'
-}
-function ownerAcceptanceTone(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return 'passed'
-  return value === 'STALE' ? 'blocked' : 'pending'
-}
-function shortFingerprint(value?: string | null) {
-  return value ? `${value.slice(0, 12)}…` : '不可用'
-}
-function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
-  if (value === 'CANONICAL_RESULT_OBSERVED') return '规范化证据已观测'
-  if (value === 'MISSING') return '证据缺失 / 来源不可用'
-  return '未执行'
-}
-function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
 function resetIncidentReportForm() {
@@ -912,16 +749,7 @@ function openGuanceValidationDialog(
   origin: GuanceValidationOrigin,
 ) {
   store.nextGuanceValidationSessionVersion()
-  Object.assign(guanceValidationForm, normalizeEvidenceChainPreviewRequest(request))
-  validationDialogReport.value = null
-  validationDialogSpinePreview.value = null
-  validationDialogOwnerAcceptance.value = ownerAcceptance
-  guanceValidationOrigin.value = origin
-  validationLoading.value = false
-  spinePreviewLoading.value = false
-  acceptanceLoading.value = false
-  Object.assign(guanceAcceptanceChecklist, EMPTY_T7_CHECKLIST)
-  guanceValidationOpen.value = true
+  beginGuanceValidationSession(request, ownerAcceptance, origin)
 }
 
 function startGuanceValidationFromOnboarding(payload: GuanceOnboardingValidationPayload) {
@@ -938,11 +766,7 @@ function isCurrentDiagnosisValidationRequest(request: EvidenceChainPreviewReques
 }
 
 function captureGuanceValidationSession() {
-  return {
-    sessionVersion: store.getSelectionVersion(),
-    origin: guanceValidationOrigin.value,
-    request: normalizeEvidenceChainPreviewRequest(guanceValidationForm),
-  }
+  return captureValidationSession(store.getSelectionVersion())
 }
 
 async function openEvaluationLedger() {
@@ -1166,19 +990,8 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .acceptance-ladder b,.acceptance-ladder small { display:block; } .acceptance-ladder b { font-size:var(--mc-text-xs); } .acceptance-ladder small { margin-top:3px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.45; }
 .acceptance-ladder strong { font-size:var(--mc-text-xs); white-space:nowrap; } .next-source-action { margin:8px 0 0; padding:8px; border-radius:6px; color:var(--mc-text-secondary); background:var(--mc-status-info-bg); font-size:var(--mc-text-xs); line-height:1.5; } .next-source-action b { display:block; margin-bottom:2px; color:var(--mc-status-info-text); }
 .signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid var(--mc-border-light); } .signal-readiness-list code { font-size:var(--mc-text-xs); } .signal-readiness-list span { font-size:var(--mc-text-xs); } .signal-readiness-list small { grid-column:1/-1; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); word-break:break-all; }
-.source-blocker { margin:7px 0; padding:7px 8px; border-radius:var(--mc-radius-xs); color:var(--mc-status-error-text); background:var(--mc-status-error-bg); font-size:var(--mc-text-xs); line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.6; }
-.validation-result { margin:9px 0; padding:9px; border-radius:var(--mc-radius-xs); font-size:var(--mc-text-xs); } .validation-result.passed { color:var(--mc-status-success-text); background:var(--mc-status-success-bg); } .validation-result.blocked { color:var(--mc-warning); background:var(--mc-status-warning-bg); } .validation-result.pending { color:var(--mc-status-info-text); background:var(--mc-status-info-bg); } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
-.owner-acceptance-result code { font-size:var(--mc-text-xs); overflow-wrap:anywhere; } .owner-acceptance-result.passed { border-color:var(--mc-success); background:var(--mc-status-success-bg); } .owner-acceptance-result.blocked { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); } .owner-acceptance-result.pending { border-color:var(--mc-border); background:var(--mc-status-info-bg); }
-.spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
-.validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:var(--mc-text-xs); } .validation-scope code { margin-top:5px; color:var(--blue); font-size:var(--mc-text-xs); }
-.dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .dialog-validation-result>b { font-size:var(--mc-text-sm); } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:var(--mc-text-xs); } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:var(--mc-text-secondary); font-family:var(--mc-mono,monospace); font-size:var(--mc-text-xs); white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:var(--mc-text-xs); line-height:1.5; }
-.t7-owner-checklist { display:grid; gap:7px; margin-top:12px; padding:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); } .t7-owner-checklist>b { margin-bottom:2px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); } .t7-owner-checklist .el-checkbox { height:auto; margin-right:0; white-space:normal; } .t7-owner-checklist .form-hint { margin-top:5px; line-height:1.6; }
-.spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
-.spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:var(--mc-text-xs); line-height:1.5; }
-.spine-facts span { color:var(--muted); }
-.spine-facts b { color:var(--mc-text-secondary); overflow-wrap:anywhere; }
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); } .action-card.write { border-color:var(--mc-border); } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:var(--mc-text-xs); }
-.action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:var(--mc-text-xs); }
+.action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; }
 @media(max-width:1100px){.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.spine-facts p{grid-template-columns:1fr;gap:2px}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}}
 </style>
