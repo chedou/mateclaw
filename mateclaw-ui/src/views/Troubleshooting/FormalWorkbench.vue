@@ -20,82 +20,20 @@
     />
 
     <template v-else>
-    <aside v-if="shouldShowQueuePanel(viewMode)" class="queue-panel">
-      <header class="queue-head">
-        <div><span class="eyebrow">MateClaw</span><h2>排障队列</h2></div>
-        <div class="queue-head-actions">
-          <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
-          <WorkbenchViewSwitch mode="QUEUE" compact @change="switchWorkbenchView" />
-        </div>
-      </header>
-      <div class="queue-tools">
-        <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="store.loadList(false)">
-          <el-option v-for="status in STATUSES" :key="status" :label="statusLabel(status)" :value="status" />
-        </el-select>
-        <el-select
-          v-model="investigationModeFilter"
-          size="small"
-          clearable
-          placeholder="全部调查模式"
-          @change="store.loadList(false)"
-        >
-          <el-option
-            v-for="mode in WORKBENCH_INVESTIGATION_MODES"
-            :key="mode"
-            :label="investigationModeLabel(mode)"
-            :value="mode"
-          />
-        </el-select>
-        <div class="queue-action-row">
-          <el-button
-            v-if="canOperateTroubleshooting || canManageTroubleshooting"
-            size="small"
-            type="primary"
-            plain
-            :icon="Plus"
-            @click="openTroubleshootingScenario"
-          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-        </div>
-      </div>
-      <div v-loading="listLoading" class="queue-list">
-        <button
-          v-for="row in rows"
-          :key="row.diagnosisId"
-          type="button"
-          class="queue-item"
-          :class="{ active: row.diagnosisId === selectedId }"
-          @click="store.selectDiagnosis(row.diagnosisId)"
-        >
-          <div class="queue-item-top">
-            <code>{{ row.system }}:{{ row.errorCode || 'NO-CODE' }}</code>
-            <span v-if="row.rehearsal" class="rehearsal">演练</span>
-          </div>
-          <span class="queue-ticket-id" :title="row.diagnosisId">
-            排障单号 · <code>{{ row.diagnosisId }}</code>
-          </span>
-          <strong>{{ row.service }}</strong>
-          <div class="queue-item-bottom">
-            <span :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
-            <time>{{ shortTime(row.updateTime) }}</time>
-          </div>
-        </button>
-        <div v-if="!listLoading && !rows.length" class="queue-empty">
-          <b>还没有诊断记录</b>
-          <p>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
-          <el-button
-            v-if="canOperateTroubleshooting || canManageTroubleshooting"
-            size="small"
-            type="primary"
-            plain
-            @click="openTroubleshootingScenario"
-          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-          <code v-else>需要 operate:troubleshooting 权限</code>
-        </div>
-      </div>
-      <footer class="queue-foot">
-        <span>正式入口 · 真实 API</span>
-      </footer>
-    </aside>
+    <DiagnosisQueuePanel
+      v-if="shouldShowQueuePanel(viewMode)"
+      v-model:status-filter="statusFilter"
+      v-model:investigation-mode-filter="investigationModeFilter"
+      :rows="rows"
+      :selected-id="selectedId"
+      :loading="listLoading"
+      :can-operate="canOperateTroubleshooting"
+      :can-manage="canManageTroubleshooting"
+      @refresh="store.loadList(false)"
+      @launch="openTroubleshootingScenario"
+      @select-diagnosis="store.selectDiagnosis"
+      @switch-view="switchWorkbenchView('LIST')"
+    />
 
     <main v-loading="detailLoading" class="work-area">
       <div v-if="!business || !developer || !current" class="detail-empty">
@@ -710,7 +648,6 @@ import {
   guanceOwnerBlockerLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
-  investigationModeLabel,
 } from './formalProjection'
 import {
   buildFormalIncidentReport,
@@ -734,8 +671,8 @@ import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
+import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
-import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
@@ -769,10 +706,6 @@ import {
 } from './caseKnowledgeImport'
 import {
   TROUBLESHOOTING_UI_LABELS,
-  WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
-  WORKBENCH_INVESTIGATION_MODES,
-  diagnosisStatusLabel as statusLabel,
-  diagnosisStatusTone as statusTone,
   formatWorkbenchTime as shortTime,
   isDiagnosisViewMode,
   resolveWorkbenchView,
@@ -1378,27 +1311,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:clamp(236px,18vw,320px) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
 .formal-workbench.traditional-list-mode { display:block; width:100%; overflow-y:auto; }
 .formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); width:100%; }
-.queue-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:var(--mc-bg-elevated); border-right:1px solid var(--line); }
-.queue-head { display:flex; align-items:center; justify-content:space-between; padding:18px 16px 14px; border-bottom:1px solid var(--line); }
-.queue-head-actions { display:flex; align-items:flex-end; flex-direction:column; }
 .eyebrow { display:block; color:var(--blue); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
-.queue-head h2 { margin:4px 0 0; font-size:var(--mc-text-base); letter-spacing:-.02em; }
-.queue-tools { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
-.queue-tools .el-select { flex:1; min-width:0; }
-.queue-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
-.queue-action-row>.el-button,.queue-action-row>.el-dropdown { flex:1 1 92px; margin-left:0; }
-.queue-action-row>.el-dropdown .el-button { width:100%; margin-left:0; }
-.queue-list { flex:1; min-height:0; overflow-y:auto; }
-.queue-item { width:100%; padding:13px 14px 12px; border:0; border-bottom:1px solid var(--mc-border-light); border-left:3px solid transparent; background:var(--mc-bg-elevated); color:inherit; font:inherit; text-align:left; cursor:pointer; }
-.queue-item:hover { background:var(--mc-bg-elevated); } .queue-item.active { border-left-color:var(--blue); background:var(--mc-sidebar-active); }
-.queue-item-top,.queue-item-bottom { display:flex; align-items:center; gap:8px; } .queue-item-top code { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; }
-.queue-ticket-id { display:flex; min-width:0; align-items:center; gap:5px; margin-top:7px; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); text-align:left; } .queue-ticket-id code { min-width:0; overflow:hidden; color:var(--mc-text-secondary); text-overflow:ellipsis; white-space:nowrap; }
-.queue-item strong { display:block; margin-top:5px; font-size:var(--mc-text-sm); } .queue-item-bottom { margin-top:7px; color:var(--muted); font-size:var(--mc-text-xs); }
-.queue-item-bottom time { margin-left:auto; font-family:var(--mc-mono,monospace); } .rehearsal { padding:1px 6px; border-radius:var(--mc-radius-sm); color:var(--mc-status-purple-text); background:var(--mc-status-info-bg); font-size:var(--mc-text-xs); }
-.active { color:var(--blue)!important; } .success { color:var(--green)!important; } .warning { color:var(--amber)!important; } .muted { color:var(--mc-text-tertiary)!important; }
-.queue-empty { padding:26px 17px; color:var(--muted); font-size:var(--mc-text-sm); line-height:1.65; } .queue-empty b { color:var(--ink); } .queue-empty p { margin:5px 0 10px; } .queue-empty code { color:var(--blue); font-size:var(--mc-text-xs); } .queue-empty .el-button { width:100%; }
-.queue-foot { display:flex; align-items:center; justify-content:space-between; padding:10px 13px; border-top:1px solid var(--line); color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
-.queue-foot button { border:0; background:none; color:var(--blue); font:inherit; cursor:pointer; }
 .work-area { width:100%; min-width:0; overflow-y:auto; padding:20px clamp(20px,3vw,40px) 40px; }
 .detail-empty { display:grid; place-items:center; align-content:center; min-height:70vh; color:var(--muted); text-align:center; }
 .empty-mark { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); color:var(--blue); background:var(--mc-bg-elevated); font-weight:800; box-shadow:0 10px 30px var(--mc-shadow-soft); }
@@ -1510,5 +1423,5 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); } .action-card.write { border-color:var(--mc-border); } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:var(--mc-text-xs); }
 .action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:var(--mc-text-xs); }
 @media(max-width:1100px){.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
 </style>
