@@ -86,6 +86,57 @@ export function runtimeStateLabel(status: string): string {
   }[status] ?? status
 }
 
+export type ObservabilityAssetDraft = {
+  system: string
+  service: string
+  displayName: string
+  environment: string
+  enabled: boolean
+  contractRefs: Record<string, string>
+  parameterValues: Record<string, string>
+  requiredAssetParameters: string[]
+  reason: string
+}
+
+export function assetParameterLabel(parameter: string): string {
+  return {
+    monitor_checker: '观测云监控规则标识（monitor_checker）',
+    deployment: 'Kubernetes Deployment',
+    namespace: 'Kubernetes Namespace',
+    cluster: '集群标识',
+    region: '区域标识',
+    environment: '环境',
+  }[parameter] || parameter
+}
+
+export function observabilityAssetDraftReadiness(
+  draft: ObservabilityAssetDraft,
+): { ready: boolean, missing: string[] } {
+  const missing: string[] = []
+  if (!draft.system.trim()) missing.push('系统标识')
+  if (!draft.service.trim()) missing.push('模块 / 服务标识')
+  if (!draft.displayName.trim()) missing.push('显示名称')
+  if (!draft.environment.trim()) missing.push('环境')
+  const bindings = Object.values(draft.contractRefs).filter(value => value.trim())
+  if (draft.enabled && !bindings.length) missing.push('至少一条已审核查询规则')
+  const parameterOrder = ['namespace', 'cluster', 'region', 'deployment', 'monitor_checker']
+  const requiredParameters = [...draft.requiredAssetParameters].sort((left, right) => {
+    const leftIndex = parameterOrder.indexOf(left)
+    const rightIndex = parameterOrder.indexOf(right)
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right)
+    if (leftIndex === -1) return 1
+    if (rightIndex === -1) return -1
+    return leftIndex - rightIndex
+  })
+  for (const parameter of requiredParameters) {
+    if (!draft.parameterValues[parameter]?.trim()) {
+      missing.push(assetParameterLabel(parameter))
+    }
+  }
+  if (!draft.reason.trim()) missing.push('变更原因')
+  return { ready: missing.length === 0, missing }
+}
+
 export function directTrialBlockReason(
   contract: EvidenceQueryContract | null,
   asset?: ObservabilityAsset | null,

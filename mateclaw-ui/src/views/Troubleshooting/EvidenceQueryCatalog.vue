@@ -545,6 +545,16 @@
         class="asset-dialog-alert"
         title="保存会追加一个不可变版本；已停用的 Workspace 资产也会阻止回落到部署默认。"
       />
+      <el-alert
+        :type="assetDraftReadiness.ready ? 'success' : 'info'"
+        :closable="false"
+        show-icon
+        class="asset-dialog-alert"
+        :title="assetDraftReadiness.ready ? '接管信息已齐全' : `接管前还缺 ${assetDraftReadiness.missing.length} 项`"
+        :description="assetDraftReadiness.ready
+          ? '保存后会生成 Workspace 不可变资产版本，随后才能执行管理员只读试跑。'
+          : `请由系统负责人确认：${assetDraftReadiness.missing.join('、')}`"
+      />
       <el-form label-position="top" class="asset-form">
         <div class="asset-form-grid">
           <el-form-item label="系统标识">
@@ -559,16 +569,16 @@
           <el-form-item label="观测平台">
             <el-input v-model="assetForm.platform" disabled />
           </el-form-item>
-          <el-form-item label="环境">
+          <el-form-item label="环境（必填）">
             <el-input v-model="assetForm.environment" placeholder="prod / staging" />
           </el-form-item>
-          <el-form-item label="区域（可选）">
+          <el-form-item :label="metadataFieldLabel('region', '区域')">
             <el-input v-model="assetForm.region" placeholder="cn-south-1" />
           </el-form-item>
-          <el-form-item label="集群（可选）">
+          <el-form-item :label="metadataFieldLabel('cluster', '集群')">
             <el-input v-model="assetForm.cluster" placeholder="csdp-prod" />
           </el-form-item>
-          <el-form-item label="命名空间（可选）">
+          <el-form-item :label="metadataFieldLabel('namespace', '命名空间')">
             <el-input v-model="assetForm.namespace" placeholder="csdp" />
           </el-form-item>
         </div>
@@ -634,7 +644,12 @@
       </el-form>
       <template #footer>
         <el-button @click="assetDialogOpen = false">取消</el-button>
-        <el-button type="primary" :loading="assetSaving" @click="saveAsset">保存新版本</el-button>
+        <el-button
+          type="primary"
+          :loading="assetSaving"
+          :disabled="!assetDraftReadiness.ready"
+          @click="saveAsset"
+        >保存新版本</el-button>
       </template>
     </el-dialog>
   </div>
@@ -657,10 +672,12 @@ import {
 } from '@/api'
 import {
   acceptanceStatusLabel,
+  assetParameterLabel,
   bindingStatusLabel,
   catalogSummary,
   contractMatches,
   directTrialBlockReason,
+  observabilityAssetDraftReadiness,
   parameterSourceLabel,
   routeOriginLabel,
   runtimeStateLabel,
@@ -816,6 +833,23 @@ const metadataAssetParameters = new Set(['namespace', 'cluster', 'region', 'envi
 const editableAssetParameters = computed(() => requiredAssetParameters.value.filter(
   parameter => !metadataAssetParameters.has(parameter),
 ))
+const assetDraftReadiness = computed(() => observabilityAssetDraftReadiness({
+  system: assetForm.value.system,
+  service: assetForm.value.service,
+  displayName: assetForm.value.displayName,
+  environment: assetForm.value.environment,
+  enabled: assetForm.value.enabled,
+  contractRefs: assetForm.value.contractRefs,
+  parameterValues: {
+    ...assetForm.value.parameters,
+    environment: assetForm.value.environment,
+    region: assetForm.value.region,
+    cluster: assetForm.value.cluster,
+    namespace: assetForm.value.namespace,
+  },
+  requiredAssetParameters: requiredAssetParameters.value,
+  reason: assetForm.value.reason,
+}))
 const assetScopeLocked = computed(() => assetForm.value.scopeLocked)
 const trialParameters = computed(() => (trialTarget.value?.contract.parameters || []).filter(
   parameter => (parameter.source === 'EVIDENCE_REQUEST_TARGET'
@@ -991,15 +1025,10 @@ function openAssetEditor(asset: ObservabilityAsset) {
   assetDialogOpen.value = true
 }
 
-function assetParameterLabel(parameter: string) {
-  return {
-    monitor_checker: '观测云监控规则标识（monitor_checker）',
-    deployment: 'Kubernetes Deployment',
-    namespace: 'Kubernetes Namespace',
-    cluster: '集群标识',
-    region: '区域标识',
-    environment: '环境标识',
-  }[parameter] || parameter
+function metadataFieldLabel(parameter: string, label: string) {
+  return requiredAssetParameters.value.includes(parameter)
+    ? `${label}（已选规则必填）`
+    : `${label}（可选）`
 }
 
 function metadataParameter(parameter: string): string {
@@ -1016,13 +1045,8 @@ async function saveAsset() {
   const signalBindings = Object.fromEntries(
     Object.entries(form.contractRefs).filter(([, contractRef]) => Boolean(contractRef)),
   )
-  if (!form.system.trim() || !form.service.trim() || !form.displayName.trim()
-    || !form.environment.trim() || !form.reason.trim()) {
-    ElMessage.warning('请填写系统、模块、显示名称、环境和变更原因')
-    return
-  }
-  if (form.enabled && !Object.keys(signalBindings).length) {
-    ElMessage.warning('启用资产前至少绑定一条已审核查询规则')
+  if (!assetDraftReadiness.value.ready) {
+    ElMessage.warning(`请先补齐：${assetDraftReadiness.value.missing.join('、')}`)
     return
   }
   const parameters: Record<string, string> = {}
@@ -1030,10 +1054,6 @@ async function saveAsset() {
     const value = (metadataAssetParameters.has(parameter)
       ? metadataParameter(parameter)
       : form.parameters[parameter] || '').trim()
-    if (!value) {
-      ElMessage.warning(`请填写 ${assetParameterLabel(parameter)}`)
-      return
-    }
     parameters[parameter] = value
   }
 

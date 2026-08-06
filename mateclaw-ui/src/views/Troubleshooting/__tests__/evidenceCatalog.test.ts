@@ -5,6 +5,7 @@ import {
   catalogSummary,
   contractMatches,
   directTrialBlockReason,
+  observabilityAssetDraftReadiness,
   moveOrderedItem,
   routeOriginLabel,
   runtimeStateLabel,
@@ -173,5 +174,56 @@ describe('evidence query catalog presentation', () => {
     })).toContain('系统观测资产')
     expect(directTrialBlockReason(contract, deploymentAsset))
       .toContain('接管为 Workspace 系统观测资产')
+  })
+
+  it('explains every owner-provided field still missing before asset takeover', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: '',
+      enabled: true,
+      contractRefs: {
+        k8s_workload_health: 'csdp-k8s-workload-health',
+        monitor_event_scan: 'csdp-monitor-event-scan',
+      },
+      parameterValues: {
+        namespace: '',
+        deployment: '',
+        monitor_checker: '',
+      },
+      requiredAssetParameters: ['namespace', 'deployment', 'monitor_checker'],
+      reason: '',
+    })).toEqual({
+      ready: false,
+      missing: [
+        '环境',
+        'Kubernetes Namespace',
+        'Kubernetes Deployment',
+        '观测云监控规则标识（monitor_checker）',
+        '变更原因',
+      ],
+    })
+  })
+
+  it('allows takeover only after scope, rules, resource identifiers and reason are complete', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: 'test-environment',
+      enabled: true,
+      contractRefs: {
+        k8s_workload_health: 'csdp-k8s-workload-health',
+        monitor_event_scan: 'csdp-monitor-event-scan',
+      },
+      parameterValues: {
+        namespace: 'test-namespace',
+        deployment: 'test-deployment',
+        monitor_checker: 'test-monitor-checker',
+      },
+      requiredAssetParameters: ['namespace', 'deployment', 'monitor_checker'],
+      reason: '登记首个只读取证资产',
+    })).toEqual({ ready: true, missing: [] })
   })
 })
