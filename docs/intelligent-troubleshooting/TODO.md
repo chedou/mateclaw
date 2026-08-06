@@ -1,10 +1,12 @@
-# 待办清单 · IT 智能排障系统
+# 实施台账 · IT 智能排障系统
 
 > 更新时间：2026-08-06（P2.5 后）
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
 > **投产清单：`production-readiness.md`** —— 第一条真实报障进来之前必须为真的事。
+> **本文件定位**：保留实现决策、验证证据和历史待办，**不再作为活跃排期入口**；当前优先级只看
+> `production-readiness.md` 和下方“待办速览”，避免从历史段落里重新捞任务。
 >
 > 唯一现行架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
@@ -20,7 +22,7 @@
 
 ---
 
-## 待办速览（2026-08-03）
+## 待办速览（2026-08-06）
 
 按"挡不挡住别人"排序，不按工作量。完整条目见对应小节。
 
@@ -56,7 +58,12 @@ Diagnosis 选择。这一轮没有改路由、请求字段、业务投影或安�
 及批次状态已抽为 `GuanceValidationDialog.vue`；弹窗只展示服务端安全投影并发出验证命令，不直接持有
 HTTP client。`useGuanceValidationDialog.ts` 只管理一次弹窗的规范化请求快照、来源、加载态和结果清空，
 真实 Router 调用、Workspace 权限、录制批次门与 T7/T8 fail-closed 判断仍由原 store/API 流程执行。
-`FormalWorkbench.vue` 已降到约 1000 行；下一批应处理 `api/troubleshooting.ts` 内类型合同与 client 的分离。
+`FormalWorkbench.vue` 已降到约 1000 行。
+
+**P2.9 前端排障 API 分层（2026-08-06）**：原 `api/troubleshooting.ts` 中 183 个领域类型已移入
+不依赖 Axios 的 `troubleshooting-contracts.ts`，HTTP 请求集中到 `troubleshooting-client.ts`；原文件变为
+兼容导出入口，因此 `@/api` 和既有相对路径调用方无需迁移。结构守卫会拒绝合同反向依赖 transport，
+这轮没有改 endpoint、请求字段、认证、Workspace header 或错误处理。
 
 **P2.4 排障模块瘦身（2026-08-03）**：按「去掉它，系统是不是既更简单、又不更危险」筛。
 
@@ -338,10 +345,9 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 
 待办：
 
-- [ ] 前端把 `cited === null` 与 `false` 的区分做**回归测试**钉住。
-      现在只有后端有；前端渲染混淆了也不会红。
-- [ ] `DerivationChain.vue` 此前无人挂载却也无人发现——说明**组件挂没挂没有守卫**。
-      考虑加一条静态检查：Troubleshooting 下的展示组件必须被引用。
+- [x] 前端已用组件回归测试钉住 `cited === null` 与 `false` 的不同文案；合并两者会直接变红。
+- [x] 正式工作台挂载守卫已覆盖 `DeveloperEvidencePanel → InvestigationProvenancePanel / DerivationChain`，
+      避免组件存在但用户永远看不到。
 
 ---
 

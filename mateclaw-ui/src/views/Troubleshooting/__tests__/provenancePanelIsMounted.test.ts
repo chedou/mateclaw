@@ -23,6 +23,12 @@ describe('the investigation provenance panel is actually on a screen', () => {
     expect(developerEvidencePanelSource).toMatch(new RegExp(`<${CHILD}[\\s>]`))
   })
 
+  it('also keeps the deterministic derivation chain on the developer screen', () => {
+    expect(developerEvidencePanelSource)
+      .toContain("import DerivationChain from './DerivationChain.vue'")
+    expect(developerEvidencePanelSource).toMatch(/<DerivationChain[\s>]/)
+  })
+
   /** 父组件自己也必须挂在正式工作台上，否则这条链还是断的。 */
   it('reaches the formal workbench through the developer evidence panel', () => {
     expect(formalWorkbenchSource)
