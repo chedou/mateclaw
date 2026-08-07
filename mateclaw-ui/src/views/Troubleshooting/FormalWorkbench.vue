@@ -297,7 +297,6 @@ import {
 } from './deploymentTopologyScenario'
 import { isEvidenceSynthesisFocus } from './synthesisPreview'
 import {
-  evidenceCatalogLocation,
   normalizeWorkbenchOverlayCapability,
 } from './workbenchCapabilityMenu'
 import EvaluationSampleLedgerWorkspace from './EvaluationSampleLedgerWorkspace.vue'
@@ -502,8 +501,6 @@ async function openDiagnosisFromList(row: DiagnosisSummary) {
 function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
   if (command === 'playbooks') {
     void router.push('/troubleshooting/sops')
-  } else if (command === 'evidence-catalog') {
-    void router.push('/troubleshooting/evidence-catalog')
   } else if (command === 'observability-assets') {
     void router.push('/troubleshooting/observability-assets')
   } else if (command === 'guance') {
@@ -576,11 +573,13 @@ function openGuanceOnboarding() {
   guanceOnboardingOpen.value = true
 }
 
+/**
+ * 这颗按钮写着「数据源联调」，原来却把人送到只读的查询规则说明书页，还带了个
+ * `?tab=acceptance`——而那页从来没有 tab，参数是空转的。也就是说点它既没联调、
+ * 也没落到 acceptance，只是换了个页面。真正的联调就是本页这个对话框。
+ */
 function openDataSourceValidation() {
-  const query = { ...route.query }
-  delete query.capability
-  const returnTo = router.resolve({ path: '/troubleshooting', query }).fullPath
-  void router.push(evidenceCatalogLocation('acceptance', returnTo))
+  openGuanceOnboarding()
 }
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }

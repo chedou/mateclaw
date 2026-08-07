@@ -87,7 +87,6 @@ import {
   Collection,
   Connection,
   DataAnalysis,
-  DataLine,
   DocumentAdd,
   OfficeBuilding,
   TrendCharts,
@@ -97,7 +96,6 @@ import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import type { WorkbenchCapabilityCommand } from './workbenchView'
 import {
   WORKBENCH_CAPABILITY_GROUPS,
-  evidenceCatalogLocation,
   observabilityAssetsLocation,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
@@ -115,7 +113,6 @@ const navCompact = computed(() => navCollapsed.value || forcedRailViewport.value
 
 const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
   playbooks: Collection,
-  'evidence-catalog': DataLine,
   'observability-assets': OfficeBuilding,
   guance: Connection,
   ledger: TrendCharts,
@@ -123,7 +120,6 @@ const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
 }
 
 const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
-  if (route.path === '/troubleshooting/evidence-catalog') return 'evidence-catalog'
   if (route.path === '/troubleshooting/observability-assets') return 'observability-assets'
   if (route.path === '/troubleshooting/sops') return 'playbooks'
   return normalizeWorkbenchOverlayCapability(route.query.capability)
@@ -148,10 +144,6 @@ function openCapability(command: WorkbenchCapabilityCommand) {
   const returnTo = preferredWorkbenchPath()
   if (command === 'playbooks') {
     void router.push({ path: '/troubleshooting/sops', query: { returnTo } })
-    return
-  }
-  if (command === 'evidence-catalog') {
-    void router.push(evidenceCatalogLocation('systems', returnTo))
     return
   }
   if (command === 'observability-assets') {

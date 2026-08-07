@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  EVIDENCE_CATALOG_DESTINATIONS,
   WORKBENCH_CAPABILITY_GROUPS,
-  evidenceCatalogLocation,
   legacyEvidenceSynthesisLocation,
-  normalizeEvidenceCatalogTab,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
   workbenchOverlayLocation,
@@ -25,7 +22,6 @@ describe('troubleshooting secondary navigation information architecture', () => 
       'case-knowledge',
     ])
     expect(items.find(item => item.command === 'guance')).toBeUndefined()
-    expect(items.find(item => item.command === 'evidence-catalog')).toBeUndefined()
   })
 
   it('redirects the legacy synthesis deep link into diagnosis evaluation', () => {
@@ -42,27 +38,17 @@ describe('troubleshooting secondary navigation information architecture', () => 
     })
   })
 
-  it('keeps catalog as a secondary deep link while setup is the primary entry', () => {
-    expect(EVIDENCE_CATALOG_DESTINATIONS).toEqual([])
+  it('no longer offers a way to construct a link into the retired catalog page', async () => {
+    // 「查询规则说明书」和取证接入调的是同一组接口、渲染同一份数据，只是一个能改
+    // 一个只能看，于是配一条规则要在两页之间来回跳。规格已折进取证接入页。
+    //
+    // 这条断言钉的是「没有人能再造出指向它的链接」——路由里保留的重定向是给旧书签
+    // 兜底的，不是给代码继续用的。留着一个 location 构造器，跳转迟早会长回来。
+    const menu = await import('../workbenchCapabilityMenu') as Record<string, unknown>
 
-    expect(evidenceCatalogLocation(
-      'contracts',
-      '/troubleshooting?view=detail&diagnosisId=diag-1',
-    )).toEqual({
-      path: '/troubleshooting/evidence-catalog',
-      query: {
-        tab: 'contracts',
-        returnTo: '/troubleshooting?view=detail&diagnosisId=diag-1',
-      },
-    })
-  })
-
-  it('normalizes invalid tab values without trusting arbitrary query values', () => {
-    expect(normalizeEvidenceCatalogTab('routes')).toBe('routes')
-    expect(normalizeEvidenceCatalogTab('assets')).toBe('assets')
-    expect(normalizeEvidenceCatalogTab(['acceptance'])).toBe('acceptance')
-    expect(normalizeEvidenceCatalogTab('unknown')).toBe('systems')
-    expect(normalizeEvidenceCatalogTab(null)).toBe('systems')
+    expect(menu.evidenceCatalogLocation).toBeUndefined()
+    expect(menu.normalizeEvidenceCatalogTab).toBeUndefined()
+    expect(menu.EVIDENCE_CATALOG_DESTINATIONS).toBeUndefined()
   })
 
   it('only accepts a local troubleshooting page as the return target', () => {

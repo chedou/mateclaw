@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import evidenceCatalogSource from '../EvidenceQueryCatalog.vue?raw'
 import observabilityAssetsSource from '../ObservabilityAssetsWorkspace.vue?raw'
 import evidenceCatalogHelperSource from '../evidenceCatalog.ts?raw'
 import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
@@ -12,7 +11,6 @@ import developerEvidenceSource from '../DeveloperEvidencePanel.vue?raw'
 describe('troubleshooting operator copy uses plain language', () => {
   it('calls evidence contracts query rules on operator-facing surfaces', () => {
     const sources = [
-      evidenceCatalogSource,
       observabilityAssetsSource,
       guanceOnboardingSource,
       guanceValidationSource,
@@ -20,8 +18,7 @@ describe('troubleshooting operator copy uses plain language', () => {
     ]
 
     for (const source of sources) expect(source).not.toContain('查询合同')
-    expect(evidenceCatalogSource).toContain('查询规则')
-    expect(evidenceCatalogSource).toContain('只读查看各系统模块已经审核的查询规则')
+    expect(observabilityAssetsSource).toContain('查询规则')
   })
 
   it('explains investigation data and validation failures without contract jargon', () => {
@@ -32,7 +29,6 @@ describe('troubleshooting operator copy uses plain language', () => {
   })
 
   it('presents Guance verification as data-source validation instead of a standalone capability', () => {
-    expect(evidenceCatalogSource).toContain('数据源联调')
     expect(observabilityAssetsSource).toContain('数据源联调')
     expect(capabilityMenuSource).not.toContain('TROUBLESHOOTING_UI_LABELS.guanceOnboarding')
     expect(developerEvidenceSource).toContain('前往数据源联调')
@@ -40,9 +36,7 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(guanceValidationSource).not.toContain('Evidence Spine')
   })
 
-  it('keeps admin trials on the evidence setup workspace, not the catalog', () => {
-    expect(evidenceCatalogSource).not.toContain('管理员只读试跑')
-    expect(evidenceCatalogSource).not.toContain('修改路由')
+  it('keeps admin trials on the evidence setup workspace', () => {
     expect(observabilityAssetsSource).toContain('管理员只读试跑')
     expect(observabilityAssetsSource).toContain('不会创建排障单，也不代表真源已验收')
     expect(observabilityAssetsSource).toContain('最近只读试跑')
@@ -65,14 +59,18 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(observabilityAssetsSource).toContain('不会覆盖原来的生产审计记录')
   })
 
-  it('explains setup as system and module tools with outbound catalog links', () => {
-    expect(evidenceCatalogSource).toContain('只读查看')
-    expect(evidenceCatalogSource).toContain('去取证接入')
-    expect(evidenceCatalogSource).toContain('只读核对')
+  it('explains setup as system and module tools on one page', () => {
     expect(observabilityAssetsSource).toContain('可用取证工具')
     expect(observabilityAssetsSource).toContain('按系统与系统模块配置取证')
     expect(evidenceCatalogHelperSource).toContain('填写工具所需资源参数')
     expect(capabilityMenuSource).toContain("label: TROUBLESHOOTING_UI_LABELS.observabilityAssets")
     expect(capabilityMenuSource).not.toContain("command: 'evidence-catalog'")
+
+    // 规格（要传什么 / 返回什么 / 预算）原来是另一页的全部内容，现在折在
+    // 每条工具的详情里。钉住它确实在这一页，否则合并会退化成「删了一页」。
+    expect(observabilityAssetsSource).toContain('规则明细：要传什么 · 返回什么 · 预算')
+    expect(observabilityAssetsSource).toContain('需要传什么')
+    expect(observabilityAssetsSource).toContain('规范返回')
+    expect(observabilityAssetsSource).toContain('服务端固定条件')
   })
 })

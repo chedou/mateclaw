@@ -91,10 +91,18 @@ const router = createRouter({
               meta: { title: 'Troubleshooting SOPs', requiredCapability: 'manage:troubleshooting' },
             },
             {
+              // 「查询规则说明书」原来是独立页面，但它和取证接入调的是同一组接口
+              // （evidenceCatalog + observabilityAssets）、渲染同一份数据，只是一个
+              // 能改、一个只能看——于是配一条规则要在两页之间来回跳。规格已折进
+              // 取证接入页每条工具的「规则明细」。
+              //
+              // 这里留重定向而不是删路由：它早已不在二级导航里，但书签和旧深链
+              // （?tab=、?returnTo=）仍可能指过来，直接删掉会变成 404。
               path: 'evidence-catalog',
-              name: 'TroubleshootingEvidenceCatalog',
-              component: () => import('@/views/Troubleshooting/EvidenceQueryCatalog.vue'),
-              meta: { title: 'Evidence Query Catalog', requiredCapability: 'manage:troubleshooting' },
+              redirect: to => ({
+                path: '/troubleshooting/observability-assets',
+                query: to.query,
+              }),
             },
             {
               path: 'observability-assets',

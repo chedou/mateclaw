@@ -17,31 +17,54 @@
         class="page-alert"
       />
 
-      <div class="toolbar">
+      <!-- 搜索只在真有东西可搜时出现。空态里的搜索框是在假装这页已经有内容。 -->
+      <div v-if="hasModules" class="toolbar">
         <el-input
           v-model="query"
           clearable
           placeholder="搜索系统、模块或工具"
           class="search-input"
         />
-        <el-button @click="openCatalog">查询规则说明书</el-button>
         <el-button type="primary" plain @click="openGuanceValidation">数据源联调</el-button>
         <el-button type="primary" @click="openNewAsset">接入模块</el-button>
       </div>
 
-      <ol class="setup-workflow" aria-label="配置步骤">
-        <li v-for="(step, index) in EVIDENCE_SETUP_WORKFLOW" :key="step">
-          <em>{{ index + 1 }}</em>
-          <span>{{ step }}</span>
-        </li>
-      </ol>
-
-      <el-alert
-        type="info"
-        :closable="false"
-        class="page-alert"
-        title="这里只维护系统、模块范围和查询规则引用；API Key、端点主机、原始 DQL 与原始日志不进入配置。只读试跑不会创建排障单，也不代表真源已验收。"
-      />
+      <!--
+        源没通时，这是本页唯一要紧的事。原来它是三步流程条里的第 3 步，
+        排在「选模块」「看工具」后面——而它其实是前两步的前提。
+      -->
+      <section v-if="!realSourceReady" class="source-gate">
+        <div class="source-gate-head">
+          <div>
+            <h2>
+              {{ replayOnly
+                ? '当前只有受控回放可用，还没有真实数据源'
+                : '还不能取到真实证据：没有可用的数据源' }}
+            </h2>
+            <p v-if="replayOnly">
+              回放能让工具跑起来、让你核对规则形状，但
+              <b>它不是真实生产观测</b>——真实故障要等真源接通。
+            </p>
+            <p v-else>
+              模块和绑定可以先离线配好，但
+              <b>绑定的工具跑不起来，也做不了只读试跑</b>——这一步要等数据源接通。
+            </p>
+          </div>
+          <!-- 同一个动作一页只出现一次：没有模块时空态已经在带路，这里就只陈述事实。 -->
+          <el-button
+            v-if="hasModules"
+            type="primary"
+            @click="openGuanceValidation"
+          >去数据源联调</el-button>
+        </div>
+        <ul class="source-gate-list">
+          <li v-for="source in blockedSources" :key="source.platform">
+            <b>{{ source.platform }}</b>
+            <span v-if="source.missing" class="missing">缺 {{ source.missing }}</span>
+            <small>{{ source.detail }}</small>
+          </li>
+        </ul>
+      </section>
 
       <div v-if="filteredSetupModules.length" class="assets-workspace">
         <aside class="asset-rail" aria-label="系统与模块">
@@ -159,6 +182,71 @@
                     </ul>
                   </div>
 
+                  <!--
+                    规则规格原来是另一个页面（查询规则说明书）的全部内容。两个页面调的是
+                    同一组接口、渲染的是同一份数据，只是一个能改、一个只能看，于是配一条
+                    规则要在两页之间来回跳。规格是**配这条规则时要对照的东西**，放这里。
+                    默认折叠：核对是偶尔需要，不该每次展开工具都占半屏。
+                  -->
+                  <details v-if="tool.contract" class="contract-spec">
+                    <summary>规则明细：要传什么 · 返回什么 · 预算</summary>
+                    <div class="axis-grid">
+                      <article>
+                        <span>路由</span>
+                        <strong>{{ routeOriginLabel(tool.contract.route.origin) }}</strong>
+                        <small>{{ tool.contract.route.platforms.join(' → ') || '未选择适配器' }}</small>
+                      </article>
+                      <article>
+                        <span>绑定</span>
+                        <strong>{{ bindingStatusLabel(tool.contract.binding.status) }}</strong>
+                        <small>{{ tool.contract.binding.bindingRef || '未绑定' }}</small>
+                      </article>
+                      <article>
+                        <span>预算</span>
+                        <strong>{{ tool.contract.budget.queryCount }} 查询 · {{ tool.contract.budget.maxRows }} 行</strong>
+                        <small>超时 {{ formatTrialTimeout(tool.contract.budget.timeoutMs) }}</small>
+                      </article>
+                    </div>
+
+                    <div class="detail-grid">
+                      <section class="detail-card">
+                        <div class="card-title"><small>INPUT</small><h3>需要传什么</h3></div>
+                        <el-table :data="tool.contract.parameters" size="small">
+                          <el-table-column prop="name" label="参数" min-width="120" />
+                          <el-table-column label="来源" min-width="140">
+                            <template #default="scope">{{ parameterSourceLabel(scope.row.source) }}</template>
+                          </el-table-column>
+                          <el-table-column label="要求" width="72">
+                            <template #default="scope">{{ scope.row.required ? '必填' : '可兜底' }}</template>
+                          </el-table-column>
+                          <el-table-column prop="description" label="说明" min-width="180" />
+                        </el-table>
+                      </section>
+                      <section class="detail-card">
+                        <div class="card-title"><small>OUTPUT</small><h3>规范返回</h3></div>
+                        <div class="tag-list">
+                          <el-tag
+                            v-for="field in tool.contract.canonicalOutputs"
+                            :key="field"
+                            effect="plain"
+                          >{{ field }}</el-tag>
+                        </div>
+                      </section>
+                      <section class="detail-card">
+                        <div class="card-title"><small>FIXED</small><h3>服务端固定条件</h3></div>
+                        <div class="tag-list">
+                          <el-tag
+                            v-for="condition in tool.contract.fixedConditions"
+                            :key="condition"
+                            type="info"
+                            effect="plain"
+                          >{{ condition }}</el-tag>
+                          <span v-if="!tool.contract.fixedConditions.length" class="empty-inline">未记录</span>
+                        </div>
+                      </section>
+                    </div>
+                  </details>
+
                   <div class="rule-actions">
                     <el-button
                       v-if="toolNeedsModuleConfig(tool)"
@@ -228,15 +316,46 @@
                 </div>
               </article>
             </div>
-            <el-empty v-else description="部署侧还没有可绑定的取证工具；请确认已审核查询规则已随部署发布">
-              <el-button @click="openCatalog">查看查询规则说明书</el-button>
-            </el-empty>
+            <!--
+              这一格不是用户能在页面里解决的：可绑定的工具来自部署侧发布的已审核查询
+              规则。原来这里放了个「查看查询规则说明书」的按钮，跳过去也是同一句话的
+              另一种说法——它不会让人离答案更近，所以只留下要找谁办。
+            -->
+            <el-empty
+              v-else
+              description="部署侧还没有为这个模块发布可绑定的取证工具；需要先让已审核的查询规则随部署发布。"
+            />
           </section>
         </section>
       </div>
-      <el-empty v-else description="还没有可配置的系统模块">
-        <el-button type="primary" @click="openNewAsset">接入第一个模块</el-button>
-      </el-empty>
+      <!--
+        空态分两种，原来只有一句话概括了它们：源没通时先去联调，源通了就登记模块。
+        「登记模块」在源没通时仍然可做（离线准备），所以它留着，只是不抢主位。
+      -->
+      <section v-else-if="!hasModules" class="setup-empty">
+        <h2>{{ setupGate === 'NEEDS_SOURCE' ? '先接通一个真实数据源' : '接入第一个系统模块' }}</h2>
+        <p v-if="setupGate === 'NEEDS_SOURCE'">
+          还没有任何模块，也还没有真实数据源。两件事都要做，但先做数据源——
+          {{ replayOnly
+            ? '现在只有受控回放，模块登记完也仍然取不到真实证据。'
+            : '没有源的话，模块登记完也仍然取不到证据。' }}
+        </p>
+        <p v-else>
+          真实数据源已就绪。登记你要排障的第一个系统模块，然后给它绑定取证工具。
+        </p>
+        <div class="setup-empty-actions">
+          <el-button
+            v-if="setupGate === 'NEEDS_SOURCE'"
+            type="primary"
+            @click="openGuanceValidation"
+          >去数据源联调</el-button>
+          <el-button
+            :type="setupGate === 'NEEDS_SOURCE' ? 'default' : 'primary'"
+            @click="openNewAsset"
+          >{{ setupGate === 'NEEDS_SOURCE' ? '仍然先登记模块' : '接入第一个模块' }}</el-button>
+        </div>
+      </section>
+      <el-empty v-else description="没有匹配当前搜索的系统模块" />
     </div>
 
     <el-dialog v-model="trialDialogOpen" title="管理员只读试跑" width="620px" destroy-on-close>
@@ -443,6 +562,17 @@
       width="760px"
       destroy-on-close
     >
+      <!--
+        这条边界原来印在页面顶部，对着一个还没开始配的人说「你填的东西不含密钥」——
+        那时他还没填任何东西。它回答的是「我在这个表单里填的会被存成什么」，
+        所以贴在表单上。
+      -->
+      <el-alert
+        type="info"
+        :closable="false"
+        class="asset-dialog-alert"
+        title="这里只保存系统、模块范围和查询规则引用。API Key、端点主机、原始 DQL 与原始日志不进入配置，由服务端保管。"
+      />
       <el-alert
         type="warning"
         :closable="false"
@@ -577,19 +707,20 @@ import {
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
 import {
   assetParameterLabel,
+  bindingStatusLabel,
   buildModuleToolSetups,
   directTrialBlockReason,
-  EVIDENCE_SETUP_WORKFLOW,
   listSetupModules,
   mergeObservabilityAssetContractOptions,
   observabilityAssetDraftReadiness,
+  parameterSourceLabel,
+  routeOriginLabel,
   signalKindLabel,
   moveOrderedItem,
   type ModuleToolSetup,
   type SetupModuleEntry,
 } from './evidenceCatalog'
 import {
-  evidenceCatalogLocation,
   safeTroubleshootingReturnPath,
   workbenchOverlayLocation,
 } from './workbenchCapabilityMenu'
@@ -679,10 +810,61 @@ const allRows = computed<ContractRow[]>(() => (catalog.value?.systems || []).fla
 const sourceReady = computed(() => (catalog.value?.sources || []).some(source =>
   source.status === 'READY'))
 
+/**
+ * 受控回放**不是真源**。`formalProjection` 早就定了这条规矩（`recorded-replay*`
+ * 单独归成 `RECORDED_REPLAY`，并明写「页面不会把回放证据描述成真实生产观测」）。
+ * 本页必须守同一条：夹具适配器在 demo profile 下是 READY 的，只看
+ * `some(status === 'READY')` 会让页面对着一台三个真源全 DISABLED 的机器说
+ * 「数据源已就绪」——那正是投产清单里要挡的「系统假装能取证」。
+ *
+ * 不要因此去改上面那个 `sourceReady`：它喂给 `buildModuleToolSetups`，回答的是
+ * 「这条工具能不能跑起来」，在那个问题上回放算数。两个问题不同，别并成一个。
+ */
+function isRecordedReplay(platform: string) {
+  return platform.startsWith('recorded-replay')
+}
+
+const realSourceReady = computed(() => (catalog.value?.sources || []).some(source =>
+  source.status === 'READY' && !isRecordedReplay(source.platform)))
+
+/** 只有回放可用：能跑，但跑出来的不是真实生产观测。这是最容易被说成「就绪」的一格。 */
+const replayOnly = computed(() => !realSourceReady.value && sourceReady.value)
+
+/**
+ * 每个平台**具体缺什么**。页面原来只说「观测云待联调」，那句话对着一个
+ * `endpointStatus=MISSING、credentialStatus=MISSING` 的适配器和一个只是没开开关的
+ * 适配器说的是同一句话，而这两件事要找的人完全不同。
+ */
+const blockedSources = computed(() => (catalog.value?.sources || [])
+  .filter(source => source.status !== 'READY' && !isRecordedReplay(source.platform))
+  .map(source => ({
+    platform: source.platform,
+    detail: source.detail,
+    missing: [
+      source.endpointStatus === 'MISSING' ? '端点' : '',
+      source.credentialStatus === 'MISSING' ? '凭据' : '',
+    ].filter(Boolean).join(' · '),
+  })))
+
 const setupModules = computed(() => listSetupModules(
   catalog.value,
   assetCatalog.value?.assets || [],
 ))
+
+const hasModules = computed(() => setupModules.value.length > 0)
+
+/**
+ * 真实依赖顺序是「先有可用的源 → 再登记模块 → 再给模块绑工具 → 才谈得上试跑」。
+ * 页面原先把「数据源联调」写成第 3 步，于是可以把前两步全填完，再发现根本没有源
+ * 可用。这里让页面按你**实际站在哪一格**说话，而不是永远摆出同一张流程图。
+ *
+ * 注意闸门只决定强调什么，不决定隐藏什么：已登记的模块在源没通时照常列出——
+ * 补范围、改绑定都是离线能做的准备，藏起来等于把人已经做过的工作抹掉。
+ */
+const setupGate = computed<'NEEDS_SOURCE' | 'NEEDS_MODULE' | 'SOURCE_BLOCKED' | 'READY'>(() => {
+  if (!hasModules.value) return realSourceReady.value ? 'NEEDS_MODULE' : 'NEEDS_SOURCE'
+  return realSourceReady.value ? 'READY' : 'SOURCE_BLOCKED'
+})
 
 const filteredSetupModules = computed(() => {
   const keyword = query.value.trim().toLowerCase()
@@ -1194,8 +1376,13 @@ function returnToWorkbench() {
   void router.push(safeTroubleshootingReturnPath(route.query.returnTo) || '/troubleshooting')
 }
 
-function openCatalog() {
-  void router.push(evidenceCatalogLocation('systems', route.fullPath))
+/**
+ * 规则预算里的超时是毫秒数。原来这个格式化函数在查询规则说明书那页各写了一份，
+ * 与 formalProjection 里那个同名函数不是一回事（那个吃 ISO duration 字符串）。
+ */
+function formatTrialTimeout(milliseconds: number) {
+  if (milliseconds >= 1000) return `${milliseconds / 1000} 秒`
+  return `${milliseconds} 毫秒`
 }
 
 function openGuanceValidation() {
@@ -1268,36 +1455,48 @@ onMounted(loadCatalog)
 .page-alert { margin-bottom: 2px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .search-input { flex: 1; min-width: min(100%, 240px); }
-.setup-workflow {
+/* 源没通时页面顶部那块闸门。它替掉了原来常驻的三步流程条。 */
+.source-gate {
+  padding: 16px 18px;
+  border: 1px solid var(--mc-warning-border, var(--mc-border-light));
+  border-radius: 12px;
+  background: var(--mc-warning-bg, var(--mc-bg-muted));
+}
+.source-gate-head { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+.source-gate-head h2 { margin: 0 0 6px; color: var(--mc-text-primary); font-size: 16px; letter-spacing: -.01em; }
+.source-gate-head p { margin: 0; max-width: 62ch; color: var(--mc-text-secondary); font-size: 13px; line-height: 1.6; }
+.source-gate-list { display: grid; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; }
+.source-gate-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12px; }
+.source-gate-list b { color: var(--mc-text-primary); font-family: var(--mc-font-mono, monospace); }
+.source-gate-list .missing { color: var(--mc-danger, #c0392b); font-weight: 600; }
+.source-gate-list small { color: var(--mc-text-tertiary); }
+
+/* 首次进入的空态。唯一能做的动作是主按钮，不再和三个跳转按钮抢注意力。 */
+.setup-empty { display: grid; justify-items: center; gap: 10px; padding: 56px 24px; text-align: center; }
+.setup-empty h2 { margin: 0; color: var(--mc-text-primary); font-size: 18px; letter-spacing: -.02em; }
+.setup-empty p { margin: 0; max-width: 52ch; color: var(--mc-text-secondary); font-size: 13px; line-height: 1.7; }
+.setup-empty-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 6px; }
+
+/* 折进工具详情的规则规格（原「查询规则说明书」整页内容）。 */
+.contract-spec { margin-top: 12px; border-top: 1px dashed var(--mc-border-light); padding-top: 10px; }
+.contract-spec > summary { color: var(--mc-text-secondary); font-size: 12px; cursor: pointer; user-select: none; }
+.contract-spec > summary:hover { color: var(--mc-primary); }
+.contract-spec .axis-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  margin-top: 12px;
 }
-.setup-workflow li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--mc-bg-muted);
-}
-.setup-workflow em {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  color: var(--mc-primary);
-  background: var(--mc-primary-bg);
-  font-style: normal;
-  font-size: 12px;
-  font-weight: 700;
-}
-.setup-workflow span { color: var(--mc-text-secondary); font-size: 12px; line-height: 1.5; }
+.contract-spec .axis-grid article { padding: 10px 12px; border-radius: 10px; background: var(--mc-bg-muted); }
+.contract-spec .axis-grid span { display: block; color: var(--mc-text-tertiary); font-size: 11px; }
+.contract-spec .axis-grid strong { display: block; margin: 2px 0; color: var(--mc-text-primary); font-size: 13px; }
+.contract-spec .axis-grid small { color: var(--mc-text-secondary); font-size: 11px; word-break: break-all; }
+.contract-spec .detail-grid { display: grid; gap: 12px; margin-top: 12px; }
+.contract-spec .detail-card { padding: 12px 14px; border: 1px solid var(--mc-border-light); border-radius: 10px; }
+.contract-spec .card-title { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+.contract-spec .card-title small { color: var(--mc-primary); font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.contract-spec .card-title h3 { margin: 0; color: var(--mc-text-primary); font-size: 13px; }
+.contract-spec .empty-inline { color: var(--mc-text-tertiary); font-size: 12px; }
 .assets-workspace {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);

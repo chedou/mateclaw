@@ -5,7 +5,6 @@ export type WorkbenchViewMode = WorkbenchViewSwitchMode | 'DETAIL'
 export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
 export type WorkbenchCapabilityCommand =
   | 'playbooks'
-  | 'evidence-catalog'
   | 'observability-assets'
   | 'guance'
   | 'ledger'
