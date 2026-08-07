@@ -7,19 +7,12 @@ import type {
   ObservabilityAssetContractOption,
 } from '@/api'
 
-/** 目录页只读；接入在「取证接入」页完成。 */
-export const EVIDENCE_CATALOG_WORKFLOW = [
-  '按系统模块浏览已审核查询规则',
-  '核对参数、返回字段和阻断点',
-  '需要接入时去取证接入或数据源联调',
-] as const
-
-/** 配置与接入主线：系统 / 模块 → 可用工具 → 每项要配什么。 */
-export const EVIDENCE_SETUP_WORKFLOW = [
-  '选择要接入的系统与系统模块',
-  '查看这个模块能用哪些取证工具',
-  '按工具补齐范围、绑定、路由，再到数据源联调',
-] as const
+// 这里原先有两条常驻流程条文案（EVIDENCE_CATALOG_WORKFLOW / EVIDENCE_SETUP_WORKFLOW）。
+// 两条都删了，原因不是「没人用」，而是它们**说的顺序是错的**：设置那条把「数据源联调」
+// 写成第 3 步，可它是前两步的前提——你可以把系统、模块、绑定全配完，再发现根本没有
+// 源可用。页面现在按 `setupGate` 说话，你站在哪一格就只说那一格的事。
+//
+// 目录那条随「查询规则说明书」一起退休。
 
 export type SetupModuleEntry = {
   system: string

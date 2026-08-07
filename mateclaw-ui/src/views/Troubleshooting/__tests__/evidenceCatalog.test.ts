@@ -4,8 +4,6 @@ import {
   bindingStatusLabel,
   buildModuleToolSetups,
   catalogSummary,
-  EVIDENCE_CATALOG_WORKFLOW,
-  EVIDENCE_SETUP_WORKFLOW,
   contractMatches,
   directTrialBlockReason,
   findModuleAsset,
@@ -148,22 +146,6 @@ describe('evidence query catalog presentation', () => {
     expect(bindingStatusLabel('CANONICAL_RESULT_OBSERVED')).toBe('已观测到规范证据')
     expect(runtimeStateLabel('CONFIGURED')).toBe('已配置')
     expect(runtimeStateLabel('MISSING')).toBe('未配置')
-  })
-
-  it('keeps a read-only catalog workflow and points setup elsewhere', () => {
-    expect([...EVIDENCE_CATALOG_WORKFLOW]).toEqual([
-      '按系统模块浏览已审核查询规则',
-      '核对参数、返回字段和阻断点',
-      '需要接入时去取证接入或数据源联调',
-    ])
-  })
-
-  it('explains evidence setup as system → module → tools', () => {
-    expect([...EVIDENCE_SETUP_WORKFLOW]).toEqual([
-      '选择要接入的系统与系统模块',
-      '查看这个模块能用哪些取证工具',
-      '按工具补齐范围、绑定、路由，再到数据源联调',
-    ])
   })
 
   it('lists setup modules from catalog and assets', () => {
