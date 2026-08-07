@@ -3,7 +3,90 @@ import type {
   EvidenceQueryContract,
   EvidenceRouteOrigin,
   ObservabilityAsset,
+  ObservabilityAssetContractOption,
 } from '@/api'
+import type { EvidenceCatalogTab } from './workbenchCapabilityMenu'
+
+export type EvidenceCatalogGuideItem = {
+  tab: EvidenceCatalogTab
+  step: string
+  label: string
+  title: string
+  purpose: string
+  whenToUse: string
+}
+
+export const EVIDENCE_CATALOG_GUIDE: ReadonlyArray<EvidenceCatalogGuideItem> = [
+  {
+    tab: 'systems',
+    step: '01',
+    label: '系统与模块',
+    title: '按系统找查询',
+    purpose: '看某个系统能查哪些数据、需要哪些参数，以及当前的阻断点。',
+    whenToUse: '查问题和试跑单条查询时使用',
+  },
+  {
+    tab: 'assets',
+    step: '02',
+    label: '系统观测资产',
+    title: '登记要查的系统',
+    purpose: '登记系统、服务、环境和资源范围，再绑定已审核的查询规则。',
+    whenToUse: '新系统接入或生产资源变更时使用',
+  },
+  {
+    tab: 'contracts',
+    step: '03',
+    label: '查询规则',
+    title: '确认每次怎么查',
+    purpose: '核对调用方式、参数来源、固定条件、返回字段和超时预算。',
+    whenToUse: '新增查询能力或观测云字段变更时核对',
+  },
+  {
+    tab: 'routes',
+    step: '04',
+    label: '路由与绑定',
+    title: '选择用哪个数据源',
+    purpose: '决定日志、链路或指标优先交给哪个只读适配器查询。',
+    whenToUse: '切换观测平台或调整主备顺序时使用',
+  },
+  {
+    tab: 'acceptance',
+    step: '05',
+    label: '数据源联调',
+    title: '确认真实调用可用',
+    purpose: '检查端点、凭据、适配器和系统级验收状态。',
+    whenToUse: '投产前或数据源异常后重新验证',
+  },
+]
+
+export function mergeObservabilityAssetContractOptions(
+  assetOptions: ReadonlyArray<ObservabilityAssetContractOption>,
+  queryContracts: ReadonlyArray<EvidenceQueryContract>,
+): ObservabilityAssetContractOption[] {
+  if (assetOptions.length > 0) {
+    return [...assetOptions].sort((left, right) =>
+      left.signalKind.localeCompare(right.signalKind)
+        || left.contractRef.localeCompare(right.contractRef))
+  }
+
+  const options = new Map<string, ObservabilityAssetContractOption>()
+  for (const contract of queryContracts) {
+    options.set(contract.contractRef, {
+      contractRef: contract.contractRef,
+      signalKind: contract.signalKind,
+      scenario: contract.scenario,
+      question: contract.question,
+      summary: contract.summary,
+      requiredAssetParameters: contract.parameters
+        .filter(parameter => parameter.source === 'SYSTEM_ASSET')
+        .map(parameter => parameter.name)
+        .sort(),
+    })
+  }
+  return [...options.values()].sort((left, right) =>
+    left.signalKind.localeCompare(right.signalKind)
+      || left.contractRef.localeCompare(right.contractRef))
+}
 
 export function catalogSummary(catalog: EvidenceQueryCatalog | null) {
   const systems = catalog?.systems.length ?? 0

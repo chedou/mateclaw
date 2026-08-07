@@ -53,6 +53,34 @@
         </article>
       </section>
 
+      <section class="catalog-guide" aria-labelledby="catalog-guide-title">
+        <div class="catalog-guide-heading">
+          <div>
+            <p class="eyebrow">使用说明</p>
+            <h2 id="catalog-guide-title">这个目录怎么用</h2>
+          </div>
+          <p>按顺序完成系统登记、查询核对和真实联调；日常排障不需要每次重复配置。</p>
+        </div>
+        <div class="catalog-guide-steps">
+          <button
+            v-for="item in EVIDENCE_CATALOG_GUIDE"
+            :key="item.tab"
+            type="button"
+            class="catalog-guide-step"
+            :class="{ active: activeTab === item.tab }"
+            @click="activeTab = item.tab"
+          >
+            <span>{{ item.step }}</span>
+            <div>
+              <small>{{ item.label }}</small>
+              <b>{{ item.title }}</b>
+              <p>{{ item.purpose }}</p>
+              <em>{{ item.whenToUse }}</em>
+            </div>
+          </button>
+        </div>
+      </section>
+
       <el-tabs v-model="activeTab" class="catalog-tabs sidebar-controlled-tabs">
         <el-tab-pane label="系统与模块" name="systems">
           <div v-if="filteredRows.length" class="system-workspace">
@@ -268,10 +296,11 @@
                 <small class="table-note">{{ scope.row.enabled ? '已启用' : '已停用' }}</small>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="130" fixed="right">
+            <el-table-column label="操作" width="190" fixed="right">
               <template #default="scope">
+                <el-button text @click="openAssetDetail(scope.row)">查看详情</el-button>
                 <el-button text type="primary" @click="openAssetEditor(scope.row)">
-                  {{ scope.row.origin === 'WORKSPACE' ? '新建版本' : '接管配置' }}
+                  {{ scope.row.origin === 'WORKSPACE' ? '修改配置' : '接管配置' }}
                 </el-button>
               </template>
             </el-table-column>
@@ -539,8 +568,73 @@
     </el-dialog>
 
     <el-dialog
+      v-model="assetDetailOpen"
+      title="系统观测资产详情"
+      width="720px"
+      destroy-on-close
+    >
+      <template v-if="assetDetail">
+        <div class="asset-detail-heading">
+          <div>
+            <small>{{ assetDetail.origin === 'WORKSPACE' ? `Workspace v${assetDetail.version}` : '部署默认' }}</small>
+            <h3>{{ assetDetail.displayName || assetDetail.service }}</h3>
+            <p>{{ assetDetail.system }} / {{ assetDetail.service }}</p>
+          </div>
+          <el-tag :type="assetDetail.enabled ? 'success' : 'info'">
+            {{ assetDetail.enabled ? '已启用' : '已停用' }}
+          </el-tag>
+        </div>
+
+        <dl class="asset-detail-grid">
+          <div><dt>观测平台</dt><dd>{{ assetDetail.platform }}</dd></div>
+          <div><dt>环境</dt><dd>{{ assetDetail.environment || '未记录' }}</dd></div>
+          <div><dt>区域</dt><dd>{{ assetDetail.region || '未记录' }}</dd></div>
+          <div><dt>集群</dt><dd>{{ assetDetail.cluster || '未记录' }}</dd></div>
+          <div><dt>命名空间</dt><dd>{{ assetDetail.namespace || '未记录' }}</dd></div>
+          <div><dt>最后变更</dt><dd>{{ assetDetail.changedAt || '未记录' }}</dd></div>
+          <div><dt>变更人</dt><dd>{{ assetDetail.changedBy || '未记录' }}</dd></div>
+          <div class="wide"><dt>变更原因</dt><dd>{{ assetDetail.reason || '未记录' }}</dd></div>
+        </dl>
+
+        <section class="asset-detail-section">
+          <h4>已绑定查询规则</h4>
+          <div class="asset-contracts">
+            <el-tag
+              v-for="(contractRef, signalKind) in assetDetail.signalBindings"
+              :key="`${signalKind}/${contractRef}`"
+              effect="plain"
+            >{{ signalKind }} · {{ contractRef }}</el-tag>
+            <span v-if="!Object.keys(assetDetail.signalBindings).length" class="empty-inline">未绑定</span>
+          </div>
+        </section>
+
+        <section class="asset-detail-section">
+          <h4>查询使用的资源标识</h4>
+          <dl v-if="Object.keys(assetDetail.parameters).length" class="asset-parameter-list">
+            <div v-for="(value, name) in assetDetail.parameters" :key="name">
+              <dt>{{ assetParameterLabel(name) }}</dt><dd>{{ value }}</dd>
+            </div>
+          </dl>
+          <p v-else class="empty-inline">当前查询规则不需要额外资源标识。</p>
+        </section>
+
+        <el-alert
+          type="info"
+          :closable="false"
+          title="修改会保存为新版本，不会覆盖原来的生产审计记录。"
+        />
+      </template>
+      <template #footer>
+        <el-button @click="assetDetailOpen = false">关闭</el-button>
+        <el-button v-if="assetDetail" type="primary" @click="editAssetFromDetail">
+          {{ assetDetail.origin === 'WORKSPACE' ? '修改配置' : '接管配置' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="assetDialogOpen"
-      :title="assetForm.expectedVersion ? '新建系统观测资产版本' : '登记系统观测资产'"
+      :title="assetForm.expectedVersion ? '修改系统观测资产' : '登记系统观测资产'"
       width="760px"
       destroy-on-close
     >
@@ -548,7 +642,7 @@
         type="warning"
         :closable="false"
         class="asset-dialog-alert"
-        title="保存会追加一个不可变版本；已停用的 Workspace 资产也会阻止回落到部署默认。"
+        title="修改会保存为新版本，不会覆盖原来的生产审计记录；已停用的 Workspace 资产也会阻止回落到部署默认。"
       />
       <el-alert
         :type="assetDraftReadiness.ready ? 'success' : 'info'"
@@ -682,6 +776,8 @@ import {
   catalogSummary,
   contractMatches,
   directTrialBlockReason,
+  EVIDENCE_CATALOG_GUIDE,
+  mergeObservabilityAssetContractOptions,
   observabilityAssetDraftReadiness,
   parameterSourceLabel,
   routeOriginLabel,
@@ -754,6 +850,8 @@ const routeReason = ref('')
 const assetDialogOpen = ref(false)
 const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
+const assetDetailOpen = ref(false)
+const assetDetail = ref<ObservabilityAsset | null>(null)
 const trialDialogOpen = ref(false)
 const trialRunning = ref(false)
 const trialHistoryLoading = ref(false)
@@ -791,6 +889,10 @@ const filteredTree = computed(() => {
     })).filter(module => module.contracts.length),
   })).filter(system => system.modules.length)
 })
+const assetContractOptions = computed(() => mergeObservabilityAssetContractOptions(
+  assetCatalog.value?.contracts || [],
+  allRows.value.map(row => row.contract),
+))
 const selectedRow = computed(() => filteredRows.value.find(row =>
   contractKey(row.system, row.service, row.contract) === selectedKey.value)
   || filteredRows.value[0]
@@ -815,7 +917,7 @@ const filteredAssets = computed(() => {
 })
 const contractGroups = computed(() => {
   const grouped = new Map<string, ObservabilityAssetContractOption[]>()
-  for (const option of assetCatalog.value?.contracts || []) {
+  for (const option of assetContractOptions.value) {
     const options = grouped.get(option.signalKind) || []
     options.push(option)
     grouped.set(option.signalKind, options)
@@ -831,7 +933,7 @@ const selectedAssetContracts = computed(() => {
   const selected = new Set(Object.values(assetForm.value.contractRefs).filter(
     (value): value is string => typeof value === 'string' && Boolean(value),
   ))
-  return (assetCatalog.value?.contracts || []).filter(option => selected.has(option.contractRef))
+  return assetContractOptions.value.filter(option => selected.has(option.contractRef))
 })
 const requiredAssetParameters = computed(() => [...new Set(
   selectedAssetContracts.value.flatMap(option => option.requiredAssetParameters),
@@ -1014,6 +1116,18 @@ async function loadCatalog() {
 function openNewAsset() {
   assetForm.value = emptyAssetForm()
   assetDialogOpen.value = true
+}
+
+function openAssetDetail(asset: ObservabilityAsset) {
+  assetDetail.value = asset
+  assetDetailOpen.value = true
+}
+
+function editAssetFromDetail() {
+  if (!assetDetail.value) return
+  const asset = assetDetail.value
+  assetDetailOpen.value = false
+  openAssetEditor(asset)
 }
 
 function openAssetEditor(asset: ObservabilityAsset) {
@@ -1229,6 +1343,21 @@ onMounted(loadCatalog)
 .summary-card.emphasis { border-color: color-mix(in srgb, var(--catalog-accent) 40%, var(--el-border-color)); background: color-mix(in srgb, var(--catalog-accent) 7%, var(--el-bg-color)); }
 .summary-card.emphasis strong { color: var(--catalog-accent); }
 
+.catalog-guide { margin-bottom:18px; padding:20px; border:1px solid var(--el-border-color-lighter); border-radius:14px; background:var(--el-bg-color); }
+.catalog-guide-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:16px; }
+.catalog-guide-heading h2 { margin:4px 0 0; font-size:20px; }
+.catalog-guide-heading>p { max-width:560px; margin:0; color:var(--el-text-color-secondary); font-size:13px; line-height:1.65; }
+.catalog-guide-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-top:1px solid var(--el-border-color-lighter); }
+.catalog-guide-step { display:grid; grid-template-columns:28px minmax(0,1fr); gap:10px; min-width:0; padding:16px 14px; border:0; border-right:1px solid var(--el-border-color-lighter); color:inherit; background:transparent; text-align:left; cursor:pointer; transition:background-color .16s ease,color .16s ease; }
+.catalog-guide-step:last-child { border-right:0; }
+.catalog-guide-step:hover,.catalog-guide-step.active { color:var(--catalog-accent); background:color-mix(in srgb,var(--catalog-accent) 6%,var(--el-bg-color)); }
+.catalog-guide-step>span { color:var(--catalog-accent); font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.catalog-guide-step small,.catalog-guide-step b,.catalog-guide-step p,.catalog-guide-step em { display:block; }
+.catalog-guide-step small { color:var(--el-text-color-secondary); font-size:10px; }
+.catalog-guide-step b { margin-top:5px; font-size:13px; }
+.catalog-guide-step p { margin:8px 0 0; color:var(--el-text-color-secondary); font-size:11px; line-height:1.55; }
+.catalog-guide-step em { margin-top:8px; color:var(--el-text-color-placeholder); font-size:10px; font-style:normal; line-height:1.45; }
+
 .catalog-tabs { padding: 0 20px 24px; border: 1px solid var(--el-border-color-lighter); border-radius: 14px; background: var(--el-bg-color); }
 .sidebar-controlled-tabs :deep(.el-tabs__header) { display:none; }
 .sidebar-controlled-tabs :deep(.el-tabs__content) { padding-top:20px; }
@@ -1283,6 +1412,19 @@ onMounted(loadCatalog)
 .asset-toolbar h2 { margin:0; font-size:20px; }
 .asset-toolbar p { margin:6px 0 0; color:var(--el-text-color-secondary); font-size:13px; }
 .asset-contracts { display:flex; flex-wrap:wrap; gap:6px; }
+.asset-detail-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding-bottom:18px; border-bottom:1px solid var(--el-border-color-lighter); }
+.asset-detail-heading small { color:var(--catalog-accent); font-weight:700; }
+.asset-detail-heading h3 { margin:5px 0; font-size:22px; }
+.asset-detail-heading p { margin:0; color:var(--el-text-color-secondary); }
+.asset-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; margin:18px 0; border-top:1px solid var(--el-border-color-lighter); border-left:1px solid var(--el-border-color-lighter); }
+.asset-detail-grid>div { min-width:0; padding:13px 14px; border-right:1px solid var(--el-border-color-lighter); border-bottom:1px solid var(--el-border-color-lighter); }
+.asset-detail-grid>div.wide { grid-column:1 / -1; }
+.asset-detail-grid dt,.asset-parameter-list dt { color:var(--el-text-color-secondary); font-size:11px; }
+.asset-detail-grid dd,.asset-parameter-list dd { margin:5px 0 0; overflow-wrap:anywhere; }
+.asset-detail-section { margin:18px 0; }
+.asset-detail-section h4 { margin:0 0 10px; font-size:14px; }
+.asset-parameter-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:0; }
+.asset-parameter-list>div { padding:12px; border-radius:8px; background:var(--el-fill-color-extra-light); }
 .asset-dialog-alert { margin-bottom:18px; }
 .asset-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; width:100%; }
 .contract-binding-grid { display:grid; gap:8px; width:100%; }
@@ -1326,6 +1468,8 @@ onMounted(loadCatalog)
   .axis-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-strip { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
   .system-workspace, .acceptance-layout { grid-template-columns: 1fr; }
+  .catalog-guide-steps { grid-template-columns:repeat(2,minmax(0,1fr)); border-left:1px solid var(--el-border-color-lighter); }
+  .catalog-guide-step { border-bottom:1px solid var(--el-border-color-lighter); }
   .catalog-tree { max-height: 300px; border-right: 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 }
 
@@ -1337,6 +1481,9 @@ onMounted(loadCatalog)
 @media (max-width: 760px) {
   .catalog-header, .catalog-main { padding-left: 16px; padding-right: 16px; }
   .header-actions { align-items: stretch; flex-direction: column; }
+  .catalog-guide-heading { align-items:flex-start; flex-direction:column; }
+  .catalog-guide-steps,.asset-detail-grid,.asset-parameter-list { grid-template-columns:1fr; }
+  .asset-detail-grid>div.wide { grid-column:auto; }
   .axis-grid, .detail-grid { grid-template-columns: 1fr; }
   .detail-card.parameter-card { grid-column: auto; overflow-x: auto; }
   .title-row { align-items: flex-start; flex-direction: column; }

@@ -3,8 +3,10 @@ import type { EvidenceQueryCatalog, EvidenceQueryContract, ObservabilityAsset } 
 import {
   bindingStatusLabel,
   catalogSummary,
+  EVIDENCE_CATALOG_GUIDE,
   contractMatches,
   directTrialBlockReason,
+  mergeObservabilityAssetContractOptions,
   observabilityAssetDraftReadiness,
   moveOrderedItem,
   routeOriginLabel,
@@ -140,6 +142,49 @@ describe('evidence query catalog presentation', () => {
     expect(bindingStatusLabel('CANONICAL_RESULT_OBSERVED')).toBe('已观测到规范证据')
     expect(runtimeStateLabel('CONFIGURED')).toBe('已配置')
     expect(runtimeStateLabel('MISSING')).toBe('未配置')
+  })
+
+  it('explains the five work areas as one operator workflow', () => {
+    expect(EVIDENCE_CATALOG_GUIDE.map(item => item.tab)).toEqual([
+      'systems',
+      'assets',
+      'contracts',
+      'routes',
+      'acceptance',
+    ])
+    expect(EVIDENCE_CATALOG_GUIDE.map(item => item.title)).toEqual([
+      '按系统找查询',
+      '登记要查的系统',
+      '确认每次怎么查',
+      '选择用哪个数据源',
+      '确认真实调用可用',
+    ])
+    expect(EVIDENCE_CATALOG_GUIDE.every(item => item.purpose && item.whenToUse)).toBe(true)
+  })
+
+  it('keeps approved catalog rules editable when the asset option projection is empty', () => {
+    expect(mergeObservabilityAssetContractOptions([], [contract])).toEqual([{
+      contractRef: 'csdp-message-send-log-search',
+      signalKind: 'log_search',
+      scenario: '会话消息发送失败',
+      question: '哪些失败请求需要继续追踪？',
+      summary: 'CSDP SendMsg 失败日志检索',
+      requiredAssetParameters: [],
+    }])
+  })
+
+  it('keeps a non-empty asset option projection authoritative', () => {
+    const assetOption = {
+      contractRef: 'asset-approved-rule',
+      signalKind: 'service_health',
+      scenario: '服务状态检查',
+      question: '服务当前是否健康？',
+      summary: '资产服务允许绑定的规则',
+      requiredAssetParameters: ['service'],
+    }
+
+    expect(mergeObservabilityAssetContractOptions([assetOption], [contract]))
+      .toEqual([assetOption])
   })
 
   it('keeps route priority explicit and leaves boundary moves unchanged', () => {

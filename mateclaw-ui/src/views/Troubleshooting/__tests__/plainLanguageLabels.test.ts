@@ -52,4 +52,16 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(evidenceCatalogSource).toContain('数据源查询失败')
     expect(evidenceCatalogSource).toContain('查询成功，但这个时间范围没有完整证据')
   })
+
+  it('makes system assets inspectable and versioned changes understandable', () => {
+    expect(evidenceCatalogSource).toContain('查看详情')
+    expect(evidenceCatalogSource).toContain('修改配置')
+    expect(evidenceCatalogSource).toContain('修改会保存为新版本')
+    expect(evidenceCatalogSource).toContain('不会覆盖原来的生产审计记录')
+  })
+
+  it('explains what each evidence-catalog area is for before configuration', () => {
+    expect(evidenceCatalogSource).toContain('这个目录怎么用')
+    expect(evidenceCatalogSource).toContain('按顺序完成系统登记、查询核对和真实联调')
+  })
 })
