@@ -9,7 +9,11 @@ export type WorkbenchCapabilityCommand =
   | 'guance'
   | 'ledger'
   | 'case-knowledge'
-export type TroubleshootingScenarioCommand = 'message-send-failed' | 'incident' | 'deployment'
+export type TroubleshootingScenarioCommand =
+  | 'cti-create-conversation-failed'
+  | 'message-send-failed'
+  | 'incident'
+  | 'deployment'
 export type TroubleshootingScenarioDefinition = {
   command: TroubleshootingScenarioCommand
   label: string
@@ -22,6 +26,7 @@ export const TROUBLESHOOTING_UI_LABELS = {
   launch: '发起排障',
   scenarioPicker: '选择排障场景',
   incident: '通用事件排障',
+  ctiCreateConversationFailed: 'CTI 创建会话失败',
   messageSendFailed: '会话消息发送失败',
   rules: '排障规则库',
   evidenceCatalog: '查询规则说明书',
@@ -60,6 +65,13 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
 ]
 
 export const WORKBENCH_TROUBLESHOOTING_SCENARIOS: ReadonlyArray<TroubleshootingScenarioDefinition> = [
+  {
+    command: 'cti-create-conversation-failed',
+    label: TROUBLESHOOTING_UI_LABELS.ctiCreateConversationFailed,
+    description: '真实 csdp-task 场景：查失败日志、还原关联调用链，再用成功样本排除背景噪声。',
+    outcome: '三次只读取证',
+    manageOnly: false,
+  },
   {
     command: 'message-send-failed',
     label: TROUBLESHOOTING_UI_LABELS.messageSendFailed,

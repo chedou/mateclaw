@@ -61,6 +61,11 @@ class EvidenceSpineOrchestratorTest {
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("ONLINE-LOG-SEARCH", "ONLINE-TRACE-BUNDLE",
                         "ONLINE-CONTRAST-SAMPLE");
+        assertThat(result.evidence())
+                .extracting(EvidenceResult::query)
+                .containsOnly("withheld");
+        assertThat(result.evidence().toString())
+                .doesNotContain("message send failed", "state conflict", "send rejected");
         assertThat(result.skeleton()).isNotNull();
         assertThat(result.skeleton().psId()).isEqualTo("synthetic-ps-1");
         assertThat(result.skeleton().serviceSequence())
@@ -109,8 +114,32 @@ class EvidenceSpineOrchestratorTest {
         assertThat(result.contrastAvailable()).isFalse();
         assertThat(result.sourceRequestCount()).isEqualTo(3);
         assertThat(result.contrastEvidence().status()).isEqualTo(EvidenceStatus.MISSING);
-        assertThat(result.evidence()).contains(result.contrastEvidence());
+        assertThat(result.evidence().get(2).queryId())
+                .isEqualTo(result.contrastEvidence().queryId());
+        assertThat(result.evidence().get(2).status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.skeleton().contrast().available()).isFalse();
+    }
+
+    @Test
+    void neverFallsBackToRawTraceRowsWhenCompressionIsUnavailable() {
+        EvidenceResult search = evidence(new EvidenceRequest(
+                "ONLINE-LOG-SEARCH", "log_search", "search",
+                Map.of("search_term", "message_send_failed"), "-15m", true));
+        EvidenceResult rawTrace = evidence(new EvidenceRequest(
+                "ONLINE-TRACE-BUNDLE", "log_trace_bundle", "trace",
+                Map.of("ps_id", "synthetic-ps-1"), "-15m", true));
+        EvidenceSpineResult result = new EvidenceSpineResult(
+                search, rawTrace, null, null, 2,
+                EvidenceSpineTimings.unmeasured(),
+                "log_trace_bundle cannot be compressed safely");
+
+        assertThat(result.evidence().get(0).observed())
+                .containsOnlyKeys("match_count", "ps_id");
+        assertThat(result.evidence().get(1).status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.evidence().get(1).observed()).isEmpty();
+        assertThat(result.evidence().toString())
+                .doesNotContain("message send failed", "state conflict", "send rejected")
+                .doesNotContain("safe query");
     }
 
     @Test

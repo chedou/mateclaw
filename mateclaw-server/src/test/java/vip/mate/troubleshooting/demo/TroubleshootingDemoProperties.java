@@ -22,4 +22,10 @@ public class TroubleshootingDemoProperties {
 
     /** Workspace the demo playbook is seeded into. */
     private long workspaceId = 1L;
+
+    // The repository's test compilation currently does not run Lombok's
+    // getter generation for this test-only configuration class.
+    public long getWorkspaceId() {
+        return workspaceId;
+    }
 }

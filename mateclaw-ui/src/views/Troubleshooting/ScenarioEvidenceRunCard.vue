@@ -1,8 +1,8 @@
 <template>
-  <section class="message-send-evidence-card">
+  <section class="scenario-evidence-card">
     <div class="scenario-head">
       <div>
-        <span class="scenario-kicker">已选场景 · 会话消息发送失败</span>
+        <span class="scenario-kicker">已选场景 · {{ scenarioName }}</span>
         <h3>{{ waiting ? '等待开始只读取证' : '场景取证已进入详情链路' }}</h3>
         <p>系统按排查指南固定顺序读取证据；证据源由工作区服务端绑定，页面不能改查询、判据或根因。</p>
       </div>
@@ -15,11 +15,11 @@
     <ol class="scenario-steps">
       <li>
         <b>1. 先找到失败请求</b>
-        <span>查找“消息发送失败”样本，取得可用的 PS ID。</span>
+        <span>{{ failureStep }}</span>
       </li>
       <li>
         <b>2. 还原这次调用经过</b>
-        <span>沿 PS ID 读取跨服务记录，压缩成可复核的调用链骨架。</span>
+        <span>沿前一步的关联 ID 读取已授权范围内的记录，压缩成可复核的调用链骨架。</span>
       </li>
       <li>
         <b>3. 对比成功和失败样本</b>
@@ -51,6 +51,8 @@ const props = defineProps<{
   diagnosis: Diagnosis
   canOperate: boolean
   loading: boolean
+  scenarioName: string
+  failureStep: string
 }>()
 
 defineEmits<{ run: [] }>()
@@ -70,7 +72,7 @@ const statusLabel = computed(() => ({
 </script>
 
 <style scoped>
-.message-send-evidence-card { width:100%; margin:20px 0 0; padding:22px 24px; border:1px solid var(--mc-primary); border-radius:var(--mc-radius-md); background:color-mix(in srgb,var(--mc-primary) 4%,var(--mc-bg-elevated)); box-shadow:0 8px 28px var(--mc-shadow-soft); }
+.scenario-evidence-card { width:100%; margin:20px 0 0; padding:22px 24px; border:1px solid var(--mc-primary); border-radius:var(--mc-radius-md); background:color-mix(in srgb,var(--mc-primary) 4%,var(--mc-bg-elevated)); box-shadow:0 8px 28px var(--mc-shadow-soft); }
 .scenario-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
 .scenario-kicker { color:var(--mc-primary); font-size:var(--mc-text-xs); font-weight:750; }
 .scenario-head h3 { margin:5px 0; font-size:var(--mc-text-lg); }

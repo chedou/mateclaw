@@ -4,6 +4,7 @@ import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
 const INTAKE_DIALOGS = [
   'IncidentReportDialog',
   'MessageSendScenarioDialog',
+  'CtiCreateConversationScenarioDialog',
   'DeploymentTopologyScenarioDialog',
 ] as const
 

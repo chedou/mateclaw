@@ -667,6 +667,138 @@
     },
     {
       "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-cti-create-conversation-failed/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:scenario:cti_create_conversation_failed",
+      "requiredEvidenceRequestId": "CTI-LOG-SEARCH",
+      "sourceReference": "guance-aggregate-2026-08-07-cti-create-conversation-failed",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-cti-create-conversation-failed-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:cti_create_conversation_failed",
+        "service": "csdp-task",
+        "title": "CTI 创建会话失败路径核查",
+        "cause": "CTI 会话创建失败（外层错误码 701018），下游具体根因待人工核对",
+        "category": "cti",
+        "ownerTeam": "CSDP TASK 负责团队",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "CTI-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "检索 CTI 会话创建失败包装链并取得关联 ID",
+            "target": {
+              "search_term": "cti_create_conversation_failed"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "CTI-TRACE-BUNDLE",
+            "signalKind": "log_trace_bundle",
+            "purpose": "按关联 ID 还原同一次 CTI 会话创建调用",
+            "target": {
+              "ps_id": "synthetic-cti-trace-001"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "CTI-CONTRAST",
+            "signalKind": "contrast_sample",
+            "purpose": "对比同窗口 CTI 会话创建成功与失败样本",
+            "target": {
+              "scenario_key": "cti_create_conversation_failed",
+              "exclude_ps_id": "synthetic-cti-trace-001"
+            },
+            "window": "-15m",
+            "required": false
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "cti_create_conversation_failure_present",
+            "sourceRequestId": "CTI-LOG-SEARCH",
+            "description": "故障窗口内至少存在一条 CTI 会话创建外层失败码 701018",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-CTI-CREATE-CONVERSATION-ERROR-CHAIN",
+            "requiredSignals": [
+              "cti_create_conversation_failure_present"
+            ],
+            "rootCause": "CTI 会话创建失败（外层 701018）",
+            "summary": "故障窗口内已确定观测到外层错误码 701018。关联链和成功样本对照只作为人工复核上下文；当前判据不声称已证明 701022、CSP 或任何下游具体组件根因。",
+            "confidence": "LOW",
+            "conclusionType": "HYPOTHESIS",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "CTI-A1",
+            "actionType": "AUTO_READONLY",
+            "title": "核对 CTI 失败与成功样本的错误链差异",
+            "description": "只读查看同窗口规范化证据，不执行任何生产变更。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "CTI-A2",
+            "actionType": "HUMAN_CONTACT",
+            "title": "携带关联 ID 交给 CSP/CTI 负责人继续核查",
+            "description": "由负责人在外部平台核对 CSP 返回的原始业务原因；MateClaw 只提供可引用证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-cti-create-conversation-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-CTI-CREATE-CONVERSATION-ERROR-CHAIN",
+        "evidence": [
+          {
+            "requestId": "CTI-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 1
+            }
+          },
+          {
+            "requestId": "CTI-TRACE-BUNDLE",
+            "status": "ANOMALY",
+            "observed": {
+              "ps_id": "synthetic-cti-trace-001"
+            }
+          },
+          {
+            "requestId": "CTI-CONTRAST",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "inner_701022_on_failed_trace",
+              "failure_sample_count": 1,
+              "failure_match_count": 1,
+              "success_sample_count": 4,
+              "success_match_count": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
       "suiteId": "csdp-gateway-timeout/v1",
       "suiteVersion": 1,
       "selectorKey": "csdp:scenario:gateway_timeout",

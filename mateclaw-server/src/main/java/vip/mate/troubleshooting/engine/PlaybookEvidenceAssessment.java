@@ -173,9 +173,7 @@ public record PlaybookEvidenceAssessment(
         Confidence confidence;
         DiagnosisRule matched = evaluation.matchedRule();
         if (matched != null) {
-            conclusionType = matched.abstained()
-                    ? ConclusionType.INSUFFICIENT_EVIDENCE
-                    : ConclusionType.LOCATED;
+            conclusionType = matched.conclusionType();
             rootCause = matched.rootCause();
             summary = matched.summary();
             confidence = matched.confidence();

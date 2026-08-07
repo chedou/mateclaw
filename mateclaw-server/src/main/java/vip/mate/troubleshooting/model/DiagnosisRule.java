@@ -8,7 +8,25 @@ public record DiagnosisRule(
         String rootCause,
         String summary,
         Confidence confidence,
+        ConclusionType conclusionType,
         boolean abstained) {
+
+    /**
+     * Backward-compatible shape for existing rules. A non-abstaining rule used
+     * to mean LOCATED; callers that need to state only a hypothesis must now do
+     * so explicitly through the canonical constructor.
+     */
+    public DiagnosisRule(
+            String ruleId,
+            List<String> requiredSignals,
+            String rootCause,
+            String summary,
+            Confidence confidence,
+            boolean abstained) {
+        this(ruleId, requiredSignals, rootCause, summary, confidence,
+                abstained ? ConclusionType.INSUFFICIENT_EVIDENCE : ConclusionType.LOCATED,
+                abstained);
+    }
 
     public DiagnosisRule {
         ruleId = required(ruleId, "ruleId");
@@ -16,6 +34,21 @@ public record DiagnosisRule(
         rootCause = required(rootCause, "rootCause");
         summary = summary == null ? "" : summary;
         confidence = confidence == null ? Confidence.LOW : confidence;
+        conclusionType = conclusionType == null
+                ? (abstained
+                        ? ConclusionType.INSUFFICIENT_EVIDENCE
+                        : ConclusionType.LOCATED)
+                : conclusionType;
+        if (abstained && conclusionType != ConclusionType.INSUFFICIENT_EVIDENCE) {
+            throw new IllegalArgumentException(
+                    "an abstaining rule must conclude INSUFFICIENT_EVIDENCE");
+        }
+        if (!abstained
+                && conclusionType != ConclusionType.LOCATED
+                && conclusionType != ConclusionType.HYPOTHESIS) {
+            throw new IllegalArgumentException(
+                    "a non-abstaining rule must conclude LOCATED or HYPOTHESIS");
+        }
     }
 
     private static String required(String value, String name) {

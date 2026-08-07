@@ -91,6 +91,45 @@ class ManualPlaybookReplaySuiteCatalogTest {
                         .isNotEqualTo(ActionType.MANUAL_WRITE));
     }
 
+    @Test
+    void theCtiCreateConversationScenarioIsARecordedThreeStepPlaybook() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        ManualPlaybookReplaySuiteCatalog.ResolvedSuite resolved = catalog.find(
+                        "csdp:scenario:cti_create_conversation_failed")
+                .orElseThrow();
+        SopEntry candidate = resolved.suite().exampleCandidate();
+
+        assertThat(candidate.service()).isEqualTo("csdp-task");
+        assertThat(candidate.evidenceRequests())
+                .extracting(request -> request.signalKind())
+                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
+        assertThat(candidate.diagnosisRules()).singleElement()
+                .satisfies(rule -> {
+                    assertThat(rule.confidence().name()).isEqualTo("LOW");
+                    assertThat(rule.rootCause()).contains("CTI", "会话创建", "701018");
+                    assertThat(rule.summary())
+                            .contains("701018", "不声称已证明 701022")
+                            .doesNotContain("下游具体组件根因已确认");
+                });
+        assertThat(resolved.evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(resolved.suite().cases())
+                .extracting(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .containsExactly(
+                        ManualPlaybookReplaySuite.Disposition.MATCHED,
+                        ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                        ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+    }
+
     /**
      * The 903001 fixture is the only Playbook carrying a production-write
      * action, and that is now its job.

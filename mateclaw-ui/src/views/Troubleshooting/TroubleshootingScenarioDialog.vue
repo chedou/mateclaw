@@ -5,7 +5,7 @@
     width="min(720px, calc(100vw - 32px))"
     class="troubleshooting-scenario-dialog"
   >
-    <p class="scenario-intro">先聚焦打通一条竖线：“会话消息发送失败”已接入创建排障单、三次只读取证和详情审计。</p>
+    <p class="scenario-intro">优先使用已登记的具体场景：系统会锁定对应排查指南，把真实只读证据和判据写入同一张排障单。</p>
     <div class="scenario-grid">
       <button
         v-for="(scenario, index) in WORKBENCH_TROUBLESHOOTING_SCENARIOS"

@@ -213,8 +213,8 @@ class EvidenceAutoConfigurationTest {
                     assertThat(guance.getTimeout()).isEqualTo(java.time.Duration.ofSeconds(45));
                     assertThat(context.getBean(EvidenceHttpTransport.class))
                             .isInstanceOf(NativeCurlEvidenceHttpTransport.class);
-                    assertThat(guance.getAssetBindings()).singleElement()
-                            .satisfies(asset -> {
+                    assertThat(guance.getAssetBindings()).hasSize(2);
+                    assertThat(guance.getAssetBindings().get(0)).satisfies(asset -> {
                                 assertThat(asset.getWorkspaceId()).isEqualTo(1L);
                                 assertThat(asset.getSystem()).isEqualTo("CSDP");
                                 assertThat(asset.getService()).isEqualTo("csdp-session-service");
@@ -236,6 +236,21 @@ class EvidenceAutoConfigurationTest {
                                                 "k8s_workload_health",
                                                 "csdp-k8s-workload-health");
                             });
+                    assertThat(guance.getAssetBindings().get(1)).satisfies(asset -> {
+                        assertThat(asset.getWorkspaceId()).isEqualTo(1L);
+                        assertThat(asset.getSystem()).isEqualTo("CSDP");
+                        assertThat(asset.getService()).isEqualTo("csdp-task");
+                        assertThat(asset.getSignalBindings())
+                                .containsEntry(
+                                        "log_search",
+                                        "csdp-cti-create-conversation-log-search")
+                                .containsEntry(
+                                        "log_trace_bundle",
+                                        "csdp-cti-create-conversation-trace-bundle")
+                                .containsEntry(
+                                        "contrast_sample",
+                                        "csdp-cti-create-conversation-contrast");
+                    });
 
                     assertThat(guance.getBindings())
                             .containsKeys(
@@ -244,7 +259,44 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-message-send-contrast",
                                     "csdp-application-error-scan",
                                     "csdp-monitor-event-scan",
-                                    "csdp-k8s-workload-health");
+                                    "csdp-k8s-workload-health",
+                                    "csdp-cti-create-conversation-log-search",
+                                    "csdp-cti-create-conversation-trace-bundle",
+                                    "csdp-cti-create-conversation-contrast");
+                    EvidenceProperties.Binding ctiSearch = guance.getBindings()
+                            .get("csdp-cti-create-conversation-log-search");
+                    assertThat(ctiSearch.getQueryTemplate())
+                            .contains(
+                                    "csdp-task",
+                                    "@code",
+                                    "701018",
+                                    "@trace_id")
+                            .doesNotContain("{{window_span}}")
+                            .doesNotContain("{{search_term}}");
+                    EvidenceProperties.Binding ctiTrace = guance.getBindings()
+                            .get("csdp-cti-create-conversation-trace-bundle");
+                    assertThat(ctiTrace.getQueryTemplate())
+                            .contains("csdp-task", "{{ps_id}}")
+                            .doesNotContain("{{search_term}}");
+                    assertThat(ctiTrace.getFieldAliases())
+                            .containsEntry("message@trace_id", "ps_id")
+                            .containsEntry("message@level", "level")
+                            .containsEntry("message@msg", "message");
+                    EvidenceProperties.Binding ctiContrast = guance.getBindings()
+                            .get("csdp-cti-create-conversation-contrast");
+                    assertThat(ctiContrast.getQueryTemplates()).hasSize(4);
+                    assertThat(ctiContrast.getQueryTemplates().get(0))
+                            .contains("{{exclude_ps_id}}", "query_string");
+                    assertThat(ctiContrast.getQueryTemplates().get(1))
+                            .contains("{{exclude_ps_id}}", "@code", "701022");
+                    assertThat(ctiContrast.getQueryTemplates().get(2))
+                            .contains("@msg", "errCode", "@stack_trace", "CreateConversation");
+                    assertThat(ctiContrast.getQueryTemplates())
+                            .allMatch(query -> !query.contains("{{window_span}}"));
+                    assertThat(ctiContrast.getConstantFields())
+                            .containsEntry(
+                                    "discriminating_feature",
+                                    "inner_701022_on_failed_trace");
                     assertThat(guance.getBindings().get("csdp-message-send-log-search")
                             .getQueryTemplate())
                             .contains(

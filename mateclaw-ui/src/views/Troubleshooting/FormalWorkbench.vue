@@ -122,12 +122,14 @@
           @close="closeOpen = true"
         />
 
-        <MessageSendEvidenceRunCard
-          v-if="messageSendScenarioActive"
+        <ScenarioEvidenceRunCard
+          v-if="evidenceSpineScenarioPresentation"
           :diagnosis="current.diagnosis"
           :can-operate="canOperateTroubleshooting"
-          :loading="messageSendEvidenceLoading"
-          @run="runMessageSendEvidence"
+          :loading="scenarioEvidenceLoading"
+          :scenario-name="evidenceSpineScenarioPresentation.name"
+          :failure-step="evidenceSpineScenarioPresentation.failureStep"
+          @run="runScenarioEvidence"
         />
 
         <TopologyEvidenceCard
@@ -183,6 +185,15 @@
       :can-submit="canSubmitMessageSendScenario"
       @open-playbooks="openPlaybooks"
       @submit="createMessageSendScenario"
+    />
+
+    <CtiCreateConversationScenarioDialog
+      v-model="ctiCreateConversationScenarioOpen"
+      v-model:form="ctiCreateConversationScenarioForm"
+      :loading="ctiCreateConversationScenarioLoading"
+      :can-submit="canSubmitCtiCreateConversationScenario"
+      @open-playbooks="openPlaybooks"
+      @submit="createCtiCreateConversationScenario"
     />
 
     <DeploymentTopologyScenarioDialog
@@ -310,13 +321,14 @@ import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import CaseKnowledgeImportWorkspace from './CaseKnowledgeImportWorkspace.vue'
 import IncidentReportDialog from './IncidentReportDialog.vue'
 import MessageSendScenarioDialog from './MessageSendScenarioDialog.vue'
+import CtiCreateConversationScenarioDialog from './CtiCreateConversationScenarioDialog.vue'
 import DeploymentTopologyScenarioDialog from './DeploymentTopologyScenarioDialog.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
 import CloseDiagnosisDialog from './CloseDiagnosisDialog.vue'
 import BusinessSummaryCard from './BusinessSummaryCard.vue'
-import MessageSendEvidenceRunCard from './MessageSendEvidenceRunCard.vue'
+import ScenarioEvidenceRunCard from './ScenarioEvidenceRunCard.vue'
 import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
@@ -335,6 +347,15 @@ import {
   messageSendScenarioFormErrors,
   type MessageSendScenarioForm,
 } from './messageSendScenario'
+import {
+  CTI_CREATE_CONVERSATION_SCENARIO,
+  EMPTY_CTI_CREATE_CONVERSATION_SCENARIO,
+  buildCtiCreateConversationScenarioRequest,
+  canRunCtiCreateConversationEvidence,
+  ctiCreateConversationScenarioFormErrors,
+  isCtiCreateConversationDiagnosis,
+  type CtiCreateConversationScenarioForm,
+} from './ctiCreateConversationScenario'
 import {
   DEFAULT_CASE_KNOWLEDGE_IMPORT_LIMIT,
   caseKnowledgeImportCanSubmit,
@@ -372,7 +393,8 @@ const {
 
 const incidentReportLoading = ref(false)
 const messageSendScenarioLoading = ref(false)
-const messageSendEvidenceLoading = ref(false)
+const ctiCreateConversationScenarioLoading = ref(false)
+const scenarioEvidenceLoading = ref(false)
 const caseKnowledgeImportLoading = ref(false)
 const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
@@ -380,6 +402,7 @@ const deploymentTopologyScenarioLoading = ref(false)
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
 const messageSendScenarioOpen = ref(false)
+const ctiCreateConversationScenarioOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
@@ -392,6 +415,9 @@ const targetAction = ref<RecommendedAction | null>(null)
 const incidentReportForm = reactive<FormalIncidentForm>({ ...EMPTY_FORMAL_INCIDENT })
 const messageSendScenarioForm = reactive<MessageSendScenarioForm>({
   ...EMPTY_MESSAGE_SEND_SCENARIO,
+})
+const ctiCreateConversationScenarioForm = reactive<CtiCreateConversationScenarioForm>({
+  ...EMPTY_CTI_CREATE_CONVERSATION_SCENARIO,
 })
 type CaseKnowledgeBaseOption = {
   id: string | number
@@ -446,8 +472,26 @@ const messageSendScenarioErrors = computed(() =>
   messageSendScenarioFormErrors(messageSendScenarioForm))
 const canSubmitMessageSendScenario = computed(() => canOperateTroubleshooting.value
   && messageSendScenarioErrors.value.length === 0)
-const messageSendScenarioActive = computed(() =>
-  isMessageSendScenarioDiagnosis(current.value?.diagnosis))
+const ctiCreateConversationScenarioErrors = computed(() =>
+  ctiCreateConversationScenarioFormErrors(ctiCreateConversationScenarioForm))
+const canSubmitCtiCreateConversationScenario = computed(() => canOperateTroubleshooting.value
+  && ctiCreateConversationScenarioErrors.value.length === 0)
+const evidenceSpineScenarioPresentation = computed(() => {
+  const diagnosis = current.value?.diagnosis
+  if (isCtiCreateConversationDiagnosis(diagnosis)) {
+    return {
+      name: CTI_CREATE_CONVERSATION_SCENARIO.name,
+      failureStep: '先用外层错误码 701018 找到失败记录和关联 ID，再在同一链路中核对 701022 与 CSP 错误。',
+    }
+  }
+  if (isMessageSendScenarioDiagnosis(diagnosis)) {
+    return {
+      name: '会话消息发送失败',
+      failureStep: '查找“消息发送失败”样本，取得可用的 PS ID。',
+    }
+  }
+  return null
+})
 const canSubmitCaseKnowledgeImport = computed(() => caseKnowledgeImportCanSubmit(
   caseKnowledgeImportForm.knowledgeBaseId,
   caseKnowledgeImportForm.limit,
@@ -592,6 +636,13 @@ function resetMessageSendScenarioForm() {
   Object.assign(messageSendScenarioForm, EMPTY_MESSAGE_SEND_SCENARIO)
 }
 
+function resetCtiCreateConversationScenarioForm() {
+  Object.assign(
+    ctiCreateConversationScenarioForm,
+    EMPTY_CTI_CREATE_CONVERSATION_SCENARIO,
+  )
+}
+
 function resetDeploymentTopologyScenarioForm() {
   Object.assign(deploymentTopologyScenarioForm, EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO)
 }
@@ -616,13 +667,50 @@ function openTroubleshootingScenario() {
 }
 
 function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
-  if (command === 'message-send-failed' && canOperateTroubleshooting.value) {
+  if (command === 'cti-create-conversation-failed' && canOperateTroubleshooting.value) {
+    resetCtiCreateConversationScenarioForm()
+    ctiCreateConversationScenarioOpen.value = true
+  } else if (command === 'message-send-failed' && canOperateTroubleshooting.value) {
     resetMessageSendScenarioForm()
     messageSendScenarioOpen.value = true
   } else if (command === 'incident' && canOperateTroubleshooting.value) {
     incidentReportOpen.value = true
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
     openDeploymentTopologyScenarioIntake()
+  }
+}
+
+async function createCtiCreateConversationScenario() {
+  if (!canSubmitCtiCreateConversationScenario.value) {
+    if (ctiCreateConversationScenarioErrors.value[0]) {
+      ElMessage.warning(ctiCreateConversationScenarioErrors.value[0])
+    }
+    return
+  }
+  ctiCreateConversationScenarioLoading.value = true
+  try {
+    const request = buildCtiCreateConversationScenarioRequest(
+      ctiCreateConversationScenarioForm,
+    )
+    const { data } = await troubleshootingApi.createScenarioDiagnosis(
+      CTI_CREATE_CONVERSATION_SCENARIO.scenarioKey,
+      request,
+    )
+    ctiCreateConversationScenarioOpen.value = false
+    resetCtiCreateConversationScenarioForm()
+    statusFilter.value = ''
+    investigationModeFilter.value = ''
+    await store.loadList(false)
+    await store.selectDiagnosis(data.diagnosis.diagnosisId)
+    ElMessage.success(data.created
+      ? '排障单已创建，请在详情中开始三次只读取证'
+      : '命中五分钟幂等窗口，已打开原排障单')
+  } catch (error) {
+    ElMessage.error(
+      `CTI 场景排障单未创建：${errorText(error)} 请确认排查指南 ${CTI_CREATE_CONVERSATION_SCENARIO.selector} 已回放并审核启用。`,
+    )
+  } finally {
+    ctiCreateConversationScenarioLoading.value = false
   }
 }
 
@@ -658,10 +746,11 @@ async function createMessageSendScenario() {
   }
 }
 
-async function runMessageSendEvidence() {
+async function runScenarioEvidence() {
   const diagnosis = current.value?.diagnosis
-  if (!diagnosis || !canRunMessageSendEvidenceForDiagnosis(diagnosis)) return
-  messageSendEvidenceLoading.value = true
+  if (!diagnosis || (!canRunMessageSendEvidenceForDiagnosis(diagnosis)
+    && !canRunCtiCreateConversationEvidence(diagnosis))) return
+  scenarioEvidenceLoading.value = true
   try {
     await troubleshootingApi.runScenarioEvidence(diagnosis.diagnosisId)
     await store.reload()
@@ -669,7 +758,7 @@ async function runMessageSendEvidence() {
   } catch (error) {
     ElMessage.error(`只读取证未完成：${errorText(error)} 系统未伪造结论，排障单仍保持等待状态。`)
   } finally {
-    messageSendEvidenceLoading.value = false
+    scenarioEvidenceLoading.value = false
   }
 }
 

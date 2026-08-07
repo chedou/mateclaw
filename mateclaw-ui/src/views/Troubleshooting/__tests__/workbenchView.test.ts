@@ -80,6 +80,11 @@ describe('troubleshooting workbench view mode', () => {
   it('treats deployment topology analysis as a troubleshooting scenario', () => {
     expect(WORKBENCH_TROUBLESHOOTING_SCENARIOS).toEqual([
       expect.objectContaining({
+        command: 'cti-create-conversation-failed',
+        label: 'CTI 创建会话失败',
+        outcome: '三次只读取证',
+      }),
+      expect.objectContaining({
         command: 'message-send-failed',
         label: '会话消息发送失败',
         outcome: '三次只读取证',
@@ -99,6 +104,7 @@ describe('troubleshooting workbench view mode', () => {
       launch: '发起排障',
       scenarioPicker: '选择排障场景',
       incident: '通用事件排障',
+      ctiCreateConversationFailed: 'CTI 创建会话失败',
       messageSendFailed: '会话消息发送失败',
       rules: '排障规则库',
       evidenceCatalog: '查询规则说明书',

@@ -164,11 +164,106 @@ class GuanceEvidenceLiveContractIT {
         });
     }
 
+    @Test
+    @EnabledIfEnvironmentVariable(
+            named = "MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY",
+            matches = ".+")
+    void observesTheCtiCreateConversationThreeStageContract() {
+        contextRunner.run(context -> {
+            IncidentContext incident = new IncidentContext(
+                    "inc-live-cti-create-conversation",
+                    "CSDP",
+                    "csdp-task",
+                    null,
+                    "CTI创建会话失败",
+                    "P1",
+                    "read-only",
+                    null,
+                    Instant.parse("2026-08-07T09:24:00Z"),
+                    null,
+                    "manual",
+                    IncidentCompleteness.LOG,
+                    null);
+            EvidenceSourceRouter router = context.getBean(EvidenceSourceRouter.class);
+
+            var search = router.collect(
+                    1L,
+                    new EvidenceRequest(
+                            "EV-LIVE-CTI-SEARCH",
+                            "log_search",
+                            "verify CTI failure wrapper contract",
+                            Map.of("search_term", "cti_create_conversation_failed"),
+                            "-15m",
+                            true),
+                    incident,
+                    Set.of("guance"));
+
+            assertThat(search.status()).as(search.summary()).isEqualTo(EvidenceStatus.NORMAL);
+            assertThat(number(search.observed().get("match_count"))).isPositive();
+            assertThat(nonBlank(search.observed().get("ps_id"))).isTrue();
+            assertThat(search.observed().get("sample_message"))
+                    .isEqualTo("cti_create_conversation_failed");
+
+            String correlationId = String.valueOf(search.observed().get("ps_id"));
+            var trace = router.collect(
+                    1L,
+                    new EvidenceRequest(
+                            "EV-LIVE-CTI-TRACE",
+                            "log_trace_bundle",
+                            "verify CTI correlation trace contract",
+                            Map.of("ps_id", correlationId),
+                            "-15m",
+                            true),
+                    incident,
+                    Set.of("guance"));
+            assertThat(trace.status()).as(trace.summary()).isEqualTo(EvidenceStatus.NORMAL);
+            assertThat(trace.observed().get("ps_id")).isEqualTo(correlationId);
+            assertThat(trace.observed().get("entries"))
+                    .isInstanceOfSatisfying(java.util.List.class,
+                            entries -> assertThat(entries).isNotEmpty());
+            assertThat(traceContains(trace.observed().get("entries"), "701018")).isTrue();
+            assertThat(traceContains(trace.observed().get("entries"), "701022")).isTrue();
+            assertThat(traceContains(trace.observed().get("entries"), "CreateConversation"))
+                    .isTrue();
+
+            var contrast = router.collect(
+                    1L,
+                    new EvidenceRequest(
+                            "EV-LIVE-CTI-CONTRAST",
+                            "contrast_sample",
+                            "verify CTI failure and success cohorts",
+                            Map.of(
+                                    "scenario_key", "cti_create_conversation_failed",
+                                    "exclude_ps_id", correlationId),
+                            "-15m",
+                            true),
+                    incident,
+                    Set.of("guance"));
+            assertThat(contrast.status()).as(contrast.summary())
+                    .isEqualTo(EvidenceStatus.NORMAL);
+            assertThat(contrast.observed().get("discriminating_feature"))
+                    .isEqualTo("inner_701022_on_failed_trace");
+            assertThat(number(contrast.observed().get("failure_sample_count"))).isEqualTo(1L);
+            assertThat(number(contrast.observed().get("failure_match_count"))).isEqualTo(1L);
+            assertThat(number(contrast.observed().get("success_sample_count"))).isEqualTo(4L);
+            assertThat(number(contrast.observed().get("success_match_count"))).isZero();
+        });
+    }
+
     private static boolean nonBlank(Object value) {
         return value instanceof String text && !text.isBlank();
     }
 
     private static long number(Object value) {
         return value instanceof Number number ? number.longValue() : -1L;
+    }
+
+    private static boolean traceContains(Object rawEntries, String token) {
+        if (!(rawEntries instanceof java.util.List<?> entries)) {
+            return false;
+        }
+        return entries.stream().anyMatch(entry -> entry instanceof Map<?, ?> fields
+                && fields.get("message") instanceof String message
+                && message.contains(token));
     }
 }

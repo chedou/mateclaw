@@ -40,6 +40,16 @@ mateclaw:
               error_log_scan: csdp-application-error-scan
               monitor_event_scan: csdp-monitor-event-scan
               k8s_workload_health: csdp-k8s-workload-health
+          # CTI 创建会话失败已在 2026-08-07 的 csdp-task 真实告警窗口
+          # 验证。Guance 未返回可靠的 cluster 字段，因此这里只授权
+          # 精确 service，不猜测 sz4-s-zaibei 的字段映射。
+          - workspace-id: ${MATECLAW_TROUBLESHOOTING_CSDP_WORKSPACE_ID:1}
+            system: CSDP
+            service: csdp-task
+            signal-bindings:
+              log_search: csdp-cti-create-conversation-log-search
+              log_trace_bundle: csdp-cti-create-conversation-trace-bundle
+              contrast_sample: csdp-cti-create-conversation-contrast
         bindings:
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
@@ -113,6 +123,79 @@ mateclaw:
                 [{{window_span}}::{{window_span}}]
             constant-fields:
               discriminating_feature: message_length_eq_2875
+            field-aliases: {}
+          # The precise measurement name was not exposed by the Guance response.
+          # The verified cross-measurement read stays bounded by exact service,
+          # terms, time window and aggregate/row budgets; no browser text is
+          # interpolated into these three CTI contracts. These historical-event
+          # queries intentionally omit a DQL relative-time suffix: requestBody's
+          # absolute timeRange is the sole clock authority for the alert window.
+          csdp-cti-create-conversation-log-search:
+            signal-kind: log_search
+            namespace: L
+            summary: CSDP CTI 创建会话失败请求检索
+            scenario: CTI 创建会话失败
+            question: 故障窗口内是否出现 CSP 会话创建错误包装链？
+            fixed-conditions:
+              - 日志服务=csdp-task
+              - 外层 CTI 创建会话失败码=@code 701018
+              - 701022 与 CSP CreateConversation 下游错误由第二步同关联 ID 链路核对
+              - 仅返回数量与最新关联 ID，不返回原始日志
+            max-rows: 1
+            query-template: >-
+              L::RE(`.*`):(count(*) as match_count,last(`@trace_id`) as ps_id)
+              { `service` = 'csdp-task' AND `@code` = 701018 }
+            constant-fields:
+              sample_message: cti_create_conversation_failed
+            field-aliases: {}
+          csdp-cti-create-conversation-trace-bundle:
+            signal-kind: log_trace_bundle
+            namespace: L
+            summary: CSDP CTI 创建会话关联调用链
+            scenario: CTI 创建会话失败
+            question: 同一关联 ID 中，CSP 错误是如何被 701022 和 701018 逐层包装的？
+            fixed-conditions:
+              - 日志服务=csdp-task
+              - 关联 ID 只能来自前一步规范化证据
+              - 最多读取 200 条同链记录
+            max-rows: 200
+            query-template: >-
+              L::RE(`.*`):(message)
+              { `service` = 'csdp-task' AND query_string(`message`, "{{ps_id}}") }
+            field-aliases:
+              time: timestamp
+              "[message@trace_id]": ps_id
+              "[message@level]": level
+              "[message@msg]": message
+            constant-fields:
+              service: csdp-task
+          csdp-cti-create-conversation-contrast:
+            signal-kind: contrast_sample
+            namespace: L
+            summary: CSDP CTI 创建会话成功与失败样本对照
+            scenario: CTI 创建会话失败
+            question: 当前失败关联链是否包含 701022，同窗成功结果行是否出现同一错误？
+            fixed-conditions:
+              - 失败样本=前一步关联 ID 对应的唯一调用链
+              - 失败特征=同关联 ID 中出现 @code 701022
+              - 成功样本=@msg 精确 errCode 0 且 @stack_trace 包含 CreateConversation
+              - 对照只是调查上下文，不直接触发根因结论
+            max-rows: 1
+            query-templates:
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as failure_sample_count)
+                { `service` = 'csdp-task' AND query_string(`message`, "{{exclude_ps_id}}") }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as failure_match_count)
+                { `service` = 'csdp-task' AND query_string(`message`, "{{exclude_ps_id}}") AND `@code` = 701022 }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as success_sample_count)
+                { `service` = 'csdp-task' AND `@msg` =~ '.*errCode[^0-9]*0([^0-9]|$).*' AND `@stack_trace` =~ '.*CreateConversation.*' }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as success_match_count)
+                { `service` = 'csdp-task' AND `@msg` =~ '.*errCode[^0-9]*0([^0-9]|$).*' AND `@stack_trace` =~ '.*CreateConversation.*' AND `@code` = 701022 }
+            constant-fields:
+              discriminating_feature: inner_701022_on_failed_trace
             field-aliases: {}
           # Sanitized import of guanceyun-error-logs. It exposes only aggregate
           # canonical facts; raw message/content/host rows remain inside Guance.
