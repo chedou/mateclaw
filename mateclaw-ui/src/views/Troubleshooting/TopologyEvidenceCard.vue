@@ -108,7 +108,7 @@ const latestRun = computed(() => props.runs[0] ?? null)
 </script>
 
 <style scoped>
-.topology-evidence-card { max-width:1320px; margin:14px auto 0; padding:18px 20px; border:1px solid var(--mc-success); border-radius:var(--mc-radius-md); background:var(--mc-status-success-bg); box-shadow:var(--mc-shadow-soft); }
+.topology-evidence-card { width:100%; max-width:none; margin:14px 0 0; padding:18px 20px; border:1px solid var(--mc-success); border-radius:var(--mc-radius-md); background:var(--mc-status-success-bg); box-shadow:var(--mc-shadow-soft); }
 .topology-evidence-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
 .topology-evidence-head h3 { margin:5px 0; font-size:16px; }
 .topology-evidence-head p { margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.6; }

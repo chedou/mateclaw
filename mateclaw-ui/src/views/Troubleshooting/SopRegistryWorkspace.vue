@@ -62,7 +62,7 @@
     >
       <div v-if="!selectedSop" class="inspector-empty">
         <span class="empty-mark">{ }</span>
-        <strong>选择一条路由查看完整契约</strong>
+        <strong>选择一条路由查看完整排障规则</strong>
         <p>列表只读索引列；判据、规则和建议动作按需加载。</p>
       </div>
 
@@ -102,7 +102,7 @@
 
           <section class="contract-health">
             <div class="section-title">
-              <span>契约组成</span>
+              <span>规则组成</span>
               <span v-if="contractWarnings.length" class="warning-count">
                 {{ contractWarnings.length }} 个审核提示
               </span>
@@ -169,7 +169,7 @@
             <template v-else-if="nextStatus === 'deprecated'">
               <div>
                 <strong>将当前版本退出命中路</strong>
-                <p>标记后该路由将退出命中路；替代版本必须通过新的版本化晋升合同。</p>
+                <p>标记后该路由将退出命中路；替代版本必须重新通过版本审核流程。</p>
               </div>
               <el-button
                 type="danger"

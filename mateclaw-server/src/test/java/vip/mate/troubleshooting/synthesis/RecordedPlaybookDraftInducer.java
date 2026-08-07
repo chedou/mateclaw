@@ -9,7 +9,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
-import org.springframework.stereotype.Service;
 import vip.mate.llm.chatmodel.ProviderChatModelFactory;
 import vip.mate.llm.service.ModelConfigService;
 
@@ -22,8 +21,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Replaces the single model call with a server-owned recorded response so the
- * learning loop is walkable without a configured provider.
+ * Test fixture that replaces one model call with a server-owned recording so
+ * the learning-loop acceptance path is repeatable without provider credentials.
  *
  * <p><b>What this is not.</b> It does not skip induction and it does not pretend
  * a model is online. Exactly one step changes — <em>what the model said</em> —
@@ -47,7 +46,6 @@ import java.util.Map;
  * with no recorded response falls back to the real inducer, so enabling the demo
  * never silently answers for a case it has not recorded.</p>
  */
-@Service
 @Primary
 @ConditionalOnProperty(prefix = "mateclaw.troubleshooting.demo", name = "enabled",
         havingValue = "true")

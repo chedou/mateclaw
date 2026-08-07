@@ -19,9 +19,9 @@
    [历史版本](./versions/index.html)按版本完整保留，不再覆盖。
 5. [HANDOFF](./HANDOFF.md)
    当前实施状态、红线、真实缺口与接手指针。
-6. [TODO](./TODO.md)
-   P1 已完成；当前唯一优先级是 P2：对首条真实 Guance Evidence Spine 完成
-   owner T7 验收，再累积 T8 影子样本。
+6. [投产清单](./production-readiness.md) · [实施台账](./TODO.md)
+   前者是当前活跃排期入口：先完成首条真实 Guance Evidence Spine 的 owner T7 验收，再累积
+   T8 影子样本；后者只保留完整实现决策、验证证据和历史待办。
 7. [P1 主链路验证记录](./p1-verification.md)
    固定 Replay Eval、REST 实测、fail-closed 边界与未完成范围。
 8. [源码核对与安全论证附录](../../rfcs/intelligent-troubleshooting-design.md)

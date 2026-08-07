@@ -10,6 +10,7 @@ import vip.mate.agent.AgentService;
 import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.context.ChatOrigin;
 import vip.mate.agent.model.AgentEntity;
+import vip.mate.channel.web.ChatStreamTracker;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -26,12 +27,18 @@ import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,6 +62,7 @@ class TroubleshootingAgentTriageServiceTest {
     @Mock private AgentBindingService bindingService;
     @Mock private EvidenceSourceRouter evidenceRouter;
     @Mock private TroubleshootingPersistenceService persistence;
+    @Mock private ChatStreamTracker streamTracker;
 
     private TroubleshootingAgentProperties properties;
     private TroubleshootingEvidenceSessionRegistry sessions;
@@ -91,7 +99,8 @@ class TroubleshootingAgentTriageServiceTest {
                         prefix -> prefix + "-fixed"),
                 persistence,
                 objectMapper,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                streamTracker);
 
         AgentEntity agent = configuredAgent();
         lenient().when(agentService.getAgent(AGENT_ID)).thenReturn(agent);
@@ -463,6 +472,85 @@ class TroubleshootingAgentTriageServiceTest {
                 .satisfies(error -> assertThat(((MateClawException) error).getCode()).isEqualTo(409))
                 .hasMessageContaining("required tools unavailable");
 
+        verifyNoInteractions(persistence);
+    }
+
+    @Test
+    void boundsASlowAgentCallAndPersistsAnAbstentionBeforeTheClientTimeout() {
+        properties.setTriageTimeout(Duration.ofMillis(40));
+        when(agentService.chatWithToolAllowlist(
+                eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any()))
+                .thenAnswer(invocation -> {
+                    Thread.sleep(250);
+                    return "{}";
+                });
+
+        long startedAt = System.nanoTime();
+        Diagnosis diagnosis = service.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "unknown route").diagnosis();
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+        assertThat(elapsed).isLessThan(Duration.ofMillis(200));
+        assertThat(diagnosis.abstained()).isTrue();
+        assertThat(diagnosis.warnings())
+                .anyMatch(warning -> warning.contains("时长预算"));
+        verify(streamTracker).requestStop(any());
+    }
+
+    @Test
+    void persistsAnAbstentionWithoutWaitingForAnInterruptedEvidenceCall() throws Exception {
+        properties.setTriageTimeout(Duration.ofMillis(80));
+        CountDownLatch evidenceStarted = new CountDownLatch(1);
+        CountDownLatch releaseEvidence = new CountDownLatch(1);
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> {
+                    evidenceStarted.countDown();
+                    boolean released = false;
+                    while (!released) {
+                        try {
+                            released = releaseEvidence.await(1, TimeUnit.SECONDS);
+                        } catch (InterruptedException ignored) {
+                            // Simulate an upstream client that does not honour thread interruption.
+                        }
+                    }
+                    return spineEvidence(invocation.getArgument(1));
+                });
+        when(agentService.chatWithToolAllowlist(
+                eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any()))
+                .thenAnswer(invocation -> {
+                    collectApprovedSpine(invocation.getArgument(2));
+                    return "{}";
+                });
+
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        Future<Diagnosis> result = caller.submit(() -> service.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "unknown route").diagnosis());
+        try {
+            assertThat(evidenceStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            Diagnosis diagnosis = result.get(300, TimeUnit.MILLISECONDS);
+
+            assertThat(diagnosis.abstained()).isTrue();
+            assertThat(diagnosis.warnings())
+                    .anyMatch(warning -> warning.contains("时长预算"));
+        } finally {
+            releaseEvidence.countDown();
+            caller.shutdownNow();
+        }
+    }
+
+    @Test
+    void rejectsATriageBudgetThatCouldOutliveTheSynchronousClientBoundary() {
+        properties.setTriageTimeout(Duration.ofSeconds(26));
+
+        assertThatThrownBy(() -> service.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "unknown route"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("limits are not configured");
+
+        verify(agentService, never()).chatWithToolAllowlist(
+                anyLong(), any(), any(), any(), any());
         verifyNoInteractions(persistence);
     }
 

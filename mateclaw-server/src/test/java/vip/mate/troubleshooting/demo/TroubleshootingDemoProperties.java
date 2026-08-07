@@ -3,17 +3,15 @@ package vip.mate.troubleshooting.demo;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
- * Demo-scenario switch. Off unless an operator turns it on.
+ * Test-only demo-scenario switch used by acceptance checks.
  *
  * <p>Kept separate from evidence configuration so that "there is a walkable
  * path" and "a real observability source is trusted" stay two different
  * decisions. Turning this on seeds a fixture-backed Playbook; it does not
  * enable any real source and does not change {@code fixtureMode}.</p>
  */
-@Component
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "mateclaw.troubleshooting.demo")

@@ -75,8 +75,8 @@ export function useSopRegistry() {
     if (!sop) return []
     const warnings: string[] = []
     if (!sop.evidenceRequests.length) warnings.push('没有取证请求；审核前确认该路由是否真的无需证据。')
-    if (!sop.anomalyCriteria.length) warnings.push('没有异常判据；当前合同无法形成可解释的信号。')
-    if (!sop.diagnosisRules.length) warnings.push('没有诊断规则；当前合同不能产出确定性根因。')
+    if (!sop.anomalyCriteria.length) warnings.push('没有异常判据；当前排障规则无法形成可解释的信号。')
+    if (!sop.diagnosisRules.length) warnings.push('没有诊断规则；当前排障规则不能产出确定性根因。')
     if (sop.status === 'approved' && !sop.verified) warnings.push('状态与 verified 不一致，应停止使用并检查数据。')
     return warnings
   })
@@ -177,7 +177,7 @@ export function useSopRegistry() {
       return
     }
     const title = `标记 ${sop.system}:${sop.errorCode} 为过期？`
-    const message = '过期后，该版本立即退出命中路且不能恢复；替代版本必须通过新的版本化晋升合同。'
+    const message = '过期后，该版本立即退出命中路且不能恢复；替代版本必须重新通过版本审核流程。'
     try {
       await ElMessageBox.confirm(message, title, {
         confirmButtonText: '标记过期',

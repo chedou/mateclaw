@@ -3,7 +3,7 @@ spring:
     activate:
       on-profile: troubleshooting-demo
 
-# Walkable scenarios, entirely on the recorded fixture.
+# Test-only walkable scenarios, entirely on the recorded fixture.
 #
 # This profile exists because the domain's gates are all fail-closed and their
 # conjunction left no default path: no evidence source is on, and the repository
@@ -11,8 +11,12 @@ spring:
 # opens explicitly marked demo doors — it does not touch any real
 # observability binding and does not change the fixture marking on results.
 #
-#   mvn -pl mateclaw-server spring-boot:run \
-#       -Dspring-boot.run.profiles=troubleshooting-demo
+#   mvn -pl mateclaw-server -DskipTests test-compile
+#   fixture_jar="$(./scripts/package-troubleshooting-demo-fixture.sh)"
+#   mvn -pl mateclaw-server \
+#       -Dspring-boot.run.additional-classpath-elements="${fixture_jar}" \
+#       -Dspring-boot.run.profiles=troubleshooting-demo \
+#       spring-boot:run
 #   ./scripts/troubleshooting-smoke.sh
 mateclaw:
   troubleshooting:

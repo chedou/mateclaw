@@ -7,6 +7,7 @@ import vip.mate.agent.AgentService;
 import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.context.ChatOrigin;
 import vip.mate.agent.model.AgentEntity;
+import vip.mate.channel.web.ChatStreamTracker;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.EvidenceProvenance;
@@ -23,12 +24,19 @@ import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** Orchestrates a route miss through one caged, read-only ReAct Agent. */
 @Service
@@ -62,6 +70,10 @@ public final class TroubleshootingAgentTriageService {
             Set.of(TroubleshootingEvidenceTool.FUNCTION_NAME);
     private static final Set<String> REQUIRED_BINDINGS =
             Set.of(TroubleshootingEvidenceTool.BINDING_NAME);
+    private static final Duration MAX_SYNC_TRIAGE_TIMEOUT = Duration.ofSeconds(25);
+    private static final ExecutorService AGENT_INVOCATION_EXECUTOR =
+            Executors.newThreadPerTaskExecutor(
+                    Thread.ofVirtual().name("troubleshooting-agent-budget-", 0).factory());
     private final TroubleshootingAgentProperties properties;
     private final AgentService agentService;
     private final AgentBindingService bindingService;
@@ -71,6 +83,7 @@ public final class TroubleshootingAgentTriageService {
     private final ObjectMapper objectMapper;
     private final TroubleshootingEvidenceModelProjector modelEvidenceProjector;
     private final Clock clock;
+    private final ChatStreamTracker streamTracker;
 
     @Autowired
     public TroubleshootingAgentTriageService(
@@ -81,9 +94,10 @@ public final class TroubleshootingAgentTriageService {
             DiagnosisStateMachine stateMachine,
             TroubleshootingPersistenceService persistence,
             ObjectMapper objectMapper,
-            TroubleshootingEvidenceModelProjector modelEvidenceProjector) {
+            TroubleshootingEvidenceModelProjector modelEvidenceProjector,
+            ChatStreamTracker streamTracker) {
         this(properties, agentService, bindingService, sessions, stateMachine,
-                persistence, objectMapper, modelEvidenceProjector, Clock.systemUTC());
+                persistence, objectMapper, modelEvidenceProjector, Clock.systemUTC(), streamTracker);
     }
 
     TroubleshootingAgentTriageService(
@@ -96,10 +110,25 @@ public final class TroubleshootingAgentTriageService {
             ObjectMapper objectMapper,
             Clock clock) {
         this(properties, agentService, bindingService, sessions, stateMachine,
+                persistence, objectMapper, clock, null);
+    }
+
+    TroubleshootingAgentTriageService(
+            TroubleshootingAgentProperties properties,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingEvidenceSessionRegistry sessions,
+            DiagnosisStateMachine stateMachine,
+            TroubleshootingPersistenceService persistence,
+            ObjectMapper objectMapper,
+            Clock clock,
+            ChatStreamTracker streamTracker) {
+        this(properties, agentService, bindingService, sessions, stateMachine,
                 persistence, objectMapper,
                 new TroubleshootingEvidenceModelProjector(
                         new DeterministicLogTraceCompressor()),
-                clock);
+                clock,
+                streamTracker);
     }
 
     TroubleshootingAgentTriageService(
@@ -112,6 +141,21 @@ public final class TroubleshootingAgentTriageService {
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             Clock clock) {
+        this(properties, agentService, bindingService, sessions, stateMachine,
+                persistence, objectMapper, modelEvidenceProjector, clock, null);
+    }
+
+    TroubleshootingAgentTriageService(
+            TroubleshootingAgentProperties properties,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingEvidenceSessionRegistry sessions,
+            DiagnosisStateMachine stateMachine,
+            TroubleshootingPersistenceService persistence,
+            ObjectMapper objectMapper,
+            TroubleshootingEvidenceModelProjector modelEvidenceProjector,
+            Clock clock,
+            ChatStreamTracker streamTracker) {
         this.properties = properties;
         this.agentService = agentService;
         this.bindingService = bindingService;
@@ -121,6 +165,7 @@ public final class TroubleshootingAgentTriageService {
         this.objectMapper = objectMapper;
         this.modelEvidenceProjector = modelEvidenceProjector;
         this.clock = clock;
+        this.streamTracker = streamTracker;
     }
 
     public StoredDiagnosis triage(
@@ -209,6 +254,7 @@ public final class TroubleshootingAgentTriageService {
 
         String modelOutput = null;
         boolean agentFailed = false;
+        boolean agentTimedOut = false;
         PromptEnvelope prompt;
         TroubleshootingEvidenceSessionRegistry.SessionSnapshot snapshot;
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -226,8 +272,13 @@ public final class TroubleshootingAgentTriageService {
                     session.snapshot().evidence(),
                     routeMissReason);
             try {
-                modelOutput = agentService.chatWithToolAllowlist(
-                        agent.getId(), prompt.text(), conversationId, origin, HARD_TOOL_SCOPE);
+                modelOutput = invokeAgentWithinBudget(
+                        agent.getId(), prompt.text(), conversationId, origin);
+            } catch (AgentInvocationTimeoutException timeout) {
+                agentTimedOut = true;
+                agentFailed = true;
+            } catch (AgentInvocationInterruptedException interrupted) {
+                throw interrupted;
             } catch (MateClawException failure) {
                 if (failure.getMsgKey() != null
                         && failure.getMsgKey().startsWith("err.agent.hard_scope_")) {
@@ -254,9 +305,14 @@ public final class TroubleshootingAgentTriageService {
 
         AgentResponse response = agentFailed ? null : parse(modelOutput);
         if (response == null) {
-            warnings.add(agentFailed
-                    ? "只读 Agent 调用失败，已降级为人工深查。"
-                    : "只读 Agent 输出不可解析，已降级为人工深查。");
+            if (agentTimedOut) {
+                warnings.add("只读 Agent 超出 " + properties.getTriageTimeout().toSeconds()
+                        + " 秒服务端时长预算，已停止等待并降级为人工深查。");
+            } else {
+                warnings.add(agentFailed
+                        ? "只读 Agent 调用失败，已降级为人工深查。"
+                        : "只读 Agent 输出不可解析，已降级为人工深查。");
+            }
         }
         if (snapshot.coreEvidenceFailure() != null) {
             warnings.add("在线核心证据链不完整（"
@@ -332,7 +388,10 @@ public final class TroubleshootingAgentTriageService {
         if (properties.getAgentId() <= 0
                 || properties.getMaxIterations() <= 0
                 || properties.getMaxEvidenceRequests() < 3
-                || properties.getMaxPromptChars() < MIN_PROMPT_CHARS) {
+                || properties.getMaxPromptChars() < MIN_PROMPT_CHARS
+                || properties.getTriageTimeout() == null
+                || properties.getTriageTimeout().toMillis() <= 0
+                || properties.getTriageTimeout().compareTo(MAX_SYNC_TRIAGE_TIMEOUT) > 0) {
             throw configurationConflict("troubleshooting Agent limits are not configured");
         }
 
@@ -364,6 +423,50 @@ public final class TroubleshootingAgentTriageService {
                     "troubleshooting Agent requires exactly one read-only tool binding");
         }
         return agent;
+    }
+
+    private String invokeAgentWithinBudget(
+            long agentId,
+            String prompt,
+            String conversationId,
+            ChatOrigin origin) {
+        if (streamTracker != null) {
+            streamTracker.register(conversationId);
+        }
+        Future<String> invocation = AGENT_INVOCATION_EXECUTOR.submit(() ->
+                agentService.chatWithToolAllowlist(
+                        agentId, prompt, conversationId, origin, HARD_TOOL_SCOPE));
+        try {
+            return invocation.get(
+                    properties.getTriageTimeout().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException timeout) {
+            stopInvocation(conversationId, invocation);
+            throw new AgentInvocationTimeoutException();
+        } catch (InterruptedException interrupted) {
+            stopInvocation(conversationId, invocation);
+            Thread.currentThread().interrupt();
+            throw new AgentInvocationInterruptedException(interrupted);
+        } catch (ExecutionException failed) {
+            Throwable cause = failed.getCause();
+            if (cause instanceof RuntimeException runtimeFailure) {
+                throw runtimeFailure;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("troubleshooting Agent invocation failed", cause);
+        } finally {
+            if (streamTracker != null) {
+                streamTracker.complete(conversationId);
+            }
+        }
+    }
+
+    private void stopInvocation(String conversationId, Future<String> invocation) {
+        if (streamTracker != null) {
+            streamTracker.requestStop(conversationId);
+        }
+        invocation.cancel(true);
     }
 
     private PromptEnvelope prompt(
@@ -500,5 +603,14 @@ public final class TroubleshootingAgentTriageService {
     }
 
     private record BoundedText(String text, boolean truncated) {
+    }
+
+    private static final class AgentInvocationTimeoutException extends RuntimeException {
+    }
+
+    private static final class AgentInvocationInterruptedException extends RuntimeException {
+        private AgentInvocationInterruptedException(InterruptedException cause) {
+            super(cause);
+        }
     }
 }

@@ -64,19 +64,19 @@ const GUANCE_SIGNAL_LABEL: Record<GuanceSignalStatus, string> = {
 }
 
 const GUANCE_VALIDATION_LABEL: Record<GuanceValidationStage, string> = {
-  BLOCKED: '单次规范化读链未通过',
-  CANONICAL_CHAIN_OBSERVED: '单次规范化读链通过（待 T7 字段验收）',
+  BLOCKED: '日志与调用链验证未通过',
+  CANONICAL_CHAIN_OBSERVED: '日志与调用链验证通过（待负责人确认）',
 }
 
 const GUANCE_SPINE_PREVIEW_LABEL: Record<GuanceSpinePreviewStage, string> = {
-  BLOCKED: '真实 Evidence Spine 未形成',
-  CORE_CHAIN_OBSERVED: '核心调用链已观测，成功样本对照缺失',
-  FULL_SPINE_OBSERVED: '完整 Evidence Spine 已观测（待 T7/T8 验收）',
+  BLOCKED: '完整取证流程未形成',
+  CORE_CHAIN_OBSERVED: '日志与调用链已取得，成功样本对照缺失',
+  FULL_SPINE_OBSERVED: '完整取证流程已验证（待负责人确认）',
 }
 
 const GUANCE_OWNER_BLOCKER_LABEL: Record<string, string> = {
   'the current Guance binding has not been explicitly accepted by an owner':
-    '当前 Guance 绑定尚未由 Workspace owner 明确验收。',
+    '当前数据源配置尚未由 Workspace 负责人确认。',
 }
 
 export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED'
@@ -87,7 +87,7 @@ export function canStartGuanceValidation(value: GuanceReadinessStatus) {
 
 export function guanceAcceptanceStateLabel(value: GuanceAcceptanceState) {
   if (value === 'READY') return '就绪'
-  if (value === 'OWNER_EVIDENCE_REQUIRED') return '待 owner 证据'
+  if (value === 'OWNER_EVIDENCE_REQUIRED') return '待负责人确认'
   return '阻断'
 }
 
@@ -157,7 +157,7 @@ export function diagnosisSummaryRouteLabel(
   provenance: RouteSemanticsProvenance,
 ) {
   if (provenance === 'LEGACY_DERIVED') {
-    return '旧合同推导 · 详情可见兼容值'
+    return '旧版记录推导 · 详情可见兼容值'
   }
   if (mode == null || authority == null) {
     return '路由字段缺失'
@@ -206,11 +206,11 @@ export function guanceDetailSourceState(
   if (ownerAcceptanceStatus === 'STALE') {
     return { label: '配置变化，验收已过期', tone: 'warning' }
   }
-  const t7 = progress?.stages.find(stage => stage.code === 'T7')
-  if (t7) {
+  const confirmation = progress?.stages.find(stage => stage.code === 'T7')
+  if (confirmation) {
     return {
-      label: `T7 · ${t7.title}`,
-      tone: t7.state === 'READY' ? 'active' : 'warning',
+      label: confirmation.title,
+      tone: confirmation.state === 'READY' ? 'active' : 'warning',
     }
   }
   if (readinessStatus) {
@@ -324,17 +324,17 @@ export function guanceAcceptanceProgress(
   const recordingBatchReady = executableTargetCount >= 20
   const recordingBatchBlocked = sourceReady && !recordingBatchReady
   const recordingTargetDetail = recordingTargets
-    ? `当前 ${executableTargetCount} / 20 个可执行新目标（冻结 ${recordingTargets.frozenTargetCount} 个）。目标必须由服务端冻结候选、请求指纹和三份当前 binding；已录制目标不能重复凑数。`
+    ? `当前 ${executableTargetCount} / 20 个可执行真实案例（已固定 ${recordingTargets.frozenTargetCount} 个）。案例必须由服务端固定排障规则、取证要求和三项当前查询绑定；已采集案例不能重复计数。`
     : '录制目标目录未加载，不能证明已准备 20 个可执行新目标。'
 
   const stages: GuanceAcceptanceStage[] = [
     {
       code: 'T6',
       state: sourceAuthorized ? 'READY' : 'BLOCKED',
-      title: sourceAuthorized ? '资产授权与核心绑定已就绪' : '授权接缝未就绪',
+      title: sourceAuthorized ? '观测资产与核心查询已就绪' : '数据源接入未完成',
       detail: sourceAuthorized
-        ? '当前 Workspace 资产与 log_search、log_trace_bundle 已通过秘密无关授权检查。'
-        : '必须先建立唯一资产授权，并显式绑定 log_search 与 log_trace_bundle。',
+        ? '当前 Workspace 观测资产与日志、调用链查询已经通过授权检查。'
+        : '必须先为当前系统登记唯一观测资产，并绑定日志和调用链查询规则。',
     },
     {
       code: 'T7',
@@ -346,57 +346,57 @@ export function guanceAcceptanceProgress(
             ? 'OWNER_EVIDENCE_REQUIRED'
             : sourceReady ? 'READY' : 'BLOCKED',
       title: ownerAccepted
-        ? '当前绑定已完成 owner 验收'
+        ? '负责人已确认当前数据源配置'
         : recordingBatchBlocked
-          ? '录制批次目标未就绪'
+          ? '真实案例尚未准备好'
           : ownerAcceptanceStale
-            ? '绑定已变更，旧验收已过期'
+            ? '数据源配置已变化，原确认失效'
             : coreSignalsObserved
-              ? '核心信号已观测，真链路待验收'
+              ? '日志与调用链已取得，待负责人确认'
               : sourceReady
-                ? '首条真实读链待执行'
-                : sourceAuthorized ? '真源运行条件未就绪' : '被 T6 阻断',
+                ? '等待验证日志与调用链'
+                : sourceAuthorized ? '真实数据源运行条件未就绪' : '数据源接入未完成',
       detail: ownerAccepted
-        ? `配置指纹已由 ${ownerAcceptance?.acceptance?.acceptedBy || 'owner'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；验收不会关闭 fixtureMode。`
+        ? `当前配置已由 ${ownerAcceptance?.acceptance?.acceptedBy || '负责人'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；这不会把演示样本当成真实数据。`
         : recordingBatchBlocked
           ? recordingTargetDetail
           : ownerAcceptanceStale
-            ? '查询模板、字段映射、路由或端点发生变化，必须重新执行真实同 PS ID 链并完成 owner 清单。'
+            ? '查询模板、字段映射、路由或端点发生变化，必须重新验证同一 PS ID 的日志与调用链，并由负责人确认。'
             : coreSignalsObserved
-              ? '当前进程已分别观测两个核心信号；该状态不证明同一 PS ID，仍需验证报告核实 measurement、字段、索引、时间单位/窗、DQL 延迟与 903001 冲突。'
+              ? '系统已经分别取得日志和调用链；仍需确认它们属于同一 PS ID，并核实数据集、字段、索引、时间范围和历史冲突。'
               : sourceReady
-                ? '用会议案例执行 Guance-only 的 log_search → log_trace_bundle。'
+                ? '使用一条真实历史故障，依次验证失败日志和 PS ID 调用链。'
                 : sourceAuthorized
                   ? '端点、运行时凭据或适配器尚未就绪，不得发起真实查询。'
-                  : 'T6 未就绪前不得查询真实观测资产。',
+                  : '数据源接入未完成前不得查询真实观测资产。',
     },
     {
       code: 'T8',
       state: ownerAccepted && sourceReady ? 'READY' : 'BLOCKED',
       title: ownerAccepted && sourceReady
-        ? '真实历史样本采集已解锁'
-        : '历史样本基线未开始',
+        ? '可以开始积累真实样本'
+        : '真实样本尚未开始',
       detail: ownerAccepted && sourceReady
-        ? '可开始积累 20–30 条真实样本；当前只是具备采集条件，不代表 T8 已通过。'
+        ? '可开始积累 20–30 条真实样本；当前只是具备采集条件，不代表效果已经达标。'
         : ownerAccepted
-          ? 'T7 验收仍保留，但当前真源运行条件未就绪，不能采集 T8 样本。'
-          : '等待当前绑定完成 T7 owner 验收，再建立 20–30 条真实样本。',
+          ? '负责人确认仍然有效，但当前真实数据源运行条件未就绪，不能采集样本。'
+          : '等待当前数据源配置通过负责人确认，再建立 20–30 条真实样本。',
     },
   ]
 
   const nextAction = (() => {
     if (ownerAccepted && sourceReady) {
-      return '当前绑定已完成 T7 owner 验收；从关闭 Diagnosis 积累 20–30 条真实样本、冻结参考解并运行单 Agent 基线。'
+      return '当前数据源配置已由负责人确认；从已关闭排障单积累 20–30 条真实样本、固定参考答案并运行单模型基线。'
     }
     if (recordingBatchBlocked) {
-      return `先在窗口外冻结至少 20 个未录制 D1 目标；当前可执行 ${executableTargetCount} 个。目录达标并准备 20–30 条历史时间计划后，再约 owner 的内网窗口。`
+      return `先准备至少 20 个尚未采集的真实案例；当前可执行 ${executableTargetCount} 个。案例达标并补齐历史故障时间后，再安排负责人进行内网验证。`
     }
     if (ownerAcceptanceStale) {
-      return 'Guance 配置指纹已变化；重新执行同 PS ID 两步读链并完成 T7 owner 清单。'
+      return 'Guance 配置已经变化；重新验证同一 PS ID 的日志与调用链，并完成负责人确认清单。'
     }
     switch (status) {
       case 'DISABLED':
-        return '由 owner 启用 Guance 适配器；启用本身不会授予任何 Workspace 资产。'
+        return '由负责人启用 Guance 数据源；启用本身不会授予任何 Workspace 资产。'
       case 'UNAUTHORIZED':
         return '为当前 Workspace / system / service 配置唯一资产授权与 log_search、log_trace_bundle 绑定。'
       case 'CONFIGURATION_INCOMPLETE':
@@ -404,7 +404,7 @@ export function guanceAcceptanceProgress(
       case 'READY_FOR_VALIDATION':
         return '由管理员用会议案例执行一次只读真源链路，核对同一 PS ID 与每步 Guance 取证耗时。'
       case 'CANONICAL_SIGNALS_OBSERVED':
-        return '由 owner 用验证报告确认同一 PS ID 并完成 T7 字段验收，再进入 T8 样本基线；fixtureMode 继续保持开启。'
+        return '由负责人根据验证报告确认同一 PS ID 和字段映射，再开始积累真实样本；演示数据状态继续保持开启。'
     }
   })()
 

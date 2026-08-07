@@ -109,7 +109,7 @@
             <div><dt>validation</dt><dd class="mono">{{ selectedReview.validationStatus }}</dd></div>
             <div><dt>phase</dt><dd class="mono">{{ selectedReview.qualificationSnapshot.qualificationPhase }}</dd></div>
             <div><dt>eligibility</dt><dd class="mono">{{ selectedReview.approvalEligibility }}</dd></div>
-            <div><dt>service</dt><dd>{{ selectedReview.service || '合同未提供' }}</dd></div>
+            <div><dt>service</dt><dd>{{ selectedReview.service || '未填写' }}</dd></div>
             <div><dt>source</dt><dd class="mono">{{ selectedReview.sourceRef }}</dd></div>
           </dl>
 
@@ -202,7 +202,7 @@
                 {{ reference }}
               </code>
             </div>
-            <p v-else class="empty-copy">当前读取合同没有可审计引用。</p>
+            <p v-else class="empty-copy">当前排障规则没有可审计引用。</p>
           </section>
 
           <template v-if="selectedEvidenceRecord">
@@ -271,7 +271,7 @@
 
           <template v-else-if="selectedManualSop">
             <section class="candidate-detail-card">
-              <div class="section-title"><span>人工注册合同</span></div>
+              <div class="section-title"><span>人工登记的排障规则</span></div>
               <dl class="compact-facts">
                 <div><dt>title</dt><dd>{{ selectedManualSop.title }}</dd></div>
                 <div><dt>owner</dt><dd>{{ selectedManualSop.ownerTeam || '未指定' }}</dd></div>

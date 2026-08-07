@@ -1,10 +1,12 @@
-# 待办清单 · IT 智能排障系统
+# 实施台账 · IT 智能排障系统
 
-> 更新时间：2026-08-03（P2.2 后）
+> 更新时间：2026-08-06（P2.5 后）
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
 > **投产清单：`production-readiness.md`** —— 第一条真实报障进来之前必须为真的事。
+> **本文件定位**：保留实现决策、验证证据和历史待办，**不再作为活跃排期入口**；当前优先级只看
+> `production-readiness.md` 和下方“待办速览”，避免从历史段落里重新捞任务。
 >
 > 唯一现行架构：`rfcs/intelligent-troubleshooting-architecture-v4.md`
 >
@@ -20,7 +22,7 @@
 
 ---
 
-## 待办速览（2026-08-03）
+## 待办速览（2026-08-06）
 
 按"挡不挡住别人"排序，不按工作量。完整条目见对应小节。
 
@@ -34,6 +36,34 @@
 | 6 | T0.8 剩余 145 条错误码录制种子导入 | 先用 T7 窗口灌 20–30 条真实种子再定后续批次 | §3.5 |
 | 7 | T10.5 最终弃读 `RouteMode` | 读取迁移已完成；待 P4 真场景同批产生 `RULE_MATCHED / MODEL_PROPOSED` 后收尾 | §6.5 |
 | 8 | P4 场景 Playbook / P5 知识治理 | 依赖 T8 的真实时延与质量数据 | §7 §8 |
+
+**P2.5 生产运行时去 Demo 化（2026-08-06）**：Demo Seeder、Demo 配置、录制模型
+响应及其 profile 已从 `src/main` 移入 `src/test`，不再进入生产 Jar。Recorded Replay
+仍是正式只读证据适配器；八闸门与学习环 CI 只加载含明确自动配置入口的专用 fixture Jar，继续验证原有 HTTP
+合同。这一刀去掉的是自动造数和假模型，不是回放取证能力，也没有放宽任何 fail-closed 闸门。
+
+**P2.6 前端领域边界瘦身（2026-08-06）**：排障类型与 HTTP client 已从全局
+`mateclaw-ui/src/api/index.ts` 独立为 `api/troubleshooting.ts`，仍复用同一个认证、Workspace 和错误处理
+transport，并从原入口兼容导出；现有调用方不需要改名。正式工作台的紧凑排障队列也已拆为
+`DiagnosisQueuePanel.vue`，自行负责筛选、排障单号、状态呈现和移动端布局，主工作台只保留页面编排与
+Diagnosis 选择。这一轮没有改路由、请求字段、业务投影或安全判断。
+
+**P2.7 排障入口组件化（2026-08-06）**：历史案例入库、通用事件、会话消息失败和部署拓扑场景
+四个入口弹窗已从 `FormalWorkbench.vue` 拆成独立组件，共用表单布局但不复制请求、权限或业务判断。
+工作台继续持有表单状态并执行原有 service 调用，子组件只呈现输入和发出提交事件；正式工作台另有挂载
+守卫，避免组件存在但入口失联。`FormalWorkbench.vue` 从 1427 行降至约 1180 行，Guance 验收弹窗因
+仍与验收会话状态高度耦合，留待下一批单独拆分。
+
+**P2.8 Guance 验收会话边界（2026-08-06）**：T7 两步读链、完整 Evidence Spine、owner 核实清单
+及批次状态已抽为 `GuanceValidationDialog.vue`；弹窗只展示服务端安全投影并发出验证命令，不直接持有
+HTTP client。`useGuanceValidationDialog.ts` 只管理一次弹窗的规范化请求快照、来源、加载态和结果清空，
+真实 Router 调用、Workspace 权限、录制批次门与 T7/T8 fail-closed 判断仍由原 store/API 流程执行。
+`FormalWorkbench.vue` 已降到约 1000 行。
+
+**P2.9 前端排障 API 分层（2026-08-06）**：原 `api/troubleshooting.ts` 中 183 个领域类型已移入
+不依赖 Axios 的 `troubleshooting-contracts.ts`，HTTP 请求集中到 `troubleshooting-client.ts`；原文件变为
+兼容导出入口，因此 `@/api` 和既有相对路径调用方无需迁移。结构守卫会拒绝合同反向依赖 transport，
+这轮没有改 endpoint、请求字段、认证、Workspace header 或错误处理。
 
 **P2.4 排障模块瘦身（2026-08-03）**：按「去掉它，系统是不是既更简单、又不更危险」筛。
 
@@ -315,10 +345,9 @@ D19 已经让这件事成为可能——一条种子只要一份聚合正例，�
 
 待办：
 
-- [ ] 前端把 `cited === null` 与 `false` 的区分做**回归测试**钉住。
-      现在只有后端有；前端渲染混淆了也不会红。
-- [ ] `DerivationChain.vue` 此前无人挂载却也无人发现——说明**组件挂没挂没有守卫**。
-      考虑加一条静态检查：Troubleshooting 下的展示组件必须被引用。
+- [x] 前端已用组件回归测试钉住 `cited === null` 与 `false` 的不同文案；合并两者会直接变红。
+- [x] 正式工作台挂载守卫已覆盖 `DeveloperEvidencePanel → InvestigationProvenancePanel / DerivationChain`，
+      避免组件存在但用户永远看不到。
 
 ---
 
@@ -1378,16 +1407,16 @@ P2 就无法回答"到底省了多少人的时间"——而那是北极星本身
 - [x] 对照与时间戳测试：`contrastAvailable=false` 时降级不失败且锁定校准期档；
       四个时间戳往返不丢，未发生阶段保持 `null`。
 
-### T5.5 · 正式 Evidence Spine 开发入口
+### T5.5 · 正式 Evidence Spine 开发入口（2026-08-06 已并入诊断效果评估）
 
-- [x] 正式 `/troubleshooting/sops` 直接调用既有 synthesis preview API，不新增第二套取证实现。
+- [x] “诊断效果评估 → 历史样本回放”直接调用既有 synthesis preview API，不新增第二套取证实现。
 - [x] 页面显式展示 `log_search → log_trace_bundle → contrast_sample`、PS ID 确定性调用链和
       失败/成功样本差异；对照缺失时保持不可用状态，不伪造测量值。
 - [x] 该入口由服务端硬限制为 Recorded Replay，默认数据源仍关闭；不调用模型、不创建 candidate、
       不提供审核、晋升或生产写操作。
-- [x] 正式 `/troubleshooting` 队列增加“无码证据预览”深链；只跳转到
-      `/troubleshooting/sops?focus=evidence-synthesis` 并自动打开上述同一只读入口，不新建 API、
-      页面、Scenario 运行时或 candidate 通道（2026-07-30）。
+- [x] 独立“无码场景预演”菜单和规则库按钮已移除，用户名称改为“历史样本回放”；
+      历史 `/troubleshooting/sops?focus=evidence-synthesis` 深链自动转入诊断效果评估并打开同一
+      只读入口，不新建 API、Scenario 运行时或 candidate 通道（2026-08-06）。
 
 ## 5. P2 · 接真实 Guance 和影子评估
 
@@ -1980,8 +2009,47 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
       资产任一变更都会使旧 T7 owner 验收失效，防止 T8 沿用旧验收查询新资源。
 - [x] 回归通过：后端排障域 + Skill Manifest `823/823`，前端 Vitest `211/211`，ESLint、
       `vue-tsc --noEmit` 与生产 Vite build 通过。
-- [ ] 由 owner 填写 CSDP 第一份真实生产资产：环境、区域/集群、精确监控规则名、Deployment 和
-      Namespace。不得从日志、拓扑名称或模型输出猜测。
-- [ ] 增加按“资产 + 查询合同”执行的 admin 只读试跑与审计记录；试跑只能使用服务端资产参数，
-      结果继续走 canonical 投影，不返回原始 DQL/日志。
+- [x] 用户已显式确认 `prd`，并登记 CSDP 第一份 SendMsg 核心 Workspace 资产 v1；仅绑定
+      `log_search / log_trace_bundle / contrast_sample`，不为本竖线伪造无关资源参数。
+- [ ] 若后续启用监控事件与 Kubernetes 规则，再由 owner 单独补充区域/集群、精确监控规则名、
+      Deployment 和 Namespace。不得从日志、拓扑名称或模型输出猜测。
+- [x] “接管配置”按已选查询规则实时列出 owner 尚未确认的环境与资源标识；规则要求的 Namespace
+      动态标为必填，信息不齐时禁用提交。该提示不替代服务端权威校验，也不预填生产值。
+- [x] 增加按“资产 + 查询规则”执行的 admin 只读试跑与不可变审计记录；试跑只接受该规则声明的
+      非资源运行参数，所有资源范围只能来自服务端系统观测资产。即使规则误把资源参数标成运行输入，
+      也会 fail-closed 拒绝。依赖前序证据的步骤拒绝浏览器手填关联 ID，必须走
+      完整证据链；结果只记录 canonical 字段名、资产版本、状态、停止原因、耗时和 actor，不返回或
+      落库检索键、原始 DQL、原始日志及凭据。失败查询同样以安全原因码留痕。
+- [x] 将“最新 Workspace 资产已启用且作用域唯一”纳入目录可运行状态；对只有部署 YAML 兼容回落的模块，
+      明确区分“完整链路可运行”与“可执行管理员试跑”，引导先接管为 Workspace 系统观测资产。
+      运行时仍保留独立 fail-closed 校验，页面将试跑失败原因持续显示在弹窗内。
 - [ ] 第一份资产逐合同试跑通过后，再把部署 YAML 授权降为兼容回落；未验证前不删除现有 Profile。
+- [ ] 当前 Workspace 资产 15 分钟试跑和同一已审核 Profile 的 24 小时合同测试均到达 Guance
+      HTTP 200，但都只有 `match_count`，没有 `ps_id / sample_message`，所以仍未通过 `log_search`。
+      需要一个保留期内的精确 SendMsg 失败时间，或在授权测试环境触发一次失败；禁止把这次不完整
+      结果记为真源成功。
+
+## 14. 历史样本回放入口收敛（2026-08-06）
+
+- [x] 将容易误解为“无码创建场景”的“无码场景预演”改名为“历史样本回放”。
+- [x] 从二级菜单和排障规则库移除独立入口，合并到“诊断效果评估”。
+- [x] 保留旧 `focus=evidence-synthesis` 深链兼容，自动转到评估台并打开回放。
+- [x] 保留并复用 `SopSynthesisService.preview()`；不改变 admin、fixture scope、Recorded Replay、
+      不调模型、不创建候选的服务端边界。
+- [x] 前端 Vitest `235/235`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。
+
+## 15. 诊断效果评估工作区融合（2026-08-06）
+
+- [x] 将评估台从弹窗改为智能排障主工作区内嵌页面，二级菜单和标题层级与其他管理模块一致。
+- [x] 保留 `capability=ledger` 深链、当前 Diagnosis 上下文、样本跳转和返回工作台流程。
+- [x] 保留样本采集、参考解冻结、单 Agent 基线与历史样本回放的既有服务端合同和权限边界。
+- [x] 增加内嵌呈现回归测试，并用真实浏览器验证页面无评估弹窗、工作区滚动和返回流程。
+- [x] 前端 Vitest `237/237`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。
+
+## 16. 复盘模块统一工作区（2026-08-06）
+
+- [x] 将“历史案例入库”从弹窗改为智能排障主工作区内嵌页面。
+- [x] 抽取统一 `CapabilityWorkspaceShell`，让历史案例入库与诊断效果评估共享标题栏、操作区、正文滚动和响应式规范。
+- [x] 保留 `capability=case-knowledge` 深链、知识库加载、导入参数、结果投影与 Wiki 管理入口。
+- [x] 浏览器验证两个页面均无模块弹窗，标题栏高度和正文边距一致；未执行真实案例导入写操作。
+- [x] 前端 Vitest `238/238`、ESLint 0 error、Snowflake 精度守卫、类型检查和生产构建通过。

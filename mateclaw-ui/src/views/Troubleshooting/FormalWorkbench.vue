@@ -4,10 +4,41 @@
     :class="{
       'traditional-list-mode': viewMode === 'LIST',
       'full-detail-mode': viewMode === 'DETAIL',
+      'capability-workspace-mode': capabilityWorkspaceActive,
     }"
   >
+    <EvaluationSampleLedgerWorkspace
+      v-if="evaluationWorkspaceActive"
+      :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
+      :current-diagnosis-status="current?.diagnosis.status || null"
+      :capture-context="evaluationCaptureContext"
+      :replay-capture-context="replayEvaluationCaptureContextValue"
+      :capture-enabled="canCaptureEvaluationSample"
+      :capture-disabled-reason="evaluationCaptureDisabledReason"
+      :replay-capture-enabled="canCaptureReplayEvaluationSample"
+      :replay-capture-disabled-reason="replayCaptureDisabledReason"
+      @back="closeCapabilityWorkspace"
+      @open-diagnosis="openDiagnosisFromEvaluation"
+      @open-history-replay="openHistoricalReplay"
+    />
+
+    <CaseKnowledgeImportWorkspace
+      v-else-if="caseKnowledgeWorkspaceActive"
+      v-model:form="caseKnowledgeImportForm"
+      :knowledge-bases="caseKnowledgeBases"
+      :knowledge-bases-loading="caseKnowledgeBasesLoading"
+      :result="caseKnowledgeImportResult"
+      :vector-status="caseKnowledgeVectorStatus"
+      :loading="caseKnowledgeImportLoading"
+      :can-submit="canSubmitCaseKnowledgeImport"
+      @back="closeCapabilityWorkspace"
+      @refresh="prepareCaseKnowledgeWorkspace(false)"
+      @manage-wiki="router.push('/wiki')"
+      @submit="importHistoricalCases"
+    />
+
     <DiagnosisListView
-      v-if="viewMode === 'LIST'"
+      v-else-if="viewMode === 'LIST'"
       v-model:status-filter="statusFilter"
       :rows="rows"
       :loading="listLoading"
@@ -20,79 +51,20 @@
     />
 
     <template v-else>
-    <aside v-if="shouldShowQueuePanel(viewMode)" class="queue-panel">
-      <header class="queue-head">
-        <div><span class="eyebrow">MateClaw</span><h2>排障队列</h2></div>
-        <div class="queue-head-actions">
-          <el-tag size="small" type="info" round>{{ rows.length }}</el-tag>
-          <WorkbenchViewSwitch mode="QUEUE" compact @change="switchWorkbenchView" />
-        </div>
-      </header>
-      <div class="queue-tools">
-        <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="store.loadList(false)">
-          <el-option v-for="status in STATUSES" :key="status" :label="statusLabel(status)" :value="status" />
-        </el-select>
-        <el-select
-          v-model="investigationModeFilter"
-          size="small"
-          clearable
-          placeholder="全部调查模式"
-          @change="store.loadList(false)"
-        >
-          <el-option
-            v-for="mode in WORKBENCH_INVESTIGATION_MODES"
-            :key="mode"
-            :label="investigationModeLabel(mode)"
-            :value="mode"
-          />
-        </el-select>
-        <div class="queue-action-row">
-          <el-button
-            v-if="canOperateTroubleshooting || canManageTroubleshooting"
-            size="small"
-            type="primary"
-            plain
-            :icon="Plus"
-            @click="openTroubleshootingScenario"
-          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-        </div>
-      </div>
-      <div v-loading="listLoading" class="queue-list">
-        <button
-          v-for="row in rows"
-          :key="row.diagnosisId"
-          type="button"
-          class="queue-item"
-          :class="{ active: row.diagnosisId === selectedId }"
-          @click="store.selectDiagnosis(row.diagnosisId)"
-        >
-          <div class="queue-item-top">
-            <code>{{ row.system }}:{{ row.errorCode || 'NO-CODE' }}</code>
-            <span v-if="row.rehearsal" class="rehearsal">演练</span>
-          </div>
-          <strong>{{ row.service }}</strong>
-          <div class="queue-item-bottom">
-            <span :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
-            <time>{{ shortTime(row.updateTime) }}</time>
-          </div>
-        </button>
-        <div v-if="!listLoading && !rows.length" class="queue-empty">
-          <b>还没有诊断记录</b>
-          <p>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
-          <el-button
-            v-if="canOperateTroubleshooting || canManageTroubleshooting"
-            size="small"
-            type="primary"
-            plain
-            @click="openTroubleshootingScenario"
-          >{{ TROUBLESHOOTING_UI_LABELS.launch }}</el-button>
-          <code v-else>需要 operate:troubleshooting 权限</code>
-        </div>
-      </div>
-      <footer class="queue-foot">
-        <span>正式入口 · 真实 API</span>
-      </footer>
-    </aside>
+    <DiagnosisQueuePanel
+      v-if="shouldShowQueuePanel(viewMode)"
+      v-model:status-filter="statusFilter"
+      v-model:investigation-mode-filter="investigationModeFilter"
+      :rows="rows"
+      :selected-id="selectedId"
+      :loading="listLoading"
+      :can-operate="canOperateTroubleshooting"
+      :can-manage="canManageTroubleshooting"
+      @refresh="store.loadList(false)"
+      @launch="openTroubleshootingScenario"
+      @select-diagnosis="store.selectDiagnosis"
+      @switch-view="switchWorkbenchView('LIST')"
+    />
 
     <main v-loading="detailLoading" class="work-area">
       <div v-if="!business || !developer || !current" class="detail-empty">
@@ -179,7 +151,7 @@
           :can-manage="canManageTroubleshooting"
           :can-approve-action="canApprove"
           :can-record-outcome-action="canRecordOutcome"
-          @open-guance-onboarding="openGuanceOnboarding"
+          @open-data-source-validation="openDataSourceValidation"
           @open-evaluation="openEvaluationLedger"
           @approve="openApprove"
           @record-outcome="openOutcome"
@@ -195,286 +167,33 @@
       @select="startTroubleshootingScenario"
     />
 
-    <el-dialog
-      v-model="caseKnowledgeImportOpen"
-      :title="TROUBLESHOOTING_UI_LABELS.caseKnowledge"
-      width="min(680px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        把已有排障单确定性转换为脱敏案例快照，写入现有 Wiki 知识库。未闭环案例只标记为“调查记录”，不作为根因依据。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="importHistoricalCases">
-        <el-form-item label="目标知识库" required>
-          <el-select
-            v-model="caseKnowledgeImportForm.knowledgeBaseId"
-            :loading="caseKnowledgeBasesLoading"
-            filterable
-            placeholder="选择当前工作区的知识库"
-            style="width:100%"
-          >
-            <el-option
-              v-for="kb in caseKnowledgeBases"
-              :key="String(kb.id)"
-              :label="`${kb.name} · ${kb.pageCount ?? 0} 页 / ${kb.rawCount ?? 0} 份素材`"
-              :value="String(kb.id)"
-              :disabled="kb.status !== 'active'"
-            />
-          </el-select>
-          <p v-if="!caseKnowledgeBasesLoading && !caseKnowledgeBases.length" class="form-hint">
-            当前工作区还没有知识库，请先到 Wiki 新建一个。
-          </p>
-        </el-form-item>
-        <el-form-item label="最多导入条数">
-          <el-input-number
-            v-model="caseKnowledgeImportForm.limit"
-            :min="1"
-            :max="MAX_CASE_KNOWLEDGE_IMPORT_LIMIT"
-            :step="10"
-          />
-          <p class="form-hint">从最新排障单开始；重复执行会复用同一版本的案例页面和原始素材。</p>
-        </el-form-item>
-      </el-form>
-
-      <div v-if="caseKnowledgeImportResult" class="case-knowledge-result">
-        <b>{{ caseKnowledgeImportSummary(caseKnowledgeImportResult) }}</b>
-        <p :class="caseKnowledgeVectorStatus.tone">
-          {{ caseKnowledgeVectorStatus.text }}
-        </p>
-        <small>
-          入库内容不包含原始日志、DQL、观测载荷或凭据；语义检索只对“向量已就绪”的案例生效。
-        </small>
-      </div>
-
-      <template #footer>
-        <el-button text @click="router.push('/wiki')">管理 Wiki 知识库</el-button>
-        <el-button @click="caseKnowledgeImportOpen = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :loading="caseKnowledgeImportLoading"
-          :disabled="!canSubmitCaseKnowledgeImport"
-          @click="importHistoricalCases"
-        >导入历史案例</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
+    <IncidentReportDialog
       v-model="incidentReportOpen"
-      :title="TROUBLESHOOTING_UI_LABELS.incident"
-      width="min(620px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        该入口调用正式 Incident API 并真实创建 Diagnosis 记录；只提交现象和标识符，不接收原始日志、DQL、凭据、影响人数或调用方证据，也不会执行生产变更。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="reportIncident">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统" required>
-            <el-input v-model="incidentReportForm.system" maxlength="128" placeholder="例如 CSDP" />
-          </el-form-item>
-          <el-form-item label="故障服务" required>
-            <el-input v-model="incidentReportForm.service" maxlength="128" placeholder="例如 csdp-session-service" />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="incidentReportForm.severity" style="width: 100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="错误码（可选）">
-            <el-input v-model="incidentReportForm.errorCode" maxlength="128" placeholder="例如 903001" />
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="incidentReportForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="描述用户可见现象；不要粘贴原始日志或密钥"
-          />
-        </el-form-item>
-        <el-form-item label="Trace / PS 线索（可选）">
-          <el-input v-model="incidentReportForm.traceId" maxlength="128" placeholder="只填写安全标识符，不粘贴链路正文" />
-        </el-form-item>
-        <div class="incident-route-preview" :class="incidentRoutePreview.tone.toLowerCase()">
-          <span>预期调查路径</span>
-          <b>{{ incidentRoutePreview.title }}</b>
-          <p>{{ incidentRoutePreview.detail }}</p>
-        </div>
-        <el-checkbox v-model="incidentReportForm.rehearsal" class="incident-rehearsal">
-          演练记录（推荐；不参与五分钟生产事件去重）
-        </el-checkbox>
-        <p class="form-hint">演练记录也会进入队列并明确标记；关闭演练标记后按正式事件启用五分钟幂等。两种模式都只读取证，生产处置仍由人工完成。</p>
-      </el-form>
-      <template #footer>
-        <el-button @click="incidentReportOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="incidentReportLoading"
-          :disabled="!canSubmitIncidentReport"
-          @click="reportIncident"
-        >创建 Diagnosis</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="incidentReportForm"
+      :route-preview="incidentRoutePreview"
+      :loading="incidentReportLoading"
+      :can-submit="canSubmitIncidentReport"
+      @submit="reportIncident"
+    />
 
-    <el-dialog
+    <MessageSendScenarioDialog
       v-model="messageSendScenarioOpen"
-      title="创建“会话消息发送失败”排障单"
-      width="min(640px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        这是当前优先打通的单场景竖线。创建时只锁定排查指南，不会直接给出根因；进入详情后由你显式开始三次只读取证。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="createMessageSendScenario">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统">
-            <el-input v-model="messageSendScenarioForm.system" disabled />
-          </el-form-item>
-          <el-form-item label="故障服务">
-            <el-input v-model="messageSendScenarioForm.service" disabled />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="messageSendScenarioForm.severity" style="width:100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Trace / PS 线索（可选）">
-            <el-input
-              v-model="messageSendScenarioForm.traceId"
-              maxlength="128"
-              placeholder="仅填写安全标识符"
-            />
-          </el-form-item>
-          <el-form-item label="故障发生时间（可选）">
-            <el-date-picker
-              v-model="messageSendScenarioForm.occurredAt"
-              type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ssZ"
-              placeholder="不选则取当前时间"
-              clearable
-              style="width:100%"
-            />
-            <p class="form-hint">真实 Guance 查询会围绕这个时间读取 Playbook 规定的窗口；不选择时由服务端取当前时间。</p>
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="messageSendScenarioForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="只描述用户可见现象，不粘贴日志、DQL 或凭据"
-          />
-        </el-form-item>
-        <el-form-item label="影响对象（可选）">
-          <el-input
-            v-model="messageSendScenarioForm.customerRef"
-            maxlength="500"
-            placeholder="例如：马来区域客户；不填人数或原始名单"
-          />
-        </el-form-item>
-        <div class="incident-route-preview scenario">
-          <span>已锁定排查指南</span>
-          <b>{{ MESSAGE_SEND_SCENARIO_SELECTOR }}</b>
-          <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。浏览器不能指定查询或判据。</p>
-        </div>
-        <el-checkbox v-model="messageSendScenarioForm.rehearsal" class="incident-rehearsal">
-          演练记录（仅影响事件去重，不决定证据来源）
-        </el-checkbox>
-        <p class="form-hint">证据来源由工作区的服务端绑定决定，页面不能强制选择 Guance 或回放；执行后以详情中每条证据记录的实际来源为准。</p>
-      </el-form>
-      <template #footer>
-        <el-button text @click="handleCapabilityCommand('playbooks')">查看排查指南</el-button>
-        <el-button @click="messageSendScenarioOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="messageSendScenarioLoading"
-          :disabled="!canSubmitMessageSendScenario"
-          @click="createMessageSendScenario"
-        >创建排障单</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="messageSendScenarioForm"
+      :loading="messageSendScenarioLoading"
+      :can-submit="canSubmitMessageSendScenario"
+      @open-playbooks="openPlaybooks"
+      @submit="createMessageSendScenario"
+    />
 
-    <el-dialog
+    <DeploymentTopologyScenarioDialog
       v-model="deploymentTopologyScenarioOpen"
-      title="创建部署拓扑拨测 Diagnosis"
-      width="min(620px, calc(100vw - 32px))"
-    >
-      <el-alert type="info" :closable="false" class="dialog-alert">
-        先由服务端锁定已审核启用的部署拓扑 Scenario Playbook 并创建 Diagnosis；此时不调用模型、不执行拨测，也不提前判断网络根因。
-      </el-alert>
-      <el-form label-position="top" @submit.prevent="createDeploymentTopologyScenario">
-        <div class="incident-form-grid">
-          <el-form-item label="故障系统" required>
-            <el-input
-              v-model="deploymentTopologyScenarioForm.system"
-              maxlength="128"
-              placeholder="必须与已审核 Scenario Playbook 的系统一致"
-            />
-          </el-form-item>
-          <el-form-item label="故障服务" required>
-            <el-input
-              v-model="deploymentTopologyScenarioForm.service"
-              maxlength="128"
-              placeholder="例如 csp-prm-miniapp"
-            />
-          </el-form-item>
-          <el-form-item label="严重级别" required>
-            <el-select v-model="deploymentTopologyScenarioForm.severity" style="width: 100%">
-              <el-option label="P0 · 全局阻断" value="P0" />
-              <el-option label="P1 · 核心故障" value="P1" />
-              <el-option label="P2 · 一般故障" value="P2" />
-              <el-option label="P3 · 低优先级" value="P3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Trace / PS 线索（可选）">
-            <el-input
-              v-model="deploymentTopologyScenarioForm.traceId"
-              maxlength="128"
-              placeholder="只填写安全标识符"
-            />
-          </el-form-item>
-        </div>
-        <el-form-item label="故障现象" required>
-          <el-input
-            v-model="deploymentTopologyScenarioForm.title"
-            type="textarea"
-            :rows="3"
-            maxlength="500"
-            show-word-limit
-            placeholder="描述需要通过部署拓扑拨测核查的用户可见现象"
-          />
-        </el-form-item>
-        <div class="incident-route-preview scenario">
-          <span>服务端权威选择器</span>
-          <b>{{ deploymentTopologySelector }}</b>
-          <p>浏览器不能指定 Playbook 版本、Tool Key 或查询参数；服务端找不到精确权威版本时会 fail-closed。</p>
-        </div>
-        <el-checkbox
-          v-model="deploymentTopologyScenarioForm.rehearsal"
-          class="incident-rehearsal"
-        >
-          演练记录（推荐；每次生成独立 Diagnosis）
-        </el-checkbox>
-        <p class="form-hint">关闭演练标记后，相同系统、服务与现象在五分钟窗口内会复用既有 Diagnosis。创建成功后再选择 Workspace 拓扑并执行只读拨测。</p>
-      </el-form>
-      <template #footer>
-        <el-button text @click="handleCapabilityCommand('playbooks')">查看排障规则库</el-button>
-        <el-button @click="deploymentTopologyScenarioOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="deploymentTopologyScenarioLoading"
-          :disabled="!canSubmitDeploymentTopologyScenario"
-          @click="createDeploymentTopologyScenario"
-        >创建并选择拓扑</el-button>
-      </template>
-    </el-dialog>
+      v-model:form="deploymentTopologyScenarioForm"
+      :selector="deploymentTopologySelector"
+      :loading="deploymentTopologyScenarioLoading"
+      :can-submit="canSubmitDeploymentTopologyScenario"
+      @open-playbooks="openPlaybooks"
+      @submit="createDeploymentTopologyScenario"
+    />
 
     <GuanceOnboardingDialog
       v-model="guanceOnboardingOpen"
@@ -489,167 +208,28 @@
       @completed="handleTopologyProbeCompleted"
     />
 
-    <el-dialog v-model="guanceValidationOpen" :title="TROUBLESHOOTING_UI_LABELS.guanceValidation" width="min(620px, calc(100vw - 32px))">
-      <el-alert type="warning" :closable="false" class="dialog-alert">两种验证都只读真实观测数据，不持久化原始日志，不回退 Recorded Replay。先用两步读链核对 T7，再用完整 Evidence Spine 检查成功样本对照与确定性压缩；两者都不会自动通过 T7/T8。</el-alert>
-      <el-form label-position="top">
-        <div class="validation-scope">
-          <span>Workspace 资产</span>
-          <code>{{ guanceValidationForm.system }} / {{ guanceValidationForm.service }}</code>
-        </div>
-        <el-form-item label="可安全插入 DQL 模板的搜索键">
-          <el-input v-model="guanceValidationForm.searchTerm" placeholder="例如 message_send_failed" />
-          <p class="form-hint">仅允许资源标识符字符；未提供 errorCode 时不会用自由文本故障描述自动填充。</p>
-        </el-form-item>
-        <el-form-item label="时间窗口">
-          <el-select v-model="guanceValidationForm.window" style="width: 100%">
-            <el-option
-              v-for="option in EVIDENCE_WINDOW_OPTIONS"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="故障时间（可选）">
-          <el-date-picker
-            v-model="guanceValidationForm.occurredAt"
-            type="datetime"
-            format="YYYY-MM-DD HH:mm:ss"
-            value-format="YYYY-MM-DDTHH:mm:ssZ"
-            placeholder="不选择则使用当前时间"
-            clearable
-            style="width: 100%"
-          />
-          <p class="form-hint">默认带入当前 Diagnosis 的故障时间；清空后，服务端会以点击验证时的当前时间作为查询结束点，不会改写 Diagnosis。</p>
-        </el-form-item>
-      </el-form>
-      <div v-if="validationDialogReport" class="dialog-validation-result">
-        <b>{{ guanceValidationLabel(validationDialogReport.stage) }}</b>
-        <ul>
-          <li v-for="step in validationDialogReport.steps" :key="step.signalKind"><code>{{ step.signalKind }}</code><span>{{ step.detail }}</span><time>{{ step.durationMs == null ? '未执行' : `${step.durationMs} ms` }}</time></li>
-        </ul>
-        <p>端到端 {{ validationDialogReport.totalDurationMs }} ms</p>
-        <small v-for="warning in validationDialogReport.warnings" :key="warning">{{ warning }}</small>
-      </div>
-      <div
-        v-if="validationDialogOwnerAcceptance"
-        class="dialog-validation-result owner-acceptance-result"
-        :class="ownerAcceptanceTone(validationDialogOwnerAcceptance.status)"
-      >
-        <b>{{ ownerAcceptanceStateLabel(validationDialogOwnerAcceptance.status) }}</b>
-        <p v-if="validationDialogOwnerAcceptance.acceptance">
-          {{ validationDialogOwnerAcceptance.acceptance.acceptedBy }} ·
-          {{ shortTime(validationDialogOwnerAcceptance.acceptance.acceptedAt) }}
-        </p>
-        <small>
-          当前配置指纹
-          <code>{{ shortFingerprint(validationDialogOwnerAcceptance.currentBindingFingerprint) }}</code>
-        </small>
-        <small v-for="blocker in validationDialogOwnerAcceptance.blockers" :key="blocker">
-          {{ guanceOwnerBlockerLabel(blocker) }}
-        </small>
-      </div>
-      <div v-if="guanceRecordingTargets" class="dialog-validation-result" :class="recordingBatchReady ? 'passed' : 'blocked'">
-        <b>T7 窗口批次目标 · {{ guanceRecordingTargets.executableTargetCount }} / 20</b>
-        <p>服务端冻结 {{ guanceRecordingTargets.frozenTargetCount }} 个未录制 D1 目标；只有与当前三份 binding 精确匹配的目标才计入。</p>
-        <small v-for="blocker in guanceRecordingTargets.blockers" :key="blocker">{{ blocker }}</small>
-      </div>
-      <div
-        v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner && recordingBatchReady"
-        class="t7-owner-checklist"
-      >
-        <b>T7 owner 字段核实清单</b>
-        <el-checkbox v-model="guanceAcceptanceChecklist.measurementAndFieldsVerified">
-          已核实真实 measurement 与 canonical 字段映射
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.indexVerified">
-          已核实索引、数据范围与查询资产
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.psIdJoinVerified">
-          已确认 log_search 与 trace 使用同一 PS ID
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.timestampUnitVerified">
-          已核实时间戳单位
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.timeWindowVerified">
-          已核实时间窗口语义
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.dqlLatencyReviewed">
-          已在 Guance 侧核对 DQL 延迟
-        </el-checkbox>
-        <el-checkbox v-model="guanceAcceptanceChecklist.legacyRouteConflictReviewed">
-          已复核 903001 与历史 route key 冲突
-        </el-checkbox>
-        <p class="form-hint">提交时服务端会再次运行 Guance-only 两步读链，并将验收绑定到当前查询模板、字段映射、端点和路由的 SHA-256 指纹；不保存搜索键、PS ID 原文、DQL、凭据或日志。</p>
-      </div>
-      <p
-        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
-        class="source-blocker"
-      >当前录制批次目标未达 20 个，只可在窗口外继续验证单条查询合同；服务端不会记录 owner ACCEPTED。</p>
-      <p
-        v-else-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED'"
-        class="source-blocker"
-      >只有当前 Workspace owner 可以提交 T7 验收；admin 可以执行只读验证，但不能替 owner 解锁真实 T8。</p>
-      <div v-if="validationDialogSpinePreview" class="dialog-validation-result spine-dialog-result">
-        <b>{{ guanceSpinePreviewLabel(validationDialogSpinePreview.stage) }}</b>
-        <ul>
-          <li v-for="step in validationDialogSpinePreview.steps" :key="step.signalKind">
-            <code>{{ step.signalKind }}</code>
-            <span>{{ spineStepStatusLabel(step.status) }}</span>
-            <time>{{ step.collectedAt ? shortTime(step.collectedAt).slice(11) : '未执行' }}</time>
-          </li>
-        </ul>
-        <div v-if="validationDialogSpinePreview.stage !== 'BLOCKED'" class="spine-facts">
-          <p><span>调用链骨架</span><b>{{ validationDialogSpinePreview.serviceSequence.join(' → ') }}</b></p>
-          <p><span>核心样本</span><b>{{ validationDialogSpinePreview.matchCount }} 条命中 · {{ validationDialogSpinePreview.traceEntries }} 个节点 · {{ validationDialogSpinePreview.anomalyCount }} 个异常点</b></p>
-          <p v-if="validationDialogSpinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ validationDialogSpinePreview.contrast.failureMatchCount }}/{{ validationDialogSpinePreview.contrast.failureSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.failureRate) }}） ↔ {{ validationDialogSpinePreview.contrast.successMatchCount }}/{{ validationDialogSpinePreview.contrast.successSampleCount }}（{{ percent(validationDialogSpinePreview.contrast.successRate) }}）</b></p>
-          <p v-else><span>失败 ↔ 成功对照</span><b>未取得，继续校准期</b></p>
-          <p><span>应用侧总耗时</span><b>{{ validationDialogSpinePreview.totalDurationMs }} ms</b></p>
-        </div>
-        <small v-for="warning in validationDialogSpinePreview.warnings" :key="warning">{{ warning }}</small>
-      </div>
-      <template #footer>
-        <el-button @click="guanceValidationOpen = false">关闭</el-button>
-        <el-button
-          plain
-          :loading="validationLoading"
-          :disabled="!guanceValidationForm.searchTerm"
-          @click="validateGuance"
-        >T7 两步读链</el-button>
-        <el-button
-          type="primary"
-          :loading="spinePreviewLoading"
-          :disabled="!guanceValidationForm.searchTerm"
-          @click="previewGuanceSpine"
-        >完整 Evidence Spine</el-button>
-        <el-button
-          v-if="validationDialogReport?.stage === 'CANONICAL_CHAIN_OBSERVED' && validationDialogOwnerAcceptance?.status !== 'ACCEPTED' && canAcceptGuanceOwner"
-          type="success"
-          :loading="acceptanceLoading"
-          :disabled="!canAcceptGuance"
-          @click="acceptGuance"
-        >确认当前绑定 T7 验收</el-button>
-        <el-button
-          v-if="validationDialogSpinePreview && validationDialogSpinePreview.stage !== 'BLOCKED' && validationCanOpenCurrentEvaluationLedger"
-          type="success"
-          plain
-          @click="openEvaluationLedger"
-        >进入{{ TROUBLESHOOTING_UI_LABELS.evaluation }}</el-button>
-      </template>
-    </el-dialog>
-
-    <EvaluationSampleLedgerDialog
-      v-model="evaluationLedgerOpen"
-      :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
-      :current-diagnosis-status="current?.diagnosis.status || null"
-      :capture-context="evaluationCaptureContext"
-      :replay-capture-context="replayEvaluationCaptureContextValue"
-      :capture-enabled="canCaptureEvaluationSample"
-      :capture-disabled-reason="evaluationCaptureDisabledReason"
-      :replay-capture-enabled="canCaptureReplayEvaluationSample"
-      :replay-capture-disabled-reason="replayCaptureDisabledReason"
-      @open-diagnosis="openDiagnosisFromLedger"
+    <GuanceValidationDialog
+      v-model="guanceValidationOpen"
+      v-model:form="guanceValidationForm"
+      v-model:checklist="guanceAcceptanceChecklist"
+      :report="validationDialogReport"
+      :spine-preview="validationDialogSpinePreview"
+      :owner-acceptance="validationDialogOwnerAcceptance"
+      :recording-targets="guanceRecordingTargets"
+      :recording-batch-ready="recordingBatchReady"
+      :can-accept-owner="canAcceptGuanceOwner"
+      :can-accept="canAcceptGuance"
+      :can-open-evaluation="validationCanOpenCurrentEvaluationLedger"
+      :validation-loading="validationLoading"
+      :spine-preview-loading="spinePreviewLoading"
+      :acceptance-loading="acceptanceLoading"
+      @validate="validateGuance"
+      @preview-spine="previewGuanceSpine"
+      @accept="acceptGuance"
+      @open-evaluation="openEvaluationLedger"
     />
+
+    <SynthesisPreviewDialog v-model="synthesisPreviewOpen" />
 
     <TransferDialog
       v-model="transferOpen"
@@ -691,24 +271,14 @@ import {
   wikiApi,
   type DiagnosisSummary,
   type EvidenceChainPreviewRequest,
-  type GuanceEvidenceAcceptanceChecklist,
   type GuanceEvidenceAcceptanceView,
-  type GuanceEvidenceSpinePreview,
-  type GuanceEvidenceValidationReport,
-  type GuanceSpinePreviewStepStatus,
   type HistoricalCaseKnowledgeImportResult,
   type RecommendedAction,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
-import {
-  diagnosisEvidenceSourcePresentation,
-  guanceOwnerBlockerLabel,
-  guanceSpinePreviewLabel,
-  guanceValidationLabel,
-  investigationModeLabel,
-} from './formalProjection'
+import { diagnosisEvidenceSourcePresentation } from './formalProjection'
 import {
   buildFormalIncidentReport,
   EMPTY_FORMAL_INCIDENT,
@@ -725,14 +295,23 @@ import {
   EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
   type DeploymentTopologyScenarioForm,
 } from './deploymentTopologyScenario'
-import { EVIDENCE_SYNTHESIS_FOCUS, EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
-import { normalizeWorkbenchOverlayCapability } from './workbenchCapabilityMenu'
-import EvaluationSampleLedgerDialog from './EvaluationSampleLedgerDialog.vue'
+import { isEvidenceSynthesisFocus } from './synthesisPreview'
+import {
+  evidenceCatalogLocation,
+  normalizeWorkbenchOverlayCapability,
+} from './workbenchCapabilityMenu'
+import EvaluationSampleLedgerWorkspace from './EvaluationSampleLedgerWorkspace.vue'
+import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import GuanceOnboardingDialog from './GuanceOnboardingDialog.vue'
+import GuanceValidationDialog from './GuanceValidationDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
+import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
-import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
+import CaseKnowledgeImportWorkspace from './CaseKnowledgeImportWorkspace.vue'
+import IncidentReportDialog from './IncidentReportDialog.vue'
+import MessageSendScenarioDialog from './MessageSendScenarioDialog.vue'
+import DeploymentTopologyScenarioDialog from './DeploymentTopologyScenarioDialog.vue'
 import TransferDialog from './TransferDialog.vue'
 import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
@@ -743,10 +322,10 @@ import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
-  normalizeEvidenceChainPreviewRequest,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
 } from './guanceOnboarding'
+import { useGuanceValidationDialog } from './useGuanceValidationDialog'
 import {
   EMPTY_MESSAGE_SEND_SCENARIO,
   MESSAGE_SEND_SCENARIO_KEY,
@@ -759,18 +338,11 @@ import {
 } from './messageSendScenario'
 import {
   DEFAULT_CASE_KNOWLEDGE_IMPORT_LIMIT,
-  MAX_CASE_KNOWLEDGE_IMPORT_LIMIT,
   caseKnowledgeImportCanSubmit,
-  caseKnowledgeImportSummary,
   caseKnowledgeVectorMessage,
 } from './caseKnowledgeImport'
 import {
   TROUBLESHOOTING_UI_LABELS,
-  WORKBENCH_DIAGNOSIS_STATUSES as STATUSES,
-  WORKBENCH_INVESTIGATION_MODES,
-  diagnosisStatusLabel as statusLabel,
-  diagnosisStatusTone as statusTone,
-  formatWorkbenchTime as shortTime,
   isDiagnosisViewMode,
   resolveWorkbenchView,
   shouldShowQueuePanel,
@@ -805,23 +377,14 @@ const messageSendEvidenceLoading = ref(false)
 const caseKnowledgeImportLoading = ref(false)
 const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
-const validationLoading = ref(false)
-const spinePreviewLoading = ref(false)
-const acceptanceLoading = ref(false)
-const validationDialogReport = ref<GuanceEvidenceValidationReport | null>(null)
-const validationDialogSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
-const validationDialogOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
-const guanceValidationOrigin = ref<GuanceValidationOrigin | null>(null)
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
 const messageSendScenarioOpen = ref(false)
-const caseKnowledgeImportOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
 const guanceOnboardingOpen = ref(false)
 const deploymentTopologyOpen = ref(false)
-const guanceValidationOpen = ref(false)
-const evaluationLedgerOpen = ref(false)
+const synthesisPreviewOpen = ref(false)
 const transferOpen = ref(false)
 const approveOpen = ref(false)
 const outcomeOpen = ref(false)
@@ -848,7 +411,20 @@ const deploymentTopologyScenarioForm = reactive<DeploymentTopologyScenarioForm>(
   ...EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO,
 })
 
-const guanceValidationForm = reactive({ system: '', service: '', searchTerm: '', window: '-15m', occurredAt: null as string | null })
+const {
+  open: guanceValidationOpen,
+  validationLoading,
+  spinePreviewLoading,
+  acceptanceLoading,
+  report: validationDialogReport,
+  spinePreview: validationDialogSpinePreview,
+  ownerAcceptance: validationDialogOwnerAcceptance,
+  origin: guanceValidationOrigin,
+  form: guanceValidationForm,
+  checklist: guanceAcceptanceChecklist,
+  begin: beginGuanceValidationSession,
+  capture: captureValidationSession,
+} = useGuanceValidationDialog()
 const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() => {
   return currentDiagnosisEvidenceLookup.value || {
     system: 'CSDP',
@@ -863,18 +439,6 @@ const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresent
 ))
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
-const EMPTY_T7_CHECKLIST: GuanceEvidenceAcceptanceChecklist = {
-  measurementAndFieldsVerified: false,
-  indexVerified: false,
-  psIdJoinVerified: false,
-  timestampUnitVerified: false,
-  timeWindowVerified: false,
-  dqlLatencyReviewed: false,
-  legacyRouteConflictReviewed: false,
-}
-const guanceAcceptanceChecklist = reactive<GuanceEvidenceAcceptanceChecklist>({
-  ...EMPTY_T7_CHECKLIST,
-})
 const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentReportForm))
 const incidentRoutePreview = computed(() => formalIncidentRoutePreview(incidentReportForm))
 const canSubmitIncidentReport = computed(() => canOperateTroubleshooting.value
@@ -906,6 +470,12 @@ const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && recordingBatchReady.value
   && validationDialogReport.value?.stage === 'CANONICAL_CHAIN_OBSERVED'
   && Object.values(guanceAcceptanceChecklist).every(Boolean))
+const evaluationWorkspaceActive = computed(() => canManageTroubleshooting.value
+  && normalizeWorkbenchOverlayCapability(route.query.capability) === 'ledger')
+const caseKnowledgeWorkspaceActive = computed(() => canManageTroubleshooting.value
+  && normalizeWorkbenchOverlayCapability(route.query.capability) === 'case-knowledge')
+const capabilityWorkspaceActive = computed(() => evaluationWorkspaceActive.value
+  || caseKnowledgeWorkspaceActive.value)
 
 async function switchWorkbenchView(mode: WorkbenchViewSwitchMode) {
   viewMode.value = mode
@@ -934,21 +504,24 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
     void router.push('/troubleshooting/sops')
   } else if (command === 'evidence-catalog') {
     void router.push('/troubleshooting/evidence-catalog')
-  } else if (command === 'synthesis') {
-    openSynthesisPreview()
+  } else if (command === 'observability-assets') {
+    void router.push('/troubleshooting/observability-assets')
   } else if (command === 'guance') {
     openGuanceOnboarding()
   } else if (command === 'ledger') {
-    openEvaluationLedger()
+    void prepareEvaluationWorkspace()
   } else if (command === 'case-knowledge') {
-    void openCaseKnowledgeImport()
+    void prepareCaseKnowledgeWorkspace()
   }
 }
 
-async function openCaseKnowledgeImport() {
+function openPlaybooks() {
+  handleCapabilityCommand('playbooks')
+}
+
+async function prepareCaseKnowledgeWorkspace(resetResult = true) {
   if (!canManageTroubleshooting.value) return
-  caseKnowledgeImportOpen.value = true
-  caseKnowledgeImportResult.value = null
+  if (resetResult) caseKnowledgeImportResult.value = null
   caseKnowledgeBasesLoading.value = true
   try {
     const response = await wikiApi.listKBs()
@@ -1003,25 +576,13 @@ function openGuanceOnboarding() {
   guanceOnboardingOpen.value = true
 }
 
-function ownerAcceptanceStateLabel(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return '当前绑定已验收'
-  if (value === 'STALE') return '配置变化，验收已过期'
-  if (value === 'NOT_ACCEPTED') return '尚未完成 owner 验收'
-  return '当前绑定不可验收'
+function openDataSourceValidation() {
+  const query = { ...route.query }
+  delete query.capability
+  const returnTo = router.resolve({ path: '/troubleshooting', query }).fullPath
+  void router.push(evidenceCatalogLocation('acceptance', returnTo))
 }
-function ownerAcceptanceTone(value: GuanceEvidenceAcceptanceView['status']) {
-  if (value === 'ACCEPTED') return 'passed'
-  return value === 'STALE' ? 'blocked' : 'pending'
-}
-function shortFingerprint(value?: string | null) {
-  return value ? `${value.slice(0, 12)}…` : '不可用'
-}
-function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
-  if (value === 'CANONICAL_RESULT_OBSERVED') return '规范化证据已观测'
-  if (value === 'MISSING') return '证据缺失 / 来源不可用'
-  return '未执行'
-}
-function percent(value: number) { return `${Math.round(Number(value) * 100)}%` }
+
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
 function resetIncidentReportForm() {
@@ -1210,16 +771,7 @@ function openGuanceValidationDialog(
   origin: GuanceValidationOrigin,
 ) {
   store.nextGuanceValidationSessionVersion()
-  Object.assign(guanceValidationForm, normalizeEvidenceChainPreviewRequest(request))
-  validationDialogReport.value = null
-  validationDialogSpinePreview.value = null
-  validationDialogOwnerAcceptance.value = ownerAcceptance
-  guanceValidationOrigin.value = origin
-  validationLoading.value = false
-  spinePreviewLoading.value = false
-  acceptanceLoading.value = false
-  Object.assign(guanceAcceptanceChecklist, EMPTY_T7_CHECKLIST)
-  guanceValidationOpen.value = true
+  beginGuanceValidationSession(request, ownerAcceptance, origin)
 }
 
 function startGuanceValidationFromOnboarding(payload: GuanceOnboardingValidationPayload) {
@@ -1236,23 +788,37 @@ function isCurrentDiagnosisValidationRequest(request: EvidenceChainPreviewReques
 }
 
 function captureGuanceValidationSession() {
-  return {
-    sessionVersion: store.getSelectionVersion(),
-    origin: guanceValidationOrigin.value,
-    request: normalizeEvidenceChainPreviewRequest(guanceValidationForm),
-  }
+  return captureValidationSession(store.getSelectionVersion())
 }
 
 async function openEvaluationLedger() {
   if (!canManageTroubleshooting.value) return
-  const diagnosisId = current.value?.diagnosis.diagnosisId
-  if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
-  evaluationLedgerOpen.value = true
+  const query = { ...route.query, capability: 'ledger' }
+  await router.push({ path: '/troubleshooting', query })
 }
 
-async function openDiagnosisFromLedger(diagnosisId: string) {
-  evaluationLedgerOpen.value = false
-  await store.selectDiagnosis(diagnosisId)
+async function prepareEvaluationWorkspace() {
+  const diagnosisId = current.value?.diagnosis.diagnosisId
+  if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
+}
+
+function closeCapabilityWorkspace() {
+  void router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
+}
+
+async function openDiagnosisFromEvaluation(diagnosisId: string) {
+  const query = workbenchQueryWithoutCapability()
+  query.view = 'detail'
+  query.diagnosisId = diagnosisId
+  await router.push({ path: '/troubleshooting', query })
+  await store.selectDiagnosis(diagnosisId, false, 'DETAIL')
+}
+
+function workbenchQueryWithoutCapability() {
+  const query = { ...route.query }
+  delete query.capability
+  delete query.focus
+  return query
 }
 
 async function validateGuance() {
@@ -1265,9 +831,9 @@ async function validateGuance() {
     if (response) {
       validationDialogReport.value = response.data
       if (response.data.stage === 'CANONICAL_CHAIN_OBSERVED') {
-        ElMessage.success('单次规范化读链已观测；待 T7 owner 字段验收，fixtureMode 保持开启')
+        ElMessage.success('日志与调用链验证通过；仍需负责人确认，演示数据状态保持不变')
       } else {
-        ElMessage.warning('真源验证被就绪门或规范化合同阻断')
+        ElMessage.warning('真源验证未通过：来源未就绪或返回数据格式校验未通过')
       }
     }
   } finally {
@@ -1288,7 +854,7 @@ async function acceptGuance() {
     const response = await store.acceptGuanceEvidence(request, session, version)
     if (response) {
       validationDialogOwnerAcceptance.value = response.data
-      ElMessage.success('当前 Guance 绑定已完成 T7 owner 验收；配置变化会自动使该记录过期')
+      ElMessage.success('当前数据源配置已由负责人确认；配置变化后该记录会自动失效')
     }
   } finally {
     if (store.isCurrentGuanceValidationGeneration(version)) acceptanceLoading.value = false
@@ -1305,11 +871,11 @@ async function previewGuanceSpine() {
     if (response) {
       validationDialogSpinePreview.value = response.data
       if (response.data.stage === 'FULL_SPINE_OBSERVED') {
-        ElMessage.success('真实三段 Evidence Spine 已观测；待 owner 完成 T7/T8 验收')
+        ElMessage.success('完整取证流程已验证；仍需负责人确认并积累真实样本')
       } else if (response.data.stage === 'CORE_CHAIN_OBSERVED') {
         ElMessage.warning('核心链路可压缩，但成功样本对照缺失，继续校准期')
       } else {
-        ElMessage.warning('真实 Evidence Spine 被就绪门或规范化合同阻断')
+        ElMessage.warning('完整取证流程未通过：数据源未就绪或返回数据格式校验未通过')
       }
     }
   } finally {
@@ -1318,11 +884,9 @@ async function previewGuanceSpine() {
 }
 
 
-function openSynthesisPreview() {
-  router.push({
-    path: '/troubleshooting/sops',
-    query: { focus: EVIDENCE_SYNTHESIS_FOCUS },
-  })
+function openHistoricalReplay() {
+  if (!canManageTroubleshooting.value) return
+  synthesisPreviewOpen.value = true
 }
 function canApprove(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'PENDING' && canTransfer.value }
 function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
@@ -1353,57 +917,44 @@ watch(
   { immediate: true },
 )
 watch(
-  [guanceOnboardingOpen, evaluationLedgerOpen, caseKnowledgeImportOpen],
-  ([guanceOpen, ledgerOpen, caseKnowledgeOpen]) => {
-    const command = normalizeWorkbenchOverlayCapability(route.query.capability)
-    if (!command) return
-    const stillOpen = command === 'guance'
-      ? guanceOpen
-      : command === 'ledger'
-        ? ledgerOpen
-        : caseKnowledgeOpen
-    if (stillOpen) return
+  () => route.query.focus,
+  focus => {
+    if (!isEvidenceSynthesisFocus(focus) || !canManageTroubleshooting.value) return
+    synthesisPreviewOpen.value = true
+  },
+  { immediate: true },
+)
+watch(synthesisPreviewOpen, open => {
+  if (open || !isEvidenceSynthesisFocus(route.query.focus)) return
+  const query = { ...route.query }
+  delete query.focus
+  void router.replace({ path: '/troubleshooting', query })
+})
+watch(guanceOnboardingOpen, open => {
+  const command = normalizeWorkbenchOverlayCapability(route.query.capability)
+  if (command !== 'guance' || open) return
     const query = { ...route.query }
     delete query.capability
     void router.replace({ path: '/troubleshooting', query })
-  },
-)
+})
 onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 </script>
 
 <style scoped>
-.formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:264px minmax(0,1fr); height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
-.formal-workbench.traditional-list-mode { display:block; overflow-y:auto; }
-.formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); }
-.queue-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:var(--mc-bg-elevated); border-right:1px solid var(--line); }
-.queue-head { display:flex; align-items:center; justify-content:space-between; padding:18px 16px 14px; border-bottom:1px solid var(--line); }
-.queue-head-actions { display:flex; align-items:flex-end; flex-direction:column; }
+.formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:clamp(236px,18vw,320px) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
+.formal-workbench.traditional-list-mode { display:block; width:100%; overflow-y:auto; }
+.formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); width:100%; }
+.formal-workbench.capability-workspace-mode { display:block; width:100%; overflow:hidden; }
 .eyebrow { display:block; color:var(--blue); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
-.queue-head h2 { margin:4px 0 0; font-size:var(--mc-text-base); letter-spacing:-.02em; }
-.queue-tools { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
-.queue-tools .el-select { flex:1; min-width:0; }
-.queue-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
-.queue-action-row>.el-button,.queue-action-row>.el-dropdown { flex:1 1 92px; margin-left:0; }
-.queue-action-row>.el-dropdown .el-button { width:100%; margin-left:0; }
-.queue-list { flex:1; min-height:0; overflow-y:auto; }
-.queue-item { width:100%; padding:13px 14px 12px; border:0; border-bottom:1px solid var(--mc-border-light); border-left:3px solid transparent; background:var(--mc-bg-elevated); color:inherit; font:inherit; text-align:left; cursor:pointer; }
-.queue-item:hover { background:var(--mc-bg-elevated); } .queue-item.active { border-left-color:var(--blue); background:var(--mc-sidebar-active); }
-.queue-item-top,.queue-item-bottom { display:flex; align-items:center; gap:8px; } .queue-item-top code { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; }
-.queue-item strong { display:block; margin-top:5px; font-size:var(--mc-text-sm); } .queue-item-bottom { margin-top:7px; color:var(--muted); font-size:var(--mc-text-xs); }
-.queue-item-bottom time { margin-left:auto; font-family:var(--mc-mono,monospace); } .rehearsal { padding:1px 6px; border-radius:var(--mc-radius-sm); color:var(--mc-status-purple-text); background:var(--mc-status-info-bg); font-size:var(--mc-text-xs); }
-.active { color:var(--blue)!important; } .success { color:var(--green)!important; } .warning { color:var(--amber)!important; } .muted { color:var(--mc-text-tertiary)!important; }
-.queue-empty { padding:26px 17px; color:var(--muted); font-size:var(--mc-text-sm); line-height:1.65; } .queue-empty b { color:var(--ink); } .queue-empty p { margin:5px 0 10px; } .queue-empty code { color:var(--blue); font-size:var(--mc-text-xs); } .queue-empty .el-button { width:100%; }
-.queue-foot { display:flex; align-items:center; justify-content:space-between; padding:10px 13px; border-top:1px solid var(--line); color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
-.queue-foot button { border:0; background:none; color:var(--blue); font:inherit; cursor:pointer; }
-.work-area { min-width:0; overflow-y:auto; padding:20px clamp(20px,3vw,40px) 40px; }
+.work-area { width:100%; min-width:0; overflow-y:auto; padding:20px clamp(20px,3vw,40px) 40px; }
 .detail-empty { display:grid; place-items:center; align-content:center; min-height:70vh; color:var(--muted); text-align:center; }
 .empty-mark { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); color:var(--blue); background:var(--mc-bg-elevated); font-weight:800; box-shadow:0 10px 30px var(--mc-shadow-soft); }
 .detail-empty h1 { margin:16px 0 4px; color:var(--ink); font-size:var(--mc-text-lg); } .detail-empty p { margin:0; font-size:var(--mc-text-sm); } .detail-empty .el-button { margin-top:16px; }
-.work-head { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; max-width:1320px; margin:0 auto 20px; }
+.work-head { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; width:100%; margin:0 0 20px; }
 .work-head h1 { margin:5px 0 0; font-size:var(--mc-text-xl); letter-spacing:-.025em; } .work-head-actions { display:flex; gap:8px; }
-.fixture-banner { display:flex; align-items:center; gap:8px; max-width:1320px; margin:0 auto 16px; padding:9px 13px; border:1px solid var(--mc-warning); border-radius:var(--mc-radius-sm); color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); font-size:var(--mc-text-xs); }
+.fixture-banner { display:flex; align-items:center; gap:8px; width:100%; margin:0 0 16px; padding:9px 13px; border:1px solid var(--mc-warning); border-radius:var(--mc-radius-sm); color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); font-size:var(--mc-text-xs); }
 .fixture-banner span:last-child { color:var(--mc-status-warning-text); } .fixture-dot { width:7px; height:7px; border-radius:50%; background:var(--mc-warning); box-shadow:0 0 0 4px rgba(245,158,11,0.13); }
-.business-card,.developer-fold { max-width:1320px; margin:0 auto; border:1px solid var(--line); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:0 8px 28px var(--mc-shadow-soft); }
+.business-card,.developer-fold { width:100%; max-width:none; margin-right:0; margin-left:0; border:1px solid var(--line); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:0 8px 28px var(--mc-shadow-soft); }
 .business-card { padding:clamp(20px,3vw,36px); } .verdict-head { padding-bottom:16px; }
 .badge-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; } .conclusion-badge,.status-badge,.confidence-badge { padding:4px 9px; border:1px solid var(--line); border-radius:var(--mc-radius-lg); font-size:var(--mc-text-xs); font-weight:700; }
 .conclusion-badge.located { color:var(--mc-status-info-text); border-color:var(--mc-border); background:var(--mc-status-info-bg); } .conclusion-badge.excluded { color:var(--mc-text-secondary); background:var(--mc-bg-muted); }
@@ -1432,7 +983,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .contrast-row>span { color:var(--muted); } .contrast-row em { color:var(--mc-text-tertiary); font-style:normal; } .contrast-row .baseline { color:var(--green); } .contrast-row small { flex-basis:100%; color:var(--muted); } .contrast-row.unavailable { color:var(--amber); background:var(--mc-status-warning-bg); }
 .draft-state { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-purple-text); background:var(--mc-status-purple-bg); font-size:var(--mc-text-xs); font-weight:750; } .draft-summary ol { margin:14px 0 9px; padding-left:20px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.65; } .draft-summary>small { color:var(--muted); font-size:var(--mc-text-xs); }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); } .lifecycle-bar>span { margin-left:5px; color:var(--muted); font-size:var(--mc-text-xs); }
-.topology-evidence-card { max-width:1320px; margin:20px auto 0; padding:22px 24px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-status-success-bg); box-shadow:0 8px 28px var(--mc-shadow-soft); }
+.topology-evidence-card { width:100%; max-width:none; margin:20px 0 0; padding:22px 24px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-status-success-bg); box-shadow:0 8px 28px var(--mc-shadow-soft); }
 .topology-evidence-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .topology-evidence-head h3 { margin:5px 0; font-size:var(--mc-text-lg); }
 .topology-evidence-head p { margin:0; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.65; }
@@ -1483,28 +1034,8 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 .acceptance-ladder b,.acceptance-ladder small { display:block; } .acceptance-ladder b { font-size:var(--mc-text-xs); } .acceptance-ladder small { margin-top:3px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.45; }
 .acceptance-ladder strong { font-size:var(--mc-text-xs); white-space:nowrap; } .next-source-action { margin:8px 0 0; padding:8px; border-radius:6px; color:var(--mc-text-secondary); background:var(--mc-status-info-bg); font-size:var(--mc-text-xs); line-height:1.5; } .next-source-action b { display:block; margin-bottom:2px; color:var(--mc-status-info-text); }
 .signal-readiness-list { margin:12px 0; padding:0; list-style:none; } .signal-readiness-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:7px 0; border-top:1px solid var(--mc-border-light); } .signal-readiness-list code { font-size:var(--mc-text-xs); } .signal-readiness-list span { font-size:var(--mc-text-xs); } .signal-readiness-list small { grid-column:1/-1; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); word-break:break-all; }
-.source-blocker { margin:7px 0; padding:7px 8px; border-radius:var(--mc-radius-xs); color:var(--mc-status-error-text); background:var(--mc-status-error-bg); font-size:var(--mc-text-xs); line-height:1.5; } .gate-note { display:block; margin-top:9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.6; }
-.validation-result { margin:9px 0; padding:9px; border-radius:var(--mc-radius-xs); font-size:var(--mc-text-xs); } .validation-result.passed { color:var(--mc-status-success-text); background:var(--mc-status-success-bg); } .validation-result.blocked { color:var(--mc-warning); background:var(--mc-status-warning-bg); } .validation-result.pending { color:var(--mc-status-info-text); background:var(--mc-status-info-bg); } .validation-result b,.validation-result span,.validation-result small { display:block; } .validation-result span { margin-top:4px; } .validation-result small { margin-top:5px; color:var(--muted); line-height:1.45; }
-.owner-acceptance-result code { font-size:var(--mc-text-xs); overflow-wrap:anywhere; } .owner-acceptance-result.passed { border-color:var(--mc-success); background:var(--mc-status-success-bg); } .owner-acceptance-result.blocked { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); } .owner-acceptance-result.pending { border-color:var(--mc-border); background:var(--mc-status-info-bg); }
-.spine-preview-result span { overflow-wrap:anywhere; line-height:1.45; }
-.validation-scope { margin-bottom:14px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .validation-scope span,.validation-scope code { display:block; } .validation-scope span { color:var(--muted); font-size:var(--mc-text-xs); } .validation-scope code { margin-top:5px; color:var(--blue); font-size:var(--mc-text-xs); }
-.incident-form-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 14px; }
-.incident-route-preview { margin:4px 0 12px; padding:12px 13px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
-.incident-route-preview>span { display:block; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
-.incident-route-preview>b { display:block; margin-top:5px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); }
-.incident-route-preview>p { margin:5px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.65; }
-.incident-route-preview.bounded_discovery { border-color:var(--mc-warning); background:var(--mc-status-warning-bg); }
-.incident-route-preview.bounded_discovery>b { color:var(--amber); }
-.incident-rehearsal { margin-top:2px; }
-.dialog-validation-result { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .dialog-validation-result>b { font-size:var(--mc-text-sm); } .dialog-validation-result ul { margin:10px 0; padding:0; list-style:none; } .dialog-validation-result li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; padding:5px 0; color:var(--muted); font-size:var(--mc-text-xs); } .dialog-validation-result li code { color:var(--blue); } .dialog-validation-result li time { color:var(--mc-text-secondary); font-family:var(--mc-mono,monospace); font-size:var(--mc-text-xs); white-space:nowrap; } .dialog-validation-result>p { margin:8px 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; } .dialog-validation-result>small { display:block; color:var(--amber); font-size:var(--mc-text-xs); line-height:1.5; }
-.case-knowledge-result { margin-top:14px; padding:13px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); } .case-knowledge-result>b { font-size:var(--mc-text-sm); } .case-knowledge-result>p { margin:8px 0; font-size:var(--mc-text-xs); line-height:1.6; } .case-knowledge-result>p.success { color:var(--green); } .case-knowledge-result>p.warning { color:var(--amber); } .case-knowledge-result>small { display:block; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.6; }
-.t7-owner-checklist { display:grid; gap:7px; margin-top:12px; padding:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); } .t7-owner-checklist>b { margin-bottom:2px; color:var(--mc-status-info-text); font-size:var(--mc-text-sm); } .t7-owner-checklist .el-checkbox { height:auto; margin-right:0; white-space:normal; } .t7-owner-checklist .form-hint { margin-top:5px; line-height:1.6; }
-.spine-facts { display:grid; gap:7px; margin:10px 0; padding:10px; border-radius:var(--mc-radius-xs); background:var(--mc-status-info-bg); }
-.spine-facts p { display:grid; grid-template-columns:110px minmax(0,1fr); gap:10px; margin:0; font-size:var(--mc-text-xs); line-height:1.5; }
-.spine-facts span { color:var(--muted); }
-.spine-facts b { color:var(--mc-text-secondary); overflow-wrap:anywhere; }
 .action-card { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:var(--mc-radius-xs); } .action-card.write { border-color:var(--mc-border); } .action-card>div { display:flex; justify-content:space-between; gap:8px; } .action-card code,.action-card>div span { color:var(--muted); font-size:var(--mc-text-xs); }
-.action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; } .dialog-alert { margin-bottom:14px; } .form-hint { margin:4px 0 0; color:var(--muted); font-size:var(--mc-text-xs); }
-@media(max-width:1100px){.formal-workbench{grid-template-columns:220px minmax(0,1fr)}.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.queue-panel{max-height:320px;border-right:0;border-bottom:1px solid var(--line)}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}.incident-form-grid{grid-template-columns:1fr}.spine-facts p{grid-template-columns:1fr;gap:2px}}
+.action-card>b { display:block; margin-top:7px; font-size:var(--mc-text-xs); } .action-card>p { margin:4px 0 9px; color:var(--muted); font-size:var(--mc-text-xs); line-height:1.5; }
+@media(max-width:1100px){.verdict-head,.developer-body{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--line);border-left:0}.convergence-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.formal-workbench{display:block;height:auto;min-height:100%;overflow:visible}.work-area{overflow:visible;padding:20px 14px 40px}.work-head,.topology-evidence-head{align-items:flex-start;flex-direction:column}.topology-evidence-result{grid-template-columns:1fr}.topology-evidence-result dl{grid-template-columns:repeat(2,1fr)}.timing-strip{grid-template-columns:1fr;gap:12px}.timing-strip i{display:none}.evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}.tone-label{grid-column:3;justify-self:start}}
 </style>

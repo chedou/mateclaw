@@ -148,6 +148,9 @@ mateclaw:
       agent-id: ${MATECLAW_TROUBLESHOOTING_AGENT_ID:0}
       max-iterations: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_ITERATIONS:6}
       max-evidence-requests: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_EVIDENCE_REQUESTS:6}
+      # Must finish before the browser's 30s request timeout. On expiry the
+      # server stops the graph wait and persists an abstained manual-review case.
+      triage-timeout: ${MATECLAW_TROUBLESHOOTING_AGENT_TRIAGE_TIMEOUT:20s}
       # Separate from the normal conversation window because this invocation
       # deliberately bypasses ambient conversation context.
       max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}

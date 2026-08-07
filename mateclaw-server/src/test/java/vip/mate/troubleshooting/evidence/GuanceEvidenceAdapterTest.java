@@ -1178,6 +1178,71 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void distinguishesAValidHttpResponseWithoutCanonicalEvidenceFromTransportFailure() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "match_count"],
+                    "values": [[1753434723000, 0]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L", "失败日志检索", "L::logs:(match_count)", Map.of(), 1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("log_search", binding), objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest("EV-NO-EVIDENCE", "log_search", "search", Map.of(), "-24h", true),
+                incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.source()).isEqualTo("guance:no_canonical_evidence");
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void treatsAnHttpSuccessWithABusinessFailureAsUnavailable() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 400,
+                  "success": false,
+                  "message": "query rejected"
+                }
+                """);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.source()).isEqualTo("guance:unavailable");
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
+    void treatsAnHttpSuccessWithoutTheRequiredDataArrayAsUnavailable() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {}
+                }
+                """);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.source()).isEqualTo("guance:unavailable");
+        assertThat(result.observed()).isEmpty();
+    }
+
+    @Test
     void rejectsUnsafeTemplateValuesWithoutSendingARequest() {
         CapturingTransport transport = new CapturingTransport(200, "{}");
         GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(

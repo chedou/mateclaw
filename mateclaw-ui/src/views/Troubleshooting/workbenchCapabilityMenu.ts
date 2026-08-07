@@ -2,6 +2,7 @@ import {
   TROUBLESHOOTING_UI_LABELS,
   type WorkbenchCapabilityCommand,
 } from './workbenchView'
+import { EVIDENCE_SYNTHESIS_FOCUS } from './synthesisPreview'
 
 export type EvidenceCatalogTab = 'systems' | 'assets' | 'contracts' | 'routes' | 'acceptance'
 export type WorkbenchOverlayCapability = 'guance' | 'ledger' | 'case-knowledge'
@@ -12,7 +13,7 @@ export type WorkbenchCapabilityNavItem = {
 }
 
 export type WorkbenchCapabilityNavGroup = {
-  key: 'configuration' | 'validation' | 'learning'
+  key: 'configuration' | 'learning'
   label: string
   items: ReadonlyArray<WorkbenchCapabilityNavItem>
 }
@@ -28,26 +29,12 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
     label: '配置与接入',
     items: [
       {
+        command: 'observability-assets',
+        label: TROUBLESHOOTING_UI_LABELS.observabilityAssets,
+      },
+      {
         command: 'playbooks',
         label: TROUBLESHOOTING_UI_LABELS.rules,
-      },
-      {
-        command: 'evidence-catalog',
-        label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog,
-      },
-      {
-        command: 'guance',
-        label: TROUBLESHOOTING_UI_LABELS.guanceOnboarding,
-      },
-    ],
-  },
-  {
-    key: 'validation',
-    label: '验证与演练',
-    items: [
-      {
-        command: 'synthesis',
-        label: TROUBLESHOOTING_UI_LABELS.noCodePreview,
       },
     ],
   },
@@ -67,32 +54,19 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
   },
 ]
 
-export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestination> = [
-  {
-    tab: 'systems',
-    label: '系统与模块',
-  },
-  {
-    tab: 'assets',
-    label: '系统观测资产',
-  },
-  {
-    tab: 'contracts',
-    label: '查询合同',
-  },
-  {
-    tab: 'routes',
-    label: '路由与绑定',
-  },
-  {
-    tab: 'acceptance',
-    label: '联调与验收',
-  },
-]
+/**
+ * 兼容旧深链 `?tab=`。新页面已收敛为单工作区，侧栏不再展示子入口。
+ * tab 仅用于把旧书签映射到页内焦点（资产 / 路由 / 联调）。
+ */
+export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestination> = []
 
-const EVIDENCE_CATALOG_TABS = new Set<EvidenceCatalogTab>(
-  EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab),
-)
+const EVIDENCE_CATALOG_TABS = new Set<EvidenceCatalogTab>([
+  'systems',
+  'assets',
+  'contracts',
+  'routes',
+  'acceptance',
+])
 const WORKBENCH_OVERLAY_CAPABILITIES = new Set<WorkbenchOverlayCapability>([
   'guance',
   'ledger',
@@ -148,15 +122,43 @@ export function workbenchOverlayLocation(
   }
 }
 
+export function legacyEvidenceSynthesisLocation(
+  preferredReturnPath?: unknown,
+): { path: string; query: Record<string, string> } {
+  const location = workbenchOverlayLocation('ledger', preferredReturnPath)
+  return {
+    ...location,
+    query: {
+      ...location.query,
+      focus: EVIDENCE_SYNTHESIS_FOCUS,
+    },
+  }
+}
+
 export function evidenceCatalogLocation(
-  tab: EvidenceCatalogTab,
+  tab: EvidenceCatalogTab = 'systems',
   currentFullPath?: string,
 ): { path: string; query: Record<string, string> } {
   const returnTo = safeTroubleshootingReturnPath(currentFullPath)
   return {
     path: '/troubleshooting/evidence-catalog',
     query: {
-      tab,
+      ...(tab !== 'systems' ? { tab } : {}),
+      ...(returnTo ? { returnTo } : {}),
+    },
+  }
+}
+
+export function observabilityAssetsLocation(
+  scope?: { system?: string; service?: string },
+  currentFullPath?: string,
+): { path: string; query: Record<string, string> } {
+  const returnTo = safeTroubleshootingReturnPath(currentFullPath)
+  return {
+    path: '/troubleshooting/observability-assets',
+    query: {
+      ...(scope?.system ? { system: scope.system } : {}),
+      ...(scope?.service ? { service: scope.service } : {}),
       ...(returnTo ? { returnTo } : {}),
     },
   }

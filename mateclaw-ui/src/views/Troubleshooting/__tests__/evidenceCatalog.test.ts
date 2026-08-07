@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import type { EvidenceQueryCatalog, EvidenceQueryContract } from '@/api'
+import type { EvidenceQueryCatalog, EvidenceQueryContract, ObservabilityAsset } from '@/api'
 import {
   bindingStatusLabel,
+  buildModuleToolSetups,
   catalogSummary,
+  EVIDENCE_CATALOG_WORKFLOW,
+  EVIDENCE_SETUP_WORKFLOW,
   contractMatches,
+  directTrialBlockReason,
+  findModuleAsset,
+  listSetupModules,
+  mergeObservabilityAssetContractOptions,
+  moduleNextAction,
+  observabilityAssetDraftReadiness,
   moveOrderedItem,
   routeOriginLabel,
   runtimeStateLabel,
+  signalKindLabel,
 } from '../evidenceCatalog'
 
 const contract: EvidenceQueryContract = {
@@ -92,6 +102,27 @@ const catalog: EvidenceQueryCatalog = {
   }],
 }
 
+const deploymentAsset: ObservabilityAsset = {
+  assetId: null,
+  origin: 'DEPLOYMENT',
+  workspaceId: 1,
+  system: 'csdp',
+  service: 'csdp-session-service',
+  displayName: 'csdp-session-service',
+  platform: 'guance',
+  environment: null,
+  region: null,
+  cluster: null,
+  namespace: null,
+  enabled: true,
+  signalBindings: { log_search: 'csdp-message-send-log-search' },
+  parameters: {},
+  version: 0,
+  changedBy: null,
+  reason: '随部署提供的兼容绑定',
+  changedAt: null,
+}
+
 describe('evidence query catalog presentation', () => {
   it('summarizes systems, modules, contracts and runnable contracts', () => {
     expect(catalogSummary(catalog)).toEqual({
@@ -119,10 +150,198 @@ describe('evidence query catalog presentation', () => {
     expect(runtimeStateLabel('MISSING')).toBe('未配置')
   })
 
+  it('keeps a read-only catalog workflow and points setup elsewhere', () => {
+    expect([...EVIDENCE_CATALOG_WORKFLOW]).toEqual([
+      '按系统模块浏览已审核查询规则',
+      '核对参数、返回字段和阻断点',
+      '需要接入时去取证接入或数据源联调',
+    ])
+  })
+
+  it('explains evidence setup as system → module → tools', () => {
+    expect([...EVIDENCE_SETUP_WORKFLOW]).toEqual([
+      '选择要接入的系统与系统模块',
+      '查看这个模块能用哪些取证工具',
+      '按工具补齐范围、绑定、路由，再到数据源联调',
+    ])
+  })
+
+  it('lists setup modules from catalog and assets', () => {
+    expect(listSetupModules(catalog, [deploymentAsset])).toEqual([
+      expect.objectContaining({
+        system: 'CSDP',
+        service: 'csdp-session-service',
+        asset: expect.objectContaining({ origin: 'DEPLOYMENT' }),
+      }),
+    ])
+  })
+
+  it('builds per-tool checklists for a module', () => {
+    const tools = buildModuleToolSetups({
+      options: [{
+        contractRef: 'csdp-message-send-log-search',
+        signalKind: 'log_search',
+        scenario: '会话消息发送失败',
+        question: '哪些失败请求需要继续追踪？',
+        summary: '检索失败请求',
+        requiredAssetParameters: [],
+      }],
+      module: catalog.systems[0].modules[0],
+      asset: { ...deploymentAsset, origin: 'WORKSPACE', version: 1, environment: 'prd' },
+      sourceReady: true,
+    })
+    expect(tools[0]).toMatchObject({
+      signalKind: 'log_search',
+      enabled: true,
+      status: 'READY',
+    })
+    expect(tools[0].checklist.map(item => item.key)).toEqual([
+      'enable', 'workspace', 'params', 'route', 'source', 'trial',
+    ])
+    expect(signalKindLabel('log_search')).toBe('日志检索')
+  })
+
+  it('tells operators the next action for a module', () => {
+    expect(moduleNextAction(catalog.systems[0].modules[0], null, true)).toMatchObject({
+      code: 'CONFIGURE_ASSET',
+      primaryCta: 'asset',
+    })
+    expect(moduleNextAction(
+      catalog.systems[0].modules[0],
+      { ...deploymentAsset, origin: 'WORKSPACE', version: 1, environment: 'prd' },
+      true,
+    )).toMatchObject({
+      code: 'ACCEPTANCE',
+      primaryCta: 'acceptance',
+    })
+    expect(findModuleAsset([deploymentAsset], 'CSDP', 'csdp-session-service')?.origin)
+      .toBe('DEPLOYMENT')
+  })
+
+  it('keeps approved catalog rules editable when the asset option projection is empty', () => {
+    expect(mergeObservabilityAssetContractOptions([], [contract])).toEqual([{
+      contractRef: 'csdp-message-send-log-search',
+      signalKind: 'log_search',
+      scenario: '会话消息发送失败',
+      question: '哪些失败请求需要继续追踪？',
+      summary: 'CSDP SendMsg 失败日志检索',
+      requiredAssetParameters: [],
+    }])
+  })
+
+  it('keeps a non-empty asset option projection authoritative', () => {
+    const assetOption = {
+      contractRef: 'asset-approved-rule',
+      signalKind: 'service_health',
+      scenario: '服务状态检查',
+      question: '服务当前是否健康？',
+      summary: '资产服务允许绑定的规则',
+      requiredAssetParameters: ['service'],
+    }
+
+    expect(mergeObservabilityAssetContractOptions([assetOption], [contract]))
+      .toEqual([assetOption])
+  })
+
   it('keeps route priority explicit and leaves boundary moves unchanged', () => {
     expect(moveOrderedItem(['guance', 'recorded-replay'], 1, -1))
       .toEqual(['recorded-replay', 'guance'])
     expect(moveOrderedItem(['guance', 'recorded-replay'], 0, -1))
       .toEqual(['guance', 'recorded-replay'])
+  })
+
+  it('allows only runnable direct Guance queries without previous-evidence inputs', () => {
+    expect(directTrialBlockReason(contract)).toBe('')
+    expect(directTrialBlockReason({
+      ...contract,
+      signalKind: 'log_trace_bundle',
+      parameters: [{
+        name: 'ps_id',
+        source: 'PREVIOUS_EVIDENCE',
+        required: true,
+        description: '由前一步失败日志提取',
+      }],
+    })).toContain('运行完整证据链')
+    expect(directTrialBlockReason({ ...contract, runnable: false }))
+      .toContain('当前不可运行')
+    expect(directTrialBlockReason({
+      ...contract,
+      parameters: [{
+        name: 'deployment',
+        source: 'EVIDENCE_REQUEST_TARGET',
+        required: true,
+        description: '错误标记的资源参数',
+      }],
+    })).toContain('取证接入')
+    expect(directTrialBlockReason(contract, deploymentAsset))
+      .toContain('接管为 Workspace 模块配置')
+  })
+
+  it('explains every owner-provided field still missing before asset takeover', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: '',
+      enabled: true,
+      contractRefs: {
+        k8s_workload_health: 'csdp-k8s-workload-health',
+        monitor_event_scan: 'csdp-monitor-event-scan',
+      },
+      parameterValues: {
+        namespace: '',
+        deployment: '',
+        monitor_checker: '',
+      },
+      requiredAssetParameters: ['namespace', 'deployment', 'monitor_checker'],
+      reason: '',
+    })).toEqual({
+      ready: false,
+      missing: [
+        '环境',
+        'Kubernetes Namespace',
+        'Kubernetes Deployment',
+        '观测云监控规则标识（monitor_checker）',
+        '变更原因',
+      ],
+    })
+  })
+
+  it('allows takeover only after scope, rules, resource identifiers and reason are complete', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: 'test-environment',
+      enabled: true,
+      contractRefs: {
+        k8s_workload_health: 'csdp-k8s-workload-health',
+        monitor_event_scan: 'csdp-monitor-event-scan',
+      },
+      parameterValues: {
+        namespace: 'test-namespace',
+        deployment: 'test-deployment',
+        monitor_checker: 'test-monitor-checker',
+      },
+      requiredAssetParameters: ['namespace', 'deployment', 'monitor_checker'],
+      reason: '登记首个只读取证资产',
+    })).toEqual({ ready: true, missing: [] })
+  })
+
+  it('treats a cleared query-rule selection as unbound instead of crashing', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: 'prd',
+      enabled: true,
+      contractRefs: {
+        log_search: 'csdp-message-send-log-search',
+        error_log_scan: undefined,
+      },
+      parameterValues: {},
+      requiredAssetParameters: [],
+      reason: '接入 CSDP SendMsg 首条真实只读取证链路',
+    })).toEqual({ ready: true, missing: [] })
   })
 })

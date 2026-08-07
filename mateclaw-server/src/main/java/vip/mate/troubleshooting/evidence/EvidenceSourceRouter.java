@@ -84,6 +84,7 @@ public final class EvidenceSourceRouter {
                             + routingAdvice());
         }
 
+        EvidenceResult canonicalMissing = null;
         for (String sourceName : route) {
             if (permitted != null && !permitted.contains(normalize(sourceName))) {
                 continue;
@@ -97,11 +98,20 @@ public final class EvidenceSourceRouter {
                 if (usable(request, result)) {
                     return result;
                 }
+                if (result != null
+                        && request.requestId().equals(result.queryId())
+                        && result.status() == EvidenceStatus.MISSING
+                        && normalize(result.source()).endsWith(":no_canonical_evidence")) {
+                    canonicalMissing = result;
+                }
             } catch (RuntimeException failure) {
                 log.warn("Evidence source {} failed for request {} ({})",
                         adapter.platform(), request.requestId(),
                         failure.getClass().getSimpleName());
             }
+        }
+        if (canonicalMissing != null) {
+            return canonicalMissing;
         }
         return missing(request, "router:unavailable", "all configured evidence sources unavailable");
     }

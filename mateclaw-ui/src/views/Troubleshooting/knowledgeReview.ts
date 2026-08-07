@@ -55,7 +55,7 @@ const LEGACY_OUTCOME_CONTRACT = 'knowledge-candidate.v1'
 export function missingKnowledgeOwnerLabel(candidate: KnowledgeCandidate): string {
   return candidate.contractVersion === LEGACY_OUTCOME_CONTRACT
     ? '未冻结（历史 v1 候选）'
-    : '未冻结（当前合同缺口）'
+    : '未冻结（当前记录不完整）'
 }
 
 export function missingOutcomeProofLabel(candidate: KnowledgeCandidate): string {
@@ -79,8 +79,8 @@ const REASON_LABELS: Record<string, string> = {
   POSITIVE_AND_NEGATIVE_REPLAY_FAILED: '服务端固定正例、负例或弃权回放未通过；当前候选不能晋升。',
   REPLAY_SUITE_UNAVAILABLE: '该 selector 尚未注册服务端回放套件，不能生成晋升证明。',
   REPLAY_PROOF_STALE: '已有回放证明与当前候选或套件指纹不一致，证明已失效。',
-  OWNER_AND_CONTRACT_VALIDATION_REQUIRED: '需要核对 owner 与完整合同校验结果。',
-  CONTRACT_VALIDATION_FAILED: '候选合同存在确定性校验错误，必须修正后生成新的来源记录。',
+  OWNER_AND_CONTRACT_VALIDATION_REQUIRED: '需要核对负责人和完整排障规则。',
+  CONTRACT_VALIDATION_FAILED: '候选排障规则未通过确定性校验，修正后需要生成新的来源记录。',
   NEGATIVE_OR_ABSTAIN_REPLAY_REQUIRED: '尚缺与当前候选关联的负例或弃权回放。',
   FIXTURE_ONLY: '当前事实只来自 Recorded Replay，不能冒充生产数据晋升。',
   SELECTOR_REQUIRED: '候选没有可用于版本替换的明确 selector。',
@@ -185,7 +185,7 @@ export function buildKnowledgeReviewRows(inbox: KnowledgeReviewInbox): Knowledge
       service: summary.service,
       selector: sourceState?.selectorKey ?? '服务端未返回 selector',
       title: `人工候选 ${summary.system}:${summary.errorCode}`,
-      summary: '完整合同按需读取；只有服务端资格通过并经人工批准后才能创建命中权威。',
+      summary: '完整排障规则按需读取；只有服务端资格通过并经人工批准后才能创建命中权威。',
       sourceRef: summary.sopId,
       evidenceRefs: [],
       createdAt: summary.createTime,

@@ -18,7 +18,6 @@
         @click="$emit('reload')"
       >刷新</el-button>
       <template v-if="activeDesk === 'registry'">
-        <el-button plain @click="$emit('openSynthesis')">{{ TROUBLESHOOTING_UI_LABELS.noCodePreview }}</el-button>
         <el-button type="primary" :icon="Plus" @click="$emit('openRegister')">注册候选</el-button>
       </template>
     </div>
@@ -39,7 +38,6 @@ defineEmits<{
   back: []
   reload: []
   openRegister: []
-  openSynthesis: []
 }>()
 </script>
 

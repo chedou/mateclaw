@@ -3,6 +3,7 @@ import {
   EVIDENCE_CATALOG_DESTINATIONS,
   WORKBENCH_CAPABILITY_GROUPS,
   evidenceCatalogLocation,
+  legacyEvidenceSynthesisLocation,
   normalizeEvidenceCatalogTab,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
@@ -10,33 +11,39 @@ import {
 } from '../workbenchCapabilityMenu'
 
 describe('troubleshooting secondary navigation information architecture', () => {
-  it('groups all six management capabilities in the persistent navigation', () => {
+  it('keeps data-source validation inside the evidence setup navigation', () => {
     const items = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
 
     expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
       '配置与接入',
-      '验证与演练',
       '复盘与沉淀',
     ])
     expect(items.map(item => item.command)).toEqual([
+      'observability-assets',
       'playbooks',
-      'evidence-catalog',
-      'guance',
-      'synthesis',
       'ledger',
       'case-knowledge',
     ])
-    expect(items.find(item => item.command === 'guance')?.label).toBe('观测云接入与验收')
+    expect(items.find(item => item.command === 'guance')).toBeUndefined()
+    expect(items.find(item => item.command === 'evidence-catalog')).toBeUndefined()
   })
 
-  it('offers a stable deep link for each evidence catalog workspace', () => {
-    expect(EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab)).toEqual([
-      'systems',
-      'assets',
-      'contracts',
-      'routes',
-      'acceptance',
-    ])
+  it('redirects the legacy synthesis deep link into diagnosis evaluation', () => {
+    expect(legacyEvidenceSynthesisLocation(
+      '/troubleshooting?view=detail&diagnosisId=diag-1',
+    )).toEqual({
+      path: '/troubleshooting',
+      query: {
+        view: 'detail',
+        diagnosisId: 'diag-1',
+        capability: 'ledger',
+        focus: 'evidence-synthesis',
+      },
+    })
+  })
+
+  it('keeps catalog as a secondary deep link while setup is the primary entry', () => {
+    expect(EVIDENCE_CATALOG_DESTINATIONS).toEqual([])
 
     expect(evidenceCatalogLocation(
       'contracts',
@@ -69,7 +76,7 @@ describe('troubleshooting secondary navigation information architecture', () => 
     expect(safeTroubleshootingReturnPath('/troubleshooting-other')).toBeNull()
   })
 
-  it('only opens the three workbench overlay capabilities from a query parameter', () => {
+  it('keeps the legacy Guance overlay deep link only as a compatibility action', () => {
     expect(normalizeWorkbenchOverlayCapability('guance')).toBe('guance')
     expect(normalizeWorkbenchOverlayCapability(['ledger'])).toBe('ledger')
     expect(normalizeWorkbenchOverlayCapability('case-knowledge')).toBe('case-knowledge')

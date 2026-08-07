@@ -96,6 +96,20 @@ class EvidenceSourceRouterTest {
     }
 
     @Test
+    void preservesAnExplicitCanonicalNoEvidenceResultAfterTryingTheRoute() {
+        StubAdapter guance = StubAdapter.returning(
+                "guance", missing("EV-1", "guance:no_canonical_evidence"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), guance);
+
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID, request("EV-1", "log_count"), incident("CSDP"));
+
+        assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(collected.source()).isEqualTo("guance:no_canonical_evidence");
+    }
+
+    @Test
     void doesNotGuessASourceWhenNoRouteIsConfigured() {
         StubAdapter adapter = StubAdapter.returning("guance", result("EV-1", "guance"));
         EvidenceSourceRouter router = router(Map.of(), adapter);
