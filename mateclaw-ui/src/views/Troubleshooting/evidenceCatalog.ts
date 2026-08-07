@@ -92,7 +92,7 @@ export type ObservabilityAssetDraft = {
   displayName: string
   environment: string
   enabled: boolean
-  contractRefs: Record<string, string>
+  contractRefs: Record<string, string | undefined>
   parameterValues: Record<string, string>
   requiredAssetParameters: string[]
   reason: string
@@ -117,7 +117,9 @@ export function observabilityAssetDraftReadiness(
   if (!draft.service.trim()) missing.push('模块 / 服务标识')
   if (!draft.displayName.trim()) missing.push('显示名称')
   if (!draft.environment.trim()) missing.push('环境')
-  const bindings = Object.values(draft.contractRefs).filter(value => value.trim())
+  const bindings = Object.values(draft.contractRefs).filter(
+    (value): value is string => typeof value === 'string' && Boolean(value.trim()),
+  )
   if (draft.enabled && !bindings.length) missing.push('至少一条已审核查询规则')
   const parameterOrder = ['namespace', 'cluster', 'region', 'deployment', 'monitor_checker']
   const requiredParameters = [...draft.requiredAssetParameters].sort((left, right) => {

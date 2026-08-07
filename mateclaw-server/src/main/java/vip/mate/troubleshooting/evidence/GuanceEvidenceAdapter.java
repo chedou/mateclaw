@@ -137,7 +137,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             Map<String, Object> observed = normalize(
                     response.body(), binding, request);
             if (observed.isEmpty()) {
-                return missing(request, "Guance returned no canonical evidence rows");
+                return missingCanonical(request);
             }
             Instant collectedAt = Instant.now(clock);
             observations.put(
@@ -704,13 +704,13 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         String signalKind = request.signalKind();
         JsonNode root = objectMapper.readTree(responseBody);
         if (root.path("code").asInt(-1) != 200 || !root.path("success").asBoolean(false)) {
-            return withhold(signalKind, "business_contract_rejected");
+            throw new GuanceResponseException("business contract rejected");
         }
 
         List<List<JsonNode>> populatedDatasets = new ArrayList<>();
         JsonNode data = root.path("content").path("data");
         if (!data.isArray()) {
-            return withhold(signalKind, "data_array_missing");
+            throw new GuanceResponseException("data array missing");
         }
         for (JsonNode dataset : data) {
             List<JsonNode> populatedSeries = new ArrayList<>();
@@ -751,9 +751,28 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         Map<String, Object> observed = normalizeScalarFragment(
                 populatedSeries, binding, signalKind);
         observed = withConstantFields(observed, binding, signalKind);
-        return CanonicalEvidenceSchema.isValid(signalKind, observed)
-                ? observed
-                : withhold(signalKind, "scalar_contract_invalid");
+        if (CanonicalEvidenceSchema.isValid(signalKind, observed)) {
+            return observed;
+        }
+        log.debug("Guance scalar shape rejected for signal {}: sourceColumns={}, canonicalTypes={}",
+                normalizeKey(signalKind),
+                populatedSeries.stream()
+                        .map(series -> {
+                            JsonNode columns = series.path("columns");
+                            if (!columns.isArray()) {
+                                return List.of();
+                            }
+                            List<String> names = new ArrayList<>();
+                            columns.forEach(column -> names.add(column.asText()));
+                            return List.copyOf(names);
+                        })
+                        .toList(),
+                observed.entrySet().stream()
+                        .map(entry -> entry.getKey() + "="
+                                + entry.getValue().getClass().getSimpleName())
+                        .sorted()
+                        .toList());
+        return withhold(signalKind, "scalar_contract_invalid");
     }
 
     private Map<String, Object> normalizeCompoundScalar(
@@ -1122,6 +1141,13 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 Map.of(), "guance:unavailable", Instant.now(clock));
     }
 
+    private EvidenceResult missingCanonical(EvidenceRequest request) {
+        return new EvidenceResult(
+                request.requestId(), "UNKNOWN", "", EvidenceStatus.MISSING,
+                "Guance returned no canonical evidence rows",
+                Map.of(), "guance:no_canonical_evidence", Instant.now(clock));
+    }
+
     private String namespace(EvidenceProperties.Binding binding) {
         return present(binding.getNamespace()) ? binding.getNamespace().trim() : "UNKNOWN";
     }
@@ -1132,6 +1158,12 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
 
     private boolean present(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static final class GuanceResponseException extends RuntimeException {
+        private GuanceResponseException(String message) {
+            super(message);
+        }
     }
 
     private boolean safeReference(String value) {

@@ -2009,8 +2009,10 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
       资产任一变更都会使旧 T7 owner 验收失效，防止 T8 沿用旧验收查询新资源。
 - [x] 回归通过：后端排障域 + Skill Manifest `823/823`，前端 Vitest `211/211`，ESLint、
       `vue-tsc --noEmit` 与生产 Vite build 通过。
-- [ ] 由 owner 填写 CSDP 第一份真实生产资产：环境、区域/集群、精确监控规则名、Deployment 和
-      Namespace。不得从日志、拓扑名称或模型输出猜测。
+- [x] 用户已显式确认 `prd`，并登记 CSDP 第一份 SendMsg 核心 Workspace 资产 v1；仅绑定
+      `log_search / log_trace_bundle / contrast_sample`，不为本竖线伪造无关资源参数。
+- [ ] 若后续启用监控事件与 Kubernetes 规则，再由 owner 单独补充区域/集群、精确监控规则名、
+      Deployment 和 Namespace。不得从日志、拓扑名称或模型输出猜测。
 - [x] “接管配置”按已选查询规则实时列出 owner 尚未确认的环境与资源标识；规则要求的 Namespace
       动态标为必填，信息不齐时禁用提交。该提示不替代服务端权威校验，也不预填生产值。
 - [x] 增加按“资产 + 查询规则”执行的 admin 只读试跑与不可变审计记录；试跑只接受该规则声明的
@@ -2022,6 +2024,10 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
       明确区分“完整链路可运行”与“可执行管理员试跑”，引导先接管为 Workspace 系统观测资产。
       运行时仍保留独立 fail-closed 校验，页面将试跑失败原因持续显示在弹窗内。
 - [ ] 第一份资产逐合同试跑通过后，再把部署 YAML 授权降为兼容回落；未验证前不删除现有 Profile。
+- [ ] 当前 Workspace 资产 15 分钟试跑和同一已审核 Profile 的 24 小时合同测试均到达 Guance
+      HTTP 200，但都只有 `match_count`，没有 `ps_id / sample_message`，所以仍未通过 `log_search`。
+      需要一个保留期内的精确 SendMsg 失败时间，或在授权测试环境触发一次失败；禁止把这次不完整
+      结果记为真源成功。
 
 ## 14. 历史样本回放入口收敛（2026-08-06）
 

@@ -45,4 +45,11 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(evidenceCatalogSource).toContain('本次试跑未完成')
     expect(evidenceCatalogSource).not.toContain('查看原始日志')
   })
+
+  it('lets operators validate a full 24-hour evidence window and distinguishes failures', () => {
+    expect(evidenceCatalogSource).toContain('最近 24 小时')
+    expect(evidenceCatalogSource).toContain("trialResult.status === 'FAILED'")
+    expect(evidenceCatalogSource).toContain('数据源查询失败')
+    expect(evidenceCatalogSource).toContain('查询成功，但这个时间范围没有完整证据')
+  })
 })

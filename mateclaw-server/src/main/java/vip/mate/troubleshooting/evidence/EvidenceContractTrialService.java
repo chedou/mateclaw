@@ -164,6 +164,9 @@ public class EvidenceContractTrialService {
         boolean sourceFailed = result != null
                 && result.status() == EvidenceStatus.MISSING
                 && normalize(result.source()).startsWith("router:");
+        boolean canonicalMissing = result != null
+                && result.status() == EvidenceStatus.MISSING
+                && normalize(result.source()).endsWith(":no_canonical_evidence");
         List<String> canonicalFields = observed
                 ? result.observed().keySet().stream().sorted().toList()
                 : List.of();
@@ -176,7 +179,7 @@ public class EvidenceContractTrialService {
                 ? "COMPLETED"
                 : sourceFailed ? "SOURCE_QUERY_FAILED" : "NO_CANONICAL_EVIDENCE";
         return persist(workspaceId, system, service, contract, asset, status,
-                stopReason, observed ? GUANCE : sourceFailed ? "router" : "none", canonicalFields,
+                stopReason, observed || canonicalMissing ? GUANCE : sourceFailed ? "router" : "none", canonicalFields,
                 durationMs, safeActor);
     }
 

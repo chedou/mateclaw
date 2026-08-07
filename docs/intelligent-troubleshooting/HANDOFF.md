@@ -1148,6 +1148,25 @@ T24 首份 Workspace 资产接管前检查（2026-08-07）：
   owner 接入误操作，服务端原有参数、合同引用、乐观版本和凭据检测门禁保持权威。
 - 本轮没有猜测或填写任何生产资源标识，没有提交资产、执行 Guance 查询或改变 T7/T8 状态。
 
+T25 首份 Workspace SendMsg 资产接管与真实试跑（2026-08-07）：
+
+- 用户显式确认环境为 `prd` 后，已在 workspace `1` 登记 `CSDP / csdp-session-service`
+  `Workspace v1`，仅绑定 SendMsg 竖线所需的 `log_search / log_trace_bundle / contrast_sample`；
+  监控事件与 Kubernetes 规则未混入本次资产，也未猜测 Namespace、Deployment 或监控规则名。
+- Workspace 资产的 15 分钟管理员试跑、以及同一服务端已审核 Profile 的 24 小时只读合同测试，
+  都已真实到达 Guance 并返回 HTTP 200；两者都只返回 `match_count` 聚合列，没有可继续关联的
+  `ps_id / sample_message`。canonical 闸门因此按设计拒绝，没有触发链路查询、没有回退
+  Recorded Replay，也不能记为 `FULL_SPINE_OBSERVED`。
+- 目录试跑新增 24 小时窗口，并区分“数据源查询失败”与“查询成功但没有完整证据”；Adapter 的
+  DEBUG 日志只记录源列名和 canonical 类型，不记录字段值、原始日志、DQL 或凭据。HTTP 200 但
+  业务码失败、`success=false` 或缺少 `content.data` 仍记为 `guance:unavailable`；只有合法响应但
+  canonical 不完整时才安全标记为 `NO_EVIDENCE / guance`。重启后浏览器 24 小时实跑
+  已验证后一状态，耗时 1325 ms。
+- 修复 Element Plus 清空查询规则时将值置为 `undefined`、进而触发 `.trim()` 崩溃的问题；清空规则
+  现在被当作未绑定并在保存时过滤，不会让接管弹窗消失。
+- 下一输入仍是 Guance 保留期内的精确 SendMsg 失败时间，或在授权测试环境触发一次失败；在取得
+  `ps_id` 前不能诚实执行后两段竖线。
+
 T21 诊断效果评估工作区融合（2026-08-06）：
 
 - “诊断效果评估”不再通过 `EvaluationSampleLedgerDialog` 弹出，而是由

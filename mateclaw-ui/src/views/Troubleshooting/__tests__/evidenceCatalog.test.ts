@@ -226,4 +226,21 @@ describe('evidence query catalog presentation', () => {
       reason: '登记首个只读取证资产',
     })).toEqual({ ready: true, missing: [] })
   })
+
+  it('treats a cleared query-rule selection as unbound instead of crashing', () => {
+    expect(observabilityAssetDraftReadiness({
+      system: 'csdp',
+      service: 'csdp-session-service',
+      displayName: 'CSDP 会话服务',
+      environment: 'prd',
+      enabled: true,
+      contractRefs: {
+        log_search: 'csdp-message-send-log-search',
+        error_log_scan: undefined,
+      },
+      parameterValues: {},
+      requiredAssetParameters: [],
+      reason: '接入 CSDP SendMsg 首条真实只读取证链路',
+    })).toEqual({ ready: true, missing: [] })
+  })
 })

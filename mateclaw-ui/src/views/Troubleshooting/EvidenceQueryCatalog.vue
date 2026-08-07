@@ -445,6 +445,7 @@
                 <el-option label="最近 15 分钟" value="-15m" />
                 <el-option label="最近 30 分钟" value="-30m" />
                 <el-option label="最近 1 小时" value="-1h" />
+                <el-option label="最近 24 小时" value="-24h" />
               </el-select>
             </el-form-item>
             <el-form-item label="故障发生时间（不选则用当前时间）">
@@ -459,7 +460,11 @@
         </el-form>
         <section v-if="trialResult" class="trial-result">
           <div>
-            <b>{{ trialResult.status === 'OBSERVED' ? '已拿到规范证据' : '查询完成，但未拿到规范证据' }}</b>
+            <b>{{ trialResult.status === 'OBSERVED'
+              ? '已拿到规范证据'
+              : trialResult.status === 'FAILED'
+                ? '数据源查询失败'
+                : '查询成功，但这个时间范围没有完整证据' }}</b>
             <small>资产 v{{ trialResult.assetVersion }} · {{ trialResult.durationMs }} 毫秒 · {{ trialResult.source }}</small>
           </div>
           <div class="tag-list output-tags">
@@ -707,7 +712,7 @@ type AssetForm = {
   cluster: string
   namespace: string
   enabled: boolean
-  contractRefs: Record<string, string>
+  contractRefs: Record<string, string | undefined>
   parameters: Record<string, string>
   expectedVersion?: number
   reason: string
@@ -823,7 +828,9 @@ const contractGroups = computed(() => {
     .sort((left, right) => left.signalKind.localeCompare(right.signalKind))
 })
 const selectedAssetContracts = computed(() => {
-  const selected = new Set(Object.values(assetForm.value.contractRefs).filter(Boolean))
+  const selected = new Set(Object.values(assetForm.value.contractRefs).filter(
+    (value): value is string => typeof value === 'string' && Boolean(value),
+  ))
   return (assetCatalog.value?.contracts || []).filter(option => selected.has(option.contractRef))
 })
 const requiredAssetParameters = computed(() => [...new Set(
@@ -943,9 +950,13 @@ async function runTrial() {
       occurredAt: trialOccurredAt.value?.toISOString(),
     })
     trialResult.value = response.data
-    ElMessage.success(response.data.status === 'OBSERVED'
+    const message = response.data.status === 'OBSERVED'
       ? '只读查询已拿到规范证据'
-      : '只读查询完成，但未拿到规范证据')
+      : response.data.status === 'FAILED'
+        ? '数据源查询失败，请核对运行日志和查询规则'
+        : '查询成功，但这个时间范围没有完整证据'
+    if (response.data.status === 'FAILED') ElMessage.error(message)
+    else ElMessage.success(message)
     await loadTrialHistory()
   } catch (failure) {
     const reason = failure instanceof Error ? failure.message : '只读试跑失败'
@@ -1042,8 +1053,12 @@ function metadataParameter(parameter: string): string {
 
 async function saveAsset() {
   const form = assetForm.value
-  const signalBindings = Object.fromEntries(
-    Object.entries(form.contractRefs).filter(([, contractRef]) => Boolean(contractRef)),
+  const signalBindings = Object.entries(form.contractRefs).reduce<Record<string, string>>(
+    (bindings, [signalKind, contractRef]) => {
+      if (typeof contractRef === 'string' && contractRef) bindings[signalKind] = contractRef
+      return bindings
+    },
+    {},
   )
   if (!assetDraftReadiness.value.ready) {
     ElMessage.warning(`请先补齐：${assetDraftReadiness.value.missing.join('、')}`)

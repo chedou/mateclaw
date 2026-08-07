@@ -312,6 +312,51 @@ class EvidenceContractTrialServiceTest {
     }
 
     @Test
+    void recordsACompletedSourceQueryWithoutCanonicalRowsAsNoEvidence() {
+        EvidenceQueryCatalogService catalog = mock(EvidenceQueryCatalogService.class);
+        when(catalog.inspect(WORKSPACE_ID)).thenReturn(catalog(contract(
+                "log_search",
+                List.of(parameter("search_term", "EVIDENCE_REQUEST_TARGET", true)))));
+        ObservabilityAssetService assets = mock(ObservabilityAssetService.class);
+        when(assets.find(WORKSPACE_ID, "csdp", "session-service")).thenReturn(Optional.of(
+                new WorkspaceObservabilityAsset(
+                        "asset-1", WORKSPACE_ID, "csdp", "session-service", "guance", true,
+                        Map.of("log_search", "csdp-log-search"), Map.of(), 3)));
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        when(router.collect(eq(WORKSPACE_ID), any(), any(), eq(java.util.Set.of("guance"))))
+                .thenAnswer(call -> {
+                    vip.mate.troubleshooting.model.EvidenceRequest request = call.getArgument(1);
+                    return new EvidenceResult(
+                            request.requestId(), "UNKNOWN", "", EvidenceStatus.MISSING,
+                            "Guance returned no canonical evidence rows", Map.of(),
+                            "guance:no_canonical_evidence", NOW);
+                });
+        AtomicReference<TroubleshootingEvidenceContractTrialEntity> inserted =
+                new AtomicReference<>();
+        TroubleshootingEvidenceContractTrialMapper mapper =
+                mock(TroubleshootingEvidenceContractTrialMapper.class);
+        when(mapper.insert(any(TroubleshootingEvidenceContractTrialEntity.class))).thenAnswer(call -> {
+            inserted.set(call.getArgument(0));
+            return 1;
+        });
+        EvidenceContractTrialService service = new EvidenceContractTrialService(
+                catalog, assets, router, mapper,
+                Clock.fixed(NOW, ZoneOffset.UTC), () -> 25_000_000L);
+
+        EvidenceContractTrialView result = service.run(
+                WORKSPACE_ID,
+                new EvidenceContractTrialRequest(
+                        "csdp", "session-service", "csdp-log-search",
+                        Map.of("search_term", "SendMsgFailed"), "-24h", NOW),
+                "ops-admin");
+
+        assertThat(result.status()).isEqualTo(EvidenceContractTrialView.Status.NO_EVIDENCE);
+        assertThat(result.stopReason()).isEqualTo("NO_CANONICAL_EVIDENCE");
+        assertThat(result.source()).isEqualTo("guance");
+        assertThat(inserted.get().getSourcePlatform()).isEqualTo("guance");
+    }
+
+    @Test
     void refusesAResourceScopeMistakenlyDeclaredAsBrowserOwned() {
         EvidenceQueryCatalogService catalog = mock(EvidenceQueryCatalogService.class);
         when(catalog.inspect(WORKSPACE_ID)).thenReturn(catalog(contract(
