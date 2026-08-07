@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import evidenceCatalogSource from '../EvidenceQueryCatalog.vue?raw'
+import observabilityAssetsSource from '../ObservabilityAssetsWorkspace.vue?raw'
+import evidenceCatalogHelperSource from '../evidenceCatalog.ts?raw'
 import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
 import guanceOnboardingSource from '../GuanceOnboardingDialog.vue?raw'
 import guanceValidationSource from '../GuanceValidationDialog.vue?raw'
@@ -11,14 +13,15 @@ describe('troubleshooting operator copy uses plain language', () => {
   it('calls evidence contracts query rules on operator-facing surfaces', () => {
     const sources = [
       evidenceCatalogSource,
+      observabilityAssetsSource,
       guanceOnboardingSource,
       guanceValidationSource,
       capabilityMenuSource,
     ]
 
     for (const source of sources) expect(source).not.toContain('查询合同')
-    expect(capabilityMenuSource).toContain("label: '查询规则'")
-    expect(evidenceCatalogSource).toContain('系统用它确定去哪里查询、需要哪些参数、返回哪些数据')
+    expect(evidenceCatalogSource).toContain('查询规则')
+    expect(evidenceCatalogSource).toContain('只读查看各系统模块已经审核的查询规则')
   })
 
   it('explains investigation data and validation failures without contract jargon', () => {
@@ -29,39 +32,47 @@ describe('troubleshooting operator copy uses plain language', () => {
   })
 
   it('presents Guance verification as data-source validation instead of a standalone capability', () => {
-    expect(capabilityMenuSource).toContain("label: '数据源联调'")
+    expect(evidenceCatalogSource).toContain('数据源联调')
+    expect(observabilityAssetsSource).toContain('数据源联调')
     expect(capabilityMenuSource).not.toContain('TROUBLESHOOTING_UI_LABELS.guanceOnboarding')
-    expect(evidenceCatalogSource).toContain('执行观测云只读联调')
     expect(developerEvidenceSource).toContain('前往数据源联调')
     expect(guanceOnboardingSource).not.toContain('<code>{{ stage.code }}</code>')
     expect(guanceValidationSource).not.toContain('Evidence Spine')
   })
 
-  it('explains the bounded admin trial and keeps raw evidence out of the catalog', () => {
-    expect(evidenceCatalogSource).toContain('管理员只读试跑')
-    expect(evidenceCatalogSource).toContain('不会创建排障单，也不代表 T7/T8 已验收')
-    expect(evidenceCatalogSource).toContain('最近只读试跑')
-    expect(evidenceCatalogSource).toContain('v-if="trialError"')
-    expect(evidenceCatalogSource).toContain('本次试跑未完成')
-    expect(evidenceCatalogSource).not.toContain('查看原始日志')
+  it('keeps admin trials on the evidence setup workspace, not the catalog', () => {
+    expect(evidenceCatalogSource).not.toContain('管理员只读试跑')
+    expect(evidenceCatalogSource).not.toContain('修改路由')
+    expect(observabilityAssetsSource).toContain('管理员只读试跑')
+    expect(observabilityAssetsSource).toContain('不会创建排障单，也不代表真源已验收')
+    expect(observabilityAssetsSource).toContain('最近只读试跑')
+    expect(observabilityAssetsSource).toContain('v-if="trialError"')
+    expect(observabilityAssetsSource).toContain('本次试跑未完成')
+    expect(observabilityAssetsSource).not.toContain('查看原始日志')
   })
 
   it('lets operators validate a full 24-hour evidence window and distinguishes failures', () => {
-    expect(evidenceCatalogSource).toContain('最近 24 小时')
-    expect(evidenceCatalogSource).toContain("trialResult.status === 'FAILED'")
-    expect(evidenceCatalogSource).toContain('数据源查询失败')
-    expect(evidenceCatalogSource).toContain('查询成功，但这个时间范围没有完整证据')
+    expect(observabilityAssetsSource).toContain('最近 24 小时')
+    expect(observabilityAssetsSource).toContain("trialResult.status === 'FAILED'")
+    expect(observabilityAssetsSource).toContain('数据源查询失败')
+    expect(observabilityAssetsSource).toContain('查询成功，但这个时间范围没有完整证据')
   })
 
-  it('makes system assets inspectable and versioned changes understandable', () => {
-    expect(evidenceCatalogSource).toContain('查看详情')
-    expect(evidenceCatalogSource).toContain('修改配置')
-    expect(evidenceCatalogSource).toContain('修改会保存为新版本')
-    expect(evidenceCatalogSource).toContain('不会覆盖原来的生产审计记录')
+  it('makes module setup inspectable and versioned changes understandable', () => {
+    expect(observabilityAssetsSource).toContain('查看详情')
+    expect(observabilityAssetsSource).toContain('修改模块配置')
+    expect(observabilityAssetsSource).toContain('修改会保存为新版本')
+    expect(observabilityAssetsSource).toContain('不会覆盖原来的生产审计记录')
   })
 
-  it('explains what each evidence-catalog area is for before configuration', () => {
-    expect(evidenceCatalogSource).toContain('这个目录怎么用')
-    expect(evidenceCatalogSource).toContain('按顺序完成系统登记、查询核对和真实联调')
+  it('explains setup as system and module tools with outbound catalog links', () => {
+    expect(evidenceCatalogSource).toContain('只读查看')
+    expect(evidenceCatalogSource).toContain('去取证接入')
+    expect(evidenceCatalogSource).toContain('只读核对')
+    expect(observabilityAssetsSource).toContain('可用取证工具')
+    expect(observabilityAssetsSource).toContain('按系统与系统模块配置取证')
+    expect(evidenceCatalogHelperSource).toContain('填写工具所需资源参数')
+    expect(capabilityMenuSource).toContain("label: TROUBLESHOOTING_UI_LABELS.observabilityAssets")
+    expect(capabilityMenuSource).not.toContain("command: 'evidence-catalog'")
   })
 })

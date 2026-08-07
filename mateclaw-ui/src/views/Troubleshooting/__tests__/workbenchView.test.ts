@@ -64,13 +64,13 @@ describe('troubleshooting workbench view mode', () => {
 
     expect(commands).toEqual([
       'playbooks',
-      'evidence-catalog',
+      'observability-assets',
       'ledger',
       'case-knowledge',
     ])
     expect(labels).toEqual([
       '排障规则库',
-      '取证查询目录',
+      '取证接入',
       '诊断效果评估',
       '历史案例入库',
     ])
@@ -101,7 +101,8 @@ describe('troubleshooting workbench view mode', () => {
       incident: '通用事件排障',
       messageSendFailed: '会话消息发送失败',
       rules: '排障规则库',
-      evidenceCatalog: '取证查询目录',
+      evidenceCatalog: '查询规则说明书',
+      observabilityAssets: '取证接入',
       historyReplay: '历史样本回放',
       guanceOnboarding: '数据源联调',
       guanceSourceStatus: '观测云真实数据源状态',

@@ -29,12 +29,12 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
     label: '配置与接入',
     items: [
       {
-        command: 'playbooks',
-        label: TROUBLESHOOTING_UI_LABELS.rules,
+        command: 'observability-assets',
+        label: TROUBLESHOOTING_UI_LABELS.observabilityAssets,
       },
       {
-        command: 'evidence-catalog',
-        label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog,
+        command: 'playbooks',
+        label: TROUBLESHOOTING_UI_LABELS.rules,
       },
     ],
   },
@@ -54,32 +54,19 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
   },
 ]
 
-export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestination> = [
-  {
-    tab: 'systems',
-    label: '系统与模块',
-  },
-  {
-    tab: 'assets',
-    label: '系统观测资产',
-  },
-  {
-    tab: 'contracts',
-    label: '查询规则',
-  },
-  {
-    tab: 'routes',
-    label: '路由与绑定',
-  },
-  {
-    tab: 'acceptance',
-    label: '数据源联调',
-  },
-]
+/**
+ * 兼容旧深链 `?tab=`。新页面已收敛为单工作区，侧栏不再展示子入口。
+ * tab 仅用于把旧书签映射到页内焦点（资产 / 路由 / 联调）。
+ */
+export const EVIDENCE_CATALOG_DESTINATIONS: ReadonlyArray<EvidenceCatalogDestination> = []
 
-const EVIDENCE_CATALOG_TABS = new Set<EvidenceCatalogTab>(
-  EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab),
-)
+const EVIDENCE_CATALOG_TABS = new Set<EvidenceCatalogTab>([
+  'systems',
+  'assets',
+  'contracts',
+  'routes',
+  'acceptance',
+])
 const WORKBENCH_OVERLAY_CAPABILITIES = new Set<WorkbenchOverlayCapability>([
   'guance',
   'ledger',
@@ -149,14 +136,29 @@ export function legacyEvidenceSynthesisLocation(
 }
 
 export function evidenceCatalogLocation(
-  tab: EvidenceCatalogTab,
+  tab: EvidenceCatalogTab = 'systems',
   currentFullPath?: string,
 ): { path: string; query: Record<string, string> } {
   const returnTo = safeTroubleshootingReturnPath(currentFullPath)
   return {
     path: '/troubleshooting/evidence-catalog',
     query: {
-      tab,
+      ...(tab !== 'systems' ? { tab } : {}),
+      ...(returnTo ? { returnTo } : {}),
+    },
+  }
+}
+
+export function observabilityAssetsLocation(
+  scope?: { system?: string; service?: string },
+  currentFullPath?: string,
+): { path: string; query: Record<string, string> } {
+  const returnTo = safeTroubleshootingReturnPath(currentFullPath)
+  return {
+    path: '/troubleshooting/observability-assets',
+    query: {
+      ...(scope?.system ? { system: scope.system } : {}),
+      ...(scope?.service ? { service: scope.service } : {}),
       ...(returnTo ? { returnTo } : {}),
     },
   }

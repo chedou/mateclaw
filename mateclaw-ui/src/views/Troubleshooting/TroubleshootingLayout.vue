@@ -53,32 +53,6 @@
                   </el-icon>
                   <span v-if="!navCompact" class="nav-label">{{ item.label }}</span>
                 </button>
-
-                <div
-                  v-if="item.command === 'evidence-catalog' && activeCommand === 'evidence-catalog'"
-                  class="nav-children"
-                  aria-label="取证查询目录工作区"
-                >
-                  <el-tooltip
-                    v-for="destination in EVIDENCE_CATALOG_DESTINATIONS"
-                    :key="destination.tab"
-                    :content="destination.label"
-                    placement="right"
-                    :disabled="!navCompact"
-                  >
-                    <button
-                      type="button"
-                      class="nav-child"
-                      :aria-label="destination.label"
-                      :class="{ active: activeEvidenceTab === destination.tab }"
-                      :aria-current="activeEvidenceTab === destination.tab ? 'page' : undefined"
-                      @click="openEvidenceTab(destination.tab)"
-                    >
-                      <el-icon><component :is="EVIDENCE_ICONS[destination.tab]" /></el-icon>
-                      <span v-if="!navCompact">{{ destination.label }}</span>
-                    </button>
-                  </el-tooltip>
-                </div>
               </div>
             </el-tooltip>
           </section>
@@ -114,26 +88,20 @@ import {
   Connection,
   DataAnalysis,
   DataLine,
-  Document,
   DocumentAdd,
-  Monitor,
   OfficeBuilding,
-  Operation,
-  Select,
   TrendCharts,
 } from '@element-plus/icons-vue'
 import { useMediaQuery } from '@/composables/useBreakpoint'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import type { WorkbenchCapabilityCommand } from './workbenchView'
 import {
-  EVIDENCE_CATALOG_DESTINATIONS,
   WORKBENCH_CAPABILITY_GROUPS,
   evidenceCatalogLocation,
-  normalizeEvidenceCatalogTab,
+  observabilityAssetsLocation,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
   workbenchOverlayLocation,
-  type EvidenceCatalogTab,
   type WorkbenchOverlayCapability,
 } from './workbenchCapabilityMenu'
 
@@ -148,26 +116,19 @@ const navCompact = computed(() => navCollapsed.value || forcedRailViewport.value
 const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
   playbooks: Collection,
   'evidence-catalog': DataLine,
+  'observability-assets': OfficeBuilding,
   guance: Connection,
   ledger: TrendCharts,
   'case-knowledge': DocumentAdd,
 }
 
-const EVIDENCE_ICONS: Record<EvidenceCatalogTab, Component> = {
-  systems: Monitor,
-  assets: OfficeBuilding,
-  contracts: Document,
-  routes: Operation,
-  acceptance: Select,
-}
-
 const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
   if (route.path === '/troubleshooting/evidence-catalog') return 'evidence-catalog'
+  if (route.path === '/troubleshooting/observability-assets') return 'observability-assets'
   if (route.path === '/troubleshooting/sops') return 'playbooks'
   return normalizeWorkbenchOverlayCapability(route.query.capability)
 })
 const workbenchActive = computed(() => route.path === '/troubleshooting' && !activeCommand.value)
-const activeEvidenceTab = computed(() => normalizeEvidenceCatalogTab(route.query.tab))
 
 function preferredWorkbenchPath(): string {
   if (route.path === '/troubleshooting') {
@@ -190,14 +151,14 @@ function openCapability(command: WorkbenchCapabilityCommand) {
     return
   }
   if (command === 'evidence-catalog') {
-    void router.push(evidenceCatalogLocation(activeEvidenceTab.value, returnTo))
+    void router.push(evidenceCatalogLocation('systems', returnTo))
+    return
+  }
+  if (command === 'observability-assets') {
+    void router.push(observabilityAssetsLocation(undefined, returnTo))
     return
   }
   void router.push(workbenchOverlayLocation(command as WorkbenchOverlayCapability, returnTo))
-}
-
-function openEvidenceTab(tab: EvidenceCatalogTab) {
-  void router.push(evidenceCatalogLocation(tab, preferredWorkbenchPath()))
 }
 
 function toggleNav() {

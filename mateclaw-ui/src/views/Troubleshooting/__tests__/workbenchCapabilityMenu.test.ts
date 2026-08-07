@@ -11,7 +11,7 @@ import {
 } from '../workbenchCapabilityMenu'
 
 describe('troubleshooting secondary navigation information architecture', () => {
-  it('keeps data-source validation inside the evidence catalog navigation', () => {
+  it('keeps data-source validation inside the evidence setup navigation', () => {
     const items = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
 
     expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
@@ -19,12 +19,13 @@ describe('troubleshooting secondary navigation information architecture', () => 
       '复盘与沉淀',
     ])
     expect(items.map(item => item.command)).toEqual([
+      'observability-assets',
       'playbooks',
-      'evidence-catalog',
       'ledger',
       'case-knowledge',
     ])
     expect(items.find(item => item.command === 'guance')).toBeUndefined()
+    expect(items.find(item => item.command === 'evidence-catalog')).toBeUndefined()
   })
 
   it('redirects the legacy synthesis deep link into diagnosis evaluation', () => {
@@ -41,16 +42,8 @@ describe('troubleshooting secondary navigation information architecture', () => 
     })
   })
 
-  it('offers a stable deep link for each evidence catalog workspace', () => {
-    expect(EVIDENCE_CATALOG_DESTINATIONS.map(item => item.tab)).toEqual([
-      'systems',
-      'assets',
-      'contracts',
-      'routes',
-      'acceptance',
-    ])
-    expect(EVIDENCE_CATALOG_DESTINATIONS.find(item => item.tab === 'acceptance')?.label)
-      .toBe('数据源联调')
+  it('keeps catalog as a secondary deep link while setup is the primary entry', () => {
+    expect(EVIDENCE_CATALOG_DESTINATIONS).toEqual([])
 
     expect(evidenceCatalogLocation(
       'contracts',

@@ -96,6 +96,12 @@ const router = createRouter({
               component: () => import('@/views/Troubleshooting/EvidenceQueryCatalog.vue'),
               meta: { title: 'Evidence Query Catalog', requiredCapability: 'manage:troubleshooting' },
             },
+            {
+              path: 'observability-assets',
+              name: 'TroubleshootingObservabilityAssets',
+              component: () => import('@/views/Troubleshooting/ObservabilityAssetsWorkspace.vue'),
+              meta: { title: 'Observability Assets', requiredCapability: 'manage:troubleshooting' },
+            },
           ],
         },
         {

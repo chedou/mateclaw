@@ -504,6 +504,8 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
     void router.push('/troubleshooting/sops')
   } else if (command === 'evidence-catalog') {
     void router.push('/troubleshooting/evidence-catalog')
+  } else if (command === 'observability-assets') {
+    void router.push('/troubleshooting/observability-assets')
   } else if (command === 'guance') {
     openGuanceOnboarding()
   } else if (command === 'ledger') {

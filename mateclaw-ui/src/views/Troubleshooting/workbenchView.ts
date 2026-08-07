@@ -6,6 +6,7 @@ export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
 export type WorkbenchCapabilityCommand =
   | 'playbooks'
   | 'evidence-catalog'
+  | 'observability-assets'
   | 'guance'
   | 'ledger'
   | 'case-knowledge'
@@ -24,7 +25,8 @@ export const TROUBLESHOOTING_UI_LABELS = {
   incident: '通用事件排障',
   messageSendFailed: '会话消息发送失败',
   rules: '排障规则库',
-  evidenceCatalog: '取证查询目录',
+  evidenceCatalog: '查询规则说明书',
+  observabilityAssets: '取证接入',
   historyReplay: '历史样本回放',
   guanceOnboarding: '数据源联调',
   guanceSourceStatus: '观测云真实数据源状态',
@@ -53,7 +55,7 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
   label: string
 }> = [
   { command: 'playbooks', label: TROUBLESHOOTING_UI_LABELS.rules },
-  { command: 'evidence-catalog', label: TROUBLESHOOTING_UI_LABELS.evidenceCatalog },
+  { command: 'observability-assets', label: TROUBLESHOOTING_UI_LABELS.observabilityAssets },
   { command: 'ledger', label: TROUBLESHOOTING_UI_LABELS.evaluation },
   { command: 'case-knowledge', label: TROUBLESHOOTING_UI_LABELS.caseKnowledge },
 ]

@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest'
 import type { EvidenceQueryCatalog, EvidenceQueryContract, ObservabilityAsset } from '@/api'
 import {
   bindingStatusLabel,
+  buildModuleToolSetups,
   catalogSummary,
-  EVIDENCE_CATALOG_GUIDE,
+  EVIDENCE_CATALOG_WORKFLOW,
+  EVIDENCE_SETUP_WORKFLOW,
   contractMatches,
   directTrialBlockReason,
+  findModuleAsset,
+  listSetupModules,
   mergeObservabilityAssetContractOptions,
+  moduleNextAction,
   observabilityAssetDraftReadiness,
   moveOrderedItem,
   routeOriginLabel,
   runtimeStateLabel,
+  signalKindLabel,
 } from '../evidenceCatalog'
 
 const contract: EvidenceQueryContract = {
@@ -144,22 +150,72 @@ describe('evidence query catalog presentation', () => {
     expect(runtimeStateLabel('MISSING')).toBe('未配置')
   })
 
-  it('explains the five work areas as one operator workflow', () => {
-    expect(EVIDENCE_CATALOG_GUIDE.map(item => item.tab)).toEqual([
-      'systems',
-      'assets',
-      'contracts',
-      'routes',
-      'acceptance',
+  it('keeps a read-only catalog workflow and points setup elsewhere', () => {
+    expect([...EVIDENCE_CATALOG_WORKFLOW]).toEqual([
+      '按系统模块浏览已审核查询规则',
+      '核对参数、返回字段和阻断点',
+      '需要接入时去取证接入或数据源联调',
     ])
-    expect(EVIDENCE_CATALOG_GUIDE.map(item => item.title)).toEqual([
-      '按系统找查询',
-      '登记要查的系统',
-      '确认每次怎么查',
-      '选择用哪个数据源',
-      '确认真实调用可用',
+  })
+
+  it('explains evidence setup as system → module → tools', () => {
+    expect([...EVIDENCE_SETUP_WORKFLOW]).toEqual([
+      '选择要接入的系统与系统模块',
+      '查看这个模块能用哪些取证工具',
+      '按工具补齐范围、绑定、路由，再到数据源联调',
     ])
-    expect(EVIDENCE_CATALOG_GUIDE.every(item => item.purpose && item.whenToUse)).toBe(true)
+  })
+
+  it('lists setup modules from catalog and assets', () => {
+    expect(listSetupModules(catalog, [deploymentAsset])).toEqual([
+      expect.objectContaining({
+        system: 'CSDP',
+        service: 'csdp-session-service',
+        asset: expect.objectContaining({ origin: 'DEPLOYMENT' }),
+      }),
+    ])
+  })
+
+  it('builds per-tool checklists for a module', () => {
+    const tools = buildModuleToolSetups({
+      options: [{
+        contractRef: 'csdp-message-send-log-search',
+        signalKind: 'log_search',
+        scenario: '会话消息发送失败',
+        question: '哪些失败请求需要继续追踪？',
+        summary: '检索失败请求',
+        requiredAssetParameters: [],
+      }],
+      module: catalog.systems[0].modules[0],
+      asset: { ...deploymentAsset, origin: 'WORKSPACE', version: 1, environment: 'prd' },
+      sourceReady: true,
+    })
+    expect(tools[0]).toMatchObject({
+      signalKind: 'log_search',
+      enabled: true,
+      status: 'READY',
+    })
+    expect(tools[0].checklist.map(item => item.key)).toEqual([
+      'enable', 'workspace', 'params', 'route', 'source', 'trial',
+    ])
+    expect(signalKindLabel('log_search')).toBe('日志检索')
+  })
+
+  it('tells operators the next action for a module', () => {
+    expect(moduleNextAction(catalog.systems[0].modules[0], null, true)).toMatchObject({
+      code: 'CONFIGURE_ASSET',
+      primaryCta: 'asset',
+    })
+    expect(moduleNextAction(
+      catalog.systems[0].modules[0],
+      { ...deploymentAsset, origin: 'WORKSPACE', version: 1, environment: 'prd' },
+      true,
+    )).toMatchObject({
+      code: 'ACCEPTANCE',
+      primaryCta: 'acceptance',
+    })
+    expect(findModuleAsset([deploymentAsset], 'CSDP', 'csdp-session-service')?.origin)
+      .toBe('DEPLOYMENT')
   })
 
   it('keeps approved catalog rules editable when the asset option projection is empty', () => {
@@ -216,9 +272,9 @@ describe('evidence query catalog presentation', () => {
         required: true,
         description: '错误标记的资源参数',
       }],
-    })).toContain('系统观测资产')
+    })).toContain('取证接入')
     expect(directTrialBlockReason(contract, deploymentAsset))
-      .toContain('接管为 Workspace 系统观测资产')
+      .toContain('接管为 Workspace 模块配置')
   })
 
   it('explains every owner-provided field still missing before asset takeover', () => {
