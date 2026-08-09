@@ -9,6 +9,8 @@ import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -30,7 +32,9 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -65,13 +69,16 @@ class ScenarioEvidenceRunServiceTest {
     private final TroubleshootingPlaybookVersionService versions =
             mock(TroubleshootingPlaybookVersionService.class);
     private final EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+    private final ScenarioEvidenceRunAuditService runAudits =
+            mock(ScenarioEvidenceRunAuditService.class);
     private final DiagnosisStateMachine stateMachine = new DiagnosisStateMachine(
             Clock.fixed(NOW, ZoneOffset.UTC), prefix -> prefix + "-fixed");
     private final CriterionEvaluator criteria = new CriterionEvaluator();
     private final DiagnosisRuleEvaluator rules = new DiagnosisRuleEvaluator();
     private final ScenarioEvidenceRunService service = new ScenarioEvidenceRunService(
             persistence, versions, stateMachine, criteria, rules,
-            new PlaybookEvidenceCollector(router));
+            new PlaybookEvidenceCollector(router), runAudits,
+            Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     @DisplayName("跑完取证计划后诊断不再停在待取证，结论来自 Playbook 自己的规则")
@@ -97,6 +104,32 @@ class ScenarioEvidenceRunServiceTest {
     }
 
     @Test
+    @DisplayName("只读取证生成不可变运行耗时，不改写首次弃权结论时间")
+    void evidenceRunPersistsItsOwnTimingWithoutRewritingTheFirstConclusion() {
+        awaiting();
+        when(router.collect(eq(7L), any(EvidenceRequest.class), any(IncidentContext.class)))
+                .thenReturn(evidence(EvidenceStatus.ANOMALY, Map.of("match_count", 3)));
+        when(persistence.update(eq(7L), any(Diagnosis.class), eq(4)))
+                .thenAnswer(call -> new StoredDiagnosis(call.getArgument(1), 5, false));
+        ScenarioEvidenceRunService timedService = new ScenarioEvidenceRunService(
+                persistence, versions, stateMachine, criteria, rules,
+                new PlaybookEvidenceCollector(router), runAudits,
+                new SequenceClock(NOW.minusSeconds(5), NOW));
+
+        Diagnosis advanced = timedService.run(7L, "diag-scenario", "alice").diagnosis();
+
+        assertThat(advanced.timings().conclusionAt()).isEqualTo(NOW.minusSeconds(110));
+        assertThat(advanced.timings().investigateCost()).isZero();
+        ArgumentCaptor<ScenarioEvidenceRunAudit> audit =
+                ArgumentCaptor.forClass(ScenarioEvidenceRunAudit.class);
+        verify(runAudits).insert(eq(7L), audit.capture());
+        assertThat(audit.getValue().startedAt()).isEqualTo(NOW.minusSeconds(5));
+        assertThat(audit.getValue().completedAt()).isEqualTo(NOW);
+        assertThat(audit.getValue().duration()).isEqualTo(Duration.ofSeconds(5));
+        assertThat(audit.getValue().evidenceRefs()).containsExactly("SYNTH-LOG-SEARCH");
+    }
+
+    @Test
     @DisplayName("三段证据方案把第一步真实 PS ID 传给后两步并写回同一 Diagnosis")
     void evidenceSpineUsesTheObservedPsIdAndPersistsRealEvidence() {
         SopEntry spinePlaybook = spinePlaybook();
@@ -115,7 +148,8 @@ class ScenarioEvidenceRunServiceTest {
                 persistence, versions, stateMachine, criteria, rules,
                 new PlaybookEvidenceCollector(router),
                 new EvidenceSpineOrchestrator(
-                        router, new DeterministicLogTraceCompressor()));
+                        router, new DeterministicLogTraceCompressor()),
+                runAudits, Clock.fixed(NOW, ZoneOffset.UTC));
 
         Diagnosis advanced = spineService.run(7L, "diag-spine", "alice").diagnosis();
 
@@ -172,7 +206,8 @@ class ScenarioEvidenceRunServiceTest {
                 persistence, versions, stateMachine, criteria, rules,
                 new PlaybookEvidenceCollector(router),
                 new EvidenceSpineOrchestrator(
-                        router, new DeterministicLogTraceCompressor()));
+                        router, new DeterministicLogTraceCompressor()),
+                runAudits, Clock.fixed(NOW, ZoneOffset.UTC));
 
         Diagnosis advanced = spineService.run(7L, "diag-cti", "alice").diagnosis();
 
@@ -247,7 +282,8 @@ class ScenarioEvidenceRunServiceTest {
                 persistence, versions, stateMachine, criteria, rules,
                 new PlaybookEvidenceCollector(router),
                 new EvidenceSpineOrchestrator(
-                        router, new DeterministicLogTraceCompressor()));
+                        router, new DeterministicLogTraceCompressor()),
+                runAudits, Clock.fixed(NOW, ZoneOffset.UTC));
 
         Diagnosis advanced = spineService.run(7L, "diag-cti", "alice").diagnosis();
 
@@ -573,5 +609,31 @@ class ScenarioEvidenceRunServiceTest {
                 "reviewer", "内网核实通过", null,
                 null, null, null,
                 playbook, NOW.minusSeconds(600), NOW.minusSeconds(600));
+    }
+
+    private static final class SequenceClock extends Clock {
+        private final Instant[] ticks;
+        private int index;
+
+        private SequenceClock(Instant... ticks) {
+            this.ticks = ticks.clone();
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant value = ticks[Math.min(index, ticks.length - 1)];
+            index++;
+            return value;
+        }
     }
 }

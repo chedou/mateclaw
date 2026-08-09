@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -67,6 +69,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private TroubleshootingPlaybookVersionService playbookVersions;
 
+    @Mock
+    private ScenarioEvidenceRunAuditService runAudits;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -77,7 +82,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 new CanonicalEvidenceViewProjector(new DeterministicLogTraceCompressor()),
                 topologyScenarioPolicy,
                 playbookVersions,
-                new InvestigationTraceProjector());
+                new InvestigationTraceProjector(),
+                runAudits);
     }
 
     @Test
@@ -100,7 +106,6 @@ class DiagnosisExperienceProjectionServiceTest {
         when(playbookVersions.findByRef(
                 WORKSPACE_ID, new PlaybookVersionRef("playbook-903001", 3)))
                 .thenReturn(Optional.of(frozenVersion));
-
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
         DiagnosisExperienceProjection.BusinessSummary business = result.businessSummary();
@@ -128,6 +133,7 @@ class DiagnosisExperienceProjectionServiceTest {
         DiagnosisExperienceProjection.DeveloperEvidenceView developer = result.developerEvidence();
         assertThat(developer.investigationMode())
                 .isEqualTo(InvestigationMode.ERROR_CODE_PLAYBOOK);
+        verify(runAudits, never()).latest(WORKSPACE_ID, DIAGNOSIS_ID);
         assertThat(developer.routeSemanticsProvenance())
                 .isEqualTo(RouteSemanticsProvenance.PERSISTED);
         assertThat(developer.routeAuthority())
@@ -380,6 +386,17 @@ class DiagnosisExperienceProjectionServiceTest {
                 .thenReturn(new StoredDiagnosis(scenarioDiagnosis(), 0, true));
         when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(derivation());
+        when(runAudits.latest(WORKSPACE_ID, DIAGNOSIS_ID)).thenReturn(Optional.of(
+                new ScenarioEvidenceRunAudit(
+                        "scenario-evidence-run-1",
+                        DIAGNOSIS_ID,
+                        new PlaybookVersionRef("playbook-slow-api", 2),
+                        DiagnosisStatus.READY_FOR_HUMAN,
+                        ConclusionType.LOCATED,
+                        List.of("EV-1", "EV-2"),
+                        NOW.plusSeconds(10),
+                        NOW.plusSeconds(15),
+                        "alice")));
 
         DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
 
@@ -390,6 +407,12 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.RULE_MATCHED);
         assertThat(result.developerEvidence().scenarioAffordances()).isEmpty();
+        assertThat(result.developerEvidence().investigationTrace().stages())
+                .filteredOn(stage -> stage.key()
+                        == InvestigationTraceView.StageKey.EVIDENCE_COLLECTION)
+                .singleElement()
+                .satisfies(stage -> assertThat(stage.duration())
+                        .isEqualTo(java.time.Duration.ofSeconds(5)));
     }
 
     @Test

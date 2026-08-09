@@ -666,6 +666,23 @@ canonical 节点身份、拨测状态、状态码、目标安全投影、观测�
 无界日志不得进入该合同。详情页从同一 `diagnosisId` 投影运行历史；任一运行失败不得覆盖
 旧证据，重试产生新 `runId`。
 
+### 5.12 ScenarioEvidenceRunAudit（v4.5 补充）
+
+```text
+ScenarioEvidenceRunAudit = runId + diagnosisId + playbookVersionRef
+                         + diagnosisStatus + conclusionType + evidenceRefs[]
+                         + startedAt + completedAt + actorRef
+```
+
+这是通用 `SCENARIO_PLAYBOOK` 只读取证计划的不可变运行台账；部署拓扑仍使用 §5.11 的
+专属合同。`evidenceRefs` 只保存冻结请求 ID，不保存 query、observed 值、关联 ID、日志正文、
+端点或凭据。运行记录与 Diagnosis 状态推进在同一事务提交；台账写入失败时，不得单独留下
+已更新的 Diagnosis。
+
+`conclusionAt` 仍表示首次产出可读结论或 abstain 的时间，后续取证不得改写；七阶段轨迹的
+“获取只读证据”阶段可从最新一条运行台账投影开始、完成和耗时，但不得用它替换 §5.10 的
+北极星三段时间。
+
 ## 6. 证据到 SOP 的生产流水线
 
 ```text

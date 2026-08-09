@@ -28,6 +28,12 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(formalWorkbenchSource).not.toContain('规范化合同阻断')
   })
 
+  it('distinguishes a persisted read-only evidence run from the first conclusion timer', () => {
+    expect(investigationTraceSource).toContain('本次只读取证用时')
+    expect(investigationTraceSource).toContain("stage.key === 'EVIDENCE_COLLECTION'")
+    expect(investigationTraceSource).toContain('trace.investigationDuration')
+  })
+
   it('presents Guance verification as data-source validation instead of a standalone capability', () => {
     expect(observabilityAssetsSource).toContain('数据源联调')
     expect(capabilityMenuSource).not.toContain('TROUBLESHOOTING_UI_LABELS.guanceOnboarding')

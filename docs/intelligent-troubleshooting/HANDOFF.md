@@ -1245,6 +1245,27 @@ T27 CTI 创建会话失败真实场景竖线（2026-08-08）：
   但 Workspace owner acceptance、生产录制批次和 T8 台账仍未完成；服务端目标目录仍为 `0 / 20`。
   传输、配置绑定和场景运行聚焦回归 `57/57` 通过。
 
+T28 CTI 真源恢复与调查耗时闭环（2026-08-09）：
+
+- Guance 读取已恢复。使用原告警时间 `2026-08-07 17:24:00 +08:00` 新建演练 Diagnosis
+  `diag-947783d2a7c443fa92eafe1d7cd7dbd4`，通过正式 `evidence-runs` 执行失败日志、关联链路和
+  成功/失败对照三次真实只读查询。三份证据均为 `NORMAL`，`fixtureMode=false`，结果维持
+  `HYPOTHESIS / LOW / READY_FOR_HUMAN`，不扩大为已确认根因。
+- V196 三方言新增通用场景取证的不可变运行台账。它与 Diagnosis 状态推进在同一事务提交，
+  只保存运行编号、冻结 Playbook 版本、结局类型、证据请求 ID、actor 和开始/完成时间；不保存 DQL、
+  observed 值、关联 ID、日志正文、端点或凭据。
+- 保留首次“证据不足”的 `conclusionAt`，不用后续取证覆盖北极星审计时间。七阶段轨迹的
+  “获取只读证据”阶段改从最新运行台账投影。本次运行
+  `scenario-evidence-run-b53063910d3e4cad8233d89c5354da5b` 耗时 `PT5.458411S`，精确引用
+  `CTI-LOG-SEARCH / CTI-TRACE-BUNDLE / CTI-CONTRAST`；页面显示“本次只读取证用时”，不再把
+  首次弃权的 `PT0S` 冒充为这次真源查询耗时。
+- 本地启动器在 macOS 未显式设置 `JAVA_HOME` 时会先绑定 JDK 21，并将其 `bin` 放到 `PATH`
+  首位，避免 Maven 与 Spring Boot 实际使用 Java 25。实际重启已确认运行时为 Java 21.0.10。
+- 回归结果：后端排障域 `849/849`，前端 `259/259`，`vue-tsc` 与 Vite 生产构建均通过；
+  T7 只读预检的服务、凭据状态、三信号路由和 binding 指纹四道门通过。
+- 这是 CTI 单场景的真实运行证据，不等于 T7/T8 投产验收；
+  Workspace owner 仍需注册并冻结至少 20 个可执行目标，当前正式目录仍为 `0 / 20`。
+
 后端定向测试命令：
 
 ```bash

@@ -92,6 +92,13 @@ else
   current_java_bin="$(command -v java || true)"
 fi
 current_java_major="$(java_major_version "${current_java_bin}" || true)"
+if [[ -z "${JAVA_HOME:-}" ]] && [[ -x /usr/libexec/java_home ]]; then
+  detected_java_home="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+  if [[ "$(java_major_version "${detected_java_home}/bin/java" || true)" == "21" ]]; then
+    export JAVA_HOME="${detected_java_home}"
+    current_java_major="21"
+  fi
+fi
 if [[ "${current_java_major}" != "21" ]] && [[ -x /usr/libexec/java_home ]]; then
   detected_java_home="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
   if [[ "$(java_major_version "${detected_java_home}/bin/java" || true)" == "21" ]]; then
@@ -103,6 +110,13 @@ fi
 if [[ "${current_java_major}" != "21" ]]; then
   echo "MateClaw requires Java 21; set JAVA_HOME to a JDK 21 installation." >&2
   exit 2
+fi
+
+# Maven and spring-boot:run do not consistently choose JAVA_HOME's binary when
+# another JDK appears earlier on PATH. Keep the launcher JVM and the forked
+# application JVM on the same supported JDK.
+if [[ -n "${JAVA_HOME:-}" ]]; then
+  export PATH="${JAVA_HOME}/bin:${PATH}"
 fi
 
 cd "${repo_root}"

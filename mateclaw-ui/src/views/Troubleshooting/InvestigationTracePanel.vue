@@ -7,7 +7,7 @@
         <p>从收到问题到给出结论或明确停止共 7 步；只展示系统实际记录的事实，缺失就明确显示“未记录”。</p>
       </div>
       <div class="trace-actions">
-        <span>本次排障用时 <b>{{ traceDuration(trace.investigationDuration) }}</b></span>
+        <span>{{ headlineDurationLabel }} <b>{{ traceDuration(headlineDuration) }}</b></span>
         <div class="trace-tabs" role="tablist">
           <button :class="{ active: activeView === 'trace' }" @click="activeView = 'trace'">执行过程</button>
           <button :class="{ active: activeView === 'relation' }" @click="activeView = 'relation'">证据关系</button>
@@ -163,6 +163,15 @@ watch(
 const selectedStage = computed(() => props.trace.stages.find(
   stage => stage.key === selectedStageKey.value,
 ) ?? props.trace.stages[0])
+const evidenceCollectionStage = computed(() => props.trace.stages.find(
+  stage => stage.key === 'EVIDENCE_COLLECTION',
+))
+const headlineDuration = computed(() => (
+  evidenceCollectionStage.value?.duration ?? props.trace.investigationDuration
+))
+const headlineDurationLabel = computed(() => (
+  evidenceCollectionStage.value?.duration ? '本次只读取证用时' : '本次排障用时'
+))
 
 function traceTime(value: string | null) {
   return value ? formatWorkbenchTime(value) : '未记录'

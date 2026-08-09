@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.projection;
 import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.CriterionOutcome;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -67,8 +68,24 @@ public final class InvestigationTraceProjector {
             Diagnosis diagnosis,
             SopEntry frozenPlaybook,
             DiagnosisDerivation derivation) {
+        return project(diagnosis, frozenPlaybook, derivation, null);
+    }
+
+    public InvestigationTraceView project(
+            Diagnosis diagnosis,
+            SopEntry frozenPlaybook,
+            DiagnosisDerivation derivation,
+            ScenarioEvidenceRunAudit latestEvidenceRun) {
         if (diagnosis == null) {
             throw new IllegalArgumentException("diagnosis is required");
+        }
+        if (latestEvidenceRun != null
+                && (!diagnosis.diagnosisId().equals(latestEvidenceRun.diagnosisId())
+                || !java.util.Objects.equals(
+                        diagnosis.sourcePlaybookVersionRef(),
+                        latestEvidenceRun.playbookVersionRef()))) {
+            throw new IllegalArgumentException(
+                    "scenario evidence run must belong to the diagnosis and frozen Playbook");
         }
 
         List<EvidenceContractView> contracts = evidenceContracts(frozenPlaybook);
@@ -87,7 +104,8 @@ public final class InvestigationTraceProjector {
                         contracts,
                         attempts,
                         missingRequired,
-                        stopReason),
+                        stopReason,
+                        latestEvidenceRun),
                 contracts,
                 attempts,
                 stopReason,
@@ -147,7 +165,8 @@ public final class InvestigationTraceProjector {
             List<EvidenceContractView> contracts,
             List<AdapterAttemptView> attempts,
             List<String> missingRequired,
-            StopReasonView stopReason) {
+            StopReasonView stopReason,
+            ScenarioEvidenceRunAudit latestEvidenceRun) {
         List<String> evidenceRefs = diagnosis.evidence().stream()
                 .map(EvidenceResult::queryId)
                 .distinct()
@@ -269,15 +288,18 @@ public final class InvestigationTraceProjector {
                                         .filter(item -> item.status() == EvidenceStatus.MISSING)
                                         .count()
                                 + " 份缺失",
-                null,
-                null,
-                null,
+                latestEvidenceRun == null ? null : latestEvidenceRun.startedAt(),
+                latestEvidenceRun == null ? null : latestEvidenceRun.completedAt(),
+                latestEvidenceRun == null ? null : latestEvidenceRun.duration(),
                 List.of(
+                        field("本次运行编号", latestEvidenceRun == null
+                                ? null : latestEvidenceRun.runId()),
                         field("证据数量", diagnosis.evidence().isEmpty()
                                 ? null : diagnosis.evidence().size()),
                         field("缺失必需请求", missingRequired.isEmpty()
                                 ? null : String.join(", ", missingRequired)),
-                        field("单次采集耗时", null),
+                        field("本次只读取证耗时", latestEvidenceRun == null
+                                ? null : latestEvidenceRun.duration()),
                         field("写操作", "禁用")),
                 evidenceRefs));
 

@@ -3,6 +3,8 @@ package vip.mate.troubleshooting.projection;
 import org.springframework.stereotype.Service;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ScenarioAffordance;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -50,6 +52,7 @@ public class DiagnosisExperienceProjectionService {
     private final DeploymentTopologyScenarioPolicy topologyScenarioPolicy;
     private final TroubleshootingPlaybookVersionService playbookVersions;
     private final InvestigationTraceProjector investigationTraceProjector;
+    private final ScenarioEvidenceRunAuditService scenarioEvidenceRuns;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
@@ -57,13 +60,15 @@ public class DiagnosisExperienceProjectionService {
             CanonicalEvidenceViewProjector evidenceProjector,
             DeploymentTopologyScenarioPolicy topologyScenarioPolicy,
             TroubleshootingPlaybookVersionService playbookVersions,
-            InvestigationTraceProjector investigationTraceProjector) {
+            InvestigationTraceProjector investigationTraceProjector,
+            ScenarioEvidenceRunAuditService scenarioEvidenceRuns) {
         this.persistence = persistence;
         this.derivationService = derivationService;
         this.evidenceProjector = evidenceProjector;
         this.topologyScenarioPolicy = topologyScenarioPolicy;
         this.playbookVersions = playbookVersions;
         this.investigationTraceProjector = investigationTraceProjector;
+        this.scenarioEvidenceRuns = scenarioEvidenceRuns;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -73,6 +78,10 @@ public class DiagnosisExperienceProjectionService {
         DiagnosisDerivation derivation = derivation(diagnosis, workspaceId, capabilityLimits);
         ApprovedPlaybookVersion frozenVersion = frozenPlaybookVersion(workspaceId, diagnosis);
         SopEntry frozenPlaybook = frozenVersion == null ? null : frozenVersion.playbook();
+        ScenarioEvidenceRunAudit latestScenarioEvidenceRun =
+                diagnosis.investigationMode() == InvestigationMode.SCENARIO_PLAYBOOK
+                        ? scenarioEvidenceRuns.latest(workspaceId, diagnosisId).orElse(null)
+                        : null;
 
         ConclusionType conclusionType = diagnosis.conclusionType();
         RouteAuthority authority = diagnosis.routeAuthority();
@@ -111,7 +120,11 @@ public class DiagnosisExperienceProjectionService {
                 scenarioAffordances(workspaceId, diagnosis),
                 evidenceFacts.callChain(),
                 evidenceSteps(diagnosis, derivation),
-                investigationTraceProjector.project(diagnosis, frozenPlaybook, derivation),
+                investigationTraceProjector.project(
+                        diagnosis,
+                        frozenPlaybook,
+                        derivation,
+                        latestScenarioEvidenceRun),
                 evidenceFacts.contrast(),
                 draft(diagnosis),
                 deduplicate(capabilityLimits),

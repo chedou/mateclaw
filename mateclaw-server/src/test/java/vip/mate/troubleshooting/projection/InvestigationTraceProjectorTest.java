@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.projection;
 
 import org.junit.jupiter.api.Test;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
@@ -111,6 +112,36 @@ class InvestigationTraceProjectorTest {
                 });
         assertThatThrownBy(() -> view.stages().clear())
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void projectsTheLatestImmutableEvidenceRunTimingOnTheCollectionStage() {
+        ScenarioEvidenceRunAudit run = new ScenarioEvidenceRunAudit(
+                "scenario-evidence-run-1",
+                "diag-1",
+                new PlaybookVersionRef("playbook-903001", 3),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                ConclusionType.LOCATED,
+                List.of("EV-2"),
+                CONCLUSION_AT.plusSeconds(10),
+                CONCLUSION_AT.plusSeconds(17),
+                "alice");
+
+        InvestigationTraceView view = projector.project(
+                deterministicDiagnosis(), frozenPlaybook(), derivation(), run);
+
+        InvestigationTraceView.StageView collection =
+                stage(view, InvestigationTraceView.StageKey.EVIDENCE_COLLECTION);
+        assertThat(collection.startedAt()).isEqualTo(CONCLUSION_AT.plusSeconds(10));
+        assertThat(collection.completedAt()).isEqualTo(CONCLUSION_AT.plusSeconds(17));
+        assertThat(collection.duration()).isEqualTo(Duration.ofSeconds(7));
+        assertThat(collection.fields()).anySatisfy(field -> {
+            assertThat(field.label()).isEqualTo("本次运行编号");
+            assertThat(field.value()).isEqualTo("scenario-evidence-run-1");
+        });
+        assertThat(view.investigationDuration())
+                .as("首次结论的北极星耗时不得被后续取证改写")
+                .isEqualTo(Duration.ofSeconds(164));
     }
 
     @Test

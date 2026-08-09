@@ -12,6 +12,8 @@ import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
+import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceRequest;
@@ -22,11 +24,14 @@ import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Runs a waiting Scenario Playbook's evidence plan and lets its Diagnosis
@@ -64,6 +69,8 @@ public class ScenarioEvidenceRunService {
     private final DiagnosisRuleEvaluator rules;
     private final PlaybookEvidenceCollector collector;
     private final EvidenceSpineOrchestrator spineOrchestrator;
+    private final ScenarioEvidenceRunAuditService runAudits;
+    private final Clock clock;
 
     @Autowired
     public ScenarioEvidenceRunService(
@@ -73,19 +80,11 @@ public class ScenarioEvidenceRunService {
             CriterionEvaluator criteria,
             DiagnosisRuleEvaluator rules,
             EvidenceSourceRouter router,
-            EvidenceSpineOrchestrator spineOrchestrator) {
+            EvidenceSpineOrchestrator spineOrchestrator,
+            ScenarioEvidenceRunAuditService runAudits) {
         this(persistence, versions, stateMachine, criteria, rules,
-                new PlaybookEvidenceCollector(router), spineOrchestrator);
-    }
-
-    ScenarioEvidenceRunService(
-            TroubleshootingPersistenceService persistence,
-            TroubleshootingPlaybookVersionService versions,
-            DiagnosisStateMachine stateMachine,
-            CriterionEvaluator criteria,
-            DiagnosisRuleEvaluator rules,
-            PlaybookEvidenceCollector collector) {
-        this(persistence, versions, stateMachine, criteria, rules, collector, null);
+                new PlaybookEvidenceCollector(router), spineOrchestrator,
+                runAudits, Clock.systemUTC());
     }
 
     ScenarioEvidenceRunService(
@@ -95,7 +94,22 @@ public class ScenarioEvidenceRunService {
             CriterionEvaluator criteria,
             DiagnosisRuleEvaluator rules,
             PlaybookEvidenceCollector collector,
-            EvidenceSpineOrchestrator spineOrchestrator) {
+            ScenarioEvidenceRunAuditService runAudits,
+            Clock clock) {
+        this(persistence, versions, stateMachine, criteria, rules, collector, null,
+                runAudits, clock);
+    }
+
+    ScenarioEvidenceRunService(
+            TroubleshootingPersistenceService persistence,
+            TroubleshootingPlaybookVersionService versions,
+            DiagnosisStateMachine stateMachine,
+            CriterionEvaluator criteria,
+            DiagnosisRuleEvaluator rules,
+            PlaybookEvidenceCollector collector,
+            EvidenceSpineOrchestrator spineOrchestrator,
+            ScenarioEvidenceRunAuditService runAudits,
+            Clock clock) {
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.versions = Objects.requireNonNull(versions, "versions");
         this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
@@ -103,6 +117,8 @@ public class ScenarioEvidenceRunService {
         this.rules = Objects.requireNonNull(rules, "rules");
         this.collector = Objects.requireNonNull(collector, "collector");
         this.spineOrchestrator = spineOrchestrator;
+        this.runAudits = Objects.requireNonNull(runAudits, "runAudits");
+        this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
     @Transactional
@@ -135,6 +151,7 @@ public class ScenarioEvidenceRunService {
                             + "not by the evidence router");
         }
 
+        Instant startedAt = clock.instant();
         List<EvidenceResult> evidence = collectEvidence(workspaceId, diagnosis, playbook);
         boolean fixtureMode = EvidenceProvenance.fixtureMode(evidence);
         PlaybookEvidenceAssessment assessment = PlaybookEvidenceAssessment.assess(
@@ -144,7 +161,35 @@ public class ScenarioEvidenceRunService {
                 frozen.knowledgeEvidenceGrade());
         Diagnosis advanced = stateMachine.recordScenarioEvidence(
                 diagnosis, playbook, evidence, assessment, safeActor);
-        return persistence.update(workspaceId, advanced, stored.version());
+        StoredDiagnosis updated = persistence.update(workspaceId, advanced, stored.version());
+        Instant completedAt = completedAt(startedAt, evidence);
+        runAudits.insert(workspaceId, new ScenarioEvidenceRunAudit(
+                "scenario-evidence-run-"
+                        + UUID.randomUUID().toString().replace("-", ""),
+                diagnosis.diagnosisId(),
+                diagnosis.sourcePlaybookVersionRef(),
+                updated.diagnosis().status(),
+                updated.diagnosis().conclusionType(),
+                evidence.stream().map(EvidenceResult::queryId).toList(),
+                startedAt,
+                completedAt,
+                safeActor));
+        return updated;
+    }
+
+    private Instant completedAt(Instant startedAt, List<EvidenceResult> evidence) {
+        Instant completedAt = clock.instant();
+        if (completedAt.isBefore(startedAt)) {
+            completedAt = startedAt;
+        }
+        for (EvidenceResult result : evidence) {
+            if (result != null
+                    && result.collectedAt() != null
+                    && result.collectedAt().isAfter(completedAt)) {
+                completedAt = result.collectedAt();
+            }
+        }
+        return completedAt;
     }
 
     private List<EvidenceResult> collectEvidence(

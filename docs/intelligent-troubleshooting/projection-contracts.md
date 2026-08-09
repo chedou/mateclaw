@@ -217,6 +217,10 @@ public record InvestigationTraceView(
   `derivation.faithful=false` 时不连接结论入边，断链显示完整性原因，不用文案补链；
 - 阶段 7 只记录可确认的 `conclusionAt`；`readyAt → conclusionAt` 是跨阶段调查总耗时，
   只放在顶层 `investigationDuration`，不冒充「结论或弃权」阶段耗时；
+- 场景只读取证完成后，阶段 5 从最新一条不可变 `ScenarioEvidenceRunAudit`
+  投影 `startedAt / completedAt / duration / runId`。这是“本次只读取证”的运行耗时，
+  不改写首次 `conclusionAt`，也不替换顶层北极星 `investigationDuration`；没有运行台账的历史记录
+  继续显示「未记录」，不从证据时间倒推；
 - 「全展示」指展示投影中已持久的安全技术事实；query 原文和 Incident
   rawInput 不进入该投影，observed 仅返回 canonical 白名单标量及日志条数，证据合同
   target 递归脱敏。判据节点和旧证据时间线只展示 authored expression 与
