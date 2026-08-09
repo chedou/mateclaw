@@ -1,6 +1,6 @@
 # 实施台账 · IT 智能排障系统
 
-> 更新时间：2026-08-06（P2.5 后）
+> 更新时间：2026-08-09（CTI 持久化真源竖线后）
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
@@ -28,7 +28,7 @@
 
 | # | 事项 | 卡在什么上 | 位置 |
 |---|---|---|---|
-| 1 | **填满 20–30 条录制目标** | **唯一的关键路径，且离线就能做、不用等窗口。** 目录 `guance-recording-targets.json` 目前 `targets: []`，即 `0 / 20`。要懂 Guance schema 的 owner 填；预检明写「不能自造查询映射」——编出来的映射会一路过闸门，然后在真实故障上给出看起来合理的错误答案 | 投产清单 A1 |
+| 1 | **填满 20–30 条录制目标** | **唯一的关键路径，且离线就能做、不用等窗口。** 目录 `guance-recording-targets.json` 目前 `targets: []`，即 `0 / 20`。2026-08-08 跑通的 CTI 持久化真源单例证明场景可运行，但没有进入 server-owned 批次目录，也没有 owner acceptance，不能拿 `1` 冒充 `1 / 20`。要懂 Guance schema 的 owner 填；预检明写「不能自造查询映射」——编出来的映射会一路过闸门，然后在真实故障上给出看起来合理的错误答案 | 投产清单 A1 |
 | 2 | **一次内网窗口**：配 Guance 端点 + owner 验收 | 依赖 1。进窗口前先跑 `scripts/troubleshooting-t7-preflight.sh`，七格逐条 | 投产清单 B |
 | ~~3~~ | ~~前端两颗回归钉子~~ | **已完成（2026-08-03）**：vitest 接上 `@vitejs/plugin-vue`，仓库第一次能真正渲染组件来测。`cited` 三态各自渲染成不同的话（把 `null` 并进 `false` 验证过会红），读不到时只说读不到、不猜；另一条钉住 provenance 面板确实被父组件 import 并放进模板、父组件也确实挂在正式工作台上 | 前端 |
 | 4 | 梯子的上一级：真实案例 → 结论规则可被证明 | **2026-08-03 现场核对后重新定性**：线上已有 12 条结案候选，**全部落在 `csdp:903001`——一条已有已审核 Playbook 的 selector 上**。它们不是在提议新知识，是在佐证既有知识。原先那句 `POSITIVE_REPLAY_REQUIRED` 指错了对象（候选身上没有可回放的 Playbook，`evidenceIds` 只有 id、没有 signalKind 与 target），已改为 `NO_ROUTEABLE_PLAYBOOK_PROJECTED` 并说明真实用途。**下一步的形态需要拍板**，见下 | §7 |

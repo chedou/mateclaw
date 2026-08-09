@@ -145,6 +145,16 @@ mateclaw:
             query-template: >-
               L::RE(`.*`):(count(*) as match_count,last(`@trace_id`) as ps_id)
               { `service` = 'csdp-task' AND `@code` = 701018 }
+            # This contract owns a fixed -15m window. Guance otherwise expands
+            # count(*) into 90 ten-second buckets while last(@trace_id) remains
+            # a single row, which cannot form one canonical observation.
+            query-options:
+              max-point-count: 1
+              interval: 900
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
             constant-fields:
               sample_message: cti_create_conversation_failed
             field-aliases: {}
@@ -194,6 +204,13 @@ mateclaw:
               - >-
                 L::RE(`.*`):(count_distinct(`@trace_id`) as success_match_count)
                 { `service` = 'csdp-task' AND `@msg` =~ '.*errCode[^0-9]*0([^0-9]|$).*' AND `@stack_trace` =~ '.*CreateConversation.*' AND `@code` = 701022 }
+            query-options:
+              max-point-count: 1
+              interval: 900
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
             constant-fields:
               discriminating_feature: inner_701022_on_failed_trace
             field-aliases: {}

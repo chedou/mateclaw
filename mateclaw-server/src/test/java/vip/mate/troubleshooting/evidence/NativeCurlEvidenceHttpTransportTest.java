@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,6 +86,30 @@ class NativeCurlEvidenceHttpTransportTest {
                 .hasMessageContaining("exit code 7")
                 .hasMessageNotContaining("runtime-secret")
                 .hasMessageNotContaining("upstream mentions");
+    }
+
+    @Test
+    void retriesOneEmptyReplyBeforeReturningTheReadOnlyResponse() throws Exception {
+        AtomicInteger starts = new AtomicInteger();
+        List<FakeProcess> attempts = List.of(
+                new FakeProcess("", "curl: (52) Empty reply from server", 52),
+                new FakeProcess(
+                        "{\"code\":200,\"success\":true}\n"
+                                + "__MATECLAW_HTTP_STATUS__:200",
+                        0));
+        NativeCurlEvidenceHttpTransport transport = new NativeCurlEvidenceHttpTransport(
+                "/usr/bin/curl",
+                ignored -> attempts.get(starts.getAndIncrement()));
+
+        EvidenceHttpTransport.Response response = transport.postJson(
+                URI.create("http://guance.example/api/v1/df/query_data_v1"),
+                Map.of("DF-API-KEY", "runtime-secret"),
+                "{\"queries\":[]}",
+                Duration.ofSeconds(5));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"success\":true");
+        assertThat(starts).hasValue(2);
     }
 
     private static final class FakeProcess extends Process {

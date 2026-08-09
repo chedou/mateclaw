@@ -273,6 +273,11 @@ class EvidenceAutoConfigurationTest {
                                     "@trace_id")
                             .doesNotContain("{{window_span}}")
                             .doesNotContain("{{search_term}}");
+                    assertThat(ctiSearch.getQueryOptions()).satisfies(options -> {
+                        assertThat(options.getMaxPointCount()).isEqualTo(1);
+                        assertThat(options.getInterval()).isEqualTo(900);
+                        assertThat(options.isAlignTime()).isFalse();
+                    });
                     EvidenceProperties.Binding ctiTrace = guance.getBindings()
                             .get("csdp-cti-create-conversation-trace-bundle");
                     assertThat(ctiTrace.getQueryTemplate())
@@ -293,6 +298,11 @@ class EvidenceAutoConfigurationTest {
                             .contains("@msg", "errCode", "@stack_trace", "CreateConversation");
                     assertThat(ctiContrast.getQueryTemplates())
                             .allMatch(query -> !query.contains("{{window_span}}"));
+                    assertThat(ctiContrast.getQueryOptions()).satisfies(options -> {
+                        assertThat(options.getMaxPointCount()).isEqualTo(1);
+                        assertThat(options.getInterval()).isEqualTo(900);
+                        assertThat(options.isAlignTime()).isFalse();
+                    });
                     assertThat(ctiContrast.getConstantFields())
                             .containsEntry(
                                     "discriminating_feature",

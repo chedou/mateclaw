@@ -175,7 +175,7 @@ describe('formal troubleshooting projection formatting', () => {
       'NOT_ACCEPTED',
       blockedProgress,
     )).toEqual({
-      label: '真实案例尚未准备好',
+      label: '生产验收批次未准备好',
       tone: 'warning',
     })
     expect(guanceDetailSourceState(
@@ -276,9 +276,10 @@ describe('formal troubleshooting projection formatting', () => {
     expect(progress.stages[1]).toEqual(expect.objectContaining({
       code: 'T7',
       state: 'BLOCKED',
-      title: '真实案例尚未准备好',
+      title: '生产验收批次未准备好',
     }))
     expect(progress.stages[1].detail).toContain('0 / 20')
+    expect(progress.stages[1].detail).toContain('不代表当前 Diagnosis 没有真源证据')
     expect(progress.nextAction).toContain('准备至少 20 个')
   })
 

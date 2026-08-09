@@ -35,6 +35,8 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
     private static final int MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
     private static final int MAX_STDERR_BYTES = 16 * 1024;
     private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
+    private static final int EMPTY_REPLY_EXIT_CODE = 52;
+    private static final int MAX_EMPTY_REPLY_ATTEMPTS = 2;
 
     private final String executable;
     private final ProcessStarter processStarter;
@@ -77,6 +79,26 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
         Map<String, String> safeHeaders = validateHeaders(headers);
         Duration safeTimeout = validateTimeout(timeout);
 
+        for (int attempt = 1; attempt <= MAX_EMPTY_REPLY_ATTEMPTS; attempt++) {
+            try {
+                return executeOnce(method, safeUri, safeHeaders, safeBody, safeTimeout);
+            } catch (CurlExitException failure) {
+                if (failure.exitCode() != EMPTY_REPLY_EXIT_CODE
+                        || attempt == MAX_EMPTY_REPLY_ATTEMPTS) {
+                    throw failure;
+                }
+            }
+        }
+        throw new IOException("native curl transport exhausted its retry budget");
+    }
+
+    private Response executeOnce(
+            String method,
+            URI safeUri,
+            Map<String, String> safeHeaders,
+            String safeBody,
+            Duration safeTimeout) throws Exception {
+
         // -q must be curl's first option so user-level .curlrc files are never loaded.
         Process process = processStarter.start(List.of(executable, "-q", "--config", "-"));
         try (ExecutorService readers = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -107,8 +129,7 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
             byte[] responseBytes = completed(stdout, "response");
             completed(stderr, "error stream");
             if (exitCode != 0) {
-                throw new IOException(
-                        "native curl transport failed with exit code " + exitCode);
+                throw new CurlExitException(exitCode);
             }
             return parseResponse(new String(responseBytes, StandardCharsets.UTF_8));
         } catch (IOException | RuntimeException failure) {
@@ -116,6 +137,19 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
                 process.destroyForcibly();
             }
             throw failure;
+        }
+    }
+
+    private static final class CurlExitException extends IOException {
+        private final int exitCode;
+
+        private CurlExitException(int exitCode) {
+            super("native curl transport failed with exit code " + exitCode);
+            this.exitCode = exitCode;
+        }
+
+        private int exitCode() {
+            return exitCode;
         }
     }
 

@@ -324,7 +324,7 @@ export function guanceAcceptanceProgress(
   const recordingBatchReady = executableTargetCount >= 20
   const recordingBatchBlocked = sourceReady && !recordingBatchReady
   const recordingTargetDetail = recordingTargets
-    ? `当前 ${executableTargetCount} / 20 个可执行真实案例（已固定 ${recordingTargets.frozenTargetCount} 个）。案例必须由服务端固定排障规则、取证要求和三项当前查询绑定；已采集案例不能重复计数。`
+    ? `当前 ${executableTargetCount} / 20 个可执行生产验收目标（已固定 ${recordingTargets.frozenTargetCount} 个）。目标必须由服务端固定排障规则、取证要求和三项当前查询绑定；已采集目标不能重复计数。这是生产验收批次门，不代表当前 Diagnosis 没有真源证据。`
     : '录制目标目录未加载，不能证明已准备 20 个可执行新目标。'
 
   const stages: GuanceAcceptanceStage[] = [
@@ -348,7 +348,7 @@ export function guanceAcceptanceProgress(
       title: ownerAccepted
         ? '负责人已确认当前数据源配置'
         : recordingBatchBlocked
-          ? '真实案例尚未准备好'
+          ? '生产验收批次未准备好'
           : ownerAcceptanceStale
             ? '数据源配置已变化，原确认失效'
             : coreSignalsObserved
