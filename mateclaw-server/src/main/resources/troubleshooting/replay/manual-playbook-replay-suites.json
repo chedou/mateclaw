@@ -799,6 +799,155 @@
     },
     {
       "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-itgw-access-failed-904003/v2",
+      "suiteVersion": 2,
+      "selectorKey": "csdp:904003",
+      "requiredEvidenceRequestId": "ITGW-LOG-SEARCH",
+      "sourceReference": "guance-aggregate-2026-08-07-itgw-access-failed-904003-v2",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-itgw-access-failed-904003-v2",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "904003",
+        "service": "csdp-wechat",
+        "title": "ITGW 访问失败 904003 路径核查",
+        "cause": "ITGW 内容安全策略拦截请求",
+        "category": "integration",
+        "ownerTeam": "CSDP WECHAT 负责团队",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "ITGW-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "检索 904003 失败请求并取得关联 ID",
+            "target": {
+              "search_term": "itgw_access_failed"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "ITGW-TRACE-BUNDLE",
+            "signalKind": "log_trace_bundle",
+            "purpose": "按关联 ID 还原同一次 ITGW 调用链",
+            "target": {
+              "ps_id": "recorded-itgw-trace-001"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "ITGW-CONTRAST",
+            "signalKind": "contrast_sample",
+            "purpose": "对比同窗口成功与失败请求的内容拦截特征",
+            "target": {
+              "scenario_key": "itgw_access_failed",
+              "exclude_ps_id": "recorded-itgw-trace-001"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "itgw_access_failure_present",
+            "sourceRequestId": "ITGW-LOG-SEARCH",
+            "description": "故障窗口内至少存在一条 ITGW 904003 失败请求",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "itgw_content_policy_discriminated",
+            "sourceRequestId": "ITGW-CONTRAST",
+            "description": "内容拦截特征集中出现在失败样本而非成功样本",
+            "rule": {
+              "kind": "failure_success_rate_contrast",
+              "failureMatchField": "failure_match_count",
+              "failureSampleField": "failure_sample_count",
+              "successMatchField": "success_match_count",
+              "successSampleField": "success_sample_count",
+              "minFailureRate": 0.9,
+              "maxSuccessRate": 0.1,
+              "minRateDelta": 0.8
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-ITGW-CONTENT-POLICY-BLOCK",
+            "requiredSignals": [
+              "itgw_access_failure_present",
+              "itgw_content_policy_discriminated"
+            ],
+            "rootCause": "ITGW 内容安全策略拦截请求",
+            "summary": "失败样本对内容拦截特征的命中率显著高于同窗口成功样本；根因定位为上游内容安全策略拦截。",
+            "confidence": "HIGH",
+            "conclusionType": "LOCATED",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "ITGW-A1",
+            "actionType": "AUTO_READONLY",
+            "title": "查看 904003 成功与失败样本对照",
+            "description": "只读查看规范化计数和调用链骨架，不展示或保存原始业务内容。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "ITGW-A2",
+            "actionType": "HUMAN_CONTACT",
+            "title": "联系 ITGW 负责人核对内容安全策略",
+            "description": "由负责人核对被拦截字段及业务放行规则，并同步修复调用方失败后的重试与异常处理。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-itgw-access-failed-904003-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-ITGW-CONTENT-POLICY-BLOCK",
+        "evidence": [
+          {
+            "requestId": "ITGW-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 9,
+              "ps_id": "recorded-itgw-trace-001"
+            }
+          },
+          {
+            "requestId": "ITGW-TRACE-BUNDLE",
+            "status": "ANOMALY",
+            "observed": {
+              "ps_id": "recorded-itgw-trace-001"
+            }
+          },
+          {
+            "requestId": "ITGW-CONTRAST",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "itgw_content_policy_blocked",
+              "failure_sample_count": 9,
+              "failure_match_count": 9,
+              "success_sample_count": 35,
+              "success_match_count": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
       "suiteId": "csdp-gateway-timeout/v1",
       "suiteVersion": 1,
       "selectorKey": "csdp:scenario:gateway_timeout",

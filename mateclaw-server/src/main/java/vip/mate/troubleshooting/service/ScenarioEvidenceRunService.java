@@ -11,12 +11,12 @@ import vip.mate.troubleshooting.evidence.EvidenceProvenance;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
 import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlanResolver;
 import vip.mate.troubleshooting.evidence.PlaybookEvidenceCollector;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
-import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
@@ -26,11 +26,8 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -58,9 +55,6 @@ import java.util.UUID;
  */
 @Service
 public class ScenarioEvidenceRunService {
-
-    private static final Set<String> EVIDENCE_SPINE_KINDS = Set.of(
-            "log_search", "log_trace_bundle", "contrast_sample");
 
     private final TroubleshootingPersistenceService persistence;
     private final TroubleshootingPlaybookVersionService versions;
@@ -196,7 +190,12 @@ public class ScenarioEvidenceRunService {
             long workspaceId,
             Diagnosis diagnosis,
             SopEntry playbook) {
-        EvidenceSpinePlan spinePlan = evidenceSpinePlan(playbook);
+        EvidenceSpinePlan spinePlan;
+        try {
+            spinePlan = EvidenceSpinePlanResolver.resolve(playbook);
+        } catch (IllegalArgumentException invalidContract) {
+            throw conflict("the frozen Evidence Spine contract is invalid");
+        }
         if (spinePlan == null) {
             return collector.collect(
                     workspaceId, playbook, diagnosis.incident(), diagnosis.evidence());
@@ -212,69 +211,6 @@ public class ScenarioEvidenceRunService {
         // configuration; the browser cannot force Guance or Replay.
         return spineOrchestrator.collect(
                 workspaceId, diagnosis.incident(), spinePlan, null).evidence();
-    }
-
-    /**
-     * Recognizes the fixed three-step evidence protocol without coupling it to
-     * one adapter. Other Playbooks keep the generic collector path.
-     */
-    private EvidenceSpinePlan evidenceSpinePlan(SopEntry playbook) {
-        if (playbook.evidenceRequests().size() != EVIDENCE_SPINE_KINDS.size()) {
-            return null;
-        }
-        Map<String, EvidenceRequest> byKind = new HashMap<>();
-        for (EvidenceRequest request : playbook.evidenceRequests()) {
-            if (!EVIDENCE_SPINE_KINDS.contains(request.signalKind())
-                    || byKind.putIfAbsent(request.signalKind(), request) != null) {
-                return null;
-            }
-        }
-        if (!byKind.keySet().equals(EVIDENCE_SPINE_KINDS)) {
-            return null;
-        }
-
-        EvidenceRequest search = byKind.get("log_search");
-        EvidenceRequest trace = byKind.get("log_trace_bundle");
-        EvidenceRequest contrast = byKind.get("contrast_sample");
-        String searchTerm = targetString(search, "search_term");
-        Object contrastScenario = contrast.target().get("scenario_key");
-        if (contrastScenario != null
-                && (!(contrastScenario instanceof String value)
-                || !searchTerm.equals(value.trim()))) {
-            throw conflict("Evidence Spine search and contrast targets must match");
-        }
-
-        String window = normalizedWindow(search.window());
-        if (!window.equals(normalizedWindow(trace.window()))
-                || !window.equals(normalizedWindow(contrast.window()))) {
-            throw conflict("Evidence Spine requests must use one bounded time window");
-        }
-        try {
-            return new EvidenceSpinePlan(
-                    search.requestId(),
-                    trace.requestId(),
-                    contrast.requestId(),
-                    searchTerm,
-                    window);
-        } catch (IllegalArgumentException invalidContract) {
-            throw conflict("the frozen Evidence Spine contract is invalid");
-        }
-    }
-
-    private String targetString(EvidenceRequest request, String field) {
-        Object raw = request.target().get(field);
-        if (!(raw instanceof String value) || value.isBlank()) {
-            throw conflict("Evidence Spine " + field + " is required");
-        }
-        return value.trim();
-    }
-
-    private String normalizedWindow(String value) {
-        if (value == null || value.isBlank()) {
-            return "-15m";
-        }
-        String normalized = value.trim();
-        return normalized.startsWith("-") ? normalized : "-" + normalized;
     }
 
     /**

@@ -16,6 +16,9 @@ import java.util.List;
         @JsonSubTypes.Type(value = Criterion.NumericGte.class, name = "numeric_gte"),
         @JsonSubTypes.Type(value = Criterion.MissingOrLte.class, name = "missing_or_lte"),
         @JsonSubTypes.Type(value = Criterion.RatioOfSumGt.class, name = "ratio_of_sum_gt"),
+        @JsonSubTypes.Type(
+                value = Criterion.FailureSuccessRateContrast.class,
+                name = "failure_success_rate_contrast"),
         @JsonSubTypes.Type(value = Criterion.MultipleGt.class, name = "multiple_gt"),
         @JsonSubTypes.Type(value = Criterion.ContainsAndIn.class, name = "contains_and_in"),
         @JsonSubTypes.Type(value = Criterion.BooleanEquals.class, name = "boolean_equals")
@@ -23,6 +26,7 @@ import java.util.List;
 public sealed interface Criterion permits Criterion.NumericGte,
         Criterion.MissingOrLte,
         Criterion.RatioOfSumGt,
+        Criterion.FailureSuccessRateContrast,
         Criterion.MultipleGt,
         Criterion.ContainsAndIn,
         Criterion.BooleanEquals {
@@ -47,6 +51,30 @@ public sealed interface Criterion permits Criterion.NumericGte,
         public RatioOfSumGt {
             numeratorField = required(numeratorField, "numeratorField");
             addendField = required(addendField, "addendField");
+        }
+    }
+
+    /**
+     * Requires a feature to be common in failures, rare in successes, and
+     * separated by a minimum rate delta. Counts are evaluated as two cohorts;
+     * comparing raw match counts alone would overstate tiny failure samples.
+     */
+    record FailureSuccessRateContrast(
+            String failureMatchField,
+            String failureSampleField,
+            String successMatchField,
+            String successSampleField,
+            double minFailureRate,
+            double maxSuccessRate,
+            double minRateDelta) implements Criterion {
+        public FailureSuccessRateContrast {
+            failureMatchField = required(failureMatchField, "failureMatchField");
+            failureSampleField = required(failureSampleField, "failureSampleField");
+            successMatchField = required(successMatchField, "successMatchField");
+            successSampleField = required(successSampleField, "successSampleField");
+            unitInterval(minFailureRate, "minFailureRate");
+            unitInterval(maxSuccessRate, "maxSuccessRate");
+            unitInterval(minRateDelta, "minRateDelta");
         }
     }
 
@@ -88,5 +116,11 @@ public sealed interface Criterion permits Criterion.NumericGte,
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value.trim();
+    }
+
+    private static void unitInterval(double value, String name) {
+        if (!Double.isFinite(value) || value < 0D || value > 1D) {
+            throw new IllegalArgumentException(name + " must be between 0 and 1");
+        }
     }
 }

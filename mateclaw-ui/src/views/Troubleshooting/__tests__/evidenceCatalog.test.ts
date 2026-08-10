@@ -254,9 +254,9 @@ describe('evidence query catalog presentation', () => {
         required: true,
         description: '错误标记的资源参数',
       }],
-    })).toContain('取证接入')
+    })).toContain('“接入系统”中登记')
     expect(directTrialBlockReason(contract, deploymentAsset))
-      .toContain('接管为 Workspace 模块配置')
+      .toContain('登记这个模块')
   })
 
   it('explains every owner-provided field still missing before asset takeover', () => {

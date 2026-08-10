@@ -26,35 +26,85 @@
               @click="openWorkbench"
             >
               <el-icon class="nav-icon"><DataAnalysis /></el-icon>
-              <span v-if="!navCompact" class="nav-label">排障工作台</span>
+              <span v-if="!navCompact" class="nav-copy">
+                <span class="nav-label">排障工作台</span>
+                <small>创建与查看排障单</small>
+              </span>
+            </button>
+          </el-tooltip>
+
+          <el-tooltip
+            v-for="item in WORKBENCH_PRIMARY_CAPABILITIES"
+            :key="item.key"
+            :content="item.label"
+            placement="right"
+            :disabled="!navCompact"
+          >
+            <button
+              type="button"
+              class="nav-item"
+              :aria-label="item.label"
+              :class="{ active: capabilityItemActive(item) }"
+              :aria-current="capabilityItemActive(item) ? 'page' : undefined"
+              @click="openCapability(item)"
+            >
+              <el-icon class="nav-icon"><component :is="capabilityIcon(item)" /></el-icon>
+              <span v-if="!navCompact" class="nav-copy">
+                <span class="nav-label">{{ item.label }}</span>
+                <small>{{ item.description }}</small>
+              </span>
             </button>
           </el-tooltip>
 
           <section v-for="group in WORKBENCH_CAPABILITY_GROUPS" :key="group.key" class="nav-group">
-            <h3 v-if="!navCompact">{{ group.label }}</h3>
             <el-tooltip
-              v-for="item in group.items"
-              :key="item.command"
-              :content="item.label"
+              :content="group.label"
               placement="right"
               :disabled="!navCompact"
             >
-              <div>
+              <button
+                type="button"
+                class="nav-item nav-group-toggle"
+                :class="{
+                  expanded: capabilityGroupExpanded(group),
+                  'contains-active': capabilityGroupActive(group),
+                }"
+                :aria-label="group.label"
+                :aria-expanded="capabilityGroupExpanded(group)"
+                @click="toggleCapabilityGroup(group.key)"
+              >
+                <el-icon class="nav-icon"><component :is="capabilityGroupIcon(group)" /></el-icon>
+                <span v-if="!navCompact" class="nav-copy">
+                  <span class="nav-label">{{ group.label }}</span>
+                  <small>{{ capabilityGroupDescription(group) }}</small>
+                </span>
+                <el-icon v-if="!navCompact" class="nav-group-chevron"><ArrowDown /></el-icon>
+              </button>
+            </el-tooltip>
+
+            <div v-show="capabilityGroupExpanded(group)" class="nav-children">
+              <el-tooltip
+                v-for="item in group.items"
+                :key="item.key"
+                :content="item.label"
+                placement="right"
+                :disabled="!navCompact"
+              >
                 <button
                   type="button"
-                  class="nav-item"
+                  class="nav-child"
                   :aria-label="item.label"
-                  :class="{ active: activeCommand === item.command }"
-                  :aria-current="activeCommand === item.command ? 'page' : undefined"
-                  @click="openCapability(item.command)"
+                  :class="{ active: capabilityItemActive(item) }"
+                  :aria-current="capabilityItemActive(item) ? 'page' : undefined"
+                  @click="openCapability(item)"
                 >
                   <el-icon class="nav-icon">
-                    <component :is="CAPABILITY_ICONS[item.command]" />
+                    <component :is="capabilityIcon(item)" />
                   </el-icon>
                   <span v-if="!navCompact" class="nav-label">{{ item.label }}</span>
                 </button>
-              </div>
-            </el-tooltip>
+              </el-tooltip>
+            </div>
           </section>
         </nav>
 
@@ -84,23 +134,29 @@ import { computed, ref } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  ArrowDown,
   Collection,
   Connection,
   DataAnalysis,
   DocumentAdd,
   OfficeBuilding,
   TrendCharts,
+  Tools,
 } from '@element-plus/icons-vue'
 import { useMediaQuery } from '@/composables/useBreakpoint'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import type { WorkbenchCapabilityCommand } from './workbenchView'
 import {
   WORKBENCH_CAPABILITY_GROUPS,
+  WORKBENCH_PRIMARY_CAPABILITIES,
   observabilityAssetsLocation,
+  normalizeEvidenceSetupSection,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
   workbenchOverlayLocation,
   type WorkbenchOverlayCapability,
+  type WorkbenchCapabilityNavGroup,
+  type WorkbenchCapabilityNavItem,
 } from './workbenchCapabilityMenu'
 
 const route = useRoute()
@@ -108,6 +164,7 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troubleshooting'))
 const navCollapsed = ref(localStorage.getItem('mc-troubleshooting-nav-collapsed') === 'true')
+const manuallyExpandedGroups = ref(new Set<WorkbenchCapabilityNavGroup['key']>())
 const forcedRailViewport = useMediaQuery('(max-width: 1040px)')
 const navCompact = computed(() => navCollapsed.value || forcedRailViewport.value)
 
@@ -118,6 +175,15 @@ const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
   ledger: TrendCharts,
   'case-knowledge': DocumentAdd,
 }
+const EVIDENCE_SECTION_ICONS: Record<string, Component> = {
+  modules: OfficeBuilding,
+  tools: Tools,
+  source: Connection,
+}
+const CAPABILITY_GROUP_ICONS: Record<WorkbenchCapabilityNavGroup['key'], Component> = {
+  advanced: Tools,
+  learning: TrendCharts,
+}
 
 const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
   if (route.path === '/troubleshooting/observability-assets') return 'observability-assets'
@@ -125,6 +191,39 @@ const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
   return normalizeWorkbenchOverlayCapability(route.query.capability)
 })
 const workbenchActive = computed(() => route.path === '/troubleshooting' && !activeCommand.value)
+
+function capabilityItemActive(item: WorkbenchCapabilityNavItem) {
+  if (activeCommand.value !== item.command) return false
+  if (item.command !== 'observability-assets') return true
+  return normalizeEvidenceSetupSection(route.query.section) === item.section
+}
+
+function capabilityIcon(item: WorkbenchCapabilityNavItem) {
+  return item.section ? EVIDENCE_SECTION_ICONS[item.section] : CAPABILITY_ICONS[item.command]
+}
+
+function capabilityGroupIcon(group: WorkbenchCapabilityNavGroup) {
+  return CAPABILITY_GROUP_ICONS[group.key]
+}
+
+function capabilityGroupDescription(group: WorkbenchCapabilityNavGroup) {
+  return group.key === 'advanced' ? '数据连接与取证配置' : '效果评估与案例沉淀'
+}
+
+function capabilityGroupActive(group: WorkbenchCapabilityNavGroup) {
+  return group.items.some(capabilityItemActive)
+}
+
+function capabilityGroupExpanded(group: WorkbenchCapabilityNavGroup) {
+  return capabilityGroupActive(group) || manuallyExpandedGroups.value.has(group.key)
+}
+
+function toggleCapabilityGroup(groupKey: WorkbenchCapabilityNavGroup['key']) {
+  const next = new Set(manuallyExpandedGroups.value)
+  if (next.has(groupKey)) next.delete(groupKey)
+  else next.add(groupKey)
+  manuallyExpandedGroups.value = next
+}
 
 function preferredWorkbenchPath(): string {
   if (route.path === '/troubleshooting') {
@@ -140,14 +239,15 @@ function openWorkbench() {
   void router.push(preferredWorkbenchPath())
 }
 
-function openCapability(command: WorkbenchCapabilityCommand) {
+function openCapability(item: WorkbenchCapabilityNavItem) {
+  const command = item.command
   const returnTo = preferredWorkbenchPath()
   if (command === 'playbooks') {
     void router.push({ path: '/troubleshooting/sops', query: { returnTo } })
     return
   }
   if (command === 'observability-assets') {
-    void router.push(observabilityAssetsLocation(undefined, returnTo))
+    void router.push(observabilityAssetsLocation(undefined, returnTo, item.section))
     return
   }
   void router.push(workbenchOverlayLocation(command as WorkbenchOverlayCapability, returnTo))
@@ -163,21 +263,28 @@ function toggleNav() {
 .troubleshooting-shell { height:100%; min-height:0; overflow:hidden; background:transparent; }
 .troubleshooting-frame { height:min(calc(100vh - 28px),100%); min-height:0; overflow:hidden; }
 .troubleshooting-layout { display:flex; gap:18px; width:100%; height:100%; min-width:0; min-height:0; }
-.capability-nav { display:flex; flex:0 0 210px; flex-direction:column; width:210px; min-width:210px; padding:14px 10px; overflow-y:auto; transition:width .25s ease,min-width .25s ease,flex-basis .25s ease; }
+.capability-nav { display:flex; flex:0 0 236px; flex-direction:column; width:236px; min-width:236px; padding:14px 10px; overflow-y:auto; transition:width .25s ease,min-width .25s ease,flex-basis .25s ease; }
 .capability-nav.collapsed { flex-basis:56px; width:56px; min-width:56px; padding:12px 8px; }
 .capability-nav__intro { padding:4px 8px 12px; margin-bottom:6px; border-bottom:1px solid var(--mc-border-light); }
 .capability-nav__intro span { display:block; margin-bottom:5px; color:var(--mc-primary); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
 .capability-nav__intro h2 { margin:0; color:var(--mc-text-primary); font-size:20px; letter-spacing:-.03em; }
 .capability-nav nav { display:flex; flex-direction:column; }
 .nav-group { margin-top:4px; }
-.nav-group h3 { margin:0; padding:12px 8px 4px; color:var(--mc-text-tertiary); font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
 .nav-item,.nav-child { display:flex; align-items:center; gap:8px; width:100%; border:0; color:var(--mc-text-secondary); background:transparent; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,color .15s ease; }
-.nav-item { min-height:38px; padding:8px 10px; border-radius:10px; font-size:13px; font-weight:500; }
+.nav-item { position:relative; min-height:52px; padding:8px 10px; border-radius:10px; font-size:13px; font-weight:500; }
 .nav-item:hover,.nav-item:focus-visible,.nav-child:hover,.nav-child:focus-visible { color:var(--mc-text-primary); background:var(--mc-bg-muted); outline:none; }
 .nav-item.active,.nav-child.active { color:var(--mc-primary); background:var(--mc-primary-bg); font-weight:650; box-shadow:inset 0 0 0 1px rgba(217,109,70,.08); }
+.nav-item.active::before { position:absolute; top:10px; bottom:10px; left:0; width:3px; border-radius:0 3px 3px 0; background:var(--mc-primary); content:""; }
 .nav-icon { display:grid; place-items:center; flex:0 0 18px; width:18px; height:18px; font-size:17px; }
 .nav-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.capability-nav.collapsed .nav-item { justify-content:center; padding:10px 8px; }
+.nav-copy { display:flex; flex:1; flex-direction:column; min-width:0; line-height:1.25; }
+.nav-copy small { margin-top:3px; overflow:hidden; color:var(--mc-text-tertiary); font-size:10px; font-weight:450; text-overflow:ellipsis; white-space:nowrap; }
+.nav-item.active .nav-copy small { color:color-mix(in srgb,var(--mc-primary) 70%,var(--mc-text-secondary)); }
+.nav-group-toggle.contains-active { color:var(--mc-primary); }
+.nav-group-chevron { flex:0 0 14px; font-size:12px; transition:transform .18s ease; }
+.nav-group-toggle.expanded .nav-group-chevron { transform:rotate(180deg); }
+.capability-nav.collapsed .nav-item { justify-content:center; min-height:40px; padding:10px 8px; }
+.capability-nav.collapsed .nav-item.active::before { top:8px; bottom:8px; }
 .nav-children { display:grid; gap:2px; margin:3px 0 5px 26px; padding-left:8px; border-left:1px solid var(--mc-border); }
 .nav-child { min-height:32px; padding:6px 8px; border-radius:8px; font-size:12px; }
 .nav-child .el-icon { flex:0 0 15px; font-size:14px; }

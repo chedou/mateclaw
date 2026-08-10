@@ -213,7 +213,7 @@ class EvidenceAutoConfigurationTest {
                     assertThat(guance.getTimeout()).isEqualTo(java.time.Duration.ofSeconds(45));
                     assertThat(context.getBean(EvidenceHttpTransport.class))
                             .isInstanceOf(NativeCurlEvidenceHttpTransport.class);
-                    assertThat(guance.getAssetBindings()).hasSize(2);
+                    assertThat(guance.getAssetBindings()).hasSize(3);
                     assertThat(guance.getAssetBindings().get(0)).satisfies(asset -> {
                                 assertThat(asset.getWorkspaceId()).isEqualTo(1L);
                                 assertThat(asset.getSystem()).isEqualTo("CSDP");
@@ -251,6 +251,21 @@ class EvidenceAutoConfigurationTest {
                                         "contrast_sample",
                                         "csdp-cti-create-conversation-contrast");
                     });
+                    assertThat(guance.getAssetBindings().get(2)).satisfies(asset -> {
+                        assertThat(asset.getWorkspaceId()).isEqualTo(1L);
+                        assertThat(asset.getSystem()).isEqualTo("CSDP");
+                        assertThat(asset.getService()).isEqualTo("csdp-wechat");
+                        assertThat(asset.getSignalBindings())
+                                .containsEntry(
+                                        "log_search",
+                                        "csdp-itgw-access-log-search")
+                                .containsEntry(
+                                        "log_trace_bundle",
+                                        "csdp-itgw-access-trace-bundle")
+                                .containsEntry(
+                                        "contrast_sample",
+                                        "csdp-itgw-access-contrast");
+                    });
 
                     assertThat(guance.getBindings())
                             .containsKeys(
@@ -262,7 +277,10 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-k8s-workload-health",
                                     "csdp-cti-create-conversation-log-search",
                                     "csdp-cti-create-conversation-trace-bundle",
-                                    "csdp-cti-create-conversation-contrast");
+                                    "csdp-cti-create-conversation-contrast",
+                                    "csdp-itgw-access-log-search",
+                                    "csdp-itgw-access-trace-bundle",
+                                    "csdp-itgw-access-contrast");
                     EvidenceProperties.Binding ctiSearch = guance.getBindings()
                             .get("csdp-cti-create-conversation-log-search");
                     assertThat(ctiSearch.getQueryTemplate())
@@ -307,6 +325,45 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry(
                                     "discriminating_feature",
                                     "inner_701022_on_failed_trace");
+                    EvidenceProperties.Binding itgwSearch = guance.getBindings()
+                            .get("csdp-itgw-access-log-search");
+                    assertThat(itgwSearch.getQueryTemplate())
+                            .contains("csdp-wechat", "@code", "904003", "@trace_id")
+                            .doesNotContain("{{window_span}}", "{{search_term}}");
+                    assertThat(itgwSearch.getQueryOptions()).satisfies(options -> {
+                        assertThat(options.getMaxPointCount()).isEqualTo(1);
+                        assertThat(options.getInterval()).isEqualTo(900);
+                        assertThat(options.isAlignTime()).isFalse();
+                    });
+                    EvidenceProperties.Binding itgwTrace = guance.getBindings()
+                            .get("csdp-itgw-access-trace-bundle");
+                    assertThat(itgwTrace.getQueryTemplate())
+                            .contains("csdp-wechat", "{{ps_id}}")
+                            .doesNotContain("{{search_term}}");
+                    assertThat(itgwTrace.getFieldAliases())
+                            .containsEntry("message@trace_id", "ps_id")
+                            .containsEntry("message@level", "level")
+                            .containsEntry("message@msg", "message");
+                    EvidenceProperties.Binding itgwContrast = guance.getBindings()
+                            .get("csdp-itgw-access-contrast");
+                    assertThat(itgwContrast.getQueryTemplates()).hasSize(4);
+                    assertThat(itgwContrast.getQueryTemplates().get(0))
+                            .contains("csdp-wechat", "904003");
+                    assertThat(itgwContrast.getQueryTemplates().get(1))
+                            .contains("csdp-wechat", "904003", "敏感词");
+                    assertThat(itgwContrast.getQueryTemplates().get(2))
+                            .contains("csdp-wechat", "workOrderPhase", "StatusCode");
+                    assertThat(itgwContrast.getQueryTemplates().get(3))
+                            .contains("csdp-wechat", "workOrderPhase", "StatusCode", "敏感词");
+                    assertThat(itgwContrast.getQueryOptions()).satisfies(options -> {
+                        assertThat(options.getMaxPointCount()).isEqualTo(1);
+                        assertThat(options.getInterval()).isEqualTo(900);
+                        assertThat(options.isAlignTime()).isFalse();
+                    });
+                    assertThat(itgwContrast.getConstantFields())
+                            .containsEntry(
+                                    "discriminating_feature",
+                                    "itgw_content_policy_blocked");
                     assertThat(guance.getBindings().get("csdp-message-send-log-search")
                             .getQueryTemplate())
                             .contains(

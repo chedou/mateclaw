@@ -37,6 +37,8 @@ public final class CriterionEvaluator {
                     number(observed, rule.field()), value -> value >= rule.threshold());
             case Criterion.MissingOrLte rule -> evaluateMissingOrLte(rule, observed);
             case Criterion.RatioOfSumGt rule -> evaluateRatio(rule, observed);
+            case Criterion.FailureSuccessRateContrast rule ->
+                    evaluateFailureSuccessRateContrast(rule, observed);
             case Criterion.MultipleGt rule -> evaluateMultiple(rule, observed);
             case Criterion.ContainsAndIn rule -> evaluateContainsAndIn(rule, observed);
             case Criterion.BooleanEquals rule -> observed.get(rule.field()) instanceof Boolean value
@@ -97,6 +99,38 @@ public final class CriterionEvaluator {
         double denominator = numerator.getAsDouble() + addend.getAsDouble();
         return outcome(denominator > 0
                 && numerator.getAsDouble() / denominator > rule.threshold());
+    }
+
+    private CriterionOutcome evaluateFailureSuccessRateContrast(
+            Criterion.FailureSuccessRateContrast rule,
+            Map<String, ?> observed) {
+        OptionalDouble failureMatches = number(observed, rule.failureMatchField());
+        OptionalDouble failureSamples = number(observed, rule.failureSampleField());
+        OptionalDouble successMatches = number(observed, rule.successMatchField());
+        OptionalDouble successSamples = number(observed, rule.successSampleField());
+        if (failureMatches.isEmpty()
+                || failureSamples.isEmpty()
+                || successMatches.isEmpty()
+                || successSamples.isEmpty()) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        double failureMatchCount = failureMatches.getAsDouble();
+        double failureSampleCount = failureSamples.getAsDouble();
+        double successMatchCount = successMatches.getAsDouble();
+        double successSampleCount = successSamples.getAsDouble();
+        if (failureSampleCount <= 0D
+                || successSampleCount <= 0D
+                || failureMatchCount < 0D
+                || successMatchCount < 0D
+                || failureMatchCount > failureSampleCount
+                || successMatchCount > successSampleCount) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        double failureRate = failureMatchCount / failureSampleCount;
+        double successRate = successMatchCount / successSampleCount;
+        return outcome(failureRate >= rule.minFailureRate()
+                && successRate <= rule.maxSuccessRate()
+                && failureRate - successRate >= rule.minRateDelta());
     }
 
     private CriterionOutcome evaluateMultiple(

@@ -99,10 +99,24 @@ const router = createRouter({
               // 这里留重定向而不是删路由：它早已不在二级导航里，但书签和旧深链
               // （?tab=、?returnTo=）仍可能指过来，直接删掉会变成 404。
               path: 'evidence-catalog',
-              redirect: to => ({
-                path: '/troubleshooting/observability-assets',
-                query: to.query,
-              }),
+              redirect: to => {
+                const query = { ...to.query }
+                const tab = Array.isArray(query.tab) ? query.tab[0] : query.tab
+                const requestedSection = Array.isArray(query.section) ? query.section[0] : query.section
+                delete query.tab
+                const section = requestedSection === 'tools' || requestedSection === 'source'
+                  || requestedSection === 'modules'
+                  ? requestedSection
+                  : tab === 'contracts' || tab === 'routes'
+                    ? 'tools'
+                    : tab === 'acceptance'
+                      ? 'source'
+                      : 'modules'
+                return {
+                  path: '/troubleshooting/observability-assets',
+                  query: { ...query, section },
+                }
+              },
             },
             {
               path: 'observability-assets',

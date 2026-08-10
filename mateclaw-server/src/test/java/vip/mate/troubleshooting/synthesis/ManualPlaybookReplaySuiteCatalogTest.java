@@ -130,6 +130,61 @@ class ManualPlaybookReplaySuiteCatalogTest {
                         ManualPlaybookReplaySuite.Disposition.ABSTAINED);
     }
 
+    @Test
+    void theItgw904003RouteUsesRecordedComparisonEvidenceForALocatedConclusion() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        ManualPlaybookReplaySuiteCatalog.ResolvedSuite resolved =
+                catalog.find("csdp:904003").orElseThrow();
+        SopEntry candidate = resolved.suite().exampleCandidate();
+
+        assertThat(candidate.service()).isEqualTo("csdp-wechat");
+        assertThat(candidate.evidenceRequests())
+                .extracting(request -> request.signalKind())
+                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
+        assertThat(candidate.diagnosisRules()).singleElement()
+                .satisfies(rule -> {
+                    assertThat(rule.confidence().name()).isEqualTo("HIGH");
+                    assertThat(rule.conclusionType().name()).isEqualTo("LOCATED");
+                    assertThat(rule.rootCause()).contains("ITGW", "内容安全策略", "拦截");
+                    assertThat(rule.requiredSignals())
+                            .containsExactly(
+                                    "itgw_access_failure_present",
+                                    "itgw_content_policy_discriminated");
+                });
+        assertThat(resolved.evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(resolved.suite().cases())
+                .extracting(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .containsExactly(
+                        ManualPlaybookReplaySuite.Disposition.MATCHED,
+                        ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                        ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+        ManualPlaybookReplaySuite.ReplayCase weakFailure = resolved.suite().cases().stream()
+                .filter(item -> item.expectedDisposition()
+                        == ManualPlaybookReplaySuite.Disposition.EXCLUDED)
+                .findFirst()
+                .orElseThrow();
+        assertThat(weakFailure.evidence().stream()
+                .filter(item -> "ITGW-CONTRAST".equals(item.requestId()))
+                .findFirst()
+                .orElseThrow()
+                .observed())
+                .as("失败仅 1/100 即使成功 0/100，也不能得到 LOCATED/HIGH")
+                .containsEntry("failure_sample_count", 100D)
+                .containsEntry("failure_match_count", 1D)
+                .containsEntry("success_sample_count", 100D)
+                .containsEntry("success_match_count", 0D);
+    }
+
     /**
      * The 903001 fixture is the only Playbook carrying a production-write
      * action, and that is now its job.

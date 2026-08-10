@@ -99,6 +99,12 @@ final class ManualPlaybookReplaySuiteTemplateFactory {
                 put(writes, rule.field(), finite(Math.nextUp(rule.threshold())));
             }
             case Criterion.RatioOfSumGt rule -> writeRatioCounterexample(rule, writes);
+            case Criterion.FailureSuccessRateContrast rule -> {
+                put(writes, rule.failureSampleField(), 100D);
+                put(writes, rule.failureMatchField(), 1D);
+                put(writes, rule.successSampleField(), 100D);
+                put(writes, rule.successMatchField(), 0D);
+            }
             case Criterion.MultipleGt rule -> {
                 put(writes, rule.baselineField(), 1D);
                 put(writes, rule.field(), finite(rule.multiplier()));

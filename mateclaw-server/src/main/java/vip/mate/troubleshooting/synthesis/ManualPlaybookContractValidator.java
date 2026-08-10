@@ -181,6 +181,15 @@ public final class ManualPlaybookContractValidator {
                 key(item.addendField(), 128, path + ".addendField", errors);
                 finite(item.threshold(), path + ".threshold", errors);
             }
+            case Criterion.FailureSuccessRateContrast item -> {
+                key(item.failureMatchField(), 128, path + ".failureMatchField", errors);
+                key(item.failureSampleField(), 128, path + ".failureSampleField", errors);
+                key(item.successMatchField(), 128, path + ".successMatchField", errors);
+                key(item.successSampleField(), 128, path + ".successSampleField", errors);
+                finite(item.minFailureRate(), path + ".minFailureRate", errors);
+                finite(item.maxSuccessRate(), path + ".maxSuccessRate", errors);
+                finite(item.minRateDelta(), path + ".minRateDelta", errors);
+            }
             case Criterion.MultipleGt item -> {
                 key(item.field(), 128, path + ".field", errors);
                 key(item.baselineField(), 128, path + ".baselineField", errors);

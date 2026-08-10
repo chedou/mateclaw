@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MateClaw 智能排障·当前怎么用</title>
+    <style>
+      :root {
+        --bg: #f7f4ef;
+        --panel: #fffdf9;
+        --ink: #24211e;
+        --muted: #6d675f;
+        --line: #ded7cd;
+        --green: #376b5f;
+        --green-soft: #e7f0ec;
+        --blue: #345d7e;
+        --blue-soft: #e7eef5;
+        --gold: #a97938;
+        --gold-soft: #f5ecdd;
+        --red: #9b4d42;
+        --red-soft: #f6e9e5;
+        --orange: #c96642;
+        --orange-soft: #f6e9e1;
+        --shadow: 0 18px 46px rgba(54, 48, 38, 0.1);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.58;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      button { font: inherit; }
+
+      .page {
+        width: min(1220px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 56px;
+      }
+
+      .topbar,
+      .section-head,
+      .card-title,
+      .callout,
+      .role-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .crumb,
+      .desc,
+      .section-head p,
+      .footer,
+      .muted { color: var(--muted); }
+
+      .crumb,
+      .desc,
+      .section-head p,
+      .footer,
+      .badge,
+      .tag,
+      th,
+      td,
+      .step p,
+      .term p,
+      .doc-link span { font-size: 13px; }
+
+      .actions,
+      .eyebrow,
+      .nav,
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .button {
+        min-height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 13px;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .button.primary {
+        border-color: var(--orange);
+        background: var(--orange);
+        color: white;
+      }
+
+      .button.secondary {
+        border-color: rgba(52, 93, 126, 0.35);
+        color: var(--blue);
+      }
+
+      .hero,
+      .card,
+      .table-wrap,
+      .step,
+      .term,
+      .doc-link,
+      .scenario-box,
+      .callout,
+      details {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .hero {
+        margin-top: 16px;
+        padding: 26px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+        gap: 24px;
+      }
+
+      .badge,
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .badge {
+        border: 1px solid var(--line);
+        background: rgba(255, 253, 249, 0.8);
+      }
+
+      .tag.done { background: var(--green-soft); color: var(--green); }
+      .tag.pending { background: var(--gold-soft); color: var(--gold); }
+      .tag.info { background: var(--blue-soft); color: var(--blue); }
+      .tag.risk { background: var(--red-soft); color: var(--red); }
+
+      h1, h2, h3 { margin: 0; letter-spacing: 0; }
+      h1 { margin-top: 12px; font-size: clamp(31px, 4.2vw, 48px); line-height: 1.08; }
+      h2 { font-size: 22px; }
+      h3 { font-size: 16px; }
+
+      .hero-copy {
+        max-width: 750px;
+        margin: 12px 0 18px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .focus-strip,
+      .grid-4,
+      .grid-3,
+      .grid-2,
+      .link-grid,
+      .scenario-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .focus-strip,
+      .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid-2, .scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .link-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+      .focus-item,
+      .card,
+      .term,
+      .doc-link,
+      .scenario-box { padding: 15px; }
+
+      .focus-item {
+        min-height: 88px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 253, 249, 0.78);
+      }
+
+      .focus-item strong {
+        display: block;
+        font-size: 28px;
+        line-height: 1.15;
+        font-weight: 850;
+      }
+
+      .decision-panel {
+        padding: 18px;
+        border: 1px solid rgba(55, 107, 95, 0.25);
+        border-radius: 8px;
+        background: var(--green-soft);
+      }
+
+      .decision-panel h2 { margin-bottom: 8px; }
+      .decision-panel .button { margin-top: 8px; }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        overflow-x: auto;
+        padding: 12px 0;
+        margin: 4px 0 10px;
+        background: rgba(247, 244, 239, 0.94);
+        backdrop-filter: blur(10px);
+      }
+
+      .nav a {
+        min-height: 34px;
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 253, 249, 0.95);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+
+      .section { margin-top: 20px; scroll-margin-top: 70px; }
+      .section-head { margin-bottom: 10px; }
+      .section-head p { margin: 4px 0 0; }
+
+      .role-card { min-height: 250px; }
+      .role-head { align-items: flex-start; margin-bottom: 12px; }
+      .role-index {
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--orange-soft);
+        color: var(--orange);
+        font-weight: 900;
+      }
+
+      .check-list,
+      .plain-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 9px;
+      }
+
+      .check-list li,
+      .plain-list li {
+        position: relative;
+        padding-left: 22px;
+        font-size: 14px;
+      }
+
+      .check-list li::before {
+        content: "✓";
+        position: absolute;
+        left: 0;
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .plain-list li::before {
+        content: "→";
+        position: absolute;
+        left: 0;
+        color: var(--blue);
+        font-weight: 900;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(175px, 1fr));
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .step {
+        position: relative;
+        min-height: 188px;
+        padding: 15px;
+      }
+
+      .step-number {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .step h3 { margin: 13px 0 6px; }
+      .step p { margin: 0; color: var(--muted); }
+      .step .tag { margin-top: 12px; }
+
+      .callout {
+        margin-top: 12px;
+        padding: 15px 16px;
+        background: var(--gold-soft);
+        border-color: rgba(169, 121, 56, 0.28);
+      }
+
+      .callout strong { color: #7d5726; }
+
+      .scenario-box h3 { margin-bottom: 10px; }
+      .alarm {
+        margin: 0;
+        padding: 14px;
+        border-radius: 8px;
+        background: #26231f;
+        color: #f8f4ed;
+        font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      .result-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+      }
+
+      .result-list li {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 10px;
+        align-items: start;
+      }
+
+      .result-list b:first-child {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .result-list span { display: block; color: var(--muted); font-size: 13px; }
+
+      .seven-flow {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(145px, 1fr));
+        gap: 9px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .seven-flow .step { min-height: 162px; }
+
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; min-width: 820px; border-collapse: collapse; }
+      th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+      th { color: var(--muted); background: #faf7f1; font-size: 12px; }
+      tr:last-child td { border-bottom: 0; }
+      td:first-child { font-weight: 800; white-space: nowrap; }
+
+      .term strong { display: block; margin-bottom: 5px; color: var(--blue); }
+      .term p { margin: 0; color: var(--muted); }
+
+      details { padding: 13px 15px; }
+      details + details { margin-top: 8px; }
+      summary { cursor: pointer; font-weight: 800; }
+      details p { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+
+      .status-card { min-height: 176px; }
+      .status-card .card-title { margin-bottom: 10px; }
+      .status-card p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+
+      .doc-link { min-height: 104px; }
+      .doc-link strong { display: block; margin-bottom: 6px; }
+      .doc-link span { color: var(--muted); }
+      .footer { margin-top: 22px; text-align: center; }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .focus-strip,
+        .grid-4,
+        .grid-3,
+        .grid-2,
+        .link-grid,
+        .scenario-grid { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media (max-width: 640px) {
+        .page { width: min(100% - 20px, 1220px); padding-top: 12px; }
+        .topbar, .section-head, .callout { align-items: flex-start; flex-direction: column; }
+        .hero { padding: 18px; }
+        .hero-grid,
+        .focus-strip,
+        .grid-4,
+        .grid-3,
+        .grid-2,
+        .link-grid,
+        .scenario-grid { grid-template-columns: 1fr; }
+      }
+
+      @media print {
+        body { background: #fff; }
+        .topbar, .nav, .button { display: none !important; }
+        .hero, .card, .step, .term, .table-wrap, .doc-link, .scenario-box, details {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="topbar">
+        <div class="crumb">MateClaw / 智能排障 / 使用说明</div>
+        <div class="actions">
+          <a class="button secondary" href="architecture-blueprint.html">架构蓝图</a>
+          <button class="button" type="button" onclick="window.print()">打印 / 导出 PDF</button>
+        </div>
+      </div>
+
+      <section class="hero" id="overview">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow">
+              <span class="badge">当前版本·2026-08-09</span>
+              <span class="tag done">CTI 真实取证已跑通</span>
+              <span class="tag pending">尚未完成正式投产验收</span>
+            </div>
+            <h1>当前的智能排障，到底怎么玩？</h1>
+            <p class="hero-copy">
+              开发收到告警后，从“排障列表”开始；系统按已审核的排查指南，
+              去观测云执行三次只读查询，再把证据、判断和停止原因写回排障详情。
+            </p>
+            <div class="focus-strip">
+              <div class="focus-item"><strong>1</strong><span>已跑通真源场景</span></div>
+              <div class="focus-item"><strong>3</strong><span>次观测云只读取证</span></div>
+              <div class="focus-item"><strong>7</strong><span>个可追溯调查阶段</span></div>
+              <div class="focus-item"><strong>0/20</strong><span>正式录制目标</span></div>
+            </div>
+          </div>
+          <aside class="decision-panel">
+            <span class="tag done">你现在该走的路</span>
+            <h2>有告警：直接去排障列表</h2>
+            <p class="desc">
+              CTI 场景已经配好取证工具。你不需要每次都去“取证接入”；
+              只有接入新系统、新模块或新查询工具时才进那个页面。
+            </p>
+            <a class="button primary" href="http://127.0.0.1:5173/troubleshooting?view=list">打开排障列表</a>
+          </aside>
+        </div>
+      </section>
+
+      <nav class="nav" aria-label="页内导航">
+        <a href="#paths">两条使用路径</a>
+        <a href="#daily">日常排障</a>
+        <a href="#cti">CTI 实例</a>
+        <a href="#seven">七阶段</a>
+        <a href="#pages">页面分工</a>
+        <a href="#terms">名词翻译</a>
+        <a href="#status">当前边界</a>
+      </nav>
+
+      <section class="section" id="paths">
+        <div class="section-head">
+          <div>
+            <h2>先分清两条使用路径</h2>
+            <p>日常排障和系统接入不是同一件事。</p>
+          </div>
+        </div>
+        <div class="grid-2">
+          <article class="card role-card">
+            <div class="role-head">
+              <div><span class="tag done">开发 / 运维</span><h2>我收到了一条告警</h2></div>
+              <span class="role-index">A</span>
+            </div>
+            <ul class="check-list">
+              <li>进入排障列表，选择故障场景</li>
+              <li>填现象、严重等级和精确故障时间</li>
+              <li>创建排障单，在详情页开始三次只读取证</li>
+              <li>核对证据、判据和系统的弃权边界</li>
+              <li>人工处置后回填结果，平台不执行生产变更</li>
+            </ul>
+            <div class="actions" style="margin-top: 16px; justify-content: flex-start">
+              <a class="button primary" href="#daily">看日常排障 5 步</a>
+            </div>
+          </article>
+
+          <article class="card role-card">
+            <div class="role-head">
+              <div><span class="tag info">平台管理员 / 系统负责人</span><h2>我要接入一个新系统</h2></div>
+              <span class="role-index">B</span>
+            </div>
+            <ul class="plain-list">
+              <li>先在“数据源联调”确认观测云端点和凭据可用</li>
+              <li>在“取证接入”登记系统、模块、环境和集群范围</li>
+              <li>给模块绑定已审核的日志、链路、拨测等取证工具</li>
+              <li>指定工具走 Guance 还是受控回放</li>
+              <li>做管理员只读试跑，再去排障规则库编排场景</li>
+            </ul>
+            <div class="actions" style="margin-top: 16px; justify-content: flex-start">
+              <a class="button secondary" href="http://127.0.0.1:5173/troubleshooting/observability-assets">打开取证接入</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="daily">
+        <div class="section-head">
+          <div>
+            <h2>日常排障·5 步就够了</h2>
+            <p>下面是开发收到告警后真正需要操作的主线。</p>
+          </div>
+        </div>
+        <div class="flow">
+          <article class="step">
+            <span class="step-number">1</span>
+            <h3>选场景</h3>
+            <p>在排障列表点“CTI 创建会话失败”。这一步是选择已审核的排查指南。</p>
+            <span class="tag info">不是选根因</span>
+          </article>
+          <article class="step">
+            <span class="step-number">2</span>
+            <h3>填告警</h3>
+            <p>填故障现象、严重程度、精确发生时间。Trace / 关联 ID 不知道可以留空。</p>
+            <span class="tag pending">历史告警必填时间</span>
+          </article>
+          <article class="step">
+            <span class="step-number">3</span>
+            <h3>创建排障单</h3>
+            <p>系统冻结当时的排查指南版本。刚创建时可能显示“证据不足”，这是诚实的初始状态。</p>
+            <span class="tag info">等待取证</span>
+          </article>
+          <article class="step">
+            <span class="step-number">4</span>
+            <h3>开始三次只读取证</h3>
+            <p>在详情页点“开始三次只读取证”：失败日志 → 关联链路 → 成功/失败对照。</p>
+            <span class="tag done">不写生产</span>
+          </article>
+          <article class="step">
+            <span class="step-number">5</span>
+            <h3>看结论与证据</h3>
+            <p>先看商业摘要，再展开开发证据台；必要时用七阶段轨迹反查每一步。</p>
+            <span class="tag pending">人工确认</span>
+          </article>
+        </div>
+        <div class="callout">
+          <div>
+            <strong>一个最容易误解的点</strong>
+            <div class="muted">“开始取证”才会读真实数据；“创建排障单”只是锁定场景和版本，不会提前编一个根因。</div>
+          </div>
+          <a class="button primary" href="http://127.0.0.1:5173/troubleshooting?view=detail&amp;diagnosisId=diag-947783d2a7c443fa92eafe1d7cd7dbd4">打开真实 CTI 示例</a>
+        </div>
+      </section>
+
+      <section class="section" id="cti">
+        <div class="section-head">
+          <div>
+            <h2>CTI 创建会话失败·完整实例</h2>
+            <p>使用你提供的告警时间，走正式取证接口跑出的真实演练记录。</p>
+          </div>
+        </div>
+        <div class="scenario-grid">
+          <article class="scenario-box">
+            <h3>输入的告警</h3>
+            <pre class="alarm">客服数字化(TASK)-【CTI创建会话失败】-事件
+紧急时间：2026-08-07 17:24:00 +08:00
+集群：sz4-s-zaibei
+服务：csdp-task
+数量：3
+异常：CTI创建会话失败</pre>
+          </article>
+          <article class="scenario-box">
+            <h3>系统实际做的三次查询</h3>
+            <ul class="result-list">
+              <li><b>1</b><div><strong>失败日志检索</strong><span>在故障窗口内找到 CTI 创建会话失败记录，并提取可用的关联标识。</span></div></li>
+              <li><b>2</b><div><strong>Trace / PS 关联链路</strong><span>用第一步的关联标识还原调用链，不使用页面伪造的 ID。</span></div></li>
+              <li><b>3</b><div><strong>成功 / 失败样本对照</strong><span>在同一时间窗口比较两类请求，只保留可复算的区分特征。</span></div></li>
+            </ul>
+          </article>
+        </div>
+        <div class="grid-4" style="margin-top: 12px">
+          <article class="card status-card"><div class="card-title"><h3>数据来源</h3><span class="tag done">真实</span></div><strong>Guance</strong><p><code>fixtureMode=false</code>，不是回放或演示数据。</p></article>
+          <article class="card status-card"><div class="card-title"><h3>取证结果</h3><span class="tag done">3/3</span></div><strong>三份证据均返回</strong><p>“返回成功”只表示查询可用，不等于业务没问题。</p></article>
+          <article class="card status-card"><div class="card-title"><h3>结论</h3><span class="tag pending">待人审</span></div><strong>可疑方向·低置信</strong><p>当前证据只足够给出假设，不能把某个下游组件写成已确认根因。</p></article>
+          <article class="card status-card"><div class="card-title"><h3>本次取证</h3><span class="tag info">已审计</span></div><strong>5.458 秒</strong><p>详情页第 5 阶段展示这次只读运行耗时，不改写最初结论时间。</p></article>
+        </div>
+      </section>
+
+      <section class="section" id="seven">
+        <div class="section-head">
+          <div>
+            <h2>详情页的“七阶段”，用大白话看</h2>
+            <p>它不是七个 Agent，而是一次排障从输入到结论的七段可追溯记录。</p>
+          </div>
+        </div>
+        <div class="seven-flow">
+          <article class="step"><span class="step-number">1</span><h3>收到什么问题</h3><p>告警系统、服务、现象、时间是什么。</p></article>
+          <article class="step"><span class="step-number">2</span><h3>准备怎么查</h3><p>命中哪份已审核排查指南，用的是哪个版本。</p></article>
+          <article class="step"><span class="step-number">3</span><h3>固定要查哪些数据</h3><p>比如失败日志、关联链路、成功失败对照。</p></article>
+          <article class="step"><span class="step-number">4</span><h3>实际去哪里查</h3><p>记录选了 Guance 还是回放，以及选择失败的原因。</p></article>
+          <article class="step"><span class="step-number">5</span><h3>拿到了什么证据</h3><p>记录本次运行、耗时、证据引用和缺失项。</p></article>
+          <article class="step"><span class="step-number">6</span><h3>按什么标准判断</h3><p>用已审核判据计算，不让模型自由编结论。</p></article>
+          <article class="step"><span class="step-number">7</span><h3>结论或诚实停止</h3><p>证据够就给假设/定位；不够就说证据不足。</p></article>
+        </div>
+      </section>
+
+      <section class="section" id="pages">
+        <div class="section-head">
+          <div>
+            <h2>各个页面的分工</h2>
+            <p>只要记住：接入是事前准备，详情是事中排障。</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>页面</th><th>解决什么问题</th><th>谁使用</th><th>什么时候用</th><th>不做什么</th></tr></thead>
+            <tbody>
+              <tr><td>排障列表</td><td>创建、查找、进入排障单</td><td>开发 / 运维</td><td>收到告警后</td><td>不配观测云凭据</td></tr>
+              <tr><td>排障详情</td><td>开始取证，查证据、判据、结论和审计轨迹</td><td>开发 / 运维 / 审核人</td><td>一次具体排障中</td><td>不执行生产变更</td></tr>
+              <tr><td>取证接入</td><td>给系统模块配查询范围、工具和数据源</td><td>平台管理员 / 系统负责人</td><td>新系统、新模块、新工具接入时</td><td>不创建排障单</td></tr>
+              <tr><td>数据源联调</td><td>确认 Guance 端点和凭据能否真实查询</td><td>Workspace 负责人 / 管理员</td><td>首次接入或凭据变更后</td><td>不定义故障判据</td></tr>
+              <tr><td>排障规则库</td><td>定义什么场景查哪些数据、如何判断</td><td>场景负责人 / 审核人</td><td>新增或升级排查指南时</td><td>不保存 API Key</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="terms">
+        <div class="section-head">
+          <div>
+            <h2>把技术名词换成大白话</h2>
+            <p>日常操作先看中文意思，英文名只用来和代码对齐。</p>
+          </div>
+        </div>
+        <div class="grid-3">
+          <article class="term"><strong>Playbook → 排查指南</strong><p>某类故障要查什么、按什么判断、什么时候必须停止。</p></article>
+          <article class="term"><strong>取证工具 → 一种只读查询能力</strong><p>例如查日志、查链路、查拨测、查服务状态。</p></article>
+          <article class="term"><strong>取证要求 → 这次必须拿到的数据</strong><p>原代码里叫 Evidence Contract；页面尽量不用“合同”。</p></article>
+          <article class="term"><strong>系统模块范围 → 去哪批资源里查</strong><p>原先叫“系统观测资产”；包括环境、集群、Namespace、Deployment 等。</p></article>
+          <article class="term"><strong>数据源路由 → 实际去哪个平台查</strong><p>例如先查 Guance，或在授权演练中使用 Recorded Replay。</p></article>
+          <article class="term"><strong>确定性判据 → 事先审核的判断标准</strong><p>系统按这些标准复算结论，不用模型自报的置信度冒充事实。</p></article>
+        </div>
+      </section>
+
+      <section class="section" id="status">
+        <div class="section-head">
+          <div>
+            <h2>当前真正做到哪里</h2>
+            <p>已确认能力与投产缺口分开，不用 Demo 或推测数据填空。</p>
+          </div>
+        </div>
+        <div class="grid-3">
+          <article class="card status-card">
+            <div class="card-title"><h3>已确认</h3><span class="tag done">可体验</span></div>
+            <ul class="check-list">
+              <li>CTI 真实 Guance 三次取证已返回</li>
+              <li>失败日志 → 关联链路 → 成功/失败对照已串联</li>
+              <li>证据、判据、结论和七阶段轨迹可追溯</li>
+            </ul>
+          </article>
+          <article class="card status-card">
+            <div class="card-title"><h3>仍待完成</h3><span class="tag pending">投产门禁</span></div>
+            <ul class="plain-list">
+              <li>正式录制目标仍为 0/20</li>
+              <li>需要负责人冻结首批 20 个真实系统/场景目标</li>
+              <li>需要在授权内网窗口完成 T7/T8 验收</li>
+            </ul>
+          </article>
+          <article class="card status-card">
+            <div class="card-title"><h3>系统主动不做</h3><span class="tag risk">安全边界</span></div>
+            <ul class="plain-list">
+              <li>不在页面接受或展示 API Key</li>
+              <li>不让浏览器临时改 DQL、资源范围或判据</li>
+              <li>证据不足时弃权，不伪造根因</li>
+              <li>不执行任何生产写操作</li>
+            </ul>
+          </article>
+        </div>
+
+        <div style="margin-top: 12px">
+          <details open>
+            <summary>我现在有一条新 CTI 告警，最短怎么做？</summary>
+            <p>打开排障列表 → 选“CTI 创建会话失败” → 填精确时间 → 创建排障单 → 详情页点“开始三次只读取证”。</p>
+          </details>
+          <details>
+            <summary>什么时候才需要进“取证接入”？</summary>
+            <p>只有接入新系统/新模块、更换集群或 Namespace、新增查询工具、修改数据源路由时才进。日常排障不进。</p>
+          </details>
+          <details>
+            <summary>结论显示“证据不足”是不是系统坏了？</summary>
+            <p>不一定。刚创建排障单、还没开始取证时，这是正常初始状态；取证后仍不足，详情页会列出缺哪份数据和停止原因。</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section" id="docs">
+        <div class="section-head">
+          <div>
+            <h2>细节文档</h2>
+            <p>这个 HTML 负责说清怎么用；实现合同、进度和架构继续以原文档为准。</p>
+          </div>
+        </div>
+        <div class="link-grid">
+          <a class="doc-link" href="evidence-query-catalog.md"><strong>取证接入说明</strong><span>页面分工、配置检查项和后端接口。</span></a>
+          <a class="doc-link" href="projection-contracts.md"><strong>详情页投影说明</strong><span>七阶段、证据关系和安全展示边界。</span></a>
+          <a class="doc-link" href="HANDOFF.md"><strong>当前交接记录</strong><span>CTI 真源结果、测试证据和投产阻塞项。</span></a>
+          <a class="doc-link" href="../../rfcs/intelligent-troubleshooting-architecture-v4.md"><strong>架构 RFC</strong><span>证据主干、不可变审计和确定性判断设计。</span></a>
+        </div>
+      </section>
+
+      <p class="footer">本页是 MateClaw 智能排障使用驾驶舱；更新时间 2026-08-09，详细进度以 HANDOFF 为准。</p>
+    </main>
+  </body>
+</html>

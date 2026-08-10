@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <dir>/Library/Fonts</dir>
+  <dir>/System/Library/Fonts</dir>
+  <dir>/System/Library/Fonts/Supplemental</dir>
+  <cachedir>/private/tmp/mateclaw-fontconfig-cache</cachedir>
+  <match target="pattern">
+    <test qual="any" name="family"><string>sans-serif</string></test>
+    <edit name="family" mode="prepend" binding="strong"><string>Arial Unicode MS</string></edit>
+  </match>
+  <alias>
+    <family>PingFang SC</family>
+    <prefer><family>Arial Unicode MS</family></prefer>
+  </alias>
+</fontconfig>

@@ -50,6 +50,16 @@ mateclaw:
               log_search: csdp-cti-create-conversation-log-search
               log_trace_bundle: csdp-cti-create-conversation-trace-bundle
               contrast_sample: csdp-cti-create-conversation-contrast
+          # ITGW 904003 已在 2026-08-07 17:12 的 csdp-wechat 告警窗口
+          # 验证。告警给出的集群仅作为事件元数据保留；Guance 合同只使用
+          # 已验证的 service 和错误码字段，不猜测 cluster 字段映射。
+          - workspace-id: ${MATECLAW_TROUBLESHOOTING_CSDP_WORKSPACE_ID:1}
+            system: CSDP
+            service: csdp-wechat
+            signal-bindings:
+              log_search: csdp-itgw-access-log-search
+              log_trace_bundle: csdp-itgw-access-trace-bundle
+              contrast_sample: csdp-itgw-access-contrast
         bindings:
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
@@ -213,6 +223,89 @@ mateclaw:
               time-zone: Asia/Shanghai
             constant-fields:
               discriminating_feature: inner_701022_on_failed_trace
+            field-aliases: {}
+          # 904003 contracts are bounded to the alert's own absolute timeRange.
+          # Only aggregate counts and the latest correlation ID leave Guance;
+          # raw payloads and the blocked business term are never persisted.
+          csdp-itgw-access-log-search:
+            signal-kind: log_search
+            namespace: L
+            summary: CSDP WECHAT ITGW 访问失败请求检索
+            scenario: ITGW访问失败【904003】
+            question: 故障窗口内有多少条独立请求命中 ITGW 904003？
+            fixed-conditions:
+              - 日志服务=csdp-wechat
+              - 错误码=@code 904003
+              - 仅返回独立调用数量与最新关联 ID，不返回原始日志
+            max-rows: 1
+            query-template: >-
+              L::RE(`.*`):(count_distinct(`@trace_id`) as match_count,last(`@trace_id`) as ps_id)
+              { `service` = 'csdp-wechat' AND `@code` = 904003 }
+            query-options:
+              max-point-count: 1
+              interval: 900
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            constant-fields:
+              sample_message: itgw_access_failed
+            field-aliases: {}
+          csdp-itgw-access-trace-bundle:
+            signal-kind: log_trace_bundle
+            namespace: L
+            summary: CSDP WECHAT ITGW 访问失败关联调用链
+            scenario: ITGW访问失败【904003】
+            question: 同一关联 ID 中，904003 如何沿 csdp-wechat 调用链传播？
+            fixed-conditions:
+              - 日志服务=csdp-wechat
+              - 关联 ID 只能来自前一步规范化证据
+              - 最多读取 200 条同链记录
+            max-rows: 200
+            query-template: >-
+              L::RE(`.*`):(message)
+              { `service` = 'csdp-wechat' AND query_string(`message`, "{{ps_id}}") }
+            field-aliases:
+              time: timestamp
+              "[message@trace_id]": ps_id
+              "[message@level]": level
+              "[message@msg]": message
+            constant-fields:
+              service: csdp-wechat
+          csdp-itgw-access-contrast:
+            signal-kind: contrast_sample
+            namespace: L
+            summary: CSDP WECHAT ITGW 成功与失败样本对照
+            scenario: ITGW访问失败【904003】
+            question: 内容拦截特征是否只出现在 904003 失败请求中？
+            fixed-conditions:
+              - 失败样本=同窗口 csdp-wechat 且 @code 904003 的独立调用
+              - 失败特征=日志规范字段命中内容安全拦截提示“敏感词”
+              - 成功样本=同窗口 workOrderPhase 且 StatusCode 200 的独立调用
+              - 只返回四个聚合计数，不返回命中的业务内容
+            max-rows: 1
+            query-templates:
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as failure_sample_count)
+                { `service` = 'csdp-wechat' AND `@code` = 904003 }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as failure_match_count)
+                { `service` = 'csdp-wechat' AND `@code` = 904003 AND query_string(`message`, "敏感词") }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as success_sample_count)
+                { `service` = 'csdp-wechat' AND query_string(`message`, "workOrderPhase AND StatusCode\\:200") }
+              - >-
+                L::RE(`.*`):(count_distinct(`@trace_id`) as success_match_count)
+                { `service` = 'csdp-wechat' AND query_string(`message`, "workOrderPhase AND StatusCode\\:200 AND 敏感词") }
+            query-options:
+              max-point-count: 1
+              interval: 900
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            constant-fields:
+              discriminating_feature: itgw_content_policy_blocked
             field-aliases: {}
           # Sanitized import of guanceyun-error-logs. It exposes only aggregate
           # canonical facts; raw message/content/host rows remain inside Guance.

@@ -243,6 +243,11 @@ class TroubleshootingDemoSeederTest {
             case Criterion.MissingOrLte value -> Set.of(value.presenceField(), value.field());
             case Criterion.RatioOfSumGt value ->
                     Set.of(value.numeratorField(), value.addendField());
+            case Criterion.FailureSuccessRateContrast value -> Set.of(
+                    value.failureMatchField(),
+                    value.failureSampleField(),
+                    value.successMatchField(),
+                    value.successSampleField());
             case Criterion.MultipleGt value -> Set.of(value.field(), value.baselineField());
             case Criterion.ContainsAndIn value ->
                     Set.of(value.containsField(), value.membershipField());

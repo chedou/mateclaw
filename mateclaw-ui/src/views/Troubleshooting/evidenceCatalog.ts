@@ -162,7 +162,7 @@ export function buildModuleToolSetups(input: {
       const checklist: ToolChecklistItem[] = [
         {
           key: 'enable',
-          label: '启用并绑定查询规则',
+          label: '启用并选择取证方法',
           detail: enabled
             ? `已绑定 ${option.contractRef}`
             : '在模块资产里勾选这条已审核规则',
@@ -203,7 +203,7 @@ export function buildModuleToolSetups(input: {
           label: '观测云数据源就绪',
           detail: input.sourceReady
             ? '端点与凭据已配置'
-            : '先到数据源联调确认端点与凭据',
+            : '先检查数据连接是否可用',
           done: input.sourceReady,
         },
         {
@@ -490,7 +490,7 @@ export function directTrialBlockReason(
 ): string {
   if (!contract) return '请先选择一条查询规则'
   if (asset !== undefined && (!asset || asset.origin !== 'WORKSPACE')) {
-    return '请先到取证接入接管为 Workspace 模块配置，再执行管理员试跑'
+    return '请先在“接入系统”中登记这个模块，再执行管理员试跑'
   }
   if (asset !== undefined && !asset?.enabled) {
     return 'Workspace 模块取证配置已停用，请先新建启用版本'
@@ -509,7 +509,7 @@ export function directTrialBlockReason(
   if (contract.parameters.some(parameter => parameter.required
     && parameter.source === 'EVIDENCE_REQUEST_TARGET'
     && resourceParameters.has(parameter.name))) {
-    return '资源范围必须先登记到取证接入，不能在试跑时临时填写'
+    return '资源范围必须先在“接入系统”中登记，不能在试跑时临时填写'
   }
   return ''
 }

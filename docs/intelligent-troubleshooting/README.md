@@ -4,6 +4,8 @@
 `vip.mate.troubleshooting` 运行。后续不引入第二套排障平台、独立 Python orchestrator
 或 loopback 运行时。
 
+快速上手：[当前的智能排障怎么用](./how-to-use.html)。
+
 ## 现行基线
 
 按下面顺序阅读：

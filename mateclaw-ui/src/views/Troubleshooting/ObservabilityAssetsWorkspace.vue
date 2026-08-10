@@ -1,8 +1,8 @@
 <template>
   <CapabilityWorkspaceShell
-    eyebrow="配置与接入"
-    :title="TROUBLESHOOTING_UI_LABELS.observabilityAssets"
-    description="按系统与系统模块配置取证：能用哪些工具、每项要填什么；在这里登记范围、绑定规则、改路由并做管理员只读试跑。"
+    :eyebrow="setupSection === 'modules' ? '智能排障' : '高级设置'"
+    :title="activeSetupSection.label"
+    :description="activeSetupSection.description"
     :refresh-loading="loading"
     @back="returnToWorkbench"
     @refresh="loadCatalog"
@@ -17,23 +17,37 @@
         class="page-alert"
       />
 
-      <!-- 搜索只在真有东西可搜时出现。空态里的搜索框是在假装这页已经有内容。 -->
-      <div v-if="hasModules" class="toolbar">
+      <!-- 三个子菜单共用同一套「搜索 + 列表 + 行操作」管理方式。 -->
+      <div v-if="showListToolbar" class="toolbar">
         <el-input
           v-model="query"
           clearable
-          placeholder="搜索系统、模块或工具"
+          :placeholder="listSearchPlaceholder"
           class="search-input"
         />
-        <el-button type="primary" plain @click="openGuanceValidation">数据源联调</el-button>
-        <el-button type="primary" @click="openNewAsset">接入模块</el-button>
+        <el-select
+          v-if="setupSection === 'tools'"
+          v-model="toolStatusFilter"
+          class="status-filter"
+          aria-label="按工具状态筛选"
+        >
+          <el-option label="全部状态" value="ALL" />
+          <el-option label="可运行" value="READY" />
+          <el-option label="待补齐" value="BLOCKED" />
+          <el-option label="未启用" value="NOT_ENABLED" />
+        </el-select>
+        <template v-if="setupSection === 'modules'">
+          <el-button @click="moduleChooserOpen = true">新增模块</el-button>
+          <el-button type="primary" @click="openNewSystem">新增系统</el-button>
+        </template>
+        <el-button v-if="setupSection === 'source'" type="primary" @click="openGuanceValidation">检查数据连接</el-button>
       </div>
 
       <!--
         源没通时，这是本页唯一要紧的事。原来它是三步流程条里的第 3 步，
         排在「选模块」「看工具」后面——而它其实是前两步的前提。
       -->
-      <section v-if="!realSourceReady" class="source-gate">
+      <section v-if="setupSection !== 'source' && !realSourceReady" class="source-gate source-gate-compact">
         <div class="source-gate-head">
           <div>
             <h2>
@@ -47,293 +61,203 @@
             </p>
             <p v-else>
               模块和绑定可以先离线配好，但
-              <b>绑定的工具跑不起来，也做不了只读试跑</b>——这一步要等数据源接通。
+              <b>取证方法跑不起来，也做不了只读试跑</b>——这一步要等数据连接可用。
             </p>
           </div>
           <!-- 同一个动作一页只出现一次：没有模块时空态已经在带路，这里就只陈述事实。 -->
-          <el-button
-            v-if="hasModules"
-            type="primary"
-            @click="openGuanceValidation"
-          >去数据源联调</el-button>
+          <el-button v-if="hasModules" type="primary" plain @click="selectSetupSection('source')">检查数据连接</el-button>
         </div>
-        <ul class="source-gate-list">
+        <ul class="source-gate-list source-gate-list-compact">
           <li v-for="source in blockedSources" :key="source.platform">
             <b>{{ source.platform }}</b>
             <span v-if="source.missing" class="missing">缺 {{ source.missing }}</span>
-            <small>{{ source.detail }}</small>
           </li>
         </ul>
       </section>
 
-      <div v-if="filteredSetupModules.length" class="assets-workspace">
-        <aside class="asset-rail" aria-label="系统与模块">
-          <template v-for="system in filteredModuleTree" :key="system.system">
-            <div class="tree-system">{{ system.system }}</div>
-            <button
-              v-for="entry in system.modules"
-              :key="moduleKey(entry.system, entry.service)"
-              type="button"
-              class="asset-item"
-              :class="{ active: selectedModuleKey === moduleKey(entry.system, entry.service) }"
-              @click="selectSetupModule(entry)"
-            >
-              <div>
-                <b>{{ entry.service }}</b>
-                <small>{{ entry.displayName }}</small>
-              </div>
-              <el-tag size="small" effect="plain" :type="moduleRailTagType(entry)">
-                {{ moduleRailLabel(entry) }}
-              </el-tag>
-            </button>
-          </template>
-        </aside>
-
-        <section v-if="selectedSetupModule" class="asset-panel">
-          <header class="asset-panel-head">
-            <div>
-              <p class="scope-line">系统 · {{ selectedSetupModule.system }}</p>
-              <h2>{{ selectedSetupModule.service }}</h2>
-              <p>{{ selectedSetupModule.displayName }} · 系统模块</p>
-            </div>
-            <div class="asset-panel-actions">
-              <el-button
-                v-if="selectedSetupModule.asset"
-                text
-                @click="openAssetDetail(selectedSetupModule.asset)"
-              >查看详情</el-button>
-              <el-button type="primary" @click="openModuleConfig">
-                {{ selectedSetupModule.asset?.origin === 'WORKSPACE' ? '修改模块配置' : '登记 / 接管模块' }}
-              </el-button>
-            </div>
-          </header>
-
-          <div class="setup-grid">
-            <article>
-              <span>1. 系统模块范围</span>
-              <strong>{{ selectedSetupModule.asset?.environment || '未登记环境' }}</strong>
-              <small>
-                {{ selectedSetupModule.asset
-                  ? ([selectedSetupModule.asset.region, selectedSetupModule.asset.cluster, selectedSetupModule.asset.namespace].filter(Boolean).join(' / ')
-                    || '可补充区域、集群、命名空间')
-                  : '先登记这个系统模块，才能绑定工具' }}
-              </small>
-            </article>
-            <article>
-              <span>2. 平台数据源</span>
-              <strong>{{ sourceReady ? '观测云已就绪' : '观测云待联调' }}</strong>
-              <small>{{ sourceReady ? '端点与凭据已配置' : '工具启用后仍需完成数据源联调' }}</small>
-            </article>
-            <article>
-              <span>3. 可用取证工具</span>
-              <strong>{{ readyToolCount }}/{{ selectedToolSetups.length }} 可运行</strong>
-              <small>{{ enabledToolCount }} 已启用 · {{ selectedToolSetups.length - enabledToolCount }} 未启用</small>
-            </article>
+      <section v-if="setupSection === 'source'" class="list-workspace source-list-workspace">
+        <div class="list-heading">
+          <div>
+            <h2>数据源列表</h2>
+            <p>共 {{ filteredSources.length }} 个数据源；API Key 由部署环境注入，不在页面保存。</p>
           </div>
+        </div>
+        <el-table v-if="filteredSources.length" :data="filteredSources" class="management-table" stripe>
+          <el-table-column prop="platform" label="数据源" min-width="170" />
+          <el-table-column label="支持的取证类型" min-width="240" class-name="optional-column" label-class-name="optional-column">
+            <template #default="scope">{{ sourceSignalLabel(scope.row.supportedSignals) }}</template>
+          </el-table-column>
+          <el-table-column label="就绪检查" min-width="260">
+            <template #default="scope">
+              <div class="source-checks">
+                <el-tag :type="sourceCheckTagType(scope.row.endpointStatus)" effect="plain" size="small">
+                  {{ sourceCheckLabel(scope.row.endpointStatus, '端点') }}
+                </el-tag>
+                <el-tag :type="sourceCheckTagType(scope.row.credentialStatus)" effect="plain" size="small">
+                  {{ sourceCheckLabel(scope.row.credentialStatus, '凭据') }}
+                </el-tag>
+                <el-tag :type="scope.row.verified ? 'success' : 'info'" effect="plain" size="small">
+                  {{ scope.row.verified ? '已验证' : '未验证' }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="110">
+            <template #default="scope">
+              <el-tag :type="sourceStateTagType(scope.row)" effect="plain" size="small">
+                {{ sourceStateLabel(scope.row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="130" align="right" fixed="right">
+            <template #default="scope">
+              <el-button
+                v-if="!isRecordedReplay(scope.row.platform)"
+                type="primary"
+                text
+                @click="openGuanceValidation"
+              >检查 / 验收</el-button>
+              <span v-else class="muted-action">无需联调</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else :description="query ? '没有匹配当前搜索的数据源' : '尚未发现已启用的数据源适配器'" />
+      </section>
 
-          <section class="rules-section">
-            <div class="section-heading">
-              <h3>可用取证工具</h3>
-              <small>每项工具列明还要配置什么；点开可改路由或试跑</small>
-            </div>
-            <div v-if="selectedToolSetups.length" class="rule-list">
-              <article
-                v-for="tool in selectedToolSetups"
-                :key="tool.contractRef"
-                class="rule-card"
-                :class="{ active: selectedToolRef === tool.contractRef }"
-              >
-                <button
-                  type="button"
-                  class="rule-card-main"
-                  @click="selectTool(tool)"
-                >
-                  <div>
-                    <b>{{ signalKindLabel(tool.signalKind) }} · {{ tool.scenario }}</b>
-                    <p>{{ tool.question }}</p>
-                    <code>{{ tool.signalKind }} · {{ tool.contractRef }}</code>
-                  </div>
-                  <el-tag
-                    :type="tool.status === 'READY' ? 'success' : tool.status === 'BLOCKED' ? 'warning' : 'info'"
-                    size="small"
-                  >{{ tool.statusLabel }}</el-tag>
-                </button>
+      <section
+        v-else-if="setupSection === 'modules' && filteredSetupModules.length"
+        class="list-workspace module-list-workspace"
+      >
+        <div class="list-heading">
+          <div>
+            <h2>系统模块列表</h2>
+            <p>共 {{ filteredSetupModules.length }} 个模块；系统标识相同的模块归在同一系统下。</p>
+          </div>
+        </div>
+        <el-table :data="filteredSetupModules" class="management-table module-table" stripe>
+          <el-table-column label="系统 / 模块" min-width="240">
+            <template #default="scope">
+              <div class="table-primary-cell">
+                <b>{{ scope.row.service }}</b>
+                <small>{{ scope.row.system }} · {{ scope.row.displayName }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="运行范围" min-width="230" class-name="optional-column" label-class-name="optional-column">
+            <template #default="scope">
+              <div class="table-primary-cell compact-cell">
+                <b>{{ scope.row.asset?.environment || '未登记环境' }}</b>
+                <small>{{ moduleResourceScope(scope.row) }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="配置来源" width="120">
+            <template #default="scope">
+              <el-tag :type="moduleOriginTagType(scope.row)" effect="plain" size="small">
+                {{ moduleOriginLabel(scope.row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="取证就绪" width="110">
+            <template #default="scope">
+              <span class="readiness-count">{{ moduleRailLabel(scope.row) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="scope">
+              <el-tag :type="moduleStateTagType(scope.row)" effect="plain" size="small">
+                {{ moduleStateLabel(scope.row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="210" align="right" fixed="right">
+            <template #default="scope">
+              <el-button
+                v-if="scope.row.asset"
+                text
+                @click="openAssetDetail(scope.row.asset)"
+              >查看</el-button>
+              <el-button type="primary" text @click="openModuleEntryConfig(scope.row)">
+                {{ scope.row.asset?.origin === 'WORKSPACE' ? '修改' : '登记 / 接管' }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
 
-                <div v-if="selectedToolRef === tool.contractRef" class="rule-detail">
-                  <div class="checklist">
-                    <div
-                      v-for="item in tool.checklist"
-                      :key="item.key"
-                      class="checklist-item"
-                      :class="{ done: item.done }"
-                    >
-                      <span class="check-mark">{{ item.done ? '✓' : '○' }}</span>
-                      <div>
-                        <b>{{ item.label }}</b>
-                        <small>{{ item.detail }}</small>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="tool.contract?.blockers?.length" class="blocker-box">
-                    <b>阻断点</b>
-                    <ul>
-                      <li v-for="blocker in tool.contract.blockers" :key="blocker">{{ blocker }}</li>
-                    </ul>
-                  </div>
-
-                  <!--
-                    规则规格原来是另一个页面（查询规则说明书）的全部内容。两个页面调的是
-                    同一组接口、渲染的是同一份数据，只是一个能改、一个只能看，于是配一条
-                    规则要在两页之间来回跳。规格是**配这条规则时要对照的东西**，放这里。
-                    默认折叠：核对是偶尔需要，不该每次展开工具都占半屏。
-                  -->
-                  <details v-if="tool.contract" class="contract-spec">
-                    <summary>规则明细：要传什么 · 返回什么 · 预算</summary>
-                    <div class="axis-grid">
-                      <article>
-                        <span>路由</span>
-                        <strong>{{ routeOriginLabel(tool.contract.route.origin) }}</strong>
-                        <small>{{ tool.contract.route.platforms.join(' → ') || '未选择适配器' }}</small>
-                      </article>
-                      <article>
-                        <span>绑定</span>
-                        <strong>{{ bindingStatusLabel(tool.contract.binding.status) }}</strong>
-                        <small>{{ tool.contract.binding.bindingRef || '未绑定' }}</small>
-                      </article>
-                      <article>
-                        <span>预算</span>
-                        <strong>{{ tool.contract.budget.queryCount }} 查询 · {{ tool.contract.budget.maxRows }} 行</strong>
-                        <small>超时 {{ formatTrialTimeout(tool.contract.budget.timeoutMs) }}</small>
-                      </article>
-                    </div>
-
-                    <div class="detail-grid">
-                      <section class="detail-card">
-                        <div class="card-title"><small>INPUT</small><h3>需要传什么</h3></div>
-                        <el-table :data="tool.contract.parameters" size="small">
-                          <el-table-column prop="name" label="参数" min-width="120" />
-                          <el-table-column label="来源" min-width="140">
-                            <template #default="scope">{{ parameterSourceLabel(scope.row.source) }}</template>
-                          </el-table-column>
-                          <el-table-column label="要求" width="72">
-                            <template #default="scope">{{ scope.row.required ? '必填' : '可兜底' }}</template>
-                          </el-table-column>
-                          <el-table-column prop="description" label="说明" min-width="180" />
-                        </el-table>
-                      </section>
-                      <section class="detail-card">
-                        <div class="card-title"><small>OUTPUT</small><h3>规范返回</h3></div>
-                        <div class="tag-list">
-                          <el-tag
-                            v-for="field in tool.contract.canonicalOutputs"
-                            :key="field"
-                            effect="plain"
-                          >{{ field }}</el-tag>
-                        </div>
-                      </section>
-                      <section class="detail-card">
-                        <div class="card-title"><small>FIXED</small><h3>服务端固定条件</h3></div>
-                        <div class="tag-list">
-                          <el-tag
-                            v-for="condition in tool.contract.fixedConditions"
-                            :key="condition"
-                            type="info"
-                            effect="plain"
-                          >{{ condition }}</el-tag>
-                          <span v-if="!tool.contract.fixedConditions.length" class="empty-inline">未记录</span>
-                        </div>
-                      </section>
-                    </div>
-                  </details>
-
-                  <div class="rule-actions">
-                    <el-button
-                      v-if="toolNeedsModuleConfig(tool)"
-                      type="primary"
-                      plain
-                      @click="openModuleConfig"
-                    >去配置模块与绑定</el-button>
-                    <el-button
-                      v-if="tool.contract"
-                      text
-                      type="primary"
-                      @click="openRouteEditor(toolRow(tool)!)"
-                    >修改路由</el-button>
-                    <el-button
-                      v-if="tool.contract?.route.origin === 'WORKSPACE'"
-                      text
-                      @click="withdrawRoute(toolRow(tool)!)"
-                    >恢复默认路由</el-button>
-                    <el-button
-                      v-if="tool.checklist.some(item => item.key === 'source' && !item.done)"
-                      text
-                      @click="openGuanceValidation"
-                    >去数据源联调</el-button>
-                    <el-tooltip
-                      :content="toolRow(tool) ? rowTrialBlocker(toolRow(tool)!) : '先启用并绑定这条工具'"
-                      :disabled="Boolean(toolRow(tool)) && !rowTrialBlocker(toolRow(tool)!)"
-                    >
-                      <span>
-                        <el-button
-                          type="primary"
-                          :disabled="!toolRow(tool) || Boolean(rowTrialBlocker(toolRow(tool)!))"
-                          @click="openTrialForRow(toolRow(tool)!)"
-                        >管理员只读试跑</el-button>
-                      </span>
-                    </el-tooltip>
-                    <small
-                      v-if="toolRow(tool) && rowTrialBlocker(toolRow(tool)!)"
-                      class="trial-blocker"
-                    >{{ rowTrialBlocker(toolRow(tool)!) }}</small>
-                  </div>
-
-                  <section v-if="tool.contract" class="trial-history">
-                    <div class="trial-history-heading">
-                      <div><small>AUDIT</small><h3>最近只读试跑</h3></div>
-                      <el-button text :loading="trialHistoryLoading" @click="loadTrialHistory">刷新</el-button>
-                    </div>
-                    <el-table v-if="trialHistory.length" :data="trialHistory" size="small">
-                      <el-table-column label="结果" width="110">
-                        <template #default="scope">
-                          <el-tag :type="scope.row.status === 'OBSERVED' ? 'success' : scope.row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
-                            {{ trialStatusLabel(scope.row.status) }}
-                          </el-tag>
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="资产版本" width="100">
-                        <template #default="scope">v{{ scope.row.assetVersion }}</template>
-                      </el-table-column>
-                      <el-table-column label="返回字段" min-width="180">
-                        <template #default="scope">{{ scope.row.canonicalFields.join('、') || '无' }}</template>
-                      </el-table-column>
-                      <el-table-column prop="durationMs" label="耗时" width="90" />
-                      <el-table-column prop="actor" label="操作人" width="120" />
-                      <el-table-column prop="completedAt" label="完成时间" min-width="160" />
-                    </el-table>
-                    <el-empty v-else :image-size="40" description="还没有只读试跑记录" />
-                  </section>
-                </div>
-              </article>
-            </div>
-            <!--
-              这一格不是用户能在页面里解决的：可绑定的工具来自部署侧发布的已审核查询
-              规则。原来这里放了个「查看查询规则说明书」的按钮，跳过去也是同一句话的
-              另一种说法——它不会让人离答案更近，所以只留下要找谁办。
-            -->
-            <el-empty
-              v-else
-              description="部署侧还没有为这个模块发布可绑定的取证工具；需要先让已审核的查询规则随部署发布。"
-            />
-          </section>
-        </section>
-      </div>
+      <section v-else-if="setupSection === 'tools' && filteredToolRows.length" class="list-workspace tool-list-workspace">
+        <div class="list-heading">
+          <div>
+            <h2>取证方法列表</h2>
+            <p>显示 {{ filteredToolRows.length }} / {{ allToolRows.length }} 条；每行只保留当前最需要的操作。</p>
+          </div>
+        </div>
+        <el-table :data="filteredToolRows" class="management-table tool-table" stripe>
+          <el-table-column label="系统 / 模块" min-width="210">
+            <template #default="scope">
+              <div class="table-primary-cell">
+                <b>{{ scope.row.entry.service }}</b>
+                <small>{{ scope.row.entry.system }} · {{ scope.row.entry.displayName }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="取证方法" min-width="260">
+            <template #default="scope">
+              <button type="button" class="table-primary-cell table-detail-trigger" @click="openToolDetail(scope.row)">
+                <b>{{ signalKindLabel(scope.row.tool.signalKind) }} · {{ scope.row.tool.scenario }}</b>
+                <small><code>{{ scope.row.tool.contractRef }}</code></small>
+              </button>
+            </template>
+          </el-table-column>
+          <el-table-column label="查询通道" min-width="190" class-name="optional-column" label-class-name="optional-column">
+            <template #default="scope">
+              <div class="table-primary-cell compact-cell">
+                <b>{{ toolRouteLabel(scope.row.tool) }}</b>
+                <small>{{ toolBindingLabel(scope.row.tool) }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="就绪状态" min-width="175">
+            <template #default="scope">
+              <div class="status-cell">
+                <el-tag :type="toolStateTagType(scope.row.tool)" effect="plain" size="small">
+                  {{ scope.row.tool.statusLabel }}
+                </el-tag>
+                <small>{{ toolNextStepLabel(scope.row.tool) }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" align="right" fixed="right">
+            <template #default="scope">
+              <el-button
+                v-if="toolNeedsModuleConfig(scope.row.tool)"
+                type="primary"
+                text
+                @click="openModuleConfigFor(scope.row.entry)"
+              >补齐配置</el-button>
+              <el-button
+                v-else-if="!toolListTrialBlocker(scope.row)"
+                type="primary"
+                text
+                @click="scope.row.row && openTrialForToolListRow(scope.row)"
+              >只读试跑</el-button>
+              <el-button v-else type="warning" text @click="openToolDetail(scope.row)">查看阻断</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+      <section v-else-if="setupSection === 'tools' && hasModules" class="setup-empty">
+        <h2>还没有可管理的取证方法</h2>
+        <p>{{ query || toolStatusFilter !== 'ALL'
+          ? '没有匹配当前搜索和状态筛选的工具。'
+          : '当前部署还没有可用的取证方法。' }}</p>
+      </section>
       <!--
         空态分两种，原来只有一句话概括了它们：源没通时先去联调，源通了就登记模块。
         「登记模块」在源没通时仍然可做（离线准备），所以它留着，只是不抢主位。
       -->
       <section v-else-if="!hasModules" class="setup-empty">
-        <h2>{{ setupGate === 'NEEDS_SOURCE' ? '先接通一个真实数据源' : '接入第一个系统模块' }}</h2>
+        <h2>{{ setupGate === 'NEEDS_SOURCE' ? '先检查数据连接' : '接入第一个系统' }}</h2>
         <p v-if="setupGate === 'NEEDS_SOURCE'">
           还没有任何模块，也还没有真实数据源。两件事都要做，但先做数据源——
           {{ replayOnly
@@ -341,22 +265,165 @@
             : '没有源的话，模块登记完也仍然取不到证据。' }}
         </p>
         <p v-else>
-          真实数据源已就绪。登记你要排障的第一个系统模块，然后给它绑定取证工具。
+          数据连接已就绪。新增你要排障的系统和模块，然后选择发生故障时要使用的取证方法。
         </p>
         <div class="setup-empty-actions">
-          <el-button
-            v-if="setupGate === 'NEEDS_SOURCE'"
-            type="primary"
-            @click="openGuanceValidation"
-          >去数据源联调</el-button>
+          <el-button v-if="setupGate === 'NEEDS_SOURCE'" type="primary" @click="selectSetupSection('source')">检查数据连接</el-button>
           <el-button
             :type="setupGate === 'NEEDS_SOURCE' ? 'default' : 'primary'"
-            @click="openNewAsset"
-          >{{ setupGate === 'NEEDS_SOURCE' ? '仍然先登记模块' : '接入第一个模块' }}</el-button>
+            @click="openNewSystem"
+          >{{ setupGate === 'NEEDS_SOURCE' ? '仍然先新增系统' : '新增第一个系统' }}</el-button>
         </div>
       </section>
       <el-empty v-else description="没有匹配当前搜索的系统模块" />
     </div>
+
+    <el-dialog v-model="moduleChooserOpen" title="选择模块所属系统" width="520px" destroy-on-close>
+      <p class="dialog-help">新模块会复用所选系统标识；如果是全新系统，请使用“新增系统”。</p>
+      <div class="system-choice-list">
+        <button
+          v-for="choice in systemChoices"
+          :key="choice.system"
+          type="button"
+          @click="chooseSystemForNewModule(choice.system)"
+        >
+          <span><b>{{ choice.system }}</b><small>{{ choice.moduleCount }} 个已登记模块</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+      </div>
+      <el-empty v-if="!systemChoices.length" :image-size="48" description="尚无可选系统，请先新增系统" />
+      <template #footer><el-button @click="moduleChooserOpen = false">取消</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="toolDetailOpen" title="取证方法详情" width="900px" destroy-on-close>
+      <template v-if="toolDetailTarget">
+        <div class="tool-detail-heading">
+          <div>
+            <small>{{ toolDetailTarget.entry.system }} / {{ toolDetailTarget.entry.service }}</small>
+            <h3>{{ signalKindLabel(toolDetailTarget.tool.signalKind) }} · {{ toolDetailTarget.tool.scenario }}</h3>
+            <p>{{ toolDetailTarget.tool.question }}</p>
+            <code>{{ toolDetailTarget.tool.contractRef }}</code>
+          </div>
+          <el-tag :type="toolStateTagType(toolDetailTarget.tool)" effect="plain">
+            {{ toolDetailTarget.tool.statusLabel }}
+          </el-tag>
+        </div>
+
+        <div class="checklist">
+          <div
+            v-for="item in toolDetailTarget.tool.checklist"
+            :key="item.key"
+            class="checklist-item"
+            :class="{ done: item.done }"
+          >
+            <span class="check-mark">{{ item.done ? '✓' : '○' }}</span>
+            <div><b>{{ item.label }}</b><small>{{ item.detail }}</small></div>
+          </div>
+        </div>
+
+        <div v-if="toolDetailTarget.tool.contract?.blockers?.length" class="blocker-box">
+          <b>阻断点</b>
+          <ul><li v-for="blocker in toolDetailTarget.tool.contract.blockers" :key="blocker">{{ blocker }}</li></ul>
+        </div>
+
+        <details v-if="toolDetailTarget.tool.contract" class="contract-spec">
+          <summary>取证方法详情：需要什么 · 返回什么 · 执行限制</summary>
+          <div class="axis-grid">
+            <article>
+              <span>路由</span>
+              <strong>{{ routeOriginLabel(toolDetailTarget.tool.contract.route.origin) }}</strong>
+              <small>{{ toolDetailTarget.tool.contract.route.platforms.join(' → ') || '未选择适配器' }}</small>
+            </article>
+            <article>
+              <span>绑定</span>
+              <strong>{{ bindingStatusLabel(toolDetailTarget.tool.contract.binding.status) }}</strong>
+              <small>{{ toolDetailTarget.tool.contract.binding.bindingRef || '未绑定' }}</small>
+            </article>
+            <article>
+              <span>预算</span>
+              <strong>{{ toolDetailTarget.tool.contract.budget.queryCount }} 查询 · {{ toolDetailTarget.tool.contract.budget.maxRows }} 行</strong>
+              <small>超时 {{ formatTrialTimeout(toolDetailTarget.tool.contract.budget.timeoutMs) }}</small>
+            </article>
+          </div>
+          <div class="detail-grid">
+            <section class="detail-card">
+              <div class="card-title"><small>INPUT</small><h3>需要传什么</h3></div>
+              <el-table :data="toolDetailTarget.tool.contract.parameters" size="small">
+                <el-table-column prop="name" label="参数" min-width="120" />
+                <el-table-column label="来源" min-width="140">
+                  <template #default="scope">{{ parameterSourceLabel(scope.row.source) }}</template>
+                </el-table-column>
+                <el-table-column label="要求" width="72">
+                  <template #default="scope">{{ scope.row.required ? '必填' : '可兜底' }}</template>
+                </el-table-column>
+                <el-table-column prop="description" label="说明" min-width="180" />
+              </el-table>
+            </section>
+            <section class="detail-card">
+              <div class="card-title"><small>OUTPUT</small><h3>规范返回</h3></div>
+              <div class="tag-list">
+                <el-tag v-for="field in toolDetailTarget.tool.contract.canonicalOutputs" :key="field" effect="plain">{{ field }}</el-tag>
+              </div>
+            </section>
+            <section class="detail-card">
+              <div class="card-title"><small>FIXED</small><h3>服务端固定条件</h3></div>
+              <div class="tag-list">
+                <el-tag
+                  v-for="condition in toolDetailTarget.tool.contract.fixedConditions"
+                  :key="condition"
+                  type="info"
+                  effect="plain"
+                >{{ condition }}</el-tag>
+                <span v-if="!toolDetailTarget.tool.contract.fixedConditions.length" class="empty-inline">未记录</span>
+              </div>
+            </section>
+          </div>
+        </details>
+
+        <section v-if="toolDetailTarget.tool.contract" class="trial-history">
+          <div class="trial-history-heading">
+            <div><small>AUDIT</small><h3>最近只读试跑</h3></div>
+            <el-button text :loading="trialHistoryLoading" @click="loadTrialHistory">刷新</el-button>
+          </div>
+          <el-table v-if="trialHistory.length" :data="trialHistory" size="small">
+            <el-table-column label="结果" width="110">
+              <template #default="scope">
+                <el-tag :type="scope.row.status === 'OBSERVED' ? 'success' : scope.row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
+                  {{ trialStatusLabel(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="资产版本" width="100"><template #default="scope">v{{ scope.row.assetVersion }}</template></el-table-column>
+            <el-table-column label="返回字段" min-width="180"><template #default="scope">{{ scope.row.canonicalFields.join('、') || '无' }}</template></el-table-column>
+            <el-table-column prop="durationMs" label="耗时" width="90" />
+            <el-table-column prop="actor" label="操作人" width="120" />
+            <el-table-column prop="completedAt" label="完成时间" min-width="160" />
+          </el-table>
+          <el-empty v-else :image-size="40" description="还没有只读试跑记录" />
+        </section>
+      </template>
+      <template #footer>
+        <el-button @click="toolDetailOpen = false">关闭</el-button>
+        <el-button
+          v-if="toolDetailTarget && toolNeedsModuleConfig(toolDetailTarget.tool)"
+          @click="openModuleConfigFor(toolDetailTarget.entry)"
+        >配置模块与绑定</el-button>
+        <el-button
+          v-if="toolDetailTarget?.row"
+          @click="openRouteEditor(toolDetailTarget.row)"
+        >修改路由</el-button>
+        <el-button
+          v-if="toolDetailTarget?.tool.contract?.route.origin === 'WORKSPACE' && toolDetailTarget.row"
+          @click="withdrawRoute(toolDetailTarget.row)"
+        >恢复默认路由</el-button>
+        <el-button
+          v-if="toolDetailTarget"
+          type="primary"
+          :disabled="Boolean(toolListTrialBlocker(toolDetailTarget))"
+          @click="openTrialForToolListRow(toolDetailTarget)"
+        >管理员只读试跑</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="trialDialogOpen" title="管理员只读试跑" width="620px" destroy-on-close>
       <template v-if="trialTarget">
@@ -368,7 +435,7 @@
         <el-alert
           type="warning"
           :closable="false"
-          title="只验证这条查询规则能否返回规范证据，不会创建排障单，也不代表真源已验收。"
+          title="只验证这个取证方法能否返回规范证据，不会创建排障单，也不代表真源已验收。"
           class="asset-dialog-alert"
         />
         <el-alert
@@ -521,7 +588,7 @@
         </dl>
 
         <section class="asset-detail-section">
-          <h4>已绑定查询规则</h4>
+          <h4>这个模块会使用的取证方法</h4>
           <div class="asset-contracts">
             <el-tag
               v-for="(contractRef, signalKind) in assetDetail.signalBindings"
@@ -539,7 +606,7 @@
               <dt>{{ assetParameterLabel(name) }}</dt><dd>{{ value }}</dd>
             </div>
           </dl>
-          <p v-else class="empty-inline">当前查询规则不需要额外资源标识。</p>
+          <p v-else class="empty-inline">当前取证方法不需要补充资源范围。</p>
         </section>
 
         <el-alert
@@ -558,7 +625,7 @@
 
     <el-dialog
       v-model="assetDialogOpen"
-      :title="assetForm.expectedVersion ? '修改系统模块取证配置' : '登记系统模块取证配置'"
+      :title="assetDialogTitle"
       width="760px"
       destroy-on-close
     >
@@ -571,7 +638,7 @@
         type="info"
         :closable="false"
         class="asset-dialog-alert"
-        title="这里只保存系统、模块范围和查询规则引用。API Key、端点主机、原始 DQL 与原始日志不进入配置，由服务端保管。"
+        title="这里只保存系统、模块范围和所选取证方法。API Key、端点主机、原始 DQL 与原始日志不进入配置，由服务端保管。"
       />
       <el-alert
         type="warning"
@@ -592,10 +659,10 @@
       <el-form label-position="top" class="asset-form">
         <div class="asset-form-grid">
           <el-form-item label="系统标识">
-            <el-input v-model="assetForm.system" :disabled="assetScopeLocked" placeholder="例如 CSDP" />
+            <el-input v-model="assetForm.system" :disabled="assetForm.systemLocked" placeholder="例如 CSDP" />
           </el-form-item>
           <el-form-item label="模块 / 服务标识">
-            <el-input v-model="assetForm.service" :disabled="assetScopeLocked" placeholder="例如 csdp-session-service" />
+            <el-input v-model="assetForm.service" :disabled="assetForm.serviceLocked" placeholder="例如 csdp-session-service" />
           </el-form-item>
           <el-form-item label="显示名称">
             <el-input v-model="assetForm.displayName" placeholder="例如 CSDP 会话服务" />
@@ -617,11 +684,12 @@
           </el-form-item>
         </div>
 
-        <el-form-item label="绑定已审核查询规则">
+        <el-form-item label="选择这个模块的取证方法">
+          <p class="field-help">发生故障时，系统会按照这里选择的方法查询日志、调用链、拨测或服务状态。</p>
           <div v-if="contractGroups.length" class="contract-binding-grid">
             <div v-for="group in contractGroups" :key="group.signalKind" class="contract-binding-row">
               <div>
-                <b>{{ group.signalKind }}</b>
+                <b>{{ signalKindLabel(group.signalKind) }}</b>
                 <small>{{ group.options[0]?.scenario }}</small>
               </div>
               <el-select
@@ -633,19 +701,19 @@
                 <el-option
                   v-for="option in group.options"
                   :key="option.contractRef"
-                  :label="`${option.contractRef} · ${option.question}`"
+                  :label="`${option.question}（${option.contractRef}）`"
                   :value="option.contractRef"
                 />
               </el-select>
             </div>
           </div>
-          <el-empty v-else :image-size="56" description="当前部署没有可登记的已审核查询规则" />
+          <el-empty v-else :image-size="56" description="当前还没有可选择的取证方法，请先由平台管理员发布" />
         </el-form-item>
 
         <section v-if="editableAssetParameters.length" class="asset-parameter-section">
           <div class="asset-parameter-heading">
-            <b>查询规则需要的资源标识</b>
-            <small>这些值由资产固定，排障运行时不能改成其他系统资源。</small>
+            <b>取证时要查询哪个资源</b>
+            <small>这些值固定当前模块的查询范围，排障时不会临时改到其他系统。</small>
           </div>
           <div class="asset-form-grid">
             <el-form-item
@@ -696,6 +764,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import {
   troubleshootingApi,
+  type EvidenceCatalogSource,
   type EvidenceCatalogModule,
   type EvidenceContractTrial,
   type EvidenceQueryCatalog,
@@ -721,16 +790,23 @@ import {
   type SetupModuleEntry,
 } from './evidenceCatalog'
 import {
+  EVIDENCE_SETUP_SECTIONS,
+  normalizeEvidenceSetupSection,
   safeTroubleshootingReturnPath,
   workbenchOverlayLocation,
 } from './workbenchCapabilityMenu'
-import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
 type ContractRow = {
   system: string
   service: string
   module: EvidenceCatalogModule
   contract: EvidenceQueryContract
+}
+
+type ToolListRow = {
+  entry: SetupModuleEntry
+  tool: ModuleToolSetup
+  row: ContractRow | null
 }
 
 type AssetForm = {
@@ -747,7 +823,8 @@ type AssetForm = {
   parameters: Record<string, string>
   expectedVersion?: number
   reason: string
-  scopeLocked: boolean
+  systemLocked: boolean
+  serviceLocked: boolean
 }
 
 function emptyAssetForm(): AssetForm {
@@ -764,7 +841,8 @@ function emptyAssetForm(): AssetForm {
     contractRefs: {},
     parameters: {},
     reason: '',
-    scopeLocked: false,
+    systemLocked: false,
+    serviceLocked: false,
   }
 }
 
@@ -775,6 +853,7 @@ const assetCatalog = ref<ObservabilityAssetCatalog | null>(null)
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
+const toolStatusFilter = ref<'ALL' | ModuleToolSetup['status']>('ALL')
 const selectedModuleKey = ref('')
 const selectedToolRef = ref('')
 const selectedKey = ref('')
@@ -783,6 +862,7 @@ const routeSaving = ref(false)
 const routeTarget = ref<ContractRow | null>(null)
 const routePlatforms = ref<string[]>([])
 const routeReason = ref('')
+const moduleChooserOpen = ref(false)
 const assetDialogOpen = ref(false)
 const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
@@ -798,6 +878,19 @@ const trialOccurredAt = ref<Date | null>(null)
 const trialResult = ref<EvidenceContractTrial | null>(null)
 const trialError = ref('')
 const trialHistory = ref<EvidenceContractTrial[]>([])
+const toolDetailOpen = ref(false)
+const toolDetailTarget = ref<ToolListRow | null>(null)
+const setupSection = computed(() => normalizeEvidenceSetupSection(route.query.section))
+const activeSetupSection = computed(() => EVIDENCE_SETUP_SECTIONS.find(
+  section => section.key === setupSection.value,
+  ) || EVIDENCE_SETUP_SECTIONS[0])
+
+function selectSetupSection(section: 'modules' | 'tools' | 'source') {
+  void router.push({
+    path: route.path,
+    query: { ...route.query, section },
+  })
+}
 
 const allRows = computed<ContractRow[]>(() => (catalog.value?.systems || []).flatMap(system =>
   system.modules.flatMap(module => module.contracts.map(contract => ({
@@ -830,16 +923,10 @@ const realSourceReady = computed(() => (catalog.value?.sources || []).some(sourc
 /** 只有回放可用：能跑，但跑出来的不是真实生产观测。这是最容易被说成「就绪」的一格。 */
 const replayOnly = computed(() => !realSourceReady.value && sourceReady.value)
 
-/**
- * 每个平台**具体缺什么**。页面原来只说「观测云待联调」，那句话对着一个
- * `endpointStatus=MISSING、credentialStatus=MISSING` 的适配器和一个只是没开开关的
- * 适配器说的是同一句话，而这两件事要找的人完全不同。
- */
 const blockedSources = computed(() => (catalog.value?.sources || [])
   .filter(source => source.status !== 'READY' && !isRecordedReplay(source.platform))
   .map(source => ({
     platform: source.platform,
-    detail: source.detail,
     missing: [
       source.endpointStatus === 'MISSING' ? '端点' : '',
       source.credentialStatus === 'MISSING' ? '凭据' : '',
@@ -852,6 +939,35 @@ const setupModules = computed(() => listSetupModules(
 ))
 
 const hasModules = computed(() => setupModules.value.length > 0)
+const systemChoices = computed(() => {
+  const counts = new Map<string, number>()
+  for (const entry of setupModules.value) {
+    counts.set(entry.system, (counts.get(entry.system) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([system, moduleCount]) => ({ system, moduleCount }))
+    .sort((left, right) => left.system.localeCompare(right.system))
+})
+const showListToolbar = computed(() => setupSection.value === 'source'
+  ? Boolean(catalog.value?.sources?.length)
+  : hasModules.value)
+const listSearchPlaceholder = computed(() => ({
+  modules: '搜索系统或模块',
+  tools: '搜索系统、模块或工具',
+  source: '搜索数据源或支持的取证类型',
+}[setupSection.value]))
+
+const filteredSources = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  const sources = catalog.value?.sources || []
+  if (!keyword) return sources
+  return sources.filter(source => [
+    source.platform,
+    source.detail,
+    ...source.supportedSignals,
+    ...source.supportedSignals.map(signalKindLabel),
+  ].some(value => value.toLowerCase().includes(keyword)))
+})
 
 /**
  * 真实依赖顺序是「先有可用的源 → 再登记模块 → 再给模块绑工具 → 才谈得上试跑」。
@@ -886,22 +1002,37 @@ const filteredSetupModules = computed(() => {
   })
 })
 
-const filteredModuleTree = computed(() => {
-  const systems = new Map<string, SetupModuleEntry[]>()
-  for (const entry of filteredSetupModules.value) {
-    const modules = systems.get(entry.system) || []
-    modules.push(entry)
-    systems.set(entry.system, modules)
-  }
-  return [...systems.entries()].map(([system, modules]) => ({ system, modules }))
+const allToolRows = computed<ToolListRow[]>(() => setupModules.value.flatMap(entry =>
+  buildModuleToolSetups({
+    options: assetCatalog.value?.contracts || [],
+    module: entry.module,
+    asset: entry.asset,
+    sourceReady: sourceReady.value,
+  }).map(tool => ({ entry, tool, row: contractRowFor(entry, tool) }))))
+
+const filteredToolRows = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  return allToolRows.value.filter(({ entry, tool }) => {
+    if (toolStatusFilter.value !== 'ALL' && tool.status !== toolStatusFilter.value) return false
+    if (!keyword) return true
+    return [
+      entry.system,
+      entry.service,
+      entry.displayName,
+      tool.signalKind,
+      signalKindLabel(tool.signalKind),
+      tool.contractRef,
+      tool.scenario,
+      tool.question,
+      tool.contract?.route.platforms.join(' ') || '',
+    ].some(value => value.toLowerCase().includes(keyword))
+  })
 })
 
 const selectedSetupModule = computed(() => filteredSetupModules.value.find(entry =>
   moduleKey(entry.system, entry.service) === selectedModuleKey.value)
   || filteredSetupModules.value[0]
   || null)
-
-const selectedAsset = computed(() => selectedSetupModule.value?.asset || null)
 
 const selectedToolSetups = computed(() => {
   const entry = selectedSetupModule.value
@@ -913,9 +1044,6 @@ const selectedToolSetups = computed(() => {
     sourceReady: sourceReady.value,
   })
 })
-
-const enabledToolCount = computed(() => selectedToolSetups.value.filter(tool => tool.enabled).length)
-const readyToolCount = computed(() => selectedToolSetups.value.filter(tool => tool.status === 'READY').length)
 
 const selectedAssetRows = computed(() => {
   const entry = selectedSetupModule.value
@@ -1002,7 +1130,13 @@ const assetDraftReadiness = computed(() => observabilityAssetDraftReadiness({
   requiredAssetParameters: requiredAssetParameters.value,
   reason: assetForm.value.reason,
 }))
-const assetScopeLocked = computed(() => assetForm.value.scopeLocked)
+const assetDialogTitle = computed(() => {
+  const form = assetForm.value
+  if (form.expectedVersion) return '修改系统模块取证配置'
+  if (!form.systemLocked) return '新增系统及第一个模块'
+  if (!form.serviceLocked) return `给 ${form.system || '当前系统'} 新增模块`
+  return '登记已有系统模块取证配置'
+})
 const trialParameters = computed(() => (trialTarget.value?.contract.parameters || []).filter(
   parameter => (parameter.source === 'EVIDENCE_REQUEST_TARGET'
     && !['monitor_checker', 'deployment', 'namespace', 'cluster', 'region', 'environment']
@@ -1015,29 +1149,35 @@ function moduleKey(system: string, service: string) {
 }
 
 function rowTrialBlocker(row: ContractRow) {
-  return directTrialBlockReason(row.contract, selectedAsset.value)
+  const asset = setupModules.value.find(entry =>
+    entry.system.trim().toLowerCase() === row.system.trim().toLowerCase()
+      && entry.service.trim().toLowerCase() === row.service.trim().toLowerCase())?.asset
+  return directTrialBlockReason(row.contract, asset)
 }
 
-function toolRow(tool: ModuleToolSetup): ContractRow | null {
-  const entry = selectedSetupModule.value
-  if (!entry || !tool.contract) return null
+function fallbackEvidenceModule(service: string): EvidenceCatalogModule {
+  return {
+    service,
+    status: 'BLOCKED',
+    runnableContracts: 0,
+    blockers: [],
+    acceptance: {
+      status: 'UNAVAILABLE',
+      currentBindingFingerprint: null,
+      acceptedBy: null,
+      acceptedAt: null,
+      blockers: [],
+    },
+    contracts: [],
+  }
+}
+
+function contractRowFor(entry: SetupModuleEntry, tool: ModuleToolSetup): ContractRow | null {
+  if (!tool.contract) return null
   return {
     system: entry.system,
     service: entry.service,
-    module: entry.module || {
-      service: entry.service,
-      status: 'BLOCKED',
-      runnableContracts: 0,
-      blockers: [],
-      acceptance: {
-        status: 'UNAVAILABLE',
-        currentBindingFingerprint: null,
-        acceptedBy: null,
-        acceptedAt: null,
-        blockers: [],
-      },
-      contracts: [],
-    },
+    module: entry.module || fallbackEvidenceModule(entry.service),
     contract: tool.contract,
   }
 }
@@ -1055,18 +1195,37 @@ function moduleRailLabel(entry: SetupModuleEntry) {
   return `${ready}/${tools.length || entry.module?.contracts.length || 0}`
 }
 
-function moduleRailTagType(entry: SetupModuleEntry): 'success' | 'warning' | 'info' | 'danger' {
-  if (!entry.asset || entry.asset.origin !== 'WORKSPACE') return 'info'
-  const tools = buildModuleToolSetups({
-    options: assetCatalog.value?.contracts || [],
-    module: entry.module,
-    asset: entry.asset,
-    sourceReady: sourceReady.value,
-  })
-  if (!tools.length) return 'info'
-  if (tools.every(tool => tool.status === 'READY')) return 'success'
-  if (tools.some(tool => tool.enabled)) return 'warning'
-  return 'info'
+function moduleResourceScope(entry: SetupModuleEntry) {
+  if (!entry.asset) return '未登记'
+  return [entry.asset.region, entry.asset.cluster, entry.asset.namespace]
+    .filter(Boolean)
+    .join(' / ') || '未记录'
+}
+
+function moduleOriginLabel(entry: SetupModuleEntry) {
+  if (!entry.asset) return '未登记'
+  return entry.asset.origin === 'WORKSPACE' ? 'Workspace' : '部署默认'
+}
+
+function moduleOriginTagType(entry: SetupModuleEntry): 'success' | 'info' | 'warning' {
+  if (!entry.asset) return 'warning'
+  return entry.asset.origin === 'WORKSPACE' ? 'success' : 'info'
+}
+
+function moduleStateLabel(entry: SetupModuleEntry) {
+  if (!entry.asset) return '待登记'
+  return entry.asset.enabled ? '已启用' : '已停用'
+}
+
+function moduleStateTagType(entry: SetupModuleEntry): 'success' | 'info' | 'warning' {
+  if (!entry.asset) return 'warning'
+  return entry.asset.enabled ? 'success' : 'info'
+}
+
+function openModuleEntryConfig(entry: SetupModuleEntry) {
+  selectSetupModule(entry)
+  if (entry.asset) openAssetEditor(entry.asset)
+  else openExistingModuleRegistration(entry)
 }
 
 function selectSetupModule(entry: SetupModuleEntry) {
@@ -1099,13 +1258,75 @@ function toolNeedsModuleConfig(tool: ModuleToolSetup) {
     (item.key === 'enable' || item.key === 'workspace' || item.key === 'params') && !item.done)
 }
 
-function openModuleConfig() {
-  const entry = selectedSetupModule.value
-  if (entry?.asset) {
-    openAssetEditor(entry.asset)
-    return
-  }
-  openNewAsset()
+function openModuleConfigFor(entry: SetupModuleEntry) {
+  toolDetailOpen.value = false
+  selectSetupModule(entry)
+  if (entry.asset) openAssetEditor(entry.asset)
+  else openExistingModuleRegistration(entry)
+}
+
+function openToolDetail(target: ToolListRow) {
+  toolDetailTarget.value = target
+  selectSetupModule(target.entry)
+  selectTool(target.tool)
+  toolDetailOpen.value = true
+  void loadTrialHistory()
+}
+
+function openTrialForToolListRow(target: ToolListRow) {
+  toolDetailOpen.value = false
+  selectSetupModule(target.entry)
+  selectTool(target.tool)
+  if (target.row) openTrialForRow(target.row)
+}
+
+function toolListTrialBlocker(target: ToolListRow) {
+  return target.row ? rowTrialBlocker(target.row) : '先启用并绑定这条工具'
+}
+
+function toolRouteLabel(tool: ModuleToolSetup) {
+  if (!tool.contract) return '未投影'
+  return tool.contract.route.platforms.join(' → ') || '未声明'
+}
+
+function toolBindingLabel(tool: ModuleToolSetup) {
+  if (!tool.enabled) return '未启用'
+  return tool.contract ? bindingStatusLabel(tool.contract.binding.status) : '待刷新'
+}
+
+function toolStateTagType(tool: ModuleToolSetup): 'success' | 'warning' | 'info' {
+  return tool.status === 'READY' ? 'success' : tool.status === 'BLOCKED' ? 'warning' : 'info'
+}
+
+function toolNextStepLabel(tool: ModuleToolSetup) {
+  if (tool.status === 'READY') return '可直接只读试跑'
+  return tool.checklist.find(item => !item.done)?.label || '查看详情确认阻断点'
+}
+
+function sourceSignalLabel(signals: string[]) {
+  return signals.map(signalKindLabel).join('、') || '未声明'
+}
+
+function sourceCheckLabel(status: string, subject: string) {
+  if (status === 'MISSING') return `缺${subject}`
+  if (status === 'READY' || status === 'CONFIGURED' || status === 'PRESENT') return '已配置'
+  if (status === 'NOT_REPORTED' || !status) return '未报告'
+  return status
+}
+
+function sourceCheckTagType(status: string): 'success' | 'warning' | 'info' {
+  if (status === 'MISSING') return 'warning'
+  return status === 'READY' || status === 'CONFIGURED' || status === 'PRESENT' ? 'success' : 'info'
+}
+
+function sourceStateLabel(source: EvidenceCatalogSource) {
+  if (source.status !== 'READY') return '待联调'
+  return isRecordedReplay(source.platform) ? '仅回放' : '已就绪'
+}
+
+function sourceStateTagType(source: EvidenceCatalogSource): 'success' | 'warning' | 'info' {
+  if (source.status !== 'READY') return 'warning'
+  return isRecordedReplay(source.platform) ? 'info' : 'success'
 }
 
 function contractKey(system: string, service: string, contract: EvidenceQueryContract) {
@@ -1177,7 +1398,7 @@ async function runTrial() {
     const message = response.data.status === 'OBSERVED'
       ? '只读查询已拿到规范证据'
       : response.data.status === 'FAILED'
-        ? '数据源查询失败，请核对运行日志和查询规则'
+        ? '数据源查询失败，请核对运行日志和所选取证方法'
         : '查询成功，但这个时间范围没有完整证据'
     if (response.data.status === 'FAILED') ElMessage.error(message)
     else ElMessage.success(message)
@@ -1238,41 +1459,49 @@ async function loadCatalog() {
       selectedKey.value = ''
     }
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : '取证接入配置加载失败'
+    error.value = failure instanceof Error ? failure.message : '系统接入配置加载失败'
   } finally {
     loading.value = false
   }
 }
 
-function openNewAsset() {
-  const current = selectedSetupModule.value
+function openNewSystem() {
   assetForm.value = emptyAssetForm()
-  if (current) {
-    assetForm.value.system = current.system
-    assetForm.value.service = current.service
-    assetForm.value.displayName = current.displayName || current.service
-    assetForm.value.scopeLocked = Boolean(current.module)
-    if (current.asset) {
-      assetForm.value.environment = current.asset.environment || ''
-      assetForm.value.region = current.asset.region || ''
-      assetForm.value.cluster = current.asset.cluster || ''
-      assetForm.value.namespace = current.asset.namespace || ''
-      assetForm.value.contractRefs = { ...current.asset.signalBindings }
-      assetForm.value.parameters = { ...current.asset.parameters }
-      assetForm.value.enabled = current.asset.enabled
-      assetForm.value.expectedVersion = current.asset.origin === 'WORKSPACE'
-        ? current.asset.version
-        : undefined
-    }
+  assetDialogOpen.value = true
+}
+
+function openModuleForSystem(system: string) {
+  assetForm.value = emptyAssetForm()
+  if (system) {
+    assetForm.value.system = system
+    assetForm.value.systemLocked = true
   }
-  if (typeof route.query.system === 'string' && route.query.system) {
-    assetForm.value.system = route.query.system
-    assetForm.value.scopeLocked = true
-  }
-  if (typeof route.query.service === 'string' && route.query.service) {
-    assetForm.value.service = route.query.service
-    assetForm.value.displayName = route.query.service
-    assetForm.value.scopeLocked = true
+  assetDialogOpen.value = true
+}
+
+function chooseSystemForNewModule(system: string) {
+  moduleChooserOpen.value = false
+  openModuleForSystem(system)
+}
+
+function openExistingModuleRegistration(entry: SetupModuleEntry) {
+  assetForm.value = emptyAssetForm()
+  assetForm.value.system = entry.system
+  assetForm.value.service = entry.service
+  assetForm.value.displayName = entry.displayName || entry.service
+  assetForm.value.systemLocked = true
+  assetForm.value.serviceLocked = true
+  if (entry.asset) {
+    assetForm.value.environment = entry.asset.environment || ''
+    assetForm.value.region = entry.asset.region || ''
+    assetForm.value.cluster = entry.asset.cluster || ''
+    assetForm.value.namespace = entry.asset.namespace || ''
+    assetForm.value.contractRefs = { ...entry.asset.signalBindings }
+    assetForm.value.parameters = { ...entry.asset.parameters }
+    assetForm.value.enabled = entry.asset.enabled
+    assetForm.value.expectedVersion = entry.asset.origin === 'WORKSPACE'
+      ? entry.asset.version
+      : undefined
   }
   assetDialogOpen.value = true
 }
@@ -1304,14 +1533,15 @@ function openAssetEditor(asset: ObservabilityAsset) {
     parameters: { ...asset.parameters },
     expectedVersion: asset.origin === 'WORKSPACE' ? asset.version : undefined,
     reason: '',
-    scopeLocked: true,
+    systemLocked: true,
+    serviceLocked: true,
   }
   assetDialogOpen.value = true
 }
 
 function metadataFieldLabel(parameter: string, label: string) {
   return requiredAssetParameters.value.includes(parameter)
-    ? `${label}（已选规则必填）`
+    ? `${label}（所选取证方法必填）`
     : `${label}（可选）`
 }
 
@@ -1392,6 +1622,7 @@ function openGuanceValidation() {
 }
 
 function openRouteEditor(row: ContractRow) {
+  toolDetailOpen.value = false
   routeTarget.value = row
   routePlatforms.value = [...row.contract.route.platforms]
   routeReason.value = ''
@@ -1447,6 +1678,10 @@ watch(selectedKey, () => {
   void loadTrialHistory()
 })
 
+watch(setupSection, () => {
+  query.value = ''
+})
+
 onMounted(loadCatalog)
 </script>
 
@@ -1455,6 +1690,7 @@ onMounted(loadCatalog)
 .page-alert { margin-bottom: 2px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .search-input { flex: 1; min-width: min(100%, 240px); }
+.status-filter { width: 138px; }
 /* 源没通时页面顶部那块闸门。它替掉了原来常驻的三步流程条。 */
 .source-gate {
   padding: 16px 18px;
@@ -1470,6 +1706,42 @@ onMounted(loadCatalog)
 .source-gate-list b { color: var(--mc-text-primary); font-family: var(--mc-font-mono, monospace); }
 .source-gate-list .missing { color: var(--mc-danger, #c0392b); font-weight: 600; }
 .source-gate-list small { color: var(--mc-text-tertiary); }
+.source-gate-compact { padding: 14px 16px; }
+.source-gate-list-compact { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; }
+.list-workspace { min-width: 0; border-top: 1px solid var(--mc-border-light); }
+.source-list-workspace { min-height: 420px; }
+.list-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 18px 2px 14px; }
+.list-heading h2 { margin: 0; color: var(--mc-text-primary); font-size: 16px; letter-spacing: -.02em; }
+.list-heading p { margin: 5px 0 0; color: var(--mc-text-secondary); font-size: 11px; }
+.management-table { width: 100%; border-top: 1px solid var(--mc-border-light); }
+.management-table :deep(.el-table__header th) { color: var(--mc-text-secondary); background: var(--mc-bg-muted); font-size: 11px; font-weight: 650; }
+.management-table :deep(.el-table__row td) { padding-top: 11px; padding-bottom: 11px; }
+.management-table :deep(.cell) { line-height: 1.4; }
+.management-table :deep(.el-table__row) { transition: background-color .14s ease; }
+.management-table :deep(.el-table__fixed-right) { box-shadow: -8px 0 16px rgb(35 45 58 / 4%); }
+.management-table code { color: var(--mc-primary); font-size: 11px; overflow-wrap: anywhere; }
+.table-primary-cell b, .table-primary-cell small { display: block; }
+.table-primary-cell b { color: var(--mc-text-primary); font-size: 13px; }
+.table-primary-cell small { margin-top: 4px; color: var(--mc-text-secondary); font-size: 11px; }
+.table-detail-trigger { width: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.table-detail-trigger:hover b { color: var(--mc-primary); }
+.compact-cell b { font-weight: 600; }
+.readiness-count { font: 650 12px var(--mc-font-mono, monospace); }
+.status-cell { display: grid; justify-items: start; gap: 5px; }
+.status-cell small { color: var(--mc-text-secondary); font-size: 10.5px; line-height: 1.35; }
+.source-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.muted-action { color: var(--mc-text-tertiary); font-size: 11px; }
+.dialog-help { margin: 0 0 14px; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.6; }
+.system-choice-list { display: grid; border-top: 1px solid var(--mc-border-light); }
+.system-choice-list button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--mc-border-light); color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.system-choice-list button:hover { color: var(--mc-primary); background: var(--mc-bg-muted); }
+.system-choice-list b, .system-choice-list small { display: block; }
+.system-choice-list small { margin-top: 4px; color: var(--mc-text-secondary); font-size: 11px; }
+.tool-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--mc-border-light); }
+.tool-detail-heading small { color: var(--mc-primary); font-weight: 700; }
+.tool-detail-heading h3 { margin: 6px 0; color: var(--mc-text-primary); font-size: 20px; }
+.tool-detail-heading p { margin: 0 0 7px; color: var(--mc-text-secondary); line-height: 1.55; }
+.tool-detail-heading code { color: var(--mc-primary); font-size: 11px; }
 
 /* 首次进入的空态。唯一能做的动作是主按钮，不再和三个跳转按钮抢注意力。 */
 .setup-empty { display: grid; justify-items: center; gap: 10px; padding: 56px 24px; text-align: center; }
@@ -1497,59 +1769,6 @@ onMounted(loadCatalog)
 .contract-spec .card-title small { color: var(--mc-primary); font-size: 10px; font-weight: 800; letter-spacing: .1em; }
 .contract-spec .card-title h3 { margin: 0; color: var(--mc-text-primary); font-size: 13px; }
 .contract-spec .empty-inline { color: var(--mc-text-tertiary); font-size: 12px; }
-.assets-workspace {
-  display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-  min-height: 560px;
-  border: 1px solid var(--mc-border-light);
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--mc-bg-elevated);
-}
-.asset-rail { padding: 12px; border-right: 1px solid var(--mc-border-light); background: var(--mc-bg-muted); overflow: auto; }
-.tree-system {
-  margin: 10px 8px 6px;
-  color: var(--mc-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.tree-system:first-child { margin-top: 2px; }
-.asset-item {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; width: 100%;
-  margin: 0 0 6px; padding: 12px; border: 0; border-radius: 10px; color: inherit; background: transparent;
-  text-align: left; cursor: pointer;
-}
-.asset-item:hover { background: var(--mc-bg); }
-.asset-item.active { color: var(--mc-primary); background: var(--mc-primary-bg); box-shadow: inset 3px 0 var(--mc-primary); }
-.asset-item b { display: block; font-size: 13px; }
-.asset-item small { display: block; margin-top: 4px; color: var(--mc-text-secondary); font-size: 11px; }
-.asset-panel { min-width: 0; padding: 18px; overflow: auto; }
-.asset-panel-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.asset-panel-head h2 { margin: 4px 0 6px; font-size: 22px; }
-.asset-panel-head p { margin: 0; color: var(--mc-text-secondary); }
-.asset-panel-actions { display: flex; gap: 8px; flex: 0 0 auto; }
-.scope-line { margin: 0; color: var(--mc-primary); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
-.setup-grid article { display: flex; flex-direction: column; min-width: 0; padding: 14px; border-radius: 10px; background: var(--mc-bg-muted); }
-.setup-grid span { color: var(--mc-text-secondary); font-size: 11px; }
-.setup-grid strong { margin-top: 6px; font-size: 14px; }
-.setup-grid small { margin-top: 5px; color: var(--mc-text-secondary); overflow-wrap: anywhere; }
-.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.section-heading h3 { margin: 0; font-size: 15px; }
-.section-heading small { color: var(--mc-text-secondary); }
-.rule-list { display: grid; gap: 10px; }
-.rule-card { border: 1px solid var(--mc-border-light); border-radius: 12px; overflow: hidden; }
-.rule-card.active { border-color: color-mix(in srgb, var(--mc-primary) 45%, var(--mc-border)); }
-.rule-card-main {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%;
-  padding: 14px 16px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer;
-}
-.rule-card-main b { display: block; margin-bottom: 4px; }
-.rule-card-main p { margin: 0 0 8px; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.5; }
-.rule-card-main code { color: var(--mc-primary); font-size: 11px; }
-.rule-detail { padding: 0 16px 16px; border-top: 1px solid var(--mc-border-light); }
 .checklist { display: grid; gap: 8px; margin: 14px 0; }
 .checklist-item {
   display: grid;
@@ -1579,8 +1798,6 @@ onMounted(loadCatalog)
   border-radius: 10px; color: #b93838; background: color-mix(in srgb, #b93838 6%, var(--mc-bg));
 }
 .blocker-box ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
-.rule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-.trial-blocker { max-width: 320px; color: var(--mc-text-secondary); font-size: 11px; line-height: 1.45; }
 .trial-history { margin-top: 14px; padding: 14px; border: 1px solid var(--mc-border-light); border-radius: 10px; }
 .trial-history-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .trial-history-heading small { color: var(--mc-primary); font-weight: 700; letter-spacing: .12em; }
@@ -1603,6 +1820,7 @@ onMounted(loadCatalog)
 .priority-row em { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--mc-primary); background: var(--mc-primary-bg); font-style: normal; font-size: 11px; font-weight: 700; }
 .asset-dialog-alert { margin-bottom: 18px; }
 .asset-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; width: 100%; }
+.field-help { width: 100%; margin: 0 0 10px; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.6; }
 .contract-binding-grid { display: grid; gap: 8px; width: 100%; }
 .contract-binding-row { display: grid; grid-template-columns: minmax(180px, .65fr) minmax(280px, 1.35fr); align-items: center; gap: 16px; padding: 12px; border: 1px solid var(--mc-border-light); border-radius: 9px; }
 .contract-binding-row small { display: block; margin-top: 4px; color: var(--mc-text-secondary); }
@@ -1627,10 +1845,8 @@ onMounted(loadCatalog)
 .asset-parameter-list>div { padding: 12px; border-radius: 8px; background: var(--mc-bg-muted); }
 .asset-contracts { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 960px) {
-  .assets-workspace, .setup-grid, .setup-workflow, .asset-detail-grid, .asset-parameter-list, .asset-form-grid, .contract-binding-row, .trial-time-grid { grid-template-columns: 1fr; }
-  .asset-rail { max-height: 240px; border-right: 0; border-bottom: 1px solid var(--mc-border-light); }
-  .asset-panel-head { flex-direction: column; }
+  .asset-detail-grid, .asset-parameter-list, .asset-form-grid, .contract-binding-row, .trial-time-grid { grid-template-columns: 1fr; }
+  .tool-detail-heading { flex-direction: column; }
+  .management-table :deep(.optional-column) { display: none; }
 }
 </style>
-
-

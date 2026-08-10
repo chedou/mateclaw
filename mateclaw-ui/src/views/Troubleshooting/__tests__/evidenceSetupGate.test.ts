@@ -51,17 +51,17 @@ describe('evidence setup gate', () => {
   it('puts the data source before the module when neither exists', async () => {
     const { text, unmount } = await render()
 
-    expect(text()).toContain('先接通一个真实数据源')
+    expect(text()).toContain('先检查数据连接')
     // 登记模块是离线能做的准备，所以留着——但不占主位。
-    expect(text()).toContain('仍然先登记模块')
+    expect(text()).toContain('仍然先新增系统')
     unmount()
   })
 
   it('leads with the module once a source is actually ready', async () => {
     const { text, unmount } = await render({ sourceReady: true })
 
-    expect(text()).toContain('接入第一个系统模块')
-    expect(text()).not.toContain('先接通一个真实数据源')
+    expect(text()).toContain('接入第一个系统')
+    expect(text()).not.toContain('先检查数据连接')
     expect(text()).not.toContain('还不能取到真实证据')
     unmount()
   })

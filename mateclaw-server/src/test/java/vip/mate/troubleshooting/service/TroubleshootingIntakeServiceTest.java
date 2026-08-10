@@ -12,6 +12,7 @@ import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentTriageService;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.evidence.EvidenceSpineOrchestrator;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
@@ -30,6 +31,7 @@ import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.intake.IntakeMessageEnvelope;
 import vip.mate.troubleshooting.intake.IntakeSession;
 import vip.mate.troubleshooting.intake.IntakeSessionReducer;
+import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -45,6 +47,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -298,6 +301,93 @@ class TroubleshootingIntakeServiceTest {
         // fixtureMode 现在由证据自己决定：这一条是 router 从真源取回来的，
         // 所以不是夹具。调用方自带的证据仍一律按夹具（它不能自证成色）。
                 eq(false), eq(false), eq(NOW), eq(NOW));
+    }
+
+    @Test
+    void runsAThreeStepHitThroughTheSharedEvidenceSpineWithTheObservedCorrelationId() {
+        SopEntry sop = itgwSop();
+        IncidentContext incident = new IncidentContext(
+                "inc-itgw", "CSDP", "csdp-wechat", "904003",
+                "ITGW访问失败", "P1", "6条失败", null,
+                Instant.parse("2026-08-07T09:12:00Z"), null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED,
+                "ITGW访问失败【904003】");
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "904003")).thenReturn(sop);
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), eq(incident), eq(null)))
+                .thenAnswer(invocation -> itgwEvidence(invocation.getArgument(1)));
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        EvidenceSpineOrchestrator spine = new EvidenceSpineOrchestrator(
+                evidenceRouter, new DeterministicLogTraceCompressor());
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                spine,
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
+
+        ArgumentCaptor<EvidenceRequest> requests = ArgumentCaptor.forClass(EvidenceRequest.class);
+        verify(evidenceRouter, times(3)).collect(
+                eq(WORKSPACE_ID), requests.capture(), eq(incident), eq(null));
+        assertThat(requests.getAllValues().get(0).target())
+                .containsExactlyEntriesOf(Map.of("search_term", "itgw_access_failed"));
+        assertThat(requests.getAllValues().get(1).target())
+                .containsExactlyEntriesOf(Map.of("ps_id", "itgw-trace-observed-1"));
+        assertThat(requests.getAllValues().get(2).target())
+                .containsExactlyEntriesOf(Map.of(
+                        "scenario_key", "itgw_access_failed",
+                        "exclude_ps_id", "itgw-trace-observed-1"));
+
+        ArgumentCaptor<List<EvidenceResult>> persisted = ArgumentCaptor.forClass(List.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), eq(incident), eq(sop), persisted.capture(),
+                eq(false), eq(false), eq(NOW), eq(NOW));
+        assertThat(persisted.getValue())
+                .extracting(EvidenceResult::queryId)
+                .containsExactly("ITGW-LOG-SEARCH", "ITGW-TRACE-BUNDLE", "ITGW-CONTRAST");
+        assertThat(persisted.getValue())
+                .extracting(EvidenceResult::query)
+                .containsOnly("withheld");
+        assertThat(persisted.getValue().toString())
+                .doesNotContain("raw-business-payload", "blocked-term-value")
+                .contains("failure_sample_count=9", "success_sample_count=35");
+    }
+
+    @Test
+    void rejectsCallerEvidenceThatDoesNotExactlyCoverAThreeStepSpine() {
+        SopEntry sop = itgwSop();
+        IncidentContext incident = new IncidentContext(
+                "inc-itgw", "CSDP", "csdp-wechat", "904003",
+                "ITGW访问失败", "P1", "6条失败", null, NOW, null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED,
+                "ITGW访问失败【904003】");
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "904003")).thenReturn(sop);
+        TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                new EvidenceSpineOrchestrator(
+                        evidenceRouter, new DeterministicLogTraceCompressor()),
+                agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        List<EvidenceResult> wrongIds = List.of(
+                evidenceWithQueryId("SAFE-OTHER-1"),
+                evidenceWithQueryId("SAFE-OTHER-2"),
+                evidenceWithQueryId("SAFE-OTHER-3"));
+
+        assertThatThrownBy(() -> collectingIntake.report(
+                WORKSPACE_ID, incident, wrongIds, false))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("partial caller-supplied Evidence Spine")
+                .extracting(error -> ((MateClawException) error).getCode())
+                .isEqualTo(409);
+
+        verifyNoInteractions(evidenceRouter, diagnosisService, agentTriageService);
     }
 
     @Test
@@ -659,5 +749,77 @@ class TroubleshootingIntakeServiceTest {
                 new PlaybookVersionRef("playbook-903001", 1),
                 List.of(evidence()), List.of("error_present"), List.of(),
                 null, false, true, List.of());
+    }
+
+    private SopEntry itgwSop() {
+        return new SopEntry(
+                "sop-904003", SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP", "904003", "csdp-wechat",
+                "ITGW访问失败路径核查", "ITGW内容策略拦截", "integration",
+                "CSDP WECHAT 负责团队", "approved", true,
+                List.of(
+                        new EvidenceRequest(
+                                "ITGW-LOG-SEARCH", "log_search", "检索失败并取得关联ID",
+                                Map.of("search_term", "itgw_access_failed"), "-15m", true),
+                        new EvidenceRequest(
+                                "ITGW-TRACE-BUNDLE", "log_trace_bundle", "还原同一次调用链",
+                                Map.of("ps_id", "placeholder-must-not-be-used"), "-15m", true),
+                        new EvidenceRequest(
+                                "ITGW-CONTRAST", "contrast_sample", "对照成功与失败样本",
+                                Map.of(
+                                        "scenario_key", "itgw_access_failed",
+                                        "exclude_ps_id", "placeholder-must-not-be-used"),
+                                "-15m", true)),
+                List.of(
+                        new AnomalyCriterion(
+                                "failure_present", "ITGW-LOG-SEARCH", "存在失败样本",
+                                new Criterion.NumericGte("match_count", 1)),
+                        new AnomalyCriterion(
+                                "content_policy_discriminated", "ITGW-CONTRAST",
+                                "内容拦截特征只出现在失败样本",
+                                new Criterion.FailureSuccessRateContrast(
+                                        "failure_match_count", "failure_sample_count",
+                                        "success_match_count", "success_sample_count",
+                                        0.9, 0.1, 0.8))),
+                List.of(new DiagnosisRule(
+                        "RULE-ITGW-CONTENT-POLICY-BLOCK",
+                        List.of("failure_present", "content_policy_discriminated"),
+                        "ITGW内容安全策略拦截请求",
+                        "失败样本命中内容拦截特征，同窗口成功请求未命中",
+                        Confidence.HIGH,
+                        false)),
+                List.of());
+    }
+
+    private EvidenceResult itgwEvidence(EvidenceRequest request) {
+        Map<String, Object> observed = switch (request.signalKind()) {
+            case "log_search" -> Map.of(
+                    "match_count", 9,
+                    "ps_id", "itgw-trace-observed-1",
+                    "sample_message", "raw-business-payload");
+            case "log_trace_bundle" -> Map.of(
+                    "ps_id", String.valueOf(request.target().get("ps_id")),
+                    "entries", List.of(
+                            Map.of(
+                                    "timestamp", 1_000L,
+                                    "service", "csdp-wechat",
+                                    "level", "ERROR",
+                                    "message", "error code 904003 blocked-term-value"),
+                            Map.of(
+                                    "timestamp", 1_010L,
+                                    "service", "itgw",
+                                    "level", "ERROR",
+                                    "message", "upstream error code 500")));
+            case "contrast_sample" -> Map.of(
+                    "discriminating_feature", "itgw_content_policy_blocked",
+                    "failure_sample_count", 9,
+                    "failure_match_count", 9,
+                    "success_sample_count", 35,
+                    "success_match_count", 0);
+            default -> throw new IllegalArgumentException(request.signalKind());
+        };
+        return new EvidenceResult(
+                request.requestId(), "L", "source-query-withheld", EvidenceStatus.ANOMALY,
+                "canonical evidence", observed, "guance:log", NOW);
     }
 }

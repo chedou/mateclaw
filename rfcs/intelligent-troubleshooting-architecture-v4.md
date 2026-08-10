@@ -550,9 +550,13 @@ KnowledgeRecord = recordId + draft + origin
 - 服务端录制种子只允许脱敏、有长度/深度/条数上限的结构化聚合事实；不得保存原始日志、DQL、
   凭据或真实资产标识。种子必须绑定精确 selector、候选合同、必需 EvidenceRequest 与一个
   `MATCHED` 正例。
-- 服务端针对 `numeric_gte / missing_or_lte / ratio_of_sum_gt / multiple_gt /
+- 服务端针对 `numeric_gte / missing_or_lte / ratio_of_sum_gt / failure_success_rate_contrast /
+  multiple_gt /
   contains_and_in / boolean_equals` 封闭词汇生成一个确定性排除例，并生成一个必需证据全
   `MISSING` 的弃权例。判据需要互相冲突的反例值时，该种子无效，不能猜测或放宽预期。
+- `failure_success_rate_contrast` 必须同时约束失败命中率下限、成功命中率上限和两者最小差值；
+  任一侧样本数缺失/为零或命中数越界为 `UNEVALUATED`，合法计数未达阈值为 `EXCLUDED`，
+  阈值配置越界则在规则加载时 fail closed；不得用原始命中数比例替代。
 - 生成套件必须通过与固定套件相同的正例、负例/弃权和精确 rule 评测；错误码路不得因数量大而
   降低晋升资格。固定套件继续 fail-fast；单个生成种子无效时只以稳定错误码隔离该 selector，
   其余固定套件与有效种子仍可加载。

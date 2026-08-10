@@ -49,6 +49,27 @@ class CriterionEvaluatorTest {
     }
 
     @Test
+    void failureSuccessRateContrastRejectsATinyFailureHitEvenWhenSuccessHasNoHits() {
+        Criterion rule = new Criterion.FailureSuccessRateContrast(
+                "failure_matches", "failure_samples",
+                "success_matches", "success_samples",
+                0.9, 0.1, 0.8);
+
+        assertTrue(evaluator.matches(rule, Map.of(
+                "failure_matches", 9, "failure_samples", 9,
+                "success_matches", 0, "success_samples", 25)));
+        assertFalse(evaluator.matches(rule, Map.of(
+                "failure_matches", 1, "failure_samples", 100,
+                "success_matches", 0, "success_samples", 100)));
+        assertFalse(evaluator.matches(rule, Map.of(
+                "failure_matches", 90, "failure_samples", 100,
+                "success_matches", 20, "success_samples", 100)));
+        assertEquals(CriterionOutcome.UNEVALUATED, evaluator.evaluate(rule, Map.of(
+                "failure_matches", 2, "failure_samples", 1,
+                "success_matches", 0, "success_samples", 0)));
+    }
+
+    @Test
     void multipleGtRequiresPositiveBaselineAndStrictlyGreaterValue() {
         Criterion rule = new Criterion.MultipleGt("slow", "baseline", 3);
 

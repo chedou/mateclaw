@@ -37,6 +37,12 @@ public final class CriterionRenderer {
             case Criterion.RatioOfSumGt rule ->
                     rule.numeratorField() + " ÷ (" + rule.numeratorField()
                             + " + " + rule.addendField() + ") > " + number(rule.threshold());
+            case Criterion.FailureSuccessRateContrast rule ->
+                    rule.failureMatchField() + " ÷ " + rule.failureSampleField()
+                            + " ≥ " + number(rule.minFailureRate()) + "  ∧  "
+                            + rule.successMatchField() + " ÷ " + rule.successSampleField()
+                            + " ≤ " + number(rule.maxSuccessRate()) + "  ∧  rate_delta ≥ "
+                            + number(rule.minRateDelta());
             case Criterion.MultipleGt rule ->
                     rule.field() + " > " + number(rule.multiplier()) + " × " + rule.baselineField();
             case Criterion.ContainsAndIn rule ->
@@ -94,6 +100,37 @@ public final class CriterionRenderer {
                 yield number(numerator) + " ÷ (" + number(numerator) + " + " + number(addend)
                         + ") = " + number(ratio)
                         + (ratio > rule.threshold() ? " > " : " ≤ ") + number(rule.threshold());
+            }
+            case Criterion.FailureSuccessRateContrast rule -> {
+                Double failureMatches = number(observed, rule.failureMatchField());
+                Double failureSamples = number(observed, rule.failureSampleField());
+                Double successMatches = number(observed, rule.successMatchField());
+                Double successSamples = number(observed, rule.successSampleField());
+                if (failureMatches == null
+                        || failureSamples == null
+                        || successMatches == null
+                        || successSamples == null) {
+                    yield "成功/失败样本计数不完整，判据未执行";
+                }
+                if (failureSamples <= 0D
+                        || successSamples <= 0D
+                        || failureMatches < 0D
+                        || successMatches < 0D
+                        || failureMatches > failureSamples
+                        || successMatches > successSamples) {
+                    yield "成功/失败样本计数不合法，判据未执行";
+                }
+                double failureRate = failureMatches / failureSamples;
+                double successRate = successMatches / successSamples;
+                double delta = failureRate - successRate;
+                yield "失败命中率=" + number(failureRate)
+                        + (failureRate >= rule.minFailureRate() ? " ≥ " : " < ")
+                        + number(rule.minFailureRate()) + "，成功命中率="
+                        + number(successRate)
+                        + (successRate <= rule.maxSuccessRate() ? " ≤ " : " > ")
+                        + number(rule.maxSuccessRate()) + "，差值=" + number(delta)
+                        + (delta >= rule.minRateDelta() ? " ≥ " : " < ")
+                        + number(rule.minRateDelta());
             }
             case Criterion.MultipleGt rule -> {
                 Double value = number(observed, rule.field());

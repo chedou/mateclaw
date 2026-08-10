@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-09
+> 更新时间：2026-08-10
 >
 > 仓库：`chedou/mateclaw`
 >
@@ -1265,6 +1265,35 @@ T28 CTI 真源恢复与调查耗时闭环（2026-08-09）：
   T7 只读预检的服务、凭据状态、三信号路由和 binding 指纹四道门通过。
 - 这是 CTI 单场景的真实运行证据，不等于 T7/T8 投产验收；
   Workspace owner 仍需注册并冻结至少 20 个可执行目标，当前正式目录仍为 `0 / 20`。
+
+T29 ITGW 904003 错误码真源竖线（2026-08-10）：
+
+- 真实告警 `CSDP / csdp-wechat / ITGW访问失败【904003】 / 2026-08-07 17:12 +08:00`
+  已接入错误码 Playbook 命中路。`TroubleshootingIntakeService` 与场景入口现共同使用
+  `EvidenceSpineOrchestrator`：先检索失败并取得真实关联 ID，再由服务端把该 ID 传给调用链与
+  成功/失败对照；冻结 Playbook 中的示例 ID 不再可能被当作运行时输入。调用方若提交部分或错 ID 的
+  三段证据会 409 fail closed，不会退回逐条独立查询。
+- `csdp-guance-evidence-pilot` 新增精确 `CSDP / csdp-wechat` 三段绑定。查询只固定
+  `service=csdp-wechat` 与已验证字段，不猜测 Guance cluster 映射；告警提供的 `sz3-s-k8s`
+  只保存为 Workspace 资产元数据。三份合同的历史窗口只由 API `timeRange` 决定，不写 DQL
+  相对时间后缀。
+- 初版 v1 已保留为历史并由审批链自动退役，没有原地改写。现行 MANUAL 候选
+  `manual-csdp-itgw-access-failed-904003-v2` 使用失败/成功两侧命中率判据：失败命中率至少 `0.9`、
+  成功命中率至多 `0.1`、差值至少 `0.8`；`1/100` 对 `0/100` 必须排除，任一侧样本缺失、为零或
+  命中数越界均为 `UNEVALUATED`。固定回放通过 `1/1` 正例与 `2/2` 排除/弃权例，审核
+  `review-8fe44e41-9078-44f7-a543-522136fc93fe` 已生成当前 active-approved
+  `playbook-97824512-a76e-464d-a48d-f4b91b6520fe / v2`。
+- v1 真源 Diagnosis `diag-821c2a49d00744899eb08bf95ebb5164` 保持历史不变。v2 首次真源尝试
+  `diag-86765db32b6f4ff2b116200b38e6a96d` 遇到 native curl 空回复，按设计以
+  `INSUFFICIENT_EVIDENCE` fail closed；直连恢复后，新的正式 Incident
+  `diag-acee292ecd7647288e2c39e80007ec2e` 冻结 v2 并完成三次 Guance-only 查询：失败样本
+  `2/2` 命中内容拦截特征，同窗成功样本 `36/0` 命中；最终为
+  `DETERMINISTIC / ERROR_CODE_PLAYBOOK / LOCATED / HIGH / READY_FOR_HUMAN`，
+  `fixtureMode=false`。持久化只含计数、确定性压缩链路骨架与证据引用，查询、原始日志、业务内容、
+  端点和凭据均不落库。
+- 这证明一条 904003 错误码竖线可在真实 Guance 上运行，不等于正式 T7/T8 批次验收；
+  owner 目标目录仍保持 `0 / 20`。判据与接入聚焦回归 `50/50`、排障域与 Skill Manifest
+  全量回归 `864/864` 通过。
 
 后端定向测试命令：
 
