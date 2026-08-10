@@ -62,6 +62,8 @@ class GuanceEvidenceSpinePreviewServiceTest {
         assertThat(preview.anomalyCount()).isEqualTo(2);
         assertThat(preview.traceElapsedMs()).isEqualTo(42L);
         assertThat(preview.contrast().available()).isTrue();
+        assertThat(preview.contrast().discriminatingFeature())
+                .isEqualTo("session_state_conflict");
         assertThat(preview.contrast().failureRate()).isEqualTo(0.92);
         assertThat(preview.contrast().successRate()).isEqualTo(0.03);
         assertThat(preview.contrast().rateDelta()).isEqualTo(0.89);

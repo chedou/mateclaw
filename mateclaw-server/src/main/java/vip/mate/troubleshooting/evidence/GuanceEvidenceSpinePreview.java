@@ -187,6 +187,7 @@ public record GuanceEvidenceSpinePreview(
 
     public record Contrast(
             boolean available,
+            String discriminatingFeature,
             long failureSampleCount,
             long failureMatchCount,
             long successSampleCount,
@@ -196,14 +197,22 @@ public record GuanceEvidenceSpinePreview(
             double rateDelta) {
 
         public Contrast {
+            discriminatingFeature = discriminatingFeature == null
+                    ? null
+                    : discriminatingFeature.trim();
             if (!available) {
-                if (failureSampleCount != 0L || failureMatchCount != 0L
+                if (discriminatingFeature != null
+                        || failureSampleCount != 0L || failureMatchCount != 0L
                         || successSampleCount != 0L || successMatchCount != 0L
                         || failureRate != 0D || successRate != 0D || rateDelta != 0D) {
                     throw new IllegalArgumentException(
                             "unavailable contrast must not contain invented measurements");
                 }
-            } else if (failureSampleCount <= 0L
+            } else if (discriminatingFeature == null
+                    || discriminatingFeature.isBlank()
+                    || discriminatingFeature.length() > 128
+                    || !discriminatingFeature.matches("[A-Za-z0-9._:-]+")
+                    || failureSampleCount <= 0L
                     || successSampleCount <= 0L
                     || failureMatchCount < 0L
                     || successMatchCount < 0L
@@ -233,7 +242,7 @@ public record GuanceEvidenceSpinePreview(
         }
 
         public static Contrast unavailable() {
-            return new Contrast(false, 0L, 0L, 0L, 0L, 0D, 0D, 0D);
+            return new Contrast(false, null, 0L, 0L, 0L, 0L, 0D, 0D, 0D);
         }
 
         private static boolean unit(double value) {

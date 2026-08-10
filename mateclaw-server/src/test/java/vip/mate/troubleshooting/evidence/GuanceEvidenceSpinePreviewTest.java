@@ -29,6 +29,7 @@ class GuanceEvidenceSpinePreviewTest {
     void rejectsContrastRatesThatCannotBeReproducedFromCounts() {
         assertThatThrownBy(() -> new GuanceEvidenceSpinePreview.Contrast(
                 true,
+                "session_state_conflict",
                 100,
                 92,
                 100,
@@ -38,6 +39,22 @@ class GuanceEvidenceSpinePreviewTest {
                 0.88))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("reproducible");
+    }
+
+    @Test
+    void rejectsUnsafeFeatureCodesBeforeTheyReachTheOperatorProjection() {
+        assertThatThrownBy(() -> new GuanceEvidenceSpinePreview.Contrast(
+                true,
+                "content policy blocked",
+                2,
+                2,
+                36,
+                0,
+                1.0,
+                0.0,
+                1.0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("contrast measurements");
     }
 
     @Test
@@ -127,6 +144,7 @@ class GuanceEvidenceSpinePreviewTest {
     private GuanceEvidenceSpinePreview.Contrast validContrast() {
         return new GuanceEvidenceSpinePreview.Contrast(
                 true,
+                "session_state_conflict",
                 100,
                 92,
                 100,

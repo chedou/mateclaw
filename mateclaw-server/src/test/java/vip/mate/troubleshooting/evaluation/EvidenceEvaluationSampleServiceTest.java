@@ -568,7 +568,8 @@ class EvidenceEvaluationSampleServiceTest {
                 readiness(), 4L, "ps-message-001", 3,
                 List.of("gateway", "session-svc", "openim"), 2, 42L,
                 new GuanceEvidenceSpinePreview.Contrast(
-                        true, 100, 92, 100, 3, 0.92, 0.03, 0.89),
+                        true, "session_state_conflict",
+                        100, 92, 100, 3, 0.92, 0.03, 0.89),
                 3, 50L,
                 List.of(
                         observed("log_search", "T8-GUANCE-LOG-SEARCH"),

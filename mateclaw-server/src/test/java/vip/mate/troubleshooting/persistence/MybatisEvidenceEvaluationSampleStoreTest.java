@@ -214,7 +214,8 @@ class MybatisEvidenceEvaluationSampleStoreTest {
                         2,
                         42L,
                         new GuanceEvidenceSpinePreview.Contrast(
-                                true, 100, 92, 100, 3, 0.92, 0.03, 0.89),
+                                true, "session_state_conflict",
+                                100, 92, 100, 3, 0.92, 0.03, 0.89),
                         3,
                         50L,
                         List.of(

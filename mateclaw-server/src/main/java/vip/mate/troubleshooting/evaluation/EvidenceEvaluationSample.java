@@ -666,6 +666,7 @@ public record EvidenceEvaluationSample(
 
     public record ContrastSnapshot(
             boolean available,
+            String discriminatingFeature,
             long failureSampleCount,
             long failureMatchCount,
             long successSampleCount,
@@ -679,6 +680,9 @@ public record EvidenceEvaluationSample(
             // manufacture rates that are inconsistent with their source counts.
             new GuanceEvidenceSpinePreview.Contrast(
                     available,
+                    available && (discriminatingFeature == null || discriminatingFeature.isBlank())
+                            ? "legacy_feature_not_recorded"
+                            : discriminatingFeature,
                     failureSampleCount,
                     failureMatchCount,
                     successSampleCount,
@@ -691,6 +695,7 @@ public record EvidenceEvaluationSample(
         static ContrastSnapshot from(GuanceEvidenceSpinePreview.Contrast contrast) {
             return new ContrastSnapshot(
                     contrast.available(),
+                    contrast.discriminatingFeature(),
                     contrast.failureSampleCount(),
                     contrast.failureMatchCount(),
                     contrast.successSampleCount(),
@@ -703,6 +708,7 @@ public record EvidenceEvaluationSample(
         static ContrastSnapshot from(LogTraceSkeleton.ContrastSummary contrast) {
             return new ContrastSnapshot(
                     contrast.available(),
+                    contrast.discriminatingFeature(),
                     contrast.failureSampleCount(),
                     contrast.failureMatchCount(),
                     contrast.successSampleCount(),
@@ -713,7 +719,7 @@ public record EvidenceEvaluationSample(
         }
 
         static ContrastSnapshot unavailable() {
-            return new ContrastSnapshot(false, 0, 0, 0, 0, 0, 0, 0);
+            return new ContrastSnapshot(false, null, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 

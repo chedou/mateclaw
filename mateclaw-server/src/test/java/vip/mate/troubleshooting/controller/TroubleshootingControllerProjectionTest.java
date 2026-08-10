@@ -251,7 +251,7 @@ class TroubleshootingControllerProjectionTest {
                                 null, List.of(), "未关联调用链", impact.blastRadius()),
                         List.of(),
                         new DiagnosisExperienceProjection.ContrastView(
-                                false, null, null, "未取得成功样本", List.of()),
+                                false, null, null, null, "未取得成功样本", List.of()),
                         new DiagnosisExperienceProjection.DraftView(
                                 null, "尚无草稿", List.of(), "尚未闭环",
                                 DiagnosisExperienceProjection.ReviewStatus.DRAFT,

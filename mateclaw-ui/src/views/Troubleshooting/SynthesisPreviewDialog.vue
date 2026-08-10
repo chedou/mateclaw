@@ -51,7 +51,7 @@
           </p>
         </div>
         <div class="result-facts">
-          <b>{{ preview.matchCount }}</b><span>条日志命中</span>
+          <b>{{ preview.matchCount }}</b><span>条查询结果</span>
           <code>{{ preview.psId }}</code>
         </div>
       </header>
@@ -76,8 +76,8 @@
       <div class="result-grid">
         <section class="trace-card">
           <div class="section-head">
-            <div><span>Deterministic skeleton</span><h4>PS 调用链</h4></div>
-            <small>{{ preview.skeleton.elapsedMs }} ms · {{ preview.skeleton.sourceEntryCount }} 条规范化事件</small>
+            <div><span>关联日志摘要</span><h4>PS ID 关联日志轨迹</h4></div>
+            <small>{{ preview.skeleton.elapsedMs }} ms · {{ preview.skeleton.sourceEntryCount }} 条关联日志</small>
           </div>
           <ol class="trace-list">
             <li
@@ -96,21 +96,14 @@
         </section>
 
         <aside class="contrast-card" :class="{ unavailable: !preview.contrastAvailable }">
-          <span>Negative control</span>
-          <h4>成功样本对照</h4>
-          <template v-if="preview.skeleton.contrast.available">
-            <div class="rate-row failure">
-              <b>{{ formatSynthesisRate(preview.skeleton.contrast.failureRate) }}</b>
-              <small>失败样本命中特征</small>
-            </div>
-            <div class="rate-row success">
-              <b>{{ formatSynthesisRate(preview.skeleton.contrast.successRate) }}</b>
-              <small>成功样本命中特征</small>
-            </div>
-            <strong>{{ formatSynthesisRateDelta(preview.skeleton.contrast.rateDelta) }}</strong>
-            <code>{{ preview.skeleton.contrast.discriminatingFeature }}</code>
+          <span>请求表现对比</span>
+          <h4>故障请求和正常请求有什么不同</h4>
+          <template v-if="previewContrastNarrative">
+            <strong>{{ previewContrastNarrative.summary }}</strong>
+            <p>{{ previewContrastNarrative.interpretation }}</p>
+            <small>{{ previewContrastNarrative.scope }}</small>
           </template>
-          <p v-else>未取得成功样本；后续草稿只能停留在校准期，不能把缺失对照伪装成已验证。</p>
+          <p v-else>未取得正常请求用于比较；当前只能保留线索，不能把缺少对照误认为没有异常。</p>
         </aside>
       </div>
 
@@ -139,11 +132,10 @@ import {
 import {
   buildSynthesisEvidenceSteps,
   EVIDENCE_WINDOW_OPTIONS,
-  formatSynthesisRate,
-  formatSynthesisRateDelta,
   normalizeSynthesisPreviewRequest,
 } from './synthesisPreview'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
+import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -170,6 +162,17 @@ const canPreview = computed(() => [form.system, form.service, form.searchTerm]
 const evidenceSteps = computed(() => preview.value
   ? buildSynthesisEvidenceSteps(preview.value)
   : [])
+const previewContrastNarrative = computed(() => {
+  const contrast = preview.value?.skeleton.contrast
+  if (!contrast?.available) return null
+  return evidenceComparisonNarrative({
+    featureCode: contrast.discriminatingFeature,
+    failureRequestCount: contrast.failureSampleCount,
+    failureWithFeatureCount: contrast.failureMatchCount,
+    normalRequestCount: contrast.successSampleCount,
+    normalWithFeatureCount: contrast.successMatchCount,
+  })
+})
 
 watch(
   () => [form.system, form.service, form.searchTerm, form.window, form.occurredAt],

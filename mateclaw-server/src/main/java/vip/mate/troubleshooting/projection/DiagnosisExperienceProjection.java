@@ -316,24 +316,48 @@ public record DiagnosisExperienceProjection(
         }
     }
 
+    public record ComparisonGroupView(
+            long totalRequests,
+            long requestsWithFeature) {
+
+        public ComparisonGroupView {
+            if (totalRequests <= 0) {
+                throw new IllegalArgumentException("totalRequests must be positive");
+            }
+            if (requestsWithFeature < 0 || requestsWithFeature > totalRequests) {
+                throw new IllegalArgumentException(
+                        "requestsWithFeature must be between zero and totalRequests");
+            }
+        }
+    }
+
     public record ContrastView(
             boolean available,
-            String failedSample,
-            String baselineSample,
+            String featureCode,
+            ComparisonGroupView failedRequests,
+            ComparisonGroupView normalRequests,
             String note,
             List<String> evidenceRefs) {
 
         public ContrastView {
-            failedSample = normalizeNullable(failedSample);
-            baselineSample = normalizeNullable(baselineSample);
+            featureCode = normalizeNullable(featureCode);
             note = note == null ? "" : note.trim();
             evidenceRefs = List.copyOf(evidenceRefs == null ? List.of() : evidenceRefs);
-            if (available && (blank(failedSample) || blank(baselineSample) || evidenceRefs.isEmpty())) {
+            if (available && (blank(featureCode)
+                    || failedRequests == null
+                    || normalRequests == null
+                    || evidenceRefs.isEmpty())) {
                 throw new IllegalArgumentException(
-                        "available contrast requires both samples and evidenceRefs");
+                        "available contrast requires a feature, both request groups and evidenceRefs");
             }
             if (!available && blank(note)) {
                 throw new IllegalArgumentException("unavailable contrast requires a note");
+            }
+            if (!available && (!blank(featureCode)
+                    || failedRequests != null
+                    || normalRequests != null)) {
+                throw new IllegalArgumentException(
+                        "unavailable contrast must not carry comparison facts");
             }
         }
     }

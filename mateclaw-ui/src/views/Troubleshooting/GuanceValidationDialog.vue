@@ -5,7 +5,7 @@
     width="min(620px, calc(100vw - 32px))"
   >
     <el-alert type="warning" :closable="false" class="dialog-alert">
-      两种验证都只读取真实观测数据，不保存原始日志，也不会使用演示数据兜底。先验证日志与调用链，再验证成功样本对照和结构化归纳；验证结果仍需负责人确认。
+      两种验证都只读取真实观测数据，不保存原始日志，也不会使用演示数据兜底。先验证失败日志和 PS ID 关联日志，再比较正常请求与失败请求；验证结果仍需负责人确认。
     </el-alert>
     <el-form label-position="top">
       <div class="validation-scope">
@@ -115,10 +115,10 @@
         </li>
       </ul>
       <div v-if="spinePreview.stage !== 'BLOCKED'" class="spine-facts">
-        <p><span>调用链骨架</span><b>{{ spinePreview.serviceSequence.join(' → ') }}</b></p>
-        <p><span>核心样本</span><b>{{ spinePreview.matchCount }} 条命中 · {{ spinePreview.traceEntries }} 个节点 · {{ spinePreview.anomalyCount }} 个异常点</b></p>
-        <p v-if="spinePreview.contrast.available"><span>失败 ↔ 成功对照</span><b>{{ spinePreview.contrast.failureMatchCount }}/{{ spinePreview.contrast.failureSampleCount }}（{{ percent(spinePreview.contrast.failureRate) }}） ↔ {{ spinePreview.contrast.successMatchCount }}/{{ spinePreview.contrast.successSampleCount }}（{{ percent(spinePreview.contrast.successRate) }}）</b></p>
-        <p v-else><span>失败 ↔ 成功对照</span><b>未取得，继续校准期</b></p>
+        <p><span>关联服务</span><b>{{ spinePreview.serviceSequence.join(' → ') || '未记录' }}</b></p>
+        <p><span>查询结果</span><b>第一步找到 {{ spinePreview.matchCount }} 条结果；随后取得 {{ spinePreview.traceEntries }} 条关联日志，其中 {{ spinePreview.anomalyCount }} 条标记为异常。</b></p>
+        <p v-if="spineContrastNarrative"><span>请求表现对比</span><b>{{ spineContrastNarrative.summary }} {{ spineContrastNarrative.interpretation }}</b></p>
+        <p v-else><span>请求表现对比</span><b>未取得正常请求用于比较，当前只能保留线索。</b></p>
         <p><span>应用侧总耗时</span><b>{{ spinePreview.totalDurationMs }} ms</b></p>
       </div>
       <small v-for="warning in spinePreview.warnings" :key="warning">{{ warning }}</small>
@@ -127,7 +127,7 @@
     <template #footer>
       <el-button @click="open = false">关闭</el-button>
       <el-button plain :loading="validationLoading" :disabled="!form.searchTerm" @click="$emit('validate')">
-        验证日志与调用链
+        验证失败日志与关联日志
       </el-button>
       <el-button type="primary" :loading="spinePreviewLoading" :disabled="!form.searchTerm" @click="$emit('preview-spine')">
         验证完整取证流程
@@ -150,6 +150,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type {
   EvidenceChainPreviewRequest,
   GuanceEvidenceAcceptanceChecklist,
@@ -166,8 +167,9 @@ import {
 } from './formalProjection'
 import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
 import { TROUBLESHOOTING_UI_LABELS, formatWorkbenchTime } from './workbenchView'
+import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 
-defineProps<{
+const props = defineProps<{
   report: GuanceEvidenceValidationReport | null
   spinePreview: GuanceEvidenceSpinePreview | null
   ownerAcceptance: GuanceEvidenceAcceptanceView | null
@@ -180,6 +182,18 @@ defineProps<{
   spinePreviewLoading: boolean
   acceptanceLoading: boolean
 }>()
+
+const spineContrastNarrative = computed(() => {
+  const contrast = props.spinePreview?.contrast
+  if (!contrast?.available) return null
+  return evidenceComparisonNarrative({
+    featureCode: contrast.discriminatingFeature,
+    failureRequestCount: contrast.failureSampleCount,
+    failureWithFeatureCount: contrast.failureMatchCount,
+    normalRequestCount: contrast.successSampleCount,
+    normalWithFeatureCount: contrast.successMatchCount,
+  })
+})
 
 const open = defineModel<boolean>({ required: true })
 const form = defineModel<EvidenceChainPreviewRequest>('form', { required: true })
@@ -214,9 +228,6 @@ function spineStepStatusLabel(value: GuanceSpinePreviewStepStatus) {
   return '未执行'
 }
 
-function percent(value: number) {
-  return `${Math.round(Number(value) * 100)}%`
-}
 </script>
 
 <style scoped>

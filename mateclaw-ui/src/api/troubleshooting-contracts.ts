@@ -412,10 +412,10 @@ export interface LogTraceDurationSummary {
 export interface LogTraceContrastSummary {
   available: boolean
   discriminatingFeature: string
-  failureSampleCount: number
-  failureMatchCount: number
-  successSampleCount: number
-  successMatchCount: number
+  failureSampleCount: number | string
+  failureMatchCount: number | string
+  successSampleCount: number | string
+  successMatchCount: number | string
   failureRate: number
   successRate: number
   rateDelta: number
@@ -857,10 +857,16 @@ export interface InvestigationTraceView {
 
 export interface ContrastView {
   available: boolean
-  failedSample: string | null
-  baselineSample: string | null
+  featureCode: string | null
+  failedRequests: ComparisonGroupView | null
+  normalRequests: ComparisonGroupView | null
   note: string
   evidenceRefs: string[]
+}
+
+export interface ComparisonGroupView {
+  totalRequests: number | string
+  requestsWithFeature: number | string
 }
 
 export interface DraftView {
@@ -1271,10 +1277,11 @@ export interface GuanceSpinePreviewStep {
 
 export interface GuanceSpineContrast {
   available: boolean
-  failureSampleCount: number
-  failureMatchCount: number
-  successSampleCount: number
-  successMatchCount: number
+  discriminatingFeature: string | null
+  failureSampleCount: number | string
+  failureMatchCount: number | string
+  successSampleCount: number | string
+  successMatchCount: number | string
   failureRate: number
   successRate: number
   rateDelta: number

@@ -222,11 +222,13 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(developer.callChain().emptyReason()).isNull();
 
         assertThat(developer.contrast().available()).isTrue();
-        assertThat(developer.contrast().failedSample()).isEqualTo("失败样本 92/100（92%）");
-        assertThat(developer.contrast().baselineSample()).isEqualTo("成功样本 3/100（3%）");
+        assertThat(developer.contrast().featureCode()).isEqualTo("session_state_conflict");
+        assertThat(developer.contrast().failedRequests())
+                .isEqualTo(new DiagnosisExperienceProjection.ComparisonGroupView(100, 92));
+        assertThat(developer.contrast().normalRequests())
+                .isEqualTo(new DiagnosisExperienceProjection.ComparisonGroupView(100, 3));
         assertThat(developer.contrast().note())
-                .contains("session_state_conflict")
-                .contains("89 个百分点");
+                .isEqualTo("失败请求与正常请求的结构化对照已记录。");
         assertThat(developer.contrast().evidenceRefs())
                 .containsExactly("SYNTH-CONTRAST-SAMPLE");
         assertThat(developer.capabilityLimits())

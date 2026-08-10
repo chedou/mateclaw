@@ -4,18 +4,85 @@
       <div>
         <span>运行记录</span>
         <h3>这次排障是怎么一步步推进的</h3>
-        <p>从收到问题到给出结论或明确停止共 7 步；只展示系统实际记录的事实，缺失就明确显示“未记录”。</p>
+        <p>默认先看 4 个关键节点；需要复核时，再切换到完整 7 步或证据关系。</p>
       </div>
       <div class="trace-actions">
         <span>{{ headlineDurationLabel }} <b>{{ traceDuration(headlineDuration) }}</b></span>
         <div class="trace-tabs" role="tablist">
-          <button :class="{ active: activeView === 'trace' }" @click="activeView = 'trace'">执行过程</button>
-          <button :class="{ active: activeView === 'relation' }" @click="activeView = 'relation'">证据关系</button>
+          <button
+            role="tab"
+            :aria-selected="activeView === 'overview'"
+            :class="{ active: activeView === 'overview' }"
+            @click="activeView = 'overview'"
+          >关键节点</button>
+          <button
+            role="tab"
+            :aria-selected="activeView === 'steps'"
+            :class="{ active: activeView === 'steps' }"
+            @click="activeView = 'steps'"
+          >完整过程</button>
+          <button
+            role="tab"
+            :aria-selected="activeView === 'relation'"
+            :class="{ active: activeView === 'relation' }"
+            @click="activeView = 'relation'"
+          >证据关系</button>
         </div>
       </div>
     </div>
 
-    <div v-if="activeView === 'trace'" class="trace-workspace">
+    <section
+      v-if="activeView === 'overview'"
+      class="trace-workspace flow-overview"
+      role="tabpanel"
+      aria-label="本次排障摘要"
+    >
+      <nav class="stage-rail overview-rail" aria-label="本次排障的四个关键节点">
+        <button
+          v-for="item in flowOverview"
+          :key="item.key"
+          :class="[`is-${item.tone}`, { active: selectedOverview?.key === item.key }]"
+          @click="selectedOverviewKey = item.key"
+        >
+          <i>{{ item.sequence }}</i>
+          <span><b>{{ item.label }}</b><small>{{ item.value }}</small></span>
+          <em>{{ item.statusLabel }}</em>
+        </button>
+      </nav>
+
+      <article v-if="selectedOverview" class="stage-inspector overview-inspector">
+        <header>
+          <div>
+            <span>关键节点 {{ selectedOverview.sequence }} / 4</span>
+            <h4>{{ selectedOverview.label }}</h4>
+            <p>{{ investigationStagePresentation(selectedOverview.key).description }}</p>
+          </div>
+          <strong :class="`is-${selectedOverview.tone}`">{{ selectedOverview.statusLabel }}</strong>
+        </header>
+
+        <section class="stage-run-summary">
+          <span>本次结果</span>
+          <p>{{ selectedOverview.value }}</p>
+        </section>
+
+        <div class="stage-explanation">
+          <section>
+            <span>这个节点在确认什么</span>
+            <b>{{ investigationStageQuestion(selectedOverview.key) }}</b>
+          </section>
+          <section>
+            <span>为什么重要</span>
+            <b>{{ selectedOverview.meaning }}</b>
+          </section>
+        </div>
+
+        <button class="overview-step-link" @click="openOverviewStage(selectedOverview.key)">
+          查看对应完整步骤
+        </button>
+      </article>
+    </section>
+
+    <div v-else-if="activeView === 'steps'" class="trace-workspace" role="tabpanel">
       <nav class="stage-rail" aria-label="排障执行的七个步骤">
         <button
           v-for="stage in trace.stages"
@@ -35,12 +102,9 @@
       <article v-if="selectedStage" class="stage-inspector">
         <header>
           <div>
-            <span>第 {{ selectedStage.sequence }} 步，共 7 步</span>
+            <span>第 {{ selectedStage.sequence }} 步 / 7</span>
             <h4>{{ investigationStagePresentation(selectedStage.key).title }}</h4>
             <p>{{ investigationStagePresentation(selectedStage.key).description }}</p>
-            <small class="stage-technical">
-              技术标识 · {{ selectedStage.title }} · {{ selectedStage.key }}
-            </small>
           </div>
           <strong :class="`is-${selectedStage.status.toLowerCase()}`">
             {{ investigationStageStatusLabel(selectedStage.status) }}
@@ -48,24 +112,48 @@
         </header>
 
         <section class="stage-run-summary">
-          <span>本次实际记录</span>
+          <span>本次结果</span>
           <p>{{ investigationStageSummaryLabel(selectedStage.key, selectedStage.summary) }}</p>
         </section>
 
-        <div class="stage-timing">
+        <div class="stage-explanation">
+          <section>
+            <span>检查点</span>
+            <b>{{ investigationStageQuestion(selectedStage.key) }}</b>
+          </section>
+          <section>
+            <span>下一步</span>
+            <b>{{ investigationStageContinuationLabel(selectedStage.key, selectedStage.status) }}</b>
+          </section>
+        </div>
+
+        <section v-if="selectedStage.key === 'CONCLUSION'" class="stop-reason">
+          <span>流程为什么停在这里</span>
+          <b>{{ stopReasonLabel(trace.stopReason.code) }}</b>
+          <p>{{ trace.stopReason.message }}</p>
+          <small>停止时间 · {{ traceTime(trace.stopReason.stoppedAt) }}</small>
+        </section>
+
+        <details class="technical-records">
+          <summary><span>查看本步技术记录</span><small>时间、字段、取证结果和证据引用</small></summary>
+          <small class="stage-technical">
+            技术标识 · {{ selectedStage.title }} · {{ selectedStage.key }}
+          </small>
+
+          <div class="stage-timing">
           <div><span>开始</span><b>{{ traceTime(selectedStage.startedAt) }}</b></div>
           <div><span>完成</span><b>{{ traceTime(selectedStage.completedAt) }}</b></div>
           <div><span>耗时</span><b>{{ traceDuration(selectedStage.duration) }}</b></div>
-        </div>
+          </div>
 
-        <dl class="stage-fields">
+          <dl class="stage-fields">
           <div v-for="field in selectedStage.fields" :key="field.label">
             <dt>{{ field.label }}</dt><dd>{{ traceDisplay(field.value) }}</dd>
           </div>
           <div v-if="!selectedStage.fields.length"><dt>其他记录</dt><dd>未记录</dd></div>
-        </dl>
+          </dl>
 
-        <section v-if="selectedStage.key === 'EVIDENCE_CONTRACT'" class="detail-block">
+          <section v-if="selectedStage.key === 'EVIDENCE_CONTRACT'" class="detail-block">
           <div class="detail-block-head"><b>本次固定要查的数据（取证要求）</b><span>{{ trace.evidenceContracts.length }} 项</span></div>
           <article v-for="contract in trace.evidenceContracts" :key="contract.requestId" class="contract-card">
             <header><code>{{ contract.requestId }}</code><span>{{ contract.required ? '必需' : '可选' }}</span></header>
@@ -77,12 +165,12 @@
             <label>目标参数（冻结值）</label><pre>{{ pretty(contract.target) }}</pre>
           </article>
           <p v-if="!trace.evidenceContracts.length" class="unrecorded-block">未记录</p>
-        </section>
+          </section>
 
-        <section
+          <section
           v-if="selectedStage.key === 'ADAPTER_SELECTION' || selectedStage.key === 'EVIDENCE_COLLECTION'"
           class="detail-block"
-        >
+          >
           <div class="detail-block-head"><b>查询工具和只读结果</b><span>{{ trace.adapterAttempts.length }} 份最终结果</span></div>
           <article v-for="attempt in trace.adapterAttempts" :key="attempt.evidenceRef" class="attempt-card">
             <header>
@@ -104,26 +192,20 @@
             </details>
           </article>
           <p v-if="!trace.adapterAttempts.length" class="unrecorded-block">未记录</p>
-        </section>
+          </section>
 
-        <section v-if="selectedStage.key === 'CONCLUSION'" class="stop-reason">
-          <span>停止原因</span>
-          <b>{{ stopReasonLabel(trace.stopReason.code) }}</b>
-          <p>{{ trace.stopReason.message }}</p>
-          <small>停止时间 · {{ traceTime(trace.stopReason.stoppedAt) }}</small>
-        </section>
-
-        <div class="stage-refs">
+          <div class="stage-refs">
           <span>证据引用</span>
           <div v-if="selectedStage.evidenceRefs.length">
             <code v-for="refValue in selectedStage.evidenceRefs" :key="refValue">{{ refValue }}</code>
           </div>
           <b v-else>未记录</b>
-        </div>
+          </div>
+        </details>
       </article>
     </div>
 
-    <EvidenceRelationGraph v-else :view="trace.evidenceRelation" />
+    <EvidenceRelationGraph v-else :view="trace.evidenceRelation" role="tabpanel" />
   </section>
 </template>
 
@@ -136,9 +218,12 @@ import type {
   InvestigationTraceView,
 } from '@/api'
 import EvidenceRelationGraph from './EvidenceRelationGraph.vue'
+import { evidenceComparisonNarrative, isEvidenceCount } from './evidencePlainLanguage'
 import { formatDuration } from './formalProjection'
 import {
   defaultInvestigationStage,
+  investigationStageContinuationLabel,
+  investigationStageQuestion,
   investigationStageSummaryLabel,
   investigationStagePresentation,
   investigationStageStatusLabel,
@@ -147,7 +232,8 @@ import {
 import { formatWorkbenchTime } from './workbenchView'
 
 const props = defineProps<{ trace: InvestigationTraceView }>()
-const activeView = ref<'trace' | 'relation'>('trace')
+const activeView = ref<'overview' | 'steps' | 'relation'>('overview')
+const selectedOverviewKey = ref<InvestigationStageKey>('INCIDENT')
 const selectedStageKey = ref<InvestigationStageKey | null>(
   defaultInvestigationStage(props.trace.stages)?.key ?? null,
 )
@@ -155,14 +241,95 @@ const selectedStageKey = ref<InvestigationStageKey | null>(
 watch(
   () => props.trace.diagnosisId,
   () => {
+    selectedOverviewKey.value = 'INCIDENT'
     selectedStageKey.value = defaultInvestigationStage(props.trace.stages)?.key ?? null
-    activeView.value = 'trace'
+    activeView.value = 'overview'
   },
 )
 
 const selectedStage = computed(() => props.trace.stages.find(
   stage => stage.key === selectedStageKey.value,
 ) ?? props.trace.stages[0])
+const stageByKey = computed(() => new Map(props.trace.stages.map(stage => [stage.key, stage])))
+const contrastEvidenceAttempt = computed(() => props.trace.adapterAttempts.find(
+  attempt => attempt.signalKind === 'contrast_sample',
+))
+const contrastEvidenceNarrative = computed(() => {
+  const observed = contrastEvidenceAttempt.value?.observed
+  if (!observed) return null
+  const failureMatches = observed.failure_match_count
+  const failureSamples = observed.failure_sample_count
+  const successMatches = observed.success_match_count
+  const successSamples = observed.success_sample_count
+  if (!isEvidenceCount(failureMatches)
+    || !isEvidenceCount(failureSamples)
+    || !isEvidenceCount(successMatches)
+    || !isEvidenceCount(successSamples)) {
+    return null
+  }
+  return evidenceComparisonNarrative({
+    featureCode: typeof observed.discriminating_feature === 'string'
+      ? observed.discriminating_feature
+      : null,
+    failureRequestCount: failureSamples,
+    failureWithFeatureCount: failureMatches,
+    normalRequestCount: successSamples,
+    normalWithFeatureCount: successMatches,
+  })
+})
+const contrastEvidenceSummary = computed(() => (
+  contrastEvidenceNarrative.value?.summary
+  ?? (contrastEvidenceAttempt.value
+    ? '请求对比没有取得可用数据，不能据此判断是否存在异常。'
+    : null)
+  ?? stageByKey.value.get('EVIDENCE_COLLECTION')?.summary
+  ?? '未记录'
+))
+const flowOverview = computed(() => [
+  {
+    key: 'INCIDENT' as const,
+    sequence: 1,
+    label: '发生了什么',
+    value: stageByKey.value.get('INCIDENT')?.summary ?? '未记录',
+    tone: stageByKey.value.get('INCIDENT')?.status.toLowerCase() ?? 'unrecorded',
+    statusLabel: investigationStageStatusLabel(stageByKey.value.get('INCIDENT')?.status ?? 'UNRECORDED'),
+    meaning: '先确认告警范围，后续才能选择正确的排障方法。',
+  },
+  {
+    key: 'PLAYBOOK_ROUTE' as const,
+    sequence: 2,
+    label: '按什么方法查',
+    value: investigationStageSummaryLabel(
+      'PLAYBOOK_ROUTE',
+      stageByKey.value.get('PLAYBOOK_ROUTE')?.summary ?? '未记录',
+    ),
+    tone: stageByKey.value.get('PLAYBOOK_ROUTE')?.status.toLowerCase() ?? 'unrecorded',
+    statusLabel: investigationStageStatusLabel(stageByKey.value.get('PLAYBOOK_ROUTE')?.status ?? 'UNRECORDED'),
+    meaning: '排障方法决定后续查什么数据，以及用什么规则判断。',
+  },
+  {
+    key: 'EVIDENCE_COLLECTION' as const,
+    sequence: 3,
+    label: '查到了什么',
+    value: contrastEvidenceSummary.value,
+    tone: stageByKey.value.get('EVIDENCE_COLLECTION')?.status.toLowerCase() ?? 'unrecorded',
+    statusLabel: investigationStageStatusLabel(stageByKey.value.get('EVIDENCE_COLLECTION')?.status ?? 'UNRECORDED'),
+    meaning: contrastEvidenceNarrative.value?.interpretation
+      ?? '这里只汇总真实查询结果，缺失的信息不会用推测补齐。',
+  },
+  {
+    key: 'CONCLUSION' as const,
+    sequence: 4,
+    label: '最后结论',
+    value: stageByKey.value.get('CONCLUSION')?.summary ?? props.trace.stopReason.message,
+    tone: stageByKey.value.get('CONCLUSION')?.status.toLowerCase() ?? 'unrecorded',
+    statusLabel: investigationStageStatusLabel(stageByKey.value.get('CONCLUSION')?.status ?? 'UNRECORDED'),
+    meaning: '结论只使用已记录证据；证据不足时系统会停止判断。',
+  },
+])
+const selectedOverview = computed(() => flowOverview.value.find(
+  item => item.key === selectedOverviewKey.value,
+) ?? flowOverview.value[0])
 const evidenceCollectionStage = computed(() => props.trace.stages.find(
   stage => stage.key === 'EVIDENCE_COLLECTION',
 ))
@@ -172,6 +339,11 @@ const headlineDuration = computed(() => (
 const headlineDurationLabel = computed(() => (
   evidenceCollectionStage.value?.duration ? '本次只读取证用时' : '本次排障用时'
 ))
+
+function openOverviewStage(key: InvestigationStageKey) {
+  selectedStageKey.value = key
+  activeView.value = 'steps'
+}
 
 function traceTime(value: string | null) {
   return value ? formatWorkbenchTime(value) : '未记录'
@@ -201,7 +373,7 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 </script>
 
 <style scoped>
-.trace-panel{display:flex;min-width:0;flex-direction:column;gap:18px;padding:18px;border:1px solid var(--mc-border);border-radius:var(--mc-radius-sm);background:var(--mc-bg-elevated)}
+.trace-panel{display:flex;min-width:0;container-type:inline-size;flex-direction:column;gap:18px;padding:18px;border:1px solid var(--mc-border);border-radius:var(--mc-radius-sm);background:var(--mc-bg-elevated)}
 .trace-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
 .trace-toolbar>div:first-child>span{color:var(--mc-text-secondary);font-size:var(--mc-text-xs);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
 .trace-toolbar h3{margin:5px 0 0;font-size:var(--mc-text-base)}
@@ -210,6 +382,7 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 .trace-tabs{display:flex;flex:none;padding:3px;border:1px solid var(--mc-border);border-radius:var(--mc-radius-sm);background:var(--mc-bg-muted)}
 .trace-tabs button{padding:6px 12px;border:0;border-radius:var(--mc-radius-xs);background:transparent;color:var(--mc-text-secondary);font-size:var(--mc-text-xs);cursor:pointer}
 .trace-tabs button.active{color:var(--mc-text-inverse)!important;background:var(--mc-primary);font-weight:700}
+.flow-overview{min-width:0}
 .trace-workspace{display:grid;grid-template-columns:minmax(230px,.58fr) minmax(0,1.5fr);gap:16px;min-width:0}
 .stage-rail{display:flex;flex-direction:column;gap:5px}
 .stage-rail button{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:start;gap:9px;width:100%;padding:10px;border:1px solid transparent;border-radius:var(--mc-radius-sm);background:transparent;color:var(--mc-text-primary);text-align:left;cursor:pointer;transition:background .15s,border-color .15s}
@@ -232,9 +405,18 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 .stage-inspector>header strong{padding:4px 8px;border-radius:999px;color:var(--mc-status-success-text);background:var(--mc-status-success-bg);font-size:var(--mc-text-xs);white-space:nowrap}
 .stage-inspector>header strong.is-partial,.stage-inspector>header strong.is-unrecorded{color:var(--mc-status-warning-text);background:var(--mc-status-warning-bg)}
 .stage-inspector>header strong.is-stopped{color:var(--mc-status-error-text);background:var(--mc-status-error-bg)}
+.overview-step-link{display:block;margin:14px 0 0 auto;padding:7px 12px;border:1px solid var(--mc-primary);border-radius:var(--mc-radius-xs);background:transparent;color:var(--mc-primary);font-size:var(--mc-text-xs);font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+.overview-step-link:hover{color:var(--mc-text-inverse);background:var(--mc-primary)}
 .stage-run-summary{margin-top:14px;padding:10px 12px;border-left:3px solid var(--mc-primary);border-radius:var(--mc-radius-xs);background:var(--mc-bg-elevated)}
 .stage-run-summary span{color:var(--mc-text-tertiary);font-size:10px;font-weight:700;letter-spacing:.06em}
 .stage-run-summary p{margin:5px 0 0;color:var(--mc-text-primary);font-size:var(--mc-text-xs);line-height:1.5}
+.stage-explanation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:12px;border-top:1px solid var(--mc-border-light);border-bottom:1px solid var(--mc-border-light)}
+.stage-explanation section{padding:11px 12px}.stage-explanation section+section{border-left:1px solid var(--mc-border-light)}
+.stage-explanation span,.stage-explanation b{display:block}.stage-explanation span{color:var(--mc-text-tertiary);font-size:10px}.stage-explanation b{margin-top:5px;font-size:var(--mc-text-xs);font-weight:600;line-height:1.5}
+.technical-records{margin-top:14px;border-top:1px solid var(--mc-border)}
+.technical-records>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px 0;color:var(--mc-primary);font-size:var(--mc-text-xs);cursor:pointer;list-style:none}
+.technical-records>summary::-webkit-details-marker{display:none}.technical-records>summary span::before{content:'＋';display:inline-block;width:18px}.technical-records[open]>summary span::before{content:'－'}
+.technical-records>summary small{color:var(--mc-text-tertiary);font-size:10px}.technical-records>.stage-technical{margin-top:10px}
 .stage-timing{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .stage-timing>div{padding:9px 10px;border:1px solid var(--mc-border-light);border-radius:var(--mc-radius-xs);background:var(--mc-bg-elevated)}
 .stage-timing span,.stage-timing b{display:block;font-size:var(--mc-text-xs)}
@@ -272,6 +454,8 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 .stop-reason b{margin-top:5px}.stop-reason p{margin:5px 0;color:var(--mc-text-secondary);font-size:var(--mc-text-xs);line-height:1.5}
 .stage-refs{display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--mc-border);font-size:var(--mc-text-xs)}
 .stage-refs>span{color:var(--mc-text-tertiary);white-space:nowrap}.stage-refs>div{display:flex;flex-wrap:wrap;gap:5px}.stage-refs code{padding:2px 6px;border-radius:var(--mc-radius-xs);color:var(--mc-primary);background:var(--mc-bg-elevated)}
+@container (max-width:720px){.trace-workspace{grid-template-columns:1fr}.stage-rail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.trace-toolbar{align-items:flex-start;flex-direction:column}.trace-actions{align-items:flex-start}}
+@container (max-width:400px){.stage-rail,.stage-explanation,.stage-timing,.stage-fields,.contract-card dl,.attempt-card dl{grid-template-columns:1fr}.stage-explanation section+section{border-top:1px solid var(--mc-border-light);border-left:0}.stage-fields>div{grid-template-columns:100px minmax(0,1fr);border-bottom:1px solid var(--mc-border-light)!important}}
 @media(max-width:1050px){.trace-workspace{grid-template-columns:1fr}.stage-rail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.trace-toolbar{flex-direction:column}.trace-actions{align-items:flex-start}.stage-rail{grid-template-columns:1fr}.stage-timing,.stage-fields,.contract-card dl,.attempt-card dl{grid-template-columns:1fr}.stage-fields>div{grid-template-columns:100px minmax(0,1fr);border-bottom:1px solid var(--mc-border-light)!important}}
+@media(max-width:700px){.trace-toolbar{align-items:flex-start;flex-direction:column}.trace-actions{align-items:flex-start}.stage-rail{grid-template-columns:1fr}.stage-explanation,.stage-timing,.stage-fields,.contract-card dl,.attempt-card dl{grid-template-columns:1fr}.stage-explanation section+section{border-top:1px solid var(--mc-border-light);border-left:0}.stage-fields>div{grid-template-columns:100px minmax(0,1fr);border-bottom:1px solid var(--mc-border-light)!important}}
 </style>

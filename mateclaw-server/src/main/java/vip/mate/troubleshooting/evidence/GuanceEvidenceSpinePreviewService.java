@@ -228,6 +228,7 @@ public class GuanceEvidenceSpinePreviewService {
         LogTraceSkeleton.ContrastSummary value = skeleton.contrast();
         return new GuanceEvidenceSpinePreview.Contrast(
                 true,
+                value.discriminatingFeature(),
                 value.failureSampleCount(),
                 value.failureMatchCount(),
                 value.successSampleCount(),

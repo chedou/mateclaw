@@ -11,6 +11,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.CallChainView;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ComparisonGroupView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.Hop;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ImpactView;
@@ -344,18 +345,19 @@ final class CanonicalEvidenceViewProjector {
         }
         return new ContrastView(
                 true,
-                "失败样本 " + summary.failureMatchCount() + "/" + summary.failureSampleCount()
-                        + "（" + percentage(summary.failureRate()) + "）",
-                "成功样本 " + summary.successMatchCount() + "/" + summary.successSampleCount()
-                        + "（" + percentage(summary.successRate()) + "）",
-                "区分特征 " + summary.discriminatingFeature()
-                        + "，失败与成功样本相差 " + percentagePoints(summary.rateDelta())
-                        + " 个百分点。",
+                summary.discriminatingFeature(),
+                new ComparisonGroupView(
+                        summary.failureSampleCount(),
+                        summary.failureMatchCount()),
+                new ComparisonGroupView(
+                        summary.successSampleCount(),
+                        summary.successMatchCount()),
+                "失败请求与正常请求的结构化对照已记录。",
                 List.of(evidence.queryId()));
     }
 
     private ContrastView unavailableContrast(String note) {
-        return new ContrastView(false, null, null, note, List.of());
+        return new ContrastView(false, null, null, null, note, List.of());
     }
 
     private ContrastView contrastUnavailable(
@@ -370,6 +372,7 @@ final class CanonicalEvidenceViewProjector {
         if (missingContrast != null) {
             return new ContrastView(
                     false,
+                    null,
                     null,
                     null,
                     "同窗口成功样本对照已发起采集，但证据来源返回 MISSING；"
@@ -425,14 +428,6 @@ final class CanonicalEvidenceViewProjector {
             return "未记录";
         }
         return BigDecimal.valueOf(durationMs).stripTrailingZeros().toPlainString() + " ms";
-    }
-
-    private String percentage(double rate) {
-        return BigDecimal.valueOf(rate * 100d).stripTrailingZeros().toPlainString() + "%";
-    }
-
-    private String percentagePoints(double delta) {
-        return BigDecimal.valueOf(delta * 100d).stripTrailingZeros().toPlainString();
     }
 
     private Long nonNegativeLong(Object raw) {

@@ -9,44 +9,61 @@ import type {
 import { investigationLabel } from './formalProjection'
 
 const STATUS_LABELS: Record<InvestigationStageStatus, string> = {
-  COMPLETED: '已记录',
-  PARTIAL: '部分记录',
+  COMPLETED: '已完成',
+  PARTIAL: '记录不完整',
   STOPPED: '已停止',
   UNRECORDED: '未记录',
 }
 
 const STAGE_PRESENTATIONS: Record<
   InvestigationStageKey,
-  Readonly<{ title: string; description: string }>
+  Readonly<{ title: string; description: string; question: string }>
 > = {
   INCIDENT: {
-    title: '先看发生了什么',
-    description: '确认哪个系统、哪个服务，在什么时间出现了什么问题。',
+    title: '收到告警',
+    description: '先确认故障对象和现象，避免后续查错系统。',
+    question: '系统、服务、发生时间和错误码是否明确？',
   },
   PLAYBOOK_ROUTE: {
-    title: '决定怎么排查',
-    description: '根据已知信息选择排障方案，并确认这套方案是否经过审核。',
+    title: '选定排障方法',
+    description: '用系统、服务和错误码匹配一套已经审核的排障方法。',
+    question: '是否找到已审核、可直接执行的排障方法？',
   },
   EVIDENCE_CONTRACT: {
-    title: '列出要查的数据',
-    description: '固定本次要查询的数据、范围和时间窗口，并标明哪些必查、哪些可选。',
+    title: '明确要查什么',
+    description: '列出这次必须查询的数据，并固定查询范围和时间。',
+    question: '需要查哪些数据，哪些是得出结论的必需项？',
   },
   ADAPTER_SELECTION: {
-    title: '选择查询工具',
-    description: '为每项数据选择可用的只读数据源和查询方式。',
+    title: '连接只读数据源',
+    description: '为每项数据找到可用的只读查询来源。',
+    question: '每项数据是否都有可用的只读查询来源？',
   },
   EVIDENCE_COLLECTION: {
-    title: '查询并拿回结果',
-    description: '执行只读查询，展示系统已经记录的结果和耗时。',
+    title: '获取真实证据',
+    description: '执行查询，记录实际返回的证据和缺失项。',
+    question: '数据是否查到，必需证据有没有缺失？',
   },
   CRITERION_EVALUATION: {
-    title: '按规则判断结果',
-    description: '把查询结果代入固定规则，判断哪些条件成立。',
+    title: '用规则核对证据',
+    description: '把真实证据代入固定规则，判断哪些条件成立。',
+    question: '证据满足哪些规则，又排除了哪些判断？',
   },
   CONCLUSION: {
-    title: '给出结论，或明确不判断',
-    description: '证据足够就给出可复核结论；证据不足就明确停止，不猜答案。',
+    title: '形成结论',
+    description: '汇总证据和规则结果；证据不足就停止，不猜原因。',
+    question: '现有证据能否支持明确结论？如果不能，是否应停止判断？',
   },
+}
+
+const NEXT_STEP_LABELS: Record<InvestigationStageKey, string> = {
+  INCIDENT: '基本信息已确认，下一步选择排障方法。',
+  PLAYBOOK_ROUTE: '排障方法已选定，下一步明确要查询的数据。',
+  EVIDENCE_CONTRACT: '查询内容已固定，下一步连接只读数据源。',
+  ADAPTER_SELECTION: '数据源已连接，下一步执行只读查询。',
+  EVIDENCE_COLLECTION: '真实证据已获取，下一步用规则核对。',
+  CRITERION_EVALUATION: '规则核对完成，下一步形成结论。',
+  CONCLUSION: '排障流程已完成，等待人工确认和处置。',
 }
 
 export function traceDisplay(value: string | null | undefined) {
@@ -67,6 +84,20 @@ export function investigationStageStatusLabel(status: InvestigationStageStatus) 
 
 export function investigationStagePresentation(key: InvestigationStageKey) {
   return STAGE_PRESENTATIONS[key]
+}
+
+export function investigationStageQuestion(key: InvestigationStageKey) {
+  return STAGE_PRESENTATIONS[key].question
+}
+
+export function investigationStageContinuationLabel(
+  key: InvestigationStageKey,
+  status: InvestigationStageStatus,
+) {
+  if (status === 'STOPPED') return '流程在这里停止，不再继续猜测。'
+  if (status === 'UNRECORDED') return '系统没有这一步的记录，不能把它当作已经执行。'
+  if (status === 'PARTIAL') return '只记录了部分过程；后续判断只使用已记录事实。'
+  return NEXT_STEP_LABELS[key]
 }
 
 export function investigationStageSummaryLabel(
@@ -94,6 +125,7 @@ export function investigationRouteLabel(
 
 export function defaultInvestigationStage(stages: InvestigationStageView[]) {
   return stages.find(stage => stage.status === 'STOPPED')
+    ?? stages.find(stage => stage.key === 'CONCLUSION' && stage.status === 'COMPLETED')
     ?? stages.find(stage => stage.status === 'PARTIAL')
     ?? stages.find(stage => stage.status === 'UNRECORDED')
     ?? stages.find(stage => stage.key === 'CONCLUSION')

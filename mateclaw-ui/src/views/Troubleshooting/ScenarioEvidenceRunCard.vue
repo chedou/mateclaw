@@ -29,7 +29,7 @@
 
     <div class="scenario-foot">
       <p v-if="waiting">开始后才会读取证据，实际来源会逐条写入详情；来源不可用或证据不足时系统会诚实弃权。</p>
-      <p v-else>完整过程已记录在下方“七阶段调查轨迹”和“证据关系”中。</p>
+      <p v-else>完整过程已记录在下方“本次排障过程”和“证据关系”中。</p>
       <el-button
         v-if="waiting"
         type="primary"

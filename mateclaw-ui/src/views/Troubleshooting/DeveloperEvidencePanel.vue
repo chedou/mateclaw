@@ -2,7 +2,7 @@
   <details v-if="developer && business && current" class="developer-fold">
     <summary>
       <span class="fold-caret" />
-      <div><b>展开开发证据台</b><small>按调查路径 → 证据链 → 判据 → 人工处置复核，不展示模型私有思维链</small></div>
+      <div><b>展开排障过程与证据</b><small>先看这次排障怎么推进，再按需查看证据、规则和技术记录</small></div>
       <span>{{ developer.steps.length }} 个证据 / 判据步骤</span>
     </summary>
     <div class="developer-body" :class="{ 'developer-body--empty-timeline': !developer.steps.length }">
@@ -25,42 +25,67 @@
         class="investigation-trace-panel"
         :trace="developer.investigationTrace"
       />
-      <section v-else class="investigation-trace-panel empty-evidence">七阶段调查轨迹 · 未记录</section>
+      <section v-else class="investigation-trace-panel empty-evidence">本次排障过程 · 未记录</section>
 
       <div class="convergence-grid">
         <section class="trace-summary">
-          <div class="section-head">
-            <div><span class="section-label">证据收敛</span><h3>PS / Trace 全链路</h3></div>
-            <code>{{ developer.callChain.psId || '未贯通' }}</code>
-          </div>
-          <div v-if="developer.callChain.hops.length" class="hop-line">
-            <div
-              v-for="(hop, index) in developer.callChain.hops"
-              :key="hop.hopId"
-              class="hop"
-              :class="{ anomalous: hop.anomalous }"
-            >
-              <span>{{ index + 1 }}</span><b>{{ hop.service }}</b><small>{{ hop.duration }}</small>
+          <div class="section-head chain-head">
+            <div>
+              <span class="section-label">关联日志摘要</span>
+              <h3>PS ID 关联日志轨迹</h3>
+              <p>按时间查看同一 PS ID 命中的日志记录；这里不是完整的跨服务 Trace。</p>
             </div>
+            <div class="chain-identity"><span>PS ID</span><code>{{ developer.callChain.psId || '未贯通' }}</code></div>
           </div>
+          <template v-if="developer.callChain.hops.length">
+            <div class="chain-metrics">
+              <div><strong>{{ developer.callChain.hops.length }}</strong><span>关联日志</span></div>
+              <div :class="{ anomalous: chainAnomalyCount > 0 }"><strong>{{ chainAnomalyCount }}</strong><span>异常日志</span></div>
+              <div><strong>{{ chainDurationCount }}</strong><span>有耗时记录</span></div>
+            </div>
+            <div class="chain-route">
+              <span>服务分布</span>
+              <div>
+                <template v-for="(group, index) in chainServiceGroups" :key="`${group.service}-${index}`">
+                  <b :class="{ anomalous: group.anomalous }">{{ group.service }} <em>× {{ group.count }}</em></b>
+                  <i v-if="index < chainServiceGroups.length - 1">→</i>
+                </template>
+              </div>
+            </div>
+            <details class="chain-details">
+              <summary>
+                <span>查看全部 {{ developer.callChain.hops.length }} 条关联日志</span>
+                <small>{{ anomalousHopSummary }}</small>
+              </summary>
+              <ol class="hop-list">
+                <li v-for="(hop, index) in developer.callChain.hops" :key="hop.hopId" :class="{ anomalous: hop.anomalous }">
+                  <span>{{ index + 1 }}</span><b>{{ hop.service }}</b><small>{{ hop.duration }}</small><em>{{ hop.anomalous ? '异常' : '正常' }}</em>
+                </li>
+              </ol>
+            </details>
+          </template>
           <p v-else class="empty-evidence">{{ developer.callChain.emptyReason }}</p>
-          <div class="contrast-row" :class="{ unavailable: !developer.contrast.available }">
-            <span>成功样本对照</span>
-            <template v-if="developer.contrast.available">
-              <b>{{ developer.contrast.failedSample }}</b><em>vs</em>
-              <b class="baseline">{{ developer.contrast.baselineSample }}</b>
+          <section class="contrast-summary" :class="{ unavailable: !developer.contrast.available }">
+            <header><div><span>请求表现对比</span><b>故障请求和正常请求有什么不同</b></div><em>{{ developer.contrast.available ? '已比较' : '未取得' }}</em></header>
+            <template v-if="contrastNarrative">
+              <div class="contrast-human">
+                <strong>{{ contrastNarrative.summary }}</strong>
+                <p>{{ contrastNarrative.interpretation }}</p>
+                <small>{{ contrastNarrative.scope }}</small>
+              </div>
+              <details class="contrast-technical">
+                <summary>查看精确数量与证据引用</summary>
+                <p>
+                  失败请求共 {{ developer.contrast.failedRequests?.totalRequests }} 个，其中
+                  {{ developer.contrast.failedRequests?.requestsWithFeature }} 个出现该现象；
+                  正常请求共 {{ developer.contrast.normalRequests?.totalRequests }} 个，其中
+                  {{ developer.contrast.normalRequests?.requestsWithFeature }} 个出现。
+                </p>
+                <code>{{ developer.contrast.evidenceRefs.join('、') }}</code>
+              </details>
             </template>
-            <b v-else>未取得</b>
-            <small>{{ developer.contrast.note }}</small>
-          </div>
-          <div v-if="developer.contrast.available" class="contrast-diff-section">
-            <div class="contrast-diff-header">
-              <span class="contrast-diff-title">差异对比</span>
-              <span class="contrast-diff-status available">可用</span>
-            </div>
-            <div ref="diffContainerRef" class="contrast-diff-container" />
-            <div v-if="developer.contrast.note" class="contrast-diff-note">{{ developer.contrast.note }}</div>
-          </div>
+            <p>{{ developer.contrast.note }}</p>
+          </section>
         </section>
 
         <aside class="draft-summary">
@@ -135,7 +160,7 @@
               size="small"
               plain
               @click="$emit('openDataSourceValidation')"
-            >前往数据源联调</el-button>
+            >检查数据连接</el-button>
           </div>
         </section>
         <section class="side-card side-card--capability">
@@ -176,7 +201,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import DerivationChain from './DerivationChain.vue'
 import InvestigationProvenancePanel from './InvestigationProvenancePanel.vue'
@@ -204,9 +229,10 @@ import {
 } from './workbenchView'
 import InvestigationTracePanel from './InvestigationTracePanel.vue'
 import { investigationRouteLabel } from './investigationTrace'
+import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 
 const STEP_TONE_LABEL: Record<EvidenceStepTone, string> = {
-  NORMAL: '正常', ANOMALY: '异常 / 命中', EXCLUDED: '已排除', UNEVALUATED: '未求值',
+  NORMAL: '正常', ANOMALY: '发现异常', EXCLUDED: '已排除', UNEVALUATED: '未求值',
 }
 
 interface Props {
@@ -262,56 +288,45 @@ const sourceUsage = computed(() => diagnosisGuanceUsageLabel(
   props.current?.diagnosis.evidence ?? [],
 ))
 
-/* ── Monaco diff editor ── */
-const diffContainerRef = ref<HTMLElement | null>(null)
-let diffEditor: any = null
+const chainAnomalyCount = computed(() => (
+  props.developer?.callChain.hops.filter(hop => hop.anomalous).length ?? 0
+))
 
-async function initDiffEditor() {
-  if (diffEditor) return
-  const monaco = await import('monaco-editor')
+const chainDurationCount = computed(() => (
+  props.developer?.callChain.hops.filter(hop => hop.duration?.trim() && hop.duration !== '未记录').length ?? 0
+))
 
-  self.MonacoEnvironment = {
-    getWorker(_id: string, _label: string) {
-      return new Worker(new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url), { type: 'module' })
-    },
-  }
-
-  if (diffContainerRef.value) {
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    diffEditor = monaco.editor.createDiffEditor(diffContainerRef.value, {
-      readOnly: true,
-      automaticLayout: true,
-      renderSideBySide: true,
-      fontSize: 12,
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      theme: isDark ? 'vs-dark' : 'vs',
-    })
-    updateDiffContent(monaco)
-  }
-}
-
-async function updateDiffContent(monacoOverride?: any) {
+const contrastNarrative = computed(() => {
   const contrast = props.developer?.contrast
-  if (!contrast?.available) return
-  const monaco = monacoOverride || await import('monaco-editor')
-  if (!diffEditor) return
-  diffEditor.setModel({
-    original: monaco.editor.createModel(contrast.baselineSample || '', 'text'),
-    modified: monaco.editor.createModel(contrast.failedSample || '', 'text'),
+  if (!contrast?.available || !contrast.failedRequests || !contrast.normalRequests) return null
+  return evidenceComparisonNarrative({
+    featureCode: contrast.featureCode,
+    failureRequestCount: contrast.failedRequests.totalRequests,
+    failureWithFeatureCount: contrast.failedRequests.requestsWithFeature,
+    normalRequestCount: contrast.normalRequests.totalRequests,
+    normalWithFeatureCount: contrast.normalRequests.requestsWithFeature,
   })
-}
+})
 
-watch(
-  () => props.developer?.contrast?.available,
-  (available) => {
-    if (available) nextTick(() => initDiffEditor())
-  },
-  { immediate: true },
-)
+const chainServiceGroups = computed(() => {
+  const groups: Array<{ service: string; count: number; anomalous: boolean }> = []
+  for (const hop of props.developer?.callChain.hops ?? []) {
+    const last = groups.at(-1)
+    if (last?.service === hop.service) {
+      last.count += 1
+      last.anomalous ||= hop.anomalous
+    } else {
+      groups.push({ service: hop.service, count: 1, anomalous: hop.anomalous })
+    }
+  }
+  return groups
+})
 
-onBeforeUnmount(() => {
-  diffEditor?.dispose()
+const anomalousHopSummary = computed(() => {
+  const hops = props.developer?.callChain.hops ?? []
+  const positions = hops.flatMap((hop, index) => hop.anomalous ? [index + 1] : [])
+  if (!positions.length) return '未标记异常日志'
+  return `异常日志：第 ${positions.join('、')} 条`
 })
 
 function stepToneLabel(value: EvidenceStepTone) { return STEP_TONE_LABEL[value] }
@@ -324,7 +339,7 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 
 <style scoped>
 /* ── Panel shell ── */
-.developer-fold { width:100%; max-width:none; margin:14px 0 0; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); overflow:hidden; }
+.developer-fold { width:100%; max-width:none; container-type:inline-size; margin:14px 0 0; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); overflow:hidden; }
 
 /* ── Summary / fold bar ── */
 .developer-fold>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; list-style:none; cursor:pointer; user-select:none; transition:background .15s; }
@@ -372,25 +387,63 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .section-head h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 .section-head>code { color:var(--mc-primary); font-size:var(--mc-text-xs); }
 
-/* ── Hop line ── */
-.hop-line { display:flex; align-items:stretch; gap:8px; margin-top:17px; }
-.hop { flex:1; padding:10px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); }
-.hop>span { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; color:var(--mc-text-inverse); background:var(--mc-primary); font-size:var(--mc-text-xs); }
-.hop b,.hop small { display:block; margin-top:5px; font-size:var(--mc-text-xs); }
-.hop small { color:var(--mc-text-secondary); }
-.hop.anomalous { border-color:var(--mc-danger-border); background:var(--mc-status-error-bg); }
-.hop.anomalous>span { background:var(--mc-danger); }
+/* ── Call-chain summary ── */
+.chain-head>div:first-child p { margin:6px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.5; }
+.chain-identity { max-width:48%; text-align:right; }
+.chain-identity span,.chain-identity code { display:block; }
+.chain-identity span { color:var(--mc-text-tertiary); font-size:10px; }
+.chain-identity code { margin-top:5px; color:var(--mc-primary); font-size:var(--mc-text-xs); overflow-wrap:anywhere; }
+.chain-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:17px; border-top:1px solid var(--mc-border-light); border-bottom:1px solid var(--mc-border-light); }
+.chain-metrics>div { padding:13px 14px; }
+.chain-metrics>div+div { border-left:1px solid var(--mc-border-light); }
+.chain-metrics strong,.chain-metrics span { display:block; }
+.chain-metrics strong { font-size:var(--mc-text-lg); line-height:1; }
+.chain-metrics span { margin-top:6px; color:var(--mc-text-tertiary); font-size:10px; }
+.chain-metrics>div.anomalous strong { color:var(--mc-danger); }
+.chain-route { display:grid; grid-template-columns:72px minmax(0,1fr); align-items:start; gap:12px; padding:14px 2px; }
+.chain-route>span { padding-top:4px; color:var(--mc-text-tertiary); font-size:10px; }
+.chain-route>div { display:flex; align-items:center; flex-wrap:wrap; gap:7px; min-width:0; }
+.chain-route b { padding:5px 8px; border-radius:var(--mc-radius-xs); color:var(--mc-text-primary); background:var(--mc-bg-muted); font-size:var(--mc-text-xs); font-weight:600; overflow-wrap:anywhere; }
+.chain-route b.anomalous { color:var(--mc-status-error-text); background:var(--mc-status-error-bg); }
+.chain-route b em { color:var(--mc-text-tertiary); font-style:normal; font-weight:500; }
+.chain-route i { color:var(--mc-text-tertiary); font-style:normal; }
+.chain-details { border-top:1px solid var(--mc-border-light); }
+.chain-details>summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 2px 0; color:var(--mc-primary); font-size:var(--mc-text-xs); cursor:pointer; list-style:none; }
+.chain-details>summary::-webkit-details-marker { display:none; }
+.chain-details>summary span::before { content:'＋'; display:inline-block; width:18px; }
+.chain-details[open]>summary span::before { content:'－'; }
+.chain-details>summary small { color:var(--mc-text-tertiary); font-size:10px; text-align:right; }
+.hop-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; margin:12px 0 0; padding:0; list-style:none; }
+.hop-list li { display:grid; grid-template-columns:24px minmax(0,1fr) auto auto; align-items:center; gap:8px; min-width:0; padding:8px 2px; border-top:1px solid var(--mc-border-light); }
+.hop-list li>span { display:inline-grid; place-items:center; width:20px; height:20px; border-radius:50%; color:var(--mc-text-secondary); background:var(--mc-bg-muted); font-size:10px; }
+.hop-list li>b { min-width:0; font-size:var(--mc-text-xs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hop-list li>small { color:var(--mc-text-tertiary); font-size:10px; }
+.hop-list li>em { color:var(--mc-text-secondary); font-size:10px; font-style:normal; }
+.hop-list li.anomalous>span { color:var(--mc-text-inverse); background:var(--mc-danger); }
+.hop-list li.anomalous>em { color:var(--mc-danger); font-weight:700; }
 
 /* ── Empty state ── */
 .empty-evidence { margin:14px 0 0; padding:11px 12px; border:1px dashed var(--mc-border); border-radius:var(--mc-radius-sm); color:var(--mc-text-secondary); background:var(--mc-bg-elevated); font-size:var(--mc-text-xs); line-height:1.65; }
 
-/* ── Contrast row ── */
-.contrast-row { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:14px; padding:10px 12px; border-radius:var(--mc-radius-sm); background:var(--mc-status-success-bg); font-size:var(--mc-text-xs); }
-.contrast-row>span { color:var(--mc-text-secondary); }
-.contrast-row em { color:var(--mc-text-tertiary); font-style:normal; }
-.contrast-row .baseline { color:var(--mc-success); }
-.contrast-row small { flex-basis:100%; color:var(--mc-text-secondary); }
-.contrast-row.unavailable { color:var(--mc-warning); background:var(--mc-status-warning-bg); }
+/* ── Failed/success contrast ── */
+.contrast-summary { margin-top:16px; padding-top:15px; border-top:1px solid var(--mc-border); }
+.contrast-summary>header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.contrast-summary>header span,.contrast-summary>header b { display:block; }
+.contrast-summary>header span { color:var(--mc-text-tertiary); font-size:10px; }
+.contrast-summary>header b { margin-top:4px; font-size:var(--mc-text-sm); }
+.contrast-summary>header>em { padding:3px 7px; border-radius:999px; color:var(--mc-status-success-text); background:var(--mc-status-success-bg); font-size:10px; font-style:normal; }
+.contrast-human { margin-top:12px; padding:13px 14px; border-left:3px solid var(--mc-success); border-radius:var(--mc-radius-xs); background:var(--mc-status-success-bg); }
+.contrast-human strong,.contrast-human p,.contrast-human small { display:block; }
+.contrast-human strong { font-size:var(--mc-text-sm); line-height:1.55; }
+.contrast-human p { margin:6px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.contrast-human small { margin-top:7px; color:var(--mc-text-tertiary); font-size:10px; line-height:1.5; }
+.contrast-technical { margin-top:9px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
+.contrast-technical summary { color:var(--mc-primary); cursor:pointer; }
+.contrast-technical p { margin:8px 0; }
+.contrast-technical code { overflow-wrap:anywhere; }
+.contrast-summary>p { margin:10px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.contrast-summary.unavailable { padding:12px; border:0; border-radius:var(--mc-radius-sm); color:var(--mc-warning); background:var(--mc-status-warning-bg); }
+.contrast-summary.unavailable>header>em { color:var(--mc-status-warning-text); background:var(--mc-bg-elevated); }
 
 /* ── Draft summary ── */
 .draft-state { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-purple-text); background:var(--mc-status-purple-bg); font-size:var(--mc-text-xs); font-weight:700; }
@@ -478,16 +531,20 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .timeline-phase-divider { display:flex; align-items:center; gap:12px; margin:20px 0 14px; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
 .timeline-phase-divider::before,.timeline-phase-divider::after { content:''; flex:1; height:1px; background:var(--mc-border-light); }
 
-/* ── Contrast diff (Monaco) ── */
-.contrast-diff-section { margin-top:14px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); overflow:hidden; }
-.contrast-diff-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--mc-bg-muted); border-bottom:1px solid var(--mc-border); }
-.contrast-diff-title { font-size:var(--mc-text-sm); font-weight:600; }
-.contrast-diff-status { font-size:var(--mc-text-xs); padding:2px 7px; border-radius:var(--mc-radius-xs); }
-.contrast-diff-status.available { color:var(--mc-success); background:var(--mc-status-success-bg); }
-.contrast-diff-container { min-height:250px; max-height:400px; background:var(--mc-bg-elevated); }
-.contrast-diff-note { padding:8px 14px; font-size:var(--mc-text-xs); color:var(--mc-text-secondary); border-top:1px solid var(--mc-border); }
-
 /* ── Responsive ── */
+@container (max-width:900px){
+  .developer-body,.convergence-grid{grid-template-columns:1fr}
+  .developer-body>.evidence-timeline,.developer-body>.developer-side{grid-column:1/-1}
+  .developer-body--empty-timeline>.developer-side{grid-template-columns:1fr}
+  .source-status{flex-direction:column}
+  .source-status-governance{max-width:none; align-items:flex-start}
+  .source-status-governance small{text-align:left}
+  .hop-list{grid-template-columns:1fr}
+}
+@container (max-width:480px){
+  .chain-head{flex-direction:column}
+  .chain-identity{max-width:none; text-align:left}
+}
 @media(max-width:1100px){
   .convergence-grid{grid-template-columns:1fr}
   .developer-body--empty-timeline>.developer-side{grid-template-columns:1fr}
@@ -498,5 +555,6 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   .source-status{flex-direction:column}
   .source-status-governance{max-width:none; align-items:flex-start}
   .source-status-governance small{text-align:left}
+  .hop-list{grid-template-columns:1fr}
 }
 </style>

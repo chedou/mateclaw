@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { InvestigationStageView, RelationEdge } from '@/api'
 import {
   defaultInvestigationStage,
+  investigationStageContinuationLabel,
+  investigationStageQuestion,
   investigationRouteLabel,
   investigationStageSummaryLabel,
   investigationStagePresentation,
@@ -41,21 +43,41 @@ describe('seven-stage investigation trace presentation', () => {
       investigationStagePresentation('CRITERION_EVALUATION').title,
       investigationStagePresentation('CONCLUSION').title,
     ]).toEqual([
-      '先看发生了什么',
-      '决定怎么排查',
-      '列出要查的数据',
-      '选择查询工具',
-      '查询并拿回结果',
-      '按规则判断结果',
-      '给出结论，或明确不判断',
+      '收到告警',
+      '选定排障方法',
+      '明确要查什么',
+      '连接只读数据源',
+      '获取真实证据',
+      '用规则核对证据',
+      '形成结论',
     ])
 
     expect(investigationStagePresentation('EVIDENCE_CONTRACT').description)
-      .toBe('固定本次要查询的数据、范围和时间窗口，并标明哪些必查、哪些可选。')
+      .toBe('列出这次必须查询的数据，并固定查询范围和时间。')
     expect(investigationStagePresentation('EVIDENCE_COLLECTION').description)
-      .toBe('执行只读查询，展示系统已经记录的结果和耗时。')
+      .toBe('执行查询，记录实际返回的证据和缺失项。')
     expect(investigationStagePresentation('CONCLUSION').description)
       .toContain('证据不足')
+  })
+
+  it('tells the operator what each step answers and why the flow continues', () => {
+    expect(investigationStageQuestion('INCIDENT'))
+      .toBe('系统、服务、发生时间和错误码是否明确？')
+    expect(investigationStageQuestion('EVIDENCE_COLLECTION'))
+      .toBe('数据是否查到，必需证据有没有缺失？')
+    expect(investigationStageQuestion('CONCLUSION'))
+      .toBe('现有证据能否支持明确结论？如果不能，是否应停止判断？')
+
+    expect(investigationStageContinuationLabel('INCIDENT', 'COMPLETED'))
+      .toBe('基本信息已确认，下一步选择排障方法。')
+    expect(investigationStageContinuationLabel('ADAPTER_SELECTION', 'PARTIAL'))
+      .toContain('只使用已记录事实')
+    expect(investigationStageContinuationLabel('CONCLUSION', 'STOPPED'))
+      .toBe('流程在这里停止，不再继续猜测。')
+    expect(investigationStageContinuationLabel('CONCLUSION', 'COMPLETED'))
+      .toBe('排障流程已完成，等待人工确认和处置。')
+    expect(investigationStageContinuationLabel('EVIDENCE_COLLECTION', 'COMPLETED'))
+      .toBe('真实证据已获取，下一步用规则核对。')
   })
 
   it('explains Playbook as a reviewed troubleshooting plan in user-facing text', () => {
@@ -83,7 +105,7 @@ describe('seven-stage investigation trace presentation', () => {
     expect(defaultInvestigationStage(stages)?.key).toBe('CONCLUSION')
   })
 
-  it('falls back to the first incomplete stage, then the conclusion', () => {
+  it('opens a recorded conclusion first, otherwise the first incomplete stage', () => {
     const partial = [
       stage(1, 'INCIDENT', 'COMPLETED'),
       stage(2, 'PLAYBOOK_ROUTE', 'COMPLETED'),
@@ -91,9 +113,11 @@ describe('seven-stage investigation trace presentation', () => {
       stage(4, 'ADAPTER_SELECTION', 'PARTIAL'),
       stage(5, 'EVIDENCE_COLLECTION', 'COMPLETED'),
       stage(6, 'CRITERION_EVALUATION', 'COMPLETED'),
-      stage(7, 'CONCLUSION', 'COMPLETED'),
+      stage(7, 'CONCLUSION', 'UNRECORDED'),
     ]
-    const complete = partial.map(item => ({ ...item, status: 'COMPLETED' as const }))
+    const complete = partial.map(item => item.key === 'CONCLUSION'
+      ? { ...item, status: 'COMPLETED' as const }
+      : item)
 
     expect(defaultInvestigationStage(partial)?.key).toBe('ADAPTER_SELECTION')
     expect(defaultInvestigationStage(complete)?.key).toBe('CONCLUSION')
@@ -105,6 +129,8 @@ describe('seven-stage investigation trace presentation', () => {
     expect(traceDisplay('')).toBe('未记录')
     expect(traceDisplay('guance')).toBe('guance')
     expect(investigationStageStatusLabel('UNRECORDED')).toBe('未记录')
+    expect(investigationStageStatusLabel('COMPLETED')).toBe('已完成')
+    expect(investigationStageStatusLabel('PARTIAL')).toBe('记录不完整')
   })
 
   it('refreshes participant provenance when the same diagnosis advances', () => {

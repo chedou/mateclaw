@@ -19,7 +19,7 @@
           <el-button type="primary" plain @click="$emit('openHistoryReplay')">回放一条历史样本</el-button>
         </div>
         <p>
-          用服务端预置的历史证据检查“失败日志 → PS ID 调用链 → 成功样本对照”是否仍能稳定运行。
+          用服务端预置的历史证据检查“失败日志 → PS ID 关联日志 → 正常请求对比”是否仍能稳定运行。
           这是回归验证，不会访问真实观测云、创建排障单或生成排障规则。
         </p>
       </section>
@@ -181,9 +181,13 @@
               <b>{{ sample.system }} / {{ sample.service }}</b>
               <p><code>{{ sample.scenarioKey }}</code><span>Diagnosis {{ sample.diagnosisId }}</span></p>
               <small>
-                {{ stageLabel(sample.evidence.stage) }} · {{ sample.evidence.matchCount }} 条命中 ·
-                {{ sample.evidence.traceEntries }} 个节点 · {{ shortTime(sample.capturedAt) }}
+                {{ stageLabel(sample.evidence.stage) }} · 第一步找到 {{ sample.evidence.matchCount }} 条结果 ·
+                取得 {{ sample.evidence.traceEntries }} 条关联日志 · {{ shortTime(sample.capturedAt) }}
               </small>
+              <div v-if="sampleContrastNarrative(sample)" class="sample-contrast">
+                <strong>{{ sampleContrastNarrative(sample)?.summary }}</strong>
+                <small>{{ sampleContrastNarrative(sample)?.interpretation }}</small>
+              </div>
               <small v-if="sample.outcome" class="outcome-line">
                 权威结果 {{ sample.outcome.outcome }} · {{ sample.outcome.summary }}
               </small>
@@ -312,6 +316,7 @@ import {
   parseEvaluationIntentKeys,
 } from './evaluationSamples'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
+import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 
 const props = withDefaults(defineProps<{
   currentDiagnosisId?: string | null
@@ -547,7 +552,21 @@ function openDiagnosis(diagnosisId: string) {
 }
 
 function stageLabel(stage: EvidenceEvaluationSample['evidence']['stage']) {
-  return stage === 'FULL_SPINE_OBSERVED' ? '完整 Evidence Spine' : '核心链已观测'
+  return stage === 'FULL_SPINE_OBSERVED'
+    ? '失败日志、关联日志和请求对比已齐全'
+    : '已取得失败日志和关联日志'
+}
+
+function sampleContrastNarrative(sample: EvidenceEvaluationSample) {
+  const contrast = sample.evidence.contrast
+  if (!contrast.available) return null
+  return evidenceComparisonNarrative({
+    featureCode: contrast.discriminatingFeature,
+    failureRequestCount: contrast.failureSampleCount,
+    failureWithFeatureCount: contrast.failureMatchCount,
+    normalRequestCount: contrast.successSampleCount,
+    normalWithFeatureCount: contrast.successMatchCount,
+  })
 }
 
 function shortTime(value: string) {
@@ -613,6 +632,10 @@ function errorText(error: unknown) {
 .sample-main code { color: #2f5cf5; }
 .sample-main>small { display: block; color: #667085; font-size: 9.5px; line-height: 1.5; }
 .sample-main .outcome-line { margin-top: 4px; color: #138a58; }
+.sample-contrast { margin-top: 7px; padding: 8px 9px; border-left: 2px solid #138a58; border-radius: 5px; background: #eefbf5; }
+.sample-contrast strong,.sample-contrast small { display: block; }
+.sample-contrast strong { color: #172033; font-size: 10px; line-height: 1.5; }
+.sample-contrast small { margin-top: 3px; color: #475467; font-size: 9.5px; line-height: 1.5; }
 .sample-actions { display: flex; min-width: 160px; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
 .baseline-result { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .baseline-result small { color: #667085; font-size: 9px; }

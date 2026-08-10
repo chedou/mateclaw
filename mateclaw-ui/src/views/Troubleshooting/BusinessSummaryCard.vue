@@ -7,8 +7,12 @@
             {{ conclusionLabel(business.conclusionType) }}
           </span>
           <span class="status-badge" :class="statusTone(business.status)">{{ statusLabel(business.status) }}</span>
-          <span class="confidence-badge" :class="business.confidence.toLowerCase()">
-            可信等级 {{ business.confidence }}
+          <span
+            class="confidence-badge"
+            :class="business.confidence.toLowerCase()"
+            :title="confidencePresentation.detail"
+          >
+            {{ confidencePresentation.label }}
           </span>
         </div>
         <h2>{{ business.headline }}</h2>
@@ -111,6 +115,7 @@ import {
   diagnosisStatusTone as statusTone,
   formatWorkbenchTime as shortTime,
 } from './workbenchView'
+import { diagnosisConfidencePresentation } from './evidencePlainLanguage'
 
 const BLAST_RADIUS_LABEL: Record<BlastRadius, string> = {
   SINGLE_CUSTOMER: '单客户影响', MULTI_CUSTOMER: '多客户影响', SYSTEM_WIDE: '系统级影响', UNKNOWN: '影响范围未知',
@@ -131,6 +136,7 @@ const props = defineProps<Props>()
 /** Three separately owned cost segments; never summed into one number (D14). */
 const stages = computed(() => northStarStages(props.business?.timings))
 const stagesComplete = computed(() => stages.value.every((stage) => stage.share !== null))
+const confidencePresentation = computed(() => diagnosisConfidencePresentation(props.business?.confidence))
 
 defineEmits<{
   confirm: []

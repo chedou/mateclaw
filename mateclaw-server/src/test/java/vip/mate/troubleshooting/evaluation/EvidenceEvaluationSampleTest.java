@@ -32,6 +32,8 @@ class EvidenceEvaluationSampleTest {
         assertThat(sample.expectedDisposition()).isNull();
         assertThat(sample.outcome()).isNull();
         assertThat(sample.modelInputHash()).isEqualTo("b".repeat(64));
+        assertThat(sample.evidence().contrast().discriminatingFeature())
+                .isEqualTo("session_state_conflict");
     }
 
     @Test
@@ -201,12 +203,15 @@ class EvidenceEvaluationSampleTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         ObjectNode legacy = (ObjectNode) objectMapper.valueToTree(captured(false));
         ((ObjectNode) legacy.get("evidence")).remove("timings");
+        ((ObjectNode) legacy.get("evidence").get("contrast"))
+                .remove("discriminatingFeature");
 
         EvidenceEvaluationSample restored = objectMapper.treeToValue(
                 legacy, EvidenceEvaluationSample.class);
 
         assertThat(restored.evidence().timings())
                 .isEqualTo(vip.mate.troubleshooting.evidence.EvidenceSpineTimings.unmeasured());
+        assertThat(restored.evidence().contrast().discriminatingFeature()).isNull();
         assertThat(restored.modelInputHash()).isNull();
         assertThat(restored.expectedDisposition()).isNull();
     }
@@ -283,7 +288,8 @@ class EvidenceEvaluationSampleTest {
                 2,
                 42L,
                 new GuanceEvidenceSpinePreview.Contrast(
-                        true, 100, 92, 100, 3, 0.92, 0.03, 0.89),
+                        true, "session_state_conflict",
+                        100, 92, 100, 3, 0.92, 0.03, 0.89),
                 3,
                 50L,
                 List.of(
