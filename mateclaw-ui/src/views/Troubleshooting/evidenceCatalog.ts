@@ -1,10 +1,12 @@
 import type {
   EvidenceCatalogModule,
+  EvidenceCatalogSource,
   EvidenceQueryCatalog,
   EvidenceQueryContract,
   EvidenceRouteOrigin,
   ObservabilityAsset,
   ObservabilityAssetContractOption,
+  SopSummary,
 } from '@/api'
 
 // 这里原先有两条常驻流程条文案（EVIDENCE_CATALOG_WORKFLOW / EVIDENCE_SETUP_WORKFLOW）。
@@ -41,6 +43,23 @@ export type ModuleToolSetup = {
   statusLabel: string
   checklist: ToolChecklistItem[]
   contract: EvidenceQueryContract | null
+}
+
+export type ModuleOnboardingStep = {
+  code: 'SOURCE' | 'ASSET' | 'TOOLS' | 'PLAYBOOK' | 'ACCEPTANCE'
+  label: string
+  state: 'DONE' | 'TODO' | 'UNKNOWN'
+  detail: string
+  action: 'source' | 'asset' | 'tools' | 'playbook' | 'acceptance'
+}
+
+export type ModuleOnboardingReadiness = {
+  status: 'READY_FOR_PILOT' | 'NEEDS_CONFIGURATION'
+  completedSteps: number
+  totalSteps: number
+  operationalPlaybooks: SopSummary[]
+  steps: ModuleOnboardingStep[]
+  nextStep: ModuleOnboardingStep | null
 }
 
 export function signalKindLabel(signalKind: string): string {
@@ -208,7 +227,7 @@ export function buildModuleToolSetups(input: {
         },
         {
           key: 'trial',
-          label: '管理员只读试跑通过',
+          label: '具备管理员只读试跑条件',
           detail: trialBlocker || '可以对这条工具做只读试跑',
           done: !trialBlocker && Boolean(contract?.runnable),
         },
@@ -244,6 +263,133 @@ export function buildModuleToolSetups(input: {
       return byStatus || left.signalKind.localeCompare(right.signalKind)
         || left.contractRef.localeCompare(right.contractRef)
     })
+}
+
+/**
+ * 把一个模块的分散配置折成一张可复核的五步接入清单。
+ *
+ * 这里只使用已有服务端投影，不根据名称猜测系统、模块或 Playbook。
+ * 排障方案列表因权限不可读时保留 UNKNOWN，不能伪装成“未配置”。
+ */
+export function buildModuleOnboardingReadiness(input: {
+  entry: SetupModuleEntry
+  tools: ReadonlyArray<ModuleToolSetup>
+  sources: ReadonlyArray<EvidenceCatalogSource>
+  playbooks: ReadonlyArray<SopSummary> | null
+}): ModuleOnboardingReadiness {
+  const { entry } = input
+  const operationalPlaybooks = input.playbooks === null
+    ? []
+    : input.playbooks.filter(playbook => playbook.operational
+      && sameIdentity(playbook.system, entry.system)
+      && sameIdentity(playbook.service, entry.service))
+  const enabledTools = input.tools.filter(tool => tool.enabled)
+  const readyRealPlatforms = new Set(input.sources
+    .filter(source => source.status === 'READY' && !isRecordedReplaySource(source.platform))
+    .map(source => normalizedIdentity(source.platform)))
+  const toolRealPlatforms = enabledTools.map(tool => (tool.contract?.route.platforms || [])
+    .filter(platform => !isRecordedReplaySource(platform))
+    .filter(platform => readyRealPlatforms.has(normalizedIdentity(platform))))
+  const assetPlatformReady = Boolean(entry.asset?.platform
+    && readyRealPlatforms.has(normalizedIdentity(entry.asset.platform)))
+  const moduleRealSourceReady = enabledTools.length
+    ? toolRealPlatforms.every(platforms => platforms.length > 0)
+    : assetPlatformReady
+  const routedRealPlatforms = [...new Set(toolRealPlatforms.flat())]
+  const source: ModuleOnboardingStep = {
+    code: 'SOURCE',
+    label: '真实数据源可用',
+    state: moduleRealSourceReady ? 'DONE' : 'TODO',
+    detail: moduleRealSourceReady
+      ? `${routedRealPlatforms.length
+        ? routedRealPlatforms.join('、')
+        : entry.asset?.platform || '真实数据源'} 已就绪并被当前模块引用`
+      : enabledTools.length
+        ? '当前模块的已启用方法还没有路由到可用的真实数据源'
+        : '请先检查当前模块的数据源连接和取证路由',
+    action: 'source',
+  }
+  const workspaceAssetReady = Boolean(
+    entry.asset?.origin === 'WORKSPACE' && entry.asset.enabled,
+  )
+  const asset: ModuleOnboardingStep = {
+    code: 'ASSET',
+    label: '系统模块已登记',
+    state: workspaceAssetReady ? 'DONE' : 'TODO',
+    detail: workspaceAssetReady
+      ? `${entry.asset!.environment || '已登记环境'} · Workspace v${entry.asset!.version}`
+      : entry.asset?.origin === 'DEPLOYMENT'
+        ? '当前仍使用部署默认，请接管为 Workspace 资产'
+        : '请登记系统、模块、环境和资源范围',
+    action: 'asset',
+  }
+  const toolsReady = enabledTools.length > 0
+    && enabledTools.every(tool => tool.status === 'READY')
+  const tools: ModuleOnboardingStep = {
+    code: 'TOOLS',
+    label: '取证方法可运行',
+    state: toolsReady ? 'DONE' : 'TODO',
+    detail: toolsReady
+      ? `${enabledTools.length} 条已绑定方法具备只读试跑条件`
+      : enabledTools.length
+        ? `${enabledTools.filter(tool => tool.status === 'READY').length}/${enabledTools.length} 条已绑定方法可运行`
+        : '还没有为该模块绑定已审核的取证方法',
+    action: 'tools',
+  }
+  const playbook: ModuleOnboardingStep = input.playbooks === null
+    ? {
+        code: 'PLAYBOOK',
+        label: '排障方案已生效',
+        state: 'UNKNOWN',
+        detail: '当前账号未读取到排障方案状态',
+        action: 'playbook',
+      }
+    : {
+        code: 'PLAYBOOK',
+        label: '排障方案已生效',
+        state: operationalPlaybooks.length ? 'DONE' : 'TODO',
+        detail: operationalPlaybooks.length
+          ? `${operationalPlaybooks.length} 条已审核排障方案可命中该模块`
+          : '还没有该模块可命中的已审核排障方案',
+        action: 'playbook',
+      }
+  const accepted = entry.module?.acceptance.status === 'ACCEPTED'
+  const acceptance: ModuleOnboardingStep = {
+    code: 'ACCEPTANCE',
+    label: '负责人已确认查询口径',
+    state: accepted ? 'DONE' : 'TODO',
+    detail: accepted
+      ? `已由 ${entry.module?.acceptance.acceptedBy || '负责人'} 确认`
+      : entry.module?.acceptance.status === 'STALE'
+        ? '配置已变更，原验收失效，需重新确认'
+        : '投产前需由 Workspace 负责人确认字段、索引、时间窗和关联口径',
+    action: 'acceptance',
+  }
+  const steps = [source, asset, tools, playbook, acceptance]
+  const completedSteps = steps.filter(step => step.state === 'DONE').length
+  const nextStep = steps.find(step => step.state !== 'DONE') || null
+  return {
+    status: completedSteps === steps.length
+      ? 'READY_FOR_PILOT'
+      : 'NEEDS_CONFIGURATION',
+    completedSteps,
+    totalSteps: steps.length,
+    operationalPlaybooks,
+    steps,
+    nextStep,
+  }
+}
+
+function isRecordedReplaySource(platform: string) {
+  return normalizedIdentity(platform).startsWith('recorded-replay')
+}
+
+function normalizedIdentity(value: string | null | undefined) {
+  return (value || '').trim().toLowerCase()
+}
+
+function sameIdentity(left: string | null | undefined, right: string | null | undefined) {
+  return normalizedIdentity(left) === normalizedIdentity(right)
 }
 
 export type ModuleNextAction = {

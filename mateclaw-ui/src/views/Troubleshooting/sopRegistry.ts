@@ -1,4 +1,4 @@
-import type { SopEntry, SopStatus } from '@/api'
+import type { SopEntry, SopStatus, SopSummary } from '@/api'
 
 const REQUIRED_TEXT_FIELDS = ['sopId', 'system', 'errorCode', 'service', 'title'] as const
 const CONTRACT_ARRAY_FIELDS = [
@@ -63,6 +63,23 @@ export function nextSopStatus(status: SopStatus): Exclude<SopStatus, 'candidate'
   if (status === 'candidate') return 'approved'
   if (status === 'approved') return 'deprecated'
   return null
+}
+
+/** Selects one exact module row for a deep link without letting another service stand in. */
+export function findScopedSopSummary(
+  rows: ReadonlyArray<SopSummary>,
+  system: string,
+  service: string,
+): SopSummary | null {
+  const normalizedSystem = normalizedIdentity(system)
+  const normalizedService = normalizedIdentity(service)
+  if (!normalizedSystem || !normalizedService) return null
+  return rows.find(row => normalizedIdentity(row.system) === normalizedSystem
+    && normalizedIdentity(row.service) === normalizedService) || null
+}
+
+function normalizedIdentity(value: string) {
+  return value.trim().toLowerCase()
 }
 
 function isObject(value: unknown): value is JsonObject {

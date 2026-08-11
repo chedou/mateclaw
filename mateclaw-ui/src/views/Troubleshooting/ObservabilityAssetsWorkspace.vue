@@ -40,7 +40,7 @@
           <el-button @click="moduleChooserOpen = true">新增模块</el-button>
           <el-button type="primary" @click="openNewSystem">新增系统</el-button>
         </template>
-        <el-button v-if="setupSection === 'source'" type="primary" @click="openGuanceValidation">检查数据连接</el-button>
+        <el-button v-if="setupSection === 'source'" type="primary" @click="openGuanceValidation()">检查数据连接</el-button>
       </div>
 
       <!--
@@ -115,7 +115,7 @@
                 v-if="!isRecordedReplay(scope.row.platform)"
                 type="primary"
                 text
-                @click="openGuanceValidation"
+                @click="openGuanceValidation()"
               >检查 / 验收</el-button>
               <span v-else class="muted-action">无需联调</span>
             </template>
@@ -163,14 +163,23 @@
               <span class="readiness-count">{{ moduleRailLabel(scope.row) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
+          <el-table-column label="接入进度" min-width="180">
             <template #default="scope">
-              <el-tag :type="moduleStateTagType(scope.row)" effect="plain" size="small">
-                {{ moduleStateLabel(scope.row) }}
-              </el-tag>
+              <button
+                type="button"
+                class="onboarding-progress-trigger"
+                @click="openModuleOnboarding(scope.row)"
+              >
+                <b>{{ moduleOnboarding(scope.row).completedSteps }}/{{ moduleOnboarding(scope.row).totalSteps }}</b>
+                <small>
+                  {{ moduleOnboarding(scope.row).status === 'READY_FOR_PILOT'
+                    ? '已具备试点条件'
+                    : `下一步：${moduleOnboarding(scope.row).nextStep?.label || '核对状态'}` }}
+                </small>
+              </button>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="210" align="right" fixed="right">
+          <el-table-column label="操作" min-width="260" align="right" fixed="right">
             <template #default="scope">
               <el-button
                 v-if="scope.row.asset"
@@ -180,6 +189,7 @@
               <el-button type="primary" text @click="openModuleEntryConfig(scope.row)">
                 {{ scope.row.asset?.origin === 'WORKSPACE' ? '修改' : '登记 / 接管' }}
               </el-button>
+              <el-button text @click="openModuleOnboarding(scope.row)">查看进度</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -559,6 +569,72 @@
     </el-dialog>
 
     <el-dialog
+      v-model="onboardingDialogOpen"
+      title="模块接入进度"
+      width="680px"
+      destroy-on-close
+    >
+      <template v-if="onboardingTarget && onboardingReadiness">
+        <div class="onboarding-dialog-heading">
+          <div>
+            <small>{{ onboardingTarget.system }} / {{ onboardingTarget.service }}</small>
+            <h3>{{ onboardingTarget.displayName }}</h3>
+            <p>这五项全部有真实记录后，才能把该模块称为“可试点”。</p>
+          </div>
+          <el-tag
+            :type="onboardingReadiness.status === 'READY_FOR_PILOT' ? 'success' : 'warning'"
+            effect="plain"
+          >
+            {{ onboardingReadiness.completedSteps }}/{{ onboardingReadiness.totalSteps }}
+          </el-tag>
+        </div>
+
+        <div class="onboarding-step-list">
+          <article
+            v-for="(step, index) in onboardingReadiness.steps"
+            :key="step.code"
+            class="onboarding-step"
+            :class="step.state.toLowerCase()"
+          >
+            <span class="onboarding-step-index">{{ step.state === 'DONE' ? '✓' : index + 1 }}</span>
+            <div>
+              <div class="onboarding-step-title">
+                <b>{{ step.label }}</b>
+                <em>{{ step.state === 'DONE' ? '已完成' : step.state === 'UNKNOWN' ? '未读取' : '待补齐' }}</em>
+              </div>
+              <p>{{ step.detail }}</p>
+            </div>
+          </article>
+        </div>
+
+        <el-alert
+          v-if="onboardingReadiness.status === 'READY_FOR_PILOT'"
+          type="success"
+          :closable="false"
+          show-icon
+          title="该模块已具备生产试点的配置条件"
+          description="这只代表配置和责任人验收完整；真实效果仍需在 T8 样本台账中累积。"
+        />
+        <el-alert
+          v-else-if="onboardingReadiness.nextStep"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="`当前先做：${onboardingReadiness.nextStep.label}`"
+          :description="onboardingReadiness.nextStep.detail"
+        />
+      </template>
+      <template #footer>
+        <el-button @click="onboardingDialogOpen = false">关闭</el-button>
+        <el-button
+          v-if="onboardingReadiness?.nextStep"
+          type="primary"
+          @click="continueModuleOnboarding"
+        >{{ onboardingNextActionLabel }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="assetDetailOpen"
       title="模块取证配置详情"
       width="720px"
@@ -772,11 +848,13 @@ import {
   type ObservabilityAsset,
   type ObservabilityAssetCatalog,
   type ObservabilityAssetContractOption,
+  type SopSummary,
 } from '@/api'
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
 import {
   assetParameterLabel,
   bindingStatusLabel,
+  buildModuleOnboardingReadiness,
   buildModuleToolSetups,
   directTrialBlockReason,
   listSetupModules,
@@ -787,6 +865,7 @@ import {
   signalKindLabel,
   moveOrderedItem,
   type ModuleToolSetup,
+  type ModuleOnboardingReadiness,
   type SetupModuleEntry,
 } from './evidenceCatalog'
 import {
@@ -868,6 +947,9 @@ const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
 const assetDetailOpen = ref(false)
 const assetDetail = ref<ObservabilityAsset | null>(null)
+const playbooks = ref<SopSummary[] | null>(null)
+const onboardingDialogOpen = ref(false)
+const onboardingTarget = ref<SetupModuleEntry | null>(null)
 const trialDialogOpen = ref(false)
 const trialRunning = ref(false)
 const trialHistoryLoading = ref(false)
@@ -1045,6 +1127,32 @@ const selectedToolSetups = computed(() => {
   })
 })
 
+function moduleOnboarding(entry: SetupModuleEntry): ModuleOnboardingReadiness {
+  return buildModuleOnboardingReadiness({
+    entry,
+    tools: buildModuleToolSetups({
+      options: assetCatalog.value?.contracts || [],
+      module: entry.module,
+      asset: entry.asset,
+      sourceReady: sourceReady.value,
+    }),
+    sources: catalog.value?.sources || [],
+    playbooks: playbooks.value,
+  })
+}
+
+const onboardingReadiness = computed(() => onboardingTarget.value
+  ? moduleOnboarding(onboardingTarget.value)
+  : null)
+
+const onboardingNextActionLabel = computed(() => ({
+  source: '去检查数据连接',
+  asset: '去登记模块',
+  tools: '去配置取证方法',
+  playbook: '去排障规则库',
+  acceptance: '去负责人验收',
+}[onboardingReadiness.value?.nextStep?.action || 'source']))
+
 const selectedAssetRows = computed(() => {
   const entry = selectedSetupModule.value
   if (!entry) return []
@@ -1210,16 +1318,6 @@ function moduleOriginLabel(entry: SetupModuleEntry) {
 function moduleOriginTagType(entry: SetupModuleEntry): 'success' | 'info' | 'warning' {
   if (!entry.asset) return 'warning'
   return entry.asset.origin === 'WORKSPACE' ? 'success' : 'info'
-}
-
-function moduleStateLabel(entry: SetupModuleEntry) {
-  if (!entry.asset) return '待登记'
-  return entry.asset.enabled ? '已启用' : '已停用'
-}
-
-function moduleStateTagType(entry: SetupModuleEntry): 'success' | 'info' | 'warning' {
-  if (!entry.asset) return 'warning'
-  return entry.asset.enabled ? 'success' : 'info'
 }
 
 function openModuleEntryConfig(entry: SetupModuleEntry) {
@@ -1438,12 +1536,20 @@ async function loadCatalog() {
   loading.value = true
   error.value = ''
   try {
-    const [catalogResponse, assetResponse] = await Promise.all([
+    const playbookRequest = troubleshootingApi.listSops?.({
+      status: 'approved',
+      limit: 500,
+    })
+    const [catalogResponse, assetResponse, playbookResponse] = await Promise.all([
       troubleshootingApi.evidenceCatalog(),
       troubleshootingApi.observabilityAssets(),
+      playbookRequest && typeof playbookRequest.then === 'function'
+        ? playbookRequest.catch(() => null)
+        : Promise.resolve(null),
     ])
     catalog.value = catalogResponse.data
     assetCatalog.value = assetResponse.data
+    playbooks.value = playbookResponse?.data || null
     const preferredSystem = typeof route.query.system === 'string' ? route.query.system : ''
     const preferredService = typeof route.query.service === 'string' ? route.query.service : ''
     const preferred = setupModules.value.find(entry =>
@@ -1463,6 +1569,46 @@ async function loadCatalog() {
   } finally {
     loading.value = false
   }
+}
+
+function openModuleOnboarding(entry: SetupModuleEntry) {
+  onboardingTarget.value = entry
+  onboardingDialogOpen.value = true
+}
+
+function continueModuleOnboarding() {
+  const target = onboardingTarget.value
+  const next = onboardingReadiness.value?.nextStep
+  if (!target || !next) return
+  onboardingDialogOpen.value = false
+  if (next.action === 'asset') {
+    openModuleEntryConfig(target)
+    return
+  }
+  if (next.action === 'source') {
+    selectSetupSection('source')
+    return
+  }
+  if (next.action === 'tools') {
+    void router.push({
+      path: route.path,
+      query: {
+        ...route.query,
+        section: 'tools',
+        system: target.system,
+        service: target.service,
+      },
+    })
+    return
+  }
+  if (next.action === 'playbook') {
+    void router.push({
+      path: '/troubleshooting/sops',
+      query: { returnTo: route.fullPath, system: target.system, service: target.service },
+    })
+    return
+  }
+  openGuanceValidation({ system: target.system, service: target.service })
 }
 
 function openNewSystem() {
@@ -1615,10 +1761,18 @@ function formatTrialTimeout(milliseconds: number) {
   return `${milliseconds} 毫秒`
 }
 
-function openGuanceValidation() {
+function openGuanceValidation(scope?: { system: string; service: string }) {
   const returnTo = safeTroubleshootingReturnPath(route.query.returnTo)
     || '/troubleshooting?view=list'
-  void router.push(workbenchOverlayLocation('guance', returnTo))
+  const location = workbenchOverlayLocation('guance', returnTo)
+  void router.push({
+    ...location,
+    query: {
+      ...location.query,
+      ...(scope?.system ? { system: scope.system } : {}),
+      ...(scope?.service ? { service: scope.service } : {}),
+    },
+  })
 }
 
 function openRouteEditor(row: ContractRow) {
@@ -1727,6 +1881,73 @@ onMounted(loadCatalog)
 .table-detail-trigger:hover b { color: var(--mc-primary); }
 .compact-cell b { font-weight: 600; }
 .readiness-count { font: 650 12px var(--mc-font-mono, monospace); }
+.onboarding-progress-trigger {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.onboarding-progress-trigger b {
+  color: var(--mc-primary);
+  font: 700 13px var(--mc-font-mono, monospace);
+}
+.onboarding-progress-trigger small {
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.onboarding-progress-trigger:hover small { color: var(--mc-primary); }
+.onboarding-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--mc-border-light);
+}
+.onboarding-dialog-heading small { color: var(--mc-primary); font-weight: 700; }
+.onboarding-dialog-heading h3 { margin: 5px 0; color: var(--mc-text-primary); font-size: 20px; }
+.onboarding-dialog-heading p { margin: 0; color: var(--mc-text-secondary); font-size: 12px; }
+.onboarding-step-list { display: grid; gap: 0; margin: 18px 0; border-top: 1px solid var(--mc-border-light); }
+.onboarding-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--mc-border-light);
+}
+.onboarding-step-index {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--mc-border);
+  border-radius: 50%;
+  color: var(--mc-text-secondary);
+  background: var(--mc-bg-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+.onboarding-step.done .onboarding-step-index {
+  border-color: color-mix(in srgb, var(--mc-success, #2f7d67) 35%, transparent);
+  color: var(--mc-success, #2f7d67);
+  background: color-mix(in srgb, var(--mc-success, #2f7d67) 10%, var(--mc-bg));
+}
+.onboarding-step.unknown .onboarding-step-index {
+  border-style: dashed;
+  color: var(--mc-warning, #9b6a28);
+}
+.onboarding-step-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.onboarding-step-title b { color: var(--mc-text-primary); font-size: 13px; }
+.onboarding-step-title em { color: var(--mc-text-tertiary); font-size: 10.5px; font-style: normal; }
+.onboarding-step.done .onboarding-step-title em { color: var(--mc-success, #2f7d67); }
+.onboarding-step.unknown .onboarding-step-title em { color: var(--mc-warning, #9b6a28); }
+.onboarding-step p { margin: 5px 0 0; color: var(--mc-text-secondary); font-size: 11.5px; line-height: 1.55; }
 .status-cell { display: grid; justify-items: start; gap: 5px; }
 .status-cell small { color: var(--mc-text-secondary); font-size: 10.5px; line-height: 1.35; }
 .source-checks { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { nextSopStatus, parseCandidateSopJson } from '../sopRegistry'
+import type { SopSummary } from '@/api'
+import { findScopedSopSummary, nextSopStatus, parseCandidateSopJson } from '../sopRegistry'
 
 const base = {
   sopId: 'sop-903001-v2',
@@ -54,5 +55,17 @@ describe('nextSopStatus', () => {
     expect(nextSopStatus('candidate')).toBe('approved')
     expect(nextSopStatus('approved')).toBe('deprecated')
     expect(nextSopStatus('deprecated')).toBeNull()
+  })
+})
+
+describe('findScopedSopSummary', () => {
+  it('selects only the exact system and service requested by an onboarding deep link', () => {
+    const rows = [
+      { ...base, routeKey: 'csdp:903001', operational: true },
+      { ...base, routeKey: 'csdp:904003', errorCode: '904003', service: 'csdp-wechat', operational: true },
+    ] as unknown as SopSummary[]
+
+    expect(findScopedSopSummary(rows, 'csdp', 'CSDP-WECHAT')?.routeKey).toBe('csdp:904003')
+    expect(findScopedSopSummary(rows, 'CSDP', 'missing-service')).toBeNull()
   })
 })

@@ -4,6 +4,8 @@ import type { EvidenceQueryCatalog, ObservabilityAssetCatalog } from '@/api'
 
 const evidenceCatalog = vi.fn()
 const observabilityAssets = vi.fn()
+const listSops = vi.fn()
+const routerPush = vi.fn()
 const routeState = {
   path: '/troubleshooting/observability-assets',
   query: { section: 'modules' },
@@ -14,6 +16,7 @@ vi.mock('@/api', () => ({
   troubleshootingApi: {
     evidenceCatalog: () => evidenceCatalog(),
     observabilityAssets: () => observabilityAssets(),
+    listSops: () => listSops(),
   },
 }))
 
@@ -28,7 +31,7 @@ vi.mock('element-plus', () => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
-  useRouter: () => ({ push: vi.fn(), resolve: () => ({ fullPath: '/troubleshooting' }) }),
+  useRouter: () => ({ push: routerPush, resolve: () => ({ fullPath: '/troubleshooting' }) }),
 }))
 
 describe('observability asset create flow', () => {
@@ -132,6 +135,102 @@ describe('observability asset create flow', () => {
       host.remove()
     }
   })
+
+  it('shows the exact five-step onboarding progress and the next missing fact', async () => {
+    routerPush.mockClear()
+    routeState.query.section = 'modules'
+    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
+    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
+    listSops.mockResolvedValue({ data: [] })
+
+    const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp(Page)
+    app.component('ElButton', buttonStub)
+    app.component('ElInput', inputStub)
+    app.component('ElDialog', dialogStub)
+    app.component('ElTable', tableStub)
+    app.component('ElTableColumn', tableColumnStub)
+    app.mount(host)
+    await settle()
+
+    expect(host.textContent).toContain('3/5')
+    const progressButton = [...host.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('查看进度'))
+    expect(progressButton).toBeTruthy()
+    progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(host.textContent).toContain('还没有该模块可命中的已审核排障方案')
+    expect(host.textContent).toContain('负责人已确认查询口径')
+    const continueButton = [...host.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('去排障规则库'))
+    expect(continueButton).toBeTruthy()
+    continueButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/troubleshooting/sops',
+      query: expect.objectContaining({ system: 'CSDP', service: 'csdp-task' }),
+    })
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('opens owner acceptance with the selected system and service', async () => {
+    routerPush.mockClear()
+    routeState.query.section = 'modules'
+    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
+    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
+    listSops.mockResolvedValue({
+      data: [{
+        sopId: 'cti-v1',
+        routeKey: 'csdp:701018',
+        system: 'CSDP',
+        service: 'csdp-task',
+        errorCode: '701018',
+        status: 'approved',
+        verified: true,
+        operational: true,
+        createTime: '2026-08-10T00:00:00Z',
+        updateTime: '2026-08-10T00:00:00Z',
+        knowledgeEvidenceGrade: 'RECORDED_AGGREGATE',
+      }],
+    })
+
+    const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp(Page)
+    app.component('ElButton', buttonStub)
+    app.component('ElInput', inputStub)
+    app.component('ElDialog', dialogStub)
+    app.component('ElTable', tableStub)
+    app.component('ElTableColumn', tableColumnStub)
+    app.mount(host)
+    await settle()
+
+    const progressButton = [...host.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('查看进度'))
+    progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    const continueButton = [...host.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('去负责人验收'))
+    expect(continueButton).toBeTruthy()
+    continueButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({
+      path: '/troubleshooting',
+      query: expect.objectContaining({
+        capability: 'guance',
+        system: 'CSDP',
+        service: 'csdp-task',
+      }),
+    }))
+
+    app.unmount()
+    host.remove()
+  })
 })
 
 const buttonStub = defineComponent({
@@ -228,6 +327,40 @@ function catalogWithSelectedModule(): EvidenceQueryCatalog {
 
 function emptyAssets(): ObservabilityAssetCatalog {
   return { workspaceId: '1', assets: [], contracts: [] } as unknown as ObservabilityAssetCatalog
+}
+
+function workspaceAssetsWithTool(): ObservabilityAssetCatalog {
+  return {
+    workspaceId: '1',
+    assets: [{
+      assetId: 'asset-csdp-task',
+      origin: 'WORKSPACE',
+      workspaceId: '1',
+      system: 'CSDP',
+      service: 'csdp-task',
+      displayName: 'CSDP Task',
+      platform: 'guance',
+      environment: 'prd',
+      region: null,
+      cluster: null,
+      namespace: null,
+      enabled: true,
+      signalBindings: { log_search: 'cti-log-search-v1' },
+      parameters: {},
+      version: 1,
+      changedBy: 'owner',
+      reason: '接入 CTI 场景',
+      changedAt: '2026-08-10T00:00:00Z',
+    }],
+    contracts: [{
+      contractRef: 'cti-log-search-v1',
+      signalKind: 'log_search',
+      scenario: 'CTI 创建会话失败',
+      question: '是否存在失败日志',
+      summary: '查询 CTI 失败日志',
+      requiredAssetParameters: [],
+    }],
+  } as unknown as ObservabilityAssetCatalog
 }
 
 function catalogWithToolAndSource(): EvidenceQueryCatalog {

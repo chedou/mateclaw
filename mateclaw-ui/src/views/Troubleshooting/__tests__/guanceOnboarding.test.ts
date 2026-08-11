@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGuanceOnboardingGuide,
+  evidenceOnboardingRequestForScope,
   canAttachGuanceResultToDiagnosis,
   guanceOnboardingScopeKey,
   isActiveGuanceValidationSession,
@@ -105,6 +106,36 @@ describe('formal Guance onboarding', () => {
       ...base,
       occurredAt: '2026-08-01T10:23:15+08:00',
     }).occurredAt).toBe('2026-08-01T10:23:15+08:00')
+  })
+
+  it('opens owner acceptance with the exact module scope from the onboarding link', () => {
+    const base = {
+      system: 'CSDP',
+      service: 'csdp-session-service',
+      searchTerm: 'message_send_failed',
+      window: '-15m',
+      occurredAt: '2026-08-07T17:12:00+08:00',
+    }
+
+    expect(evidenceOnboardingRequestForScope(base, {
+      system: ' CSDP ',
+      service: ' csdp-wechat ',
+    })).toEqual({
+      system: 'CSDP',
+      service: 'csdp-wechat',
+      searchTerm: '',
+      window: '-15m',
+      occurredAt: null,
+    })
+    expect(evidenceOnboardingRequestForScope(base, {
+      system: 'CSDP\nsecret: leaked',
+      service: 'csdp-wechat',
+    })).toEqual(base)
+
+    expect(evidenceOnboardingRequestForScope(base, {
+      system: 'CSDP',
+      service: 'csdp-session-service',
+    })).toEqual(base)
   })
 
   it('rejects an old response after the validation dialog is reopened with a new origin', () => {

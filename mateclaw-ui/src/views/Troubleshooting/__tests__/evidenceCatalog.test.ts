@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { EvidenceQueryCatalog, EvidenceQueryContract, ObservabilityAsset } from '@/api'
+import type {
+  EvidenceQueryCatalog,
+  EvidenceQueryContract,
+  ObservabilityAsset,
+  SopSummary,
+} from '@/api'
 import {
   bindingStatusLabel,
+  buildModuleOnboardingReadiness,
   buildModuleToolSetups,
   catalogSummary,
   contractMatches,
@@ -121,6 +127,25 @@ const deploymentAsset: ObservabilityAsset = {
   changedAt: null,
 }
 
+const operationalPlaybook: SopSummary = {
+  sopId: 'playbook-itgw-v2',
+  routeKey: 'csdp:904003',
+  system: 'CSDP',
+  errorCode: '904003',
+  service: 'csdp-session-service',
+  status: 'approved',
+  verified: true,
+  operational: true,
+  createTime: '2026-08-10T08:00:00Z',
+  updateTime: '2026-08-10T08:00:00Z',
+  playbookVersion: 2,
+  sourceOrigin: 'MANUAL',
+  sourceRecordId: 'manual-itgw-v2',
+  reviewId: 'review-itgw-v2',
+  reviewVersion: 1,
+  knowledgeEvidenceGrade: 'RECORDED_AGGREGATE',
+}
+
 describe('evidence query catalog presentation', () => {
   it('summarizes systems, modules, contracts and runnable contracts', () => {
     expect(catalogSummary(catalog)).toEqual({
@@ -181,6 +206,151 @@ describe('evidence query catalog presentation', () => {
       'enable', 'workspace', 'params', 'route', 'source', 'trial',
     ])
     expect(signalKindLabel('log_search')).toBe('日志检索')
+  })
+
+  it('calls a module ready for pilot only after all five onboarding facts are recorded', () => {
+    const module = {
+      ...catalog.systems[0].modules[0],
+      acceptance: {
+        ...catalog.systems[0].modules[0].acceptance,
+        status: 'ACCEPTED' as const,
+        acceptedBy: 'workspace-owner',
+        acceptedAt: '2026-08-10T09:00:00Z',
+      },
+    }
+    const asset = {
+      ...deploymentAsset,
+      origin: 'WORKSPACE' as const,
+      version: 2,
+      environment: 'prd',
+    }
+    const tools = buildModuleToolSetups({
+      options: [],
+      module,
+      asset,
+      sourceReady: true,
+    })
+
+    expect(buildModuleOnboardingReadiness({
+      entry: {
+        system: 'CSDP',
+        service: 'csdp-session-service',
+        displayName: 'CSDP 会话服务',
+        asset,
+        module,
+      },
+      tools,
+      sources: catalog.sources,
+      playbooks: [operationalPlaybook],
+    })).toMatchObject({
+      status: 'READY_FOR_PILOT',
+      completedSteps: 5,
+      totalSteps: 5,
+      nextStep: null,
+      steps: [
+        { code: 'SOURCE', state: 'DONE' },
+        { code: 'ASSET', state: 'DONE' },
+        { code: 'TOOLS', state: 'DONE' },
+        { code: 'PLAYBOOK', state: 'DONE' },
+        { code: 'ACCEPTANCE', state: 'DONE' },
+      ],
+    })
+  })
+
+  it('does not count another service playbook as this module onboarding progress', () => {
+    const entry = listSetupModules(catalog, [
+      { ...deploymentAsset, origin: 'WORKSPACE', version: 1, environment: 'prd' },
+    ])[0]
+    const tools = buildModuleToolSetups({
+      options: [],
+      module: entry.module,
+      asset: entry.asset,
+      sourceReady: true,
+    })
+
+    const readiness = buildModuleOnboardingReadiness({
+      entry,
+      tools,
+      sources: catalog.sources,
+      playbooks: [{ ...operationalPlaybook, service: 'csdp-wechat' }],
+    })
+
+    expect(readiness.status).toBe('NEEDS_CONFIGURATION')
+    expect(readiness.steps.find(step => step.code === 'PLAYBOOK')).toMatchObject({
+      state: 'TODO',
+      detail: '还没有该模块可命中的已审核排障方案',
+    })
+    expect(readiness.nextStep?.code).toBe('PLAYBOOK')
+  })
+
+  it('keeps an unreadable playbook registry distinct from no approved playbook', () => {
+    const entry = listSetupModules(catalog, [{
+      ...deploymentAsset,
+      origin: 'WORKSPACE',
+      version: 2,
+      environment: 'prd',
+    }])[0]
+    const tools = buildModuleToolSetups({
+      options: [],
+      module: entry.module,
+      asset: entry.asset,
+      sourceReady: true,
+    })
+    const readiness = buildModuleOnboardingReadiness({
+      entry,
+      tools,
+      sources: catalog.sources,
+      playbooks: null,
+    })
+
+    expect(readiness.steps.find(step => step.code === 'PLAYBOOK')).toMatchObject({
+      state: 'UNKNOWN',
+      detail: '当前账号未读取到排障方案状态',
+    })
+    expect(readiness.nextStep?.code).toBe('PLAYBOOK')
+  })
+
+  it('does not call replay-only module tools a real-source pilot', () => {
+    const entry = listSetupModules(catalog, [
+      { ...deploymentAsset, origin: 'WORKSPACE', version: 2, environment: 'prd' },
+    ])[0]
+    const replayTool = {
+      ...buildModuleToolSetups({
+        options: [],
+        module: entry.module,
+        asset: entry.asset,
+        sourceReady: true,
+      })[0],
+      status: 'READY' as const,
+      contract: {
+        ...contract,
+        route: {
+          ...contract.route,
+          platforms: ['recorded-replay'],
+        },
+      },
+    }
+    const readiness = buildModuleOnboardingReadiness({
+      entry: {
+        ...entry,
+        module: {
+          ...entry.module!,
+          acceptance: {
+            ...entry.module!.acceptance,
+            status: 'ACCEPTED',
+          },
+        },
+      },
+      tools: [replayTool],
+      sources: catalog.sources,
+      playbooks: [operationalPlaybook],
+    })
+
+    expect(readiness.status).toBe('NEEDS_CONFIGURATION')
+    expect(readiness.steps.find(step => step.code === 'SOURCE')).toMatchObject({
+      state: 'TODO',
+      detail: '当前模块的已启用方法还没有路由到可用的真实数据源',
+    })
   })
 
   it('tells operators the next action for a module', () => {

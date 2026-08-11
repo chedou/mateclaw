@@ -2,6 +2,7 @@ import type {
   EvidenceChainPreviewRequest,
   GuanceEvidenceAcceptanceView,
 } from '@/api'
+import { normalizeEvidenceChainPreviewRequest } from './evidenceRequest'
 
 export { normalizeEvidenceChainPreviewRequest } from './evidenceRequest'
 
@@ -23,6 +24,11 @@ export interface GuanceOnboardingValidationPayload {
 
 export type GuanceValidationOrigin = 'DIAGNOSIS' | 'ONBOARDING'
 
+export interface EvidenceOnboardingRouteScope {
+  system?: unknown
+  service?: unknown
+}
+
 export interface GuanceValidationSessionSnapshot {
   sessionVersion: number
   origin: GuanceValidationOrigin | null
@@ -42,6 +48,26 @@ export function guanceOnboardingScopeKey(scope: GuanceOnboardingScope): string {
 
 export function isSafeGuanceSearchTerm(searchTerm: string): boolean {
   return SAFE_T7_SEARCH_TERM.test(searchTerm.trim())
+}
+
+/** Applies only safe, complete module deep-link scope; otherwise keeps the trusted base request. */
+export function evidenceOnboardingRequestForScope(
+  request: EvidenceChainPreviewRequest,
+  scope: EvidenceOnboardingRouteScope,
+): EvidenceChainPreviewRequest {
+  const base = normalizeEvidenceChainPreviewRequest(request)
+  const system = typeof scope.system === 'string' ? scope.system.trim() : ''
+  const service = typeof scope.service === 'string' ? scope.service.trim() : ''
+  if (!SAFE_RESOURCE_IDENTIFIER.test(system) || !SAFE_RESOURCE_IDENTIFIER.test(service)) return base
+  const sameScope = base.system.toLowerCase() === system.toLowerCase()
+    && base.service.toLowerCase() === service.toLowerCase()
+  return {
+    ...base,
+    system,
+    service,
+    searchTerm: sameScope ? base.searchTerm : '',
+    occurredAt: sameScope ? base.occurredAt : null,
+  }
 }
 
 export function sameEvidenceChainLookup(

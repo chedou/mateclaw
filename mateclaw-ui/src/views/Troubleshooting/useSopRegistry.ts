@@ -8,7 +8,7 @@ import {
   type SopStatus,
   type SopSummary,
 } from '@/api'
-import { nextSopStatus, parseCandidateSopJson } from './sopRegistry'
+import { findScopedSopSummary, nextSopStatus, parseCandidateSopJson } from './sopRegistry'
 
 const SOP_STATUSES: SopStatus[] = ['candidate', 'approved', 'deprecated']
 const STATUS_LABEL: Record<SopStatus, string> = {
@@ -34,14 +34,19 @@ const EMPTY_TEMPLATE = JSON.stringify({
   actions: [],
 }, null, 2)
 
-export function useSopRegistry() {
+export function useSopRegistry(initialScope: {
+  initialSystem?: string
+  initialService?: string
+} = {}) {
   const activeDesk = ref<'registry' | 'review'>('registry')
   const rows = ref<SopSummary[]>([])
   const evidenceCoverage = ref<KnowledgeEvidenceCoverage | null>(null)
   const selectedSop = ref<SopEntry | null>(null)
   const selectedRouteKey = ref<string | null>(null)
   const statusFilter = ref<SopStatus | ''>('')
-  const systemFilter = ref('')
+  const initialSystem = initialScope.initialSystem?.trim() || ''
+  const initialService = initialScope.initialService?.trim() || ''
+  const systemFilter = ref(initialSystem)
   const listLoading = ref(false)
   const detailLoading = ref(false)
   const statusUpdating = ref(false)
@@ -90,6 +95,14 @@ export function useSopRegistry() {
   })
 
   let detailRequest = 0
+  let initialScopePending = Boolean(initialSystem && initialService)
+
+  function clearSelection() {
+    detailRequest += 1
+    selectedRouteKey.value = null
+    selectedSop.value = null
+    detailLoading.value = false
+  }
 
   async function loadList() {
     listLoading.value = true
@@ -107,13 +120,19 @@ export function useSopRegistry() {
       evidenceCoverage.value = coverageResult.status === 'fulfilled'
         ? coverageResult.value.data
         : null
+      if (initialScopePending) {
+        initialScopePending = false
+        const scoped = findScopedSopSummary(rows.value, initialSystem, initialService)
+        if (scoped) await selectSop(scoped)
+        else clearSelection()
+        return
+      }
       const selected = rows.value.find((row) => row.routeKey === selectedRouteKey.value)
       if (selected) return
       if (rows.value.length) {
         await selectSop(rows.value[0])
       } else {
-        selectedRouteKey.value = null
-        selectedSop.value = null
+        clearSelection()
       }
     } finally {
       listLoading.value = false
@@ -290,6 +309,7 @@ export function useSopRegistry() {
     selectSop,
     reload,
     clearFilters,
+    clearSelection,
     openRegister,
     registerSop,
     advanceStatus,

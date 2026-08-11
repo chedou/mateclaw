@@ -333,6 +333,7 @@ import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
 import {
   canAttachGuanceResultToDiagnosis,
+  evidenceOnboardingRequestForScope,
   type GuanceOnboardingValidationPayload,
   type GuanceValidationOrigin,
 } from './guanceOnboarding'
@@ -451,13 +452,17 @@ const {
   capture: captureValidationSession,
 } = useGuanceValidationDialog()
 const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() => {
-  return currentDiagnosisEvidenceLookup.value || {
+  const base = currentDiagnosisEvidenceLookup.value || {
     system: 'CSDP',
     service: 'csdp-session-service',
     searchTerm: 'message_send_failed',
     window: '-15m',
     occurredAt: null,
   }
+  return evidenceOnboardingRequestForScope(base, {
+    system: route.query.system,
+    service: route.query.service,
+  })
 })
 const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresentation(
   current.value?.diagnosis.evidence ?? [],

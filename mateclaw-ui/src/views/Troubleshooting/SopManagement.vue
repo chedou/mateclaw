@@ -126,8 +126,14 @@ watch(() => route.query.focus, focus => {
   void router.replace(legacyEvidenceSynthesisLocation(route.query.returnTo))
 }, { immediate: true })
 
-const registry = useSopRegistry()
+const initialSystem = queryText(route.query.system)
+const initialService = queryText(route.query.service)
+const registry = useSopRegistry({ initialSystem, initialService })
 const review = useKnowledgeReview()
+
+function queryText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 // Wire cross-workspace refresh: registry actions (register) can refresh review inbox
 registry.setRefreshReviewInbox(review.loadReviewInbox)
