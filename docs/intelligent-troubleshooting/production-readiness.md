@@ -1,6 +1,6 @@
 # 投产清单 · IT 智能排障系统
 
-> 更新时间：2026-08-09
+> 更新时间：2026-08-11
 >
 > 这份清单只回答一个问题：**在第一条真实报障进来之前，哪些事必须为真。**
 > 每一格都写明「谁做」「怎么验证」，以及**做不到时系统会怎么表现**——
@@ -10,15 +10,42 @@
 
 ## 一句话现状
 
-**挡住整个平台投产的不是 CTI 单场景代码，而是两件需要人的事**：20–30 条真实录制目标要由懂
-Guance 的 owner 填，以及一次完成当前 binding 指纹验收的内网窗口。2026-08-08 已有一张正式 CTI
-Diagnosis 持久化跑通三段 Guance-only 取证；它证明这条场景能运行，但不能替代批量目标和 owner 验收。
+**挡住整个平台投产的不是再写一个场景，而是两件需要人的事**：20–30 条真实录制目标要由懂
+Guance 的 owner 核实，以及一次完成当前 binding 指纹验收的内网窗口。CTI 创建会话失败和
+ITGW 904003 都已用正式 Diagnosis 持久化跑通三段 Guance-only 取证；它们证明两条场景能运行，
+但不能替代批量目标和 owner 验收。
 
 ```
 录制目标   0 / 20        ← 阻塞，离线可做，不用等窗口
-默认部署   Guance DISABLED ← 阻塞，需要内网窗口显式配置
-本地 CTI   1 条持久化真源竖线 ← 已观测，不等于 T7/T8 通过
-其余       已就绪
+正式默认   Guance DISABLED ← 阻塞，需要内网窗口显式配置
+真源场景   CTI + ITGW     ← 单例已观测，不等于 T7/T8 通过
+代码侧闸门 已就绪          ← 仍不会绕过 owner 和真实样本
+```
+
+---
+
+## 现在开始：首批真实试运行按这 5 步走
+
+这里要把两个数字分开：
+
+- **2 条业务场景**：是第一批让二线/三线真正使用的范围，先用 CTI 和 ITGW，不同时扩 K8s、HCI 和多 Agent。
+- **20 份录制目标**：是 T7 批量验收的最小分母，用于证明平台不是只会演示两个案例。
+
+| 步骤 | 谁来做 | 现在就做什么 | 完成标志 |
+|---|---|---|---|
+| 1. 冻结试点范围 | 业务负责人 + 二线 + 三线 | 第一批只放 CTI 和 ITGW；指定 1 名二线使用者、1 名三线复核人和 1 名 Guance owner | 人、场景和试运行时间已确定 |
+| 2. 补齐 Owner 查询口径 | Guance owner | 按建议工作表核实 20 份 service、安全检索键、查询/判据引用、binding 和保留期内故障时间 | 校验器返回 `PREPARED_NOT_EXECUTABLE / selectedCount=20` |
+| 3. 冻结服务端目标 | 开发者 | 只根据 owner 核实的稳定引用生成 server-owned target，重启后跑预检 | 运行接口返回 20–30 个与当前 binding 一致的可执行目标 |
+| 4. 走一次内网验收窗口 | Workspace owner + 开发者 | 先跑七格预检，再由 owner 对当前指纹提交 `ACCEPTED`，随后采集 20–30 份真实历史样本 | 预检全绿、验收指纹不过期、样本可回放 |
+| 5. 开小范围影子试运行 | 二线 + 三线 | 真实告警进来后由二线建单，平台只读取证和给候选结论，三线人工确认或驳回 | 不自动做生产变更；每单都有证据引用、停止原因和人工结果 |
+
+Owner 从这份建议工作表开始：
+[`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)。
+完成后的文件只放受控本地目录，**不提交仓库，不填 API Key、DQL 全文或原始日志**。
+
+```bash
+python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py \
+  --validate <受控本地目录>/t7-owner-contract-intake.local.json
 ```
 
 ---
@@ -28,7 +55,7 @@ Diagnosis 持久化跑通三段 Guance-only 取证；它证明这条场景能运
 ### A1. 填满 20–30 条录制目标 ← **唯一的关键路径**
 
 - **谁**：懂 Guance schema 的 owner（measurement、字段、阈值）。
-- **做什么**：填 `t7-owner-contract-intake.template.json`，服务端据此冻结成
+- **做什么**：优先填 `t7-owner-contract-intake.recommended.template.json`，服务端据此冻结成
   server-owned 可执行 target。
 - **怎么验证**：
   ```bash
@@ -40,9 +67,10 @@ Diagnosis 持久化跑通三段 Guance-only 取证；它证明这条场景能运
 - **做不到会怎样**：owner 验收无法提交（`GuanceEvidenceAcceptanceService` 会拒），
   真源采样闸门保持关闭。**系统不会假装能取证**。
 
-### A2. 决定首批上线的 selector 范围
+### A2. 决定首批上线的业务场景范围
 
-- 目前有 8 条已审核 Playbook（`csdp:*`）。建议第一批只放**其中 2–3 条**最熟悉的。
+- 第一批只放已有真源运行记录的 **CTI 创建会话失败**和 **ITGW 904003**。
+- 这里的 2 条是“先给谁用、先处理什么”的业务范围，不会降低 A1 的 20 份 T7 验收分母。
 - 新系统接入路径已通（无需改发布物）：注册 Playbook → 审核 → 声明取证路由。
   详见 TODO 的 P2.0 / P2.1 段。
 
