@@ -93,6 +93,12 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - Java 领域模块 `vip.mate.troubleshooting`、REST、RBAC、三方言 Flyway、状态机和持久化。
 - 903001 确定性错误码竖线，命中路零 LLM。
 - 受限 Agent miss-path：唯一只读证据工具、服务端会话、硬白名单、引用校验、abstain。
+- **OPEN_DISCOVERY 运行审计窄切片（2026-08-11）**：V197 `OpenDiscoveryRunAudit` 已在与
+  Diagnosis 创建同一事务中冻结可见/已选 approved scenario key、三类计划信号、
+  服务端迭代/证据/时长上限、实际源请求数、安全证据引用、时间和类型化 stopReason；
+  七阶段详情可直接说明“选了什么计划、发起几次查询、为什么停止”。台账不落 prompt、
+  模型输出、DQL、observed、原始日志、端点或凭据。这不等于 DiscoveryPolicy、多轮 Loop
+  Controller 或自主组合 K8s/HCI/Guance 工具已完成。
 - **正式 Web Incident Intake（2026-07-29）**：`/troubleshooting` 已提供
   `operate:troubleshooting` 权限内的“上报事件”，直接复用既有 Incident API 与同一 Diagnosis 队列；
   旧 `/troubleshooting/legacy` 保留。表单只暴露 system/service/现象/严重级别、可选错误码与 Trace
@@ -303,7 +309,8 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   以及“关闭且 outcome 已登记”后持久化原路 @ 通知；尚未完成的只是需单独平台评审的
   出站交互卡片（继续扩平台现有 `channel/wecom`，见 v4 §7.4 / D17）。
 - 完整持久化 Scenario Playbook Registry 与 DiscoveryPolicy 尚未完成；当前只落了会议正例
-  `message_send_failed` 的配置型 approved Evidence Spine 目录，用于先锁住 server-owned plan 边界。
+  `message_send_failed` 的配置型 approved Evidence Spine 目录，以及对这条受限单次路径的
+  `OpenDiscoveryRunAudit`，用于锁住 server-owned plan 和运行审计边界，不是多轮自主规划。
 - 双投影已能直接消费 Diagnosis 内既有 canonical evidence：`log_count` 产出带引用的事件量说明，
   `trace` 只作为部分异常 hop，`log_trace_bundle + contrast_sample` 可复算为有界调用链和成功样本对照；
   不新增表或第二份事实。
@@ -532,8 +539,9 @@ P2 真源门与单次只读验证（2026-07-29）已通过代码级验证：
   `contrastAvailable=false`、来源不可用及证据引用，不再把降级状态写成未采集。
 - 正式前端 `15` 个测试文件 / `119` 个测试通过，`vue-tsc --noEmit` 与 Vite 生产构建通过，构建完成
   `6270` 个模块转换；正式、Playbook 与 legacy 路由合同未改。
-- 该收口没有解除 `fixtureMode`；当前仅实现一个配置型 approved 场景目录，尚未实现完整持久化
-  Scenario Registry/Planning、DiscoveryPolicy、Loop Controller 或 Challenger。真 Guance 影响人数/
+- 该收口没有解除 `fixtureMode`；当前仅实现一个配置型 approved 场景目录和对其单次执行的
+  `OpenDiscoveryRunAudit`，尚未实现完整持久化 Scenario Registry/Planning、DiscoveryPolicy、
+  多轮 Loop Controller 或 Challenger。真 Guance 影响人数/
   BlastRadius 仍等待 T7 owner 配置与内网样本。
 
 P2 正式准入阶梯与真源耗时证据（2026-07-29）已通过代码级验证：
@@ -1293,7 +1301,7 @@ T29 ITGW 904003 错误码真源竖线（2026-08-10）：
   端点和凭据均不落库。
 - 这证明一条 904003 错误码竖线可在真实 Guance 上运行，不等于正式 T7/T8 批次验收；
   owner 目标目录仍保持 `0 / 20`。判据与接入聚焦回归 `50/50`、排障域与 Skill Manifest
-  全量回归 `864/864` 通过。
+  全量回归 `875/875` 通过。
 
 T30 模块可复制接入清单（2026-08-11）：
 
@@ -1312,6 +1320,20 @@ T30 模块可复制接入清单（2026-08-11）：
 - 本轮仅使用现有 `evidenceCatalog / observabilityAssets / listSops` 公开投影；
   没有猜测 K8s/HCI 资源，也没有把多 Agent 当作已投产主路。排障前端回归 `183/183`、
   ESLint、Snowflake 精度守卫、`vue-tsc --noEmit` 与 Vite 生产构建通过。
+
+T31 受限开放调查运行审计（2026-08-11）：
+
+- V197 新增不可变 `OpenDiscoveryRunAudit`，仅保存可见/已选 approved scenario key、
+  三类计划信号、服务端迭代/证据/时长上限、实际源请求数、安全证据引用、
+  时间和类型化 stopReason；三方言迁移均不含 prompt、模型输出、query/DQL、observed、
+  原始日志、端点或凭据。
+- `OpenDiscoveryDiagnosisPersistenceService` 把 Diagnosis 与运行台账限定在最后的短事务；
+  模型和只读取证过程不占用数据库事务。去重命中旧 Diagnosis 时不会把新运行错绑到历史聚合。
+- 七阶段详情从该台账读取“可选/已选计划、计划数据类型、三项预算、实际查询数、
+  运行耗时和精确停止原因”；旧 Diagnosis 继续显示“未记录”，不回填、不猜测。
+- 这是完整 DiscoveryPolicy / Loop Controller 的审计基础，不是自主组合 K8s/HCI/Guance
+  工具或多 Agent 已投产。排障域与 Skill Manifest 回归 `875/875`、排障前端 `183/183`、
+  `vue-tsc --noEmit` 通过。
 
 后端定向测试命令：
 

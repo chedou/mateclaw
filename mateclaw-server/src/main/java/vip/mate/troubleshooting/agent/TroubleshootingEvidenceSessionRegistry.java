@@ -34,6 +34,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 public final class TroubleshootingEvidenceSessionRegistry {
 
+    private static final List<String> APPROVED_SPINE_SIGNAL_KINDS = List.of(
+            "log_search", "log_trace_bundle", "contrast_sample");
+
     public static final String ONLINE_SEARCH_REQUEST_ID =
             EvidenceSpineStage.SEARCH.onlineRequestId();
     public static final String ONLINE_TRACE_REQUEST_ID =
@@ -144,6 +147,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
         }
         ApprovedEvidenceSpineCatalog.ApprovedSpinePlan approved = approvedPlans.resolve(
                 workspaceId, state.incident, scenarioKey);
+        state.selectPlan(approved.scenarioKey(), APPROVED_SPINE_SIGNAL_KINDS);
         EvidenceSpinePlan plan = approved.evidencePlan();
         EvidenceSpineResult spine = evidenceOrchestration.collect(
                 workspaceId, state.incident, plan, approved.permittedPlatforms());
@@ -215,6 +219,8 @@ public final class TroubleshootingEvidenceSessionRegistry {
         private final LinkedHashSet<String> toolCollectedQueryIds = new LinkedHashSet<>();
         private int requestCount;
         private String coreEvidenceFailure;
+        private String selectedScenarioKey;
+        private List<String> plannedSignalKinds = List.of();
         private volatile SessionSnapshot stableSnapshot;
 
         private SessionState(
@@ -242,7 +248,23 @@ public final class TroubleshootingEvidenceSessionRegistry {
             stableSnapshot = new SessionSnapshot(
                     List.copyOf(evidence.values()),
                     Set.copyOf(toolCollectedQueryIds),
-                    coreEvidenceFailure);
+                    coreEvidenceFailure,
+                    selectedScenarioKey,
+                    plannedSignalKinds,
+                    requestCount);
+        }
+
+        private void selectPlan(String scenarioKey, List<String> signalKinds) {
+            if (selectedScenarioKey != null
+                    && !selectedScenarioKey.equals(scenarioKey)) {
+                throw new IllegalStateException(
+                        "a triage session may select only one approved scenario plan");
+            }
+            selectedScenarioKey = scenarioKey;
+            plannedSignalKinds = List.copyOf(signalKinds);
+            // Publish before upstream collection. A timed-out or interrupted
+            // source call must not erase which server-owned plan was attempted.
+            publishStableSnapshot();
         }
 
         private void markCoreFailure(String reason) {
@@ -255,7 +277,21 @@ public final class TroubleshootingEvidenceSessionRegistry {
     public record SessionSnapshot(
             List<EvidenceResult> evidence,
             Set<String> toolCollectedQueryIds,
-            String coreEvidenceFailure) {
+            String coreEvidenceFailure,
+            String selectedScenarioKey,
+            List<String> plannedSignalKinds,
+            int sourceRequestCount) {
+
+        public SessionSnapshot {
+            evidence = List.copyOf(evidence == null ? List.of() : evidence);
+            toolCollectedQueryIds = Set.copyOf(
+                    toolCollectedQueryIds == null ? Set.of() : toolCollectedQueryIds);
+            plannedSignalKinds = List.copyOf(
+                    plannedSignalKinds == null ? List.of() : plannedSignalKinds);
+            if (sourceRequestCount < 0) {
+                throw new IllegalArgumentException("sourceRequestCount cannot be negative");
+            }
+        }
     }
 
     public record ToolCollection(

@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.projection;
 
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.agent.OpenDiscoveryRunAudit;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
@@ -68,7 +69,7 @@ public final class InvestigationTraceProjector {
             Diagnosis diagnosis,
             SopEntry frozenPlaybook,
             DiagnosisDerivation derivation) {
-        return project(diagnosis, frozenPlaybook, derivation, null);
+        return project(diagnosis, frozenPlaybook, derivation, null, null);
     }
 
     public InvestigationTraceView project(
@@ -76,6 +77,16 @@ public final class InvestigationTraceProjector {
             SopEntry frozenPlaybook,
             DiagnosisDerivation derivation,
             ScenarioEvidenceRunAudit latestEvidenceRun) {
+        return project(
+                diagnosis, frozenPlaybook, derivation, latestEvidenceRun, null);
+    }
+
+    public InvestigationTraceView project(
+            Diagnosis diagnosis,
+            SopEntry frozenPlaybook,
+            DiagnosisDerivation derivation,
+            ScenarioEvidenceRunAudit latestEvidenceRun,
+            OpenDiscoveryRunAudit openDiscoveryRun) {
         if (diagnosis == null) {
             throw new IllegalArgumentException("diagnosis is required");
         }
@@ -87,11 +98,19 @@ public final class InvestigationTraceProjector {
             throw new IllegalArgumentException(
                     "scenario evidence run must belong to the diagnosis and frozen Playbook");
         }
+        if (openDiscoveryRun != null
+                && (diagnosis.investigationMode() != InvestigationMode.OPEN_DISCOVERY
+                || !diagnosis.diagnosisId().equals(openDiscoveryRun.diagnosisId())
+                || !diagnosis.runId().equals(openDiscoveryRun.runId()))) {
+            throw new IllegalArgumentException(
+                    "open discovery run must belong to the OPEN_DISCOVERY diagnosis");
+        }
 
         List<EvidenceContractView> contracts = evidenceContracts(frozenPlaybook);
         List<AdapterAttemptView> attempts = adapterAttempts(diagnosis, frozenPlaybook);
         List<String> missingRequired = missingRequiredEvidence(contracts, diagnosis.evidence());
-        StopReasonView stopReason = stopReason(diagnosis, derivation, missingRequired);
+        StopReasonView stopReason = stopReason(
+                diagnosis, derivation, missingRequired, openDiscoveryRun);
         EvidenceRelationView evidenceRelation = evidenceRelation(diagnosis, derivation);
 
         return new InvestigationTraceView(
@@ -105,7 +124,8 @@ public final class InvestigationTraceProjector {
                         attempts,
                         missingRequired,
                         stopReason,
-                        latestEvidenceRun),
+                        latestEvidenceRun,
+                        openDiscoveryRun),
                 contracts,
                 attempts,
                 stopReason,
@@ -166,7 +186,8 @@ public final class InvestigationTraceProjector {
             List<AdapterAttemptView> attempts,
             List<String> missingRequired,
             StopReasonView stopReason,
-            ScenarioEvidenceRunAudit latestEvidenceRun) {
+            ScenarioEvidenceRunAudit latestEvidenceRun,
+            OpenDiscoveryRunAudit openDiscoveryRun) {
         List<String> evidenceRefs = diagnosis.evidence().stream()
                 .map(EvidenceResult::queryId)
                 .distinct()
@@ -201,8 +222,12 @@ public final class InvestigationTraceProjector {
         boolean legacyRoute = diagnosis.routeSemanticsProvenance()
                 == RouteSemanticsProvenance.LEGACY_DERIVED;
         StageStatus routeStatus = legacyRoute
-                || diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
-                        ? StageStatus.PARTIAL
+                ? StageStatus.PARTIAL
+                : diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
+                        ? openDiscoveryRun != null
+                                && openDiscoveryRun.selectedScenarioKey() != null
+                                        ? StageStatus.COMPLETED
+                                        : StageStatus.PARTIAL
                         : StageStatus.COMPLETED;
         stages.add(new StageView(
                 2,
@@ -212,7 +237,12 @@ public final class InvestigationTraceProjector {
                 legacyRoute
                         ? "旧合同未持久化调查模式与路由权威"
                         : diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
-                                ? "开放调查，未命中已审核 Playbook"
+                                ? openDiscoveryRun != null
+                                        && openDiscoveryRun.selectedScenarioKey() != null
+                                                ? "未命中固定排障方案，受限调查选择「"
+                                                        + openDiscoveryRun.selectedScenarioKey()
+                                                        + "」"
+                                                : "未命中固定排障方案，受限调查未选出可执行计划"
                                 : safe(diagnosis.sopTitle()),
                 null,
                 null,
@@ -224,13 +254,29 @@ public final class InvestigationTraceProjector {
                         field("路由语义来源", diagnosis.routeSemanticsProvenance()),
                         field("SOP 选择键", diagnosis.sopKey()),
                         field("冻结 Playbook", frozenRef),
-                        field("Playbook 责任方", diagnosis.sourcePlaybookOwner())),
+                        field("Playbook 责任方", diagnosis.sourcePlaybookOwner()),
+                        field("可选的受限调查计划", openDiscoveryRun == null
+                                || openDiscoveryRun.visibleScenarioKeys().isEmpty()
+                                        ? null
+                                        : String.join(", ", openDiscoveryRun.visibleScenarioKeys())),
+                        field("本次选中的调查计划", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.selectedScenarioKey()),
+                        field("最多推理轮次", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.maxIterations()),
+                        field("只读查询上限", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.maxEvidenceRequests()),
+                        field("总时长上限", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.timeBudget()),
+                        field("生产写操作", "禁用")),
                 List.of()));
 
         StageStatus contractStatus;
         if (frozenPlaybook != null) {
             contractStatus = StageStatus.COMPLETED;
         } else if (diagnosis.sourcePlaybookVersionRef() != null) {
+            contractStatus = StageStatus.PARTIAL;
+        } else if (openDiscoveryRun != null
+                && !openDiscoveryRun.plannedSignalKinds().isEmpty()) {
             contractStatus = StageStatus.PARTIAL;
         } else {
             contractStatus = StageStatus.UNRECORDED;
@@ -240,7 +286,14 @@ public final class InvestigationTraceProjector {
                 StageKey.EVIDENCE_CONTRACT,
                 "证据合同",
                 contractStatus,
-                contracts.isEmpty() ? null : contracts.size() + " 份冻结证据请求",
+                contracts.isEmpty()
+                        ? openDiscoveryRun == null
+                                || openDiscoveryRun.plannedSignalKinds().isEmpty()
+                                        ? null
+                                        : "服务端计划查 "
+                                                + openDiscoveryRun.plannedSignalKinds().size()
+                                                + " 类只读数据；可执行参数不进入该投影"
+                        : contracts.size() + " 份冻结证据请求",
                 null,
                 null,
                 null,
@@ -249,11 +302,30 @@ public final class InvestigationTraceProjector {
                                 ? null : frozenPlaybook.contractVersion()),
                         field("请求数量", contracts.isEmpty() ? null : contracts.size()),
                         field("必需请求", contracts.isEmpty() ? null : contracts.stream()
-                                .filter(EvidenceContractView::required).count())),
+                                .filter(EvidenceContractView::required).count()),
+                        field("计划查询的数据", openDiscoveryRun == null
+                                || openDiscoveryRun.plannedSignalKinds().isEmpty()
+                                        ? null
+                                        : String.join(" → ",
+                                                openDiscoveryRun.plannedSignalKinds())),
+                        field("可执行查询参数", openDiscoveryRun == null
+                                ? null : "由服务端审核计划保管，不暴露给模型或该投影")),
                 List.of()));
 
         Set<String> sources = new LinkedHashSet<>();
         attempts.forEach(attempt -> sources.add(attempt.adapterSource()));
+        java.time.Instant collectionStartedAt = latestEvidenceRun != null
+                ? latestEvidenceRun.startedAt()
+                : openDiscoveryRun == null ? null : openDiscoveryRun.startedAt();
+        java.time.Instant collectionCompletedAt = latestEvidenceRun != null
+                ? latestEvidenceRun.completedAt()
+                : openDiscoveryRun == null ? null : openDiscoveryRun.completedAt();
+        java.time.Duration collectionDuration = latestEvidenceRun != null
+                ? latestEvidenceRun.duration()
+                : openDiscoveryRun == null ? null : openDiscoveryRun.duration();
+        String evidenceRunId = latestEvidenceRun != null
+                ? latestEvidenceRun.runId()
+                : openDiscoveryRun == null ? null : openDiscoveryRun.runId();
         stages.add(new StageView(
                 4,
                 StageKey.ADAPTER_SELECTION,
@@ -288,18 +360,20 @@ public final class InvestigationTraceProjector {
                                         .filter(item -> item.status() == EvidenceStatus.MISSING)
                                         .count()
                                 + " 份缺失",
-                latestEvidenceRun == null ? null : latestEvidenceRun.startedAt(),
-                latestEvidenceRun == null ? null : latestEvidenceRun.completedAt(),
-                latestEvidenceRun == null ? null : latestEvidenceRun.duration(),
+                collectionStartedAt,
+                collectionCompletedAt,
+                collectionDuration,
                 List.of(
-                        field("本次运行编号", latestEvidenceRun == null
-                                ? null : latestEvidenceRun.runId()),
+                        field("本次运行编号", evidenceRunId),
                         field("证据数量", diagnosis.evidence().isEmpty()
                                 ? null : diagnosis.evidence().size()),
                         field("缺失必需请求", missingRequired.isEmpty()
                                 ? null : String.join(", ", missingRequired)),
-                        field("本次只读取证耗时", latestEvidenceRun == null
-                                ? null : latestEvidenceRun.duration()),
+                        field("本次只读取证耗时", collectionDuration),
+                        field("实际发起的只读查询", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.sourceRequestCount()),
+                        field("只读查询上限", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.maxEvidenceRequests()),
                         field("写操作", "禁用")),
                 evidenceRefs));
 
@@ -365,7 +439,11 @@ public final class InvestigationTraceProjector {
     private StopReasonView stopReason(
             Diagnosis diagnosis,
             DiagnosisDerivation derivation,
-            List<String> missingRequired) {
+            List<String> missingRequired,
+            OpenDiscoveryRunAudit openDiscoveryRun) {
+        if (openDiscoveryRun != null) {
+            return openDiscoveryStopReason(openDiscoveryRun);
+        }
         StopReasonCode code;
         String message;
         if (diagnosis.conclusionType() != ConclusionType.INSUFFICIENT_EVIDENCE) {
@@ -389,6 +467,46 @@ public final class InvestigationTraceProjector {
                 code == StopReasonCode.EVIDENCE_MISSING
                         ? missingRequired
                         : relatedConclusionEvidence(diagnosis, derivation));
+    }
+
+    private StopReasonView openDiscoveryStopReason(OpenDiscoveryRunAudit run) {
+        StopReasonCode code;
+        String message;
+        switch (run.stopReason()) {
+            case VERIFIABLE_HYPOTHESIS -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "已形成带可验证证据引用的候选判断，等待人工确认";
+            }
+            case CORE_EVIDENCE_INCOMPLETE -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "核心证据链不完整，系统已停止判断并转人工深查";
+            }
+            case AGENT_INVOCATION_FAILED -> {
+                code = StopReasonCode.SOURCE_UNAVAILABLE;
+                message = "受限调查 Agent 调用失败，已停止并转人工深查";
+            }
+            case TIME_BUDGET_EXHAUSTED -> {
+                code = StopReasonCode.SOURCE_UNAVAILABLE;
+                message = "达到 " + run.timeBudget().toSeconds()
+                        + " 秒时长上限，系统已停止继续查询";
+            }
+            case NO_VERIFIABLE_CITATIONS -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "没有可验证的证据引用，系统已停止判断";
+            }
+            case INVALID_AGENT_OUTPUT -> {
+                code = StopReasonCode.ABSTAINED;
+                message = "调查结果不完整或无法解析，系统已弃权";
+            }
+            case AGENT_ABSTAINED -> {
+                code = StopReasonCode.ABSTAINED;
+                message = "受限调查主动弃权：现有证据不足以支持候选判断";
+            }
+            default -> throw new IllegalStateException(
+                    "unsupported open discovery stop reason: " + run.stopReason());
+        }
+        return new StopReasonView(
+                code, message, run.completedAt(), run.evidenceRefs());
     }
 
     private EvidenceRelationView evidenceRelation(

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import vip.mate.troubleshooting.agent.OpenDiscoveryRunAudit;
+import vip.mate.troubleshooting.agent.OpenDiscoveryRunAuditService;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
 import vip.mate.troubleshooting.model.BlastRadius;
@@ -72,6 +74,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private ScenarioEvidenceRunAuditService runAudits;
 
+    @Mock
+    private OpenDiscoveryRunAuditService openDiscoveryRuns;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -83,7 +88,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 topologyScenarioPolicy,
                 playbookVersions,
                 new InvestigationTraceProjector(),
-                runAudits);
+                runAudits,
+                openDiscoveryRuns);
     }
 
     @Test
@@ -364,6 +370,40 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(InvestigationMode.OPEN_DISCOVERY);
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.MODEL_PROPOSED);
+    }
+
+    @Test
+    void loadsTheImmutableOpenDiscoveryRunIntoTheDeveloperTrace() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(abstainedDiagnosis(), 0, true));
+        when(openDiscoveryRuns.latest(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(Optional.of(new OpenDiscoveryRunAudit(
+                        "run-1",
+                        DIAGNOSIS_ID,
+                        List.of("message_send_failed"),
+                        "message_send_failed",
+                        List.of("log_search", "log_trace_bundle", "contrast_sample"),
+                        6,
+                        6,
+                        2,
+                        java.time.Duration.ofSeconds(20),
+                        OpenDiscoveryRunAudit.StopReason.CORE_EVIDENCE_INCOMPLETE,
+                        List.of("ONLINE-LOG-SEARCH"),
+                        READY_AT,
+                        READY_AT.plusSeconds(3),
+                        "agent:88")));
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.developerEvidence().investigationTrace().stages())
+                .filteredOn(stage -> stage.key()
+                        == InvestigationTraceView.StageKey.PLAYBOOK_ROUTE)
+                .singleElement()
+                .satisfies(stage -> assertThat(stage.summary())
+                        .contains("受限调查").contains("message_send_failed"));
+        assertThat(result.developerEvidence().investigationTrace().stopReason().message())
+                .contains("核心证据链不完整");
+        verify(runAudits, never()).latest(WORKSPACE_ID, DIAGNOSIS_ID);
     }
 
     @Test

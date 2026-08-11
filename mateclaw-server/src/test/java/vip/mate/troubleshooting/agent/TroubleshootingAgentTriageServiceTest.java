@@ -23,7 +23,6 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
-import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 
 import java.time.Clock;
@@ -61,7 +60,7 @@ class TroubleshootingAgentTriageServiceTest {
     @Mock private AgentService agentService;
     @Mock private AgentBindingService bindingService;
     @Mock private EvidenceSourceRouter evidenceRouter;
-    @Mock private TroubleshootingPersistenceService persistence;
+    @Mock private OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence;
     @Mock private ChatStreamTracker streamTracker;
 
     private TroubleshootingAgentProperties properties;
@@ -97,7 +96,7 @@ class TroubleshootingAgentTriageServiceTest {
                 new DiagnosisStateMachine(
                         Clock.fixed(NOW, ZoneOffset.UTC),
                         prefix -> prefix + "-fixed"),
-                persistence,
+                openDiscoveryPersistence,
                 objectMapper,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 streamTracker);
@@ -106,7 +105,9 @@ class TroubleshootingAgentTriageServiceTest {
         lenient().when(agentService.getAgent(AGENT_ID)).thenReturn(agent);
         lenient().when(bindingService.getBoundToolNames(AGENT_ID))
                 .thenReturn(Set.of(TroubleshootingEvidenceTool.BINDING_NAME));
-        lenient().when(persistence.createOrGet(anyLong(), any(Diagnosis.class), any()))
+        lenient().when(openDiscoveryPersistence.persist(
+                        anyLong(), any(Diagnosis.class), any(), any(),
+                        any(OpenDiscoveryRunAudit.class)))
                 .thenAnswer(invocation ->
                         new StoredDiagnosis(invocation.getArgument(1), 0, true));
     }
@@ -181,6 +182,54 @@ class TroubleshootingAgentTriageServiceTest {
         verify(agentService).chatWithToolAllowlist(
                 eq(AGENT_ID), any(), any(), any(ChatOrigin.class),
                 eq(Set.of(TroubleshootingEvidenceTool.FUNCTION_NAME)));
+    }
+
+    @Test
+    void persistsTheBoundedOpenDiscoveryRunThatActuallyExecuted() {
+        when(evidenceRouter.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), any(IncidentContext.class),
+                eq(Set.of("recorded-replay"))))
+                .thenAnswer(invocation -> spineEvidence(invocation.getArgument(1)));
+        when(agentService.chatWithToolAllowlist(
+                eq(AGENT_ID), any(), any(), any(ChatOrigin.class),
+                eq(Set.of(TroubleshootingEvidenceTool.FUNCTION_NAME))))
+                .thenAnswer(invocation -> {
+                    collectApprovedSpine(invocation.getArgument(2));
+                    return """
+                            {"summary":"已取得可复核线索","hypothesis":"消息发送链路异常",
+                             "confidence":"MEDIUM","abstain":false,
+                             "evidenceQueryIds":["ONLINE-LOG-SEARCH","ONLINE-TRACE-BUNDLE",
+                             "ONLINE-CONTRAST-SAMPLE"]}
+                            """;
+                });
+
+        StoredDiagnosis stored = service.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "no deterministic route");
+
+        var auditCaptor = org.mockito.ArgumentCaptor.forClass(OpenDiscoveryRunAudit.class);
+        verify(openDiscoveryPersistence).persist(
+                eq(WORKSPACE_ID), eq(stored.diagnosis()), any(), eq(null),
+                auditCaptor.capture());
+        OpenDiscoveryRunAudit audit = auditCaptor.getValue();
+        assertThat(audit.diagnosisId()).isEqualTo(stored.diagnosis().diagnosisId());
+        assertThat(audit.runId()).isEqualTo(stored.diagnosis().runId());
+        assertThat(audit.visibleScenarioKeys()).containsExactly("message_send_failed");
+        assertThat(audit.selectedScenarioKey()).isEqualTo("message_send_failed");
+        assertThat(audit.plannedSignalKinds()).containsExactly(
+                "log_search", "log_trace_bundle", "contrast_sample");
+        assertThat(audit.maxIterations()).isEqualTo(6);
+        assertThat(audit.maxEvidenceRequests()).isEqualTo(6);
+        assertThat(audit.sourceRequestCount()).isEqualTo(3);
+        assertThat(audit.timeBudget()).isEqualTo(Duration.ofSeconds(20));
+        assertThat(audit.stopReason())
+                .isEqualTo(OpenDiscoveryRunAudit.StopReason.VERIFIABLE_HYPOTHESIS);
+        assertThat(audit.evidenceRefs()).containsExactly(
+                TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
+                TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
+                TroubleshootingEvidenceSessionRegistry.ONLINE_CONTRAST_REQUEST_ID);
+        assertThat(audit.startedAt()).isEqualTo(NOW);
+        assertThat(audit.completedAt()).isEqualTo(NOW);
+        assertThat(audit.actorRef()).isEqualTo("agent:" + AGENT_ID);
     }
 
     @Test
@@ -438,7 +487,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .satisfies(error -> assertThat(((MateClawException) error).getCode()).isEqualTo(409))
                 .hasMessageContaining("native search disabled");
 
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -455,7 +504,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .satisfies(error -> assertThat(((MateClawException) error).getCode()).isEqualTo(409))
                 .hasMessageContaining("missing API key");
 
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -472,7 +521,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .satisfies(error -> assertThat(((MateClawException) error).getCode()).isEqualTo(409))
                 .hasMessageContaining("required tools unavailable");
 
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -551,7 +600,7 @@ class TroubleshootingAgentTriageServiceTest {
 
         verify(agentService, never()).chatWithToolAllowlist(
                 anyLong(), any(), any(), any(), any());
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -667,7 +716,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .hasMessageContaining("limits are not configured");
 
         verify(agentService, never()).chatWithToolAllowlist(anyLong(), any(), any(), any(), any());
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -681,7 +730,7 @@ class TroubleshootingAgentTriageServiceTest {
 
         verify(agentService, never()).chatWithToolAllowlist(
                 anyLong(), any(), any(), any(), any());
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -695,7 +744,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .hasMessageContaining("read-only tool binding");
 
         verify(agentService, never()).chatWithToolAllowlist(anyLong(), any(), any(), any(), any());
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test
@@ -711,7 +760,7 @@ class TroubleshootingAgentTriageServiceTest {
                 .hasMessageContaining("workspace-local");
 
         verify(agentService, never()).chatWithToolAllowlist(anyLong(), any(), any(), any(), any());
-        verifyNoInteractions(persistence);
+        verifyNoInteractions(openDiscoveryPersistence);
     }
 
     @Test

@@ -19,7 +19,6 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
-import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
@@ -79,7 +78,7 @@ public final class TroubleshootingAgentTriageService {
     private final AgentBindingService bindingService;
     private final TroubleshootingEvidenceSessionRegistry sessions;
     private final DiagnosisStateMachine stateMachine;
-    private final TroubleshootingPersistenceService persistence;
+    private final OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence;
     private final ObjectMapper objectMapper;
     private final TroubleshootingEvidenceModelProjector modelEvidenceProjector;
     private final Clock clock;
@@ -92,12 +91,13 @@ public final class TroubleshootingAgentTriageService {
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
             DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             ChatStreamTracker streamTracker) {
         this(properties, agentService, bindingService, sessions, stateMachine,
-                persistence, objectMapper, modelEvidenceProjector, Clock.systemUTC(), streamTracker);
+                openDiscoveryPersistence, objectMapper, modelEvidenceProjector,
+                Clock.systemUTC(), streamTracker);
     }
 
     TroubleshootingAgentTriageService(
@@ -106,25 +106,12 @@ public final class TroubleshootingAgentTriageService {
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
             DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence,
-            ObjectMapper objectMapper,
-            Clock clock) {
-        this(properties, agentService, bindingService, sessions, stateMachine,
-                persistence, objectMapper, clock, null);
-    }
-
-    TroubleshootingAgentTriageService(
-            TroubleshootingAgentProperties properties,
-            AgentService agentService,
-            AgentBindingService bindingService,
-            TroubleshootingEvidenceSessionRegistry sessions,
-            DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
             Clock clock,
             ChatStreamTracker streamTracker) {
         this(properties, agentService, bindingService, sessions, stateMachine,
-                persistence, objectMapper,
+                openDiscoveryPersistence, objectMapper,
                 new TroubleshootingEvidenceModelProjector(
                         new DeterministicLogTraceCompressor()),
                 clock,
@@ -137,21 +124,7 @@ public final class TroubleshootingAgentTriageService {
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
             DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence,
-            ObjectMapper objectMapper,
-            TroubleshootingEvidenceModelProjector modelEvidenceProjector,
-            Clock clock) {
-        this(properties, agentService, bindingService, sessions, stateMachine,
-                persistence, objectMapper, modelEvidenceProjector, clock, null);
-    }
-
-    TroubleshootingAgentTriageService(
-            TroubleshootingAgentProperties properties,
-            AgentService agentService,
-            AgentBindingService bindingService,
-            TroubleshootingEvidenceSessionRegistry sessions,
-            DiagnosisStateMachine stateMachine,
-            TroubleshootingPersistenceService persistence,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             Clock clock,
@@ -161,7 +134,7 @@ public final class TroubleshootingAgentTriageService {
         this.bindingService = bindingService;
         this.sessions = sessions;
         this.stateMachine = stateMachine;
-        this.persistence = persistence;
+        this.openDiscoveryPersistence = openDiscoveryPersistence;
         this.objectMapper = objectMapper;
         this.modelEvidenceProjector = modelEvidenceProjector;
         this.clock = clock;
@@ -247,6 +220,8 @@ public final class TroubleshootingAgentTriageService {
                 : suppliedEvidence.stream()
                         .map(TroubleshootingSecretRedactor::redact)
                         .toList();
+        List<String> visibleScenarioKeys =
+                sessions.approvedScenarioKeys(workspaceId, sanitizedIncident);
         String correlationId = UUID.randomUUID().toString().replace("-", "");
         String conversationId = "troubleshooting-triage-" + correlationId;
         ChatOrigin origin = ChatOrigin.web(
@@ -255,6 +230,7 @@ public final class TroubleshootingAgentTriageService {
         String modelOutput = null;
         boolean agentFailed = false;
         boolean agentTimedOut = false;
+        Instant discoveryStartedAt = clock.instant();
         PromptEnvelope prompt;
         TroubleshootingEvidenceSessionRegistry.SessionSnapshot snapshot;
         try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -267,7 +243,7 @@ public final class TroubleshootingAgentTriageService {
             // its initial snapshot so dangerous supplied queryIds are already
             // remapped exactly as they will later be persisted in Diagnosis.
             prompt = prompt(
-                    workspaceId,
+                    visibleScenarioKeys,
                     sanitizedIncident,
                     session.snapshot().evidence(),
                     routeMissReason);
@@ -355,6 +331,7 @@ public final class TroubleshootingAgentTriageService {
             confidence = response.confidence();
         }
 
+        Instant discoveryCompletedAt = clock.instant();
         AgentTriageDraft draft = new AgentTriageDraft(
                 "diag-" + correlationId,
                 "case-" + correlationId,
@@ -366,7 +343,7 @@ public final class TroubleshootingAgentTriageService {
                 hypothesis,
                 confidence,
                 forcedAbstention,
-                NorthStarTimings.concluded(reportedAt, readyAt, clock.instant()),
+                NorthStarTimings.concluded(reportedAt, readyAt, discoveryCompletedAt),
                 rehearsal,
                 // 从这批证据自己身上读。第二个参数不能省：会话快照里既有 Agent
                 // 自己通过取证脊柱取回来的，也有**调用方随请求自带的**，而后者的
@@ -375,10 +352,61 @@ public final class TroubleshootingAgentTriageService {
                         snapshot.evidence(), sanitizedSuppliedEvidence),
                 warnings);
         Diagnosis diagnosis = stateMachine.initializeAgentFallback(draft);
-        return intakeSessionId == null
-                ? persistence.createOrGet(workspaceId, diagnosis, reportedAt)
-                : persistence.createOrGetForIntake(
-                        workspaceId, diagnosis, intakeSessionId);
+        OpenDiscoveryRunAudit runAudit = new OpenDiscoveryRunAudit(
+                diagnosis.runId(),
+                diagnosis.diagnosisId(),
+                visibleScenarioKeys,
+                snapshot.selectedScenarioKey(),
+                snapshot.plannedSignalKinds(),
+                properties.getMaxIterations(),
+                properties.getMaxEvidenceRequests(),
+                snapshot.sourceRequestCount(),
+                properties.getTriageTimeout(),
+                stopReason(
+                        response,
+                        agentFailed,
+                        agentTimedOut,
+                        blankCore,
+                        citations,
+                        snapshot),
+                snapshot.evidence().stream()
+                        .map(EvidenceResult::queryId)
+                        .filter(snapshot.toolCollectedQueryIds()::contains)
+                        .toList(),
+                discoveryStartedAt,
+                discoveryCompletedAt,
+                "agent:" + agent.getId());
+        return openDiscoveryPersistence.persist(
+                workspaceId, diagnosis, reportedAt, intakeSessionId, runAudit);
+    }
+
+    private OpenDiscoveryRunAudit.StopReason stopReason(
+            AgentResponse response,
+            boolean agentFailed,
+            boolean agentTimedOut,
+            boolean blankCore,
+            List<String> citations,
+            TroubleshootingEvidenceSessionRegistry.SessionSnapshot snapshot) {
+        if (agentTimedOut) {
+            return OpenDiscoveryRunAudit.StopReason.TIME_BUDGET_EXHAUSTED;
+        }
+        if (agentFailed) {
+            return OpenDiscoveryRunAudit.StopReason.AGENT_INVOCATION_FAILED;
+        }
+        if (response == null || blankCore) {
+            return OpenDiscoveryRunAudit.StopReason.INVALID_AGENT_OUTPUT;
+        }
+        if (snapshot.coreEvidenceFailure() != null) {
+            return OpenDiscoveryRunAudit.StopReason.CORE_EVIDENCE_INCOMPLETE;
+        }
+        if (Boolean.TRUE.equals(response.abstain())
+                || response.confidence() == Confidence.LOW) {
+            return OpenDiscoveryRunAudit.StopReason.AGENT_ABSTAINED;
+        }
+        if (citations.isEmpty()) {
+            return OpenDiscoveryRunAudit.StopReason.NO_VERIFIABLE_CITATIONS;
+        }
+        return OpenDiscoveryRunAudit.StopReason.VERIFIABLE_HYPOTHESIS;
     }
 
     private AgentEntity requireSafeConfiguration(long workspaceId) {
@@ -470,12 +498,11 @@ public final class TroubleshootingAgentTriageService {
     }
 
     private PromptEnvelope prompt(
-            long workspaceId,
+            List<String> visibleScenarioKeys,
             IncidentContext incident,
             List<EvidenceResult> suppliedEvidence,
             String routeMissReason) {
-        String approvedScenarioKeys = json(
-                sessions.approvedScenarioKeys(workspaceId, incident));
+        String approvedScenarioKeys = json(visibleScenarioKeys);
         String incidentJson = untrustedPromptData(json(
                 TroubleshootingSecretRedactor.redact(incident)));
         String evidenceJson = untrustedPromptData(json(

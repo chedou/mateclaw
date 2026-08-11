@@ -892,6 +892,51 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void v197CreatesSecretFreeOpenDiscoveryRunAuditInAllDialects() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v197;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V197__troubleshooting_open_discovery_run.sql");
+
+            assertTrue(tables(connection.getMetaData())
+                    .contains("mate_troubleshooting_open_discovery_run"));
+            Set<String> columns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_open_discovery_run");
+            assertTrue(columns.containsAll(Set.of(
+                    "workspace_id", "run_id", "diagnosis_id",
+                    "visible_scenario_keys", "selected_scenario_key",
+                    "planned_signal_kinds", "max_iterations",
+                    "max_evidence_requests", "source_request_count",
+                    "time_budget_ms", "stop_reason", "evidence_refs",
+                    "actor_ref", "started_at", "completed_at")));
+            assertFalse(columns.contains("prompt"));
+            assertFalse(columns.contains("model_output"));
+            assertFalse(columns.contains("query"));
+            assertFalse(columns.contains("observed"));
+            assertFalse(columns.contains("raw_log"));
+            assertEquals(1, countIndexes(connection, "uk_ts_open_discovery_run_id"));
+            assertEquals(1, countIndexes(
+                    connection, "idx_ts_open_discovery_run_diagnosis"));
+        }
+
+        for (String dialect : List.of("mysql", "kingbase")) {
+            String migration = resourceText(
+                    "db/migration/" + dialect
+                            + "/V197__troubleshooting_open_discovery_run.sql");
+            assertTrue(migration.contains("mate_troubleshooting_open_discovery_run"));
+            assertTrue(migration.contains("stop_reason"));
+            assertFalse(migration.contains("api_key"));
+            assertFalse(migration.contains("raw_log"));
+            assertFalse(migration.contains("query_text"));
+            assertFalse(migration.contains("model_output"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

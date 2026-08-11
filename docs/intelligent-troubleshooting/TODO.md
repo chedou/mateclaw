@@ -1779,6 +1779,11 @@ v4 §10 允许这个兼容中间态，但它是迁移的一站，不是终点。
 
 ### T12 · DiscoveryPolicy
 
+- [x] 先把现有受限 miss-path 的**真实运行边界**持久化：V197
+      `OpenDiscoveryRunAudit` 只记录 workspace 可见/实际选中的 approved scenario key、三类计划信号、
+      服务端迭代/证据/时长上限、实际源请求数、安全证据引用、时间和类型化 stopReason。
+      它不保存 prompt、模型输出、DQL、日志或 observed，也不代表 DiscoveryPolicy /
+      多轮 Loop Controller 已完成（2026-08-11）。
 - [ ] OPEN_DISCOVERY 不注册成 Playbook，不拥有 selector/已批准根因。
 - [ ] Policy 只限定 allowedSignalKinds、证据调用次数、迭代、上下文和置信上限。
 - [ ] 继续只暴露唯一只读证据工具；不得因新增场景而扩大 Agent 工具面。
