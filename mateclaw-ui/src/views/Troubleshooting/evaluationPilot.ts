@@ -27,6 +27,23 @@ export interface EvaluationPilotQueueRow {
   sampleId: string | null
 }
 
+export type PilotWorkbenchPromptKind =
+  | 'SETUP'
+  | 'CREATE_FORMAL'
+  | 'CONTINUE_DIAGNOSIS'
+  | 'HANDOFF_EVALUATION'
+
+export interface PilotWorkbenchPrompt {
+  kind: PilotWorkbenchPromptKind
+  step: 1 | 2 | 3
+  title: string
+  detail: string
+  ownerLabel: string
+  actionLabel: string
+  diagnosisId: string | null
+  scope: TroubleshootingPilotPlan['modules'][number] | null
+}
+
 const STAGE_COPY: Record<EvaluationPilotStage, {
   stageLabel: string
   nextAction: string
@@ -118,6 +135,78 @@ export function buildEvaluationPilotQueue(
     })
 }
 
+/**
+ * Projects the pilot into one workbench action that every troubleshooting
+ * viewer can understand. It deliberately uses only the viewer-safe pilot plan
+ * and Diagnosis summaries; evaluation evidence stays on the admin surface.
+ */
+export function buildPilotWorkbenchPrompt(
+  diagnoses: ReadonlyArray<DiagnosisSummary>,
+  plan: TroubleshootingPilotPlan | null,
+): PilotWorkbenchPrompt {
+  if (!pilotPlanReady(plan)) {
+    const configuredButUnavailable = Boolean(plan?.configured)
+    return {
+      kind: 'SETUP',
+      step: 1,
+      title: configuredButUnavailable
+        ? '试点配置需要管理员处理'
+        : '先固定首批范围和三位负责人',
+      detail: configuredButUnavailable
+        ? '已有试点配置暂未就绪。管理员检查是否启用、调查范围和三位负责人。'
+        : '试点尚未启用。管理员先选定系统、服务和二线、三线、数据取证负责人。',
+      ownerLabel: '工作区管理员',
+      actionLabel: '配置试点',
+      diagnosisId: null,
+      scope: null,
+    }
+  }
+
+  const scopedFormal = diagnoses
+    .filter(diagnosis => !diagnosis.rehearsal)
+    .filter(diagnosis => matchesPilotScope(diagnosis, plan))
+    .sort((left, right) => sortableTime(right.updateTime) - sortableTime(left.updateTime))
+  const pending = scopedFormal.find(diagnosis => diagnosis.status !== 'CLOSED')
+
+  if (pending) {
+    return {
+      kind: 'CONTINUE_DIAGNOSIS',
+      step: 2,
+      title: '今天先推进这张正式排障单',
+      detail: `排障单 ${pending.diagnosisId} 尚未登记最终结果；先完成复核、平台外处置和关闭。`,
+      ownerLabel: plan.secondLine.displayName,
+      actionLabel: '打开这张排障单',
+      diagnosisId: pending.diagnosisId,
+      scope: scopedModule(pending, plan),
+    }
+  }
+
+  const closed = scopedFormal[0]
+  if (closed) {
+    return {
+      kind: 'HANDOFF_EVALUATION',
+      step: 3,
+      title: '正式排障已闭环，进入试点评估接力',
+      detail: `排障单 ${closed.diagnosisId} 已关闭；评估页会根据真源样本、人工答案和影子运行的已保存状态，再指出唯一下一步。`,
+      ownerLabel: `${plan.sourceOwner.displayName}、${plan.thirdLine.displayName}`,
+      actionLabel: '进入试点评估',
+      diagnosisId: closed.diagnosisId,
+      scope: scopedModule(closed, plan),
+    }
+  }
+
+  return {
+    kind: 'CREATE_FORMAL',
+    step: 2,
+    title: '试点已就绪，发起第一张正式排障单',
+    detail: '使用试点范围内的真实告警建单，并明确关闭“演练模式”。',
+    ownerLabel: plan.secondLine.displayName,
+    actionLabel: '发起首张正式排障',
+    diagnosisId: null,
+    scope: plan.modules[0] || null,
+  }
+}
+
 export function pilotPlanReady(
   plan: TroubleshootingPilotPlan | null,
 ): plan is TroubleshootingPilotPlan & {
@@ -165,6 +254,16 @@ function stageOwner(
 
 function normalizeScopePart(value: string) {
   return value.trim().toLocaleLowerCase()
+}
+
+function scopedModule(
+  diagnosis: Pick<DiagnosisSummary, 'system' | 'service'>,
+  plan: TroubleshootingPilotPlan & { modules: TroubleshootingPilotPlan['modules'] },
+) {
+  const system = normalizeScopePart(diagnosis.system)
+  const service = normalizeScopePart(diagnosis.service)
+  return plan.modules.find(module => normalizeScopePart(module.system) === system
+    && normalizeScopePart(module.service) === service) || null
 }
 
 function pilotStage(

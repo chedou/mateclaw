@@ -5,7 +5,10 @@ import type {
   EvidenceEvaluationSample,
   TroubleshootingPilotPlan,
 } from '@/api'
-import { buildEvaluationPilotQueue } from '../evaluationPilot'
+import {
+  buildEvaluationPilotQueue,
+  buildPilotWorkbenchPrompt,
+} from '../evaluationPilot'
 
 describe('evaluation pilot hand-off queue', () => {
   it('turns persisted formal diagnoses into one truthful next action', () => {
@@ -101,6 +104,76 @@ describe('evaluation pilot hand-off queue', () => {
       [run('sample-ready', 'MODEL_REJECTED', 'TECHNICAL_FAILURE')],
       pilotPlan(),
     ).at(0)?.stage).toBe('BASELINE_BLOCKED')
+  })
+})
+
+describe('pilot workbench start prompt', () => {
+  it('asks an administrator to configure the pilot before showing any case', () => {
+    const unconfigured = { ...pilotPlan(), configured: false, modules: [] }
+
+    expect(buildPilotWorkbenchPrompt([], unconfigured)).toMatchObject({
+      kind: 'SETUP',
+      step: 1,
+      ownerLabel: '工作区管理员',
+      diagnosisId: null,
+      actionLabel: '配置试点',
+    })
+  })
+
+  it('distinguishes an unavailable saved plan from a plan that was never configured', () => {
+    const disabled = { ...pilotPlan(), enabled: false }
+
+    expect(buildPilotWorkbenchPrompt([], disabled)).toMatchObject({
+      kind: 'SETUP',
+      title: '试点配置需要管理员处理',
+      detail: '已有试点配置暂未就绪。管理员检查是否启用、调查范围和三位负责人。',
+    })
+  })
+
+  it('starts the first formal incident inside the declared scope', () => {
+    expect(buildPilotWorkbenchPrompt([], pilotPlan())).toMatchObject({
+      kind: 'CREATE_FORMAL',
+      step: 2,
+      ownerLabel: '二线小周',
+      diagnosisId: null,
+      actionLabel: '发起首张正式排障',
+      scope: { system: 'csdp', service: 'csdp-wechat' },
+    })
+  })
+
+  it('points the team at the latest pending formal diagnosis only', () => {
+    const rehearsal = diagnosis('diag-rehearsal', 'READY_FOR_HUMAN', true, '2026-08-13T10:00:00Z')
+    const outOfScope = {
+      ...diagnosis('diag-other', 'READY_FOR_HUMAN', false, '2026-08-13T11:00:00Z'),
+      service: 'csdp-customer',
+    }
+    const older = diagnosis('diag-older', 'READY_FOR_HUMAN', false, '2026-08-13T08:00:00Z')
+    const latest = diagnosis('diag-latest', 'CONFIRMED', false, '2026-08-13T09:00:00Z')
+
+    expect(buildPilotWorkbenchPrompt(
+      [rehearsal, outOfScope, older, latest],
+      pilotPlan(),
+    )).toMatchObject({
+      kind: 'CONTINUE_DIAGNOSIS',
+      step: 2,
+      ownerLabel: '二线小周',
+      diagnosisId: 'diag-latest',
+      actionLabel: '打开这张排障单',
+    })
+    expect(buildPilotWorkbenchPrompt([latest], pilotPlan()).detail).toContain('排障单 diag-latest')
+  })
+
+  it('hands a closed formal diagnosis to the evidence owner', () => {
+    const closed = diagnosis('diag-closed', 'CLOSED', false, '2026-08-13T09:00:00Z')
+
+    expect(buildPilotWorkbenchPrompt([closed], pilotPlan())).toMatchObject({
+      kind: 'HANDOFF_EVALUATION',
+      step: 3,
+      ownerLabel: '观测负责人、三线小陈',
+      diagnosisId: 'diag-closed',
+      actionLabel: '进入试点评估',
+    })
+    expect(buildPilotWorkbenchPrompt([closed], pilotPlan()).detail).toContain('排障单 diag-closed')
   })
 })
 

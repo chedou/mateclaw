@@ -45,10 +45,18 @@
       :loading="listLoading"
       :can-operate="canOperateTroubleshooting"
       :can-manage="canManageTroubleshooting"
+      :pilot-plan="pilotPlan"
+      :pilot-plan-loading="pilotPlanLoading"
+      :pilot-plan-error="pilotPlanError"
       @refresh="store.loadList(false)"
       @guide="openFirstUseGuide"
       @launch="openTroubleshootingScenario"
       @open-diagnosis="openDiagnosisFromList"
+      @pilot-refresh="loadPilotPlan"
+      @pilot-setup="openEvaluationLedger"
+      @pilot-launch-formal="launchFormalPilotIncident"
+      @pilot-open-diagnosis="openPilotDiagnosis"
+      @pilot-open-evaluation="openPilotEvaluation"
       @switch-view="switchWorkbenchView('QUEUE')"
     />
 
@@ -313,6 +321,8 @@ import {
   type RecommendedAction,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
+  type TroubleshootingPilotModuleScope,
+  type TroubleshootingPilotPlan,
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import { diagnosisEvidenceSourcePresentation } from './formalProjection'
@@ -429,6 +439,9 @@ const scenarioEvidenceLoading = ref(false)
 const caseKnowledgeImportLoading = ref(false)
 const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
+const pilotPlan = ref<TroubleshootingPilotPlan | null>(null)
+const pilotPlanLoading = ref(true)
+const pilotPlanError = ref('')
 
 const scenarioLauncherOpen = ref(false)
 const firstUseGuideOpen = ref(false)
@@ -582,6 +595,47 @@ async function switchWorkbenchView(mode: WorkbenchViewSwitchMode) {
 
 async function openDiagnosisFromList(row: DiagnosisSummary) {
   await store.selectDiagnosis(row.diagnosisId, true, 'DETAIL')
+}
+
+async function loadPilotPlan() {
+  pilotPlanLoading.value = true
+  try {
+    const response = await troubleshootingApi.pilotPlan()
+    pilotPlan.value = response.data
+    pilotPlanError.value = ''
+  } catch {
+    pilotPlan.value = null
+    pilotPlanError.value = '团队试点状态暂时不可用，请稍后重试。'
+  } finally {
+    pilotPlanLoading.value = false
+  }
+}
+
+async function openPilotDiagnosis(diagnosisId: string) {
+  await store.selectDiagnosis(diagnosisId, true, 'DETAIL')
+}
+
+function launchFormalPilotIncident(scope: TroubleshootingPilotModuleScope) {
+  if (!canOperateTroubleshooting.value) return
+  resetIncidentReportForm()
+  incidentReportForm.system = scope.system
+  incidentReportForm.service = scope.service
+  incidentReportForm.rehearsal = false
+  openIncidentIntake()
+}
+
+async function openPilotEvaluation(diagnosisId: string) {
+  if (!canManageTroubleshooting.value) return
+  await store.selectDiagnosis(diagnosisId, false, 'DETAIL')
+  await router.push({
+    path: '/troubleshooting',
+    query: {
+      ...workbenchQueryWithoutCapability(),
+      view: 'detail',
+      diagnosisId,
+      capability: 'ledger',
+    },
+  })
 }
 
 function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
@@ -999,8 +1053,9 @@ async function prepareEvaluationWorkspace() {
   if (diagnosisId) await store.loadReplayCapability(diagnosisId, store.getSelectionVersion())
 }
 
-function closeCapabilityWorkspace() {
-  void router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
+async function closeCapabilityWorkspace() {
+  await router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
+  await loadPilotPlan()
 }
 
 async function openDiagnosisFromEvaluation(diagnosisId: string) {
@@ -1152,7 +1207,10 @@ watch(guanceOnboardingOpen, open => {
     delete query.capability
     void router.replace({ path: '/troubleshooting', query })
 })
-onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
+onMounted(() => {
+  void store.loadList(isDiagnosisViewMode(viewMode.value))
+  void loadPilotPlan()
+})
 </script>
 
 <style scoped>

@@ -22,6 +22,70 @@
       </div>
     </header>
 
+    <section v-if="pilotPlanError" class="pilot-workbench-strip pilot-load-error" aria-live="polite">
+      <div class="pilot-copy">
+        <span>团队试点</span>
+        <h2>暂时没有读到试点状态</h2>
+        <p>{{ pilotPlanError }} 排障列表仍可正常使用。</p>
+      </div>
+      <el-button plain :loading="pilotPlanLoading" @click="emit('pilot-refresh')">重新读取</el-button>
+    </section>
+
+    <section
+      v-else-if="!pilotPlanLoading"
+      class="pilot-workbench-strip"
+      :class="`step-${pilotPrompt.step}`"
+      aria-labelledby="pilot-workbench-title"
+    >
+      <div class="pilot-copy">
+        <span>团队试点 · 第 {{ pilotPrompt.step }} 步，共 3 步</span>
+        <h2 id="pilot-workbench-title">{{ pilotPrompt.title }}</h2>
+        <p>{{ pilotPrompt.detail }}</p>
+        <code v-if="pilotPrompt.scope">
+          {{ pilotPrompt.scope.system }} / {{ pilotPrompt.scope.service }}
+        </code>
+      </div>
+      <ol class="pilot-progress" aria-label="团队试点进度">
+        <li v-for="step in PILOT_STEPS" :key="step.index" :class="{
+          done: step.index < pilotPrompt.step,
+          current: step.index === pilotPrompt.step,
+        }">
+          <i>{{ step.index < pilotPrompt.step ? '✓' : step.index }}</i>
+          <span>{{ step.label }}</span>
+        </li>
+      </ol>
+      <div class="pilot-owner-action">
+        <span>现在轮到</span>
+        <b>{{ pilotPrompt.ownerLabel }}</b>
+        <el-button
+          v-if="pilotPrompt.kind === 'SETUP' && canManage"
+          type="primary"
+          @click="runPilotAction"
+        >{{ pilotActionLabel }}</el-button>
+        <el-button
+          v-else-if="pilotPrompt.kind === 'CREATE_FORMAL' && canOperate"
+          type="primary"
+          @click="runPilotAction"
+        >{{ pilotActionLabel }}</el-button>
+        <el-button
+          v-else-if="pilotPrompt.kind === 'CONTINUE_DIAGNOSIS'"
+          type="primary"
+          @click="runPilotAction"
+        >{{ pilotActionLabel }}</el-button>
+        <el-button
+          v-else-if="pilotPrompt.kind === 'HANDOFF_EVALUATION' && canManage"
+          type="primary"
+          @click="runPilotAction"
+        >{{ pilotActionLabel }}</el-button>
+        <el-button
+          v-else-if="pilotPrompt.kind === 'HANDOFF_EVALUATION' && !canManage"
+          plain
+          @click="runPilotAction"
+        >{{ pilotActionLabel }}</el-button>
+        <small v-else>请联系具备相应权限的负责人继续。</small>
+      </div>
+    </section>
+
     <div class="list-page-toolbar">
       <el-select
         v-model="filterModel"
@@ -171,7 +235,12 @@
 import { computed } from 'vue'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { vLoading } from 'element-plus/es/components/loading/index'
-import type { DiagnosisStatus, DiagnosisSummary } from '@/api'
+import type {
+  DiagnosisStatus,
+  DiagnosisSummary,
+  TroubleshootingPilotModuleScope,
+  TroubleshootingPilotPlan,
+} from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
 import WorkbenchViewSwitch from './WorkbenchViewSwitch.vue'
 import {
@@ -186,6 +255,13 @@ import {
   diagnosisStatusTone,
   formatWorkbenchTime,
 } from './workbenchView'
+import { buildPilotWorkbenchPrompt } from './evaluationPilot'
+
+const PILOT_STEPS = [
+  { index: 1, label: '固定范围与人' },
+  { index: 2, label: '完成正式排障' },
+  { index: 3, label: '补齐效果证据' },
+] as const
 
 const props = defineProps<{
   rows: DiagnosisSummary[]
@@ -193,6 +269,9 @@ const props = defineProps<{
   loading: boolean
   canOperate: boolean
   canManage: boolean
+  pilotPlan: TroubleshootingPilotPlan | null
+  pilotPlanLoading: boolean
+  pilotPlanError: string
 }>()
 
 const emit = defineEmits<{
@@ -202,6 +281,11 @@ const emit = defineEmits<{
   launch: []
   'open-diagnosis': [row: DiagnosisSummary]
   'switch-view': []
+  'pilot-refresh': []
+  'pilot-setup': []
+  'pilot-launch-formal': [scope: TroubleshootingPilotModuleScope]
+  'pilot-open-diagnosis': [diagnosisId: string]
+  'pilot-open-evaluation': [diagnosisId: string]
 }>()
 
 const store = useTroubleshootingStore()
@@ -214,6 +298,29 @@ const filterModel = computed({
 const systemOptions = computed(() =>
   [...new Set(props.rows.map(r => r.system).filter(Boolean))].sort()
 )
+const pilotPrompt = computed(() => buildPilotWorkbenchPrompt(props.rows, props.pilotPlan))
+const pilotActionLabel = computed(() => pilotPrompt.value.kind === 'HANDOFF_EVALUATION'
+  && !props.canManage
+  ? '查看已闭环排障单'
+  : pilotPrompt.value.actionLabel)
+
+function runPilotAction() {
+  const prompt = pilotPrompt.value
+  if (prompt.kind === 'SETUP') {
+    if (props.canManage) emit('pilot-setup')
+    return
+  }
+  if (prompt.kind === 'CREATE_FORMAL') {
+    if (props.canOperate && prompt.scope) emit('pilot-launch-formal', prompt.scope)
+    return
+  }
+  if (!prompt.diagnosisId) return
+  if (prompt.kind === 'HANDOFF_EVALUATION' && props.canManage) {
+    emit('pilot-open-evaluation', prompt.diagnosisId)
+    return
+  }
+  emit('pilot-open-diagnosis', prompt.diagnosisId)
+}
 
 /**
  * Element Plus emits `{ column, prop, order }` with both `prop` and `order`
@@ -253,6 +360,24 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .list-page-head h1 { margin:6px 0 4px; font-size:28px; letter-spacing:-.035em; }
 .list-page-head p { margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-sm); }
 .list-page-head-actions { display:flex; align-items:center; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
+.pilot-workbench-strip { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr) minmax(170px,.42fr); align-items:center; gap:28px; margin-top:24px; padding:20px 0; border-top:1px solid var(--mc-border); border-bottom:1px solid var(--mc-border); background:linear-gradient(90deg,var(--mc-status-info-bg),transparent 72%); }
+.pilot-copy>span,.pilot-owner-action>span { color:var(--mc-primary); font-size:10px; font-weight:750; letter-spacing:.08em; }
+.pilot-copy h2 { margin:5px 0 4px; color:var(--mc-text-primary); font-size:18px; letter-spacing:-.02em; }
+.pilot-copy p { max-width:720px; margin:0; color:var(--mc-text-secondary); font-size:12px; line-height:1.6; }
+.pilot-copy code { display:inline-block; margin-top:8px; color:var(--mc-primary); font-size:10px; }
+.pilot-progress { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; margin:0; padding:0; list-style:none; }
+.pilot-progress li { position:relative; display:grid; justify-items:center; gap:6px; color:var(--mc-text-tertiary); font-size:10px; text-align:center; }
+.pilot-progress li::before { position:absolute; top:10px; right:50%; left:-50%; height:1px; background:var(--mc-border); content:''; }
+.pilot-progress li:first-child::before { display:none; }
+.pilot-progress i { position:relative; z-index:1; display:grid; place-items:center; width:21px; height:21px; border:1px solid var(--mc-border); border-radius:50%; background:var(--mc-bg-elevated); font-style:normal; font-weight:750; }
+.pilot-progress li.done,.pilot-progress li.current { color:var(--mc-text-primary); }
+.pilot-progress li.done i { color:var(--mc-status-success-text); border-color:var(--mc-success); background:var(--mc-status-success-bg); }
+.pilot-progress li.current i { color:var(--mc-text-inverse); border-color:var(--mc-primary); background:var(--mc-primary); }
+.pilot-owner-action { display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding-left:20px; border-left:1px solid var(--mc-border); }
+.pilot-owner-action>b { font-size:13px; }
+.pilot-owner-action>.el-button { width:100%; margin-top:5px; }
+.pilot-owner-action>small { color:var(--mc-text-tertiary); font-size:10px; line-height:1.5; }
+.pilot-load-error { grid-template-columns:minmax(0,1fr) auto; background:var(--mc-status-warning-bg); }
 .list-page-toolbar { display:flex; align-items:center; gap:12px; margin-top:24px; margin-bottom:12px; flex-wrap:wrap; }
 .list-page-toolbar .el-select { width:190px; }
 .list-page-toolbar>span { color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
@@ -281,5 +406,6 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .traditional-list-empty p { max-width:520px; margin:0 0 16px; font-size:12px; line-height:1.65; }
 .list-page-foot { display:flex; align-items:center; justify-content:space-between; padding:13px 2px 0; color:var(--mc-text-tertiary); font-size:10px; }
 .list-page-foot button { border:0; background:none; color:var(--mc-primary); font:inherit; cursor:pointer; }
-@media(max-width:760px){.traditional-list-page{padding:20px 12px}.list-page-head{flex-direction:column}.list-page-head-actions{justify-content:flex-start}.list-page-toolbar{align-items:stretch;flex-wrap:wrap}.list-page-toolbar .el-select{width:100%}.list-page-toolbar>.el-button{margin-left:auto}.traditional-table-card{overflow-x:auto}.diagnosis-table{min-width:920px}}
+@media(max-width:980px){.pilot-workbench-strip{grid-template-columns:1fr}.pilot-owner-action{padding-top:14px;padding-left:0;border-top:1px solid var(--mc-border);border-left:0}.pilot-owner-action>.el-button{width:auto}}
+@media(max-width:760px){.traditional-list-page{padding:20px 12px}.list-page-head{flex-direction:column}.list-page-head-actions{justify-content:flex-start}.pilot-workbench-strip{gap:18px;padding:18px 0}.pilot-progress span{font-size:9px}.list-page-toolbar{align-items:stretch;flex-wrap:wrap}.list-page-toolbar .el-select{width:100%}.list-page-toolbar>.el-button{margin-left:auto}.traditional-table-card{overflow-x:auto}.diagnosis-table{min-width:920px}}
 </style>
