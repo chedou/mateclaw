@@ -73,7 +73,7 @@
       </button>
       <div v-if="!loading && !rows.length" class="queue-empty">
         <b>还没有诊断记录</b>
-        <p>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
+        <p>有告警？点「发起排障」填表，或在表单里改用对话补问。生成排障单后进入详情继续。</p>
         <el-button
           v-if="canOperate || canManage"
           size="small"

@@ -640,6 +640,7 @@ export const CHANNEL_FIELD_DEFS: Record<string, ChannelFieldDef[]> = {
   wecom: [
     { key: 'bot_id', label: '机器人 ID', placeholder: 'bot_xxxxxxxxxx', required: true, type: 'text', tooltip: '企业微信智能机器人的 Bot ID（在企业微信后台创建智能机器人后获取）' },
     { key: 'secret', label: 'Secret', placeholder: 'xxxxxxxxxxxxxxxx', required: true, sensitive: true, type: 'password', tooltip: '企业微信智能机器人的 Secret' },
+    { key: 'troubleshooting_intake_enabled', label: '排障对话入站', placeholder: '', type: 'switch', defaultValue: false, tooltip: '开启后，群内 @ 机器人的普通消息由排障 Intake 接管：补问缺失字段，资料齐后异步生成同一张排障单。默认关闭。' },
     { key: 'welcome_text', label: '欢迎消息', placeholder: '你好！我是你的 AI 助手', type: 'text', tooltip: '用户首次进入对话时自动发送的欢迎消息（留空则不发送）' },
     { key: 'media_download_enabled', label: '媒体下载', placeholder: '', type: 'switch', defaultValue: false, tooltip: '下载消息中的图片和文件到本地并解密（需要本地磁盘空间）' },
     { key: 'media_dir', label: '媒体目录', placeholder: 'data/media', type: 'text', tooltip: '媒体文件保存目录（默认 data/media）' },

@@ -1,10 +1,13 @@
 package vip.mate.troubleshooting.agent;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import vip.mate.agent.AgentService;
 import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.model.AgentEntity;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.repository.TroubleshootingOpenDiscoveryAgentBindingMapper;
+import vip.mate.troubleshooting.model.TroubleshootingOpenDiscoveryAgentBindingEntity;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -18,6 +21,9 @@ import java.util.Set;
  * <p>Inspects without calling a model or evidence source. Triage and readiness
  * share the same fail-closed rules so operators can see blockers before an
  * unknown alert arrives at night.</p>
+ *
+ * <p>Agent identity resolution order: workspace digital-employee binding →
+ * process-wide {@code mateclaw.troubleshooting.agent.agent-id}.</p>
  */
 @Component
 public final class OpenDiscoveryAgentGate {
@@ -29,23 +35,68 @@ public final class OpenDiscoveryAgentGate {
     private final TroubleshootingAgentProperties properties;
     private final AgentService agentService;
     private final AgentBindingService bindingService;
+    private final TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings;
 
+    @Autowired
     public OpenDiscoveryAgentGate(
             TroubleshootingAgentProperties properties,
             AgentService agentService,
-            AgentBindingService bindingService) {
+            AgentBindingService bindingService,
+            TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings) {
         this.properties = properties;
         this.agentService = agentService;
         this.bindingService = bindingService;
+        this.workspaceBindings = workspaceBindings;
+    }
+
+    /** Test / legacy constructor without workspace bindings. */
+    OpenDiscoveryAgentGate(
+            TroubleshootingAgentProperties properties,
+            AgentService agentService,
+            AgentBindingService bindingService) {
+        this(properties, agentService, bindingService, null);
+    }
+
+    public long resolveAgentId(long workspaceId) {
+        if (workspaceBindings != null) {
+            TroubleshootingOpenDiscoveryAgentBindingEntity row =
+                    workspaceBindings.findByWorkspace(workspaceId);
+            if (row != null && row.getAgentId() != null && row.getAgentId() > 0) {
+                return row.getAgentId();
+            }
+        }
+        return properties.getAgentId();
+    }
+
+    public OpenDiscoveryAgentBindingSource bindingSource(long workspaceId) {
+        if (workspaceBindings != null) {
+            TroubleshootingOpenDiscoveryAgentBindingEntity row =
+                    workspaceBindings.findByWorkspace(workspaceId);
+            if (row != null && row.getAgentId() != null && row.getAgentId() > 0) {
+                return OpenDiscoveryAgentBindingSource.WORKSPACE;
+            }
+        }
+        if (properties.getAgentId() > 0) {
+            return OpenDiscoveryAgentBindingSource.CONFIG;
+        }
+        return OpenDiscoveryAgentBindingSource.NONE;
     }
 
     public Inspection inspect(long workspaceId) {
+        return inspect(workspaceId, resolveAgentId(workspaceId));
+    }
+
+    public Inspection inspectCandidate(long workspaceId, long agentId) {
+        return inspect(workspaceId, agentId);
+    }
+
+    private Inspection inspect(long workspaceId, long agentId) {
         List<String> blockers = new ArrayList<>();
         if (!properties.isEnabled()) {
             blockers.add("开放调查开关未打开（mateclaw.troubleshooting.agent.enabled）");
         }
-        if (properties.getAgentId() <= 0) {
-            blockers.add("未配置专用 Agent ID（mateclaw.troubleshooting.agent.agent-id）");
+        if (agentId <= 0) {
+            blockers.add("未绑定专用数字员工（员工页一键绑定，或配置 mateclaw.troubleshooting.agent.agent-id）");
         }
         if (properties.getMaxIterations() <= 0) {
             blockers.add("Agent 迭代上限未配置或非法");
@@ -63,43 +114,43 @@ public final class OpenDiscoveryAgentGate {
         }
 
         AgentEntity agent = null;
-        if (properties.getAgentId() > 0) {
+        if (agentId > 0) {
             try {
-                agent = agentService.getAgent(properties.getAgentId());
+                agent = agentService.getAgent(agentId);
             } catch (RuntimeException unavailable) {
-                blockers.add("配置的专用 Agent 不可用或不存在");
+                blockers.add("配置的专用数字员工不可用或不存在");
             }
         }
         if (agent != null) {
             if (!Boolean.TRUE.equals(agent.getEnabled())) {
-                blockers.add("专用 Agent 未启用");
+                blockers.add("专用数字员工未启用");
             }
             if (agent.getWorkspaceId() == null || agent.getWorkspaceId() != workspaceId) {
-                blockers.add("专用 Agent 不属于当前 Workspace");
+                blockers.add("专用数字员工不属于当前 Workspace");
             }
             if (!"react".equalsIgnoreCase(safe(agent.getAgentType()))) {
-                blockers.add("专用 Agent 必须是 ReAct 类型");
+                blockers.add("专用数字员工必须是 ReAct 类型");
             }
             if (agent.getModelName() == null || agent.getModelName().isBlank()) {
-                blockers.add("专用 Agent 必须显式绑定唯一模型");
+                blockers.add("专用数字员工必须显式绑定唯一模型");
             }
             if (!Boolean.TRUE.equals(agent.getSkillsDisabled())) {
-                blockers.add("专用 Agent 必须关闭 Skills");
+                blockers.add("专用数字员工必须关闭 Skills");
             }
             if (!Boolean.TRUE.equals(agent.getWikiDisabled())) {
-                blockers.add("专用 Agent 必须关闭 Wiki");
+                blockers.add("专用数字员工必须关闭 Wiki");
             }
             if (Boolean.TRUE.equals(agent.getToolsDisabled())) {
-                blockers.add("专用 Agent 不能关闭工具（需要唯一只读取证工具）");
+                blockers.add("专用数字员工不能关闭工具（需要唯一只读取证工具）");
             }
             if (agent.getMaxIterations() == null
                     || agent.getMaxIterations() <= 0
                     || agent.getMaxIterations() > properties.getMaxIterations()) {
-                blockers.add("专用 Agent 迭代数必须在配置上限内且大于 0");
+                blockers.add("专用数字员工迭代数必须在配置上限内且大于 0");
             }
             Set<String> bindings = bindingService.getBoundToolNames(agent.getId());
             if (!REQUIRED_BINDINGS.equals(bindings)) {
-                blockers.add("专用 Agent 必须且只能绑定 TroubleshootingEvidenceTool");
+                blockers.add("专用数字员工必须且只能绑定 TroubleshootingEvidenceTool");
             }
         }
 
@@ -119,7 +170,8 @@ public final class OpenDiscoveryAgentGate {
         if (!properties.isEnabled()) {
             throw configurationConflict("troubleshooting miss-path Agent is disabled");
         }
-        if (properties.getAgentId() <= 0
+        long agentId = resolveAgentId(workspaceId);
+        if (agentId <= 0
                 || properties.getMaxIterations() <= 0
                 || properties.getMaxEvidenceRequests() < 3
                 || properties.getMaxPromptChars() < MIN_PROMPT_CHARS
@@ -128,7 +180,7 @@ public final class OpenDiscoveryAgentGate {
                 || properties.getTriageTimeout().compareTo(MAX_SYNC_TRIAGE_TIMEOUT) > 0) {
             throw configurationConflict("troubleshooting Agent limits are not configured");
         }
-        Inspection inspection = inspect(workspaceId);
+        Inspection inspection = inspect(workspaceId, agentId);
         if (inspection.status() != Status.AGENT_READY || inspection.agent() == null) {
             AgentEntity agent = inspection.agent();
             if (agent == null) {

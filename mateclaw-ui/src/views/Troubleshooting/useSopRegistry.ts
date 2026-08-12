@@ -129,11 +129,8 @@ export function useSopRegistry(initialScope: {
       }
       const selected = rows.value.find((row) => row.routeKey === selectedRouteKey.value)
       if (selected) return
-      if (rows.value.length) {
-        await selectSop(rows.value[0])
-      } else {
-        clearSelection()
-      }
+      // Drawer UX: keep list-only until the operator opens a row.
+      clearSelection()
     } finally {
       listLoading.value = false
     }

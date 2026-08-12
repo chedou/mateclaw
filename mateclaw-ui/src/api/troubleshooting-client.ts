@@ -7,6 +7,8 @@ import type {
   CaptureEvaluationSampleRequest,
   CaptureRecordedReplayEvaluationSampleRequest,
   ClosureOutcome,
+  ConversationTurnRequest,
+  ConversationTurnResult,
   CreateDeploymentTopologyScenarioRequest,
   DeclareEvidenceRouteRequest,
   DeclareEvidenceContractRequest,
@@ -28,6 +30,7 @@ import type {
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
   OpenDiscoveryReadiness,
+  OpenDiscoveryAgentBinding,
   GuanceEvidenceSpinePreview,
   GuanceEvidenceValidationReport,
   GuanceRecordingTargetCatalogView,
@@ -67,6 +70,10 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Report an incident. A retry inside the dedup bucket returns `created: false`. */
   report: (data: IncidentReportRequest) =>
     http.post<StoredDiagnosis>('/troubleshooting/incidents', data),
+
+  /** Multi-turn Web conversation intake; READY returns the same Diagnosis as WeCom. */
+  conversationTurn: (data: ConversationTurnRequest) =>
+    http.post<ConversationTurnResult>('/troubleshooting/conversation/turns', data),
 
   /** Opens one exact approved scenario without claiming a cause. */
   createScenarioDiagnosis: (scenarioKey: string, data: ScenarioDiagnosisRequest) =>
@@ -122,6 +129,21 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Secret-free OPEN_DISCOVERY / miss-path readiness; does not call a model. */
   openDiscoveryReadiness: (params?: { system?: string }) =>
     http.get<OpenDiscoveryReadiness>('/troubleshooting/open-discovery/readiness', { params }),
+
+  /** Current workspace digital-employee binding for OPEN_DISCOVERY. */
+  openDiscoveryAgentBinding: () =>
+    http.get<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding'),
+
+  /** Bind a digital employee as the OPEN_DISCOVERY executor. */
+  bindOpenDiscoveryAgent: (data: { agentId: number | string; prepareEvidenceTool?: boolean }) =>
+    http.put<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding', {
+      agentId: Number(data.agentId),
+      prepareEvidenceTool: data.prepareEvidenceTool ?? true,
+    }),
+
+  /** Clear workspace binding and fall back to process config agent-id. */
+  clearOpenDiscoveryAgentBinding: () =>
+    http.delete<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding'),
 
   /** Scenario-oriented contract directory; reads configuration without querying a source. */
   evidenceCatalog: () => http.get<EvidenceQueryCatalog>(

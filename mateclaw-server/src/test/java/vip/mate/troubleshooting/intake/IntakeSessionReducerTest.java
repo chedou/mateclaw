@@ -69,7 +69,7 @@ class IntakeSessionReducerTest {
         assertNull(ready.errorCode(), "an omitted error code must remain unknown");
         assertTrue(ready.missingFields().isEmpty());
         String prompt = IntakeDecision.from(ready, false, false).prompt();
-        assertTrue(prompt.contains("已进入异步只读调查队列"));
+        assertTrue(prompt.contains("正在生成排障单"));
         assertTrue(prompt.contains("不会执行任何生产变更"));
     }
 
@@ -91,7 +91,49 @@ class IntakeSessionReducerTest {
         assertNull(session.occurredAt());
         assertEquals(List.of("occurredAt"), session.missingFields());
         assertTrue(IntakeDecision.from(session, false, false).prompt()
-                .contains("2026-07-29 10:05:00"));
+                .contains("2026-08-12 16:36:00"));
+    }
+
+    @Test
+    void pastedIcareDialProbeAlertBecomesReadyWithoutManualFieldTranscription() {
+        String alert = """
+                sf-icare-app-虚机-拨测检测异常
+                ■【重要】2026-08-12 16:36:00 (r/95b771)
+                业务系统：深信服新ICare系统-邹汶达
+                告警分组：ICARE告警
+                告警级别：error
+                监控项：sf-icare-app-虚机-拨测检测异常，请及时关注处理
+                告警URL：http://icarenew.sangfor.com/index.html
+                """;
+        IntakeSession session = reducer.start(
+                "intake-icare",
+                envelope("msg-icare", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.READY, session.status());
+        assertEquals("深信服新ICare系统-邹汶达", session.system());
+        assertEquals("sf-icare-app", session.service());
+        assertEquals("未知", session.customerRef());
+        assertEquals(Instant.parse("2026-08-12T08:36:00Z"), session.occurredAt());
+        assertTrue(session.symptom().contains("sf-icare-app"));
+        assertTrue(session.missingFields().isEmpty());
+        assertTrue(IntakeDecision.from(session, false, false).prompt().contains("正在生成排障单"));
+    }
+
+    @Test
+    void awaitingPromptShowsRecognizedFieldsInsteadOfBlankAsk() {
+        IntakeSession session = reducer.start(
+                "intake-1",
+                envelope(
+                        "msg-1",
+                        "业务系统：CSDP\n现象: 消息发送失败\n发生时间: 2026-08-12 16:36:00",
+                        List.of(),
+                        FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.AWAITING_INPUT, session.status());
+        String prompt = IntakeDecision.from(session, false, false).prompt();
+        assertTrue(prompt.contains("已从告警中识别"));
+        assertTrue(prompt.contains("系统=CSDP"));
+        assertTrue(prompt.contains("还需要"));
     }
 
     @Test

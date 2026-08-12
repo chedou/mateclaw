@@ -71,18 +71,18 @@ export function useKnowledgeReview() {
       reviewUnavailable.value = false
       const retained = knowledgeRows.value.find((row) => row.key === selectedReviewKey.value)
       if (retained) return
-      const first = knowledgeRows.value[0]
-      if (first) {
-        await selectReview(first)
-      } else {
-        selectedReviewKey.value = null
-        selectedManualSop.value = null
-      }
+      // Drawer UX: keep list-only until the operator opens a row.
+      clearSelection()
     } catch {
       reviewUnavailable.value = true
     } finally {
       reviewLoading.value = false
     }
+  }
+
+  function clearSelection() {
+    selectedReviewKey.value = null
+    selectedManualSop.value = null
   }
 
   async function selectReview(row: KnowledgeReviewRow) {
@@ -323,6 +323,7 @@ export function useKnowledgeReview() {
     // methods
     loadReviewInbox,
     selectReview,
+    clearSelection,
     startReview,
     rejectReview,
     approveReview,

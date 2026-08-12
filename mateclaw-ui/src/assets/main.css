@@ -35,6 +35,11 @@
   --mc-space-lg: 16px;
   --mc-space-xl: 24px;
 
+  /* troubleshooting module layout — keep sub-page rails/drawers consistent */
+  --mc-ts-side-rail-width: 280px;
+  --mc-ts-inspector-width: 460px;
+  --mc-ts-drawer-width: min(880px, 100%);
+
   /* brand */
   --mc-primary: #d96d46;
   --mc-primary-light: #ebb08f;

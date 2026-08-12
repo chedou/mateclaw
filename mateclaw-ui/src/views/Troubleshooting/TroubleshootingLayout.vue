@@ -3,10 +3,10 @@
     <div class="mc-page-frame troubleshooting-frame">
       <div
         class="mc-page-inner troubleshooting-layout"
-        :class="{ 'without-capability-nav': !canManageTroubleshooting }"
+        :class="{ 'without-capability-nav': !canViewTroubleshooting }"
       >
       <aside
-        v-if="canManageTroubleshooting"
+        v-if="canViewTroubleshooting"
         class="capability-nav mc-surface-card"
         :class="{ collapsed: navCompact }"
       >
@@ -34,7 +34,7 @@
           </el-tooltip>
 
           <el-tooltip
-            v-for="item in WORKBENCH_PRIMARY_CAPABILITIES"
+            v-for="item in visiblePrimaryCapabilities"
             :key="item.key"
             :content="item.label"
             placement="right"
@@ -56,7 +56,7 @@
             </button>
           </el-tooltip>
 
-          <section v-for="group in WORKBENCH_CAPABILITY_GROUPS" :key="group.key" class="nav-group">
+          <section v-for="group in visibleCapabilityGroups" :key="group.key" class="nav-group">
             <el-tooltip
               :content="group.label"
               placement="right"
@@ -138,6 +138,7 @@ import {
   Collection,
   Connection,
   DataAnalysis,
+  Document,
   DocumentAdd,
   OfficeBuilding,
   TrendCharts,
@@ -153,6 +154,7 @@ import {
   normalizeEvidenceSetupSection,
   normalizeWorkbenchOverlayCapability,
   safeTroubleshootingReturnPath,
+  t7OwnerContractLocation,
   workbenchOverlayLocation,
   type WorkbenchOverlayCapability,
   type WorkbenchCapabilityNavGroup,
@@ -162,15 +164,34 @@ import {
 const route = useRoute()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
+const canViewTroubleshooting = computed(() => workspaceStore.can('view:troubleshooting'))
 const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troubleshooting'))
 const navCollapsed = ref(localStorage.getItem('mc-troubleshooting-nav-collapsed') === 'true')
 const manuallyExpandedGroups = ref(new Set<WorkbenchCapabilityNavGroup['key']>())
 const forcedRailViewport = useMediaQuery('(max-width: 1040px)')
 const navCompact = computed(() => navCollapsed.value || forcedRailViewport.value)
 
+function navItemVisible(item: WorkbenchCapabilityNavItem) {
+  const required = item.requiredCapability || 'manage:troubleshooting'
+  return workspaceStore.can(required)
+}
+
+const visiblePrimaryCapabilities = computed(() =>
+  WORKBENCH_PRIMARY_CAPABILITIES.filter(navItemVisible),
+)
+const visibleCapabilityGroups = computed(() =>
+  WORKBENCH_CAPABILITY_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items.filter(navItemVisible),
+    }))
+    .filter(group => group.items.length > 0),
+)
+
 const CAPABILITY_ICONS: Record<WorkbenchCapabilityCommand, Component> = {
   playbooks: Collection,
   'observability-assets': OfficeBuilding,
+  't7-owner-contract': Document,
   guance: Connection,
   ledger: TrendCharts,
   'case-knowledge': DocumentAdd,
@@ -188,6 +209,7 @@ const CAPABILITY_GROUP_ICONS: Record<WorkbenchCapabilityNavGroup['key'], Compone
 const activeCommand = computed<WorkbenchCapabilityCommand | null>(() => {
   if (route.path === '/troubleshooting/observability-assets') return 'observability-assets'
   if (route.path === '/troubleshooting/sops') return 'playbooks'
+  if (route.path === '/troubleshooting/t7-owner-contract') return 't7-owner-contract'
   return normalizeWorkbenchOverlayCapability(route.query.capability)
 })
 const workbenchActive = computed(() => route.path === '/troubleshooting' && !activeCommand.value)
@@ -250,6 +272,10 @@ function openCapability(item: WorkbenchCapabilityNavItem) {
     void router.push(observabilityAssetsLocation(undefined, returnTo, item.section))
     return
   }
+  if (command === 't7-owner-contract') {
+    void router.push(t7OwnerContractLocation(returnTo))
+    return
+  }
   void router.push(workbenchOverlayLocation(command as WorkbenchOverlayCapability, returnTo))
 }
 
@@ -263,7 +289,7 @@ function toggleNav() {
 .troubleshooting-shell { height:100%; min-height:0; overflow:hidden; background:transparent; }
 .troubleshooting-frame { height:min(calc(100vh - 28px),100%); min-height:0; overflow:hidden; }
 .troubleshooting-layout { display:flex; gap:18px; width:100%; height:100%; min-width:0; min-height:0; }
-.capability-nav { display:flex; flex:0 0 236px; flex-direction:column; width:236px; min-width:236px; padding:14px 10px; overflow-y:auto; transition:width .25s ease,min-width .25s ease,flex-basis .25s ease; }
+.capability-nav { display:flex; flex:0 0 var(--mc-ts-side-rail-width); flex-direction:column; width:var(--mc-ts-side-rail-width); min-width:var(--mc-ts-side-rail-width); padding:14px 10px; overflow-y:auto; transition:width .25s ease,min-width .25s ease,flex-basis .25s ease; }
 .capability-nav.collapsed { flex-basis:56px; width:56px; min-width:56px; padding:12px 8px; }
 .capability-nav__intro { padding:4px 8px 12px; margin-bottom:6px; border-bottom:1px solid var(--mc-border-light); }
 .capability-nav__intro span { display:block; margin-bottom:5px; color:var(--mc-primary); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }

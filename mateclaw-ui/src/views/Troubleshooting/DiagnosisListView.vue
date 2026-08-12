@@ -4,7 +4,7 @@
       <div>
         <span class="eyebrow">MateClaw · Troubleshooting</span>
         <h1>排障队列</h1>
-        <p>集中查看全部诊断记录，选择一条进入处置工作台。</p>
+        <p>有告警就发起；点一条记录进入详情处置。</p>
       </div>
       <div class="list-page-head-actions">
         <WorkbenchViewSwitch mode="LIST" @change="emit('switch-view')" />
@@ -149,7 +149,7 @@
         <div class="empty-mark">MC</div>
         <h2>{{ rows.length ? '没有匹配的记录' : '还没有诊断记录' }}</h2>
         <p v-if="rows.length">尝试调整搜索关键词或筛选条件。</p>
-        <p v-else>从正式入口选择排障场景；通用事件会进入 Diagnosis 主链，专项场景遵守各自能力边界。</p>
+        <p v-else>有告警？点「发起排障」填表，或在表单里改用对话补问。生成排障单后进入详情继续。</p>
         <el-button v-if="!rows.length && (canOperate || canManage)" type="primary" plain @click="emit('launch')">
           {{ TROUBLESHOOTING_UI_LABELS.launch }}
         </el-button>

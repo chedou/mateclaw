@@ -36,6 +36,8 @@ describe('troubleshooting capability workspaces', () => {
   it('keeps a visible return action and the historical replay entry', () => {
     expect(evaluationWorkspaceSource).toContain("$emit('back')")
     expect(evaluationWorkspaceSource).toContain('回放一条历史样本')
-    expect(evaluationWorkspaceSource).toContain("openHistoryReplay: []")
+    expect(evaluationWorkspaceSource).toContain('openReplayDrawer')
+    expect(evaluationWorkspaceSource).toContain('<SynthesisPreviewDialog embedded')
+    expect(evaluationWorkspaceSource).not.toContain("historyReplayOpen")
   })
 })

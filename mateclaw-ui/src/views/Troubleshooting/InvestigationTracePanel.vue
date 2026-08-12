@@ -383,7 +383,7 @@ function stopReasonLabel(value: InvestigationStopReasonCode) {
 .trace-tabs button{padding:6px 12px;border:0;border-radius:var(--mc-radius-xs);background:transparent;color:var(--mc-text-secondary);font-size:var(--mc-text-xs);cursor:pointer}
 .trace-tabs button.active{color:var(--mc-text-inverse)!important;background:var(--mc-primary);font-weight:700}
 .flow-overview{min-width:0}
-.trace-workspace{display:grid;grid-template-columns:minmax(230px,.58fr) minmax(0,1.5fr);gap:16px;min-width:0}
+.trace-workspace{display:grid;grid-template-columns:var(--mc-ts-side-rail-width) minmax(0,1fr);gap:16px;min-width:0}
 .stage-rail{display:flex;flex-direction:column;gap:5px}
 .stage-rail button{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:start;gap:9px;width:100%;padding:10px;border:1px solid transparent;border-radius:var(--mc-radius-sm);background:transparent;color:var(--mc-text-primary);text-align:left;cursor:pointer;transition:background .15s,border-color .15s}
 .stage-rail button:hover{background:var(--mc-bg-muted)}

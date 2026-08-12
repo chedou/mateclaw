@@ -46,11 +46,11 @@ public final class OpenDiscoveryReadinessService {
         String nextAction;
         if (agent.status() == OpenDiscoveryAgentGate.Status.DISABLED) {
             status = OpenDiscoveryReadiness.Status.DISABLED;
-            nextAction = "按 agent-miss-path-runbook 创建专用 Agent 后，打开 mateclaw.troubleshooting.agent.enabled";
+            nextAction = "按 agent-miss-path-runbook 创建专用数字员工后，打开 mateclaw.troubleshooting.agent.enabled";
         } else if (!blockers.isEmpty() || agent.status() != OpenDiscoveryAgentGate.Status.AGENT_READY) {
             status = OpenDiscoveryReadiness.Status.BLOCKED;
             nextAction = blockers.isEmpty()
-                    ? "检查专用 Agent、工具绑定与预算配置"
+                    ? "检查专用数字员工、工具绑定与预算配置"
                     : blockers.get(0);
         } else if (!trueSourcePermitted) {
             status = OpenDiscoveryReadiness.Status.READY_FOR_REHEARSAL;
@@ -60,10 +60,13 @@ public final class OpenDiscoveryReadinessService {
             nextAction = "未知告警可走受限开放调查：结论最高 MEDIUM，证据不足会弃权转人工";
         }
 
+        String agentName = agent.agent() == null ? "" : safeName(agent.agent().getName());
         return new OpenDiscoveryReadiness(
                 status,
                 properties.isEnabled(),
-                properties.getAgentId(),
+                agentGate.resolveAgentId(workspaceId),
+                agentName,
+                agentGate.bindingSource(workspaceId).name(),
                 agent.status() == OpenDiscoveryAgentGate.Status.AGENT_READY,
                 plans.size(),
                 (int) visible,
@@ -150,5 +153,9 @@ public final class OpenDiscoveryReadinessService {
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String safeName(String value) {
+        return value == null ? "" : value.trim();
     }
 }

@@ -33,6 +33,8 @@ declare module 'vue' {
     ElPagination: typeof import('element-plus/es/components/pagination/index')['ElPagination']
     ElPopover: typeof import('element-plus/es/components/popover/index')['ElPopover']
     ElProgress: typeof import('element-plus/es/components/progress/index')['ElProgress']
+    ElRadioButton: typeof import('element-plus/es/components/radio/index')['ElRadioButton']
+    ElRadioGroup: typeof import('element-plus/es/components/radio/index')['ElRadioGroup']
     ElSelect: typeof import('element-plus/es/components/select/index')['ElSelect']
     ElSkeleton: typeof import('element-plus/es/components/skeleton/index')['ElSkeleton']
     ElSwitch: typeof import('element-plus/es/components/switch/index')['ElSwitch']

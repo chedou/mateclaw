@@ -9,6 +9,7 @@ import {
   normalizeWorkbenchOverlayCapability,
   observabilityAssetsLocation,
   safeTroubleshootingReturnPath,
+  t7OwnerContractLocation,
   workbenchOverlayLocation,
 } from '../workbenchCapabilityMenu'
 
@@ -27,9 +28,11 @@ describe('troubleshooting secondary navigation information architecture', () => 
       section: item.section,
     }))).toEqual([
       { key: 'evidence-modules', label: '接入系统', section: 'modules' },
+      { key: 't7-owner-contract', label: '标准查登记', section: undefined },
     ])
     expect(items.map(item => item.key)).toEqual([
       'evidence-modules',
+      't7-owner-contract',
       'evidence-tools',
       'evidence-source',
       'playbooks',
@@ -46,13 +49,18 @@ describe('troubleshooting secondary navigation information architecture', () => 
     ])
     expect(items.map(item => item.description)).toEqual([
       '登记系统模块，并在模块里选择取证方法',
+      '先登记 10 条重点故障怎么查（还不能验收）',
       '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
       '检查观测云能否正常读取',
       '场景、步骤与判断标准',
       '用真实样本验证效果',
       '沉淀已解决的故障',
     ])
+    expect(items.find(item => item.command === 't7-owner-contract')?.requiredCapability).toBe(
+      'view:troubleshooting',
+    )
     expect(items.find(item => item.command === 'guance')).toBeUndefined()
+    expect(items.find(item => item.command === 't7-owner-contract')?.label).toBe('标准查登记')
   })
 
   it('keeps each evidence setup menu addressable without losing the return target', () => {
@@ -69,6 +77,13 @@ describe('troubleshooting secondary navigation information architecture', () => 
       path: '/troubleshooting/observability-assets',
       query: {
         section: 'tools',
+        returnTo: '/troubleshooting?view=detail&diagnosisId=diag-1',
+      },
+    })
+
+    expect(t7OwnerContractLocation('/troubleshooting?view=detail&diagnosisId=diag-1')).toEqual({
+      path: '/troubleshooting/t7-owner-contract',
+      query: {
         returnTo: '/troubleshooting?view=detail&diagnosisId=diag-1',
       },
     })

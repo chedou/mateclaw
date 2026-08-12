@@ -12,6 +12,8 @@ public record OpenDiscoveryReadiness(
         Status status,
         boolean agentEnabled,
         long configuredAgentId,
+        String configuredAgentName,
+        String agentBindingSource,
         boolean agentReady,
         int configuredPlanCount,
         int visiblePlanCount,
@@ -22,6 +24,10 @@ public record OpenDiscoveryReadiness(
 
     public OpenDiscoveryReadiness {
         status = status == null ? Status.BLOCKED : status;
+        configuredAgentName = configuredAgentName == null ? "" : configuredAgentName.trim();
+        agentBindingSource = agentBindingSource == null || agentBindingSource.isBlank()
+                ? "NONE"
+                : agentBindingSource.trim();
         plans = List.copyOf(plans == null ? List.of() : plans);
         blockers = List.copyOf(blockers == null ? List.of() : blockers);
         nextAction = nextAction == null ? "" : nextAction.trim();

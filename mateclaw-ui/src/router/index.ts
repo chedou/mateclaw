@@ -124,6 +124,13 @@ const router = createRouter({
               component: () => import('@/views/Troubleshooting/ObservabilityAssetsWorkspace.vue'),
               meta: { title: 'Observability Assets', requiredCapability: 'manage:troubleshooting' },
             },
+            {
+              path: 't7-owner-contract',
+              name: 'TroubleshootingT7OwnerContract',
+              component: () => import('@/views/Troubleshooting/T7OwnerContractIntakeWorkspace.vue'),
+              // 前端本地登记表：有排障查看权即可进入，避免后端短暂不可用 / 仅 member 时被挡到「无权访问」。
+              meta: { title: '标准查登记', requiredCapability: 'view:troubleshooting' },
+            },
           ],
         },
         {

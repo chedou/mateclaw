@@ -35,18 +35,17 @@ public record DiagnosisSummary(
             throw new IllegalArgumentException(
                     "routeSemanticsProvenance must not be null");
         }
-        switch (routeSemanticsProvenance) {
-            case PERSISTED -> {
-                if (investigationMode == null || routeAuthority == null) {
-                    throw new IllegalArgumentException(
-                            "PERSISTED diagnosis summaries require both typed route semantics");
-                }
+        // Prefer plain if/else over switch-on-enum: some incremental reloads
+        // leave behind a missing DiagnosisSummary$1 synthetic and break the queue.
+        if (routeSemanticsProvenance == RouteSemanticsProvenance.PERSISTED) {
+            if (investigationMode == null || routeAuthority == null) {
+                throw new IllegalArgumentException(
+                        "PERSISTED diagnosis summaries require both typed route semantics");
             }
-            case LEGACY_DERIVED -> {
-                if (investigationMode != null || routeAuthority != null) {
-                    throw new IllegalArgumentException(
-                            "LEGACY_DERIVED diagnosis summaries must not carry typed route semantics");
-                }
+        } else if (routeSemanticsProvenance == RouteSemanticsProvenance.LEGACY_DERIVED) {
+            if (investigationMode != null || routeAuthority != null) {
+                throw new IllegalArgumentException(
+                        "LEGACY_DERIVED diagnosis summaries must not carry typed route semantics");
             }
         }
     }

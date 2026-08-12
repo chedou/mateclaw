@@ -43,6 +43,24 @@ export interface IncidentReportRequest {
   rehearsal: boolean
 }
 
+/** One turn of the Web conversation intake that reuses IntakeSession. */
+export interface ConversationTurnRequest {
+  conversationId?: string | null
+  text: string
+}
+
+export interface ConversationTurnResult {
+  conversationId: string
+  intakeSessionId: string
+  status: 'RECEIVED' | 'AWAITING_INPUT' | 'READY' | string
+  missingFields: string[]
+  prompt: string
+  duplicate: boolean
+  outOfOrder: boolean
+  diagnosisId: string | null
+  created: boolean | null
+}
+
 /** Explicit topology-scenario intake; routing, Playbook and Tool keys are server-owned. */
 export interface CreateDeploymentTopologyScenarioRequest {
   system: string
@@ -963,6 +981,8 @@ export interface OpenDiscoveryReadiness {
   status: OpenDiscoveryReadinessStatus
   agentEnabled: boolean
   configuredAgentId: number
+  configuredAgentName?: string
+  agentBindingSource?: 'WORKSPACE' | 'CONFIG' | 'NONE' | string
   agentReady: boolean
   configuredPlanCount: number
   visiblePlanCount: number
@@ -970,6 +990,17 @@ export interface OpenDiscoveryReadiness {
   plans: OpenDiscoveryPlanSummary[]
   blockers: string[]
   nextAction: string
+}
+
+export interface OpenDiscoveryAgentBinding {
+  workspaceId: number
+  agentId: number
+  agentName?: string | null
+  source: 'WORKSPACE' | 'CONFIG' | 'NONE' | string
+  boundBy?: string | null
+  boundAt?: string | null
+  blockers: string[]
+  ready: boolean
 }
 
 export type EvidenceRouteOrigin = 'WORKSPACE' | 'DEPLOYMENT' | 'UNCONFIGURED'

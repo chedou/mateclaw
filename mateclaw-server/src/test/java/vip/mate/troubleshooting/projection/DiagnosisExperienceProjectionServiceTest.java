@@ -170,7 +170,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 .extracting(InvestigationTraceView.EvidenceContractView::requestId)
                 .containsExactly("EV-2");
         assertThat(developer.contrast().available()).isFalse();
-        assertThat(developer.capabilityLimits()).anyMatch(item -> item.contains("生产变更"));
+        assertThat(developer.capabilityLimits()).anyMatch(item -> item.contains("改生产环境"));
         assertThat(developer.fixtureMode()).isTrue();
     }
 
@@ -514,7 +514,7 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(projection.developerEvidence().routeSemanticsProvenance())
                 .isEqualTo(RouteSemanticsProvenance.PERSISTED);
         assertThat(projection.developerEvidence().capabilityLimits())
-                .anyMatch(item -> item.contains("开放调查路径没有可复算的确定性 SOP 判据链"));
+                .anyMatch(item -> item.contains("开放调查") && item.contains("标准排障方案"));
         assertThat(projection.developerEvidence().steps())
                 .extracting(DiagnosisExperienceProjection.EvidenceStep::kind)
                 .doesNotContain(DiagnosisExperienceProjection.EvidenceStepKind.CRITERION);

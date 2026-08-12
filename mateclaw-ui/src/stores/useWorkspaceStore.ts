@@ -76,7 +76,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         currentCapabilities.value = new Set(caps as Capability[])
       } catch (e) {
         console.warn('Failed to fetch workspace access:', e)
-        currentCapabilities.value = new Set()
+        // 后端短暂不可用时不要把已登录管理员锁死成「无权访问」。
+        // 仅在名单里已标明全局管理员 / owner|admin 时回退，避免抬高普通成员权限。
+        const ws = workspaces.value.find((item) => item.id === id)
+        const role = (ws?.effectiveRole || ws?.memberRole || '').toLowerCase()
+        if (ws?.isGlobalAdmin || role === 'owner' || role === 'admin') {
+          currentCapabilities.value = new Set([
+            'chat',
+            'view:wiki',
+            'view:troubleshooting',
+            'view:memory',
+            'view:dashboard',
+            'manage:wiki',
+            'manage:agents',
+            'operate:troubleshooting',
+            'manage:skills',
+            'manage:channels',
+            'manage:models',
+            'manage:security',
+            'manage:settings',
+            'manage:troubleshooting',
+          ] as Capability[])
+        } else {
+          currentCapabilities.value = new Set()
+        }
       } finally {
         accessLoaded.value = true
         accessInFlight = null

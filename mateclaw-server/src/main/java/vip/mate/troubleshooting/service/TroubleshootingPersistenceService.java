@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +34,8 @@ import java.util.Optional;
  */
 @Service
 public class TroubleshootingPersistenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(TroubleshootingPersistenceService.class);
 
     private final TroubleshootingDiagnosisMapper diagnosisMapper;
     private final TroubleshootingKnowledgeOutboxMapper outboxMapper;
@@ -250,9 +254,17 @@ public class TroubleshootingPersistenceService {
                     TroubleshootingDiagnosisEntity::getInvestigationMode,
                     investigationMode.name());
         }
-        return diagnosisMapper.selectList(query).stream()
-                .map(DiagnosisSummary::from)
-                .toList();
+        java.util.List<DiagnosisSummary> rows = new java.util.ArrayList<>();
+        for (TroubleshootingDiagnosisEntity entity : diagnosisMapper.selectList(query)) {
+            try {
+                rows.add(DiagnosisSummary.from(entity));
+            } catch (RuntimeException failure) {
+                // One corrupt legacy/indexed row must not blank the duty queue.
+                log.warn("Skipping diagnosis {} in queue: {}",
+                        entity.getDiagnosisId(), failure.toString());
+            }
+        }
+        return rows;
     }
 
     @Transactional

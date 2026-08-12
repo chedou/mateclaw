@@ -19,7 +19,6 @@
       :replay-capture-disabled-reason="replayCaptureDisabledReason"
       @back="closeCapabilityWorkspace"
       @open-diagnosis="openDiagnosisFromEvaluation"
-      @open-history-replay="openHistoricalReplay"
     />
 
     <CaseKnowledgeImportWorkspace
@@ -69,8 +68,8 @@
     <main v-loading="detailLoading" class="work-area">
       <div v-if="!business || !developer || !current" class="detail-empty">
         <div class="empty-mark">MC</div>
-        <h1>选择一条诊断开始排障</h1>
-        <p>服务经理先看业务摘要；开发证据在同一页面按需展开。</p>
+        <h1>从粘贴告警开始</h1>
+        <p>点「发起排障」，填系统、服务和现象即可生成排障单；详情里再按五问推进。</p>
         <el-button
           v-if="canOperateTroubleshooting || canManageTroubleshooting"
           type="primary"
@@ -108,6 +107,8 @@
           <b>{{ evidenceSourcePresentation.title }}</b>
           <span>{{ evidenceSourcePresentation.detail }}</span>
         </div>
+
+        <FiveQuestionRail :items="fiveQuestionItems" />
 
         <BusinessSummaryCard
           :business="business"
@@ -167,6 +168,7 @@
       :can-operate="canOperateTroubleshooting"
       :can-manage="canManageTroubleshooting"
       @select="startTroubleshootingScenario"
+      @back-to-incident="openIncidentIntake"
     />
 
     <IncidentReportDialog
@@ -176,7 +178,15 @@
       :open-discovery-readiness="openDiscoveryReadiness"
       :loading="incidentReportLoading"
       :can-submit="canSubmitIncidentReport"
+      @pick-scenario="openKnownScenarioPicker"
+      @pick-conversation="openConversationIntake"
       @submit="reportIncident"
+    />
+
+    <ConversationIntakeDialog
+      v-model="conversationIntakeOpen"
+      @switch-form="openIncidentIntakeFromConversation"
+      @ready="onConversationReady"
     />
 
     <MessageSendScenarioDialog
@@ -241,7 +251,7 @@
       @open-evaluation="openEvaluationLedger"
     />
 
-    <SynthesisPreviewDialog v-model="synthesisPreviewOpen" />
+    <SynthesisPreviewDialog v-if="!evaluationWorkspaceActive" v-model="synthesisPreviewOpen" />
 
     <TransferDialog
       v-model="transferOpen"
@@ -322,6 +332,7 @@ import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import CaseKnowledgeImportWorkspace from './CaseKnowledgeImportWorkspace.vue'
 import IncidentReportDialog from './IncidentReportDialog.vue'
+import ConversationIntakeDialog from './ConversationIntakeDialog.vue'
 import MessageSendScenarioDialog from './MessageSendScenarioDialog.vue'
 import CtiCreateConversationScenarioDialog from './CtiCreateConversationScenarioDialog.vue'
 import DeploymentTopologyScenarioDialog from './DeploymentTopologyScenarioDialog.vue'
@@ -330,6 +341,8 @@ import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
 import CloseDiagnosisDialog from './CloseDiagnosisDialog.vue'
 import BusinessSummaryCard from './BusinessSummaryCard.vue'
+import FiveQuestionRail from './FiveQuestionRail.vue'
+import { buildFiveQuestionRail } from './fiveQuestionProgress'
 import ScenarioEvidenceRunCard from './ScenarioEvidenceRunCard.vue'
 import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
@@ -404,6 +417,7 @@ const deploymentTopologyScenarioLoading = ref(false)
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
+const conversationIntakeOpen = ref(false)
 const openDiscoveryReadiness = ref<OpenDiscoveryReadiness | null>(null)
 const messageSendScenarioOpen = ref(false)
 const ctiCreateConversationScenarioOpen = ref(false)
@@ -470,6 +484,10 @@ const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() 
 const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresentation(
   current.value?.diagnosis.evidence ?? [],
 ))
+const fiveQuestionItems = computed(() => {
+  if (!business.value || !developer.value) return []
+  return buildFiveQuestionRail(business.value, developer.value)
+})
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
 const incidentReportErrors = computed(() => formalIncidentFormErrors(incidentReportForm))
@@ -555,6 +573,8 @@ function handleCapabilityCommand(command: WorkbenchCapabilityCommand) {
     void router.push('/troubleshooting/sops')
   } else if (command === 'observability-assets') {
     void router.push('/troubleshooting/observability-assets')
+  } else if (command === 't7-owner-contract') {
+    void router.push('/troubleshooting/t7-owner-contract')
   } else if (command === 'guance') {
     openGuanceOnboarding()
   } else if (command === 'ledger') {
@@ -669,9 +689,53 @@ function openDeploymentTopologyScenarioIntake() {
   deploymentTopologyScenarioOpen.value = true
 }
 
-function openTroubleshootingScenario() {
+function openIncidentIntake() {
+  if (!canOperateTroubleshooting.value) return
+  scenarioLauncherOpen.value = false
+  conversationIntakeOpen.value = false
+  incidentReportOpen.value = true
+}
+
+function openIncidentIntakeFromConversation() {
+  conversationIntakeOpen.value = false
+  openIncidentIntake()
+}
+
+function openConversationIntake() {
+  if (!canOperateTroubleshooting.value) return
+  incidentReportOpen.value = false
+  scenarioLauncherOpen.value = false
+  conversationIntakeOpen.value = true
+}
+
+function openKnownScenarioPicker() {
   if (!canOperateTroubleshooting.value && !canManageTroubleshooting.value) return
+  incidentReportOpen.value = false
+  conversationIntakeOpen.value = false
   scenarioLauncherOpen.value = true
+}
+
+async function onConversationReady(payload: { diagnosisId: string; created: boolean | null }) {
+  conversationIntakeOpen.value = false
+  statusFilter.value = ''
+  investigationModeFilter.value = ''
+  await store.loadList(false)
+  await store.selectDiagnosis(payload.diagnosisId)
+  if (payload.created === false) {
+    ElMessage.info('已打开既有排障单（对话入口汇合到同一张单）')
+  } else {
+    ElMessage.success('对话资料已齐，已生成排障单')
+  }
+}
+
+function openTroubleshootingScenario() {
+  if (canOperateTroubleshooting.value) {
+    openIncidentIntake()
+    return
+  }
+  if (canManageTroubleshooting.value) {
+    scenarioLauncherOpen.value = true
+  }
 }
 
 function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
@@ -682,7 +746,7 @@ function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
     resetMessageSendScenarioForm()
     messageSendScenarioOpen.value = true
   } else if (command === 'incident' && canOperateTroubleshooting.value) {
-    incidentReportOpen.value = true
+    openIncidentIntake()
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
     openDeploymentTopologyScenarioIntake()
   }
@@ -790,15 +854,15 @@ async function reportIncident() {
     await store.loadList(false)
     await store.selectDiagnosis(data.diagnosis.diagnosisId)
     if (data.created) {
-      ElMessage.success('排障事件已进入正式 Diagnosis 主链')
+      ElMessage.success('已生成排障单，进入详情按五问推进')
     } else {
-      ElMessage.info('命中五分钟幂等窗口，已打开既有 Diagnosis')
+      ElMessage.info('五分钟内同类事件已有排障单，已打开原单')
     }
   } catch (error) {
     const routeBoundary = incidentRoutePreview.value.tone === 'DETERMINISTIC'
-      ? '错误码未命中已审核 Playbook 时，受限未命中路径会按设计 fail-closed。'
-      : '开放调查未启用或配置不合规时会按设计 fail-closed。'
-    ElMessage.error(`上报未创建：${errorText(error)} ${routeBoundary}`)
+      ? '有错误码但未命中已审核标准方案时，系统会明确拒绝，不会瞎猜。'
+      : '没有标准方案时的兜底调查未启用或配置不合规时，系统会明确拒绝。'
+    ElMessage.error(`未生成排障单：${errorText(error)} ${routeBoundary}`)
   } finally {
     incidentReportLoading.value = false
   }
@@ -1055,7 +1119,7 @@ onMounted(() => store.loadList(isDiagnosisViewMode(viewMode.value)))
 </script>
 
 <style scoped>
-.formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:clamp(236px,18vw,320px) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
+.formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:var(--mc-ts-side-rail-width) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
 .formal-workbench.traditional-list-mode { display:block; width:100%; overflow-y:auto; }
 .formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); width:100%; }
 .formal-workbench.capability-workspace-mode { display:block; width:100%; overflow:hidden; }

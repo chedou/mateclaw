@@ -321,26 +321,25 @@ public final class TroubleshootingAgentTriageService {
             }
 
             List<String> warnings = new ArrayList<>();
-            warnings.add("只读 Agent 输出仅供人工确认；未生成或执行任何处置动作。");
-            warnings.add("当前证据链仍处于 fixtureMode，生产数据源联调完成前不得解除。");
+            warnings.add("上面的分析只是建议，需要人确认；系统没有自动改任何东西。");
+            warnings.add("当前还在演练/演示证据模式；生产数据源联调完成前，不能当成正式验收通过。");
             if (prompt.truncated()) {
                 warnings.add("未受信上下文超出 " + properties.getMaxPromptChars()
                         + " 字符的上下文预算，已确定性截断；结论仍需人工复核。");
             }
             if (routeMissReason != null && !routeMissReason.isBlank()) {
-                warnings.add("确定性路由未命中："
-                        + TroubleshootingSecretRedactor.redact(routeMissReason));
+                warnings.add(plainRouteMissWarning(routeMissReason));
             }
 
             AgentResponse response = agentFailed ? null : parse(modelOutput);
             if (response == null) {
                 if (agentTimedOut) {
-                    warnings.add("只读 Agent 超出 " + properties.getTriageTimeout().toSeconds()
-                            + " 秒服务端时长预算，已停止等待并降级为人工深查。");
+                    warnings.add("助手超时（超过 " + properties.getTriageTimeout().toSeconds()
+                            + " 秒），已改为请人继续查。");
                 } else {
                     warnings.add(agentFailed
-                            ? "只读 Agent 调用失败，已降级为人工深查。"
-                            : "只读 Agent 输出不可解析，已降级为人工深查。");
+                            ? "助手调用失败，已改为请人继续查。"
+                            : "助手返回内容读不懂，已改为请人继续查。");
                 }
             }
             if (snapshot.coreEvidenceFailure() != null) {
@@ -360,15 +359,15 @@ public final class TroubleshootingAgentTriageService {
                     || snapshot.coreEvidenceFailure() != null;
             if (response != null && !Boolean.TRUE.equals(response.abstain())
                     && citations.isEmpty()) {
-                warnings.add("只读 Agent 未提供可验证的证据引用，已强制弃权。");
+                warnings.add("助手没给出可核对的证据引用，已放弃自动结论。");
             }
             if (response != null && !Boolean.TRUE.equals(response.abstain()) && blankCore) {
-                warnings.add("只读 Agent 未提供完整的摘要与假设，已强制弃权。");
+                warnings.add("助手没写清摘要和假设，已放弃自动结论。");
             }
 
             String summary = response == null || response.summary() == null
                     || response.summary().isBlank()
-                    ? "只读 Agent 未能形成可验证结论，等待人工深查。"
+                    ? "助手没形成可核对结论，等人工继续查。"
                     : TroubleshootingSecretRedactor.redact(response.summary().trim());
             String hypothesis = response == null || response.hypothesis() == null
                     || response.hypothesis().isBlank()
@@ -379,7 +378,7 @@ public final class TroubleshootingAgentTriageService {
                 confidence = Confidence.LOW;
             } else if (response.confidence() == Confidence.HIGH) {
                 confidence = Confidence.MEDIUM;
-                warnings.add("未命中路 Agent 建议最高校准为 MEDIUM，仍需人工确认。");
+                warnings.add("开放调查建议最高按中等把握看待，仍需人工确认。");
             } else {
                 confidence = response.confidence();
             }
@@ -625,6 +624,14 @@ public final class TroubleshootingAgentTriageService {
             }
         }
         return List.copyOf(seen);
+    }
+
+    private static String plainRouteMissWarning(String routeMissReason) {
+        String reason = TroubleshootingSecretRedactor.redact(routeMissReason).trim();
+        if (reason.contains("no errorCode") || reason.contains("deterministic routing needs one")) {
+            return "这单没有错误码，没法自动匹配标准排障方案。";
+        }
+        return "没法自动匹配标准排障方案：" + reason;
     }
 
     private String json(Object value) {

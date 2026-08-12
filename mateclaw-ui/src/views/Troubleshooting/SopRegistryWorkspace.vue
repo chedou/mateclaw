@@ -54,20 +54,31 @@
       </div>
     </section>
 
-    <aside
-      class="inspector"
-      :class="{ 'is-loading': detailLoading }"
-      :aria-busy="detailLoading"
-      aria-label="SOP 详情检查器"
+    <el-drawer
+      :model-value="Boolean(selectedRouteKey)"
+      :size="'var(--mc-ts-drawer-width)'"
+      destroy-on-close
+      class="sop-detail-drawer"
+      :title="drawerTitle"
+      @update:model-value="onDrawerOpenChange"
     >
-      <div v-if="!selectedSop" class="inspector-empty">
-        <span class="empty-mark">{ }</span>
-        <strong>选择一条路由查看完整排障规则</strong>
-        <p>列表只读索引列；判据、规则和建议动作按需加载。</p>
-      </div>
+      <div
+        class="inspector"
+        :class="{ 'is-loading': detailLoading }"
+        :aria-busy="detailLoading"
+        aria-label="SOP 详情检查器"
+      >
+        <div v-if="!selectedSop" class="inspector-empty">
+          <span class="empty-mark">{ }</span>
+          <strong>{{ detailLoading ? '正在加载规则详情…' : '暂无详情' }}</strong>
+          <p>点选列表中的路由后，完整判据、规则与动作会显示在这里。</p>
+        </div>
 
-      <Transition v-else name="inspector" mode="out-in">
-        <div :key="selectedSop.system + ':' + selectedSop.errorCode" class="inspector-body">
+        <div
+          v-else
+          :key="selectedSop.system + ':' + selectedSop.errorCode"
+          class="inspector-body"
+        >
           <div class="inspector-head">
             <div>
               <span class="eyebrow">{{ selectedSop.contractVersion }}</span>
@@ -123,12 +134,69 @@
             <p>此 SOP 含 MANUAL_WRITE 建议，但平台只允许转派、批准状态推进和外部结果登记，绝不执行写操作。</p>
           </section>
 
+          <section class="structured-section">
+            <div class="section-title"><span>取证步骤</span></div>
+            <div
+              v-for="(item, index) in selectedSop.evidenceRequests"
+              :key="`ev-${index}`"
+              class="step-card"
+            >
+              <strong>{{ index + 1 }}. {{ String(item.requestId || '未命名') }}</strong>
+              <p>{{ String(item.purpose || '未填写目的') }}</p>
+              <div class="step-meta">
+                <span>类型 {{ String(item.signalKind || '—') }}</span>
+                <span>窗口 {{ String(item.window || '—') }}</span>
+                <span>{{ item.required === false ? '可选' : '必做' }}</span>
+              </div>
+            </div>
+            <p v-if="!selectedSop.evidenceRequests.length" class="empty-line">无取证步骤</p>
+          </section>
+
+          <section class="structured-section">
+            <div class="section-title"><span>异常判据</span></div>
+            <div
+              v-for="(item, index) in selectedSop.anomalyCriteria"
+              :key="`cr-${index}`"
+              class="step-card"
+            >
+              <strong>{{ index + 1 }}. {{ String(item.signal || '未命名信号') }}</strong>
+              <p>{{ String(item.description || '未填写说明') }}</p>
+              <div class="step-meta">
+                <span>来自 {{ String(item.sourceRequestId || '—') }}</span>
+                <span>规则 {{ criterionRuleLabel(item) }}</span>
+              </div>
+            </div>
+            <p v-if="!selectedSop.anomalyCriteria.length" class="empty-line">无异常判据</p>
+          </section>
+
+          <section class="structured-section">
+            <div class="section-title"><span>诊断结论</span></div>
+            <div
+              v-for="(item, index) in selectedSop.diagnosisRules"
+              :key="`dr-${index}`"
+              class="step-card"
+            >
+              <strong>{{ index + 1 }}. {{ String(item.ruleId || '未命名规则') }}</strong>
+              <p>{{ String(item.rootCause || item.summary || '未填写根因') }}</p>
+              <div class="step-meta">
+                <span>置信度 {{ String(item.confidence || '—') }}</span>
+                <span>信号 {{ Array.isArray(item.requiredSignals) ? item.requiredSignals.join(', ') : '—' }}</span>
+              </div>
+            </div>
+            <p v-if="!selectedSop.diagnosisRules.length" class="empty-line">无诊断规则</p>
+          </section>
+
           <section class="json-section">
             <div class="section-title">
-              <span>完整 SOP JSON</span>
-              <el-button size="small" text @click="$emit('copyContract')">复制</el-button>
+              <span>完整 SOP JSON（高级）</span>
+              <div class="json-actions">
+                <el-button size="small" text @click="jsonExpanded = !jsonExpanded">
+                  {{ jsonExpanded ? '收起' : '展开' }}
+                </el-button>
+                <el-button size="small" text @click="$emit('copyContract')">复制</el-button>
+              </div>
             </div>
-            <pre>{{ prettyContract }}</pre>
+            <pre v-show="jsonExpanded">{{ prettyContract }}</pre>
           </section>
 
           <div class="review-action">
@@ -181,19 +249,34 @@
             <span v-else>生命周期已结束；该版本只保留审计记录。</span>
           </div>
         </div>
-      </Transition>
-    </aside>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import type { KnowledgeEvidenceGrade, SopEntry, SopStatus, SopSummary } from '@/api'
 import { knowledgeEvidenceGradeLabel } from './formalProjection'
+
+const jsonExpanded = ref(false)
 
 function knowledgeGradeTagType(grade: KnowledgeEvidenceGrade) {
   if (grade === 'RECORDED_AGGREGATE') return 'success'
   if (grade === 'AUTHORED_FIXTURE') return 'warning'
   return 'info'
+}
+
+function criterionRuleLabel(item: Record<string, unknown>) {
+  const rule = item.rule && typeof item.rule === 'object' && !Array.isArray(item.rule)
+    ? item.rule as Record<string, unknown>
+    : {}
+  const kind = String(rule.kind || '—')
+  const field = String(rule.field || '')
+  const threshold = rule.threshold
+  if (field && threshold !== undefined) return `${kind} ${field} ${threshold}`
+  if (field) return `${kind} ${field}`
+  return kind
 }
 
 const STATUS_LABEL: Record<SopStatus, string> = {
@@ -202,7 +285,7 @@ const STATUS_LABEL: Record<SopStatus, string> = {
   deprecated: '已过期',
 }
 
-defineProps<{
+const props = defineProps<{
   rows: SopSummary[]
   selectedRouteKey: string | null
   selectedSop: SopEntry | null
@@ -220,19 +303,30 @@ defineProps<{
   formatTime: (value?: string | null) => string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'select-sop': [row: SopSummary]
   'openRegister': []
   'advanceStatus': []
   'openReviewForVersion': []
   'deprecateLegacy': []
   'copyContract': []
+  'clearSelection': []
 }>()
+
+const drawerTitle = computed(() => {
+  if (props.selectedSop?.title) return props.selectedSop.title
+  if (props.selectedRouteKey) return props.selectedRouteKey
+  return '规则详情'
+})
+
+function onDrawerOpenChange(open: boolean) {
+  if (!open) emit('clearSelection')
+}
 </script>
 
 <style scoped>
-.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(560px, 1fr) 430px; }
-.registry { min-width: 0; min-height: 0; position: relative; border-right: 1px solid var(--el-border-color-lighter); }
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.registry { flex: 1; min-width: 0; min-height: 0; position: relative; }
 .route-cell { display: flex; flex-direction: column; gap: 2px; }
 .route-cell strong { font: 600 12px var(--mc-mono, monospace); color: var(--el-text-color-primary); }
 .route-cell span { font: 10px var(--mc-mono, monospace); color: var(--el-text-color-placeholder); }
@@ -253,19 +347,19 @@ defineEmits<{
 .empty-state .el-button { pointer-events: auto; }
 
 .inspector {
-  min-width: 0; overflow-y: auto;
-  background: color-mix(in srgb, var(--el-bg-color) 96%, var(--el-text-color-primary) 4%);
+  min-width: 0;
+  min-height: 0;
   transition: opacity 120ms ease;
 }
 .inspector.is-loading { opacity: .62; pointer-events: none; }
 .inspector-empty {
-  min-height: 65%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 28px; text-align: center; color: var(--el-text-color-secondary);
 }
 .inspector-empty strong { color: var(--el-text-color-primary); font-size: 13px; }
 .inspector-empty p { max-width: 280px; margin: 7px 0 0; font-size: 11.5px; line-height: 1.6; }
 .empty-mark { margin-bottom: 14px; font: 24px var(--mc-mono, monospace); color: var(--el-text-color-placeholder); }
-.inspector-body { padding: 18px 18px 28px; }
+.inspector-body { padding: 0 4px 12px; }
 .inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
 .eyebrow { color: var(--el-text-color-secondary); font: 10px var(--mc-mono, monospace); }
 .inspector-head h2 { margin: 5px 0 4px; font-size: 17px; line-height: 1.45; }
@@ -275,8 +369,27 @@ defineEmits<{
 .metadata div:nth-child(odd) { padding-right: 12px; }
 .metadata dt { color: var(--el-text-color-secondary); font: 10px var(--mc-mono, monospace); }
 .metadata dd { margin: 4px 0 0; font-size: 11.5px; color: var(--el-text-color-primary); }
-.contract-health, .json-section { margin-top: 18px; }
+.contract-health, .json-section, .structured-section { margin-top: 18px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; font-size: 12px; font-weight: 650; }
+.json-actions { display: flex; align-items: center; gap: 2px; }
+.step-card {
+  margin-top: 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+.step-card strong { display: block; font-size: 12px; color: var(--el-text-color-primary); }
+.step-card p { margin: 5px 0 0; color: var(--el-text-color-regular); font-size: 11px; line-height: 1.5; }
+.step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 7px;
+  color: var(--el-text-color-secondary);
+  font-size: 10.5px;
+}
+.empty-line { margin: 6px 0 0; color: var(--el-text-color-placeholder); font-size: 11px; }
 .warning-count { color: var(--el-color-warning); font-size: 10.5px; font-weight: 500; }
 .counts { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; overflow: hidden; }
 .counts div { padding: 9px 6px; text-align: center; border-right: 1px solid var(--el-border-color-lighter); }
@@ -315,22 +428,8 @@ defineEmits<{
   background: color-mix(in srgb, var(--mc-primary) 12%, var(--el-bg-color)) !important;
 }
 :deep(.selected-row > td:first-child) { box-shadow: inset 3px 0 0 var(--mc-primary); }
-.inspector-enter-active, .inspector-leave-active { transition: opacity 150ms ease, transform 150ms ease; }
-.inspector-enter-from { opacity: 0; transform: translateX(6px); }
-.inspector-leave-to { opacity: 0; transform: translateX(-4px); }
-
-@media (max-width: 1280px) {
-  .workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: 520px auto;
-    align-content: start;
-    overflow: visible;
-  }
-  .registry { height: 520px; border-right: 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-  .inspector { overflow: visible; }
-}
 
 @media (prefers-reduced-motion: reduce) {
-  :deep(.el-table__row), .inspector, .inspector-enter-active, .inspector-leave-active { transition: none; }
+  :deep(.el-table__row), .inspector { transition: none; }
 }
 </style>

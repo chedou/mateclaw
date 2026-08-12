@@ -46,7 +46,7 @@ import java.util.Optional;
 public class DiagnosisExperienceProjectionService {
 
     private static final String WRITE_BOUNDARY =
-            "MateClaw 只提供只读证据与状态推进；生产变更由授权人员在系统外执行并回填结果。";
+            "系统只帮你查证据、推进工单；改生产环境要人在外面做完，再回来登记结果。";
 
     private final TroubleshootingPersistenceService persistence;
     private final DiagnosisDerivationService derivationService;
@@ -115,7 +115,7 @@ public class DiagnosisExperienceProjectionService {
 
         capabilityLimits.add(WRITE_BOUNDARY);
         if (!diagnosis.timings().recorded()) {
-            capabilityLimits.add("该旧记录创建时尚未采集 D14 阶段时间戳，不用 0 或当前时间回填。");
+            capabilityLimits.add("这是旧记录：当时还没记下各阶段耗时，所以这里不会用 0 或当前时间凑数。");
         }
         capabilityLimits.addAll(diagnosis.warnings());
 
@@ -137,7 +137,7 @@ public class DiagnosisExperienceProjectionService {
                         latestOpenDiscoveryRun),
                 evidenceFacts.contrast(),
                 draft(diagnosis),
-                deduplicate(capabilityLimits),
+                plainCapabilityLimits(capabilityLimits),
                 diagnosis.fixtureMode());
 
         return new DiagnosisExperienceProjection(business, developer);
@@ -196,7 +196,7 @@ public class DiagnosisExperienceProjectionService {
             List<String> capabilityLimits) {
         if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
                 || diagnosis.sopKey() == null) {
-            capabilityLimits.add("开放调查路径没有可复算的确定性 SOP 判据链。 ");
+            capabilityLimits.add("这是开放调查：没有套用标准排障方案，所以结论不能按固定步骤复算。");
             return null;
         }
         try {
@@ -371,6 +371,60 @@ public class DiagnosisExperienceProjectionService {
 
     private String describeAction(RecommendedAction action) {
         return action.title() + (action.description().isBlank() ? "" : "：" + action.description());
+    }
+
+    private List<String> plainCapabilityLimits(List<String> values) {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            result.add(toPlainCapabilityLimit(value.trim()));
+        }
+        return List.copyOf(result);
+    }
+
+    /** Operator-facing rewrite; keeps unknown strings intact. */
+    static String toPlainCapabilityLimit(String raw) {
+        String text = raw.trim();
+        return switch (text) {
+            case "MateClaw 只提供只读证据与状态推进；生产变更由授权人员在系统外执行并回填结果。" ->
+                    WRITE_BOUNDARY;
+            case "只读 Agent 输出仅供人工确认；未生成或执行任何处置动作。" ->
+                    "上面的分析只是建议，需要人确认；系统没有自动改任何东西。";
+            case "当前证据链仍处于 fixtureMode，生产数据源联调完成前不得解除。" ->
+                    "当前还在演练/演示证据模式；生产数据源联调完成前，不能当成正式验收通过。";
+            case "开放调查路径没有可复算的确定性 SOP 判据链。",
+                 "开放调查路径没有可复算的确定性 SOP 判据链" ->
+                    "这是开放调查：没有套用标准排障方案，所以结论不能按固定步骤复算。";
+            case "该旧记录创建时尚未采集 D14 阶段时间戳，不用 0 或当前时间回填。" ->
+                    "这是旧记录：当时还没记下各阶段耗时，所以这里不会用 0 或当前时间凑数。";
+            default -> plainRouteMissLimit(text);
+        };
+    }
+
+    private static String plainRouteMissLimit(String text) {
+        if (text.startsWith("确定性路由未命中：")) {
+            String reason = text.substring("确定性路由未命中：".length()).trim();
+            if (reason.contains("no errorCode") || reason.contains("deterministic routing needs one")) {
+                return "这单没有错误码，没法自动匹配标准排障方案。";
+            }
+            if (!reason.isBlank()) {
+                return "没法自动匹配标准排障方案：" + reason;
+            }
+            return "没法自动匹配标准排障方案。";
+        }
+        if (text.startsWith("只读 Agent ")) {
+            return text
+                    .replace("只读 Agent 超出", "助手超时（超过")
+                    .replace(" 秒服务端时长预算，已停止等待并降级为人工深查。", " 秒），已改为请人继续查。")
+                    .replace("只读 Agent 调用失败，已降级为人工深查。", "助手调用失败，已改为请人继续查。")
+                    .replace("只读 Agent 输出不可解析，已降级为人工深查。", "助手返回内容读不懂，已改为请人继续查。")
+                    .replace("只读 Agent 未提供可验证的证据引用，已强制弃权。", "助手没给出可核对的证据引用，已放弃自动结论。")
+                    .replace("只读 Agent 未提供完整的摘要与假设，已强制弃权。", "助手没写清摘要和假设，已放弃自动结论。")
+                    .replace("只读 Agent 未能形成可验证结论，等待人工深查。", "助手没形成可核对结论，等人工继续查。");
+        }
+        return text;
     }
 
     private List<String> deduplicate(List<String> values) {

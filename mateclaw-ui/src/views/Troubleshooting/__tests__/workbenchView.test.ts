@@ -8,6 +8,7 @@ import {
   isDiagnosisViewMode,
   resolveWorkbenchView,
   shouldShowQueuePanel,
+  workbenchSecondaryScenarios,
   workbenchViewQuery,
 } from '../workbenchView'
 
@@ -77,35 +78,52 @@ describe('troubleshooting workbench view mode', () => {
     expect(new Set(commands).size).toBe(commands.length)
   })
 
-  it('treats deployment topology analysis as a troubleshooting scenario', () => {
+  it('puts paste-alert first and keeps known scenarios secondary', () => {
     expect(WORKBENCH_TROUBLESHOOTING_SCENARIOS).toEqual([
       expect.objectContaining({
+        command: 'incident',
+        label: '粘贴告警发起',
+        group: 'daily',
+        outcome: '最常用',
+      }),
+      expect.objectContaining({
         command: 'cti-create-conversation-failed',
-        label: 'CTI 创建会话失败',
-        outcome: '三次只读取证',
+        label: '创建会话失败',
+        group: 'known',
+        outcome: '已有标准方法',
       }),
       expect.objectContaining({
         command: 'message-send-failed',
-        label: '会话消息发送失败',
-        outcome: '三次只读取证',
+        label: '消息发送失败',
+        group: 'known',
+        outcome: '已有标准方法',
       }),
-      expect.objectContaining({ command: 'incident', label: '通用事件排障' }),
       expect.objectContaining({
         command: 'deployment',
-        label: '部署拓扑拨测分析',
-        description: expect.stringContaining('显式创建受控 Scenario Diagnosis'),
-        outcome: '创建场景 Diagnosis',
+        label: '部署拓扑拨测',
+        group: 'admin',
+        outcome: '管理员',
       }),
+    ])
+    expect(workbenchSecondaryScenarios(true, true).map(item => item.command)).toEqual([
+      'cti-create-conversation-failed',
+      'message-send-failed',
+      'deployment',
+    ])
+    expect(workbenchSecondaryScenarios(true, false).map(item => item.command)).toEqual([
+      'cti-create-conversation-failed',
+      'message-send-failed',
     ])
   })
 
   it('keeps user-facing troubleshooting names in one canonical label table', () => {
     expect(TROUBLESHOOTING_UI_LABELS).toMatchObject({
       launch: '发起排障',
-      scenarioPicker: '选择排障场景',
-      incident: '通用事件排障',
-      ctiCreateConversationFailed: 'CTI 创建会话失败',
-      messageSendFailed: '会话消息发送失败',
+      scenarioPicker: '选择已登记场景',
+      incident: '粘贴告警发起',
+      conversation: '对话发起排障',
+      ctiCreateConversationFailed: '创建会话失败',
+      messageSendFailed: '消息发送失败',
       rules: '排障规则库',
       evidenceCatalog: '查询规则说明书',
       observabilityAssets: '接入系统',
@@ -113,7 +131,7 @@ describe('troubleshooting workbench view mode', () => {
       guanceOnboarding: '数据连接检查',
       guanceSourceStatus: '观测云真实数据源状态',
       guanceValidation: '真实数据验证',
-      deploymentTopology: '部署拓扑拨测分析',
+      deploymentTopology: '部署拓扑拨测',
       evaluation: '诊断效果评估',
       caseKnowledge: '历史案例入库',
     })

@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Pure reducer for RECEIVED -> AWAITING_INPUT -> READY. */
 public final class IntakeSessionReducer {
@@ -23,6 +25,17 @@ public final class IntakeSessionReducer {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     private static final List<String> REQUIRED_FIELDS = List.of(
             "symptom", "system", "service", "customerRef", "occurredAt");
+    /** Embedded wall-clock in pasted alert banners, e.g. 【重要】2026-08-12 16:36:00. */
+    private static final Pattern EMBEDDED_LOCAL_TIME = Pattern.compile(
+            "(20\\d{2}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?)");
+    /**
+     * Infra dial-probe / VM health alerts rarely name a customer; the product
+     * already accepts the explicit token “未知”, so we only fill it when the
+     * pasted text itself signals that class of alert.
+     */
+    private static final Pattern INFRA_ALERT_WITHOUT_CUSTOMER = Pattern.compile(
+            "拨测|虚机|主机|存活检测|监控项|告警分组|告警级别|告警URL",
+            Pattern.CASE_INSENSITIVE);
 
     public IntakeSession start(String intakeSessionId, IntakeMessageEnvelope envelope) {
         ParsedInput parsed = parse(envelope.text());
@@ -141,13 +154,20 @@ public final class IntakeSessionReducer {
         Map<String, String> fields = new LinkedHashMap<>();
         List<String> freeLines = new ArrayList<>();
         for (String rawLine : raw.lines().toList()) {
-            String line = rawLine.trim();
+            String line = stripAlertDecorations(rawLine.trim());
             if (line.isBlank() || isMediaMarker(line)) {
                 continue;
+            }
+            Instant embeddedTime = extractEmbeddedTime(line);
+            if (embeddedTime != null && !fields.containsKey("occurredAt")) {
+                fields.put("occurredAt", formatLocal(embeddedTime));
             }
             int separator = separator(line);
             if (separator > 0) {
                 String key = canonicalKey(line.substring(0, separator));
+                if ("ignore".equals(key)) {
+                    continue;
+                }
                 if (key != null) {
                     fields.put(key, safe(line.substring(separator + 1)));
                     continue;
@@ -155,37 +175,145 @@ public final class IntakeSessionReducer {
             }
             freeLines.add(line);
         }
-        String symptom = fields.get("symptom");
-        if (symptom == null && !freeLines.isEmpty()) {
-            symptom = safe(String.join("\n", freeLines));
+
+        String symptom = first(
+                trimMonitorItem(fields.get("symptom")),
+                firstFreeSymptom(freeLines));
+        String system = fields.get("system");
+        String service = first(fields.get("service"), inferService(symptom));
+        String customerRef = fields.get("customerRef");
+        if (isMissing(customerRef) && looksLikeInfraAlertWithoutCustomer(raw)) {
+            customerRef = "未知";
+        }
+        Instant occurredAt = parseOccurredAt(fields.get("occurredAt"));
+        if (occurredAt == null) {
+            occurredAt = extractEmbeddedTime(raw);
         }
         return new ParsedInput(
                 symptom,
-                fields.get("system"),
-                fields.get("service"),
-                fields.get("customerRef"),
+                system,
+                service,
+                customerRef,
                 fields.get("errorCode"),
                 fields.get("traceId"),
-                parseOccurredAt(fields.get("occurredAt")));
+                occurredAt);
+    }
+
+    private String firstFreeSymptom(List<String> freeLines) {
+        for (String line : freeLines) {
+            if (extractEmbeddedTime(line) != null && line.length() < 40) {
+                continue;
+            }
+            if (line.startsWith("http://") || line.startsWith("https://")) {
+                continue;
+            }
+            return safe(line);
+        }
+        return null;
+    }
+
+    private String inferService(String symptom) {
+        if (symptom == null || symptom.isBlank()) {
+            return null;
+        }
+        String cleaned = trimMonitorItem(symptom);
+        // sf-icare-app-虚机-拨测检测异常 → sf-icare-app
+        int zh = indexOfFirstCjk(cleaned);
+        if (zh > 0) {
+            String asciiPrefix = cleaned.substring(0, zh).replaceAll("[-_]+$", "");
+            if (!asciiPrefix.isBlank() && asciiPrefix.length() >= 3) {
+                return asciiPrefix;
+            }
+        }
+        String[] parts = cleaned.split("[-_]");
+        if (parts.length >= 2 && parts[0].matches("[A-Za-z0-9]+") && parts[1].matches("[A-Za-z0-9]+")) {
+            return parts[0] + "-" + parts[1];
+        }
+        return null;
+    }
+
+    private String trimMonitorItem(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim();
+        int cut = cleaned.indexOf('，');
+        if (cut > 0) {
+            cleaned = cleaned.substring(0, cut).trim();
+        }
+        cut = cleaned.indexOf(',');
+        if (cut > 0) {
+            cleaned = cleaned.substring(0, cut).trim();
+        }
+        return cleaned;
+    }
+
+    private boolean looksLikeInfraAlertWithoutCustomer(String raw) {
+        return raw != null && INFRA_ALERT_WITHOUT_CUSTOMER.matcher(raw).find();
+    }
+
+    private Instant extractEmbeddedTime(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher matcher = EMBEDDED_LOCAL_TIME.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        return parseOccurredAt(matcher.group(1).replace('T', ' '));
+    }
+
+    private String formatLocal(Instant instant) {
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(BUSINESS_ZONE)
+                .format(instant);
+    }
+
+    private int indexOfFirstCjk(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String stripAlertDecorations(String line) {
+        if (line == null) {
+            return "";
+        }
+        return line
+                .replaceFirst("^[■●◆*]\\s*", "")
+                .replaceFirst("^【重要】\\s*", "")
+                .trim();
     }
 
     private Instant parseOccurredAt(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
+        String normalized = value.trim()
+                .replace('T', ' ')
+                .replaceAll("\\s+", " ");
+        // Drop trailing ticket crumbs: "2026-08-12 16:36:00 (r/95b771)"
+        int paren = normalized.indexOf('(');
+        if (paren > 0) {
+            normalized = normalized.substring(0, paren).trim();
+        }
         try {
-            return Instant.parse(value);
+            return Instant.parse(value.trim());
         } catch (DateTimeParseException ignored) {
             // Try an explicit offset next.
         }
         try {
-            return OffsetDateTime.parse(value).toInstant();
+            return OffsetDateTime.parse(value.trim()).toInstant();
         } catch (DateTimeParseException ignored) {
             // Try the two documented local formats next.
         }
         for (DateTimeFormatter format : LOCAL_TIME_FORMATS) {
             try {
-                return LocalDateTime.parse(value, format).atZone(BUSINESS_ZONE).toInstant();
+                return LocalDateTime.parse(normalized, format).atZone(BUSINESS_ZONE).toInstant();
             } catch (DateTimeParseException ignored) {
                 // Continue through the small deterministic format set.
             }
@@ -237,13 +365,14 @@ public final class IntakeSessionReducer {
                 .replace("-", "")
                 .replace(" ", "");
         return switch (key) {
-            case "现象", "问题", "问题现象", "symptom", "title" -> "symptom";
-            case "系统", "system" -> "system";
-            case "服务", "service" -> "service";
-            case "客户id", "客户", "租户id", "customerid", "customerref" -> "customerRef";
-            case "发生时间", "时间", "occurredat" -> "occurredAt";
+            case "现象", "问题", "问题现象", "symptom", "title", "监控项" -> "symptom";
+            case "系统", "system", "业务系统" -> "system";
+            case "服务", "service", "运行服务", "服务名" -> "service";
+            case "客户id", "客户", "租户id", "customerid", "customerref", "影响对象" -> "customerRef";
+            case "发生时间", "时间", "occurredat", "告警时间" -> "occurredAt";
             case "错误码", "errorcode" -> "errorCode";
             case "traceid", "psid", "psid/traceid" -> "traceId";
+            case "告警分组", "告警级别", "告警url", "报警url" -> "ignore";
             default -> null;
         };
     }

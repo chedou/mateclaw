@@ -9,6 +9,7 @@ import capabilityMenuSource from '../workbenchCapabilityMenu.ts?raw'
 import developerEvidenceSource from '../DeveloperEvidencePanel.vue?raw'
 import businessSummarySource from '../BusinessSummaryCard.vue?raw'
 import synthesisPreviewSource from '../SynthesisPreviewDialog.vue?raw'
+import synthesisPreviewBodySource from '../SynthesisPreviewBody.vue?raw'
 import evaluationLedgerSource from '../EvaluationSampleLedgerWorkspace.vue?raw'
 
 describe('troubleshooting operator copy uses plain language', () => {
@@ -77,11 +78,15 @@ describe('troubleshooting operator copy uses plain language', () => {
 
   it('presents PS-linked log records without pretending they are a full distributed trace', () => {
     expect(developerEvidenceSource).toContain('关联日志摘要')
+    expect(developerEvidenceSource).toContain('这次请求上发生了什么')
     expect(developerEvidenceSource).toContain('PS ID 关联日志轨迹')
     expect(developerEvidenceSource).toContain('这里不是完整的跨服务 Trace')
     expect(developerEvidenceSource).toContain('关联日志')
     expect(developerEvidenceSource).toContain('异常日志')
     expect(developerEvidenceSource).toContain('查看全部 {{ developer.callChain.hops.length }} 条关联日志')
+    expect(developerEvidenceSource).toContain('质疑结论或交接复核时再展开')
+    expect(developerEvidenceSource).toContain('结案后沉淀用，不参与当场处置')
+    expect(developerEvidenceSource).not.toContain('convergence-grid')
     expect(developerEvidenceSource).not.toContain('PS / Trace 链路')
     expect(developerEvidenceSource).not.toContain('链路节点')
     expect(developerEvidenceSource).toContain('故障请求和正常请求有什么不同')
@@ -103,8 +108,9 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(developerEvidenceSource).toContain('查看精确数量与证据引用')
     expect(guanceValidationSource).toContain('spineContrastNarrative.summary')
     expect(guanceValidationSource).not.toContain('failureMatchCount }}/{{')
-    expect(synthesisPreviewSource).toContain('previewContrastNarrative.summary')
-    expect(synthesisPreviewSource).not.toContain('失败样本命中特征')
+    expect(synthesisPreviewBodySource).toContain('previewContrastNarrative.summary')
+    expect(synthesisPreviewBodySource).not.toContain('失败样本命中特征')
+    expect(synthesisPreviewSource).toContain('SynthesisPreviewBody')
     expect(evaluationLedgerSource).toContain('条关联日志')
     expect(evaluationLedgerSource).toContain('sampleContrastNarrative(sample)?.summary')
     expect(businessSummarySource).toContain('confidencePresentation.label')

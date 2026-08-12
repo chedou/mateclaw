@@ -279,6 +279,11 @@ public class TroubleshootingIntakeSessionService {
     }
 
     private void enqueueInvestigation(IntakeSession session) {
+        if (TroubleshootingIntakeSources.isLocalSynchronous(session.source())) {
+            // Web conversation intake reports Diagnosis at the HTTP boundary and
+            // does not need channel ACK delivery through IntakeInvestigationPoller.
+            return;
+        }
         LocalDateTime now = utcNow();
         TroubleshootingIntakeInvestigationEntity task =
                 new TroubleshootingIntakeInvestigationEntity();

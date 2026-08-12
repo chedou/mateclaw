@@ -6,6 +6,7 @@ export type WorkbenchDiagnosisViewMode = Exclude<WorkbenchViewMode, 'LIST'>
 export type WorkbenchCapabilityCommand =
   | 'playbooks'
   | 'observability-assets'
+  | 't7-owner-contract'
   | 'guance'
   | 'ledger'
   | 'case-knowledge'
@@ -14,20 +15,24 @@ export type TroubleshootingScenarioCommand =
   | 'message-send-failed'
   | 'incident'
   | 'deployment'
+export type TroubleshootingScenarioGroup = 'daily' | 'known' | 'admin'
 export type TroubleshootingScenarioDefinition = {
   command: TroubleshootingScenarioCommand
   label: string
   description: string
   outcome: string
+  /** daily = 粘贴告警主路径；known = 已登记场景；admin = 管理员专项 */
+  group: TroubleshootingScenarioGroup
   manageOnly: boolean
 }
 
 export const TROUBLESHOOTING_UI_LABELS = {
   launch: '发起排障',
-  scenarioPicker: '选择排障场景',
-  incident: '通用事件排障',
-  ctiCreateConversationFailed: 'CTI 创建会话失败',
-  messageSendFailed: '会话消息发送失败',
+  scenarioPicker: '选择已登记场景',
+  incident: '粘贴告警发起',
+  conversation: '对话发起排障',
+  ctiCreateConversationFailed: '创建会话失败',
+  messageSendFailed: '消息发送失败',
   rules: '排障规则库',
   evidenceCatalog: '查询规则说明书',
   observabilityAssets: '接入系统',
@@ -35,7 +40,7 @@ export const TROUBLESHOOTING_UI_LABELS = {
   guanceOnboarding: '数据连接检查',
   guanceSourceStatus: '观测云真实数据源状态',
   guanceValidation: '真实数据验证',
-  deploymentTopology: '部署拓扑拨测分析',
+  deploymentTopology: '部署拓扑拨测',
   evaluation: '诊断效果评估',
   caseKnowledge: '历史案例入库',
 } as const
@@ -66,34 +71,50 @@ export const WORKBENCH_CAPABILITY_ACTIONS: ReadonlyArray<{
 
 export const WORKBENCH_TROUBLESHOOTING_SCENARIOS: ReadonlyArray<TroubleshootingScenarioDefinition> = [
   {
+    command: 'incident',
+    label: TROUBLESHOOTING_UI_LABELS.incident,
+    description: '把告警里的系统、服务、现象填进来即可；有错误码优先走标准方案。',
+    outcome: '最常用',
+    group: 'daily',
+    manageOnly: false,
+  },
+  {
     command: 'cti-create-conversation-failed',
     label: TROUBLESHOOTING_UI_LABELS.ctiCreateConversationFailed,
-    description: '真实 csdp-task 场景：查失败日志、还原关联调用链，再用成功样本排除背景噪声。',
-    outcome: '三次只读取证',
+    description: 'CSDP 已登记场景。系统和服务已锁定，按标准步骤查失败与对照。',
+    outcome: '已有标准方法',
+    group: 'known',
     manageOnly: false,
   },
   {
     command: 'message-send-failed',
     label: TROUBLESHOOTING_UI_LABELS.messageSendFailed,
-    description: '首条完整竖线：先查失败请求，再沿 PS ID 还原调用链，最后对比成功与失败样本。',
-    outcome: '三次只读取证',
-    manageOnly: false,
-  },
-  {
-    command: 'incident',
-    label: TROUBLESHOOTING_UI_LABELS.incident,
-    description: '按系统、服务、故障现象与可选错误码发起调查，进入 Diagnosis 处置主链。',
-    outcome: '创建 Diagnosis',
+    description: '会话消息发送失败的已登记场景。按固定三步只读取证。',
+    outcome: '已有标准方法',
+    group: 'known',
     manageOnly: false,
   },
   {
     command: 'deployment',
     label: TROUBLESHOOTING_UI_LABELS.deploymentTopology,
-    description: '显式创建受控 Scenario Diagnosis，再选择 Workspace 拓扑资产并将安全结果写入详情。',
-    outcome: '创建场景 Diagnosis',
+    description: '先建排障单，再选拓扑做只读拨测。适合管理员专项。',
+    outcome: '管理员',
+    group: 'admin',
     manageOnly: true,
   },
 ]
+
+/** 日常主路径以外的已登记 / 管理员场景，用于次要入口。 */
+export function workbenchSecondaryScenarios(
+  canOperate: boolean,
+  canManage: boolean,
+): TroubleshootingScenarioDefinition[] {
+  return WORKBENCH_TROUBLESHOOTING_SCENARIOS.filter((scenario) => {
+    if (scenario.group === 'daily') return false
+    if (scenario.manageOnly) return canManage
+    return canOperate
+  })
+}
 
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
   READY_FOR_HUMAN: '待确认',

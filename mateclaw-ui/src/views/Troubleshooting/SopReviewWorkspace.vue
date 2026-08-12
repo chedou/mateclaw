@@ -65,20 +65,27 @@
       </div>
     </section>
 
-    <aside
-      class="inspector review-inspector"
-      :class="{ 'is-loading': reviewLoading || manualDetailLoading }"
-      :aria-busy="reviewLoading || manualDetailLoading"
-      aria-label="知识候选详情检查器"
+    <el-drawer
+      :model-value="Boolean(selectedReviewKey)"
+      :size="'var(--mc-ts-drawer-width)'"
+      destroy-on-close
+      class="sop-detail-drawer"
+      :title="drawerTitle"
+      @update:model-value="onDrawerOpenChange"
     >
-      <div v-if="!selectedReview" class="inspector-empty">
-        <span class="empty-mark">K</span>
-        <strong>选择一条候选查看资格证据</strong>
-        <p>这里展示服务端真实持久化记录，不会把发布成功、模型输出或一次关闭误写成审批通过。</p>
-      </div>
+      <div
+        class="inspector review-inspector"
+        :class="{ 'is-loading': reviewLoading || manualDetailLoading }"
+        :aria-busy="reviewLoading || manualDetailLoading"
+        aria-label="知识候选详情检查器"
+      >
+        <div v-if="!selectedReview" class="inspector-empty">
+          <span class="empty-mark">K</span>
+          <strong>{{ reviewLoading || manualDetailLoading ? '正在加载候选详情…' : '暂无详情' }}</strong>
+          <p>点选列表中的候选后，资格证据与审核动作会显示在这里。</p>
+        </div>
 
-      <Transition v-else name="inspector" mode="out-in">
-        <div :key="selectedReview.key" class="inspector-body">
+        <div v-else :key="selectedReview.key" class="inspector-body">
           <div class="inspector-head">
             <div>
               <span class="eyebrow">{{ selectedReview.recordId }}</span>
@@ -387,12 +394,13 @@
             </div>
           </div>
         </div>
-      </Transition>
-    </aside>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { KnowledgeCandidate, KnowledgeOrigin, PlaybookKnowledgeRecord, SopEntry } from '@/api'
 import {
   missingKnowledgeOwnerLabel,
@@ -402,7 +410,7 @@ import {
   type ReferenceComparisonIssue,
 } from './knowledgeReview'
 
-defineProps<{
+const props = defineProps<{
   filteredRows: KnowledgeReviewRow[]
   knowledgeRowCount: number
   selectedReviewKey: string | null
@@ -426,7 +434,7 @@ defineProps<{
   percent: (value: number) => string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'select-review': [row: KnowledgeReviewRow]
   'retryInbox': []
   'startReview': [row: KnowledgeReviewRow]
@@ -434,13 +442,24 @@ defineEmits<{
   'approveReview': [row: KnowledgeReviewRow]
   'runManualReplay': [row: KnowledgeReviewRow]
   'deprecateReview': [row: KnowledgeReviewRow]
+  'clearSelection': []
 }>()
+
+const drawerTitle = computed(() => {
+  if (props.selectedReview?.title) return props.selectedReview.title
+  if (props.selectedReviewKey) return props.selectedReviewKey
+  return '知识候选详情'
+})
+
+function onDrawerOpenChange(open: boolean) {
+  if (!open) emit('clearSelection')
+}
 </script>
 
 <style scoped>
-.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(680px, 1fr) 480px; }
-.review-workspace { grid-template-columns: minmax(680px, 1fr) 480px; }
-.registry { min-width: 0; min-height: 0; position: relative; border-right: 1px solid var(--el-border-color-lighter); }
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.review-workspace { /* same shell as registry */ }
+.registry { flex: 1; min-width: 0; min-height: 0; position: relative; }
 .review-title-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .review-title-cell strong {
   overflow: hidden; color: var(--el-text-color-primary); font-size: 11.5px;
@@ -474,19 +493,19 @@ defineEmits<{
 .review-unavailable p { margin: 3px 0 0; color: var(--el-text-color-regular); font-size: 10.5px; }
 
 .inspector {
-  min-width: 0; overflow-y: auto;
-  background: color-mix(in srgb, var(--el-bg-color) 96%, var(--el-text-color-primary) 4%);
+  min-width: 0;
+  min-height: 0;
   transition: opacity 120ms ease;
 }
 .inspector.is-loading { opacity: .62; pointer-events: none; }
 .inspector-empty {
-  min-height: 65%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 28px; text-align: center; color: var(--el-text-color-secondary);
 }
 .inspector-empty strong { color: var(--el-text-color-primary); font-size: 13px; }
 .inspector-empty p { max-width: 280px; margin: 7px 0 0; font-size: 11.5px; line-height: 1.6; }
 .empty-mark { margin-bottom: 14px; font: 24px var(--mc-mono, monospace); color: var(--el-text-color-placeholder); }
-.inspector-body { padding: 18px 18px 28px; }
+.inspector-body { padding: 0 4px 12px; }
 .inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
 .eyebrow { color: var(--el-text-color-secondary); font: 10px var(--mc-mono, monospace); }
 .inspector-head h2 { margin: 5px 0 4px; font-size: 17px; line-height: 1.45; }
@@ -591,22 +610,8 @@ defineEmits<{
   background: color-mix(in srgb, var(--mc-primary) 12%, var(--el-bg-color)) !important;
 }
 :deep(.selected-row > td:first-child) { box-shadow: inset 3px 0 0 var(--mc-primary); }
-.inspector-enter-active, .inspector-leave-active { transition: opacity 150ms ease, transform 150ms ease; }
-.inspector-enter-from { opacity: 0; transform: translateX(6px); }
-.inspector-leave-to { opacity: 0; transform: translateX(-4px); }
-
-@media (max-width: 1280px) {
-  .workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: 520px auto;
-    align-content: start;
-    overflow: visible;
-  }
-  .registry { height: 520px; border-right: 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-  .inspector { overflow: visible; }
-}
 
 @media (prefers-reduced-motion: reduce) {
-  :deep(.el-table__row), .inspector, .inspector-enter-active, .inspector-leave-active { transition: none; }
+  :deep(.el-table__row), .inspector { transition: none; }
 }
 </style>

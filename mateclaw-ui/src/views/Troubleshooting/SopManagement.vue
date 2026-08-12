@@ -50,6 +50,7 @@
       @open-review-for-version="openReviewForSelectedVersion"
       @deprecate-legacy="registry.deprecateLegacyVersion(review.askReviewReason)"
       @copy-contract="registry.copyContract()"
+      @clear-selection="registry.clearSelection()"
     />
 
     <SopReviewWorkspace
@@ -82,6 +83,7 @@
       @approve-review="handleApproveReview"
       @run-manual-replay="review.runManualReplay"
       @deprecate-review="handleDeprecateReview"
+      @clear-selection="review.clearSelection()"
     />
 
     <SopRegisterDialog
@@ -227,6 +229,6 @@ async function reload() {
 }
 
 @media (max-width: 720px) {
-  :deep(.el-dialog) { max-width: calc(100vw - 32px); }
+  :deep(.el-drawer) { width: 100% !important; }
 }
 </style>

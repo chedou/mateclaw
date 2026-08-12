@@ -69,6 +69,12 @@
           <div v-else class="no-agent-hint">{{ $t('chat.selectAgent') }}</div>
         </div>
         <div class="chat-header-right">
+          <button
+            v-if="canOperateTroubleshooting"
+            type="button"
+            class="header-ts-launch"
+            @click="openConversationIntake"
+          >发起排障</button>
           <!-- Model selector — Issue #81 v2 R3: always pass full providers + show-all-states
                so unhealthy rows render as dimmed entries with status chips and a Fix
                button instead of disappearing entirely. -->
@@ -151,6 +157,17 @@
         @dismiss="recoverableDismissed = true"
       />
 
+      <div v-if="tsIntentOffer" class="ts-intent-banner" role="status">
+        <div class="ts-intent-copy">
+          <b>这句更像排障告警</b>
+          <span>可以走排障补问并生成排障单；也可以继续普通对话，不打断助手。</span>
+        </div>
+        <div class="ts-intent-actions">
+          <button type="button" class="btn-primary" @click="acceptTroubleshootingIntent">用排障流程</button>
+          <button type="button" class="btn-secondary" @click="declineTroubleshootingIntent">继续普通对话</button>
+        </div>
+      </div>
+
       <!-- Cron job in-flight placeholder — visible while T2 hasn't committed
            the assistant message yet. Populated by pollActivity → /cron-jobs/active-runs. -->
       <div v-if="activeCronRuns.length > 0" class="cron-running-bar">
@@ -221,8 +238,8 @@
       <ChatInput
         ref="chatInputRef"
         v-model="inputText"
-        :loading="isGenerating && !hasPendingApproval"
-        :disabled="blockingPrompt || !currentAgent"
+        :loading="(isGenerating && !hasPendingApproval) || tsIntakeLoading"
+        :disabled="blockingPrompt || !currentAgent || tsIntakeLoading"
         :skills-enabled="!!currentAgent && !currentAgent.skillsDisabled"
         :placeholder="$t('chat.messagePlaceholder')"
         :hint="currentRuntimeModel"
@@ -263,6 +280,12 @@
           :agent-id="selectedAgentId"
           :conversation-id="currentConversationId"
           @close="showTalkMode = false"
+        />
+
+        <ConversationIntakeDialog
+          v-model="conversationIntakeOpen"
+          @switch-form="goTroubleshootingForm"
+          @ready="onConversationIntakeReady"
         />
       </div>
     </div>
@@ -311,9 +334,26 @@ import { useGoalStore } from '@/stores/useGoalStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import GoalSetInlinePrompt from '@/components/goal/GoalSetInlinePrompt.vue'
 import GoalSystemLine from '@/components/goal/GoalSystemLine.vue'
+import ConversationIntakeDialog from '@/views/Troubleshooting/ConversationIntakeDialog.vue'
+import {
+  shouldAutoStartTroubleshootingIntake,
+  shouldOfferTroubleshootingIntake,
+} from '@/views/Troubleshooting/chatTroubleshootingIntent'
+import { troubleshootingApi } from '@/api'
+
+const TS_LAUNCH_SUGGESTION = '发起排障（粘贴告警）'
 
 // ============ Talk Mode ============
 const showTalkMode = ref(false)
+const conversationIntakeOpen = ref(false)
+/** Soft confirm when chat text looks like an alert but is not HIGH confidence. */
+const tsIntentOffer = ref<{ text: string } | null>(null)
+/** After user confirms, subsequent turns stay on Intake until READY / exit. */
+const tsIntakeActive = ref(false)
+const tsIntakeConversationId = ref<string | null>(null)
+const tsIntakeLoading = ref(false)
+/** User chose "continue normal chat" for this browser chat conversation. */
+const tsIntentSuppressedConvIds = ref<Set<string>>(new Set())
 
 // ============ 移动端 & 响应式状态 ============
 const convPanelOpen = ref(false)
@@ -343,27 +383,31 @@ function toggleConvPanel() {
 // ============ 配置和常量 ============
 const suggestions = computed(() => {
   const agent = currentAgent.value
+  let base: string[] = []
   // If agent has custom suggestions (stored as newline-separated string in description etc.)
   const agentSuggestions = (agent as any)?.suggestions as string | undefined
   if (agentSuggestions) {
     const parsed = agentSuggestions.split('\n').filter(Boolean).slice(0, 4)
-    if (parsed.length) return parsed
-  }
-  // Agent-type-aware defaults
-  if (agent?.agentType === 'plan_execute') {
-    return [
+    if (parsed.length) base = parsed
+  } else if (agent?.agentType === 'plan_execute') {
+    base = [
       t('chat.suggestionPlan1', '帮我制定一个完整的项目计划'),
       t('chat.suggestionPlan2', '分步骤帮我完成一个复杂任务'),
       t('chat.suggestionIntro'),
       t('chat.suggestionWeather'),
     ]
+  } else {
+    base = [
+      t('chat.suggestionIntro'),
+      t('chat.suggestionPoem'),
+      t('chat.suggestionCode'),
+      t('chat.suggestionWeather'),
+    ]
   }
-  return [
-    t('chat.suggestionIntro'),
-    t('chat.suggestionPoem'),
-    t('chat.suggestionCode'),
-    t('chat.suggestionWeather'),
-  ]
+  if (canOperateTroubleshooting.value) {
+    return [TS_LAUNCH_SUGGESTION, ...base.slice(0, 3)]
+  }
+  return base
 })
 
 // ============ 状态 ============
@@ -1297,6 +1341,139 @@ watch([selectedAgentId, currentConversationId], () => {
 const goalStore = useGoalStore()
 const workspaceStoreForGoal = useWorkspaceStore()
 const currentWorkspaceId = computed(() => workspaceStoreForGoal.currentWorkspaceId ?? '1')
+const canOperateTroubleshooting = computed(() =>
+  workspaceStoreForGoal.can('operate:troubleshooting'),
+)
+
+function openConversationIntake() {
+  if (!canOperateTroubleshooting.value) {
+    ElMessage.warning('当前 Workspace 缺少 operate:troubleshooting 权限')
+    return
+  }
+  if (currentConversationId.value) {
+    tsIntentSuppressedConvIds.value.delete(currentConversationId.value)
+  }
+  conversationIntakeOpen.value = true
+}
+
+function goTroubleshootingForm() {
+  conversationIntakeOpen.value = false
+  router.push({ path: '/troubleshooting', query: { view: 'list' } })
+}
+
+async function onConversationIntakeReady(payload: {
+  diagnosisId: string
+  created: boolean | null
+}) {
+  conversationIntakeOpen.value = false
+  exitTroubleshootingIntakeMode()
+  if (payload.created === false) {
+    ElMessage.info(`已汇合既有排障单 ${payload.diagnosisId}；结论已留在抽屉对话`)
+  } else {
+    ElMessage.success(`排障单 ${payload.diagnosisId} 结论已回写对话（未跳转工作台）`)
+  }
+}
+
+function exitTroubleshootingIntakeMode() {
+  tsIntakeActive.value = false
+  tsIntakeConversationId.value = null
+  tsIntakeLoading.value = false
+  tsIntentOffer.value = null
+}
+
+function isTsIntentSuppressed(): boolean {
+  const cid = currentConversationId.value
+  return Boolean(cid && tsIntentSuppressedConvIds.value.has(cid))
+}
+
+function appendLocalChatMessage(
+  role: 'user' | 'assistant',
+  content: string,
+  opts?: { asEmployee?: boolean },
+) {
+  if (!currentConversationId.value) {
+    currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  }
+  let text = content
+  if (role === 'assistant' && opts?.asEmployee && currentAgent.value) {
+    const name = currentAgent.value.name || '数字员工'
+    text = `【${name} · 排障】\n${content}`
+  }
+  messages.value.push({
+    id: `ts-local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    conversationId: currentConversationId.value,
+    role,
+    content: text,
+    contentParts: [{ type: 'text', text }],
+    status: 'completed',
+    createTime: new Date().toISOString(),
+    metadata: opts?.asEmployee && selectedAgentId.value
+      ? {
+          troubleshooting: true,
+          agentId: String(selectedAgentId.value),
+          agentName: currentAgent.value?.name,
+        } as any
+      : undefined,
+  })
+}
+
+async function runTroubleshootingIntakeTurn(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed || tsIntakeLoading.value) return
+  tsIntakeLoading.value = true
+  tsIntentOffer.value = null
+  appendLocalChatMessage('user', trimmed)
+  inputText.value = ''
+  chatInputRef.value?.clear?.()
+  try {
+    const { data } = await troubleshootingApi.conversationTurn({
+      conversationId: tsIntakeConversationId.value,
+      text: trimmed,
+    })
+    tsIntakeActive.value = true
+    tsIntakeConversationId.value = data.conversationId
+    appendLocalChatMessage('assistant', data.prompt, { asEmployee: true })
+    if (data.status === 'READY' && data.diagnosisId) {
+      exitTroubleshootingIntakeMode()
+      const employee = currentAgent.value?.name
+      ElMessage.success(
+        data.created === false
+          ? `已汇合既有排障单；结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`
+          : `排障结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`,
+      )
+    }
+  } catch (error: any) {
+    appendLocalChatMessage(
+      'assistant',
+      error?.message || '排障补问失败，已保留在当前对话。你可以改点「继续普通对话」或重试。',
+      { asEmployee: true },
+    )
+  } finally {
+    tsIntakeLoading.value = false
+  }
+}
+
+async function acceptTroubleshootingIntent() {
+  const pending = tsIntentOffer.value?.text?.trim()
+  tsIntentOffer.value = null
+  if (!pending) {
+    openConversationIntake()
+    return
+  }
+  await runTroubleshootingIntakeTurn(pending)
+}
+
+async function declineTroubleshootingIntent() {
+  const pending = tsIntentOffer.value?.text?.trim()
+  tsIntentOffer.value = null
+  exitTroubleshootingIntakeMode()
+  if (currentConversationId.value) {
+    tsIntentSuppressedConvIds.value.add(currentConversationId.value)
+  }
+  if (pending) {
+    await continueNormalChatSend(pending)
+  }
+}
 watch(currentConversationId, async (cid) => {
   // Skip un-persisted conversations: a brand-new empty chat has no goal yet
   // and the lookup would only 403 (Not the owner). The ring is hydrated by the
@@ -1668,6 +1845,7 @@ async function selectConversation(conv: Conversation) {
   if (switchingAway) {
     resetForNewConversation()
     messageListRef.value?.resetScrollLock()
+    exitTroubleshootingIntakeMode()
   }
   currentConversationId.value = conv.conversationId
   selectedAgentId.value = conv.agentId || selectedAgentId.value
@@ -1806,6 +1984,7 @@ function newConversation() {
   // Creating a new chat is just local navigation. Keep any previous backend
   // run alive so the user can return and reconnect to it later.
   resetForNewConversation()
+  exitTroubleshootingIntakeMode()
   currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   messages.value = []
   // A fresh conversation defers to the selected agent's model (then the global
@@ -1950,6 +2129,28 @@ async function handleSendMessage(content: string) {
     return
   }
 
+  if (!isApprovalCommand && !pendingAttachments.value.length) {
+    const gate = {
+      canOperate: canOperateTroubleshooting.value,
+      suppressed: isTsIntentSuppressed(),
+      intakeActive: tsIntakeActive.value,
+    }
+    if (shouldAutoStartTroubleshootingIntake(content, gate)) {
+      await runTroubleshootingIntakeTurn(content)
+      return
+    }
+    if (shouldOfferTroubleshootingIntake(content, gate)) {
+      tsIntentOffer.value = { text: content.trim() }
+      inputText.value = ''
+      chatInputRef.value?.clear?.()
+      return
+    }
+  }
+
+  await continueNormalChatSend(content)
+}
+
+async function continueNormalChatSend(content: string) {
   if (!currentConversationId.value) {
     currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   }
@@ -2067,6 +2268,10 @@ async function handleRewind(message: Message) {
 }
 
 function sendSuggestion(text: string) {
+  if (text === TS_LAUNCH_SUGGESTION) {
+    openConversationIntake()
+    return
+  }
   inputText.value = text
   handleSendMessage(text)
 }
@@ -2601,6 +2806,77 @@ function handleCodeCopy(e: MouseEvent) {
 .header-btn:hover {
   border-color: var(--mc-danger);
   color: var(--mc-danger);
+}
+
+.header-ts-launch {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--mc-border);
+  border-radius: 10px;
+  color: var(--mc-text-primary);
+  background: var(--mc-panel-raised);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.header-ts-launch:hover {
+  border-color: var(--mc-primary);
+  color: var(--mc-primary);
+}
+
+.ts-intent-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 16px 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--mc-primary) 28%, var(--mc-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mc-primary) 8%, var(--mc-bg));
+}
+.ts-intent-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.ts-intent-copy b {
+  font-size: 13px;
+}
+.ts-intent-copy span {
+  color: var(--mc-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ts-intent-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ts-intent-actions .btn-primary,
+.ts-intent-actions .btn-secondary {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ts-intent-actions .btn-primary {
+  border: none;
+  color: #fff;
+  background: var(--mc-primary);
+}
+.ts-intent-actions .btn-secondary {
+  border: 1px solid var(--mc-border);
+  color: var(--mc-text-primary);
+  background: var(--mc-bg);
 }
 
 .model-prompt {

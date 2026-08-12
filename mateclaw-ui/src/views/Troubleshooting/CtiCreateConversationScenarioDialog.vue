@@ -1,11 +1,13 @@
 <template>
-  <el-dialog
+  <el-drawer
     v-model="open"
-    title="创建“CTI 创建会话失败”排障单"
-    width="min(640px, calc(100vw - 32px))"
+    title="创建会话失败"
+    :size="'var(--mc-ts-drawer-width)'"
+    destroy-on-close
   >
     <el-alert type="info" :closable="false" class="dialog-alert">
-      这条场景会使用已审核的 csdp-task 查询规则，只读检索失败记录、还原关联调用链，并对比成功与失败样本。
+      这是 CSDP 已登记场景：按标准方法查失败记录、关联调用，并对照成功样本。
+      会生成或复用同一张排障单；全程只读。
     </el-alert>
     <el-form label-position="top" @submit.prevent="$emit('submit')">
       <div class="incident-form-grid">
@@ -37,24 +39,32 @@
         </el-form-item>
       </div>
       <el-form-item label="故障现象" required>
-        <el-input v-model="form.title" type="textarea" :rows="3" maxlength="500" show-word-limit />
+        <el-input
+          v-model="form.title"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          placeholder="粘贴或描述用户可见现象；不要粘贴日志、DQL 或密钥"
+        />
       </el-form-item>
       <el-form-item label="影响范围 / 告警线索（可选）">
         <el-input v-model="form.customerRef" maxlength="500" placeholder="例如：集群 sz4-s-zaibei，告警数量 3" />
       </el-form-item>
       <div class="incident-route-preview scenario">
-        <span>已锁定排查指南</span>
+        <span>这次怎么查</span>
         <b>{{ CTI_CREATE_CONVERSATION_SCENARIO.selector }}</b>
-        <p>失败记录 → 关联调用链 → 成功/失败对照；页面不能修改 DQL、证据源或判据。</p>
+        <p>失败记录 → 关联调用链 → 成功/失败对照；页面不能修改查询、证据源或判据。</p>
       </div>
       <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">演练记录</el-checkbox>
+      <p class="form-hint">建单后进入详情，按五问推进：发生了什么 → 怎么查 → 查到什么 → 说明什么 → 下一步怎么办。</p>
     </el-form>
     <template #footer>
       <el-button text @click="$emit('open-playbooks')">查看排查指南</el-button>
       <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">创建排障单</el-button>
+      <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">生成排障单</el-button>
     </template>
-  </el-dialog>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">

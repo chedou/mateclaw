@@ -117,15 +117,15 @@ export function formalIncidentRoutePreview(
   if (clean(form.errorCode)) {
     return {
       tone: 'DETERMINISTIC',
-      title: '错误码 Playbook · 零 LLM 优先',
-      detail: '服务端先走已审核的错误码 Playbook；未命中已审核 Playbook 时才进入受限未命中路径，未启用或配置不合规会明确拒绝。',
+      title: '优先走标准排障方案',
+      detail: '有错误码时，先匹配已审核的标准方法；匹配不上再走受限只读调查。配置不合规会明确拒绝，不会瞎猜。',
     }
   }
   return {
     tone: 'BOUNDED_DISCOVERY',
-    title: '开放调查 · 模型提议 · ≤MEDIUM',
+    title: '没有标准方案 · 受限只读调查',
     detail: clean(form.traceId)
-      ? '无已审核 Playbook 时走受限只读 Agent；只能选服务端已批准的取证计划，证据不足会弃权。未启用或配置不合规会明确拒绝，不创建伪诊断。'
-      : '现象输入进入受限开放调查；只能选服务端已批准的取证计划，结论最高 MEDIUM。未启用或配置不合规会明确拒绝，不创建伪诊断。',
+      ? '只能使用已批准的取证计划；证据不够就停止并转人工，不会编造高把握根因。'
+      : '按现象做受限只读调查；结论最多按中等把握看待，证据不够就停，不会创建假诊断。',
   }
 }

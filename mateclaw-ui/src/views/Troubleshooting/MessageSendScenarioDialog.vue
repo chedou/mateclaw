@@ -1,11 +1,13 @@
 <template>
-  <el-dialog
+  <el-drawer
     v-model="open"
-    title="创建“会话消息发送失败”排障单"
-    width="min(640px, calc(100vw - 32px))"
+    title="消息发送失败"
+    :size="'var(--mc-ts-drawer-width)'"
+    destroy-on-close
   >
     <el-alert type="info" :closable="false" class="dialog-alert">
-      这是当前优先打通的单场景竖线。创建时只锁定排查指南，不会直接给出根因；进入详情后由你显式开始三次只读取证。
+      这是已登记的标准场景：系统和服务已锁定。建单后进详情，再显式开始只读取证。
+      不会改生产。
     </el-alert>
     <el-form label-position="top" @submit.prevent="$emit('submit')">
       <div class="incident-form-grid">
@@ -33,7 +35,7 @@
             clearable
             style="width:100%"
           />
-          <p class="form-hint">真实 Guance 查询会围绕这个时间读取 Playbook 规定的窗口；不选择时由服务端取当前时间。</p>
+          <p class="form-hint">真实查询会围绕这个时间读取标准方案规定的窗口；不选则由服务端取当前时间。</p>
         </el-form-item>
       </div>
       <el-form-item label="故障现象" required>
@@ -43,30 +45,32 @@
           :rows="3"
           maxlength="500"
           show-word-limit
-          placeholder="只描述用户可见现象，不粘贴日志、DQL 或凭据"
+          placeholder="粘贴或描述用户可见现象；不要粘贴日志、DQL 或密钥"
         />
       </el-form-item>
       <el-form-item label="影响对象（可选）">
         <el-input v-model="form.customerRef" maxlength="500" placeholder="例如：马来区域客户；不填人数或原始名单" />
       </el-form-item>
       <div class="incident-route-preview scenario">
-        <span>已锁定排查指南</span>
+        <span>这次怎么查</span>
         <b>{{ MESSAGE_SEND_SCENARIO_SELECTOR }}</b>
-        <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。浏览器不能指定查询或判据。</p>
+        <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。页面不能指定查询或判据。</p>
       </div>
       <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">
         演练记录（仅影响事件去重，不决定证据来源）
       </el-checkbox>
-      <p class="form-hint">证据来源由工作区的服务端绑定决定，页面不能强制选择 Guance 或回放；执行后以详情中每条证据记录的实际来源为准。</p>
+      <p class="form-hint">
+        建单后进入详情，按五问推进。证据来源由工作区绑定决定，页面不能强制选择数据源。
+      </p>
     </el-form>
     <template #footer>
       <el-button text @click="$emit('open-playbooks')">查看排查指南</el-button>
       <el-button @click="open = false">取消</el-button>
       <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">
-        创建排障单
+        生成排障单
       </el-button>
     </template>
-  </el-dialog>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">

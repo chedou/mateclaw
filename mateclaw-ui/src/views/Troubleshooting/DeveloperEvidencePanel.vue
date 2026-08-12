@@ -27,117 +27,152 @@
       />
       <section v-else class="investigation-trace-panel empty-evidence">本次排障过程 · 未记录</section>
 
-      <div class="convergence-grid">
+      <div class="evidence-main">
         <section class="trace-summary">
           <div class="section-head chain-head">
             <div>
               <span class="section-label">关联日志摘要</span>
-              <h3>PS ID 关联日志轨迹</h3>
-              <p>按时间查看同一 PS ID 命中的日志记录；这里不是完整的跨服务 Trace。</p>
+              <h3>这次请求上发生了什么</h3>
+              <p>PS ID 关联日志轨迹：同一 PS ID 命中的日志；这里不是完整的跨服务 Trace。</p>
             </div>
             <div class="chain-identity"><span>PS ID</span><code>{{ developer.callChain.psId || '未贯通' }}</code></div>
           </div>
+
           <template v-if="developer.callChain.hops.length">
-            <div class="chain-metrics">
-              <div><strong>{{ developer.callChain.hops.length }}</strong><span>关联日志</span></div>
-              <div :class="{ anomalous: chainAnomalyCount > 0 }"><strong>{{ chainAnomalyCount }}</strong><span>异常日志</span></div>
-              <div><strong>{{ chainDurationCount }}</strong><span>有耗时记录</span></div>
-            </div>
-            <div class="chain-route">
-              <span>服务分布</span>
-              <div>
+            <div class="fact-lead" :class="{ anomalous: chainAnomalyCount > 0 }">
+              <strong>
+                {{ developer.callChain.hops.length }} 条关联日志
+                <template v-if="chainAnomalyCount"> · {{ chainAnomalyCount }} 条异常日志</template>
+                <template v-else> · 未标记异常日志</template>
+              </strong>
+              <p v-if="chainServiceGroups.length">
+                服务分布：
                 <template v-for="(group, index) in chainServiceGroups" :key="`${group.service}-${index}`">
-                  <b :class="{ anomalous: group.anomalous }">{{ group.service }} <em>× {{ group.count }}</em></b>
-                  <i v-if="index < chainServiceGroups.length - 1">→</i>
+                  <span :class="{ anomalous: group.anomalous }">{{ group.service }}×{{ group.count }}</span>
+                  <template v-if="index < chainServiceGroups.length - 1"> → </template>
                 </template>
-              </div>
+              </p>
             </div>
+
             <details class="chain-details">
               <summary>
                 <span>查看全部 {{ developer.callChain.hops.length }} 条关联日志</span>
-                <small>{{ anomalousHopSummary }}</small>
+                <small>{{ anomalousHopSummary }} · {{ chainDurationCount }} 条有耗时记录</small>
               </summary>
               <ol class="hop-list">
-                <li v-for="(hop, index) in developer.callChain.hops" :key="hop.hopId" :class="{ anomalous: hop.anomalous }">
-                  <span>{{ index + 1 }}</span><b>{{ hop.service }}</b><small>{{ hop.duration }}</small><em>{{ hop.anomalous ? '异常' : '正常' }}</em>
+                <li
+                  v-for="(hop, index) in developer.callChain.hops"
+                  :key="hop.hopId"
+                  :class="{ anomalous: hop.anomalous }"
+                >
+                  <span>{{ index + 1 }}</span>
+                  <b>{{ hop.service }}</b>
+                  <small>{{ hop.duration }}</small>
+                  <em>{{ hop.anomalous ? '异常' : '正常' }}</em>
                 </li>
               </ol>
             </details>
           </template>
           <p v-else class="empty-evidence">{{ developer.callChain.emptyReason }}</p>
-          <section class="contrast-summary" :class="{ unavailable: !developer.contrast.available }">
-            <header><div><span>请求表现对比</span><b>故障请求和正常请求有什么不同</b></div><em>{{ developer.contrast.available ? '已比较' : '未取得' }}</em></header>
-            <template v-if="contrastNarrative">
-              <div class="contrast-human">
-                <strong>{{ contrastNarrative.summary }}</strong>
-                <p>{{ contrastNarrative.interpretation }}</p>
-                <small>{{ contrastNarrative.scope }}</small>
-              </div>
-              <details class="contrast-technical">
-                <summary>查看精确数量与证据引用</summary>
-                <p>
-                  失败请求共 {{ developer.contrast.failedRequests?.totalRequests }} 个，其中
-                  {{ developer.contrast.failedRequests?.requestsWithFeature }} 个出现该现象；
-                  正常请求共 {{ developer.contrast.normalRequests?.totalRequests }} 个，其中
-                  {{ developer.contrast.normalRequests?.requestsWithFeature }} 个出现。
-                </p>
-                <code>{{ developer.contrast.evidenceRefs.join('、') }}</code>
-              </details>
-            </template>
-            <p>{{ developer.contrast.note }}</p>
-          </section>
         </section>
 
-        <aside class="draft-summary">
-          <div class="section-head">
-            <div><span class="section-label">知识草稿</span><h3>{{ developer.draft.title }}</h3></div>
-            <span class="draft-state">{{ developer.draft.reviewStatus }}</span>
-          </div>
-          <ol v-if="developer.draft.steps.length">
-            <li v-for="step in developer.draft.steps" :key="step">{{ step }}</li>
-          </ol>
-          <p v-else class="empty-evidence">{{ developer.draft.emptyReason }}</p>
-          <small>{{ developer.draft.stateNote }}</small>
-        </aside>
-      </div>
-
-      <section class="evidence-timeline">
-        <div class="developer-section-head">
-          <div><span class="section-label">证据时间线</span><h3>事实与判据逐行复核</h3></div>
-          <span>{{ conclusionLabel(business.conclusionType) }} · {{ business.confidence }}</span>
-        </div>
-        <div v-if="developer.steps.length" class="timeline-filter-bar">
-          <button
-            v-for="filter in timelineFilters"
-            :key="filter.value"
-            class="timeline-filter-btn"
-            :class="{ active: activeTimelineFilter === filter.value }"
-            @click="activeTimelineFilter = filter.value"
-          >{{ filter.label }}</button>
-        </div>
-        <template
-          v-for="(step, index) in filteredSteps"
-          :key="`${step.kind}-${step.at || ''}-${step.ref}`"
+        <section
+          class="contrast-summary contrast-card"
+          :class="{ unavailable: !developer.contrast.available }"
         >
-          <div v-if="index > 0 && step.kind !== filteredSteps[index - 1].kind" class="timeline-phase-divider">
-            <span>{{ step.kind === 'CRITERION' ? '判据评估' : '证据采集' }}</span>
-          </div>
-          <article
-            class="evidence-step"
-            :class="step.tone.toLowerCase()"
-          >
-            <time>{{ evidenceTime(step.kind, step.at) }}</time>
-            <span class="step-line"><i /></span>
-            <div><b>{{ step.title }}</b><p>{{ step.detail }}</p><code>{{ step.ref }}</code></div>
-            <span class="tone-label">{{ stepToneLabel(step.tone) }}</span>
-          </article>
-        </template>
-        <div v-if="!filteredSteps.length" class="empty-evidence">
-          {{ developer.steps.length
-            ? '当前筛选条件下没有匹配的证据或判据。'
-            : '当前 Diagnosis 尚未形成可复核的证据或判据。请先完成真源验证，或补充日志、Trace / PS 线索后重新调查。' }}
-        </div>
-      </section>
+          <header>
+            <div>
+              <span class="section-label">请求表现对比</span>
+              <h3>故障请求和正常请求有什么不同</h3>
+            </div>
+            <em>{{ developer.contrast.available ? '已比较' : '未取得' }}</em>
+          </header>
+          <template v-if="contrastNarrative">
+            <div class="contrast-human">
+              <strong>{{ contrastNarrative.summary }}</strong>
+              <p>{{ contrastNarrative.interpretation }}</p>
+              <small>{{ contrastNarrative.scope }}</small>
+            </div>
+            <details class="contrast-technical">
+              <summary>查看精确数量与证据引用</summary>
+              <p>
+                失败请求共 {{ developer.contrast.failedRequests?.totalRequests }} 个，其中
+                {{ developer.contrast.failedRequests?.requestsWithFeature }} 个出现该现象；
+                正常请求共 {{ developer.contrast.normalRequests?.totalRequests }} 个，其中
+                {{ developer.contrast.normalRequests?.requestsWithFeature }} 个出现。
+              </p>
+              <code>{{ developer.contrast.evidenceRefs.join('、') }}</code>
+            </details>
+          </template>
+          <p v-else class="contrast-note">{{ developer.contrast.note }}</p>
+        </section>
+
+        <details class="secondary-fold timeline-fold">
+          <summary>
+            <span class="fold-caret" />
+            <div>
+              <b>证据时间线</b>
+              <small>质疑结论或交接复核时再展开；默认不必逐行看完</small>
+            </div>
+            <span>{{ developer.steps.length }} 步 · {{ conclusionLabel(business.conclusionType) }}</span>
+          </summary>
+          <section class="evidence-timeline">
+            <div class="developer-section-head">
+              <div><span class="section-label">证据时间线</span><h3>事实与判据逐行复核</h3></div>
+              <span>{{ conclusionLabel(business.conclusionType) }} · {{ business.confidence }}</span>
+            </div>
+            <div v-if="developer.steps.length" class="timeline-filter-bar">
+              <button
+                v-for="filter in timelineFilters"
+                :key="filter.value"
+                class="timeline-filter-btn"
+                :class="{ active: activeTimelineFilter === filter.value }"
+                @click="activeTimelineFilter = filter.value"
+              >{{ filter.label }}</button>
+            </div>
+            <template
+              v-for="(step, index) in filteredSteps"
+              :key="`${step.kind}-${step.at || ''}-${step.ref}`"
+            >
+              <div v-if="index > 0 && step.kind !== filteredSteps[index - 1].kind" class="timeline-phase-divider">
+                <span>{{ step.kind === 'CRITERION' ? '判据评估' : '证据采集' }}</span>
+              </div>
+              <article class="evidence-step" :class="step.tone.toLowerCase()">
+                <time>{{ evidenceTime(step.kind, step.at) }}</time>
+                <span class="step-line"><i /></span>
+                <div><b>{{ step.title }}</b><p>{{ step.detail }}</p><code>{{ step.ref }}</code></div>
+                <span class="tone-label">{{ stepToneLabel(step.tone) }}</span>
+              </article>
+            </template>
+            <div v-if="!filteredSteps.length" class="empty-evidence">
+              {{ developer.steps.length
+                ? '当前筛选条件下没有匹配的证据或判据。'
+                : '当前 Diagnosis 尚未形成可复核的证据或判据。请先完成真源验证，或补充日志、Trace / PS 线索后重新调查。' }}
+            </div>
+          </section>
+        </details>
+
+        <details class="secondary-fold draft-fold">
+          <summary>
+            <span class="fold-caret" />
+            <div>
+              <b>知识草稿</b>
+              <small>结案后沉淀用，不参与当场处置</small>
+            </div>
+            <span class="draft-state">{{ developer.draft.reviewStatus }}</span>
+          </summary>
+          <aside class="draft-summary">
+            <div class="section-head">
+              <div><span class="section-label">知识草稿</span><h3>{{ developer.draft.title }}</h3></div>
+            </div>
+            <ol v-if="developer.draft.steps.length">
+              <li v-for="step in developer.draft.steps" :key="step">{{ step }}</li>
+            </ol>
+            <p v-else class="empty-evidence">{{ developer.draft.emptyReason }}</p>
+            <small>{{ developer.draft.stateNote }}</small>
+          </aside>
+        </details>
+      </div>
 
       <aside class="developer-side">
         <section class="source-status" v-loading="readinessLoading">
@@ -164,7 +199,9 @@
           </div>
         </section>
         <section class="side-card side-card--capability">
-          <span class="section-label">当前范围</span><h3>能力边界</h3>
+          <span class="section-label">使用说明</span>
+          <h3>这单要注意什么</h3>
+          <p class="capability-lead">下面是边界提醒，不是故障原因。</p>
           <ul class="capability-list"><li v-for="item in developer.capabilityLimits" :key="item">{{ item }}</li></ul>
         </section>
         <section class="side-card side-card--provenance">
@@ -354,12 +391,10 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 
 /* ── Body grid ── */
 .developer-body { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:20px; padding:22px; border-top:1px solid var(--mc-border); background:var(--mc-bg-elevated); }
-.developer-body>.route-card,.developer-body>.investigation-trace-panel,.developer-body>.convergence-grid { grid-column:1/-1; }
+.developer-body>.route-card,.developer-body>.investigation-trace-panel { grid-column:1/-1; }
 .developer-body>.route-card { margin-top:0; }
-.developer-body>.convergence-grid { margin-top:16px; }
-.developer-body--empty-timeline>.evidence-timeline { grid-column:1/-1; }
-.developer-body--empty-timeline>.developer-side { grid-column:1/-1; display:grid; grid-template-columns:minmax(0,1.55fr) minmax(280px,.75fr); align-items:start; }
-.developer-body--empty-timeline .side-card--actions { grid-column:1/-1; }
+.developer-body>.evidence-main { display:flex; min-width:0; flex-direction:column; gap:14px; }
+.developer-body--empty-timeline>.developer-side { align-self:start; }
 
 /* ── Section label — enhanced visual weight ── */
 .section-label { display:block; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
@@ -380,9 +415,8 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .route-card .knowledge-grade.recorded_aggregate { color:var(--mc-success); background:var(--mc-status-success-bg); border-color:var(--mc-success); }
 .route-card .knowledge-grade.authored_fixture { color:var(--mc-warning); background:var(--mc-status-warning-bg); border-color:var(--mc-warning); }
 
-/* ── Convergence grid — simplified single-layer ── */
-.convergence-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(270px,.8fr); gap:14px; }
-.trace-summary,.draft-summary { padding:18px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
+/* ── Fact-first log summary ── */
+.trace-summary { padding:18px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg); }
 .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .section-head h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 .section-head>code { color:var(--mc-primary); font-size:var(--mc-text-xs); }
@@ -393,21 +427,19 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .chain-identity span,.chain-identity code { display:block; }
 .chain-identity span { color:var(--mc-text-tertiary); font-size:10px; }
 .chain-identity code { margin-top:5px; color:var(--mc-primary); font-size:var(--mc-text-xs); overflow-wrap:anywhere; }
-.chain-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:17px; border-top:1px solid var(--mc-border-light); border-bottom:1px solid var(--mc-border-light); }
-.chain-metrics>div { padding:13px 14px; }
-.chain-metrics>div+div { border-left:1px solid var(--mc-border-light); }
-.chain-metrics strong,.chain-metrics span { display:block; }
-.chain-metrics strong { font-size:var(--mc-text-lg); line-height:1; }
-.chain-metrics span { margin-top:6px; color:var(--mc-text-tertiary); font-size:10px; }
-.chain-metrics>div.anomalous strong { color:var(--mc-danger); }
-.chain-route { display:grid; grid-template-columns:72px minmax(0,1fr); align-items:start; gap:12px; padding:14px 2px; }
-.chain-route>span { padding-top:4px; color:var(--mc-text-tertiary); font-size:10px; }
-.chain-route>div { display:flex; align-items:center; flex-wrap:wrap; gap:7px; min-width:0; }
-.chain-route b { padding:5px 8px; border-radius:var(--mc-radius-xs); color:var(--mc-text-primary); background:var(--mc-bg-muted); font-size:var(--mc-text-xs); font-weight:600; overflow-wrap:anywhere; }
-.chain-route b.anomalous { color:var(--mc-status-error-text); background:var(--mc-status-error-bg); }
-.chain-route b em { color:var(--mc-text-tertiary); font-style:normal; font-weight:500; }
-.chain-route i { color:var(--mc-text-tertiary); font-style:normal; }
-.chain-details { border-top:1px solid var(--mc-border-light); }
+.fact-lead {
+  margin-top:14px;
+  padding:13px 14px;
+  border-left:3px solid var(--mc-primary);
+  border-radius:var(--mc-radius-xs);
+  background:var(--mc-bg-muted);
+}
+.fact-lead.anomalous { border-left-color:var(--mc-danger); background:var(--mc-status-error-bg); }
+.fact-lead strong,.fact-lead p { display:block; }
+.fact-lead strong { font-size:var(--mc-text-sm); color:var(--mc-text-primary); }
+.fact-lead p { margin:6px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.fact-lead span.anomalous { color:var(--mc-danger); font-weight:600; }
+.chain-details { margin-top:14px; border-top:1px solid var(--mc-border-light); }
 .chain-details>summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 2px 0; color:var(--mc-primary); font-size:var(--mc-text-xs); cursor:pointer; list-style:none; }
 .chain-details>summary::-webkit-details-marker { display:none; }
 .chain-details>summary span::before { content:'＋'; display:inline-block; width:18px; }
@@ -422,15 +454,44 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .hop-list li.anomalous>span { color:var(--mc-text-inverse); background:var(--mc-danger); }
 .hop-list li.anomalous>em { color:var(--mc-danger); font-weight:700; }
 
+/* ── Secondary folds (timeline / draft) ── */
+.secondary-fold {
+  border:1px solid var(--mc-border);
+  border-radius:var(--mc-radius-sm);
+  background:var(--mc-bg);
+  overflow:hidden;
+}
+.secondary-fold>summary {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+}
+.secondary-fold>summary::-webkit-details-marker { display:none; }
+.secondary-fold>summary:hover { background:var(--mc-bg-muted); }
+.secondary-fold>summary>div b,.secondary-fold>summary>div small { display:block; }
+.secondary-fold>summary>div b { font-size:var(--mc-text-sm); }
+.secondary-fold>summary>div small { margin-top:3px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
+.secondary-fold>summary>span:last-child { margin-left:auto; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
+.secondary-fold[open]>summary { border-bottom:1px solid var(--mc-border-light); }
+.timeline-fold .evidence-timeline { padding:4px 16px 16px; }
+.draft-fold .draft-summary { padding:4px 16px 16px; border:0; }
+
 /* ── Empty state ── */
 .empty-evidence { margin:14px 0 0; padding:11px 12px; border:1px dashed var(--mc-border); border-radius:var(--mc-radius-sm); color:var(--mc-text-secondary); background:var(--mc-bg-elevated); font-size:var(--mc-text-xs); line-height:1.65; }
 
-/* ── Failed/success contrast ── */
-.contrast-summary { margin-top:16px; padding-top:15px; border-top:1px solid var(--mc-border); }
+/* ── Failed/success contrast (own card) ── */
+.contrast-card {
+  padding:18px;
+  border:1px solid var(--mc-border);
+  border-radius:var(--mc-radius-sm);
+  background:var(--mc-bg);
+}
 .contrast-summary>header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-.contrast-summary>header span,.contrast-summary>header b { display:block; }
-.contrast-summary>header span { color:var(--mc-text-tertiary); font-size:10px; }
-.contrast-summary>header b { margin-top:4px; font-size:var(--mc-text-sm); }
+.contrast-summary>header h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 .contrast-summary>header>em { padding:3px 7px; border-radius:999px; color:var(--mc-status-success-text); background:var(--mc-status-success-bg); font-size:10px; font-style:normal; }
 .contrast-human { margin-top:12px; padding:13px 14px; border-left:3px solid var(--mc-success); border-radius:var(--mc-radius-xs); background:var(--mc-status-success-bg); }
 .contrast-human strong,.contrast-human p,.contrast-human small { display:block; }
@@ -441,9 +502,10 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .contrast-technical summary { color:var(--mc-primary); cursor:pointer; }
 .contrast-technical p { margin:8px 0; }
 .contrast-technical code { overflow-wrap:anywhere; }
-.contrast-summary>p { margin:10px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
-.contrast-summary.unavailable { padding:12px; border:0; border-radius:var(--mc-radius-sm); color:var(--mc-warning); background:var(--mc-status-warning-bg); }
+.contrast-note { margin:10px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.contrast-summary.unavailable { border-color:color-mix(in srgb, var(--mc-warning) 35%, var(--mc-border)); background:var(--mc-status-warning-bg); }
 .contrast-summary.unavailable>header>em { color:var(--mc-status-warning-text); background:var(--mc-bg-elevated); }
+.contrast-summary.unavailable .contrast-note { color:var(--mc-warning); }
 
 /* ── Draft summary ── */
 .draft-state { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-purple-text); background:var(--mc-status-purple-bg); font-size:var(--mc-text-xs); font-weight:700; }
@@ -488,6 +550,7 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .developer-side h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 
 /* ── Capability list — neutral color (not error) ── */
+.capability-lead { margin:8px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.5; }
 .capability-list { margin:13px 0 0; padding-left:17px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.6; }
 .capability-list li+li { margin-top:7px; }
 
@@ -533,9 +596,8 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 
 /* ── Responsive ── */
 @container (max-width:900px){
-  .developer-body,.convergence-grid{grid-template-columns:1fr}
-  .developer-body>.evidence-timeline,.developer-body>.developer-side{grid-column:1/-1}
-  .developer-body--empty-timeline>.developer-side{grid-template-columns:1fr}
+  .developer-body{grid-template-columns:1fr}
+  .developer-body>.evidence-main,.developer-body>.developer-side{grid-column:1/-1}
   .source-status{flex-direction:column}
   .source-status-governance{max-width:none; align-items:flex-start}
   .source-status-governance small{text-align:left}
@@ -545,13 +607,9 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
   .chain-head{flex-direction:column}
   .chain-identity{max-width:none; text-align:left}
 }
-@media(max-width:1100px){
-  .convergence-grid{grid-template-columns:1fr}
-  .developer-body--empty-timeline>.developer-side{grid-template-columns:1fr}
-}
 @media(max-width:900px){
   .developer-body{grid-template-columns:1fr}
-  .developer-body>.evidence-timeline,.developer-body>.developer-side{grid-column:1/-1}
+  .developer-body>.evidence-main,.developer-body>.developer-side{grid-column:1/-1}
   .source-status{flex-direction:column}
   .source-status-governance{max-width:none; align-items:flex-start}
   .source-status-governance small{text-align:left}

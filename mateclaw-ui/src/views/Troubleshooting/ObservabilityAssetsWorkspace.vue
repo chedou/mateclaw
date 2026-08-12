@@ -280,7 +280,7 @@
 
     <el-drawer
       v-model="moduleWorkspaceOpen"
-      :size="moduleWorkspacePanel === 'overview' ? 'min(720px, 100%)' : 'min(880px, 100%)'"
+      :size="'var(--mc-ts-drawer-width)'"
       destroy-on-close
       class="module-workspace-drawer"
       :title="moduleWorkspaceDrawerTitle"
@@ -854,7 +854,7 @@
 
     <el-drawer
       v-model="contractDrawerOpen"
-      size="min(880px, 100%)"
+      size="var(--mc-ts-drawer-width)"
       destroy-on-close
       class="contract-library-drawer"
       :title="contractDrawerTitle"

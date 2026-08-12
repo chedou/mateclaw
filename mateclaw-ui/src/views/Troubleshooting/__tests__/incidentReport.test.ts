@@ -79,11 +79,11 @@ describe('formal workbench incident report boundary', () => {
     expect(() => buildFormalIncidentReport(invalid)).toThrow('请选择或填写故障系统')
   })
 
-  it('keeps the route preview honest about zero-LLM hits and fail-closed misses', () => {
+  it('keeps the route preview honest about standard plans and bounded discovery', () => {
     expect(formalIncidentRoutePreview(baseForm)).toEqual({
       tone: 'DETERMINISTIC',
-      title: '错误码 Playbook · 零 LLM 优先',
-      detail: expect.stringContaining('未命中已审核 Playbook'),
+      title: '优先走标准排障方案',
+      detail: expect.stringContaining('已审核的标准方法'),
     })
 
     const discovery = formalIncidentRoutePreview({
@@ -92,9 +92,16 @@ describe('formal workbench incident report boundary', () => {
       traceId: '',
     })
     expect(discovery.tone).toBe('BOUNDED_DISCOVERY')
-    expect(discovery.title).toContain('开放调查')
-    expect(discovery.title).toContain('MEDIUM')
-    expect(discovery.detail).toContain('已批准的取证计划')
+    expect(discovery.title).toContain('没有标准方案')
+    expect(discovery.title).toContain('受限只读调查')
+    expect(discovery.detail).toContain('证据不够就停')
+
+    const withTrace = formalIncidentRoutePreview({
+      ...baseForm,
+      errorCode: '',
+      traceId: 'ps-abc123',
+    })
+    expect(withTrace.detail).toContain('已批准的取证计划')
   })
 
   it('rejects DQL and raw log text before it can leave the browser form', () => {

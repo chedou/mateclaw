@@ -2,287 +2,355 @@
   <CapabilityWorkspaceShell
     eyebrow="复盘与沉淀"
     :title="TROUBLESHOOTING_UI_LABELS.evaluation"
-    description="使用真实故障和历史样本验证取证链、诊断结论与版本稳定性。"
+    description="用真实故障和历史样本核对取证是否稳定、结论是否靠谱。"
     :refresh-loading="loading"
     @back="$emit('back')"
     @refresh="loadLedger"
   >
     <div class="evaluation-ledger-workspace">
-    <el-alert type="warning" :closable="false" class="ledger-alert">
-      台账只积累脱敏的 Evidence Spine 结构事实与人工参考解。达到 20–30 条不等于 T8 通过，且不会自动关闭 fixtureMode。
-    </el-alert>
+      <el-alert type="warning" :closable="false" show-icon class="ledger-alert">
+        这里只积累脱敏样本与人工参考解。样本够多不等于验收通过，也不会自动关闭演示标记。
+      </el-alert>
 
-    <div v-loading="loading" class="ledger-body">
-      <section class="history-replay-panel">
-        <div class="panel-head">
-          <div><span>Recorded Replay</span><h3>{{ TROUBLESHOOTING_UI_LABELS.historyReplay }}</h3></div>
-          <el-button type="primary" plain @click="$emit('openHistoryReplay')">回放一条历史样本</el-button>
+      <div class="status-bar">
+        <div class="status-metrics">
+          <span>累计 {{ ledger?.summary.total ?? 0 }}</span>
+          <span>可评估 {{ ledger?.summary.readyForEvaluation ?? 0 }}</span>
+          <span>待参考解 {{ ledger?.summary.evidenceCaptured ?? 0 }}</span>
+          <div class="progress-inline">
+            <b>{{ progress.label }}</b>
+            <el-progress :percentage="progress.percent" :stroke-width="6" :show-text="false" />
+          </div>
         </div>
-        <p>
-          用服务端预置的历史证据检查“失败日志 → PS ID 关联日志 → 正常请求对比”是否仍能稳定运行。
-          这是回归验证，不会访问真实观测云、创建排障单或生成排障规则。
-        </p>
-      </section>
+        <div class="status-actions">
+          <el-switch
+            v-model="onlyCurrent"
+            size="small"
+            :disabled="!currentDiagnosisId"
+            active-text="仅当前 Diagnosis"
+            @change="loadLedger"
+          />
+          <el-button type="primary" plain @click="openReplayDrawer">回放一条历史样本</el-button>
+          <el-button plain @click="openCaptureDrawer">采集样本</el-button>
+          <el-button plain @click="openMetricsDrawer">查看指标</el-button>
+        </div>
+      </div>
 
-      <section v-if="ledger" class="summary-panel">
-        <div class="summary-grid">
-          <article><span>累计样本</span><b>{{ ledger.summary.total }}</b><small>Guance {{ ledger.summary.guance }} · Replay {{ ledger.summary.recordedReplay }}</small></article>
-          <article><span>可评估</span><b>{{ ledger.summary.readyForEvaluation }}</b><small>待参考解 {{ ledger.summary.evidenceCaptured }}</small></article>
-          <article><span>完整脊柱</span><b>{{ ledger.summary.fullSpineObserved }}</b><small>仅核心链 {{ ledger.summary.coreChainObserved }}</small></article>
-          <article><span>关联 fixture Diagnosis</span><b>{{ ledger.summary.linkedFixtureDiagnoses }}</b><small>真源样本与 Diagnosis 状态分别记录</small></article>
-        </div>
-        <div class="progress-row">
-          <div><b>{{ progress.label }}</b><small>{{ progress.note }}</small></div>
-          <el-progress :percentage="progress.percent" :stroke-width="8" :show-text="false" />
-        </div>
-      </section>
+      <div v-loading="loading" class="ledger-body">
+        <el-table
+          v-if="ledger?.samples.length"
+          :data="ledger.samples"
+          row-key="sampleId"
+          height="100%"
+          :row-class-name="sampleRowClassName"
+          @row-click="selectSample"
+        >
+          <el-table-column label="来源" width="120">
+            <template #default="{ row }">
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="row.sourcePlatform === 'GUANCE' ? 'success' : 'info'"
+              >{{ evaluationSourceLabel(row.sourcePlatform) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="系统 / 服务" min-width="160">
+            <template #default="{ row }">
+              <div class="cell-stack">
+                <strong>{{ row.system }} / {{ row.service }}</strong>
+                <small>Diagnosis {{ row.diagnosisId }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="场景键" min-width="140">
+            <template #default="{ row }">
+              <code class="scenario-key">{{ row.scenarioKey }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="130">
+            <template #default="{ row }">
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="row.referenceStatus === 'READY_FOR_EVALUATION' ? 'primary' : 'warning'"
+              >{{ evaluationReferenceStatusLabel(row.referenceStatus) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="取证摘要" min-width="220">
+            <template #default="{ row }">
+              <span class="muted">
+                {{ stageLabel(row.evidence.stage) }} ·
+                取得 {{ row.evidence.traceEntries }} 条关联日志
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="时间" width="168">
+            <template #default="{ row }">
+              <span class="mono muted">{{ shortTime(row.capturedAt) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else-if="!loading" description="台账还没有采集样本。点「采集样本」写入评估台账；「回放」只验证取证链，不会写入这里。" :image-size="64" />
+      </div>
 
-      <section v-if="ledger" class="latency-panel">
-        <div class="panel-head">
-          <div><span>T8 描述性指标</span><h3>分来源应用侧时延</h3></div>
-          <el-tag size="small" type="info">{{ ledger.summary.timingMeasuredSamples }} 条完整计时</el-tag>
+      <el-drawer
+        :model-value="drawerOpen"
+        :size="'var(--mc-ts-drawer-width)'"
+        destroy-on-close
+        class="evaluation-detail-drawer"
+        :title="drawerTitle"
+        @update:model-value="onDrawerOpenChange"
+      >
+        <div v-if="drawerPanel === 'replay'" class="drawer-panel">
+          <el-button text type="primary" class="back-link" @click="backToDetailOrClose">← 返回</el-button>
+          <p class="panel-lead">
+            只验证取证链路；不会写入评估台账。要进列表请改用「采集样本」。
+          </p>
+          <SynthesisPreviewDialog embedded />
         </div>
-        <div class="latency-grid">
-          <article v-for="card in latencyCards" :key="card.key">
-            <header><b>{{ card.source }}</b><small>{{ card.sampleCount }} 条可测样本</small></header>
-            <dl>
-              <div><dt>证据源往返</dt><dd>{{ card.evidence }}</dd></div>
-              <div><dt>确定性压缩</dt><dd>{{ card.compression }}</dd></div>
-              <div><dt>端到端预览</dt><dd>{{ card.total }}</dd></div>
-            </dl>
-          </article>
-        </div>
-        <p class="latency-note">
-          统计仅覆盖当前筛选范围，Guance 与 Recorded Replay 不混算。这里是 MateClaw 应用侧墙钟时间，
-          不是 Guance 服务端 DQL 耗时；模型耗时与结构质量在下方基线面板单独统计，任何数值都不代表 T8 已通过。
-        </p>
-      </section>
 
-      <section v-if="baselineLedger" class="baseline-panel">
-        <div class="panel-head">
-          <div><span>T8 单 Agent 基线</span><h3>固定输入、固定模型版本的描述性结果</h3></div>
-          <el-tag size="small" type="info">{{ baselineLedger.summary.total }} 次运行 · 无 Gate 结论</el-tag>
-        </div>
-        <div class="baseline-grid">
-          <article v-for="card in baselineCards" :key="card.key">
-            <header><b>{{ card.source }} · {{ card.cohort }}</b><small>{{ card.runCount }} 次基线</small></header>
-            <p>{{ card.evidenceMode }} · {{ card.classifications }}</p>
-            <dl>
-              <div><dt>模型调用</dt><dd>{{ card.modelLatency }}</dd></div>
-              <div><dt>证据 + 模型</dt><dd>{{ card.composedLatency }}</dd></div>
-              <div><dt>Token</dt><dd>{{ card.tokens }}</dd></div>
-              <div><dt>服务端系统置信度</dt><dd>{{ card.systemConfidence }}</dd></div>
-            </dl>
-          </article>
-        </div>
-        <p class="latency-note">
-          每个结果只比较一条冻结样本与一个固定模型配置，不生成候选 SOP、不进入审批，也不改变 fixtureMode。
-          “有帮助 / 无帮助 / 危险已拦截 / 技术失败”是逐样本分类，不能替代 20–30 条固定集和 owner Gate。
-          HIGH 由真源、真实 Diagnosis、完整三次取证、确定性校验和引用完整共同决定，不读取模型自报置信度。
-        </p>
-      </section>
+        <div v-else-if="drawerPanel === 'capture'" class="drawer-panel">
+          <el-button text type="primary" class="back-link" @click="backToDetailOrClose">← 返回</el-button>
+          <p class="panel-lead">
+            每次都重新走服务端只读取证；输入没变会复用已有样本，变了会新增版本，不会覆盖旧参考解。
+          </p>
+          <div v-if="displayCaptureContext" class="scope-chip">
+            {{ displayCaptureContext.system }} / {{ displayCaptureContext.service }}
+          </div>
 
-      <section v-if="captureContext || replayCaptureContext" class="capture-panel">
-        <div class="panel-head">
-          <div><span>T8 样本采集</span><h3>按来源重放同一套取证步骤</h3></div>
-          <el-tag v-if="displayCaptureContext" size="small" type="info">{{ displayCaptureContext.system }} / {{ displayCaptureContext.service }}</el-tag>
-        </div>
-        <p>不会保存当前浏览器预览；每次都重新执行服务端读链。输入指纹未变时复用既有样本，发生漂移时自动新增不可变 revision，绝不覆盖旧 oracle。</p>
-        <div v-if="captureContext" class="capture-form">
-          <label>
-            <span>Guance 场景键</span>
-            <el-input v-model="captureForm.scenarioKey" size="small" placeholder="message_send_failed" />
-          </label>
-          <label>
-            <span>搜索键</span>
-            <el-input :model-value="captureContext.searchTerm" size="small" disabled />
-          </label>
-          <label>
-            <span>时间窗口</span>
-            <el-input :model-value="captureContext.window" size="small" disabled />
-          </label>
-          <div class="capture-actions">
+          <section v-if="captureContext" class="capture-block">
+            <h3>观测云样本</h3>
+            <div class="capture-form">
+              <label>
+                <span>场景键</span>
+                <el-input v-model="captureForm.scenarioKey" placeholder="message_send_failed" />
+              </label>
+              <label>
+                <span>搜索键</span>
+                <el-input :model-value="captureContext.searchTerm" disabled />
+              </label>
+              <label>
+                <span>时间窗口</span>
+                <el-input :model-value="captureContext.window" disabled />
+              </label>
+            </div>
             <el-button
               type="primary"
               plain
               :loading="captureLoading"
               :disabled="!captureEnabled || !captureFormValid"
               @click="captureSample('GUANCE')"
-            >采集 Guance 真源</el-button>
-          </div>
-        </div>
-        <small v-if="captureContext && !captureEnabled" class="disabled-reason">Guance：{{ captureDisabledReason }}</small>
-        <small v-else-if="captureContext && !captureFormValid" class="disabled-reason">Guance 场景键须为 2–64 位小写结构化 key，不接受自由文本。</small>
+            >采集观测云样本</el-button>
+            <small v-if="!captureEnabled" class="disabled-reason">{{ captureDisabledReason }}</small>
+            <small v-else-if="!captureFormValid" class="disabled-reason">场景键须为 2–64 位小写结构化 key。</small>
+          </section>
 
-        <div v-if="replayCaptureContext" class="capture-form">
-          <label>
-            <span>Replay 场景键</span>
-            <el-input :model-value="replayCaptureContext.scenarioKey" size="small" disabled />
-          </label>
-          <label>
-            <span>服务端登记搜索键</span>
-            <el-input :model-value="replayCaptureContext.searchTerm" size="small" disabled />
-          </label>
-          <label>
-            <span>服务端登记窗口</span>
-            <el-input :model-value="replayCaptureContext.window" size="small" disabled />
-          </label>
-          <div class="capture-actions">
+          <section v-if="replayCaptureContext" class="capture-block">
+            <h3>回放对照</h3>
+            <div class="capture-form">
+              <label>
+                <span>场景键</span>
+                <el-input :model-value="replayCaptureContext.scenarioKey" disabled />
+              </label>
+              <label>
+                <span>搜索键</span>
+                <el-input :model-value="replayCaptureContext.searchTerm" disabled />
+              </label>
+              <label>
+                <span>时间窗口</span>
+                <el-input :model-value="replayCaptureContext.window" disabled />
+              </label>
+            </div>
             <el-button
               type="info"
               plain
               :loading="replayCaptureLoading"
               :disabled="!replayCaptureEnabled || !replayCaptureFormValid"
               @click="captureSample('RECORDED_REPLAY')"
-            >采集 Replay 对照</el-button>
+            >采集回放对照</el-button>
+            <small v-if="!replayCaptureEnabled" class="disabled-reason">{{ replayCaptureDisabledReason }}</small>
+            <small v-else-if="!replayCaptureFormValid" class="disabled-reason">服务端回放目标不是合法场景键。</small>
+          </section>
+
+          <el-empty
+            v-if="!captureContext && !replayCaptureContext"
+            description="先打开一条 Diagnosis，并完成可用的取证预览后再采集"
+            :image-size="56"
+          />
+        </div>
+
+        <div v-else-if="drawerPanel === 'metrics'" class="drawer-panel">
+          <el-button text type="primary" class="back-link" @click="backToDetailOrClose">← 返回</el-button>
+          <p class="panel-lead">
+            时延与基线只是描述性统计，不代表验收通过。观测云与回放样本分开算，不混在一起。
+          </p>
+
+          <section v-if="ledger" class="metrics-block">
+            <div class="section-title">
+              <span>分来源应用侧时延</span>
+              <el-tag size="small" type="info" effect="plain">{{ ledger.summary.timingMeasuredSamples }} 条完整计时</el-tag>
+            </div>
+            <div class="metric-list">
+              <article v-for="card in latencyCards" :key="card.key">
+                <header><b>{{ card.source }}</b><small>{{ card.sampleCount }} 条可测</small></header>
+                <dl>
+                  <div><dt>证据源往返</dt><dd>{{ card.evidence }}</dd></div>
+                  <div><dt>确定性压缩</dt><dd>{{ card.compression }}</dd></div>
+                  <div><dt>端到端预览</dt><dd>{{ card.total }}</dd></div>
+                </dl>
+              </article>
+            </div>
+          </section>
+
+          <section v-if="baselineLedger" class="metrics-block">
+            <div class="section-title">
+              <span>单模型基线摘要</span>
+              <el-tag size="small" type="info" effect="plain">{{ baselineLedger.summary.total }} 次运行</el-tag>
+            </div>
+            <div class="metric-list">
+              <article v-for="card in baselineCards" :key="card.key">
+                <header><b>{{ card.source }} · {{ card.cohort }}</b><small>{{ card.runCount }} 次</small></header>
+                <p>{{ card.evidenceMode }} · {{ card.classifications }}</p>
+                <dl>
+                  <div><dt>模型调用</dt><dd>{{ card.modelLatency }}</dd></div>
+                  <div><dt>证据 + 模型</dt><dd>{{ card.composedLatency }}</dd></div>
+                  <div><dt>Token</dt><dd>{{ card.tokens }}</dd></div>
+                  <div><dt>系统置信度</dt><dd>{{ card.systemConfidence }}</dd></div>
+                </dl>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <div v-else-if="drawerPanel === 'reference' && referenceSample" class="drawer-panel">
+          <el-button text type="primary" class="back-link" @click="drawerPanel = 'detail'">← 回到样本详情</el-button>
+          <p class="panel-lead">
+            每行一个步骤键。结果、恢复验证和关闭时间由服务端读取已关闭的 Diagnosis，浏览器不能改。
+          </p>
+          <div class="reference-form">
+            <label class="disposition-field">
+              <span>期望模型行为</span>
+              <el-select v-model="referenceForm.expectedDisposition" placeholder="选择期望行为">
+                <el-option label="生成结构化排障草案" value="DRAFT" />
+                <el-option label="证据不足时安全拒答" value="ABSTAIN" />
+              </el-select>
+            </label>
+            <label>
+              <span>必须步骤（按顺序）</span>
+              <el-input
+                v-model="referenceForm.required"
+                type="textarea"
+                :rows="5"
+                placeholder="locate_failed_request&#10;trace_ps_id&#10;verify_recovery"
+              />
+            </label>
+            <label>
+              <span>禁止步骤</span>
+              <el-input
+                v-model="referenceForm.forbidden"
+                type="textarea"
+                :rows="5"
+                placeholder="restart_production"
+              />
+            </label>
+          </div>
+          <p v-if="referenceError" class="reference-error">{{ referenceError }}</p>
+          <div class="drawer-actions">
+            <el-button
+              type="primary"
+              :loading="referenceLoading"
+              :disabled="Boolean(referenceError)"
+              @click="finalizeReference"
+            >冻结参考解</el-button>
           </div>
         </div>
-        <small v-if="!replayCaptureEnabled" class="disabled-reason">Replay：{{ replayCaptureDisabledReason }}</small>
-        <small v-else-if="!replayCaptureFormValid" class="disabled-reason">服务端 Replay 目标不是合法的结构化场景键。</small>
-      </section>
 
-      <section class="sample-panel">
-        <div class="panel-head sample-head">
-          <div><span>固定评估集候选</span><h3>历史样本</h3></div>
-          <div class="sample-filters">
-            <el-switch
-              v-model="onlyCurrent"
+        <div v-else-if="selectedSample" class="drawer-panel">
+          <template v-for="sample in [selectedSample]" :key="sample.sampleId">
+          <header class="detail-head">
+            <div>
+              <span class="eyebrow">采集 r{{ sample.captureRevision }} · v{{ sample.version }}</span>
+              <h2>{{ sample.scenarioKey }}</h2>
+              <p>{{ sample.system }} / {{ sample.service }}</p>
+            </div>
+            <el-tag
               size="small"
-              :disabled="!currentDiagnosisId"
-              active-text="仅当前 Diagnosis"
-              @change="loadLedger"
-            />
-            <el-button size="small" text @click="loadLedger">刷新</el-button>
+              effect="plain"
+              :type="sample.referenceStatus === 'READY_FOR_EVALUATION' ? 'primary' : 'warning'"
+            >{{ evaluationReferenceStatusLabel(sample.referenceStatus) }}</el-tag>
+          </header>
+
+          <dl class="meta-grid">
+            <div><dt>来源</dt><dd>{{ evaluationSourceLabel(sample.sourcePlatform) }}</dd></div>
+            <div><dt>Diagnosis</dt><dd class="mono">{{ sample.diagnosisId }}</dd></div>
+            <div><dt>取证阶段</dt><dd>{{ stageLabel(sample.evidence.stage) }}</dd></div>
+            <div><dt>关联日志</dt><dd>{{ sample.evidence.traceEntries }} 条关联日志</dd></div>
+            <div v-if="sample.expectedDisposition">
+              <dt>期望行为</dt>
+              <dd>{{ evaluationExpectedDispositionLabel(sample.expectedDisposition) }}</dd>
+            </div>
+            <div><dt>采集时间</dt><dd class="mono">{{ shortTime(sample.capturedAt) }}</dd></div>
+          </dl>
+
+          <div v-if="sampleContrastNarrative(sample)" class="contrast-box">
+            <strong>{{ sampleContrastNarrative(sample)?.summary }}</strong>
+            <small>{{ sampleContrastNarrative(sample)?.interpretation }}</small>
           </div>
-        </div>
 
-        <div v-if="ledger?.samples.length" class="sample-list">
-          <article
-            v-for="sample in ledger.samples"
-            :key="sample.sampleId"
-            class="sample-row"
-            :class="{ current: sample.diagnosisId === currentDiagnosisId }"
-          >
-            <div class="sample-main">
-              <div class="sample-tags">
-                <el-tag size="small" :type="sample.sourcePlatform === 'GUANCE' ? 'success' : 'info'">
-                  {{ evaluationSourceLabel(sample.sourcePlatform) }}
-                </el-tag>
-                <el-tag size="small" :type="sample.referenceStatus === 'READY_FOR_EVALUATION' ? 'primary' : 'warning'">
-                  {{ evaluationReferenceStatusLabel(sample.referenceStatus) }}
-                </el-tag>
-                <el-tag v-if="sample.diagnosisFixtureMode" size="small" type="warning" effect="plain">关联 fixture Diagnosis</el-tag>
-                <el-tag v-if="sample.evidence.fixtureMode" size="small" type="info" effect="plain">fixture 证据</el-tag>
-                <el-tag v-if="sample.expectedDisposition" size="small" type="info" effect="plain">
-                  {{ evaluationExpectedDispositionLabel(sample.expectedDisposition) }}
-                </el-tag>
-                <el-tag size="small" type="info" effect="plain">采集 r{{ sample.captureRevision }}</el-tag>
-              </div>
-              <b>{{ sample.system }} / {{ sample.service }}</b>
-              <p><code>{{ sample.scenarioKey }}</code><span>Diagnosis {{ sample.diagnosisId }}</span></p>
+          <p v-if="sample.outcome" class="outcome-line">
+            权威结果 {{ sample.outcome.outcome }} · {{ sample.outcome.summary }}
+          </p>
+
+          <template v-if="selectedBaselineRun">
+            <div class="section-title"><span>基线结果</span></div>
+            <div class="baseline-result">
+              <el-tag
+                size="small"
+                :type="baselineClassificationTagType(selectedBaselineRun.quality.classification)"
+              >{{ baselineClassificationLabel(selectedBaselineRun.quality.classification) }}</el-tag>
+              <small>{{ baselineStatusLabel(selectedBaselineRun.status) }}</small>
               <small>
-                {{ stageLabel(sample.evidence.stage) }} · 第一步找到 {{ sample.evidence.matchCount }} 条结果 ·
-                取得 {{ sample.evidence.traceEntries }} 条关联日志 · {{ shortTime(sample.capturedAt) }}
-              </small>
-              <div v-if="sampleContrastNarrative(sample)" class="sample-contrast">
-                <strong>{{ sampleContrastNarrative(sample)?.summary }}</strong>
-                <small>{{ sampleContrastNarrative(sample)?.interpretation }}</small>
-              </div>
-              <small v-if="sample.outcome" class="outcome-line">
-                权威结果 {{ sample.outcome.outcome }} · {{ sample.outcome.summary }}
+                {{ selectedBaselineRun.model.provider }} / {{ selectedBaselineRun.model.modelName }} ·
+                {{ selectedBaselineRun.composedTotalDurationMs }} ms
               </small>
             </div>
-            <div class="sample-actions">
-              <el-button
-                v-if="sample.diagnosisId !== currentDiagnosisId"
-                size="small"
-                text
-                @click="openDiagnosis(sample.diagnosisId)"
-              >打开 Diagnosis</el-button>
-              <el-button
-                v-else-if="sample.referenceStatus === 'EVIDENCE_CAPTURED'"
-                size="small"
-                type="primary"
-                plain
-                :disabled="currentDiagnosisStatus !== 'CLOSED'"
-                @click="openReference(sample)"
-              >{{ currentDiagnosisStatus === 'CLOSED' ? '填写人工参考解' : '关闭后填写参考解' }}</el-button>
-              <template v-if="sample.referenceStatus === 'READY_FOR_EVALUATION'">
-                <div v-if="baselineRunFor(sample)" class="baseline-result">
-                  <el-tag
-                    size="small"
-                    :type="baselineClassificationTagType(baselineRunFor(sample)!.quality.classification)"
-                  >{{ baselineClassificationLabel(baselineRunFor(sample)!.quality.classification) }}</el-tag>
-                  <small>{{ baselineStatusLabel(baselineRunFor(sample)!.status) }}</small>
-                  <small>
-                    {{ baselineRunFor(sample)!.model.provider }} / {{ baselineRunFor(sample)!.model.modelName }} ·
-                    {{ baselineRunFor(sample)!.composedTotalDurationMs }} ms
-                  </small>
-                </div>
-                <el-button
-                  v-if="baselineRunnable(sample)"
-                  size="small"
-                  type="primary"
-                  plain
-                  :loading="baselineRunningSampleId === sample.sampleId"
-                  @click="runBaseline(sample)"
-                >{{ baselineRunFor(sample) ? '运行 / 读取当前模型版本' : '运行单 Agent 基线' }}</el-button>
-                <span v-else class="immutable-mark">{{ baselineUnavailableReason(sample) }}</span>
-                <span class="immutable-mark">参考解已冻结 · v{{ sample.version }}</span>
-              </template>
-            </div>
-          </article>
-        </div>
-        <el-empty v-else-if="!loading" description="尚未积累 T8 历史样本" :image-size="64" />
-      </section>
+          </template>
 
-      <section v-if="referenceSample" class="reference-panel">
-        <div class="panel-head">
-          <div><span>人工结构化 oracle</span><h3>{{ referenceSample.scenarioKey }}</h3></div>
-          <el-button size="small" text @click="referenceSample = null">取消</el-button>
+          <div class="drawer-actions">
+            <el-button
+              v-if="sample.diagnosisId !== currentDiagnosisId"
+              @click="openDiagnosis(sample.diagnosisId)"
+            >打开 Diagnosis</el-button>
+            <el-button
+              v-else-if="sample.referenceStatus === 'EVIDENCE_CAPTURED'"
+              type="primary"
+              plain
+              :disabled="currentDiagnosisStatus !== 'CLOSED'"
+              @click="openReference(sample)"
+            >{{ currentDiagnosisStatus === 'CLOSED' ? '填写参考解' : '关闭后填写参考解' }}</el-button>
+            <el-button
+              v-if="sample.referenceStatus === 'READY_FOR_EVALUATION' && baselineRunnable(sample)"
+              type="primary"
+              plain
+              :loading="baselineRunningSampleId === sample.sampleId"
+              @click="runBaseline(sample)"
+            >{{ selectedBaselineRun ? '运行 / 读取当前模型版本' : '运行基线核对' }}</el-button>
+            <span
+              v-else-if="sample.referenceStatus === 'READY_FOR_EVALUATION'"
+              class="immutable-mark"
+            >{{ baselineUnavailableReason(sample) }}</span>
+          </div>
+          <p v-if="sample.referenceStatus === 'READY_FOR_EVALUATION'" class="immutable-mark">
+            参考解已冻结 · v{{ sample.version }}
+          </p>
+          </template>
         </div>
-        <el-alert type="info" :closable="false">
-          每行一个 intent key。结果、恢复验证和关闭时间由服务端读取当前 CLOSED Diagnosis，浏览器不能填写或覆盖。
-        </el-alert>
-        <div class="reference-form">
-          <label class="disposition-field">
-            <span>期望模型行为</span>
-            <el-select v-model="referenceForm.expectedDisposition" placeholder="选择期望行为">
-              <el-option label="生成结构化排障草案" value="DRAFT" />
-              <el-option label="证据不足时安全拒答" value="ABSTAIN" />
-            </el-select>
-          </label>
-          <label>
-            <span>必须步骤（按顺序）</span>
-            <el-input
-              v-model="referenceForm.required"
-              type="textarea"
-              :rows="5"
-              placeholder="locate_failed_request&#10;trace_ps_id&#10;verify_recovery"
-            />
-          </label>
-          <label>
-            <span>禁止步骤</span>
-            <el-input
-              v-model="referenceForm.forbidden"
-              type="textarea"
-              :rows="5"
-              placeholder="restart_production"
-            />
-          </label>
-        </div>
-        <p v-if="referenceError" class="reference-error">{{ referenceError }}</p>
-        <div class="reference-actions">
-          <el-button
-            type="primary"
-            :loading="referenceLoading"
-            :disabled="Boolean(referenceError)"
-            @click="finalizeReference"
-          >冻结参考解</el-button>
-        </div>
-      </section>
-    </div>
 
+        <div v-else class="drawer-empty">
+          <strong>选择一条样本查看详情</strong>
+          <p>也可先采集样本，或查看时延与基线摘要。</p>
+        </div>
+      </el-drawer>
     </div>
   </CapabilityWorkspaceShell>
 </template>
@@ -292,6 +360,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
+import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import {
   troubleshootingApi,
   type BaselineClassification,
@@ -318,6 +387,8 @@ import {
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 
+type DrawerPanel = 'detail' | 'reference' | 'capture' | 'metrics' | 'replay'
+
 const props = withDefaults(defineProps<{
   currentDiagnosisId?: string | null
   currentDiagnosisStatus?: DiagnosisStatus | null
@@ -333,15 +404,14 @@ const props = withDefaults(defineProps<{
   captureContext: null,
   replayCaptureContext: null,
   captureEnabled: false,
-  captureDisabledReason: '先在真源验收中取得一条非 BLOCKED Evidence Spine，再采集历史样本。',
+  captureDisabledReason: '先完成一次可用的取证预览，再采集历史样本。',
   replayCaptureEnabled: false,
-  replayCaptureDisabledReason: '当前 Diagnosis 不在可管理的 Replay fixture 范围。',
+  replayCaptureDisabledReason: '当前 Diagnosis 不在可管理的回放范围。',
 })
 
 const emit = defineEmits<{
   back: []
   'open-diagnosis': [diagnosisId: string]
-  openHistoryReplay: []
   captured: [sample: EvidenceEvaluationSample]
 }>()
 
@@ -353,6 +423,8 @@ const replayCaptureLoading = ref(false)
 const referenceLoading = ref(false)
 const baselineRunningSampleId = ref<string | null>(null)
 const onlyCurrent = ref(false)
+const selectedSampleId = ref<string | null>(null)
+const drawerPanel = ref<DrawerPanel>('detail')
 const referenceSample = ref<EvidenceEvaluationSample | null>(null)
 const captureForm = reactive({ scenarioKey: '' })
 const referenceForm = reactive<{
@@ -398,6 +470,32 @@ const referenceError = computed(() => {
   return overlap ? `intent key 不能同时为必须与禁止：${overlap}` : ''
 })
 
+const selectedSample = computed(() => ledger.value?.samples.find(
+  sample => sample.sampleId === selectedSampleId.value,
+) || null)
+
+const selectedBaselineRun = computed(() => {
+  const sample = selectedSample.value
+  return sample ? baselineRunFor(sample) : null
+})
+
+const drawerOpen = computed(() => Boolean(
+  selectedSampleId.value
+    || drawerPanel.value === 'capture'
+    || drawerPanel.value === 'metrics'
+    || drawerPanel.value === 'reference'
+    || drawerPanel.value === 'replay',
+))
+
+const drawerTitle = computed(() => {
+  if (drawerPanel.value === 'replay') return TROUBLESHOOTING_UI_LABELS.historyReplay
+  if (drawerPanel.value === 'capture') return '采集样本'
+  if (drawerPanel.value === 'metrics') return '时延与基线指标'
+  if (drawerPanel.value === 'reference') return '填写参考解'
+  if (selectedSample.value) return selectedSample.value.scenarioKey
+  return '样本详情'
+})
+
 onMounted(() => {
   syncCaptureForm()
   referenceSample.value = null
@@ -422,11 +520,58 @@ async function loadLedger() {
     ])
     ledger.value = sampleResponse.data
     baselineLedger.value = baselineResponse.data
+    if (selectedSampleId.value && !ledger.value?.samples.some(sample => sample.sampleId === selectedSampleId.value)) {
+      selectedSampleId.value = null
+      if (drawerPanel.value === 'detail' || drawerPanel.value === 'reference') {
+        drawerPanel.value = 'detail'
+        referenceSample.value = null
+      }
+    }
   } catch (error) {
-    ElMessage.error(`加载 T8 样本与基线台账失败：${errorText(error)}`)
+    ElMessage.error(`加载评估样本失败：${errorText(error)}`)
   } finally {
     loading.value = false
   }
+}
+
+function selectSample(sample: EvidenceEvaluationSample) {
+  selectedSampleId.value = sample.sampleId
+  drawerPanel.value = 'detail'
+  referenceSample.value = null
+}
+
+function openCaptureDrawer() {
+  drawerPanel.value = 'capture'
+}
+
+function openReplayDrawer() {
+  drawerPanel.value = 'replay'
+}
+
+function openMetricsDrawer() {
+  drawerPanel.value = 'metrics'
+}
+
+function onDrawerOpenChange(open: boolean) {
+  if (open) return
+  selectedSampleId.value = null
+  drawerPanel.value = 'detail'
+  referenceSample.value = null
+}
+
+function backToDetailOrClose() {
+  if (selectedSampleId.value) {
+    drawerPanel.value = 'detail'
+    return
+  }
+  onDrawerOpenChange(false)
+}
+
+function sampleRowClassName({ row }: { row: EvidenceEvaluationSample }) {
+  const classes = []
+  if (row.sampleId === selectedSampleId.value) classes.push('selected-row')
+  if (row.diagnosisId === props.currentDiagnosisId) classes.push('current-row')
+  return classes.join(' ')
 }
 
 async function captureSample(source: 'GUANCE' | 'RECORDED_REPLAY') {
@@ -450,12 +595,14 @@ async function captureSample(source: 'GUANCE' | 'RECORDED_REPLAY') {
           diagnosisId: context.diagnosisId,
         })
     await loadLedger()
+    selectedSampleId.value = response.data.sample.sampleId
+    drawerPanel.value = 'detail'
     emit('captured', response.data.sample)
     ElMessage.success(response.data.created
-      ? `证据输入发生变化，已写入不可变采集 r${response.data.sample.captureRevision}`
-      : `输入指纹未变化，已复用采集 r${response.data.sample.captureRevision}`)
+      ? `证据输入发生变化，已写入采集 r${response.data.sample.captureRevision}`
+      : `输入未变化，已复用采集 r${response.data.sample.captureRevision}`)
   } catch (error) {
-    ElMessage.error(`T8 样本采集失败：${errorText(error)}`)
+    ElMessage.error(`样本采集失败：${errorText(error)}`)
   } finally {
     if (source === 'GUANCE') captureLoading.value = false
     else replayCaptureLoading.value = false
@@ -465,10 +612,12 @@ async function captureSample(source: 'GUANCE' | 'RECORDED_REPLAY') {
 function openReference(sample: EvidenceEvaluationSample) {
   if (sample.diagnosisId !== props.currentDiagnosisId
     || props.currentDiagnosisStatus !== 'CLOSED') return
+  selectedSampleId.value = sample.sampleId
   referenceSample.value = sample
   referenceForm.required = ''
   referenceForm.forbidden = ''
   referenceForm.expectedDisposition = 'DRAFT'
+  drawerPanel.value = 'reference'
 }
 
 async function finalizeReference() {
@@ -483,8 +632,9 @@ async function finalizeReference() {
       expectedDisposition: referenceForm.expectedDisposition,
     })
     referenceSample.value = null
+    drawerPanel.value = 'detail'
     await loadLedger()
-    ElMessage.success('人工参考解已冻结；权威结果来自关联的 CLOSED Diagnosis')
+    ElMessage.success('参考解已冻结；权威结果来自已关闭的 Diagnosis')
   } catch (error) {
     ElMessage.error(`参考解冻结失败：${errorText(error)}`)
   } finally {
@@ -515,7 +665,7 @@ function baselineUnavailableReason(sample: EvidenceEvaluationSample) {
   if (sample.diagnosisId !== props.currentDiagnosisId) return '打开 Diagnosis 后运行'
   const context = baselineCaptureContext(sample)
   if (!context || context.diagnosisId !== sample.diagnosisId) {
-    return '先打开当前 Diagnosis 以恢复冻结查询窗口'
+    return '先打开当前 Diagnosis 以恢复查询窗口'
   }
   return ''
 }
@@ -532,10 +682,10 @@ async function runBaseline(sample: EvidenceEvaluationSample) {
     })
     await loadLedger()
     ElMessage.success(response.data.created
-      ? '单 Agent 基线已运行并保存结构化结果'
+      ? '基线核对已运行并保存结果'
       : '该样本与模型版本已有基线结果，已返回既有记录')
   } catch (error) {
-    ElMessage.error(`单 Agent 基线运行失败：${errorText(error)}`)
+    ElMessage.error(`基线核对失败：${errorText(error)}`)
   } finally {
     baselineRunningSampleId.value = null
   }
@@ -579,71 +729,355 @@ function errorText(error: unknown) {
 </script>
 
 <style scoped>
-.ledger-alert { margin-bottom: 14px; }
-.ledger-body { min-height: 220px; }
-.history-replay-panel,.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { padding: 15px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; }
-.summary-panel,.latency-panel,.baseline-panel,.capture-panel,.sample-panel,.reference-panel { margin-top: 12px; }
-.history-replay-panel { border-color: #d8e2f5; background: #f8faff; }
-.history-replay-panel p { margin: 9px 0 0; color: #667085; font-size: 10.5px; line-height: 1.55; }
-.summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
-.summary-grid article { padding: 11px; border-radius: 8px; background: #f5f7fb; }
-.summary-grid span,.summary-grid small { display: block; color: #667085; font-size: 10px; }
-.summary-grid b { display: block; margin: 4px 0; color: #172033; font-size: 20px; }
-.progress-row { display: grid; grid-template-columns: minmax(220px,1fr) minmax(180px,.7fr); align-items: center; gap: 18px; margin-top: 12px; }
-.progress-row b,.progress-row small { display: block; }
-.progress-row b { font-size: 12px; }
-.progress-row small { margin-top: 4px; color: #b54708; font-size: 10px; line-height: 1.5; }
-.latency-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 12px; }
-.latency-grid article { padding: 12px; border: 1px solid #e7eaf0; border-radius: 8px; background: #fbfcfe; }
-.latency-grid header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.latency-grid header b { font-size: 11px; }
-.latency-grid header small { color: #667085; font-size: 9px; }
-.latency-grid dl { display: grid; gap: 7px; margin: 10px 0 0; }
-.latency-grid dl>div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.latency-grid dt { color: #667085; font-size: 9.5px; }
-.latency-grid dd { margin: 0; color: #172033; font-size: 9.5px; font-weight: 650; text-align: right; }
-.baseline-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 12px; }
-.baseline-grid article { padding: 12px; border: 1px solid #d8e2f5; border-radius: 8px; background: #f8faff; }
-.baseline-grid header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.baseline-grid header b { font-size: 11px; }
-.baseline-grid header small { color: #667085; font-size: 9px; }
-.baseline-grid p { margin: 8px 0; color: #344054; font-size: 9.5px; line-height: 1.5; }
-.baseline-grid dl { display: grid; gap: 7px; margin: 0; }
-.baseline-grid dl>div { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.baseline-grid dt { color: #667085; font-size: 9.5px; }
-.baseline-grid dd { margin: 0; color: #172033; font-size: 9.5px; font-weight: 650; text-align: right; }
-.latency-note { margin: 10px 0 0; color: #667085; font-size: 9.5px; line-height: 1.55; }
-.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.panel-head span { color: #2f5cf5; font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-.panel-head h3 { margin: 4px 0 0; font-size: 14px; }
-.capture-panel>p { margin: 9px 0; color: #667085; font-size: 10.5px; line-height: 1.55; }
-.capture-form { display: grid; grid-template-columns: 1.2fr 1.2fr .7fr auto; align-items: end; gap: 9px; }
-.capture-actions { display: flex; align-items: center; gap: 7px; }
-.capture-form label>span,.reference-form label>span { display: block; margin-bottom: 5px; color: #475467; font-size: 10px; font-weight: 650; }
-.disabled-reason { display: block; margin-top: 7px; color: #b54708; font-size: 10px; }
-.sample-head { align-items: center; }
-.sample-filters { display: flex; align-items: center; gap: 8px; }
-.sample-list { display: grid; gap: 8px; margin-top: 12px; }
-.sample-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e7eaf0; border-radius: 8px; background: #fbfcfe; }
-.sample-row.current { border-color: #b2ccff; background: #f5f8ff; }
-.sample-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
-.sample-main>b { display: block; font-size: 12px; }
-.sample-main>p { display: flex; flex-wrap: wrap; gap: 9px; margin: 5px 0; color: #667085; font-size: 10px; }
-.sample-main code { color: #2f5cf5; }
-.sample-main>small { display: block; color: #667085; font-size: 9.5px; line-height: 1.5; }
-.sample-main .outcome-line { margin-top: 4px; color: #138a58; }
-.sample-contrast { margin-top: 7px; padding: 8px 9px; border-left: 2px solid #138a58; border-radius: 5px; background: #eefbf5; }
-.sample-contrast strong,.sample-contrast small { display: block; }
-.sample-contrast strong { color: #172033; font-size: 10px; line-height: 1.5; }
-.sample-contrast small { margin-top: 3px; color: #475467; font-size: 9.5px; line-height: 1.5; }
-.sample-actions { display: flex; min-width: 160px; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
-.baseline-result { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.baseline-result small { color: #667085; font-size: 9px; }
-.immutable-mark { color: #667085; font-size: 9.5px; }
-.reference-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.disposition-field { grid-column: 1 / -1; }
-.reference-error { margin: 8px 0 0; color: #d92d20; font-size: 10px; }
-.reference-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
-@media(max-width:760px){.summary-grid,.latency-grid,.baseline-grid{grid-template-columns:1fr 1fr}.progress-row,.capture-form,.reference-form{grid-template-columns:1fr}.capture-actions{align-items:stretch;flex-direction:column}.sample-row{grid-template-columns:1fr}.sample-actions,.baseline-result{align-items:flex-start;text-align:left}}
-@media(max-width:520px){.summary-grid,.latency-grid,.baseline-grid{grid-template-columns:1fr}}
+.evaluation-ledger-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+  color: var(--mc-text-primary);
+}
+
+.ledger-alert { margin: 0; }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 10px;
+  background: var(--mc-bg-elevated);
+}
+
+.status-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  color: var(--mc-text-secondary);
+  font-size: 12px;
+}
+
+.progress-inline {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 180px);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.progress-inline b {
+  color: var(--mc-text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ledger-body {
+  flex: 1;
+  min-height: 280px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--mc-bg-elevated);
+}
+
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cell-stack strong {
+  font-size: 12px;
+  color: var(--mc-text-primary);
+}
+
+.cell-stack small,
+.muted {
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+}
+
+.mono { font-family: var(--mc-mono, monospace); }
+
+.scenario-key {
+  color: var(--mc-primary);
+  font: 600 11px var(--mc-mono, monospace);
+}
+
+:deep(.el-table) {
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--mc-primary) 7%, var(--mc-bg));
+}
+
+:deep(.el-table__row) { cursor: pointer; }
+
+:deep(.selected-row > td.el-table__cell) {
+  background: color-mix(in srgb, var(--mc-primary) 12%, var(--mc-bg)) !important;
+}
+
+:deep(.selected-row > td:first-child) {
+  box-shadow: inset 3px 0 0 var(--mc-primary);
+}
+
+:deep(.current-row > td.el-table__cell) {
+  background: color-mix(in srgb, var(--mc-accent, var(--mc-primary)) 5%, var(--mc-bg));
+}
+
+.drawer-panel { display: grid; gap: 14px; padding-bottom: 8px; }
+.back-link { justify-self: start; margin: -4px 0 0; }
+.panel-lead {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.scope-chip {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--mc-primary);
+  background: var(--mc-primary-bg);
+  font: 600 11px var(--mc-mono, monospace);
+}
+
+.capture-block,
+.metrics-block {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 10px;
+  background: var(--mc-bg-muted);
+}
+
+.capture-block h3,
+.section-title span {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.capture-form {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-form label > span,
+.reference-form label > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.disabled-reason {
+  color: var(--mc-warning);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.metric-list {
+  display: grid;
+  gap: 10px;
+}
+
+.metric-list article {
+  padding: 12px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 8px;
+  background: var(--mc-bg-elevated);
+}
+
+.metric-list header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.metric-list header b { font-size: 12px; }
+.metric-list header small,
+.metric-list p {
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.metric-list p { margin: 8px 0; }
+
+.metric-list dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.metric-list dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metric-list dt { color: var(--mc-text-secondary); font-size: 11px; }
+.metric-list dd {
+  margin: 0;
+  color: var(--mc-text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eyebrow {
+  color: var(--mc-text-secondary);
+  font: 10px var(--mc-mono, monospace);
+}
+
+.detail-head h2 {
+  margin: 4px 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.detail-head p {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 12px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  border-top: 1px solid var(--mc-border-light);
+}
+
+.meta-grid > div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mc-border-light);
+}
+
+.meta-grid > div:nth-child(odd) { padding-right: 12px; }
+.meta-grid dt { color: var(--mc-text-secondary); font-size: 10px; }
+.meta-grid dd { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+
+.contrast-box {
+  padding: 10px 12px;
+  border-left: 2px solid var(--mc-success);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mc-success) 8%, var(--mc-bg));
+}
+
+.contrast-box strong,
+.contrast-box small { display: block; }
+.contrast-box strong { font-size: 12px; line-height: 1.5; }
+.contrast-box small {
+  margin-top: 4px;
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.outcome-line {
+  margin: 0;
+  color: var(--mc-success);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.baseline-result {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.baseline-result small {
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.immutable-mark {
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.reference-form {
+  display: grid;
+  gap: 12px;
+}
+
+.disposition-field :deep(.el-select) { width: 100%; }
+
+.reference-error {
+  margin: 0;
+  color: var(--mc-danger);
+  font-size: 12px;
+}
+
+.drawer-empty {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  min-height: 240px;
+  text-align: center;
+  color: var(--mc-text-secondary);
+}
+
+.drawer-empty strong { color: var(--mc-text-primary); font-size: 13px; }
+.drawer-empty p { margin: 0; font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .status-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .status-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .progress-inline {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .meta-grid { grid-template-columns: 1fr; }
+  .meta-grid > div:nth-child(odd) { padding-right: 0; }
+}
 </style>

@@ -13,6 +13,8 @@ export type WorkbenchCapabilityNavItem = {
   label: string
   description: string
   section?: EvidenceSetupSection
+  /** Route/nav gate; defaults to manage:troubleshooting for config pages. */
+  requiredCapability?: 'view:troubleshooting' | 'operate:troubleshooting' | 'manage:troubleshooting'
 }
 
 export type WorkbenchCapabilityNavGroup = {
@@ -28,6 +30,14 @@ export const WORKBENCH_PRIMARY_CAPABILITIES: ReadonlyArray<WorkbenchCapabilityNa
     section: 'modules',
     label: '接入系统',
     description: '登记系统模块，并在模块里选择取证方法',
+    requiredCapability: 'manage:troubleshooting',
+  },
+  {
+    key: 't7-owner-contract',
+    command: 't7-owner-contract',
+    label: '标准查登记',
+    description: '先登记 10 条重点故障怎么查（还不能验收）',
+    requiredCapability: 'view:troubleshooting',
   },
 ]
 
@@ -42,6 +52,7 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
     section: 'tools',
     label: '取证方法',
     description: '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
+    requiredCapability: 'manage:troubleshooting',
   },
       {
         key: 'evidence-source',
@@ -49,12 +60,14 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
         section: 'source',
         label: '数据连接',
         description: '检查观测云能否正常读取',
+        requiredCapability: 'manage:troubleshooting',
       },
       {
         key: 'playbooks',
         command: 'playbooks',
         label: TROUBLESHOOTING_UI_LABELS.rules,
         description: '场景、步骤与判断标准',
+        requiredCapability: 'manage:troubleshooting',
       },
     ],
   },
@@ -67,12 +80,14 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
         command: 'ledger',
         label: TROUBLESHOOTING_UI_LABELS.evaluation,
         description: '用真实样本验证效果',
+        requiredCapability: 'manage:troubleshooting',
       },
       {
         key: 'case-knowledge',
         command: 'case-knowledge',
         label: TROUBLESHOOTING_UI_LABELS.caseKnowledge,
         description: '沉淀已解决的故障',
+        requiredCapability: 'manage:troubleshooting',
       },
     ],
   },
@@ -166,6 +181,18 @@ export function observabilityAssetsLocation(
       ...(scope?.system ? { system: scope.system } : {}),
       ...(scope?.service ? { service: scope.service } : {}),
       ...(section ? { section } : {}),
+      ...(returnTo ? { returnTo } : {}),
+    },
+  }
+}
+
+export function t7OwnerContractLocation(
+  currentFullPath?: string,
+): { path: string; query: Record<string, string> } {
+  const returnTo = safeTroubleshootingReturnPath(currentFullPath)
+  return {
+    path: '/troubleshooting/t7-owner-contract',
+    query: {
       ...(returnTo ? { returnTo } : {}),
     },
   }

@@ -551,7 +551,7 @@ class TroubleshootingAgentTriageServiceTest {
         assertThat(elapsed).isLessThan(Duration.ofMillis(200));
         assertThat(diagnosis.abstained()).isTrue();
         assertThat(diagnosis.warnings())
-                .anyMatch(warning -> warning.contains("时长预算"));
+                .anyMatch(warning -> warning.contains("助手超时"));
         verify(streamTracker).requestStop(any());
     }
 
@@ -596,7 +596,7 @@ class TroubleshootingAgentTriageServiceTest {
 
             assertThat(diagnosis.abstained()).isTrue();
             assertThat(diagnosis.warnings())
-                    .anyMatch(warning -> warning.contains("时长预算"));
+                    .anyMatch(warning -> warning.contains("助手超时"));
             var auditCaptor = org.mockito.ArgumentCaptor.forClass(
                     OpenDiscoveryRunAudit.class);
             verify(openDiscoveryPersistence).persist(
