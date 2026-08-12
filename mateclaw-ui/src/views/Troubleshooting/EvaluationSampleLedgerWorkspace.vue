@@ -17,7 +17,7 @@
           <div>
             <span>试点闭环</span>
             <h2 id="pilot-relay-title">试点接力队列</h2>
-            <p>系统只根据已保存的正式排障单、真源样本和影子运行，告诉下一位负责人现在只补哪一步。</p>
+            <p>系统只根据当前试点批次中新建的正式排障单、真源样本和影子运行，告诉下一位负责人现在只补哪一步。</p>
           </div>
           <div class="pilot-relay-metrics" aria-label="试点接力队列统计">
             <div><b>{{ pilotSummary.formal }}</b><span>正式排障单</span></div>
@@ -56,13 +56,13 @@
           </p>
         </div>
         <div v-else-if="!loading" class="pilot-relay-empty">
-          <div v-if="pilotConfigured"><b>当前试点范围还没有正式排障单</b><span>只有命中上述系统 / 服务的真实记录才会进入；演练记录不计入。</span></div>
+          <div v-if="pilotConfigured"><b>当前试点批次还没有新建的正式排障单</b><span>保存本批次后，新建且命中上述系统 / 服务的真实记录才会进入；历史单和演练记录不计入。</span></div>
           <div v-else><b>试点交接队列尚未启用</b><span>先配置精确范围和三位工作区负责人；系统不会用全量排障单伪装试点进度。</span></div>
           <el-button plain @click="$emit('back')">返回排障工作台</el-button>
         </div>
 
         <p class="pilot-relay-boundary">
-          最近最多读取 100 张排障单。演练、Recorded Replay 和 fixture 不计入真实效果；这里也不替代 T7 正式录制批次验收。
+          每张正式单在建单时冻结所属试点版本，历史单和旧版本不会追溯计入当前批次。最近最多读取 100 张；演练、Recorded Replay 和 fixture 不计入真实效果，这里也不替代 T7 正式录制批次验收。
         </p>
       </section>
 
@@ -578,7 +578,7 @@ import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 import {
   buildEvaluationPilotQueue,
   buildPilotScopeSuggestions,
-  matchesPilotScope,
+  matchesPilotEnrollment,
   pilotPlanReady,
 } from './evaluationPilot'
 
@@ -672,7 +672,7 @@ const pilotQueue = computed(() => buildEvaluationPilotQueue(
 const pilotVisibleRows = computed(() => pilotQueue.value.slice(0, 6))
 const pilotScopeSuggestions = computed(() => buildPilotScopeSuggestions(pilotDiagnoses.value).slice(0, 6))
 const pilotScopedDiagnoses = computed(() => pilotDiagnoses.value.filter(
-  diagnosis => !diagnosis.rehearsal && matchesPilotScope(diagnosis, pilotPlan.value),
+  diagnosis => !diagnosis.rehearsal && matchesPilotEnrollment(diagnosis, pilotPlan.value),
 ))
 const pilotSummary = computed(() => ({
   formal: pilotScopedDiagnoses.value.length,

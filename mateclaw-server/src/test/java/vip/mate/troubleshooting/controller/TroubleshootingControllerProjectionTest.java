@@ -194,6 +194,7 @@ class TroubleshootingControllerProjectionTest {
                         RouteAuthority.RULE_MATCHED,
                         RouteSemanticsProvenance.PERSISTED,
                         false,
+                        null,
                         3,
                         null,
                         null)));

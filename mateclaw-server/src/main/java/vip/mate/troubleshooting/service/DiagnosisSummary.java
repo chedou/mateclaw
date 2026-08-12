@@ -26,6 +26,7 @@ public record DiagnosisSummary(
         RouteAuthority routeAuthority,
         RouteSemanticsProvenance routeSemanticsProvenance,
         boolean rehearsal,
+        Integer pilotPlanVersion,
         int version,
         LocalDateTime createTime,
         LocalDateTime updateTime) {
@@ -63,6 +64,7 @@ public record DiagnosisSummary(
                 semantics.routeAuthority(),
                 semantics.provenance(),
                 Boolean.TRUE.equals(entity.getRehearsal()),
+                entity.getPilotPlanVersion(),
                 entity.getVersion() == null ? 0 : entity.getVersion(),
                 entity.getCreateTime(),
                 entity.getUpdateTime());

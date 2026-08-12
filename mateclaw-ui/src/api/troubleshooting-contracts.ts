@@ -613,6 +613,8 @@ export interface DiagnosisSummary {
   routeAuthority: RouteAuthority | null
   routeSemanticsProvenance: RouteSemanticsProvenance
   rehearsal: boolean
+  /** Immutable pilot cohort admitted by the backend at Diagnosis creation. */
+  pilotPlanVersion?: number | null
   version: number
   createTime: string
   updateTime: string

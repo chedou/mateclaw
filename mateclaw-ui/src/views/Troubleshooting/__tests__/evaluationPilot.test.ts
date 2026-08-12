@@ -207,6 +207,37 @@ describe('evaluation pilot hand-off queue', () => {
     )).toEqual([])
   })
 
+  it('does not retroactively turn a historical matching diagnosis into a pilot record', () => {
+    const historical = {
+      ...diagnosis('diag-before-pilot', 'CLOSED', false, '2026-08-13T04:00:00Z'),
+      pilotPlanVersion: null,
+    }
+
+    expect(buildEvaluationPilotQueue(
+      [historical], [], [], pilotPlan(),
+    )).toEqual([])
+    expect(buildPilotWorkbenchPrompt([historical], pilotPlan())).toMatchObject({
+      kind: 'CREATE_FORMAL',
+      step: 2,
+      actionLabel: '发起首张正式排障',
+    })
+  })
+
+  it('keeps a previous pilot revision out of the current cohort', () => {
+    const previousCohort = diagnosis(
+      'diag-v1', 'CLOSED', false, '2026-08-13T04:00:00Z',
+    )
+    const currentPlan = { ...pilotPlan(), version: 2 }
+
+    expect(buildEvaluationPilotQueue(
+      [previousCohort], [], [], currentPlan,
+    )).toEqual([])
+    expect(buildPilotWorkbenchPrompt([previousCohort], currentPlan)).toMatchObject({
+      kind: 'CREATE_FORMAL',
+      step: 2,
+    })
+  })
+
   it('admits only diagnoses inside the declared system and service scope', () => {
     const inScope = diagnosis('diag-wechat', 'READY_FOR_HUMAN', false, '2026-08-13T04:00:00Z')
     const wrongService = {
@@ -377,6 +408,7 @@ function diagnosis(
     routeAuthority: 'RULE_MATCHED',
     routeSemanticsProvenance: 'PERSISTED',
     rehearsal,
+    pilotPlanVersion: 1,
     version: 1,
     createTime: updateTime,
     updateTime,

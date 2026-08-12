@@ -46,6 +46,10 @@ public class TroubleshootingDiagnosisEntity {
     @TableField(value = "route_authority", updateStrategy = FieldStrategy.ALWAYS)
     private String routeAuthority;
 
+    /** Immutable pilot cohort selected when this Diagnosis is first inserted. */
+    @TableField(value = "pilot_plan_version", updateStrategy = FieldStrategy.NEVER)
+    private Integer pilotPlanVersion;
+
     private Integer version;
 
     private String closureNotificationStatus;

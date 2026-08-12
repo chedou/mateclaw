@@ -124,6 +124,39 @@ public class TroubleshootingPilotPlanService {
         return project(row);
     }
 
+    /**
+     * Returns the immutable cohort version for a newly created formal Diagnosis.
+     *
+     * <p>This is intentionally evaluated only at insert time. Historical rows
+     * are never backfilled when a plan is declared or edited, and rehearsal
+     * rows never enter a production pilot denominator.</p>
+     */
+    public Integer enrollmentVersion(
+            long workspaceId,
+            String system,
+            String service,
+            boolean rehearsal) {
+        requireWorkspace(workspaceId);
+        if (rehearsal) {
+            return null;
+        }
+        String normalizedSystem = normalizedLookupIdentifier(system);
+        String normalizedService = normalizedLookupIdentifier(service);
+        if (normalizedSystem == null || normalizedService == null) {
+            return null;
+        }
+        PlanView plan = current(workspaceId);
+        if (!plan.configured()
+                || !plan.enabled()
+                || !plan.blockers().isEmpty()) {
+            return null;
+        }
+        boolean inScope = plan.modules().stream().anyMatch(module ->
+                module.system().equals(normalizedSystem)
+                        && module.service().equals(normalizedService));
+        return inScope ? plan.version() : null;
+    }
+
     @Transactional
     public PlanView declare(long workspaceId, Declaration declaration, String actor) {
         requireWorkspace(workspaceId);
@@ -301,6 +334,11 @@ public class TroubleshootingPilotPlanService {
             throw invalid(field + " must be a stable lowercase identifier");
         }
         return normalized;
+    }
+
+    private String normalizedLookupIdentifier(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return IDENTIFIER.matcher(normalized).matches() ? normalized : null;
     }
 
     private String safeText(String value, String field, int maxChars, boolean required) {

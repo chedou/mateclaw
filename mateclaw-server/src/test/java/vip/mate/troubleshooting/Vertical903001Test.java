@@ -36,6 +36,7 @@ import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
+import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.model.TroubleshootingSopEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
@@ -125,7 +126,8 @@ class Vertical903001Test {
                 new KnowledgeEvidenceSelectorInventory(objectMapper),
                 objectMapper);
         TroubleshootingPersistenceService persistence = new TroubleshootingPersistenceService(
-                diagnosisMapper(), outboxMapper(), objectMapper);
+                diagnosisMapper(), outboxMapper(), objectMapper,
+                mock(TroubleshootingPilotPlanService.class));
         DiagnosisStateMachine stateMachine = new DiagnosisStateMachine();
         DeterministicDiagnosisService diagnosisService = new DeterministicDiagnosisService(
                 new CriterionEvaluator(), new DiagnosisRuleEvaluator(),

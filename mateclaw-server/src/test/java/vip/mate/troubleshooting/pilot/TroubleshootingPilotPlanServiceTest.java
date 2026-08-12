@@ -80,6 +80,34 @@ class TroubleshootingPilotPlanServiceTest {
     }
 
     @Test
+    void admitsOnlyNewFormalDiagnosesInsideTheCurrentReadyScope() {
+        service.declare(WORKSPACE_ID, declaration(0), "admin");
+
+        assertThat(service.enrollmentVersion(
+                WORKSPACE_ID, "CSDP", "csdp-task", false)).isEqualTo(1);
+        assertThat(service.enrollmentVersion(
+                WORKSPACE_ID, "csdp", "unknown-service", false)).isNull();
+        assertThat(service.enrollmentVersion(
+                WORKSPACE_ID, "csdp", "csdp-task", true)).isNull();
+
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "member");
+        assertThat(service.enrollmentVersion(
+                WORKSPACE_ID, "csdp", "csdp-task", false)).isNull();
+    }
+
+    @Test
+    void aDisabledPlanNeverAdmitsAProductionDiagnosis() {
+        TroubleshootingPilotPlanService.Declaration disabled =
+                new TroubleshootingPilotPlanService.Declaration(
+                        "CSDP 首批试点", modules(), SECOND_LINE, THIRD_LINE, SOURCE_OWNER,
+                        false, 0, "暂停统计");
+        service.declare(WORKSPACE_ID, disabled, "admin");
+
+        assertThat(service.enrollmentVersion(
+                WORKSPACE_ID, "csdp", "csdp-wechat", false)).isNull();
+    }
+
+    @Test
     void appendsImmutableVersionsAndRejectsAStaleEditor() {
         service.declare(WORKSPACE_ID, declaration(0), "admin");
 

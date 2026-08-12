@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.persistence;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -31,6 +32,7 @@ import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
+import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
@@ -55,6 +57,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,6 +65,7 @@ class TroubleshootingPersistenceServiceTest {
 
     @Mock private TroubleshootingDiagnosisMapper diagnosisMapper;
     @Mock private TroubleshootingKnowledgeOutboxMapper outboxMapper;
+    @Mock private TroubleshootingPilotPlanService pilotPlans;
 
     private ObjectMapper objectMapper;
     private TroubleshootingPersistenceService service;
@@ -79,7 +83,20 @@ class TroubleshootingPersistenceServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        service = new TroubleshootingPersistenceService(diagnosisMapper, outboxMapper, objectMapper);
+        service = new TroubleshootingPersistenceService(
+                diagnosisMapper, outboxMapper, objectMapper, pilotPlans);
+    }
+
+    @Test
+    void pilotPlanVersionIsInsertOnlyAtTheEntityMappingBoundary() {
+        var field = TableInfoHelper.getTableInfo(TroubleshootingDiagnosisEntity.class)
+                .getFieldList()
+                .stream()
+                .filter(candidate -> "pilotPlanVersion".equals(candidate.getProperty()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(FieldStrategy.NEVER, field.getUpdateStrategy());
     }
 
     @Test
@@ -105,6 +122,24 @@ class TroubleshootingPersistenceServiceTest {
                 entity.getValue().getRouteAuthority());
         assertEquals(0, stored.version());
         assertTrue(stored.created());
+    }
+
+    @Test
+    void freezesTheCurrentPilotVersionOnlyWhenTheDiagnosisIsFirstCreated() {
+        when(diagnosisMapper.selectOne(any())).thenReturn(null);
+        when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+        when(pilotPlans.enrollmentVersion(
+                7L, "CSDP", "csdp-wechat", false)).thenReturn(7);
+
+        service.createOrGet(
+                7L,
+                diagnosis(false),
+                Instant.parse("2026-07-25T01:04:59Z"));
+
+        ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
+                ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
+        verify(diagnosisMapper).insert(entity.capture());
+        assertEquals(7, entity.getValue().getPilotPlanVersion());
     }
 
     @Test
@@ -237,6 +272,7 @@ class TroubleshootingPersistenceServiceTest {
         assertEquals(4, stored.version());
         assertFalse(stored.created());
         verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+        verifyNoInteractions(pilotPlans);
     }
 
     @Test
@@ -274,6 +310,7 @@ class TroubleshootingPersistenceServiceTest {
         assertEquals(3, stored.version());
         assertFalse(stored.created());
         verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
+        verifyNoInteractions(pilotPlans);
     }
 
     @Test
@@ -317,6 +354,7 @@ class TroubleshootingPersistenceServiceTest {
         Map<String, Object> params = update.getValue().getParamNameValuePairs();
         assertTrue(sqlSet.contains("investigation_mode"), sqlSet);
         assertTrue(sqlSet.contains("route_authority"), sqlSet);
+        assertFalse(sqlSet.contains("pilot_plan_version"), sqlSet);
         assertTrue(params.containsValue(InvestigationMode.ERROR_CODE_PLAYBOOK.name()), params.toString());
         assertTrue(params.containsValue(RouteAuthority.EXPLICIT.name()), params.toString());
     }
@@ -335,6 +373,7 @@ class TroubleshootingPersistenceServiceTest {
         entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
         entity.setInvestigationMode(InvestigationMode.SCENARIO_PLAYBOOK.name());
         entity.setRouteAuthority(RouteAuthority.RULE_MATCHED.name());
+        entity.setPilotPlanVersion(7);
         entity.setAggregateJson("{not-json");
         when(diagnosisMapper.selectList(any())).thenReturn(List.of(entity));
 
@@ -368,12 +407,14 @@ class TroubleshootingPersistenceServiceTest {
         entity.setContractVersion(Diagnosis.CURRENT_CONTRACT_VERSION);
         entity.setInvestigationMode(InvestigationMode.SCENARIO_PLAYBOOK.name());
         entity.setRouteAuthority(RouteAuthority.RULE_MATCHED.name());
+        entity.setPilotPlanVersion(7);
 
         DiagnosisSummary summary = DiagnosisSummary.from(entity);
 
         assertEquals(InvestigationMode.SCENARIO_PLAYBOOK, summary.investigationMode());
         assertEquals(RouteAuthority.RULE_MATCHED, summary.routeAuthority());
         assertEquals(RouteSemanticsProvenance.PERSISTED, summary.routeSemanticsProvenance());
+        assertEquals(7, summary.pilotPlanVersion());
     }
 
     @Test
@@ -411,6 +452,7 @@ class TroubleshootingPersistenceServiceTest {
                         RouteAuthority.EXPLICIT,
                         null,
                         false,
+                        null,
                         3,
                         null,
                         null));
@@ -433,6 +475,7 @@ class TroubleshootingPersistenceServiceTest {
                         null,
                         RouteSemanticsProvenance.PERSISTED,
                         false,
+                        null,
                         3,
                         null,
                         null));
@@ -455,6 +498,7 @@ class TroubleshootingPersistenceServiceTest {
                         null,
                         RouteSemanticsProvenance.LEGACY_DERIVED,
                         false,
+                        null,
                         1,
                         null,
                         null));

@@ -115,6 +115,7 @@ class HistoricalCaseKnowledgeImportServiceTest {
                 RouteAuthority.EXPLICIT,
                 RouteSemanticsProvenance.PERSISTED,
                 true,
+                null,
                 3,
                 LocalDateTime.parse("2026-08-03T10:00:00"),
                 LocalDateTime.parse("2026-08-03T10:10:00"));

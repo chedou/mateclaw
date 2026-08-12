@@ -20,6 +20,7 @@ import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.ScenarioSelector;
 import vip.mate.troubleshooting.model.TroubleshootingDiagnosisEntity;
 import vip.mate.troubleshooting.model.TroubleshootingKnowledgeOutboxEntity;
+import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
 
@@ -40,14 +41,17 @@ public class TroubleshootingPersistenceService {
     private final TroubleshootingDiagnosisMapper diagnosisMapper;
     private final TroubleshootingKnowledgeOutboxMapper outboxMapper;
     private final ObjectMapper objectMapper;
+    private final TroubleshootingPilotPlanService pilotPlans;
 
     public TroubleshootingPersistenceService(
             TroubleshootingDiagnosisMapper diagnosisMapper,
             TroubleshootingKnowledgeOutboxMapper outboxMapper,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            TroubleshootingPilotPlanService pilotPlans) {
         this.diagnosisMapper = diagnosisMapper;
         this.outboxMapper = outboxMapper;
         this.objectMapper = objectMapper;
+        this.pilotPlans = pilotPlans;
     }
 
     @Transactional
@@ -457,6 +461,11 @@ public class TroubleshootingPersistenceService {
         entity.setAggregateJson(json(diagnosis));
         entity.setInvestigationMode(persistedInvestigationMode(diagnosis));
         entity.setRouteAuthority(persistedRouteAuthority(diagnosis));
+        entity.setPilotPlanVersion(pilotPlans.enrollmentVersion(
+                workspaceId,
+                diagnosis.incident().system(),
+                diagnosis.incident().service(),
+                diagnosis.rehearsal()));
         entity.setVersion(0);
         entity.setDeleted(0);
         entity.setCreateTime(now);

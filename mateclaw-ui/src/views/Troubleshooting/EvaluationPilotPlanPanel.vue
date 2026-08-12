@@ -5,7 +5,7 @@
       <div>
         <b>{{ configured ? plan?.name : '先固定试点范围和三位负责人' }}</b>
         <span v-if="configured">
-          只跟踪
+          当前批次 v{{ plan?.version }} 只跟踪
           <template v-for="(module, index) in plan?.modules" :key="`${module.system}/${module.service}`">
             <strong>{{ module.system }} / {{ module.service }}</strong><template v-if="index < (plan?.modules.length || 0) - 1">、</template>
           </template>
@@ -17,7 +17,7 @@
       <span><small>二线闭环</small><b>{{ plan.secondLine?.displayName || '人员已失效' }}</b></span>
       <span><small>三线复核</small><b>{{ plan.thirdLine?.displayName || '人员已失效' }}</b></span>
       <span><small>数据取证</small><b>{{ plan.sourceOwner?.displayName || '人员已失效' }}</b></span>
-      <em>v{{ plan.version }}{{ plan.enabled ? '' : ' · 已停用' }}</em>
+      <em>{{ plan.enabled ? '接收新单' : '已停用' }}</em>
     </div>
     <el-button v-if="canManage" plain @click="openSetup">
       {{ plan?.configured ? '修改试点设置' : '配置试点' }}
@@ -29,7 +29,7 @@
     <header>
       <div>
         <b>试点设置</b>
-        <span>只声明系统 / 服务范围和交接人；不改写排障结论，每次保存都新增一个不可变版本。</span>
+        <span>只声明系统 / 服务范围和交接人；每次保存开启一个新批次，不改写结论，也不把历史排障单追溯纳入。</span>
       </div>
       <el-button text @click="setupOpen = false">收起</el-button>
     </header>
@@ -138,7 +138,7 @@
     </div>
 
     <footer>
-      <span>{{ formIssue || '保存后立即按新版本筛选交接队列。' }}</span>
+      <span>{{ formIssue || '保存后，之后新建且命中范围的正式单才进入这个批次。' }}</span>
       <el-button @click="setupOpen = false">取消</el-button>
       <el-button type="primary" :loading="saving" :disabled="Boolean(formIssue)" @click="save">
         保存新版本
@@ -383,7 +383,7 @@ async function save() {
     })
     setupOpen.value = false
     emit('updated', response.data)
-    ElMessage.success(`试点设置 v${response.data.version} 已保存，交接队列已按新范围刷新`)
+    ElMessage.success(`试点批次 v${response.data.version} 已保存；之后新建且命中范围的正式单才会进入`)
   } catch (error) {
     ElMessage.error(`保存试点设置失败：${errorText(error)}`)
   } finally {

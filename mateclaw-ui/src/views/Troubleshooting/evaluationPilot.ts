@@ -226,7 +226,9 @@ const STAGE_COPY: Record<EvaluationPilotStage, {
 
 /**
  * Builds the promotion hand-off queue from persisted facts only.
- * Rehearsals, Replay and fixture samples never enter the queue.
+ * Only Diagnoses frozen into the current immutable plan revision are admitted.
+ * Rehearsals, historical rows, previous revisions, Replay and fixture samples
+ * never enter the current cohort.
  */
 export function buildEvaluationPilotQueue(
   diagnoses: ReadonlyArray<DiagnosisSummary>,
@@ -258,7 +260,7 @@ export function buildEvaluationPilotQueue(
 
   return diagnoses
     .filter(diagnosis => !diagnosis.rehearsal)
-    .filter(diagnosis => matchesPilotScope(diagnosis, plan))
+    .filter(diagnosis => matchesPilotEnrollment(diagnosis, plan))
     .map((diagnosis) => {
       const sample = latestSampleByDiagnosis.get(diagnosis.diagnosisId) || null
       const stage = pilotStage(diagnosis, sample, sample ? runsBySample.get(sample.sampleId) || [] : [])
@@ -310,7 +312,7 @@ export function buildPilotWorkbenchPrompt(
 
   const scopedFormal = diagnoses
     .filter(diagnosis => !diagnosis.rehearsal)
-    .filter(diagnosis => matchesPilotScope(diagnosis, plan))
+    .filter(diagnosis => matchesPilotEnrollment(diagnosis, plan))
     .sort((left, right) => sortableTime(right.updateTime) - sortableTime(left.updateTime))
   const pending = scopedFormal.find(diagnosis => diagnosis.status !== 'CLOSED')
 
@@ -345,7 +347,7 @@ export function buildPilotWorkbenchPrompt(
     kind: 'CREATE_FORMAL',
     step: 2,
     title: '试点已就绪，发起第一张正式排障单',
-    detail: '使用试点范围内的真实告警建单，并明确关闭“演练模式”。',
+    detail: `使用试点范围内的真实告警新建正式排障单，并关闭“演练模式”。保存 v${plan.version} 前的历史单不会补算进来。`,
     ownerLabel: plan.secondLine.displayName,
     actionLabel: '发起首张正式排障',
     diagnosisId: null,
@@ -376,6 +378,21 @@ export function matchesPilotScope(
   if (!pilotPlanReady(plan)) return false
   const diagnosisKey = pilotScopeKey(diagnosis)
   return plan.modules.some(module => pilotScopeKey(module) === diagnosisKey)
+}
+
+/**
+ * A formal Diagnosis belongs to the current pilot cohort only when the backend
+ * froze this exact immutable plan revision at creation time. Scope matching is
+ * retained as a defensive consistency check; historical rows with no frozen
+ * version are suggestions, never pilot outcomes.
+ */
+export function matchesPilotEnrollment(
+  diagnosis: Pick<DiagnosisSummary, 'system' | 'service' | 'pilotPlanVersion'>,
+  plan: TroubleshootingPilotPlan | null,
+) {
+  return pilotPlanReady(plan)
+    && diagnosis.pilotPlanVersion === plan.version
+    && matchesPilotScope(diagnosis, plan)
 }
 
 function stageOwner(
