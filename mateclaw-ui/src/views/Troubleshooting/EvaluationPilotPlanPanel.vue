@@ -35,7 +35,7 @@
     </header>
 
     <el-alert
-      v-if="!membersLoading && (membersLoadFailed || members.length < 3)"
+      v-if="!membersLoading && (membersLoadFailed || !pilotTeamReadiness.ready)"
       type="warning"
       :closable="false"
       show-icon
@@ -45,11 +45,14 @@
         <el-button text type="primary" @click="loadMembers">重新读取</el-button>
       </template>
       <template v-else-if="canManageMembers">
-        当前工作区只有 {{ members.length }} / 3 名成员。现在先补齐成员，才能把二线、三线和数据负责人分开。
-        <el-button text type="primary" @click="openMemberSettings">先去添加成员</el-button>
+        当前工作区共 {{ pilotTeamReadiness.memberCount }} 名成员，其中
+        {{ pilotTeamReadiness.operatorCount }} 名能推进排障、{{ pilotTeamReadiness.adminCount }} 名能维护评估。
+        试点需要 3 名能操作排障的成员，其中至少 2 名管理员或所有者。
+        <el-button text type="primary" @click="openMemberSettings">去补齐成员与角色</el-button>
       </template>
       <template v-else>
-        当前工作区只有 {{ members.length }} / 3 名成员。当前账号不能添加成员，请联系工作区管理员补齐成员。
+        当前成员与角色还不能完成三类职责。当前账号不能调整成员，请联系工作区管理员：
+        准备 3 名能操作排障的成员，其中至少 2 名管理员或所有者。
       </template>
     </el-alert>
 
@@ -122,7 +125,7 @@
             :key="String(member.userId)"
             :label="memberLabel(member)"
             :value="String(member.userId)"
-            :disabled="memberDisabled(role.key, member.userId)"
+            :disabled="memberDisabled(role, member)"
           />
         </el-select>
         <small>{{ role.help }}</small>
@@ -155,9 +158,12 @@ import {
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import {
+  buildPilotTeamReadiness,
+  pilotMemberCanOwnResponsibility,
   pilotPlanReady,
   pilotScopeIsSaveable,
   pilotScopeKey,
+  type PilotResponsibility,
   type PilotScopeSuggestion,
 } from './evaluationPilot'
 import { pilotMemberSettingsLocation } from './workbenchCapabilityMenu'
@@ -170,23 +176,38 @@ interface WorkspacePilotMember {
   username?: string | null
   nickname?: string | null
   role: string
+  active?: boolean | null
 }
 
-const ROLE_FIELDS: ReadonlyArray<{ key: PilotRole; label: string; help: string }> = [
+interface PilotRoleField {
+  key: PilotRole
+  responsibility: PilotResponsibility
+  label: string
+  help: string
+  roleIssue: string
+}
+
+const ROLE_FIELDS: ReadonlyArray<PilotRoleField> = [
   {
     key: 'secondLineUserId',
+    responsibility: 'SECOND_LINE',
     label: '二线闭环负责人',
-    help: '复核候选定位，完成平台外处置并登记结果。',
+    help: '复核候选定位，完成平台外处置并登记结果；需要成员、管理员或所有者角色。',
+    roleIssue: '二线闭环负责人需要成员、管理员或所有者角色。',
   },
   {
     key: 'thirdLineUserId',
+    responsibility: 'THIRD_LINE',
     label: '三线开发复核人',
-    help: '填写人工标准答案，核对准确性和周复盘结果。',
+    help: '填写人工标准答案，核对准确性和周复盘结果；需要管理员或所有者角色。',
+    roleIssue: '三线开发复核人需要管理员或所有者角色。',
   },
   {
     key: 'sourceOwnerUserId',
+    responsibility: 'SOURCE_OWNER',
     label: '数据取证负责人',
-    help: '保证真实只读查询可用，采集脱敏 Guance 样本。',
+    help: '保证真实只读查询可用，采集脱敏 Guance 样本；需要管理员或所有者角色。',
+    roleIssue: '数据取证负责人需要管理员或所有者角色。',
   },
 ]
 
@@ -222,6 +243,7 @@ const canManage = computed(() => workspaceStore.can('manage:troubleshooting')
   || workspaceStore.isAtLeast('admin'))
 const canManageMembers = computed(() => workspaceStore.can('manage:settings'))
 const configured = computed(() => pilotPlanReady(props.plan))
+const pilotTeamReadiness = computed(() => buildPilotTeamReadiness(members.value))
 const formIssue = computed(() => {
   if (!canManage.value) return '当前角色无权修改试点设置。'
   if (membersLoading.value) return '正在读取工作区成员，请稍候。'
@@ -233,8 +255,8 @@ const formIssue = computed(() => {
   }
   const moduleKeys = form.modules.map(pilotScopeKey)
   if (new Set(moduleKeys).size !== moduleKeys.length) return '系统 / 服务范围不能重复。'
-  if (members.value.length < 3) {
-    return '当前未取得至少 3 名工作区成员，请先补齐成员或重试加载。'
+  if (!pilotTeamReadiness.value.ready) {
+    return '试点需要 3 名能操作排障的成员，其中至少 2 名管理员或所有者。'
   }
   const people = ROLE_FIELDS.map(role => form[role.key])
   if (people.some(userId => !/^\d+$/.test(userId) || userId === '0')) {
@@ -244,6 +266,11 @@ const formIssue = computed(() => {
   if (people.some(userId => !members.value.some(member => String(member.userId) === userId))) {
     return '已选人员不在当前工作区，请重新选择。'
   }
+  const incompatibleRole = ROLE_FIELDS.find((role) => {
+    const member = members.value.find(item => String(item.userId) === form[role.key])
+    return member && !pilotMemberCanOwnResponsibility(role.responsibility, member)
+  })
+  if (incompatibleRole) return incompatibleRole.roleIssue
   if (!form.reason.trim()) return '请填写本次固定或调整试点的原因。'
   return ''
 })
@@ -328,12 +355,13 @@ function removeModule(index: number) {
 
 function memberLabel(member: WorkspacePilotMember) {
   const displayName = member.nickname || member.username || `成员 ${member.userId}`
-  return `${displayName} · ${member.role}`
+  return `${displayName} · ${member.role}${member.active === true ? '' : ' · 账号不可用'}`
 }
 
-function memberDisabled(role: PilotRole, userId: string | number) {
-  const candidate = String(userId)
-  return ROLE_FIELDS.some(otherRole => otherRole.key !== role && form[otherRole.key] === candidate)
+function memberDisabled(role: PilotRoleField, member: WorkspacePilotMember) {
+  if (!pilotMemberCanOwnResponsibility(role.responsibility, member)) return true
+  const candidate = String(member.userId)
+  return ROLE_FIELDS.some(otherRole => otherRole.key !== role.key && form[otherRole.key] === candidate)
 }
 
 async function save() {

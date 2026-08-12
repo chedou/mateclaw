@@ -7,9 +7,10 @@ import type {
 } from '@/api'
 import {
   buildEvaluationPilotQueue,
-  buildPilotMemberProgress,
   buildPilotScopeSuggestions,
+  buildPilotTeamReadiness,
   buildPilotWorkbenchPrompt,
+  pilotMemberCanOwnResponsibility,
 } from '../evaluationPilot'
 
 describe('pilot scope suggestions', () => {
@@ -60,11 +61,67 @@ describe('pilot scope suggestions', () => {
 })
 
 describe('evaluation pilot hand-off queue', () => {
-  it('keeps the three distinct pilot roles as one visible member prerequisite', () => {
-    expect(buildPilotMemberProgress(1)).toEqual({ memberCount: 1, missingCount: 2, ready: false })
-    expect(buildPilotMemberProgress(2)).toEqual({ memberCount: 2, missingCount: 1, ready: false })
-    expect(buildPilotMemberProgress(3)).toEqual({ memberCount: 3, missingCount: 0, ready: true })
-    expect(buildPilotMemberProgress(5)).toEqual({ memberCount: 5, missingCount: 0, ready: true })
+  it('requires three operators including two administrators for the three pilot duties', () => {
+    expect(buildPilotTeamReadiness([{ role: 'owner', active: true }])).toEqual({
+      memberCount: 1,
+      operatorCount: 1,
+      adminCount: 1,
+      missingOperatorCount: 2,
+      missingAdminCount: 1,
+      ready: false,
+    })
+    expect(buildPilotTeamReadiness([
+      { role: 'owner', active: true },
+      { role: 'admin', active: true },
+      { role: 'member', active: true },
+    ])).toEqual({
+      memberCount: 3,
+      operatorCount: 3,
+      adminCount: 2,
+      missingOperatorCount: 0,
+      missingAdminCount: 0,
+      ready: true,
+    })
+    expect(buildPilotTeamReadiness([
+      { role: 'owner', active: true },
+      { role: 'member', active: true },
+      { role: 'member', active: true },
+    ]).ready).toBe(false)
+    expect(buildPilotTeamReadiness([
+      { role: 'owner', active: true },
+      { role: 'admin', active: true },
+      { role: 'viewer', active: true },
+    ]).ready).toBe(false)
+  })
+
+  it('only offers people who can perform the selected pilot duty', () => {
+    expect(pilotMemberCanOwnResponsibility('SECOND_LINE', { role: 'member', active: true })).toBe(true)
+    expect(pilotMemberCanOwnResponsibility('SECOND_LINE', { role: 'viewer', active: true })).toBe(false)
+    expect(pilotMemberCanOwnResponsibility('THIRD_LINE', { role: 'admin', active: true })).toBe(true)
+    expect(pilotMemberCanOwnResponsibility('THIRD_LINE', { role: 'member', active: true })).toBe(false)
+    expect(pilotMemberCanOwnResponsibility('SOURCE_OWNER', { role: 'owner', active: true })).toBe(true)
+    expect(pilotMemberCanOwnResponsibility('SOURCE_OWNER', { role: 'member', active: true })).toBe(false)
+  })
+
+  it('does not count disabled, orphaned or legacy-unknown accounts as ready', () => {
+    const members = [
+      { role: 'owner', active: true },
+      { role: 'admin', active: false },
+      { role: 'admin', active: null },
+      { role: 'member' },
+    ]
+
+    expect(buildPilotTeamReadiness(members)).toEqual({
+      memberCount: 4,
+      operatorCount: 1,
+      adminCount: 1,
+      missingOperatorCount: 2,
+      missingAdminCount: 1,
+      ready: false,
+    })
+    expect(pilotMemberCanOwnResponsibility(
+      'THIRD_LINE', { role: 'admin', active: false },
+    )).toBe(false)
   })
 
   it('turns persisted formal diagnoses into one truthful next action', () => {
@@ -242,8 +299,8 @@ function pilotPlan(): TroubleshootingPilotPlan {
     name: 'CSDP 首批试点',
     modules: [{ system: 'csdp', service: 'csdp-wechat' }],
     secondLine: member('11', '二线小周'),
-    thirdLine: member('12', '三线小陈'),
-    sourceOwner: member('13', '观测负责人'),
+    thirdLine: member('12', '三线小陈', 'admin'),
+    sourceOwner: member('13', '观测负责人', 'admin'),
     changedBy: 'admin',
     changedAt: '2026-08-13T03:00:00Z',
     changeReason: '固定首批范围与负责人',
@@ -251,13 +308,13 @@ function pilotPlan(): TroubleshootingPilotPlan {
   }
 }
 
-function member(userId: string, displayName: string) {
+function member(userId: string, displayName: string, workspaceRole = 'member') {
   return {
     userId,
     username: `user-${userId}`,
     nickname: displayName,
     displayName,
-    workspaceRole: 'member',
+    workspaceRole,
   }
 }
 

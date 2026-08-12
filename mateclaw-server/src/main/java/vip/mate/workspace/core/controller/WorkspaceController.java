@@ -96,6 +96,7 @@ public class WorkspaceController {
         // 填充用户名/昵称
         for (WorkspaceMemberEntity m : members) {
             UserEntity user = authService.findById(m.getUserId());
+            m.setActive(user != null && Boolean.TRUE.equals(user.getEnabled()));
             if (user != null) {
                 m.setUsername(user.getUsername());
                 m.setNickname(user.getNickname());

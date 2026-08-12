@@ -15,6 +15,7 @@ import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.TroubleshootingPilotPlanEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingPilotPlanMapper;
 import vip.mate.workspace.core.model.WorkspaceMemberEntity;
+import vip.mate.workspace.core.security.RoleCapabilities;
 import vip.mate.workspace.core.service.WorkspaceService;
 
 import java.time.Clock;
@@ -145,6 +146,12 @@ public class TroubleshootingPilotPlanService {
                 workspaceId, declaration.thirdLineUserId(), "third-line reviewer");
         MemberView sourceOwner = requireActiveMember(
                 workspaceId, declaration.sourceOwnerUserId(), "source owner");
+        requireMinimumRole(
+                secondLine, "second-line owner", RoleCapabilities.ROLE_MEMBER);
+        requireMinimumRole(
+                thirdLine, "third-line reviewer", RoleCapabilities.ROLE_ADMIN);
+        requireMinimumRole(
+                sourceOwner, "source owner", RoleCapabilities.ROLE_ADMIN);
 
         TroubleshootingPilotPlanEntity row = new TroubleshootingPilotPlanEntity();
         row.setWorkspaceId(workspaceId);
@@ -184,6 +191,18 @@ public class TroubleshootingPilotPlanService {
                 row.getWorkspaceId(), row.getSourceOwnerUserId());
         if (secondLine == null || thirdLine == null || sourceOwner == null) {
             blockers.add("\u8bd5\u70b9\u8d1f\u8d23\u4eba\u5df2\u79bb\u5f00\u5de5\u4f5c\u533a\u6216\u8d26\u53f7\u5df2\u505c\u7528");
+        }
+        if (secondLine != null && !hasMinimumRole(
+                secondLine, RoleCapabilities.ROLE_MEMBER)) {
+            blockers.add("二线闭环人需要成员、管理员或所有者角色，才能推进排障单");
+        }
+        if (thirdLine != null && !hasMinimumRole(
+                thirdLine, RoleCapabilities.ROLE_ADMIN)) {
+            blockers.add("三线复核人需要管理员或所有者角色，才能维护人工答案和评估结果");
+        }
+        if (sourceOwner != null && !hasMinimumRole(
+                sourceOwner, RoleCapabilities.ROLE_ADMIN)) {
+            blockers.add("数据取证负责人需要管理员或所有者角色，才能采集真源样本");
         }
         if (!Boolean.TRUE.equals(row.getEnabled())) {
             blockers.add("\u8bd5\u70b9\u8ba1\u5212\u5df2\u505c\u7528");
@@ -242,6 +261,19 @@ public class TroubleshootingPilotPlanService {
             throw invalid(role + " must be an active workspace member");
         }
         return member;
+    }
+
+    private void requireMinimumRole(
+            MemberView member, String assignment, String minimumRole) {
+        if (!hasMinimumRole(member, minimumRole)) {
+            throw invalid(assignment + " must have workspace role "
+                    + minimumRole + " or above");
+        }
+    }
+
+    private boolean hasMinimumRole(MemberView member, String minimumRole) {
+        return RoleCapabilities.roleLevel(member.workspaceRole())
+                >= RoleCapabilities.roleLevel(minimumRole);
     }
 
     private MemberView resolveActiveMember(long workspaceId, Long userId) {

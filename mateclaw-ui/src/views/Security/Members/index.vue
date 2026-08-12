@@ -9,15 +9,15 @@
         <span>来自智能排障试点</span>
         <strong v-if="loading">正在核对成员数量</strong>
         <strong v-else-if="memberLoadFailed">暂时无法读取成员数量</strong>
-        <strong v-else-if="!pilotMemberProgress.ready">
-          还需添加 {{ pilotMemberProgress.missingCount }} 名成员
-        </strong>
-        <strong v-else>成员已满足试点要求</strong>
+        <strong v-else-if="!pilotTeamReadiness.ready">成员或角色还未满足试点要求</strong>
+        <strong v-else>角色已经满足试点要求</strong>
         <p v-if="!loading && memberLoadFailed">当前无法确认三人门槛，请刷新页面后再继续试点配置。</p>
-        <p v-else-if="!loading && !pilotMemberProgress.ready">
-          当前 Workspace 有 {{ pilotMemberProgress.memberCount }} 名成员；至少需要 3 名，才能分别指定二线、三线和数据取证负责人。
+        <p v-else-if="!loading && !pilotTeamReadiness.ready">
+          当前 Workspace 共 {{ pilotTeamReadiness.memberCount }} 名成员，其中
+          {{ pilotTeamReadiness.operatorCount }} 名能推进排障、{{ pilotTeamReadiness.adminCount }} 名能维护评估。
+          试点需要 3 名能操作排障的成员，其中至少 2 名具有管理员或所有者角色。
         </p>
-        <p v-else-if="!loading">当前 Workspace 有 {{ pilotMemberProgress.memberCount }} 名成员，可以返回并继续分配三类负责人。</p>
+        <p v-else-if="!loading">当前角色结构可以完成三类职责，可以返回并继续分配负责人。</p>
       </div>
       <button class="btn-secondary" @click="returnToPilot">返回试点配置</button>
     </section>
@@ -145,7 +145,7 @@ import { useI18n } from 'vue-i18n'
 import { mcToast } from '@/composables/useMcToast'
 import { workspaceTeamApi } from '@/api/index'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
-import { buildPilotMemberProgress } from '@/views/Troubleshooting/evaluationPilot'
+import { buildPilotTeamReadiness } from '@/views/Troubleshooting/evaluationPilot'
 import { pilotMemberReturnPath } from '@/views/Troubleshooting/workbenchCapabilityMenu'
 
 const { t } = useI18n()
@@ -159,6 +159,7 @@ interface Member {
   username?: string
   nickname?: string
   role: string
+  active?: boolean | null
   createTime: string
 }
 
@@ -168,7 +169,7 @@ const loading = ref(false)
 const memberLoadFailed = ref(false)
 const showAddDialog = ref(false)
 const pilotReturnTo = computed(() => pilotMemberReturnPath(route.query.source, route.query.returnTo))
-const pilotMemberProgress = computed(() => buildPilotMemberProgress(members.value.length))
+const pilotTeamReadiness = computed(() => buildPilotTeamReadiness(members.value))
 
 const defaultForm = () => ({ username: '', password: '', nickname: '', role: 'member' })
 const newMemberForm = reactive(defaultForm())

@@ -55,7 +55,7 @@ class TroubleshootingPilotPlanServiceTest {
         workspaces = mock(WorkspaceService.class);
         users = mock(AuthService.class);
         registerMember(SECOND_LINE, "ops-l2", "二线小周", "member");
-        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "member");
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "admin");
         registerMember(SOURCE_OWNER, "guance-owner", "观测负责人", "admin");
         service = new TroubleshootingPilotPlanService(
                 mapper(), workspaces, users, new ObjectMapper(),
@@ -156,6 +156,35 @@ class TroubleshootingPilotPlanServiceTest {
     }
 
     @Test
+    void refusesOwnersWhoCannotPerformTheirAssignedPilotActions() {
+        registerMember(SECOND_LINE, "ops-l2", "二线小周", "viewer");
+
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID, declaration(0), "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("second-line owner")
+                .hasMessageContaining("member");
+
+        registerMember(SECOND_LINE, "ops-l2", "二线小周", "member");
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "member");
+
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID, declaration(0), "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("third-line reviewer")
+                .hasMessageContaining("admin");
+
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "admin");
+        registerMember(SOURCE_OWNER, "guance-owner", "观测负责人", "member");
+
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID, declaration(0), "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("source owner")
+                .hasMessageContaining("admin");
+    }
+
+    @Test
     void reportsAnUnconfiguredPlanWithoutInventingPeopleOrScope() {
         TroubleshootingPilotPlanService.PlanView plan = service.current(WORKSPACE_ID);
 
@@ -166,6 +195,28 @@ class TroubleshootingPilotPlanServiceTest {
         assertThat(plan.blockers()).contains(
                 "试点范围尚未配置",
                 "二线、三线和系统负责人尚未固定");
+    }
+
+    @Test
+    void marksASavedPlanUnavailableWhenAnOwnerLosesTheRequiredRole() {
+        service.declare(WORKSPACE_ID, declaration(0), "admin");
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "member");
+
+        TroubleshootingPilotPlanService.PlanView plan = service.current(WORKSPACE_ID);
+
+        assertThat(plan.configured()).isTrue();
+        assertThat(plan.blockers()).contains(
+                "三线复核人需要管理员或所有者角色，才能维护人工答案和评估结果");
+
+        registerMember(THIRD_LINE, "dev-l3", "三线小陈", "admin");
+        registerMember(SOURCE_OWNER, "guance-owner", "观测负责人", "member");
+        assertThat(service.current(WORKSPACE_ID).blockers()).contains(
+                "数据取证负责人需要管理员或所有者角色，才能采集真源样本");
+
+        registerMember(SOURCE_OWNER, "guance-owner", "观测负责人", "admin");
+        registerMember(SECOND_LINE, "ops-l2", "二线小周", "viewer");
+        assertThat(service.current(WORKSPACE_ID).blockers()).contains(
+                "二线闭环人需要成员、管理员或所有者角色，才能推进排障单");
     }
 
     private TroubleshootingPilotPlanService.Declaration declaration(int expectedVersion) {

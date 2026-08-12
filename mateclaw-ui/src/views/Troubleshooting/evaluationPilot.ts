@@ -4,6 +4,7 @@ import type {
   EvidenceEvaluationSample,
   TroubleshootingPilotPlan,
 } from '@/api'
+import { ROLE_LEVEL, type WorkspaceRole } from '@/composables/capabilities'
 
 export type EvaluationPilotStage =
   | 'NEEDS_CLOSURE'
@@ -44,10 +45,20 @@ export interface PilotWorkbenchPrompt {
   scope: TroubleshootingPilotPlan['modules'][number] | null
 }
 
-export interface PilotMemberProgress {
+export type PilotResponsibility = 'SECOND_LINE' | 'THIRD_LINE' | 'SOURCE_OWNER'
+
+export interface PilotTeamReadiness {
   memberCount: number
-  missingCount: number
+  operatorCount: number
+  adminCount: number
+  missingOperatorCount: number
+  missingAdminCount: number
   ready: boolean
+}
+
+export interface PilotWorkspaceMemberAccess {
+  role?: string | null
+  active?: boolean | null
 }
 
 export interface PilotScopeSuggestion {
@@ -57,7 +68,8 @@ export interface PilotScopeSuggestion {
   latestAt: string
 }
 
-const PILOT_REQUIRED_MEMBER_COUNT = 3
+const PILOT_REQUIRED_OPERATOR_COUNT = 3
+const PILOT_REQUIRED_ADMIN_COUNT = 2
 const STABLE_PILOT_IDENTIFIER = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/
 
 export function pilotScopeKey(scope: Pick<DiagnosisSummary, 'system' | 'service'>) {
@@ -69,16 +81,41 @@ export function pilotScopeIsSaveable(scope: Pick<DiagnosisSummary, 'system' | 's
     && STABLE_PILOT_IDENTIFIER.test(normalizeScopePart(scope.service))
 }
 
-export function buildPilotMemberProgress(memberCount: number): PilotMemberProgress {
-  const normalizedCount = Number.isFinite(memberCount)
-    ? Math.max(0, Math.floor(memberCount))
-    : 0
-  const missingCount = Math.max(0, PILOT_REQUIRED_MEMBER_COUNT - normalizedCount)
+/**
+ * Mirrors only the minimum Workspace roles required by the three pilot duties.
+ * The backend RoleCapabilities and endpoint guards remain authoritative.
+ */
+export function pilotMemberCanOwnResponsibility(
+  responsibility: PilotResponsibility,
+  member: PilotWorkspaceMemberAccess,
+) {
+  if (member.active !== true) return false
+  const minimumRole: WorkspaceRole = responsibility === 'SECOND_LINE' ? 'member' : 'admin'
+  return workspaceRoleLevel(member.role) >= ROLE_LEVEL[minimumRole]
+}
+
+export function buildPilotTeamReadiness(
+  members: ReadonlyArray<PilotWorkspaceMemberAccess>,
+): PilotTeamReadiness {
+  const operatorCount = members.filter(member =>
+    pilotMemberCanOwnResponsibility('SECOND_LINE', member)).length
+  const adminCount = members.filter(member =>
+    pilotMemberCanOwnResponsibility('THIRD_LINE', member)).length
+  const missingOperatorCount = Math.max(0, PILOT_REQUIRED_OPERATOR_COUNT - operatorCount)
+  const missingAdminCount = Math.max(0, PILOT_REQUIRED_ADMIN_COUNT - adminCount)
   return {
-    memberCount: normalizedCount,
-    missingCount,
-    ready: missingCount === 0,
+    memberCount: members.length,
+    operatorCount,
+    adminCount,
+    missingOperatorCount,
+    missingAdminCount,
+    ready: missingOperatorCount === 0 && missingAdminCount === 0,
   }
+}
+
+function workspaceRoleLevel(role: string | null | undefined) {
+  const normalized = role?.trim().toLowerCase() as WorkspaceRole | undefined
+  return normalized ? ROLE_LEVEL[normalized] ?? 0 : 0
 }
 
 /**

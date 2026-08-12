@@ -37,6 +37,10 @@ public class WorkspaceMemberEntity {
     @TableField(exist = false)
     private String nickname;
 
+    /** 关联用户是否存在且已启用（非持久化，API 返回用） */
+    @TableField(exist = false)
+    private Boolean active;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
