@@ -10,6 +10,11 @@
         <WorkbenchViewSwitch mode="LIST" @change="emit('switch-view')" />
         <el-button
           v-if="canOperate || canManage"
+          plain
+          @click="emit('guide')"
+        >{{ TROUBLESHOOTING_UI_LABELS.firstUse }}</el-button>
+        <el-button
+          v-if="canOperate || canManage"
           type="primary"
           :icon="Plus"
           @click="emit('launch')"
@@ -193,6 +198,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:statusFilter': [value: DiagnosisStatus | '']
   refresh: []
+  guide: []
   launch: []
   'open-diagnosis': [row: DiagnosisSummary]
   'switch-view': []

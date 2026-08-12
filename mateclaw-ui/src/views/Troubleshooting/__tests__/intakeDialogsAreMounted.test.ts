@@ -6,6 +6,7 @@ import messageSendDialogSource from '../MessageSendScenarioDialog.vue?raw'
 import ctiDialogSource from '../CtiCreateConversationScenarioDialog.vue?raw'
 import deploymentDialogSource from '../DeploymentTopologyScenarioDialog.vue?raw'
 import conversationDialogSource from '../ConversationIntakeDialog.vue?raw'
+import firstUseGuideSource from '../FirstUseGuideDrawer.vue?raw'
 
 const INTAKE_DIALOGS = [
   'IncidentReportDialog',
@@ -34,6 +35,12 @@ describe('the troubleshooting intake dialogs', () => {
       expect(source).not.toContain('<el-dialog')
     }
     expect(formalWorkbenchSource).toContain('FiveQuestionRail')
+    expect(formalWorkbenchSource).toContain('FirstUseGuideDrawer')
+    expect(formalWorkbenchSource).toContain('@guide="openFirstUseGuide"')
+    expect(formalWorkbenchSource).toContain('@start="startFirstUseRehearsal"')
+    expect(firstUseGuideSource).toContain('<el-drawer')
+    expect(firstUseGuideSource).toContain('日常排障不从配置页开始')
+    expect(firstUseGuideSource).toContain('TROUBLESHOOTING_UI_LABELS.startRehearsal')
     expect(formalWorkbenchSource).toContain('openIncidentIntake')
     expect(formalWorkbenchSource).toContain('@pick-scenario="openKnownScenarioPicker"')
     expect(formalWorkbenchSource).toContain('ConversationIntakeDialog')

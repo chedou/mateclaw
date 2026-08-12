@@ -119,6 +119,9 @@ describe('troubleshooting workbench view mode', () => {
   it('keeps user-facing troubleshooting names in one canonical label table', () => {
     expect(TROUBLESHOOTING_UI_LABELS).toMatchObject({
       launch: '发起排障',
+      firstUse: '第一次使用？',
+      firstUseTitle: '第一次使用智能排障',
+      startRehearsal: '开始演练',
       scenarioPicker: '选择已登记场景',
       incident: '粘贴告警发起',
       conversation: '对话发起排障',

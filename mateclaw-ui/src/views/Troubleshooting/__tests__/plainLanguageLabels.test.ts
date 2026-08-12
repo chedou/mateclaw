@@ -41,6 +41,22 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(formalWorkbenchSource).not.toContain('规范化合同阻断')
   })
 
+  it('labels rehearsal and production diagnosis details by their persisted record type', () => {
+    expect(formalWorkbenchSource).toContain(
+      "current.diagnosis.rehearsal ? '演练排障工作台' : '正式排障工作台'",
+    )
+  })
+
+  it('tells a human how to review, handle and close a diagnosis without implying production writes', () => {
+    expect(businessSummarySource).toContain('现在轮到人')
+    expect(businessSummarySource).toContain('复核后确认定位')
+    expect(businessSummarySource).toContain('转给其他人继续查')
+    expect(businessSummarySource).toContain('联系有转派权限的负责人继续查')
+    expect(businessSummarySource).toContain('登记结果并关闭')
+    expect(businessSummarySource).toContain('可以体验确认和关闭流程，但不会计入正式系统负责人验收目标')
+    expect(businessSummarySource).not.toContain('关闭并沉淀知识')
+  })
+
   it('distinguishes a persisted read-only evidence run from the first conclusion timer', () => {
     expect(investigationTraceSource).toContain('本次只读取证用时')
     expect(investigationTraceSource).toContain("stage.key === 'EVIDENCE_COLLECTION'")

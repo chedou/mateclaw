@@ -44,6 +44,7 @@
       :can-operate="canOperateTroubleshooting"
       :can-manage="canManageTroubleshooting"
       @refresh="store.loadList(false)"
+      @guide="openFirstUseGuide"
       @launch="openTroubleshootingScenario"
       @open-diagnosis="openDiagnosisFromList"
       @switch-view="switchWorkbenchView('QUEUE')"
@@ -82,7 +83,10 @@
       <template v-else>
         <header class="work-head">
           <div>
-            <span class="eyebrow">正式排障工作台 · Diagnosis {{ business.diagnosisId }}</span>
+            <span class="eyebrow">
+              {{ current.diagnosis.rehearsal ? '演练排障工作台' : '正式排障工作台' }}
+              · Diagnosis {{ business.diagnosisId }}
+            </span>
             <h1>{{ business.problem }}</h1>
           </div>
           <div class="work-head-actions">
@@ -116,6 +120,7 @@
           :can-operate="canOperateTroubleshooting"
           :can-transfer="canTransfer"
           :can-close="canClose"
+          :rehearsal="current.diagnosis.rehearsal"
           :action-loading="actionLoading"
           :status="current.diagnosis.status"
           @confirm="store.confirmDiagnosis"
@@ -162,6 +167,11 @@
       </template>
     </main>
     </template>
+
+    <FirstUseGuideDrawer
+      v-model="firstUseGuideOpen"
+      @start="startFirstUseRehearsal"
+    />
 
     <TroubleshootingScenarioDialog
       v-model="scenarioLauncherOpen"
@@ -329,6 +339,7 @@ import GuanceValidationDialog from './GuanceValidationDialog.vue'
 import DeploymentTopologySopDialog from './DeploymentTopologySopDialog.vue'
 import DiagnosisListView from './DiagnosisListView.vue'
 import DiagnosisQueuePanel from './DiagnosisQueuePanel.vue'
+import FirstUseGuideDrawer from './FirstUseGuideDrawer.vue'
 import TroubleshootingScenarioDialog from './TroubleshootingScenarioDialog.vue'
 import CaseKnowledgeImportWorkspace from './CaseKnowledgeImportWorkspace.vue'
 import IncidentReportDialog from './IncidentReportDialog.vue'
@@ -416,6 +427,7 @@ const caseKnowledgeBasesLoading = ref(false)
 const deploymentTopologyScenarioLoading = ref(false)
 
 const scenarioLauncherOpen = ref(false)
+const firstUseGuideOpen = ref(false)
 const incidentReportOpen = ref(false)
 const conversationIntakeOpen = ref(false)
 const openDiscoveryReadiness = ref<OpenDiscoveryReadiness | null>(null)
@@ -742,6 +754,15 @@ function openTroubleshootingScenario() {
   if (canManageTroubleshooting.value) {
     scenarioLauncherOpen.value = true
   }
+}
+
+function openFirstUseGuide() {
+  firstUseGuideOpen.value = true
+}
+
+function startFirstUseRehearsal() {
+  firstUseGuideOpen.value = false
+  openTroubleshootingScenario()
 }
 
 function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {

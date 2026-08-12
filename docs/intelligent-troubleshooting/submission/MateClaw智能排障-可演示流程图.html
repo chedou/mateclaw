@@ -52,8 +52,19 @@
     .summary-entry.api .summary-entry-head span{color:var(--blue)}
     .summary-entry-boundary{margin-top:8px;color:var(--muted);font-size:10px}
     .summary-entry-boundary b{color:var(--ink)}
+    .summary-rollout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#fff}
+    .summary-rollout-step{padding:14px 15px}
+    .summary-rollout-step+.summary-rollout-step{border-left:1px solid var(--line)}
+    .summary-rollout-step small,.summary-rollout-step strong,.summary-rollout-step span{display:block}
+    .summary-rollout-step small{color:var(--green);font-size:10px;font-weight:900}
+    .summary-rollout-step.pending small{color:var(--gold)}
+    .summary-rollout-step.current small{color:var(--blue)}
+    .summary-rollout-step strong{margin:5px 0 4px;font-size:14px}
+    .summary-rollout-step span{color:var(--muted);font-size:11px;line-height:1.6}
+    .summary-rollout-gate{display:flex;align-items:flex-start;gap:10px;margin-top:8px;padding:10px 12px;border-left:3px solid var(--red);background:var(--red-soft);color:#78423b;font-size:11px}
+    .summary-rollout-gate b{flex:0 0 auto}
     @media(max-width:1120px){.summary-alert-intake{grid-template-columns:1fr}.summary-entry-grid{grid-template-columns:1fr 1fr}.summary-entry.api{grid-column:1/-1}}
-    @media(max-width:760px){.summary-alert-facts,.summary-intake-actions{grid-template-columns:1fr 1fr}.summary-entry-grid{grid-template-columns:1fr}.summary-entry.api{grid-column:auto}}
+    @media(max-width:760px){.summary-alert-facts,.summary-intake-actions{grid-template-columns:1fr 1fr}.summary-entry-grid,.summary-rollout{grid-template-columns:1fr}.summary-entry.api{grid-column:auto}.summary-rollout-step+.summary-rollout-step{border-top:1px solid var(--line);border-left:0}.summary-rollout-gate{flex-direction:column;gap:3px}}
   </style>
 </head>
 <body>
@@ -106,8 +117,8 @@
         </div>
         <div class="summary-entry-grid">
           <article class="summary-entry primary">
-            <div class="summary-entry-head"><div><h3>入口 A · Web 排障工作台</h3><p>适合二线、三线开发和值班负责人。首次使用默认以演练模式建单，可先核对流程，不占用正式排障口径。</p></div><span>当前可用</span></div>
-            <div class="summary-entry-route" aria-label="Web 工作台发起步骤"><b>智能排障</b><b>排障工作台</b><b>发起排障</b><b>粘贴告警</b></div>
+            <div class="summary-entry-head"><div><h3>入口 A · Web 排障工作台</h3><p>适合二线、三线开发和值班负责人。第一次使用可先看三步引导，再以演练模式建单，不占用正式排障口径。</p></div><span>当前可用</span></div>
+            <div class="summary-entry-route" aria-label="Web 工作台首次使用步骤"><b>智能排障</b><b>排障工作台</b><b>第一次使用？</b><b>开始演练并粘贴告警</b></div>
           </article>
           <article class="summary-entry conditional">
             <div class="summary-entry-head"><div><h3>入口 B · 企微群排障机器人</h3><p>目标 Workspace 启用后，可在群里直接提交告警，机器人补问缺失信息并返回结果。</p></div><span>按需启用</span></div>
@@ -119,6 +130,7 @@
           </article>
         </div>
         <div class="summary-entry-converge"><span>三种来源最终汇合</span><strong>同一个事件只生成或复用一张排障单 → 进入同一个详情页 → 沿同一条取证与判断流程推进</strong></div>
+        <div class="summary-entry-boundary"><b>当前实测：</b>Web“第一次使用”路径已用 ITGW 904003 告警完成一次真实演练，命中已审核标准方法并完成三次 Guance 只读取证；这是入口与演练流程验证，不计入正式 Owner 录制目标。</div>
         <div class="summary-entry-boundary"><b>信息不全时：</b>企微会补问，Web 会提示必填项，接口会按合同拒绝不完整事件。历史告警应填写原始故障时间；未填写时系统明确采用提交时刻，不会伪装成已经知道故障发生时间，也不会用模型猜系统或错误码。</div>
       </section>
       <section class="summary-block" aria-labelledby="summaryFlowTitle">
@@ -128,7 +140,7 @@
           <div class="summary-step"><i>2</i><strong>选择调查方法</strong><span>优先使用已审核的标准方法</span></div>
           <div class="summary-step"><i>3</i><strong>读取真实证据</strong><span>通过只读 Tool 查询日志与状态</span></div>
           <div class="summary-step"><i>4</i><strong>规则核对证据</strong><span>对照失败与正常样本，不靠猜测</span></div>
-          <div class="summary-step"><i>5</i><strong>人工确认处置</strong><span>确认、驳回或带着证据转人工</span></div>
+          <div class="summary-step"><i>5</i><strong>人工确认处置</strong><span>复核定位，平台外处置后登记结果</span></div>
         </div>
       </section>
       <section class="summary-block" aria-labelledby="summaryDeliveryTitle">
@@ -137,6 +149,15 @@
           <article class="summary-result"><small>本案例得到的可信线索</small><strong>内容安全策略拦截特征与本次失败明显相关</strong><p>2 条失败请求都出现该特征；同一时间段 36 条正常请求都没有出现。结论、判断规则和证据引用可以逐层反查。</p></article>
           <aside class="summary-boundary"><strong>系统边界</strong><p>平台只做只读调查，不直接修改生产系统；证据不足就停止，不猜根因。最终处置由授权负责人确认。</p></aside>
         </div>
+      </section>
+      <section class="summary-block" aria-labelledby="summaryRolloutTitle">
+        <div class="summary-block-head"><h2 id="summaryRolloutTitle">怎样在一个团队开始试点</h2><p>先小范围证明有效，再扩大系统与场景</p></div>
+        <div class="summary-rollout">
+          <article class="summary-rollout-step"><small>已确认 · 试点范围</small><strong>只选 CTI 与 ITGW 两个真源场景</strong><span>先用已经在真实 Guance 上跑过的路径，不同时扩 K8s、HCI、多 Agent 和更多系统。</span></article>
+          <article class="summary-rollout-step pending"><small>待确认 · 试点人员</small><strong>固定 1 名二线、1 名三线、1 名系统负责人</strong><span>二线负责首次发起，三线复核证据，系统或 Guance 负责人确认查询口径与最终处置。</span></article>
+          <article class="summary-rollout-step current"><small>当前推进 · 每周闭环</small><strong>用真实告警完成演练、确认与结果登记</strong><span>同时记录人工基线、系统调查耗时、人的采纳耗时和最终结果，用事实判断是否降低排障成本。</span></article>
+        </div>
+        <div class="summary-rollout-gate"><b>扩大范围前的门槛</b><span>Owner 查询目标冻结、正式批次验收和效果对照通过前，只做受控试点；当前正式录制仍为 0 / 20，不能宣称全面投产。</span></div>
       </section>
       <div class="summary-actions"><button class="btn primary" id="openDetailsBtn" type="button">进入完整演示 →</button><a class="btn" href="http://127.0.0.1:5173/troubleshooting?view=list" target="_blank" rel="noreferrer">打开排障工作台</a><span>完整演示包含：用户入口、五问主线、三种处理方式、Tool 取证、七步调查与角色分工。</span></div>
     </section>
@@ -149,12 +170,12 @@
     <section class="entry-guide" data-focus-step="5" aria-labelledby="userStartTitle">
       <header class="entry-guide-head"><div><small>第 0 步 · 用户从这里开始</small><h2 id="userStartTitle">看到告警后，从两个入口进入同一张排障单</h2><p>日常用户不需要先学习取证配置。选择当前可用入口，把告警事实交给 MateClaw，后面的取证和判断才由平台接手。</p></div><a class="btn primary entry-link" href="http://127.0.0.1:5173/troubleshooting?view=list" target="_blank" rel="noreferrer">打开本地排障工作台</a></header>
       <div class="entry-lanes">
-        <article class="entry-card primary"><span class="entry-tag">当前本地演示入口</span><h3>A. 在 Web 工作台手工发起</h3><p>适合二线、三线开发和值班负责人；粘贴告警后补齐系统、服务和原始故障时间。首次使用保留“演练模式”，确认入口与取证均可用后再显式切到正式排障。</p><ol class="entry-route"><li>左侧“智能排障”</li><li>进入“排障工作台”</li><li>点击“发起排障”</li><li>填告警并选择演练 / 正式</li></ol></article>
+        <article class="entry-card primary"><span class="entry-tag">当前本地演示入口</span><h3>A. 在 Web 工作台手工发起</h3><p>适合二线、三线开发和值班负责人；第一次使用先看三步引导，再粘贴告警并补齐系统、服务和原始故障时间。默认保留“演练模式”，确认入口与取证均可用后再显式切到正式排障。</p><ol class="entry-route"><li>左侧“智能排障”</li><li>进入“排障工作台”</li><li>点击“第一次使用？”</li><li>开始演练并粘贴告警</li></ol></article>
         <div class="entry-or" aria-hidden="true">或</div>
         <article class="entry-card conditional"><span class="entry-tag">能力已实现 · 按 Workspace 启用</span><h3>B. 在企微群里 @ 排障机器人</h3><p>启用后，报障人直接发送告警；机器人补问缺失信息，后台调查后原路返回摘要和详情链接。</p><ol class="entry-route"><li>群里 @ 机器人</li><li>发送告警事实</li><li>按提示补充信息</li><li>打开返回的详情</li></ol></article>
       </div>
       <div class="entry-converge"><span>两个入口最终汇合</span><strong>生成或复用同一张排障单（Diagnosis） → 进入排障详情 → 按下面五个问题完成调查与人工处置</strong></div>
-      <div class="entry-boundary"><b>不要从配置页开始：</b>“接入系统、排障规则库、数据连接检查”是管理员在首次接入系统或场景时使用的后台能力，不是二线和开发日常排障的起点。Web 首次发起默认是演练，只有明确取消演练才进入正式口径；企微入口虽然代码能力已完成，但仍需目标 Workspace 显式启用，不能等同于所有生产环境已经开通。</div>
+      <div class="entry-boundary"><b>不要从配置页开始：</b>“接入系统、排障规则库、数据连接检查”是管理员在首次接入系统或场景时使用的后台能力，不是二线和开发日常排障的起点。Web 首次发起默认是演练，只有明确取消演练才进入正式口径；这条首用路径已用 ITGW 904003 告警完成真实 Guance 演练。企微入口虽然代码能力已完成，但仍需目标 Workspace 显式启用，不能等同于所有生产环境已经开通。</div>
     </section>
     <div class="presenter" aria-label="演示控制器"><button class="btn primary" id="autoBtn" type="button">▶ 自动演示</button><button class="btn" id="prevBtn" type="button">← 上一步</button><button class="btn" id="nextBtn" type="button">下一步 →</button><button class="btn" id="resetBtn" type="button">重置</button><div class="progress-track"><div class="progress-bar" id="progressBar"></div></div><div class="counter" id="counter">使用 1 / 6</div></div>
     <div class="workspace">
@@ -220,12 +241,12 @@
       ["第 3 步 · 一次性接入","维护三类只读查询","把人工排障经验写成可执行、可检查的查询方法。","系统负责人","失败日志、关联日志和正常样本对照查询","登记查询模板、必填参数、返回字段和安全输出白名单","机器知道先查什么、后查什么，以及每一步需要哪些字段","查询字段不明确或可能越权时，规则不能送审","开发日常不用临时写 DQL，查询方法由系统负责人提前维护。"],
       ["第 4 步 · 一次性接入","试跑、回放并审核规则","让规则先证明自己能安全执行，再允许在线使用。","审核负责人","候选规则、历史样本和授权只读环境","检查路由、绝对时间窗、证据字段、停止条件和确定性判据","一个有版本、可追溯、已批准的排障方法","回放不稳定、证据不足或规则会猜测时，不予启用","已审核表示当前版本的输入、输出和边界已经可以复核。"],
       ["接入完成","系统已具备该场景的排障能力","开发可以从告警直接创建排障单。","平台、系统和审核负责人共同交付","已验证数据源 + 已登记资产 + 已批准规则","把批准版本设为该错误码或场景的活动规则","开发和值班人员获得稳定的日常排障入口","任一前置资产失效时，在线流程按设计停止","接入团队交付的不是一段 DQL，而是一条可持续运营的排障能力。"],
-      ["使用起点 · 第 0 步","用户从哪里开始？","看到告警后，从 Web 排障工作台或已启用的企微群入口发起；两条路最终进入同一张排障单。","二线、三线开发或值班负责人","一条包含系统、服务、原始故障时间、现象和可选错误码的告警","Web 入口按“智能排障 → 排障工作台 → 发起排障”创建，首次默认演练；历史告警填写原始故障时间，未填则明确采用提交时刻。企微入口在 Workspace 显式启用后接收 @ 消息、补问并异步调查","生成或复用同一张排障单（Diagnosis），后续都进入同一个详情页","没有排障操作权限时 Web 只能查看；要进入正式口径需显式取消演练；企微入口未启用时不能从群里发起，应改走已开通入口或联系管理员","日常用户从告警和排障工作台开始，不从“接入系统、规则库、数据连接检查”等管理员页面开始。"],
+      ["使用起点 · 第 0 步","用户从哪里开始？","看到告警后，从 Web 排障工作台或已启用的企微群入口发起；两条路最终进入同一张排障单。","二线、三线开发或值班负责人","一条包含系统、服务、原始故障时间、现象和可选错误码的告警","Web 首次使用按“智能排障 → 排障工作台 → 第一次使用？ → 开始演练”进入，再粘贴告警；熟悉后可直接点“发起排障”。历史告警填写原始故障时间，未填则明确采用提交时刻。企微入口在 Workspace 显式启用后接收 @ 消息、补问并异步调查","生成或复用同一张排障单（Diagnosis），后续都进入同一个详情页","没有排障操作权限时 Web 只能查看；要进入正式口径需显式取消演练；企微入口未启用时不能从群里发起，应改走已开通入口或联系管理员","日常用户从告警和排障工作台开始，不从“接入系统、规则库、数据连接检查”等管理员页面开始。"],
       ["日常 1 / 5","发生了什么？","先确认哪个系统、哪个服务，在什么时间出现了什么现象。","开发或值班人员","告警里的系统、服务、精确时间、错误码和故障现象","保留原始告警，并把它整理成统一的排障事件，锁定查询时间和服务范围","CSDP / csdp-wechat 在 17:12 出现 ITGW 访问失败【904003】","系统、服务、时间或错误码缺失时，先提示补充，不贸然开始自动调查","你只需要把告警原样带进平台；这一问保证后面不会查错系统或时间。"],
       ["日常 2 / 5","这次怎么查？","先找有没有审核通过的标准排障方法；没有时才考虑受限调查。","MateClaw 自动选择","上一问整理好的告警和错误码 904003","匹配 CSDP / csdp-wechat / 904003 的活动规则，并冻结本次使用的版本","本案例已选中标准排障方法（SOP），后续步骤不会中途变化","没有命中已审核方法时，仅在环境允许的白名单内补证据；否则明确转人工","三种调查方式有严格先后：标准方法优先、无 SOP 受限探索、自主规划仍未完成投产证明。"],
       ["日常 3 / 5","实际查到了什么？","平台按已审核计划选择可用的只读 Tool，把不同数据源返回的结果整理成同一种证据。","MateClaw 证据编排器","已选调查方法、绝对时间窗、服务名、已登记 Tool，以及查询返回的真实关联 ID","本案例调用观测云取得失败日志、关联调用记录和同窗正常样本；只有 K8s、HCI 等 Tool 完成适配、配置和审核后，场景才能调用它们","取得 2 条失败请求、对应关联日志和 36 条正常请求；本案例不是 Demo 数据","Tool 未启用、缺资产、缺关联 ID、查询失败或样本不足时，明确显示证据缺口并转人工","Tool 表示去哪个平台查，例如观测云、K8s、HCI；取证能力表示拿回日志、指标、拨测或健康状态。当前案例使用观测云，K8s 直连和 HCI 仍待适配。"],
       ["日常 4 / 5","这些证据说明什么？","把失败请求与正常请求放在一起，检查异常特征是否只集中在失败侧。","MateClaw 确定性规则","失败与正常两组样本，以及审核通过的比较条件","精确计算两组的出现比例和差异，不让模型凭一条错误日志猜根因","两条失败请求都出现内容安全策略拦截特征；36 条正常请求都没有，因此该特征与本次失败明显相关","样本不足或差异不达标时，排除当前方向或明确弃权，不输出高置信结论","这里证明的是‘异常特征明显相关’，不是未经确认的绝对因果；多 Agent 未来只能在结论后做影子反证。"],
-      ["日常 5 / 5","接下来怎么办？","平台交付可复核的候选定位，人来决定生产处置。","授权负责人","候选结论、判断依据、证据引用和当前生产影响","先展示结论，再允许反查五问主线、七步技术记录和原始证据关系","负责人可以确认、驳回，或带着完整证据转给更合适的人继续处理","MateClaw 不直接执行生产变更；证据仍不足时保留停止理由并转人工","平台负责把调查讲清楚，不替代生产责任人做最终因果确认、变更或回滚。"]
+      ["日常 5 / 5","接下来怎么办？","平台交付可复核的候选定位，人来决定生产处置。","授权负责人","候选结论、判断依据、证据引用和当前生产影响","先判断是否认可定位：认可就确认，不认可就转给其他人继续查；修复、放行或回滚在平台外完成，随后回来登记真实结果并关闭","得到人的确认或转派记录，以及可用于效果评估和知识审核的最终处置结果","MateClaw 不直接执行生产变更；证据仍不足时保留停止理由并转人工","‘确认定位’、‘执行生产处置’和‘登记最终结果’是三个动作；平台负责留痕，不替代生产责任人变更或回滚。"]
     ];
     let current=5,timer=null;const fields=["detailStep","detailTitle","detailSummary","detailOwner","detailInput","detailAction","detailOutput","detailStop","speakerNote"],els=fields.map(id=>document.getElementById(id)),nodes=[...document.querySelectorAll(".node[data-step]")],explainers=[...document.querySelectorAll("[data-focus-step]")],chapterSummary=document.getElementById("chapter-summary"),chapterDetails=document.getElementById("chapter-details"),chapterButtons=[...document.querySelectorAll(".chapter-btn")];
     function rangeFor(index){return index<=4?{start:0,end:4,label:"接入"}:{start:5,end:10,label:"使用"}}

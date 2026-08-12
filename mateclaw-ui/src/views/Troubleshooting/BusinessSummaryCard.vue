@@ -81,17 +81,26 @@
       </p>
     </section>
 
+    <section class="human-review-guide" :class="status?.toLowerCase()">
+      <div>
+        <span class="section-label">现在轮到人</span>
+        <strong>{{ reviewGuidance.title }}</strong>
+      </div>
+      <p>{{ reviewGuidance.detail }}</p>
+      <small v-if="rehearsal">这是演练记录：可以体验确认和关闭流程，但不会计入正式系统负责人验收目标。</small>
+    </section>
+
     <div class="lifecycle-bar">
       <el-button
         v-if="canOperate && status === 'READY_FOR_HUMAN'"
         type="primary"
         :loading="actionLoading"
         @click="$emit('confirm')"
-      >确认结论</el-button>
-      <el-button v-if="canTransfer" :disabled="actionLoading" @click="$emit('transfer')">结构化转派</el-button>
-      <el-button v-if="canClose" :disabled="actionLoading" @click="$emit('close')">关闭并沉淀知识</el-button>
+      >复核后确认定位</el-button>
+      <el-button v-if="canTransfer" :disabled="actionLoading" @click="$emit('transfer')">转给其他人继续查</el-button>
+      <el-button v-if="canClose" :disabled="actionLoading" @click="$emit('close')">登记结果并关闭</el-button>
       <span v-if="status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
-      <span v-else>按钮只推进领域状态，MateClaw 不执行任何生产变更。</span>
+      <span v-else>这些按钮只记录人的判断和处置结果，MateClaw 不执行生产变更。</span>
     </div>
   </section>
 </template>
@@ -127,6 +136,7 @@ interface Props {
   canOperate: boolean
   canTransfer: boolean
   canClose: boolean
+  rehearsal: boolean
   actionLoading: boolean
   status: DiagnosisStatus | null
 }
@@ -137,6 +147,37 @@ const props = defineProps<Props>()
 const stages = computed(() => northStarStages(props.business?.timings))
 const stagesComplete = computed(() => stages.value.every((stage) => stage.share !== null))
 const confidencePresentation = computed(() => diagnosisConfidencePresentation(props.business?.confidence))
+const reviewGuidance = computed(() => {
+  const guidance: Record<DiagnosisStatus, { title: string; detail: string }> = {
+    READY_FOR_HUMAN: {
+      title: '先判断：你是否认可这个定位？',
+      detail: props.canTransfer
+        ? '认可就确认；不认可或还需要专业判断，就转给其他人继续查。两种选择都不会修改生产环境。'
+        : '认可就确认；不认可或还需要专业判断，就先不要确认，联系有转派权限的负责人继续查。',
+    },
+    NEEDS_INVESTIGATION: {
+      title: '先补证据，不要确认',
+      detail: '页面已经说明缺什么。补齐数据源、查询规则或现场信息后，再重新形成可复核结论。',
+    },
+    CONFIRMED: {
+      title: '去平台外完成处置，回来登记结果',
+      detail: props.canClose
+        ? '修复、放行或回滚由授权人员执行。完成后登记是否恢复、实际原因和对排障方法的反馈。'
+        : '修复、放行或回滚由授权人员执行。完成后请有关闭权限的负责人登记恢复情况、实际原因和方法反馈。',
+    },
+    TRANSFERRED: {
+      title: '等待接手人继续处理并回填结果',
+      detail: '转派信息和已有证据已经保留，接手人不需要从头查；处理完成后仍要登记真实结果。',
+    },
+    CLOSED: {
+      title: '这张排障单已经完成归档',
+      detail: '最终结果、恢复验证和方法反馈已经保存，可用于效果评估和后续知识审核。',
+    },
+  }
+  return props.status
+    ? guidance[props.status]
+    : { title: '等待排障状态加载', detail: '状态加载完成后，页面会告诉你下一步由谁做什么。' }
+})
 
 defineEmits<{
   confirm: []
@@ -203,8 +244,12 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .ns-stage.adopt .ns-bar i { background:var(--mc-warning); }
 .ns-range { color:var(--mc-text-tertiary); font-size:12px; }
 .ns-incomplete { margin:10px 0 0; color:var(--mc-text-tertiary); font-size:12px; line-height:1.6; }
+.human-review-guide { display:grid; grid-template-columns:minmax(220px,.75fr) minmax(340px,1.25fr); gap:8px 24px; align-items:start; margin-top:14px; padding:15px 16px; border-top:1px solid var(--mc-border); border-bottom:1px solid var(--mc-border); background:var(--mc-bg-muted); }
+.human-review-guide strong { display:block; margin-top:5px; color:var(--mc-text-primary); font-size:14px; line-height:1.5; }
+.human-review-guide p { margin:0; color:var(--mc-text-secondary); font-size:12px; line-height:1.65; }
+.human-review-guide small { grid-column:2; color:var(--mc-status-purple-text); font-size:11px; line-height:1.5; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--mc-border); } .lifecycle-bar>span { margin-left:5px; color:var(--mc-text-secondary); font-size:12px; }
 .active { color:var(--mc-primary)!important; } .success { color:var(--mc-success)!important; } .warning { color:var(--mc-warning)!important; } .muted { color:var(--mc-text-tertiary)!important; }
 @media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}}
-@media(max-width:760px){.ns-stages{grid-template-columns:1fr}.north-star header{flex-direction:column;gap:4px}}
+@media(max-width:760px){.ns-stages,.human-review-guide{grid-template-columns:1fr}.human-review-guide small{grid-column:1}.north-star header{flex-direction:column;gap:4px}.lifecycle-bar{align-items:flex-start;flex-direction:column}.lifecycle-bar>span{margin-left:0}}
 </style>
