@@ -86,6 +86,25 @@ export type OwnerValidationFailure = {
 
 export type OwnerValidationResult = OwnerValidationSuccess | OwnerValidationFailure
 
+export type OwnerContractSectionKey = 'INCIDENT' | 'QUERY' | 'DECISION'
+
+export type OwnerContractSectionProgress = {
+  key: OwnerContractSectionKey
+  label: string
+  filled: number
+  total: number
+  complete: boolean
+  issue?: string
+}
+
+export type OwnerContractProgress = {
+  filled: number
+  total: number
+  complete: boolean
+  sections: OwnerContractSectionProgress[]
+  issues: string[]
+}
+
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const SAFE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,255}$/
 const WINDOW = /^-([1-9][0-9]{0,5})(s|m|h|d)$/
@@ -234,6 +253,126 @@ function requireOccurredAt(
   return normalized
 }
 
+type OwnerProgressFieldKey =
+  | 'ownerTeam'
+  | 'ownerLevel'
+  | 'ownerScenario'
+  | 'verifiedRuntimeService'
+  | 'candidateReference'
+  | 'serverQueryContractReference'
+  | 'safeSearchTerm'
+  | 'window'
+  | 'anomalyCriterionReference'
+  | 'diagnosisRuleReference'
+  | 'bindingRefs.log_search'
+  | 'bindingRefs.log_trace_bundle'
+  | 'bindingRefs.contrast_sample'
+  | 'historicalOccurredAt'
+  | 'historicalSourceReference'
+
+type OwnerProgressField = {
+  key: OwnerProgressFieldKey
+  section: OwnerContractSectionKey
+  label: string
+  read: (contract: OwnerContract) => unknown
+  valid: (value: unknown, asOf: Date) => boolean
+}
+
+const OWNER_SECTION_LABELS: Record<OwnerContractSectionKey, string> = {
+  INCIDENT: '确认这是什么故障',
+  QUERY: '确认在观测云怎么查',
+  DECISION: '确认平台怎么判断',
+}
+
+function passes(check: (issues: string[]) => unknown): boolean {
+  const issues: string[] = []
+  const result = check(issues)
+  return result !== null && issues.length === 0
+}
+
+const OWNER_PROGRESS_FIELDS: OwnerProgressField[] = [
+  {
+    key: 'ownerTeam', section: 'INCIDENT', label: '责任团队', read: contract => contract.ownerTeam,
+    valid: value => passes(issues => requireString(value, 'ownerTeam', 128, issues)),
+  },
+  {
+    key: 'ownerLevel', section: 'INCIDENT', label: '故障等级', read: contract => contract.ownerLevel,
+    valid: (value) => {
+      const issues: string[] = []
+      const normalized = requireString(value, 'ownerLevel', 2, issues)
+      return normalized !== null
+        && issues.length === 0
+        && OWNER_LEVELS.includes(normalized as OwnerLevel)
+    },
+  },
+  {
+    key: 'ownerScenario', section: 'INCIDENT', label: '故障场景', read: contract => contract.ownerScenario,
+    valid: value => passes(issues => requireString(value, 'ownerScenario', 160, issues)),
+  },
+  {
+    key: 'verifiedRuntimeService', section: 'INCIDENT', label: '真实运行服务',
+    read: contract => contract.verifiedRuntimeService,
+    valid: value => passes(issues => requireIdentifier(value, 'verifiedRuntimeService', issues)),
+  },
+  {
+    key: 'historicalOccurredAt', section: 'INCIDENT', label: '故障发生时间',
+    read: contract => contract.historicalOccurredAt,
+    valid: (value, asOf) => passes(issues => requireOccurredAt(value, 'historicalOccurredAt', asOf, issues)),
+  },
+  {
+    key: 'historicalSourceReference', section: 'INCIDENT', label: '告警或工单号',
+    read: contract => contract.historicalSourceReference,
+    valid: value => passes(issues => requireReference(value, 'historicalSourceReference', issues)),
+  },
+  {
+    key: 'safeSearchTerm', section: 'QUERY', label: '安全检索键', read: contract => contract.safeSearchTerm,
+    valid: value => passes(issues => requireIdentifier(value, 'safeSearchTerm', issues)),
+  },
+  {
+    key: 'window', section: 'QUERY', label: '查询时间窗', read: contract => contract.window,
+    valid: value => passes(issues => requireWindow(value, 'window', issues)),
+  },
+  {
+    key: 'serverQueryContractReference', section: 'QUERY', label: '服务端查法编号',
+    read: contract => contract.serverQueryContractReference,
+    valid: value => passes(issues => requireReference(value, 'serverQueryContractReference', issues)),
+  },
+  {
+    key: 'bindingRefs.log_search', section: 'QUERY', label: '失败日志查询',
+    read: contract => contract.bindingRefs?.log_search,
+    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.log_search', issues)),
+  },
+  {
+    key: 'bindingRefs.log_trace_bundle', section: 'QUERY', label: '关联调用还原',
+    read: contract => contract.bindingRefs?.log_trace_bundle,
+    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.log_trace_bundle', issues)),
+  },
+  {
+    key: 'bindingRefs.contrast_sample', section: 'QUERY', label: '成功失败对照',
+    read: contract => contract.bindingRefs?.contrast_sample,
+    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.contrast_sample', issues)),
+  },
+  {
+    key: 'candidateReference', section: 'DECISION', label: '候选材料编号',
+    read: contract => contract.candidateReference,
+    valid: value => passes(issues => requireReference(value, 'candidateReference', issues)),
+  },
+  {
+    key: 'anomalyCriterionReference', section: 'DECISION', label: '异常判据编号',
+    read: contract => contract.anomalyCriterionReference,
+    valid: value => passes(issues => requireReference(value, 'anomalyCriterionReference', issues)),
+  },
+  {
+    key: 'diagnosisRuleReference', section: 'DECISION', label: '诊断规则编号',
+    read: contract => contract.diagnosisRuleReference,
+    valid: value => passes(issues => requireReference(value, 'diagnosisRuleReference', issues)),
+  },
+]
+
+const OWNER_PROGRESS_FIELD_BY_KEY = new Map(
+  OWNER_PROGRESS_FIELDS.map(field => [field.key, field] as const),
+)
+
 export function emptyOwnerContract(): OwnerContract {
   return {
     ownerTeam: '<replace:owner-team>',
@@ -265,36 +404,172 @@ function fieldLooksFilled(value: string): boolean {
   return Boolean(trimmed) && !UNRESOLVED_PLACEHOLDER.test(trimmed)
 }
 
-export function ownerContractCompleteness(contract: OwnerContract | null): {
+export function ownerContractCompleteness(
+  contract: OwnerContract | null,
+  asOf: Date = new Date(),
+): {
   filled: number
   total: number
   complete: boolean
 } {
-  const total = 15
-  if (!contract) return { filled: 0, total, complete: false }
-  const scalars = [
-    contract.ownerTeam,
-    contract.ownerLevel,
-    contract.ownerScenario,
-    contract.verifiedRuntimeService,
-    contract.candidateReference,
-    contract.serverQueryContractReference,
-    contract.safeSearchTerm,
-    contract.window,
-    contract.anomalyCriterionReference,
-    contract.diagnosisRuleReference,
-    contract.historicalOccurredAt,
-    contract.historicalSourceReference,
+  const progress = buildOwnerContractProgress(contract, asOf)
+  return { filled: progress.filled, total: progress.total, complete: progress.complete }
+}
+
+/**
+ * Presents the immutable 15-field contract as three owner-facing questions.
+ * This is a projection only: it does not remove or relax any validated field.
+ */
+export function ownerContractSectionProgress(
+  contract: OwnerContract | null,
+  asOf: Date = new Date(),
+): OwnerContractSectionProgress[] {
+  return buildOwnerContractProgress(contract, asOf).sections
+}
+
+function buildOwnerContractProgress(
+  contract: OwnerContract | null,
+  asOf: Date,
+  sectionIssues: ReadonlyMap<OwnerContractSectionKey, string[]> = new Map(),
+): OwnerContractProgress {
+  const validFields = new Set<OwnerProgressFieldKey>()
+  if (contract) {
+    for (const field of OWNER_PROGRESS_FIELDS) {
+      if (field.valid(field.read(contract), asOf)) validFields.add(field.key)
+    }
+  }
+
+  const sections = (Object.keys(OWNER_SECTION_LABELS) as OwnerContractSectionKey[]).map((key) => {
+    const fields = OWNER_PROGRESS_FIELDS.filter(field => field.section === key)
+    const filled = fields.filter(field => validFields.has(field.key)).length
+    const issues = sectionIssues.get(key) || []
+    return {
+      key,
+      label: OWNER_SECTION_LABELS[key],
+      filled,
+      total: fields.length,
+      complete: filled === fields.length && issues.length === 0,
+      ...(issues.length > 0 ? { issue: issues.join('；') } : {}),
+    }
+  })
+  const invalidLabels = OWNER_PROGRESS_FIELDS
+    .filter(field => !validFields.has(field.key))
+    .map(field => field.label)
+  const issues = [
+    ...(invalidLabels.length > 0 ? [`请检查：${invalidLabels.join('、')}`] : []),
+    ...new Set([...sectionIssues.values()].flat()),
   ]
-  const bindings = [
-    contract.bindingRefs?.log_search,
-    contract.bindingRefs?.log_trace_bundle,
-    contract.bindingRefs?.contrast_sample,
+  return {
+    filled: validFields.size,
+    total: OWNER_PROGRESS_FIELDS.length,
+    complete: sections.every(section => section.complete),
+    sections,
+    issues,
+  }
+}
+
+function progressFieldValid(
+  contract: OwnerContract | null,
+  key: OwnerProgressFieldKey,
+  asOf: Date,
+): boolean {
+  const field = OWNER_PROGRESS_FIELD_BY_KEY.get(key)
+  return Boolean(contract && field?.valid(field.read(contract), asOf))
+}
+
+export function ownerContractBatchProgress(
+  rows: ReadonlyArray<OwnerContractRow>,
+  asOf: Date = new Date(),
+): Map<string, OwnerContractProgress> {
+  const selected = rows.filter(row => row.selectedForWindow)
+  const sectionIssues = new Map<string, Map<OwnerContractSectionKey, string[]>>()
+  const addIssue = (selector: string, section: OwnerContractSectionKey, issue: string) => {
+    const bySection = sectionIssues.get(selector) || new Map<OwnerContractSectionKey, string[]>()
+    const issues = bySection.get(section) || []
+    if (!issues.includes(issue)) issues.push(issue)
+    bySection.set(section, issues)
+    sectionIssues.set(selector, bySection)
+  }
+  const markDuplicates = (
+    identity: (contract: OwnerContract) => string | null,
+    section: OwnerContractSectionKey,
+    issue: string,
+  ) => {
+    const selectorsByIdentity = new Map<string, string[]>()
+    for (const row of selected) {
+      if (!row.ownerContract) continue
+      const value = identity(row.ownerContract)
+      if (value === null) continue
+      const selectors = selectorsByIdentity.get(value) || []
+      selectors.push(row.selectorKey)
+      selectorsByIdentity.set(value, selectors)
+    }
+    for (const selectors of selectorsByIdentity.values()) {
+      if (selectors.length < 2) continue
+      selectors.forEach(selector => addIssue(selector, section, issue))
+    }
+  }
+
+  const uniqueFields: Array<{
+    key: OwnerProgressFieldKey
+    section: OwnerContractSectionKey
+    issue: string
+  }> = [
+    { key: 'candidateReference', section: 'DECISION', issue: '候选材料编号与其他条目重复' },
+    { key: 'serverQueryContractReference', section: 'QUERY', issue: '服务端查法编号与其他条目重复' },
+    { key: 'anomalyCriterionReference', section: 'DECISION', issue: '异常判据编号与其他条目重复' },
+    { key: 'diagnosisRuleReference', section: 'DECISION', issue: '诊断规则编号与其他条目重复' },
+    { key: 'historicalSourceReference', section: 'INCIDENT', issue: '告警或工单号与其他条目重复' },
   ]
-  const filled = [...scalars, ...bindings].filter(
-    value => typeof value === 'string' && fieldLooksFilled(value),
-  ).length
-  return { filled, total, complete: filled === total }
+  for (const definition of uniqueFields) {
+    markDuplicates((contract) => {
+      if (!progressFieldValid(contract, definition.key, asOf)) return null
+      return String(OWNER_PROGRESS_FIELD_BY_KEY.get(definition.key)!.read(contract)).trim()
+    }, definition.section, definition.issue)
+  }
+
+  const queryIdentityFields: OwnerProgressFieldKey[] = [
+    'verifiedRuntimeService',
+    'safeSearchTerm',
+    'window',
+    'bindingRefs.log_search',
+    'bindingRefs.log_trace_bundle',
+    'bindingRefs.contrast_sample',
+  ]
+  markDuplicates((contract) => {
+    if (!queryIdentityFields.every(key => progressFieldValid(contract, key, asOf))) return null
+    return queryIdentityFields
+      .map(key => String(OWNER_PROGRESS_FIELD_BY_KEY.get(key)!.read(contract)).trim())
+      .join('\0')
+  }, 'QUERY', '与其他条目的查询方法重复')
+
+  return new Map(selected.map(row => [
+    row.selectorKey,
+    buildOwnerContractProgress(
+      row.ownerContract,
+      asOf,
+      sectionIssues.get(row.selectorKey),
+    ),
+  ]))
+}
+
+/** Returns the next selected row that still needs owner facts, wrapping once. */
+export function nextIncompleteOwnerSelector(
+  rows: ReadonlyArray<OwnerContractRow>,
+  currentSelector: string,
+  asOf: Date = new Date(),
+): string | null {
+  const selected = rows.filter(row => row.selectedForWindow)
+  const progress = ownerContractBatchProgress(selected, asOf)
+  if (!selected.some(row => !progress.get(row.selectorKey)?.complete)) return null
+
+  const currentIndex = selected.findIndex(row => row.selectorKey === currentSelector)
+  for (let offset = 1; offset <= selected.length; offset += 1) {
+    const index = (Math.max(-1, currentIndex) + offset) % selected.length
+    const row = selected[index]
+    if (!progress.get(row.selectorKey)?.complete) return row.selectorKey
+  }
+  return null
 }
 
 export function applySourceHintsDraft(row: OwnerContractRow): OwnerContract {

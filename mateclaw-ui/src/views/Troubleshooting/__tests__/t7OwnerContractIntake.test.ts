@@ -3,8 +3,11 @@ import recommendedTemplate from '@/assets/troubleshooting/t7-owner-contract-inta
 import {
   applyFirstBatchDeveloperDrafts,
   cloneRecommendedWorksheet,
+  nextIncompleteOwnerSelector,
+  ownerContractBatchProgress,
   ownerContractCompleteness,
   ownerRemainingFields,
+  ownerContractSectionProgress,
   validateOwnerInput,
   type OwnerContract,
   type OwnerContractDocument,
@@ -85,4 +88,132 @@ describe('t7OwnerContractIntake validation', () => {
     expect(ownerRemainingFields(sourceGap.ownerContract)).toContain('ownerLevel')
     expect(ownerRemainingFields(sourceGap.ownerContract)).toContain('safeSearchTerm')
   })
+
+  it('turns the 15 owner facts into three plain-language completion steps', () => {
+    const worksheet = cloneRecommendedWorksheet(template)
+    applyFirstBatchDeveloperDrafts(worksheet)
+    const contract = worksheet.contracts.find(row => row.selectorKey === 'csdp:101010')!
+      .ownerContract!
+
+    expect(ownerContractSectionProgress(contract)).toEqual([
+      {
+        key: 'INCIDENT',
+        label: '确认这是什么故障',
+        filled: 4,
+        total: 6,
+        complete: false,
+      },
+      {
+        key: 'QUERY',
+        label: '确认在观测云怎么查',
+        filled: 6,
+        total: 6,
+        complete: true,
+      },
+      {
+        key: 'DECISION',
+        label: '确认平台怎么判断',
+        filled: 3,
+        total: 3,
+        complete: true,
+      },
+    ])
+
+    contract.historicalOccurredAt = '2026-08-07T09:12:00Z'
+    contract.historicalSourceReference = 'alert:r-02a773'
+    expect(ownerContractSectionProgress(contract)[0]).toMatchObject({
+      filled: 6,
+      complete: true,
+    })
+  })
+
+  it('moves to the next selected incomplete row and stops when all are complete', () => {
+    const worksheet = cloneRecommendedWorksheet(template)
+    const selected = worksheet.contracts.filter(row => row.selectedForWindow)
+    selected.forEach((row, index) => {
+      row.ownerContract = completeOwnerContract(index)
+    })
+    selected[1].ownerContract!.historicalOccurredAt = '<replace:UTC-whole-seconds>'
+
+    expect(nextIncompleteOwnerSelector(selected, selected[0].selectorKey))
+      .toBe(selected[1].selectorKey)
+    expect(nextIncompleteOwnerSelector(selected, selected[1].selectorKey))
+      .toBe(selected[1].selectorKey)
+
+    selected[1].ownerContract = completeOwnerContract(1)
+    expect(nextIncompleteOwnerSelector(selected, selected[0].selectorKey)).toBeNull()
+  })
+
+  it('does not mark non-empty invalid owner facts ready or skip that row', () => {
+    const worksheet = cloneRecommendedWorksheet(template)
+    const selected = worksheet.contracts.filter(row => row.selectedForWindow)
+    selected.forEach((row, index) => {
+      row.ownerContract = completeOwnerContract(index)
+    })
+    selected[1].ownerContract!.ownerLevel = 'P3'
+    selected[1].ownerContract!.window = '-25h'
+    const asOf = new Date('2026-08-13T00:00:00Z')
+
+    const progress = ownerContractBatchProgress(selected, asOf).get(selected[1].selectorKey)!
+    expect(progress.complete).toBe(false)
+    expect(progress.sections.find(section => section.key === 'INCIDENT')).toMatchObject({
+      filled: 5,
+      complete: false,
+    })
+    expect(progress.sections.find(section => section.key === 'QUERY')).toMatchObject({
+      filled: 5,
+      complete: false,
+    })
+    expect(nextIncompleteOwnerSelector(selected, selected[0].selectorKey, asOf))
+      .toBe(selected[1].selectorKey)
+  })
+
+  it('keeps duplicated query semantics in the attention loop', () => {
+    const worksheet = cloneRecommendedWorksheet(template)
+    const selected = worksheet.contracts.filter(row => row.selectedForWindow)
+    selected.forEach((row, index) => {
+      row.ownerContract = completeOwnerContract(index)
+    })
+    const first = selected[0].ownerContract!
+    const duplicate = selected[1].ownerContract!
+    duplicate.verifiedRuntimeService = first.verifiedRuntimeService
+    duplicate.safeSearchTerm = first.safeSearchTerm
+    duplicate.window = first.window
+    duplicate.bindingRefs = { ...first.bindingRefs }
+    const asOf = new Date('2026-08-13T00:00:00Z')
+
+    const progress = ownerContractBatchProgress(selected, asOf)
+    expect(progress.get(selected[0].selectorKey)).toMatchObject({
+      complete: false,
+      issues: ['与其他条目的查询方法重复'],
+    })
+    expect(progress.get(selected[1].selectorKey)).toMatchObject({
+      complete: false,
+      issues: ['与其他条目的查询方法重复'],
+    })
+    expect(nextIncompleteOwnerSelector(selected, selected[0].selectorKey, asOf))
+      .toBe(selected[1].selectorKey)
+  })
 })
+
+function completeOwnerContract(index: number): OwnerContract {
+  return {
+    ownerTeam: 'CSDP',
+    ownerLevel: 'P1',
+    ownerScenario: `真实故障 ${index}`,
+    verifiedRuntimeService: `csdp-service-${index}`,
+    candidateReference: `cand:t7:${index}`,
+    serverQueryContractReference: `query:t7:${index}`,
+    safeSearchTerm: `error-${index}`,
+    window: '-6h',
+    anomalyCriterionReference: `criterion:t7:${index}`,
+    diagnosisRuleReference: `rule:t7:${index}`,
+    bindingRefs: {
+      log_search: `binding-${index}-log`,
+      log_trace_bundle: `binding-${index}-trace`,
+      contrast_sample: `binding-${index}-contrast`,
+    },
+    historicalOccurredAt: '2026-08-07T09:12:00Z',
+    historicalSourceReference: `alert:r-${index}`,
+  }
+}

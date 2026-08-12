@@ -18,7 +18,7 @@
     <div class="status-bar">
       <div class="status-metrics">
         <span>首批 {{ selectedCount }} / {{ minSelected }}</span>
-        <span>字段完整 {{ completeCount }} / {{ selectedCount }}</span>
+        <span>整条完成 {{ completeCount }} / {{ selectedCount }}</span>
         <span :class="validationTone">{{ validationLabel }}</span>
       </div>
       <div class="status-actions">
@@ -85,7 +85,7 @@
           </div>
           <div class="selector-meta">
             <span :class="completenessClass(row)">
-              {{ ownerContractCompleteness(row.ownerContract).filled }}/15
+              {{ rowProgress(row).complete ? '已就绪' : `已核对 ${rowProgress(row).filled}/15` }}
             </span>
             <small>{{ row.sourceHints.scenarios[0] || row.sourceHints.modules[0] || '无场景提示' }}</small>
           </div>
@@ -93,6 +93,37 @@
       </aside>
 
       <section v-if="activeRow" class="editor-pane">
+        <div class="active-row-head">
+          <div>
+            <span>当前正在登记</span>
+            <h2>{{ activeRow.selectorKey }}</h2>
+            <p>先确认真实故障，再确认查法和判断方法；三步都完成才算这一条材料齐全。</p>
+          </div>
+          <el-button
+            plain
+            :disabled="!canOpenNextIncomplete"
+            @click="openNextIncomplete"
+          >{{ nextIncompleteLabel }}</el-button>
+        </div>
+
+        <ol class="section-progress" aria-label="本条标准查登记进度">
+          <li
+            v-for="(section, index) in activeSections"
+            :key="section.key"
+            :class="{ complete: section.complete }"
+          >
+            <i>{{ section.complete ? '✓' : index + 1 }}</i>
+            <span>
+              <b>{{ section.label }}</b>
+              <small>
+                {{ section.complete
+                  ? '已核对'
+                  : `已核对 ${section.filled} / ${section.total}${section.issue ? ` · ${section.issue}` : ''}` }}
+              </small>
+            </span>
+          </li>
+        </ol>
+
         <div class="hints-card">
           <div class="hints-head">
             <h2>来源提示（只读）</h2>
@@ -109,70 +140,97 @@
         </div>
 
         <el-form v-if="activeContract" label-position="top" class="contract-form">
-          <div class="form-grid">
-            <el-form-item label="责任团队 ownerTeam（可中文）">
-              <el-input v-model="activeContract.ownerTeam" maxlength="128" show-word-limit />
-            </el-form-item>
-            <el-form-item label="故障等级 ownerLevel（P0/P1/P2）">
-              <el-select v-model="activeContract.ownerLevel" style="width: 100%">
-                <el-option label="P0" value="P0" />
-                <el-option label="P1" value="P1" />
-                <el-option label="P2" value="P2" />
-                <el-option
-                  v-if="isPlaceholderLevel(activeContract.ownerLevel)"
-                  :label="activeContract.ownerLevel"
-                  :value="activeContract.ownerLevel"
+          <section class="contract-step">
+            <header>
+              <i>1</i>
+              <div><b>确认这是什么故障</b><span>用一条真实告警确认责任团队、运行服务、故障时间和来源。</span></div>
+              <em>{{ sectionProgress('INCIDENT').filled }} / {{ sectionProgress('INCIDENT').total }}</em>
+            </header>
+            <div class="form-grid">
+              <el-form-item label="责任团队 ownerTeam（可中文）">
+                <el-input v-model="activeContract.ownerTeam" maxlength="128" show-word-limit />
+              </el-form-item>
+              <el-form-item label="故障等级 ownerLevel（P0/P1/P2）">
+                <el-select v-model="activeContract.ownerLevel" style="width: 100%">
+                  <el-option label="P0" value="P0" />
+                  <el-option label="P1" value="P1" />
+                  <el-option label="P2" value="P2" />
+                  <el-option
+                    v-if="isPlaceholderLevel(activeContract.ownerLevel)"
+                    :label="activeContract.ownerLevel"
+                    :value="activeContract.ownerLevel"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="故障场景 ownerScenario（可中文）" class="span-2">
+                <el-input v-model="activeContract.ownerScenario" maxlength="160" show-word-limit />
+              </el-form-item>
+              <el-form-item label="真实运行服务 verifiedRuntimeService（如 csdp-wechat）">
+                <el-input v-model="activeContract.verifiedRuntimeService" maxlength="128" />
+              </el-form-item>
+              <el-form-item label="故障发生时间 historicalOccurredAt（UTC 整秒）">
+                <el-input
+                  v-model="activeContract.historicalOccurredAt"
+                  placeholder="2026-08-07T09:12:00Z"
+                  maxlength="20"
                 />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="故障场景 ownerScenario（可中文）" class="span-2">
-              <el-input v-model="activeContract.ownerScenario" maxlength="160" show-word-limit />
-            </el-form-item>
-            <el-form-item label="运行服务名 verifiedRuntimeService（如 csdp-wechat）">
-              <el-input v-model="activeContract.verifiedRuntimeService" maxlength="128" />
-            </el-form-item>
-            <el-form-item label="安全检索键 safeSearchTerm（错误码或关键词）">
-              <el-input v-model="activeContract.safeSearchTerm" maxlength="128" />
-            </el-form-item>
-            <el-form-item label="查询时间窗 window（如 -6h / -15m）">
-              <el-input v-model="activeContract.window" maxlength="16" />
-            </el-form-item>
-            <el-form-item label="历史故障时间 historicalOccurredAt（UTC 整秒，必填）">
-              <el-input
-                v-model="activeContract.historicalOccurredAt"
-                placeholder="2026-08-07T09:12:00Z"
-                maxlength="20"
-              />
-            </el-form-item>
-            <el-form-item label="候选材料引用 candidateReference（给这条故障的材料编号）">
-              <el-input v-model="activeContract.candidateReference" maxlength="256" />
-            </el-form-item>
-            <el-form-item label="查询合同引用 serverQueryContractReference（服务端查法编号）">
-              <el-input v-model="activeContract.serverQueryContractReference" maxlength="256" />
-            </el-form-item>
-            <el-form-item label="异常判据引用 anomalyCriterionReference（怎么判定异常）">
-              <el-input v-model="activeContract.anomalyCriterionReference" maxlength="256" />
-            </el-form-item>
-            <el-form-item label="诊断规则引用 diagnosisRuleReference（怎么下结论）">
-              <el-input v-model="activeContract.diagnosisRuleReference" maxlength="256" />
-            </el-form-item>
-            <el-form-item label="历史来源引用 historicalSourceReference（告警/工单号，必填）">
-              <el-input v-model="activeContract.historicalSourceReference" maxlength="256" />
-            </el-form-item>
-            <el-form-item label="日志检索绑定 bindingRefs.log_search（查失败日志用哪条）">
-              <el-input v-model="activeContract.bindingRefs.log_search" maxlength="128" />
-            </el-form-item>
-            <el-form-item label="链路还原绑定 bindingRefs.log_trace_bundle（按 PS ID 追链路）">
-              <el-input v-model="activeContract.bindingRefs.log_trace_bundle" maxlength="128" />
-            </el-form-item>
-            <el-form-item label="成败对照绑定 bindingRefs.contrast_sample（失败 vs 成功样本）">
-              <el-input v-model="activeContract.bindingRefs.contrast_sample" maxlength="128" />
-            </el-form-item>
-          </div>
+              </el-form-item>
+              <el-form-item label="对应的告警 / 工单号 historicalSourceReference" class="span-2">
+                <el-input v-model="activeContract.historicalSourceReference" maxlength="256" />
+              </el-form-item>
+            </div>
+          </section>
+
+          <section class="contract-step">
+            <header>
+              <i>2</i>
+              <div><b>确认在观测云怎么查</b><span>只登记安全检索键、时间窗和服务端查法编号，不填 DQL 和原始日志。</span></div>
+              <em>{{ sectionProgress('QUERY').filled }} / {{ sectionProgress('QUERY').total }}</em>
+            </header>
+            <div class="form-grid">
+              <el-form-item label="搜什么 safeSearchTerm（错误码或稳定关键词）">
+                <el-input v-model="activeContract.safeSearchTerm" maxlength="128" />
+              </el-form-item>
+              <el-form-item label="查多长时间 window（如 -6h / -15m）">
+                <el-input v-model="activeContract.window" maxlength="16" />
+              </el-form-item>
+              <el-form-item label="服务端查法编号 serverQueryContractReference" class="span-2">
+                <el-input v-model="activeContract.serverQueryContractReference" maxlength="256" />
+              </el-form-item>
+              <el-form-item label="失败日志查询 bindingRefs.log_search">
+                <el-input v-model="activeContract.bindingRefs.log_search" maxlength="128" />
+              </el-form-item>
+              <el-form-item label="关联调用还原 bindingRefs.log_trace_bundle">
+                <el-input v-model="activeContract.bindingRefs.log_trace_bundle" maxlength="128" />
+              </el-form-item>
+              <el-form-item label="成功 / 失败对照 bindingRefs.contrast_sample" class="span-2">
+                <el-input v-model="activeContract.bindingRefs.contrast_sample" maxlength="128" />
+              </el-form-item>
+            </div>
+          </section>
+
+          <section class="contract-step">
+            <header>
+              <i>3</i>
+              <div><b>确认平台怎么判断</b><span>把材料、异常判据和结论规则绑定到唯一编号，便于审核和回放。</span></div>
+              <em>{{ sectionProgress('DECISION').filled }} / {{ sectionProgress('DECISION').total }}</em>
+            </header>
+            <div class="form-grid">
+              <el-form-item label="候选材料编号 candidateReference" class="span-2">
+                <el-input v-model="activeContract.candidateReference" maxlength="256" />
+              </el-form-item>
+              <el-form-item label="异常判据编号 anomalyCriterionReference">
+                <el-input v-model="activeContract.anomalyCriterionReference" maxlength="256" />
+              </el-form-item>
+              <el-form-item label="诊断规则编号 diagnosisRuleReference">
+                <el-input v-model="activeContract.diagnosisRuleReference" maxlength="256" />
+              </el-form-item>
+            </div>
+          </section>
         </el-form>
 
-        <p v-if="activeRemaining.length" class="remaining">
-          本条 Owner 待补：{{ activeRemaining.join('、') }}
+        <p v-if="activeProgress.issues.length" class="remaining">
+          本条还需修正：{{ activeProgress.issues.join('；') }}
         </p>
         <p class="fingerprint">
           preparationFingerprint={{ worksheet.preparationFingerprint }}
@@ -198,12 +256,15 @@ import {
   cloneRecommendedWorksheet,
   draftStorageKey,
   downloadOwnerDocument,
-  ownerContractCompleteness,
-  ownerRemainingFields,
+  nextIncompleteOwnerSelector,
+  ownerContractBatchProgress,
   validateOwnerInput,
   type OwnerContract,
   type OwnerContractDocument,
+  type OwnerContractProgress,
   type OwnerContractRow,
+  type OwnerContractSectionKey,
+  type OwnerContractSectionProgress,
   type OwnerValidationResult,
 } from './t7OwnerContractIntake'
 
@@ -220,33 +281,30 @@ const minSelected = T7_MIN_SELECTED
 
 const selectedRows = computed(() => worksheet.value.contracts.filter(row => row.selectedForWindow))
 const selectedCount = computed(() => selectedRows.value.length)
+const batchProgress = computed(() => ownerContractBatchProgress(selectedRows.value))
 const completeCount = computed(() => selectedRows.value.filter(
-  row => ownerContractCompleteness(row.ownerContract).complete,
+  row => batchProgress.value.get(row.selectorKey)?.complete,
 ).length)
 const activeRow = computed(() => selectedRows.value.find(row => row.selectorKey === activeSelector.value)
   || selectedRows.value[0]
   || null)
 const activeContract = computed<OwnerContract | null>(() => activeRow.value?.ownerContract ?? null)
-const FIELD_LABELS_ZH: Record<string, string> = {
-  ownerTeam: '责任团队',
-  ownerLevel: '故障等级',
-  ownerScenario: '故障场景',
-  verifiedRuntimeService: '运行服务名',
-  candidateReference: '候选材料引用',
-  serverQueryContractReference: '查询方法引用',
-  safeSearchTerm: '安全检索键',
-  window: '查询时间窗',
-  anomalyCriterionReference: '异常判据引用',
-  diagnosisRuleReference: '诊断规则引用',
-  bindingRefs: '三类查询绑定',
-  historicalOccurredAt: '历史故障时间',
-  historicalSourceReference: '历史来源引用',
-}
-
-const activeRemaining = computed(() =>
-  ownerRemainingFields(activeContract.value).map(field => FIELD_LABELS_ZH[field] || field),
-)
-
+const activeProgress = computed(() => activeRow.value
+  ? rowProgress(activeRow.value)
+  : emptyProgress())
+const activeSections = computed(() => activeProgress.value.sections)
+const nextIncompleteSelector = computed(() => nextIncompleteOwnerSelector(
+  selectedRows.value,
+  activeSelector.value,
+))
+const canOpenNextIncomplete = computed(() => Boolean(
+  nextIncompleteSelector.value && nextIncompleteSelector.value !== activeSelector.value,
+))
+const nextIncompleteLabel = computed(() => {
+  if (!nextIncompleteSelector.value) return '首批 20 条已齐全'
+  if (nextIncompleteSelector.value === activeSelector.value) return '先完成本条'
+  return '下一条未完成 →'
+})
 const validationLabel = computed(() => {
   if (!validationResult.value) return '尚未校验'
   return validationResult.value.ok ? 'PREPARED_NOT_EXECUTABLE' : `失败 ${validationResult.value.issues.length} 项`
@@ -280,10 +338,33 @@ function isPlaceholderLevel(value: string) {
 }
 
 function completenessClass(row: OwnerContractRow) {
-  const { complete, filled } = ownerContractCompleteness(row.ownerContract)
+  const { complete, filled } = rowProgress(row)
   if (complete) return 'complete'
   if (filled > 0) return 'partial'
   return 'empty'
+}
+
+function emptyProgress(): OwnerContractProgress {
+  return {
+    filled: 0,
+    total: 15,
+    complete: false,
+    sections: [],
+    issues: [],
+  }
+}
+
+function rowProgress(row: OwnerContractRow): OwnerContractProgress {
+  return batchProgress.value.get(row.selectorKey) || emptyProgress()
+}
+
+function sectionProgress(key: OwnerContractSectionKey): OwnerContractSectionProgress {
+  return activeSections.value.find(section => section.key === key)!
+}
+
+function openNextIncomplete() {
+  if (!canOpenNextIncomplete.value || !nextIncompleteSelector.value) return
+  activeSelector.value = nextIncompleteSelector.value
 }
 
 function returnToWorkbench() {
@@ -520,6 +601,76 @@ function matchesAuthoritativeWorksheet(document: OwnerContractDocument | null | 
   gap: 14px;
   min-width: 0;
 }
+.active-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 2px 2px 0;
+}
+.active-row-head > div { min-width: 0; }
+.active-row-head span {
+  color: var(--mc-primary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+.active-row-head h2 {
+  margin: 3px 0 2px;
+  color: var(--mc-text-primary);
+  font-size: 18px;
+  word-break: break-word;
+}
+.active-row-head p {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.active-row-head .el-button { flex: none; }
+.section-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.section-progress li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 10px;
+  background: var(--mc-bg-elevated);
+}
+.section-progress i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--mc-bg-muted);
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+}
+.section-progress span,
+.section-progress b,
+.section-progress small { display: block; min-width: 0; }
+.section-progress b { color: var(--mc-text-primary); font-size: 11px; }
+.section-progress small { margin-top: 2px; color: var(--mc-text-tertiary); font-size: 9px; }
+.section-progress li.complete {
+  border-color: rgba(47, 125, 74, .28);
+  background: var(--mc-status-success-bg);
+}
+.section-progress li.complete i {
+  background: var(--mc-success);
+  color: var(--mc-text-inverse);
+}
 .hints-card {
   padding: 14px 16px;
   border: 1px solid var(--mc-border-light);
@@ -556,10 +707,53 @@ function matchesAuthoritativeWorksheet(document: OwnerContractDocument | null | 
   word-break: break-word;
 }
 .contract-form {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.contract-step {
   padding: 14px 16px 4px;
   border: 1px solid var(--mc-border-light);
   border-radius: 12px;
   background: var(--mc-bg-elevated);
+}
+.contract-step > header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--mc-border-light);
+}
+.contract-step > header > i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--mc-primary-bg);
+  color: var(--mc-primary);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+.contract-step > header b,
+.contract-step > header span { display: block; }
+.contract-step > header b { color: var(--mc-text-primary); font-size: 13px; }
+.contract-step > header span {
+  margin-top: 3px;
+  color: var(--mc-text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.contract-step > header em {
+  color: var(--mc-text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
 }
 .form-grid {
   display: grid;
@@ -584,6 +778,9 @@ function matchesAuthoritativeWorksheet(document: OwnerContractDocument | null | 
   .workspace-grid { grid-template-columns: 1fr; }
   .selector-list { max-height: 240px; }
   .status-bar { align-items: flex-start; flex-direction: column; }
+  .active-row-head { align-items: stretch; flex-direction: column; }
+  .active-row-head .el-button { width: 100%; }
+  .section-progress { grid-template-columns: 1fr; }
   .hints-card dl, .form-grid { grid-template-columns: 1fr; }
 }
 </style>
