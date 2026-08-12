@@ -4,11 +4,13 @@ import type { EvidenceQueryCatalog, ObservabilityAssetCatalog } from '@/api'
 
 const evidenceCatalog = vi.fn()
 const observabilityAssets = vi.fn()
+const evidenceContracts = vi.fn()
 
 vi.mock('@/api', () => ({
   troubleshootingApi: {
     evidenceCatalog: () => evidenceCatalog(),
     observabilityAssets: () => observabilityAssets(),
+    evidenceContracts: () => evidenceContracts(),
   },
 }))
 
@@ -100,6 +102,7 @@ describe('evidence setup gate', () => {
       data: catalog(options.sourceReady ?? false, options.replayReady ?? false),
     })
     observabilityAssets.mockResolvedValue({ data: assets() })
+    evidenceContracts.mockResolvedValue({ data: { workspaceId: '1', contracts: [] } })
 
     const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
     const host = document.createElement('div')

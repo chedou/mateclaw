@@ -388,8 +388,8 @@ class EvidenceAutoConfigurationTest {
                                     "csp-rpc-msg",
                                     "query_string",
                                     "failed AND sendmsg",
-                                    "@trace_id",
-                                    "{{window_span}}");
+                                    "@trace_id")
+                            .doesNotContain("{{window_span}}");
                     assertThat(guance.getBindings().get("csdp-message-send-log-search")
                             .getQuestion()).contains("SendMsg 失败请求");
                     EvidenceProperties.Binding traceBinding = guance.getBindings()
@@ -411,21 +411,22 @@ class EvidenceAutoConfigurationTest {
                     assertThat(contrastBinding.getQueryTemplates())
                             .hasSize(4)
                             .allSatisfy(query -> assertThat(query)
-                                    .contains("count_distinct", "@trace_id", "{{window_span}}"));
+                                    .contains("count_distinct", "@trace_id")
+                                    .doesNotContain("{{window_span}}"));
                     assertThat(contrastBinding.getQueryTemplates().get(0))
                             .contains("failed AND sendmsg");
                     assertThat(contrastBinding.getQueryTemplates().get(1))
-                            .contains("failed AND sendmsg", "message_length = 2875");
+                            .contains("failed AND sendmsg", "message_length = 2011");
                     assertThat(contrastBinding.getQueryTemplates().get(2))
                             .contains("success AND sendmsg AND NOT failed");
                     assertThat(contrastBinding.getQueryTemplates().get(3))
                             .contains(
                                     "success AND sendmsg AND NOT failed",
-                                    "message_length = 2875");
+                                    "message_length = 2011");
                     assertThat(contrastBinding.getConstantFields())
                             .containsEntry(
                                     "discriminating_feature",
-                                    "message_length_eq_2875");
+                                    "message_length_eq_2011");
                     EvidenceProperties.Binding errorScan = guance.getBindings()
                             .get("csdp-application-error-scan");
                     assertThat(errorScan.getNamespace()).isEqualTo("L");

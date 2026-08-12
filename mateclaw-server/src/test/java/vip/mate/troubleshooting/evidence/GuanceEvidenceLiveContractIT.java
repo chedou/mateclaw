@@ -106,7 +106,7 @@ class GuanceEvidenceLiveContractIT {
                     "success_match_count");
             assertThat(Objects.equals(
                     contrast.observed().get("discriminating_feature"),
-                    "message_length_eq_2875")).isTrue();
+                    "message_length_eq_2011")).isTrue();
             long failureSamples = number(contrast.observed().get("failure_sample_count"));
             long failureMatches = number(contrast.observed().get("failure_match_count"));
             long successSamples = number(contrast.observed().get("success_sample_count"));

@@ -24,6 +24,7 @@ const FEATURE_LABELS: Record<string, string> = {
   gateway_timeout: '网关超时',
   inner_701022_on_failed_trace: '失败请求中的下游错误 701022',
   itgw_content_policy_blocked: '内容拦截',
+  message_length_eq_2011: '消息长度为 2011',
   message_length_eq_2875: '消息长度为 2875',
   message_send_failed: '消息发送失败',
   session_state_conflict: '会话状态冲突',
