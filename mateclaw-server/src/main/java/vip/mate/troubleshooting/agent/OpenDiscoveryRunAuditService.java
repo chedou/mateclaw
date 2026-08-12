@@ -59,6 +59,7 @@ public class OpenDiscoveryRunAuditService {
         entity.setDiagnosisId(audit.diagnosisId());
         entity.setVisibleScenarioKeys(writeList(audit.visibleScenarioKeys()));
         entity.setSelectedScenarioKey(audit.selectedScenarioKey());
+        entity.setSelectedPlanFingerprint(audit.selectedPlanFingerprint());
         entity.setPlannedSignalKinds(writeList(audit.plannedSignalKinds()));
         entity.setMaxIterations(audit.maxIterations());
         entity.setMaxEvidenceRequests(audit.maxEvidenceRequests());
@@ -84,6 +85,7 @@ public class OpenDiscoveryRunAuditService {
                     entity.getDiagnosisId(),
                     readList(entity.getVisibleScenarioKeys()),
                     entity.getSelectedScenarioKey(),
+                    entity.getSelectedPlanFingerprint(),
                     readList(entity.getPlannedSignalKinds()),
                     entity.getMaxIterations(),
                     entity.getMaxEvidenceRequests(),

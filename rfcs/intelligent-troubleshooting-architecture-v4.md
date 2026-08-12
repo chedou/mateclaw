@@ -403,13 +403,13 @@ WeCom / Web / Alert adapters
 |---|---|---|---|
 | §5.1 `IntakeEnvelope / IntakeDecision` | `PARTIAL` | `IntakeMessageEnvelope`、`IntakeDecision`、`IntakeSession` 已承载入站、补问与事件时间；没有同名 `IntakeEnvelope` | RFC 记下真实命名，不为对齐伪代码迁移通道和持久化合同 |
 | §5.2 `IncidentContext` | `IMPLEMENTED` | 同名领域类型已存在，`IncidentImpact` 与 completeness 边界已落地 | 保持 |
-| §5.3 `InvestigationPlan` | `PARTIAL` | 固定证据脊柱使用 `EvidenceSpinePlan` 与 `ApprovedEvidenceSpineCatalog.ApprovedSpinePlan`；V197 `OpenDiscoveryRunAudit` 只冻结本次可见/已选场景键、三类计划信号与服务端预算；`InvestigationMode / RouteAuthority` 仍归属 Diagnosis | 不把运行审计冒充完整 Planning；等真实未知告警给出多工具选择失败模式后再收敛聚合 |
+| §5.3 `InvestigationPlan` | `PARTIAL` | 固定证据脊柱使用 `EvidenceSpinePlan` 与 `ApprovedEvidenceSpineCatalog.ApprovedSpinePlan`；V197/V198 `OpenDiscoveryRunAudit` 冻结本次可见/已选场景键、精确计划指纹、三类计划信号与服务端预算；`InvestigationMode / RouteAuthority` 仍归属 Diagnosis | 不把运行审计冒充完整 Planning；等真实未知告警给出多工具选择失败模式后再收敛聚合 |
 | §5.4 `EvidenceBundle` | `PARTIAL` | canonical 结果仍以 `List<EvidenceResult>` 在 Diagnosis 流转；固定脊柱另有 `EvidenceSpineResult`，缺失必需证据由 `PlaybookEvidenceAssessment` 计算 | 暂不新增只包装列表的类型；等 `InvestigationPlan`、bundle identity、plan 绑定、fixture 与持久化边界能一次落地时收敛 |
 | §5.5 `Diagnosis` | `IMPLEMENTED` | 同名聚合、状态机、来源 Playbook 版本、双投影与持久化已落地 | 保持兼容字段，新增字段继续走版本合同 |
 | §5.6 `InvestigationPlaybook` | `PARTIAL` | 运行时权威名为 `SopEntry`；`ScenarioSelector` 独立存在，SCENARIO 仍由 `errorCode="scenario:..."` 编码，尚无统一 `type + selector` | 随 T10.5 / P4 一次迁移 selector、routing key、不可变版本和持久化兼容；本结构账不改线上身份 |
 | §5.6 `DiscoveryPolicy` | `NOT_IMPLEMENTED` | OPEN_DISCOVERY 仍受现有 Agent miss-path 的固定边界约束，没有独立 policy 聚合 | 等 P4 且真实样本给出迭代、预算与停止需求后实现 |
 | §5.7 `PlaybookDraft / KnowledgeRecord` | `IMPLEMENTED` | `PlaybookDraft`、`PlaybookKnowledgeRecord`、review inbox 与不可变版本晋升已落地；`SopSynthesisPreview` 保留兼容命名 | 新领域代码使用 Playbook 命名，兼容 API 不强制重命名 |
-| §5.8 `LoopPolicy / LoopRun / LoopOutcome` | `PARTIAL` | V197 `OpenDiscoveryRunAudit` 已对当前单次受限 miss-path 持久化迭代/取证/时长上限、实际源请求数、已选服务端计划、安全证据引用、时间与类型化 stopReason；它不是多轮 Loop Controller | 真实未知告警暴露“继续查什么”和恢复失败模式前，不实现目标 `LoopPolicy / LoopRun / LoopOutcome` 伪代码 |
+| §5.8 `LoopPolicy / LoopRun / LoopOutcome` | `PARTIAL` | V197/V198 `OpenDiscoveryRunAudit` 已对当前单次受限 miss-path 持久化实际迭代/取证/时长上限、发出前记账的源请求数、已选服务端计划与指纹、安全证据引用、时间与类型化 stopReason；Web 重放在外部调查前原子 claim，超时/取消不续查后续阶段；它不是多轮 Loop Controller | 真实未知告警暴露“继续查什么”和恢复失败模式前，不实现目标 `LoopPolicy / LoopRun / LoopOutcome` 伪代码 |
 | §5.9 `AdversarialEvalReport` | `PENDING-EVIDENCE` | 无运行时类型，Challenger 尚未启动 | 等真实样本与等预算基线证明有增益后再设计 |
 | §5.10 北极星时间戳 | `IMPLEMENTED` | `NorthStarTimings`、`IntakeSession` 与 `Diagnosis` 已分别持有四阶段时间 | 保持三段指标分开统计 |
 | §5.11 `TopologyProbeEvidenceRun` | `IMPLEMENTED` | 同名不可变运行记录、持久化服务和 Diagnosis 关联已落地 | 保持为同一 Diagnosis 的证据运行，不另建诊断主流 |
@@ -579,8 +579,9 @@ KnowledgeRecord = recordId + draft + origin
 
 > **状态：`PARTIAL`（仅完成观测到的运行审计切片）。** 现有受限 miss-path 已真实暴露
 > “时长到限、Agent 调用失败、输出无法解析、核心证据缺失、无可验证引用、主动弃权、形成候选判断”
-> 七类停止结果，因此 V197 只新增 `OpenDiscoveryRunAudit` 记录实际预算、已选服务端计划、请求数、
-> 安全证据引用和 stopReason。下列 `LoopPolicy / LoopRun / LoopOutcome` 仍是**未生效目标伪代码**；
+> 七类停止结果，因此 V197/V198 只新增 `OpenDiscoveryRunAudit` 及其执行前原子 claim，记录实际预算、
+> 已选服务端计划指纹、发出前记账的请求数、安全证据引用和 stopReason，并在超时/取消后
+> 禁止续查后续阶段。下列 `LoopPolicy / LoopRun / LoopOutcome` 仍是**未生效目标伪代码**；
 > 当前没有多轮计划、检查点恢复或自主组合工具，不得借此宣称 Loop Controller 已完成。
 
 ```text
@@ -931,7 +932,7 @@ Diagnosis，避免未成形的报障污染已有处置不变量。
 | `TroubleshootingIntakeService` | 先委托新的 Planning 接口，后续再收拢内部实现 |
 | `EvidenceSourceRouter.collect()` | 保留为 Adapter 路由内部 seam；已由共享 `EvidenceSpineOrchestrator` 编排 `log_search → log_trace_bundle → contrast_sample`，在线 Diagnosis 与 SOP 合成不再各自实现 |
 | `TroubleshootingEvidenceTool` | 保持 Agent 唯一只读门面；模型只提交 workspace/system 可见的注册 `scenario_key`，搜索词、窗口、平台白名单与三阶段 EvidencePlan 由服务端 approved 配置解析；初始/工具证据统一投影为无 query、无 entries、无日志正文的模型安全骨架，并禁止直取其他 signal kind；后续内部委托域内 `ReadOnlyEvidenceToolRegistry`，不直接向 Agent 展开插件列表 |
-| `Agent Graph` + `TroubleshootingAgentTriageService` | 作为受限单次调查的兼容实现；V197 已用 `OpenDiscoveryRunAudit` 冻结 maxIterations/maxEvidenceRequests/时长预算、已选 approved plan、实际请求数和 stopReason；检查点、恢复与多轮 `LoopRun` 仍未实现 |
+| `Agent Graph` + `TroubleshootingAgentTriageService` | 作为受限单次调查的兼容实现；V197/V198 已用 `OpenDiscoveryRunAudit` 冻结实际 maxIterations/maxEvidenceRequests/时长预算、已选 approved plan 指纹、发出前记账的实际请求数和 stopReason，并在 Agent/取证前原子 claim Web 去重键；检查点、恢复与多轮 `LoopRun` 仍未实现 |
 | `SopSynthesisService.preview()` | 作为 SOP Synthesis 的前三步，继续 fixture-only，补模型/校验/候选前不得声称完成；内部新合同用 `PlaybookDraft` |
 | `KnowledgeCandidate` + Outbox | 保留发布语义；另建审核状态，禁止复用 outbox status |
 | 新 Challenger 角色 | 通过当前 Java MateClaw 模型配置实现为 Adversarial Evaluation 内部 Adapter；不引入第二 Agent runtime，不向外暴露角色接口 |

@@ -66,6 +66,20 @@ public final class EvidenceSpineOrchestrator {
             IncidentContext incident,
             EvidenceSpinePlan plan,
             Set<String> permittedPlatforms) {
+        return collect(
+                workspaceId,
+                incident,
+                plan,
+                permittedPlatforms,
+                EvidenceSpineRunControl.unbounded());
+    }
+
+    public EvidenceSpineResult collect(
+            long workspaceId,
+            IncidentContext incident,
+            EvidenceSpinePlan plan,
+            Set<String> permittedPlatforms,
+            EvidenceSpineRunControl runControl) {
         if (workspaceId <= 0 || incident == null || plan == null) {
             throw new IllegalArgumentException(
                     "workspace, incident and evidence spine plan are required");
@@ -78,6 +92,7 @@ public final class EvidenceSpineOrchestrator {
                 Map.of("search_term", plan.searchTerm()),
                 plan.window(),
                 true);
+        requireControl(runControl).beforeSourceRequest(searchRequest.requestId());
         long searchStarted = ticker.getAsLong();
         EvidenceResult search = collectCanonical(
                 workspaceId, searchRequest, incident, permittedPlatforms);
@@ -106,6 +121,7 @@ public final class EvidenceSpineOrchestrator {
                 Map.of("ps_id", psId),
                 plan.window(),
                 true);
+        runControl.beforeSourceRequest(traceRequest.requestId());
         long traceStarted = ticker.getAsLong();
         EvidenceResult trace = collectCanonical(
                 workspaceId, traceRequest, incident, permittedPlatforms);
@@ -153,6 +169,7 @@ public final class EvidenceSpineOrchestrator {
                         "exclude_ps_id", psId),
                 plan.window(),
                 false);
+        runControl.beforeSourceRequest(contrastRequest.requestId());
         long contrastStarted = ticker.getAsLong();
         EvidenceResult contrast = collectCanonical(
                 workspaceId, contrastRequest, incident, permittedPlatforms);
@@ -179,6 +196,13 @@ public final class EvidenceSpineOrchestrator {
                 compressionDurationMs);
         return new EvidenceSpineResult(
                 search, trace, contrast, skeleton, 3, timings, null);
+    }
+
+    private EvidenceSpineRunControl requireControl(EvidenceSpineRunControl runControl) {
+        if (runControl == null) {
+            throw new IllegalArgumentException("evidence spine run control is required");
+        }
+        return runControl;
     }
 
     private EvidenceSpineResult failed(

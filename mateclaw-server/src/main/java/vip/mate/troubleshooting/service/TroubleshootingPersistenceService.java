@@ -198,6 +198,18 @@ public class TroubleshootingPersistenceService {
                 .map(entity -> stored(entity, false));
     }
 
+    /** Finds a generic five-minute incident bucket before any external work starts. */
+    public Optional<StoredDiagnosis> findByIncident(
+            long workspaceId,
+            vip.mate.troubleshooting.model.IncidentContext incident,
+            boolean rehearsal,
+            Instant receivedAt) {
+        validateWorkspace(workspaceId);
+        return IncidentDeduplicationKey.create(incident, rehearsal, receivedAt)
+                .map(key -> findByDedupKey(workspaceId, key))
+                .map(entity -> stored(entity, false));
+    }
+
     @Transactional
     public StoredDiagnosis update(long workspaceId, Diagnosis diagnosis, int expectedVersion) {
         updateAggregate(workspaceId, diagnosis, expectedVersion);

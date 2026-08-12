@@ -937,6 +937,55 @@ class TroubleshootingMigrationTest {
         }
     }
 
+    @Test
+    void v198ClaimsOpenDiscoveryBeforeExecutionAndFreezesPlanFingerprint() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v198;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V197__troubleshooting_open_discovery_run.sql");
+            executeMigration(
+                    connection,
+                    "db/migration/h2/V198__troubleshooting_open_discovery_claim.sql");
+
+            Set<String> runColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_open_discovery_run");
+            assertTrue(runColumns.contains("selected_plan_fingerprint"));
+
+            assertTrue(tables(connection.getMetaData())
+                    .contains("mate_troubleshooting_open_discovery_claim"));
+            Set<String> claimColumns = columns(
+                    connection.getMetaData(),
+                    "mate_troubleshooting_open_discovery_claim");
+            assertTrue(claimColumns.containsAll(Set.of(
+                    "workspace_id", "dedup_key", "claim_token", "status",
+                    "diagnosis_id", "claimed_at", "lease_expires_at", "completed_at")));
+            assertFalse(claimColumns.contains("prompt"));
+            assertFalse(claimColumns.contains("query"));
+            assertFalse(claimColumns.contains("observed"));
+            assertFalse(claimColumns.contains("raw_log"));
+            assertEquals(1, countIndexes(connection, "uk_ts_open_discovery_claim_key"));
+            assertEquals(1, countIndexes(connection, "idx_ts_open_discovery_claim_lease"));
+        }
+
+        for (String dialect : List.of("mysql", "kingbase")) {
+            String migration = resourceText(
+                    "db/migration/" + dialect
+                            + "/V198__troubleshooting_open_discovery_claim.sql");
+            assertTrue(migration.contains("selected_plan_fingerprint"));
+            assertTrue(migration.contains("mate_troubleshooting_open_discovery_claim"));
+            assertTrue(migration.contains("uk_ts_open_discovery_claim_key"));
+            assertTrue(migration.contains("idx_ts_open_discovery_claim_lease"));
+            assertFalse(migration.contains("api_key"));
+            assertFalse(migration.contains("raw_log"));
+            assertFalse(migration.contains("query_text"));
+            assertFalse(migration.contains("model_output"));
+        }
+    }
+
     private void executeMigration(Connection connection, String resourcePath) {
         ScriptUtils.executeSqlScript(
                 connection,

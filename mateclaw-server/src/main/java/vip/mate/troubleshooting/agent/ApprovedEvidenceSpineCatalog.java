@@ -4,6 +4,10 @@ import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
 import vip.mate.troubleshooting.model.IncidentContext;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -132,5 +136,27 @@ public final class ApprovedEvidenceSpineCatalog {
             String scenarioKey,
             EvidenceSpinePlan evidencePlan,
             Set<String> permittedPlatforms) {
+
+        /** Stable, non-reversible identity for the exact server-owned plan. */
+        public String fingerprint() {
+            String canonical = String.join(
+                    "\u001f",
+                    "approved-evidence-spine.v1",
+                    scenarioKey,
+                    evidencePlan.searchRequestId(),
+                    evidencePlan.traceRequestId(),
+                    evidencePlan.contrastRequestId(),
+                    evidencePlan.searchTerm(),
+                    evidencePlan.window(),
+                    permittedPlatforms.stream().sorted().collect(
+                            java.util.stream.Collectors.joining(",")));
+            try {
+                return HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256").digest(
+                                canonical.getBytes(StandardCharsets.UTF_8)));
+            } catch (NoSuchAlgorithmException impossible) {
+                throw new IllegalStateException("SHA-256 is unavailable", impossible);
+            }
+        }
     }
 }

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.time.Instant;
 
 /**
  * Server-side capability session for the troubleshooting evidence tool.
@@ -87,6 +88,34 @@ public final class TroubleshootingEvidenceSessionRegistry {
         return new SessionHandle(id, state);
     }
 
+    public SessionHandle open(
+            String conversationId,
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            Instant deadline) {
+        String id = required(conversationId, "conversationId");
+        if (workspaceId <= 0) {
+            throw new IllegalArgumentException("workspaceId must be positive");
+        }
+        if (incident == null || deadline == null) {
+            throw new IllegalArgumentException("incident and deadline are required");
+        }
+        SessionState state = new SessionState(
+                workspaceId, incident, suppliedEvidence, deadline);
+        if (sessions.putIfAbsent(id, state) != null) {
+            throw new IllegalStateException("troubleshooting session already exists: " + id);
+        }
+        return new SessionHandle(id, state);
+    }
+
+    public void cancel(String conversationId) {
+        SessionState state = sessions.get(required(conversationId, "conversationId"));
+        if (state != null) {
+            state.cancelled.set(true);
+        }
+    }
+
     public ToolCollection collectForTool(
             String conversationId,
             long workspaceId,
@@ -147,11 +176,15 @@ public final class TroubleshootingEvidenceSessionRegistry {
         }
         ApprovedEvidenceSpineCatalog.ApprovedSpinePlan approved = approvedPlans.resolve(
                 workspaceId, state.incident, scenarioKey);
-        state.selectPlan(approved.scenarioKey(), APPROVED_SPINE_SIGNAL_KINDS);
+        state.selectPlan(
+                approved.scenarioKey(), approved.fingerprint(), APPROVED_SPINE_SIGNAL_KINDS);
         EvidenceSpinePlan plan = approved.evidencePlan();
         EvidenceSpineResult spine = evidenceOrchestration.collect(
-                workspaceId, state.incident, plan, approved.permittedPlatforms());
-        state.requestCount += spine.sourceRequestCount();
+                workspaceId,
+                state.incident,
+                plan,
+                approved.permittedPlatforms(),
+                state::beforeSourceRequest);
         state.markCoreFailure(spine.coreFailure());
         for (EvidenceResult result : spine.evidence()) {
             EvidenceResult sanitized = TroubleshootingSecretRedactor.redact(result);
@@ -220,15 +253,27 @@ public final class TroubleshootingEvidenceSessionRegistry {
         private int requestCount;
         private String coreEvidenceFailure;
         private String selectedScenarioKey;
+        private String selectedPlanFingerprint;
         private List<String> plannedSignalKinds = List.of();
+        private final Instant deadline;
+        private final AtomicBoolean cancelled = new AtomicBoolean();
         private volatile SessionSnapshot stableSnapshot;
 
         private SessionState(
                 long workspaceId,
                 IncidentContext incident,
                 List<EvidenceResult> suppliedEvidence) {
+            this(workspaceId, incident, suppliedEvidence, null);
+        }
+
+        private SessionState(
+                long workspaceId,
+                IncidentContext incident,
+                List<EvidenceResult> suppliedEvidence,
+                Instant deadline) {
             this.workspaceId = workspaceId;
             this.incident = incident;
+            this.deadline = deadline;
             for (EvidenceResult sanitized
                     : TroubleshootingEvidenceSanitizer.sanitizeSupplied(suppliedEvidence)) {
                 String queryId = sanitized.queryId();
@@ -250,20 +295,36 @@ public final class TroubleshootingEvidenceSessionRegistry {
                     Set.copyOf(toolCollectedQueryIds),
                     coreEvidenceFailure,
                     selectedScenarioKey,
+                    selectedPlanFingerprint,
                     plannedSignalKinds,
                     requestCount);
         }
 
-        private void selectPlan(String scenarioKey, List<String> signalKinds) {
+        private void selectPlan(
+                String scenarioKey,
+                String planFingerprint,
+                List<String> signalKinds) {
             if (selectedScenarioKey != null
                     && !selectedScenarioKey.equals(scenarioKey)) {
                 throw new IllegalStateException(
                         "a triage session may select only one approved scenario plan");
             }
             selectedScenarioKey = scenarioKey;
+            selectedPlanFingerprint = planFingerprint;
             plannedSignalKinds = List.copyOf(signalKinds);
             // Publish before upstream collection. A timed-out or interrupted
             // source call must not erase which server-owned plan was attempted.
+            publishStableSnapshot();
+        }
+
+        private void beforeSourceRequest(String requestId) {
+            if (cancelled.get()
+                    || Thread.currentThread().isInterrupted()
+                    || deadline != null && !Instant.now().isBefore(deadline)) {
+                throw new IllegalStateException(
+                        "evidence spine deadline or cancellation boundary reached");
+            }
+            requestCount++;
             publishStableSnapshot();
         }
 
@@ -279,6 +340,7 @@ public final class TroubleshootingEvidenceSessionRegistry {
             Set<String> toolCollectedQueryIds,
             String coreEvidenceFailure,
             String selectedScenarioKey,
+            String selectedPlanFingerprint,
             List<String> plannedSignalKinds,
             int sourceRequestCount) {
 

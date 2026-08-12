@@ -13,6 +13,7 @@ public interface TroubleshootingOpenDiscoveryRunMapper
     @Select("""
             SELECT id, workspace_id, run_id, diagnosis_id,
                    visible_scenario_keys, selected_scenario_key,
+                   selected_plan_fingerprint,
                    planned_signal_kinds, max_iterations, max_evidence_requests,
                    source_request_count, time_budget_ms, stop_reason,
                    evidence_refs, actor_ref, started_at, completed_at,

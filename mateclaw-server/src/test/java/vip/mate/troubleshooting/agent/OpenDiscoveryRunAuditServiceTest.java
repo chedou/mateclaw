@@ -52,6 +52,8 @@ class OpenDiscoveryRunAuditServiceTest {
                 .isEqualTo("[\"message_send_failed\"]");
         assertThat(row.getValue().getSelectedScenarioKey())
                 .isEqualTo("message_send_failed");
+        assertThat(row.getValue().getSelectedPlanFingerprint())
+                .isEqualTo("a".repeat(64));
         assertThat(row.getValue().getPlannedSignalKinds())
                 .isEqualTo("[\"log_search\",\"log_trace_bundle\",\"contrast_sample\"]");
         assertThat(row.getValue().getSourceRequestCount()).isEqualTo(3);
@@ -70,6 +72,7 @@ class OpenDiscoveryRunAuditServiceTest {
         row.setDiagnosisId("diag-agent-1");
         row.setVisibleScenarioKeys("[\"message_send_failed\"]");
         row.setSelectedScenarioKey("message_send_failed");
+        row.setSelectedPlanFingerprint("a".repeat(64));
         row.setPlannedSignalKinds(
                 "[\"log_search\",\"log_trace_bundle\",\"contrast_sample\"]");
         row.setMaxIterations(6);
@@ -119,6 +122,7 @@ class OpenDiscoveryRunAuditServiceTest {
                 "diag-agent-1",
                 List.of("message_send_failed"),
                 "message_send_failed",
+                "a".repeat(64),
                 List.of("log_search", "log_trace_bundle", "contrast_sample"),
                 6,
                 6,

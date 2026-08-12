@@ -20,6 +20,7 @@ public class TroubleshootingOpenDiscoveryRunEntity {
     private String diagnosisId;
     private String visibleScenarioKeys;
     private String selectedScenarioKey;
+    private String selectedPlanFingerprint;
     private String plannedSignalKinds;
     private Integer maxIterations;
     private Integer maxEvidenceRequests;

@@ -261,6 +261,8 @@ public final class InvestigationTraceProjector {
                                         : String.join(", ", openDiscoveryRun.visibleScenarioKeys())),
                         field("本次选中的调查计划", openDiscoveryRun == null
                                 ? null : openDiscoveryRun.selectedScenarioKey()),
+                        field("调查计划指纹", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.selectedPlanFingerprint()),
                         field("最多推理轮次", openDiscoveryRun == null
                                 ? null : openDiscoveryRun.maxIterations()),
                         field("只读查询上限", openDiscoveryRun == null
@@ -314,15 +316,12 @@ public final class InvestigationTraceProjector {
 
         Set<String> sources = new LinkedHashSet<>();
         attempts.forEach(attempt -> sources.add(attempt.adapterSource()));
-        java.time.Instant collectionStartedAt = latestEvidenceRun != null
-                ? latestEvidenceRun.startedAt()
-                : openDiscoveryRun == null ? null : openDiscoveryRun.startedAt();
-        java.time.Instant collectionCompletedAt = latestEvidenceRun != null
-                ? latestEvidenceRun.completedAt()
-                : openDiscoveryRun == null ? null : openDiscoveryRun.completedAt();
-        java.time.Duration collectionDuration = latestEvidenceRun != null
-                ? latestEvidenceRun.duration()
-                : openDiscoveryRun == null ? null : openDiscoveryRun.duration();
+        java.time.Instant collectionStartedAt = latestEvidenceRun == null
+                ? null : latestEvidenceRun.startedAt();
+        java.time.Instant collectionCompletedAt = latestEvidenceRun == null
+                ? null : latestEvidenceRun.completedAt();
+        java.time.Duration collectionDuration = latestEvidenceRun == null
+                ? null : latestEvidenceRun.duration();
         String evidenceRunId = latestEvidenceRun != null
                 ? latestEvidenceRun.runId()
                 : openDiscoveryRun == null ? null : openDiscoveryRun.runId();
@@ -430,6 +429,8 @@ public final class InvestigationTraceProjector {
                         field("根因", diagnosis.rootCause()),
                         field("转交团队", diagnosis.routeToTeam()),
                         field("停止原因", stopReason.message()),
+                        field("受限调查总耗时", openDiscoveryRun == null
+                                ? null : openDiscoveryRun.duration()),
                         field("计时口径", diagnosis.timings().investigateCost() == null
                                 ? null : "进入调查（readyAt）到形成结论（conclusionAt）的总耗时，跨越第 2—7 阶段")),
                 relatedConclusionEvidence(diagnosis, derivation)));

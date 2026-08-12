@@ -18,9 +18,12 @@ import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,12 +38,15 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
     private TroubleshootingPersistenceService diagnoses;
     @Mock
     private OpenDiscoveryRunAuditService runAudits;
+    @Mock
+    private OpenDiscoveryRunClaimService claims;
 
     private OpenDiscoveryDiagnosisPersistenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new OpenDiscoveryDiagnosisPersistenceService(diagnoses, runAudits);
+        service = new OpenDiscoveryDiagnosisPersistenceService(
+                diagnoses, runAudits, claims);
     }
 
     @Test
@@ -51,7 +57,7 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 .thenReturn(new StoredDiagnosis(diagnosis, 0, true));
 
         StoredDiagnosis stored = service.persist(
-                WORKSPACE_ID, diagnosis, NOW, null, audit);
+                WORKSPACE_ID, diagnosis, NOW, null, null, audit);
 
         assertThat(stored.created()).isTrue();
         verify(runAudits).insert(WORKSPACE_ID, audit);
@@ -65,7 +71,7 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 .thenReturn(new StoredDiagnosis(diagnosis, 3, false));
 
         StoredDiagnosis stored = service.persist(
-                WORKSPACE_ID, diagnosis, NOW, null, audit);
+                WORKSPACE_ID, diagnosis, NOW, null, null, audit);
 
         assertThat(stored.created()).isFalse();
         verify(runAudits, never()).insert(WORKSPACE_ID, audit);
@@ -80,13 +86,87 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 List.of(), NOW, NOW, "agent:88");
 
         assertThatThrownBy(() -> service.persist(
-                WORKSPACE_ID, diagnosis(), NOW, null, wrong))
+                WORKSPACE_ID, diagnosis(), NOW, null, null, wrong))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("must belong");
         verify(diagnoses, never()).createOrGet(
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void completesTheAtomicClaimInTheSameShortTransactionAsDiagnosisAndAudit() {
+        Diagnosis diagnosis = diagnosis();
+        OpenDiscoveryRunAudit audit = audit();
+        OpenDiscoveryRunClaim claim = new OpenDiscoveryRunClaim(
+                "a".repeat(64), "claim-1", NOW, NOW.plusSeconds(80));
+        when(diagnoses.createOrGet(WORKSPACE_ID, diagnosis, NOW))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true));
+
+        service.persist(WORKSPACE_ID, diagnosis, NOW, null, claim, audit);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                diagnoses, runAudits, claims);
+        order.verify(diagnoses).createOrGet(WORKSPACE_ID, diagnosis, NOW);
+        order.verify(runAudits).insert(WORKSPACE_ID, audit);
+        order.verify(claims).complete(
+                WORKSPACE_ID, claim, diagnosis.diagnosisId(), audit.completedAt());
+    }
+
+    @Test
+    void reservesAStableWebIncidentBeforeExternalInvestigation() {
+        IncidentContext incident = diagnosis().incident();
+        OpenDiscoveryRunClaim claim = new OpenDiscoveryRunClaim(
+                "a".repeat(64), "claim-1", NOW, NOW.plusSeconds(80));
+        when(diagnoses.findByIncident(WORKSPACE_ID, incident, false, NOW))
+                .thenReturn(Optional.empty());
+        when(claims.claim(eq(WORKSPACE_ID), any(), eq(NOW), eq(Duration.ofSeconds(80))))
+                .thenReturn(OpenDiscoveryRunClaimService.ClaimResult.acquired(claim));
+
+        OpenDiscoveryRunReservation reservation = service.reserve(
+                WORKSPACE_ID, incident, false, NOW, null, Duration.ofSeconds(80));
+
+        assertThat(reservation.alreadyCompleted()).isFalse();
+        assertThat(reservation.claim()).isSameAs(claim);
+        verify(claims).claim(
+                eq(WORKSPACE_ID), any(), eq(NOW), eq(Duration.ofSeconds(80)));
+    }
+
+    @Test
+    void mapsACompletedClaimBackToTheStoredDiagnosis() {
+        IncidentContext incident = diagnosis().incident();
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 3, false);
+        when(diagnoses.findByIncident(WORKSPACE_ID, incident, false, NOW))
+                .thenReturn(Optional.empty());
+        when(claims.claim(eq(WORKSPACE_ID), any(), eq(NOW), any()))
+                .thenReturn(OpenDiscoveryRunClaimService.ClaimResult.completed("diag-agent-1"));
+        when(diagnoses.get(WORKSPACE_ID, "diag-agent-1")).thenReturn(stored);
+
+        OpenDiscoveryRunReservation reservation = service.reserve(
+                WORKSPACE_ID, incident, false, NOW, null, Duration.ofSeconds(80));
+
+        assertThat(reservation.completedDiagnosis()).isSameAs(stored);
+        assertThat(reservation.claim()).isNull();
+    }
+
+    @Test
+    void rejectsAConcurrentDuplicateWithoutStartingAnotherRun() {
+        IncidentContext incident = diagnosis().incident();
+        when(diagnoses.findByIncident(WORKSPACE_ID, incident, false, NOW))
+                .thenReturn(Optional.empty());
+        when(claims.claim(eq(WORKSPACE_ID), any(), eq(NOW), any()))
+                .thenReturn(OpenDiscoveryRunClaimService.ClaimResult.inProgress());
+
+        assertThatThrownBy(() -> service.reserve(
+                WORKSPACE_ID, incident, false, NOW, null, Duration.ofSeconds(80)))
+                .isInstanceOf(vip.mate.exception.MateClawException.class)
+                .satisfies(error -> assertThat(
+                        ((vip.mate.exception.MateClawException) error).getCode())
+                        .isEqualTo(409))
+                .hasMessageContaining("already in progress");
+
+        verify(diagnoses, never()).get(eq(WORKSPACE_ID), any());
     }
 
     private Diagnosis diagnosis() {

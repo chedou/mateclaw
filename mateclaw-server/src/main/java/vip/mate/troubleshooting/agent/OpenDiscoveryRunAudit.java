@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Immutable, secret-free facts for one bounded OPEN_DISCOVERY run. */
 public record OpenDiscoveryRunAudit(
@@ -13,6 +14,7 @@ public record OpenDiscoveryRunAudit(
         String diagnosisId,
         List<String> visibleScenarioKeys,
         String selectedScenarioKey,
+        String selectedPlanFingerprint,
         List<String> plannedSignalKinds,
         int maxIterations,
         int maxEvidenceRequests,
@@ -30,6 +32,7 @@ public record OpenDiscoveryRunAudit(
         visibleScenarioKeys = safeList(visibleScenarioKeys, "visibleScenarioKey", 128);
         selectedScenarioKey = nullableSafe(
                 selectedScenarioKey, "selectedScenarioKey", 128);
+        selectedPlanFingerprint = nullableFingerprint(selectedPlanFingerprint);
         plannedSignalKinds = safeList(plannedSignalKinds, "plannedSignalKind", 64);
         evidenceRefs = safeList(evidenceRefs, "evidenceRef", 128);
         if (selectedScenarioKey != null
@@ -44,6 +47,10 @@ public record OpenDiscoveryRunAudit(
         if (selectedScenarioKey != null && plannedSignalKinds.isEmpty()) {
             throw new IllegalArgumentException(
                     "a selected scenario key requires planned signal kinds");
+        }
+        if (selectedScenarioKey == null && selectedPlanFingerprint != null) {
+            throw new IllegalArgumentException(
+                    "a plan fingerprint cannot be recorded without a selected scenario key");
         }
         if (maxIterations <= 0 || maxEvidenceRequests <= 0
                 || sourceRequestCount < 0
@@ -61,6 +68,40 @@ public record OpenDiscoveryRunAudit(
             throw new IllegalArgumentException("completedAt cannot precede startedAt");
         }
         actorRef = safe(actorRef, "actorRef", 192);
+    }
+
+    /** Compatibility reader for V197 rows created before plan fingerprints existed. */
+    public OpenDiscoveryRunAudit(
+            String runId,
+            String diagnosisId,
+            List<String> visibleScenarioKeys,
+            String selectedScenarioKey,
+            List<String> plannedSignalKinds,
+            int maxIterations,
+            int maxEvidenceRequests,
+            int sourceRequestCount,
+            Duration timeBudget,
+            StopReason stopReason,
+            List<String> evidenceRefs,
+            Instant startedAt,
+            Instant completedAt,
+            String actorRef) {
+        this(
+                runId,
+                diagnosisId,
+                visibleScenarioKeys,
+                selectedScenarioKey,
+                null,
+                plannedSignalKinds,
+                maxIterations,
+                maxEvidenceRequests,
+                sourceRequestCount,
+                timeBudget,
+                stopReason,
+                evidenceRefs,
+                startedAt,
+                completedAt,
+                actorRef);
     }
 
     public Duration duration() {
@@ -90,6 +131,18 @@ public record OpenDiscoveryRunAudit(
 
     private static String nullableSafe(String value, String field, int maxLength) {
         return value == null || value.isBlank() ? null : safe(value, field, maxLength);
+    }
+
+    private static String nullableFingerprint(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!Pattern.matches("[a-f0-9]{64}", normalized)) {
+            throw new IllegalArgumentException(
+                    "selectedPlanFingerprint must be a SHA-256 hex digest");
+        }
+        return normalized;
     }
 
     private static String safe(String value, String field, int maxLength) {

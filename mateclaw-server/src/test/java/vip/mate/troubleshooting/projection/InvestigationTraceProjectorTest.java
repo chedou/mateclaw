@@ -180,6 +180,7 @@ class InvestigationTraceProjectorTest {
                 "diag-2",
                 List.of("message_send_failed"),
                 "message_send_failed",
+                "a".repeat(64),
                 List.of("log_search", "log_trace_bundle", "contrast_sample"),
                 6,
                 6,
@@ -204,6 +205,10 @@ class InvestigationTraceProjectorTest {
                     assertThat(field.value()).isEqualTo("message_send_failed");
                 })
                 .anySatisfy(field -> {
+                    assertThat(field.label()).isEqualTo("调查计划指纹");
+                    assertThat(field.value()).isEqualTo("a".repeat(64));
+                })
+                .anySatisfy(field -> {
                     assertThat(field.label()).isEqualTo("最多推理轮次");
                     assertThat(field.value()).isEqualTo("6");
                 })
@@ -224,9 +229,9 @@ class InvestigationTraceProjectorTest {
 
         InvestigationTraceView.StageView collection =
                 stage(view, InvestigationTraceView.StageKey.EVIDENCE_COLLECTION);
-        assertThat(collection.startedAt()).isEqualTo(READY_AT);
-        assertThat(collection.completedAt()).isEqualTo(READY_AT.plusSeconds(4));
-        assertThat(collection.duration()).isEqualTo(Duration.ofSeconds(4));
+        assertThat(collection.startedAt()).isNull();
+        assertThat(collection.completedAt()).isNull();
+        assertThat(collection.duration()).isNull();
         assertThat(collection.fields())
                 .anySatisfy(field -> {
                     assertThat(field.label()).isEqualTo("实际发起的只读查询");
@@ -236,6 +241,12 @@ class InvestigationTraceProjectorTest {
                     assertThat(field.label()).isEqualTo("只读查询上限");
                     assertThat(field.value()).isEqualTo("6");
                 });
+        InvestigationTraceView.StageView conclusion =
+                stage(view, InvestigationTraceView.StageKey.CONCLUSION);
+        assertThat(conclusion.fields()).anySatisfy(field -> {
+            assertThat(field.label()).isEqualTo("受限调查总耗时");
+            assertThat(field.value()).isEqualTo("PT4S");
+        });
         assertThat(view.stopReason().code())
                 .isEqualTo(InvestigationTraceView.StopReasonCode.EVIDENCE_MISSING);
         assertThat(view.stopReason().message()).contains("核心证据链不完整");

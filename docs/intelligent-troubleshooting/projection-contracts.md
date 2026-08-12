@@ -222,10 +222,14 @@ public record InvestigationTraceView(
   不改写首次 `conclusionAt`，也不替换顶层北极星 `investigationDuration`；没有运行台账的历史记录
   继续显示「未记录」，不从证据时间倒推；
 - OPEN_DISCOVERY 从最新一条不可变 `OpenDiscoveryRunAudit` 投影本次可见/已选的
-  服务端 approved plan、计划信号类型、迭代/证据/时长上限、实际源请求数、安全证据引用、
-  `startedAt / completedAt / duration` 与类型化 stopReason。该台账不含 prompt、模型输出、
+  服务端 approved plan、精确计划 SHA-256 指纹、计划信号类型、Agent 实际迭代上限、
+  证据/时长上限、发出前记账的实际源请求数、安全证据引用、`startedAt / completedAt / duration`
+  与类型化 stopReason。这段 duration 是“受限调查总耗时”，包含 Agent 调用和解析，不得写入
+  阶段 5 冒充“只读取证耗时”；未单独持久 Evidence Spine timing 时，阶段 5 时间保持“未记录”。
+  该台账不含 prompt、模型输出、
   query/DQL、observed、原始日志、端点或凭据；只证明当前受限单次 miss-path 实际怎么运行，
-  不得把它展示成多轮自主规划或已完成的 Loop Controller；
+  不得把它展示成多轮自主规划或已完成的 Loop Controller。V197 存量行缺计划指纹时显示
+  “未记录”，不用当前配置回填；
 - 「全展示」指展示投影中已持久的安全技术事实；query 原文和 Incident
   rawInput 不进入该投影，observed 仅返回 canonical 白名单标量及日志条数，证据合同
   target 递归脱敏。判据节点和旧证据时间线只展示 authored expression 与

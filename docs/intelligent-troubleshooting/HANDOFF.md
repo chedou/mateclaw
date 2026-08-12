@@ -93,10 +93,13 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
 - Java 领域模块 `vip.mate.troubleshooting`、REST、RBAC、三方言 Flyway、状态机和持久化。
 - 903001 确定性错误码竖线，命中路零 LLM。
 - 受限 Agent miss-path：唯一只读证据工具、服务端会话、硬白名单、引用校验、abstain。
-- **OPEN_DISCOVERY 运行审计窄切片（2026-08-11）**：V197 `OpenDiscoveryRunAudit` 已在与
-  Diagnosis 创建同一事务中冻结可见/已选 approved scenario key、三类计划信号、
-  服务端迭代/证据/时长上限、实际源请求数、安全证据引用、时间和类型化 stopReason；
-  七阶段详情可直接说明“选了什么计划、发起几次查询、为什么停止”。台账不落 prompt、
+- **OPEN_DISCOVERY 运行审计窄切片（2026-08-12）**：V197 `OpenDiscoveryRunAudit` 已在与
+  Diagnosis 创建同一事务中冻结可见/已选 approved scenario key、精确计划 SHA-256 指纹、
+  三类计划信号、Agent 实际迭代上限、证据/时长上限、实际源请求数、安全证据引用、
+  时间和类型化 stopReason。V198 又在任何 Agent/观测源调用前用数据库唯一键原子占用
+  Web 五分钟告警桶；并发重放不会再启动第二次外部调查。每次只读源请求在真正发出前记账，
+  时长到限或取消后不得续查后续阶段。七阶段详情可直接说明“选了什么计划、发起几次查询、
+  为什么停止”。台账不落 prompt、
   模型输出、DQL、observed、原始日志、端点或凭据。这不等于 DiscoveryPolicy、多轮 Loop
   Controller 或自主组合 K8s/HCI/Guance 工具已完成。
 - **正式 Web Incident Intake（2026-07-29）**：`/troubleshooting` 已提供
@@ -1321,19 +1324,27 @@ T30 模块可复制接入清单（2026-08-11）：
   没有猜测 K8s/HCI 资源，也没有把多 Agent 当作已投产主路。排障前端回归 `183/183`、
   ESLint、Snowflake 精度守卫、`vue-tsc --noEmit` 与 Vite 生产构建通过。
 
-T31 受限开放调查运行审计（2026-08-11）：
+T31 受限开放调查运行审计（2026-08-12）：
 
 - V197 新增不可变 `OpenDiscoveryRunAudit`，仅保存可见/已选 approved scenario key、
-  三类计划信号、服务端迭代/证据/时长上限、实际源请求数、安全证据引用、
+  精确 approved plan SHA-256 指纹、三类计划信号、Agent 实际迭代上限、证据/时长上限、
+  实际源请求数、安全证据引用、
   时间和类型化 stopReason；三方言迁移均不含 prompt、模型输出、query/DQL、observed、
   原始日志、端点或凭据。
-- `OpenDiscoveryDiagnosisPersistenceService` 把 Diagnosis 与运行台账限定在最后的短事务；
-  模型和只读取证过程不占用数据库事务。去重命中旧 Diagnosis 时不会把新运行错绑到历史聚合。
-- 七阶段详情从该台账读取“可选/已选计划、计划数据类型、三项预算、实际查询数、
-  运行耗时和精确停止原因”；旧 Diagnosis 继续显示“未记录”，不回填、不猜测。
+- V198 `OpenDiscoveryRunClaim` 在外部调查前以 `workspace + dedup key` 唯一键原子占用并限时租约；
+  命中已完成记录直接返回原 Diagnosis，命中进行中记录则 409 fail closed。Diagnosis、运行台账和
+  claim 完成标记在同一短事务提交；模型和只读取证不占用数据库事务。
+- 取证脊柱在 SEARCH / TRACE / CONTRAST 每次只读请求发出前先增加审计计数，并在后续阶段前检查
+  绝对 deadline / cancellation；即使上游客户端不响应线程中断，超时后也不会继续发起 Trace/对照。
+- 七阶段详情从该台账读取“可选/已选计划、计划指纹、计划数据类型、三项预算、实际查询数、
+  受限调查总耗时和精确停止原因”；不再把 Agent 思考时间写成“只读取证耗时”。V197 旧行的计划指纹
+  和旧 Diagnosis 的其他缺失事实继续显示“未记录”，不回填、不猜测。
 - 这是完整 DiscoveryPolicy / Loop Controller 的审计基础，不是自主组合 K8s/HCI/Guance
-  工具或多 Agent 已投产。排障域与 Skill Manifest 回归 `875/875`、排障前端 `183/183`、
+  工具或多 Agent 已投产。排障域与 Skill Manifest 回归 `886/886`、排障前端 `183/183`、
   `vue-tsc --noEmit` 通过。
+- V198 的 H2/MySQL/Kingbase 迁移形状已由 `TroubleshootingMigrationTest` 覆盖；本地后端在本轮为切换
+  新代码已停止，但新进程未成功保持运行。进入下一次真实告警试用前，必须用 JDK 21 重启并
+  直接确认 Flyway V198 已应用、`18088` 监听和详情投影可读；不得用单测代替这项运行验收。
 
 后端定向测试命令：
 
