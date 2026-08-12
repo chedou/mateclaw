@@ -8,8 +8,56 @@ import type {
 import {
   buildEvaluationPilotQueue,
   buildPilotMemberProgress,
+  buildPilotScopeSuggestions,
   buildPilotWorkbenchPrompt,
 } from '../evaluationPilot'
+
+describe('pilot scope suggestions', () => {
+  it('suggests deduplicated saveable scopes from formal diagnoses only', () => {
+    const olderWechat = diagnosis('diag-wechat-old', 'CLOSED', false, '2026-08-13T08:00:00Z')
+    const latestWechat = {
+      ...diagnosis('diag-wechat-latest', 'CLOSED', false, '2026-08-13T10:00:00Z'),
+      system: ' csdp ',
+      service: ' CSDP-WECHAT ',
+    }
+    const task = {
+      ...diagnosis('diag-task', 'CLOSED', false, '2026-08-13T09:00:00Z'),
+      service: 'csdp-task',
+    }
+    const rehearsal = diagnosis('diag-rehearsal', 'CLOSED', true, '2026-08-13T11:00:00Z')
+    const blank = {
+      ...diagnosis('diag-blank', 'CLOSED', false, '2026-08-13T12:00:00Z'),
+      service: ' ',
+    }
+    const displayNameOnly = {
+      ...diagnosis('diag-display-name', 'CLOSED', false, '2026-08-13T13:00:00Z'),
+      system: '深信服新ICare系统-邹汶达',
+      service: 'sf-icare-app',
+    }
+
+    expect(buildPilotScopeSuggestions([
+      task,
+      rehearsal,
+      latestWechat,
+      blank,
+      displayNameOnly,
+      olderWechat,
+    ])).toEqual([
+      {
+        system: 'csdp',
+        service: 'CSDP-WECHAT',
+        formalCount: 2,
+        latestAt: '2026-08-13T10:00:00Z',
+      },
+      {
+        system: 'CSDP',
+        service: 'csdp-task',
+        formalCount: 1,
+        latestAt: '2026-08-13T09:00:00Z',
+      },
+    ])
+  })
+})
 
 describe('evaluation pilot hand-off queue', () => {
   it('keeps the three distinct pilot roles as one visible member prerequisite', () => {

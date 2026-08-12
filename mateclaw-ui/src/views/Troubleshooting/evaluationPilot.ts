@@ -50,7 +50,24 @@ export interface PilotMemberProgress {
   ready: boolean
 }
 
+export interface PilotScopeSuggestion {
+  system: string
+  service: string
+  formalCount: number
+  latestAt: string
+}
+
 const PILOT_REQUIRED_MEMBER_COUNT = 3
+const STABLE_PILOT_IDENTIFIER = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/
+
+export function pilotScopeKey(scope: Pick<DiagnosisSummary, 'system' | 'service'>) {
+  return `${normalizeScopePart(scope.system)}\u0000${normalizeScopePart(scope.service)}`
+}
+
+export function pilotScopeIsSaveable(scope: Pick<DiagnosisSummary, 'system' | 'service'>) {
+  return STABLE_PILOT_IDENTIFIER.test(normalizeScopePart(scope.system))
+    && STABLE_PILOT_IDENTIFIER.test(normalizeScopePart(scope.service))
+}
 
 export function buildPilotMemberProgress(memberCount: number): PilotMemberProgress {
   const normalizedCount = Number.isFinite(memberCount)
@@ -62,6 +79,53 @@ export function buildPilotMemberProgress(memberCount: number): PilotMemberProgre
     missingCount,
     ready: missingCount === 0,
   }
+}
+
+/**
+ * Derives selectable pilot scopes from formal Diagnosis summaries already
+ * loaded by the evaluation workspace. Choosing one only fills the setup form;
+ * declaring a new immutable pilot version remains an explicit admin action.
+ */
+export function buildPilotScopeSuggestions(
+  diagnoses: ReadonlyArray<Pick<DiagnosisSummary, 'system' | 'service' | 'rehearsal' | 'updateTime'>>,
+): PilotScopeSuggestion[] {
+  const suggestions = new Map<string, PilotScopeSuggestion>()
+
+  diagnoses
+    .filter(diagnosis => !diagnosis.rehearsal && pilotScopeIsSaveable(diagnosis))
+    .forEach((diagnosis) => {
+      const system = diagnosis.system.trim()
+      const service = diagnosis.service.trim()
+      if (!system || !service) return
+
+      const key = pilotScopeKey({ system, service })
+      const existing = suggestions.get(key)
+      if (!existing) {
+        suggestions.set(key, {
+          system,
+          service,
+          formalCount: 1,
+          latestAt: diagnosis.updateTime,
+        })
+        return
+      }
+
+      existing.formalCount += 1
+      if (sortableTime(diagnosis.updateTime) > sortableTime(existing.latestAt)) {
+        existing.system = system
+        existing.service = service
+        existing.latestAt = diagnosis.updateTime
+      }
+    })
+
+  return [...suggestions.values()].sort((left, right) => {
+    const countOrder = right.formalCount - left.formalCount
+    if (countOrder !== 0) return countOrder
+    const timeOrder = sortableTime(right.latestAt) - sortableTime(left.latestAt)
+    if (timeOrder !== 0) return timeOrder
+    return `${normalizeScopePart(left.system)}/${normalizeScopePart(left.service)}`
+      .localeCompare(`${normalizeScopePart(right.system)}/${normalizeScopePart(right.service)}`)
+  })
 }
 
 const STAGE_COPY: Record<EvaluationPilotStage, {
@@ -248,10 +312,8 @@ export function matchesPilotScope(
   plan: TroubleshootingPilotPlan | null,
 ) {
   if (!pilotPlanReady(plan)) return false
-  const system = normalizeScopePart(diagnosis.system)
-  const service = normalizeScopePart(diagnosis.service)
-  return plan.modules.some(module => normalizeScopePart(module.system) === system
-    && normalizeScopePart(module.service) === service)
+  const diagnosisKey = pilotScopeKey(diagnosis)
+  return plan.modules.some(module => pilotScopeKey(module) === diagnosisKey)
 }
 
 function stageOwner(
@@ -273,17 +335,15 @@ function stageOwner(
 }
 
 function normalizeScopePart(value: string) {
-  return value.trim().toLocaleLowerCase()
+  return value.trim().toLowerCase()
 }
 
 function scopedModule(
   diagnosis: Pick<DiagnosisSummary, 'system' | 'service'>,
   plan: TroubleshootingPilotPlan & { modules: TroubleshootingPilotPlan['modules'] },
 ) {
-  const system = normalizeScopePart(diagnosis.system)
-  const service = normalizeScopePart(diagnosis.service)
-  return plan.modules.find(module => normalizeScopePart(module.system) === system
-    && normalizeScopePart(module.service) === service) || null
+  const diagnosisKey = pilotScopeKey(diagnosis)
+  return plan.modules.find(module => pilotScopeKey(module) === diagnosisKey) || null
 }
 
 function pilotStage(

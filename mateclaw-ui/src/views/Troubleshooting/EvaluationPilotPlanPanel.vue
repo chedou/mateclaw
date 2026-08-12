@@ -65,6 +65,32 @@
 
       <div class="pilot-field wide">
         <span>只跟踪哪些系统 / 服务</span>
+        <div v-if="scopeSuggestions.length" class="pilot-scope-suggestions">
+          <div class="pilot-scope-suggestion-head">
+            <div>
+              <b>从最近正式排障单选择</b>
+              <small>只读取非演练记录，只列出可直接保存的稳定标识；选择后只会填入范围，不会自动保存。</small>
+            </div>
+            <span>最近 {{ scopeSuggestions.length }} 个范围</span>
+          </div>
+          <div class="pilot-scope-suggestion-list">
+            <button
+              v-for="suggestion in scopeSuggestions"
+              :key="`${suggestion.system}/${suggestion.service}`"
+              type="button"
+              :class="{ selected: scopeSuggestionSelected(suggestion) }"
+              :aria-pressed="scopeSuggestionSelected(suggestion)"
+              :disabled="!scopeSuggestionSelected(suggestion) && form.modules.length >= 20"
+              @click="addScopeSuggestion(suggestion)"
+            >
+              <span>
+                <b>{{ suggestion.system }} / {{ suggestion.service }}</b>
+                <small>{{ suggestion.formalCount }} 张正式排障单</small>
+              </span>
+              <em>{{ scopeSuggestionSelected(suggestion) ? '已选择' : '加入范围' }}</em>
+            </button>
+          </div>
+        </div>
         <div class="pilot-module-list">
           <div v-for="(module, index) in form.modules" :key="index" class="pilot-module-row">
             <el-input v-model="module.system" placeholder="系统标识，如 csdp" />
@@ -128,7 +154,12 @@ import {
   type TroubleshootingPilotPlan,
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
-import { pilotPlanReady } from './evaluationPilot'
+import {
+  pilotPlanReady,
+  pilotScopeIsSaveable,
+  pilotScopeKey,
+  type PilotScopeSuggestion,
+} from './evaluationPilot'
 import { pilotMemberSettingsLocation } from './workbenchCapabilityMenu'
 
 type PilotRole = 'secondLineUserId' | 'thirdLineUserId' | 'sourceOwnerUserId'
@@ -162,8 +193,10 @@ const ROLE_FIELDS: ReadonlyArray<{ key: PilotRole; label: string; help: string }
 const props = withDefaults(defineProps<{
   plan: TroubleshootingPilotPlan | null
   startOpen?: boolean
+  scopeSuggestions?: PilotScopeSuggestion[]
 }>(), {
   startOpen: false,
+  scopeSuggestions: () => [],
 })
 const emit = defineEmits<{ updated: [plan: TroubleshootingPilotPlan] }>()
 const route = useRoute()
@@ -195,16 +228,10 @@ const formIssue = computed(() => {
   if (membersLoadFailed.value) return '工作区成员读取失败，请重试后再保存。'
   if (!form.name.trim()) return '请填写试点名称。'
   if (!form.modules.length) return '至少配置一个系统 / 服务。'
-  const normalizedModules = form.modules.map(module => ({
-    system: module.system.trim().toLocaleLowerCase(),
-    service: module.service.trim().toLocaleLowerCase(),
-  }))
-  const stableIdentifier = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/
-  if (normalizedModules.some(module => !stableIdentifier.test(module.system)
-    || !stableIdentifier.test(module.service))) {
+  if (form.modules.some(module => !pilotScopeIsSaveable(module))) {
     return '系统和服务请填稳定标识，仅使用字母、数字、点、下划线或短横线。'
   }
-  const moduleKeys = normalizedModules.map(module => `${module.system}\u0000${module.service}`)
+  const moduleKeys = form.modules.map(pilotScopeKey)
   if (new Set(moduleKeys).size !== moduleKeys.length) return '系统 / 服务范围不能重复。'
   if (members.value.length < 3) {
     return '当前未取得至少 3 名工作区成员，请先补齐成员或重试加载。'
@@ -275,6 +302,23 @@ async function loadMembers() {
 function addModule() {
   if (form.modules.length >= 20) return
   form.modules.push({ system: '', service: '' })
+}
+
+function scopeSuggestionSelected(suggestion: PilotScopeSuggestion) {
+  const suggestionKey = pilotScopeKey(suggestion)
+  return form.modules.some(module => pilotScopeKey(module) === suggestionKey)
+}
+
+function addScopeSuggestion(suggestion: PilotScopeSuggestion) {
+  if (scopeSuggestionSelected(suggestion)) return
+  const emptyIndex = form.modules.findIndex(module => !module.system.trim() && !module.service.trim())
+  const module = { system: suggestion.system, service: suggestion.service }
+  if (emptyIndex >= 0) {
+    form.modules.splice(emptyIndex, 1, module)
+    return
+  }
+  if (form.modules.length >= 20) return
+  form.modules.push(module)
 }
 
 function removeModule(index: number) {
@@ -461,6 +505,80 @@ function errorText(error: unknown) {
 .enabled-field { grid-column: 1 / -1; }
 
 .pilot-module-list { display: grid; gap: 7px; }
+.pilot-scope-suggestions {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0 11px;
+  border-top: 1px solid var(--mc-border-light);
+  border-bottom: 1px solid var(--mc-border-light);
+}
+
+.pilot-scope-suggestion-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pilot-scope-suggestion-head > div { display: grid; gap: 2px; }
+.pilot-scope-suggestion-head b { font-size: 10px; }
+.pilot-scope-suggestion-head small,
+.pilot-scope-suggestion-head > span {
+  color: var(--mc-text-tertiary);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.pilot-scope-suggestion-head > span { white-space: nowrap; }
+
+.pilot-scope-suggestion-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pilot-scope-suggestion-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 7px;
+  color: inherit;
+  background: var(--mc-bg-elevated);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pilot-scope-suggestion-list > button:hover {
+  border-color: color-mix(in srgb, var(--mc-primary) 42%, var(--mc-border));
+}
+
+.pilot-scope-suggestion-list > button.selected {
+  border-color: var(--mc-status-success-border, var(--mc-border));
+  background: var(--mc-status-success-bg, var(--mc-bg-muted));
+}
+
+.pilot-scope-suggestion-list > button:disabled { cursor: not-allowed; opacity: .55; }
+.pilot-scope-suggestion-list > button > span { display: grid; gap: 2px; min-width: 0; }
+.pilot-scope-suggestion-list b {
+  overflow: hidden;
+  font: 650 10px var(--mc-mono, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pilot-scope-suggestion-list small { color: var(--mc-text-tertiary); font-size: 9px; }
+.pilot-scope-suggestion-list em {
+  flex: none;
+  color: var(--mc-primary);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+.pilot-scope-suggestion-list > button.selected em { color: var(--mc-status-success-text, var(--mc-success)); }
+
 .pilot-module-row {
   display: grid;
   grid-template-columns: minmax(140px, .65fr) auto minmax(180px, 1fr) auto;
@@ -481,6 +599,7 @@ function errorText(error: unknown) {
   .pilot-plan-people { display: grid; grid-template-columns: 1fr 1fr; }
   .pilot-plan-people em { margin-left: 0; }
   .pilot-setup-grid { grid-template-columns: 1fr; }
+  .pilot-scope-suggestion-list { grid-template-columns: 1fr; }
   .pilot-field.wide,
   .enabled-field { grid-column: auto; }
   .pilot-module-row { grid-template-columns: 1fr; }

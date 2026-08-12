@@ -29,6 +29,7 @@
         <EvaluationPilotPlanPanel
           :plan="pilotPlan"
           :start-open="startPilotSetup"
+          :scope-suggestions="pilotScopeSuggestions"
           @updated="pilotPlan = $event"
         />
 
@@ -576,6 +577,7 @@ import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 import { evidenceComparisonNarrative } from './evidencePlainLanguage'
 import {
   buildEvaluationPilotQueue,
+  buildPilotScopeSuggestions,
   matchesPilotScope,
   pilotPlanReady,
 } from './evaluationPilot'
@@ -668,6 +670,7 @@ const pilotQueue = computed(() => buildEvaluationPilotQueue(
   pilotPlan.value,
 ))
 const pilotVisibleRows = computed(() => pilotQueue.value.slice(0, 6))
+const pilotScopeSuggestions = computed(() => buildPilotScopeSuggestions(pilotDiagnoses.value).slice(0, 6))
 const pilotScopedDiagnoses = computed(() => pilotDiagnoses.value.filter(
   diagnosis => !diagnosis.rehearsal && matchesPilotScope(diagnosis, pilotPlan.value),
 ))

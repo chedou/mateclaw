@@ -77,6 +77,7 @@ describe('troubleshooting capability workspaces', () => {
   it('configures an exact Workspace pilot without creating a second ledger', () => {
     expect(evaluationWorkspaceSource).toContain('<EvaluationPilotPlanPanel')
     expect(evaluationWorkspaceSource).toContain(':start-open="startPilotSetup"')
+    expect(evaluationWorkspaceSource).toContain(':scope-suggestions="pilotScopeSuggestions"')
     expect(evaluationWorkspaceSource).toContain('@updated="pilotPlan = $event"')
     expect(evaluationWorkspaceSource).toContain('troubleshootingApi.pilotPlan()')
     expect(evaluationPilotPlanPanelSource).toContain('先固定试点范围和三位负责人')
@@ -96,6 +97,10 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationPilotPlanPanelSource).toContain('请联系工作区管理员补齐成员')
     expect(evaluationPilotPlanPanelSource).toContain('暂时无法读取工作区成员')
     expect(evaluationPilotPlanPanelSource).toContain('工作区成员读取失败，请重试后再保存')
+    expect(evaluationPilotPlanPanelSource).toContain('从最近正式排障单选择')
+    expect(evaluationPilotPlanPanelSource).toContain('只读取非演练记录')
+    expect(evaluationPilotPlanPanelSource).toContain('选择后只会填入范围，不会自动保存')
+    expect(evaluationPilotPlanPanelSource).toContain('addScopeSuggestion(suggestion)')
     expect(membersWorkspaceSource).toContain('来自智能排障试点')
     expect(membersWorkspaceSource).toContain('还需添加 {{ pilotMemberProgress.missingCount }} 名成员')
     expect(membersWorkspaceSource).toContain('成员已满足试点要求')
