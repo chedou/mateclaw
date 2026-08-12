@@ -207,7 +207,7 @@ function capabilityGroupIcon(group: WorkbenchCapabilityNavGroup) {
 }
 
 function capabilityGroupDescription(group: WorkbenchCapabilityNavGroup) {
-  return group.key === 'advanced' ? '数据连接与取证配置' : '效果评估与案例沉淀'
+  return group.key === 'advanced' ? '更多配置：取证总览与数据连接' : '效果评估与案例沉淀'
 }
 
 function capabilityGroupActive(group: WorkbenchCapabilityNavGroup) {

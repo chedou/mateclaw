@@ -43,10 +43,12 @@ public class EvidenceAutoConfiguration {
             EvidenceProperties properties,
             ObjectMapper objectMapper,
             EvidenceHttpTransport transport,
-            ObjectProvider<WorkspaceObservabilityAssets> workspaceAssets) {
+            ObjectProvider<WorkspaceObservabilityAssets> workspaceAssets,
+            ObjectProvider<WorkspaceEvidenceContracts> workspaceContracts) {
         return new GuanceEvidenceAdapter(
                 properties.getGuance(), objectMapper, transport,
                 workspaceAssets.getIfAvailable(() -> WorkspaceObservabilityAssets.NONE),
+                workspaceContracts.getIfAvailable(() -> WorkspaceEvidenceContracts.NONE),
                 Clock.systemUTC());
     }
 

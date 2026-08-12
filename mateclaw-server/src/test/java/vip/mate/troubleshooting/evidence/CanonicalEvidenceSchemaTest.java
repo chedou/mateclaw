@@ -94,6 +94,24 @@ class CanonicalEvidenceSchemaTest {
                 "unhealthy_container_count", 1,
                 "max_cpu_percent", 82.5,
                 "max_memory_percent", 76.25))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_pod_status", Map.of(
+                "pod_count", 4,
+                "running_pod_count", 3,
+                "non_running_pod_count", 1))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_node_status", Map.of(
+                "node_count", 2,
+                "related_host_count", 2,
+                "max_node_cpu_percent", 71.5,
+                "max_node_memory_percent", 64.0))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_node_status", Map.of(
+                "node_count", 1,
+                "related_host_count", 1))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("host_status", Map.of(
+                "host_count", 2,
+                "max_host_cpu_percent", 88.0,
+                "max_host_memory_percent", 73.25))).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("host_status", Map.of(
+                "host_count", 1))).isTrue();
     }
 
     @Test
@@ -145,6 +163,16 @@ class CanonicalEvidenceSchemaTest {
                 "max_memory_percent", 20)))
                 .as("a workload cannot have more pods than observed containers")
                 .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("k8s_pod_status", Map.of(
+                "pod_count", 2,
+                "running_pod_count", 2,
+                "non_running_pod_count", 1)))
+                .as("running + non-running pods cannot exceed distinct pod_count")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("host_status", Map.of(
+                "host_count", 1,
+                "max_host_cpu_percent", -1,
+                "max_host_memory_percent", 10))).isFalse();
     }
 
     @Test

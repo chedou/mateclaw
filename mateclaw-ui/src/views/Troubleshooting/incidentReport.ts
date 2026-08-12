@@ -123,9 +123,9 @@ export function formalIncidentRoutePreview(
   }
   return {
     tone: 'BOUNDED_DISCOVERY',
-    title: '受限只读调查 · 未命中路径',
+    title: '开放调查 · 模型提议 · ≤MEDIUM',
     detail: clean(form.traceId)
-      ? 'Trace 只作为已知线索进入受限只读 Agent；该路径未通过运行验收或未启用时会 fail-closed，不创建伪诊断。'
-      : '现象输入进入受限只读 Agent；该路径未通过运行验收或未启用时会 fail-closed，不创建伪诊断。',
+      ? '无已审核 Playbook 时走受限只读 Agent；只能选服务端已批准的取证计划，证据不足会弃权。未启用或配置不合规会明确拒绝，不创建伪诊断。'
+      : '现象输入进入受限开放调查；只能选服务端已批准的取证计划，结论最高 MEDIUM。未启用或配置不合规会明确拒绝，不创建伪诊断。',
   }
 }

@@ -11,7 +11,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.model.TroubleshootingEvidenceContractEntity;
 import vip.mate.troubleshooting.model.TroubleshootingObservabilityAssetEntity;
+import vip.mate.troubleshooting.repository.TroubleshootingEvidenceContractMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingObservabilityAssetMapper;
 
 import java.util.LinkedHashMap;
@@ -41,11 +43,24 @@ class ObservabilityAssetServiceTest {
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""),
                 TroubleshootingObservabilityAssetEntity.class);
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                TroubleshootingEvidenceContractEntity.class);
     }
 
     @BeforeEach
     void setUp() {
-        service = new ObservabilityAssetService(assetMapper(), objectMapper, properties());
+        service = newService(properties());
+    }
+
+    private ObservabilityAssetService newService(EvidenceProperties properties) {
+        TroubleshootingEvidenceContractMapper contractMapper =
+                mock(TroubleshootingEvidenceContractMapper.class);
+        when(contractMapper.selectList(any())).thenReturn(List.of());
+        EvidenceContractService contracts = new EvidenceContractService(
+                contractMapper, properties, objectMapper);
+        return new ObservabilityAssetService(
+                assetMapper(), properties, contracts, objectMapper);
     }
 
     @Test
@@ -135,8 +150,7 @@ class ObservabilityAssetServiceTest {
                 .setQueryTemplate(
                         "L::logs:(count(*)) {tenant='{{tenant}}'} "
                                 + "[{{window_span}}::{{window_span}}]");
-        ObservabilityAssetService undeclaredService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, undeclaredProperties);
+        ObservabilityAssetService undeclaredService = newService(undeclaredProperties);
         assertThatThrownBy(() -> undeclaredService.declare(
                 WORKSPACE_ID,
                 declaration(null, true,
@@ -175,8 +189,7 @@ class ObservabilityAssetServiceTest {
                 legacyProperties.getGuance().getBindings());
         bindings.put("legacy-without-signal", legacy);
         legacyProperties.getGuance().setBindings(bindings);
-        ObservabilityAssetService strictService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, legacyProperties);
+        ObservabilityAssetService strictService = newService(legacyProperties);
 
         assertThatThrownBy(() -> strictService.declare(
                 WORKSPACE_ID,
@@ -197,8 +210,7 @@ class ObservabilityAssetServiceTest {
         Map<String, String> selected = new LinkedHashMap<>();
         selected.put("log_search", "csdp-log-search");
         selected.put("monitor_event_scan", "csdp-monitor-events");
-        ObservabilityAssetService crossContractService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, crossContractProperties);
+        ObservabilityAssetService crossContractService = newService(crossContractProperties);
         assertThatThrownBy(() -> crossContractService.declare(
                 WORKSPACE_ID,
                 declaration(null, true, selected, Map.of("namespace", "csdp")),
@@ -210,8 +222,7 @@ class ObservabilityAssetServiceTest {
         EvidenceProperties.Binding mixed = mixedTemplateProperties.getGuance()
                 .getBindings().get("csdp-log-search");
         mixed.setQueryTemplates(List.of("L::logs:(count(*))"));
-        ObservabilityAssetService mixedTemplateService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, mixedTemplateProperties);
+        ObservabilityAssetService mixedTemplateService = newService(mixedTemplateProperties);
         assertThatThrownBy(() -> mixedTemplateService.declare(
                 WORKSPACE_ID,
                 declaration(null, true,
@@ -226,8 +237,7 @@ class ObservabilityAssetServiceTest {
         mixedCase.setQueryTemplate(
                 "E::monitor:(count(*)) {namespace='{{Namespace}}'}");
         mixedCase.setAssetParameters(List.of("namespace"));
-        ObservabilityAssetService mixedCaseService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, mixedCaseProperties);
+        ObservabilityAssetService mixedCaseService = newService(mixedCaseProperties);
         assertThatThrownBy(() -> mixedCaseService.declare(
                 WORKSPACE_ID,
                 declaration(null, true,
@@ -252,8 +262,7 @@ class ObservabilityAssetServiceTest {
                 configured.getGuance().getBindings());
         bindings.put("csdp-k8s", workload);
         configured.getGuance().setBindings(bindings);
-        ObservabilityAssetService strictService = new ObservabilityAssetService(
-                assetMapper(), objectMapper, configured);
+        ObservabilityAssetService strictService = newService(configured);
 
         assertThatThrownBy(() -> strictService.declare(
                 WORKSPACE_ID,

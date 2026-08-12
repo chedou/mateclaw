@@ -4,6 +4,8 @@
 >
 > 唯一现行产品事实：`recording-product-baseline.md`
 >
+> **开放调查兜底 P0**：`open-discovery-p0-checklist.md` —— 夜间未知告警走受限 miss-path 的启用清单与就绪 API。
+>
 > **投产清单：`production-readiness.md`** —— 第一条真实报障进来之前必须为真的事。
 > **本文件定位**：保留实现决策、验证证据和历史待办，**不再作为活跃排期入口**；当前优先级只看
 > `production-readiness.md` 和下方“待办速览”，避免从历史段落里重新捞任务。

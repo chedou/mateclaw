@@ -37,6 +37,12 @@ public class EvidenceQueryCatalogService {
                     "监控告警巡检", "故障窗口内是否触发了 warning 及以上监控事件？")),
             Map.entry("k8s_workload_health", new Presentation(
                     "K8s 工作负载健康", "目标 Deployment 的 Pod 状态和 CPU、内存是否异常？")),
+            Map.entry("k8s_pod_status", new Presentation(
+                    "服务 Pod 状态", "该服务当前有多少 Pod 在跑，是否有非 running？")),
+            Map.entry("k8s_node_status", new Presentation(
+                    "服务 Node 状态", "承载该服务的 Node/主机数量与资源高水位如何？")),
+            Map.entry("host_status", new Presentation(
+                    "服务主机状态", "该服务落在哪些主机上，CPU/内存是否打满？")),
             Map.entry("synthetic_probe", new Presentation(
                     "部署拓扑拨测", "哪个网络节点的拨测状态异常？")),
             Map.entry("log_count", new Presentation(
@@ -447,27 +453,37 @@ public class EvidenceQueryCatalogService {
                 .filter(value -> !blank(value))
                 .map(this::normalize)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        List<String> templates = queryTemplates(binding);
+        // Placeholders that remain after omitting every {{?name}}...{{/name}} block
+        // are truly required; names that only live inside optional blocks are not.
+        Set<String> requiredPlaceholders = EvidenceTemplateParameterPolicy.placeholders(
+                templates.stream()
+                        .map(template -> EvidenceTemplateParameterPolicy
+                                .applyOptionalSections(template, ignored -> false))
+                        .toList());
         parameters.put("occurred_at", new EvidenceQueryCatalogView.ParameterView(
                 "occurred_at", "INCIDENT_OR_CURRENT_TIME", false,
                 "故障发生时间；未记录时由运行时使用当前时间"));
         parameters.put("window", new EvidenceQueryCatalogView.ParameterView(
                 "window", "EVIDENCE_REQUEST", false,
                 "查询时间窗口；未指定时默认 -15m"));
-        for (String template : queryTemplates(binding)) {
+        for (String template : templates) {
             Matcher matcher = PLACEHOLDER.matcher(template);
             while (matcher.find()) {
                 String name = matcher.group(1);
                 if ("window".equals(name) || "window_span".equals(name)) {
                     continue;
                 }
-                parameters.putIfAbsent(name, parameter(name, assetParameters));
+                boolean required = assetParameters.contains(normalize(name))
+                        || requiredPlaceholders.contains(normalize(name));
+                parameters.putIfAbsent(name, parameter(name, assetParameters, required));
             }
         }
         return List.copyOf(parameters.values());
     }
 
     private EvidenceQueryCatalogView.ParameterView parameter(
-            String name, Set<String> assetParameters) {
+            String name, Set<String> assetParameters, boolean required) {
         if (assetParameters.contains(normalize(name))) {
             return new EvidenceQueryCatalogView.ParameterView(
                     name, "SYSTEM_ASSET", true,
@@ -475,32 +491,48 @@ public class EvidenceQueryCatalogService {
         }
         if ("ps_id".equals(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
-                    name, "PREVIOUS_EVIDENCE", true,
+                    name, "PREVIOUS_EVIDENCE", required,
                     "由前一步失败日志证据提取，不接受浏览器任意输入");
         }
         if (Set.of("incident_id", "system", "service", "error_code", "trace_id")
                 .contains(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
-                    name, "INCIDENT", true, "来自当前排障事件");
+                    name, "INCIDENT", required,
+                    required ? "来自当前排障事件" : "来自当前排障事件；未提供时查询条件会省略该字段");
         }
         if ("deployment".equals(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
-                    name, "EVIDENCE_REQUEST_TARGET", true,
-                    "来自已审核排障方案的 Kubernetes Deployment 名称");
+                    name, "EVIDENCE_REQUEST_TARGET", required,
+                    required
+                            ? "来自已审核排障方案的 Kubernetes Deployment 名称"
+                            : "可选；未提供时按服务查询，不强制 Deployment");
         }
         if ("namespace".equals(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
-                    name, "EVIDENCE_REQUEST_TARGET", true,
-                    "来自已审核排障方案的 Kubernetes Namespace，禁止跨命名空间猜测");
+                    name, "EVIDENCE_REQUEST_TARGET", required,
+                    required
+                            ? "来自已审核排障方案的 Kubernetes Namespace，禁止跨命名空间猜测"
+                            : "可选；未提供时按服务查询，不强制 Namespace");
         }
         if ("monitor_checker".equals(name)) {
             return new EvidenceQueryCatalogView.ParameterView(
-                    name, "EVIDENCE_REQUEST_TARGET", true,
-                    "来自已审核排障方案的精确监控规则标识，禁止全站告警扫描");
+                    name, "EVIDENCE_REQUEST_TARGET", required,
+                    required
+                            ? "来自已审核排障方案的精确监控规则标识，禁止全站告警扫描"
+                            : "可选；未提供时统计窗口内全部 warning 及以上事件");
+        }
+        if ("host".equals(name) || "node_name".equals(name)) {
+            return new EvidenceQueryCatalogView.ParameterView(
+                    name, "EVIDENCE_REQUEST_TARGET", required,
+                    required
+                            ? "来自已审核排障方案的精确主机/节点标识"
+                            : "可选；未提供时按报障服务反查相关主机/节点");
         }
         return new EvidenceQueryCatalogView.ParameterView(
-                name, "EVIDENCE_REQUEST_TARGET", true,
-                "来自已审核 Playbook 的证据请求目标");
+                name, "EVIDENCE_REQUEST_TARGET", required,
+                required
+                        ? "来自已审核 Playbook 的证据请求目标"
+                        : "可选证据目标；未提供时对应查询条件会省略");
     }
 
     private EvidenceQueryCatalogView.BudgetView budget(

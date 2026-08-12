@@ -943,6 +943,35 @@ export interface GuanceEvidenceReadiness {
   blockers: string[]
 }
 
+export type OpenDiscoveryReadinessStatus =
+  | 'DISABLED'
+  | 'BLOCKED'
+  | 'READY_FOR_REHEARSAL'
+  | 'READY_FOR_BOUNDED_FALLBACK'
+
+export interface OpenDiscoveryPlanSummary {
+  scenarioKey: string
+  system: string
+  enabled: boolean
+  visibleForRequestedSystem: boolean
+  permittedPlatforms: string[]
+  includesTrueSource: boolean
+}
+
+/** Secret-free readiness for the OPEN_DISCOVERY / miss-path night-time fallback. */
+export interface OpenDiscoveryReadiness {
+  status: OpenDiscoveryReadinessStatus
+  agentEnabled: boolean
+  configuredAgentId: number
+  agentReady: boolean
+  configuredPlanCount: number
+  visiblePlanCount: number
+  trueSourcePermitted: boolean
+  plans: OpenDiscoveryPlanSummary[]
+  blockers: string[]
+  nextAction: string
+}
+
 export type EvidenceRouteOrigin = 'WORKSPACE' | 'DEPLOYMENT' | 'UNCONFIGURED'
 
 export interface EvidenceCatalogSource {
@@ -1129,6 +1158,52 @@ export interface ObservabilityAssetContractOption {
   question: string
   summary: string
   requiredAssetParameters: string[]
+}
+
+export type EvidenceContractScopeType = 'GENERIC' | 'SYSTEM' | 'MODULE'
+
+export interface EvidenceContractView {
+  contractRef: string
+  signalKind: string
+  scopeType: EvidenceContractScopeType | string
+  system: string
+  service: string
+  scenario: string
+  question: string
+  summary: string
+  namespace: string
+  maxRows: number
+  fixedConditions: string[]
+  requiredAssetParameters: string[]
+  origin: 'DEPLOYMENT' | 'WORKSPACE' | string
+  enabled: boolean
+  version: number
+  queryTemplate?: string | null
+}
+
+export interface EvidenceContractCatalog {
+  workspaceId: number
+  contracts: EvidenceContractView[]
+}
+
+export interface DeclareEvidenceContractRequest {
+  contractRef: string
+  signalKind: string
+  scopeType: EvidenceContractScopeType
+  system?: string
+  service?: string
+  scenario: string
+  question: string
+  summary?: string
+  namespace?: string
+  maxRows?: number
+  queryTemplate: string
+  fixedConditions?: string[]
+  requiredAssetParameters?: string[]
+  fieldAliases?: Record<string, string>
+  enabled: boolean
+  expectedVersion?: number
+  reason: string
 }
 
 export interface ObservabilityAssetCatalog {

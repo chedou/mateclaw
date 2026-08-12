@@ -67,7 +67,14 @@ export function signalKindLabel(signalKind: string): string {
     log_search: '日志检索',
     log_trace_bundle: '链路还原',
     contrast_sample: '成功失败对照',
+    error_log_scan: '错误日志巡检',
+    monitor_event_scan: '监控告警巡检',
     k8s_workload_health: 'K8s 工作负载健康',
+    k8s_pod_status: '服务 Pod 状态',
+    k8s_node_status: '服务 Node 状态',
+    host_status: '服务主机状态',
+    log_count: '日志计数',
+    synthetic_probe: '拨测',
     k8s_health: 'K8s 健康',
     monitor_checker: '监控拨测',
     rum_error: '前端错误',
@@ -591,6 +598,7 @@ export type ObservabilityAssetDraft = {
 
 export function assetParameterLabel(parameter: string): string {
   return {
+    probe_name: '拨测任务名（probe_name，须为 ASCII）',
     monitor_checker: '观测云监控规则标识（monitor_checker）',
     deployment: 'Kubernetes Deployment',
     namespace: 'Kubernetes Namespace',
@@ -612,7 +620,7 @@ export function observabilityAssetDraftReadiness(
     (value): value is string => typeof value === 'string' && Boolean(value.trim()),
   )
   if (draft.enabled && !bindings.length) missing.push('至少一条已审核查询规则')
-  const parameterOrder = ['namespace', 'cluster', 'region', 'deployment', 'monitor_checker']
+  const parameterOrder = ['namespace', 'cluster', 'region', 'deployment', 'probe_name', 'monitor_checker']
   const requiredParameters = [...draft.requiredAssetParameters].sort((left, right) => {
     const leftIndex = parameterOrder.indexOf(left)
     const rightIndex = parameterOrder.indexOf(right)

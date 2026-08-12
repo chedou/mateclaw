@@ -9,6 +9,7 @@ import type {
   ClosureOutcome,
   CreateDeploymentTopologyScenarioRequest,
   DeclareEvidenceRouteRequest,
+  DeclareEvidenceContractRequest,
   DeclareObservabilityAssetRequest,
   DeploymentTopologyAssetSummary,
   DeploymentTopologyImportResult,
@@ -26,6 +27,7 @@ import type {
   FinalizeEvaluationSampleReferenceRequest,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
+  OpenDiscoveryReadiness,
   GuanceEvidenceSpinePreview,
   GuanceEvidenceValidationReport,
   GuanceRecordingTargetCatalogView,
@@ -43,6 +45,8 @@ import type {
   KnowledgeReviewState,
   ManualPlaybookReplayAttestation,
   ObservabilityAsset,
+  EvidenceContractCatalog,
+  EvidenceContractView,
   ObservabilityAssetCatalog,
   RecordedReplayEvaluationCapability,
   RunBaselineEvaluationRequest,
@@ -115,6 +119,10 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   evidenceReadiness: (params: { system: string; service: string }) =>
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
 
+  /** Secret-free OPEN_DISCOVERY / miss-path readiness; does not call a model. */
+  openDiscoveryReadiness: (params?: { system?: string }) =>
+    http.get<OpenDiscoveryReadiness>('/troubleshooting/open-discovery/readiness', { params }),
+
   /** Scenario-oriented contract directory; reads configuration without querying a source. */
   evidenceCatalog: () => http.get<EvidenceQueryCatalog>(
     '/troubleshooting/evidence/catalog',
@@ -148,6 +156,21 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   observabilityAssets: () => http.get<ObservabilityAssetCatalog>(
     '/troubleshooting/evidence/assets',
   ),
+
+  /** Method library: deployment + workspace contracts (list hides query templates). */
+  evidenceContracts: () => http.get<EvidenceContractCatalog>(
+    '/troubleshooting/evidence/contracts',
+  ),
+
+  /** Admin detail includes query template for editing. */
+  evidenceContractDetail: (contractRef: string) =>
+    http.get<EvidenceContractView>(
+      `/troubleshooting/evidence/contracts/${encodeURIComponent(contractRef)}`,
+    ),
+
+  /** Adds the next immutable workspace contract revision. */
+  declareEvidenceContract: (data: DeclareEvidenceContractRequest) =>
+    http.put<EvidenceContractView>('/troubleshooting/evidence/contracts', data),
 
   /** Adds the next immutable asset revision; existing versions remain auditable. */
   declareObservabilityAsset: (data: DeclareObservabilityAssetRequest) =>

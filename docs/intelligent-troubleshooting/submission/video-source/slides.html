@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MateClaw 智能排障演示视频</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #f4eee7;
+      --panel: #fffdf9;
+      --ink: #251f1b;
+      --muted: #746b63;
+      --line: #ddd2c7;
+      --accent: #df6d49;
+      --accent-soft: #f8e7de;
+      --green: #376b5f;
+      --green-soft: #e7f2ed;
+      --blue: #345d7e;
+      --blue-soft: #e9f0f6;
+      --gold: #a97938;
+      --gold-soft: #f6ecdd;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .slide {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      padding: 64px 76px 56px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(223,109,73,.08), transparent 26%),
+        var(--bg);
+    }
+    .slide[hidden] { display: none; }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .brand { color: var(--accent); }
+    .page-no {
+      position: absolute;
+      right: 76px;
+      bottom: 40px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 78px; line-height: 1.08; letter-spacing: -.035em; }
+    h2 { font-size: 48px; line-height: 1.15; }
+    h3 { font-size: 27px; line-height: 1.3; }
+    .lead { margin-top: 24px; color: var(--muted); font-size: 29px; line-height: 1.6; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 15px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 18px;
+    }
+    .pill.green { background: var(--green-soft); color: var(--green); }
+    .pill.blue { background: var(--blue-soft); color: var(--blue); }
+    .pill.gold { background: var(--gold-soft); color: var(--gold); }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,253,249,.94);
+      padding: 28px;
+      box-shadow: 0 18px 50px rgba(74,57,43,.08);
+    }
+    .card p { margin-top: 12px; color: var(--muted); font-size: 22px; line-height: 1.55; }
+    .metric { display: block; font-size: 42px; line-height: 1.05; font-weight: 900; color: var(--accent); }
+    .cover {
+      display: grid;
+      grid-template-columns: 1.08fr .92fr;
+      gap: 70px;
+      align-items: center;
+      height: 850px;
+    }
+    .cover .claim {
+      margin-top: 38px;
+      padding-left: 22px;
+      border-left: 5px solid var(--accent);
+      font-size: 30px;
+      line-height: 1.55;
+      font-weight: 750;
+    }
+    .cover .grid-4 { grid-template-columns: 1fr 1fr; }
+    .section-title { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; }
+    .visual-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.48fr) minmax(390px, .52fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+    .browser-frame {
+      height: 790px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(74,57,43,.12);
+      overflow: hidden;
+    }
+    .browser-frame img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 12px; }
+    .side-stack { display: grid; gap: 18px; align-content: start; }
+    .side-stack .card { min-height: 154px; }
+    .wide-frame {
+      height: 700px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(74,57,43,.12);
+    }
+    .wide-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .process-frame { height: 620px; }
+    .caption-bar {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .step { display: flex; gap: 16px; align-items: flex-start; }
+    .step-no {
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--accent);
+      color: white;
+      font-size: 20px;
+      font-weight: 900;
+    }
+    .quote {
+      margin-top: 30px;
+      padding: 28px 32px;
+      border-radius: 18px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 28px;
+      line-height: 1.55;
+      font-weight: 800;
+    }
+    .ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .ai-card { min-height: 610px; }
+    .ai-card ul, .boundary-list { margin: 26px 0 0; padding: 0; list-style: none; display: grid; gap: 18px; }
+    .ai-card li, .boundary-list li {
+      position: relative;
+      padding-left: 34px;
+      font-size: 25px;
+      line-height: 1.5;
+    }
+    .ai-card li::before, .boundary-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--green);
+      font-weight: 900;
+    }
+    .efficiency .card { min-height: 330px; }
+    .efficiency .metric { margin-bottom: 20px; }
+    .final-panel {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 30px;
+      margin-top: 34px;
+    }
+    .final-panel .card { min-height: 560px; }
+    .boundary-list li.pending::before { content: "→"; color: var(--gold); }
+    .footer-claim {
+      margin-top: 28px;
+      padding: 24px 30px;
+      border-radius: 18px;
+      background: var(--accent);
+      color: white;
+      font-size: 30px;
+      line-height: 1.45;
+      font-weight: 800;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <section class="slide" data-slide="1">
+    <div class="topline"><span class="brand">MATECLAW · 智能排障</span><span>先解决真实问题，再讲技术</span></div>
+    <div class="cover">
+      <div>
+        <span class="pill">作品演示</span>
+        <h1 style="margin-top:22px">让更多人能排障<br>让重大问题更快收敛</h1>
+        <p class="lead">MateClaw 的价值不是多一个搜索框，而是让不同经验的人围绕同一份证据开展排障。</p>
+        <div class="claim">降低的是对陌生系统细节和少数熟手的前置依赖，不降低开发质量、生产权限和最终责任要求。</div>
+      </div>
+      <div class="grid-4">
+        <div class="card"><span class="metric">二线</span><p>有方法开始并推进排障</p></div>
+        <div class="card"><span class="metric">三线</span><p>快速进入陌生系统调查</p></div>
+        <div class="card"><span class="metric">重大故障</span><p>围绕同一证据收敛范围</p></div>
+        <div class="card"><span class="metric">1 条真实竖线</span><p>已证明审核方法可运行</p></div>
+      </div>
+    </div>
+    <div class="page-no">01 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="2" hidden>
+    <div class="topline"><span class="brand">三种处理方式</span><span>不同成熟度，不同安全边界</span></div>
+    <div class="section-title"><span class="pill blue">业务问题 ≠ 实现方式</span><h2>有方法就执行，有新经验就审核沉淀，无方法就受限探索</h2></div>
+    <div class="grid-3">
+      <div class="card"><span class="pill green">已有审核方法</span><h2>直接执行</h2><p>执行冻结查询和确定性条件。ITGW 904003 真实案例已跑通。</p></div>
+      <div class="card"><span class="pill gold">新问题已解决</span><h2>审核后复用</h2><p>结案形成候选方法，必须经回放、确定性校验和人工审核。</p></div>
+      <div class="card"><span class="pill blue">完全没有方法</span><h2>受限只读探索</h2><p>只提出白名单内的只读调查建议；无证据即停止，通用自主规划尚未投产验证。</p></div>
+    </div>
+    <div class="quote" style="margin-top:32px">当前真实证明的是“第一种方式能跑”，不是“三个业务问题已全部解决”。</div>
+    <div class="page-no">02 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="3" hidden>
+    <div class="topline"><span class="brand">真实案例</span><span>CSDP / csdp-wechat / 904003</span></div>
+    <div class="section-title"><span class="pill green">已定位 · 待确认</span><h2>一张排障单，先把结果与责任边界说清楚</h2></div>
+    <div class="visual-layout">
+      <div class="browser-frame"><img src="assets/01-排障结果总览.png" alt="真实排障结果总览"></div>
+      <div class="side-stack">
+        <div class="card"><h3>发生了什么</h3><p>2026-08-07 17:12，csdp-wechat 出现 ITGW 访问失败【904003】。</p></div>
+        <div class="card"><h3>系统给出的结论</h3><p>证据支持异常环节与内容安全策略拦截有关，当前状态为“已定位、待确认”。</p></div>
+        <div class="card"><h3>为什么不自动修复</h3><p>平台只做只读取证和结论计算；生产处置仍由授权负责人完成。</p></div>
+      </div>
+    </div>
+    <div class="page-no">03 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="4" hidden>
+    <div class="topline"><span class="brand">调查过程</span><span>四个关键节点</span></div>
+    <div class="section-title"><span class="pill blue">可展开复核</span><h2>系统不是直接给答案，而是按固定路径一步步查</h2></div>
+    <div class="wide-frame process-frame"><img src="assets/02-四个关键节点.png" alt="四个关键节点"></div>
+    <div class="caption-bar">
+      <div class="card step"><span class="step-no">1</span><div><h3>先找到失败请求</h3><p>确认系统、服务、错误码和绝对时间窗。</p></div></div>
+      <div class="card step"><span class="step-no">2</span><div><h3>再串联同一请求</h3><p>把第一步返回的真实关联 ID 作为唯一后续输入。</p></div></div>
+      <div class="card step"><span class="step-no">3</span><div><h3>最后找正常请求对照</h3><p>验证异常特征是否只集中在失败请求中。</p></div></div>
+    </div>
+    <div class="page-no">04 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="5" hidden>
+    <div class="topline"><span class="brand">证据对照</span><span>把技术计数翻译成人话</span></div>
+    <div class="section-title"><span class="pill green">真实数据</span><h2>失败请求出现了什么，正常请求有没有出现</h2></div>
+    <div class="wide-frame"><img src="assets/03-证据对照.png" alt="失败与正常请求证据对照"></div>
+    <div class="quote">两个失败请求都出现了“内容拦截”；同一窗口内的 36 个正常请求均未出现。这个现象集中在失败请求中，支持它与本次故障有关。</div>
+    <div class="page-no">05 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="6" hidden>
+    <div class="topline"><span class="brand">怎么开始使用</span><span>一次接入，日常从告警开始</span></div>
+    <div class="section-title"><span class="pill blue">两段路径</span><h2>先由负责人把真实查询接好，再让值班和开发简单使用</h2></div>
+    <div class="ai-grid">
+      <div class="card ai-card">
+        <span class="pill green">一次性接入</span>
+        <h2 style="margin-top:24px">平台和系统负责人先准备</h2>
+        <ul>
+          <li>平台管理员统一验证 Guance 数据源</li>
+          <li>系统负责人登记系统、服务、环境和查询规则</li>
+          <li>审核负责人完成试跑、回放、绑定和版本启用</li>
+          <li>缺资产、缺规则或缺证据时明确停止</li>
+        </ul>
+      </div>
+      <div class="card ai-card">
+        <span class="pill gold">日常排障</span>
+        <h2 style="margin-top:24px">值班和开发从一条告警开始</h2>
+        <ul>
+          <li>创建排障单，填写系统、服务、时间、错误码和现象</li>
+          <li>系统自动选方法并只读取证</li>
+          <li>先看结论，需要时再看过程和证据关系</li>
+          <li>负责人确认、驳回或转人工；生产处置仍在外部执行</li>
+        </ul>
+      </div>
+    </div>
+    <div class="page-no">06 / 08</div>
+  </section>
+
+  <section class="slide efficiency" data-slide="7" hidden>
+    <div class="topline"><span class="brand">效果验收</span><span>不只看机器快不快，还要看人是否真的改变</span></div>
+    <div class="section-title"><span class="pill green">三个问题 · 三组指标</span><h2>用真实人员试用和历史复盘，验证作品效果</h2></div>
+    <div class="grid-3">
+      <div class="card"><span class="metric">二线</span><h3>能不能自己推进</h3><p>看独立完成率、升级比例和首个可读结论耗时。</p></div>
+      <div class="card"><span class="metric">三线</span><h3>陌生系统能不能更快上手</h3><p>看首次排障耗时、求助次数和证据完整度。</p></div>
+      <div class="card"><span class="metric">重大故障</span><h3>范围能不能更快收敛</h3><p>看范围收敛耗时、重复查询和无效转交。</p></div>
+    </div>
+    <div class="quote" style="margin-top:42px">本次约 4 秒只证明一条已审核方法能在真实 Guance 上完成调查，不能替代上述人员效果验收。</div>
+    <p class="lead" style="font-size:22px">验收方式：记录传统人工基线，再让二线、首次接手系统的开发和重大故障团队用同类案例对照。</p>
+    <div class="page-no">07 / 08</div>
+  </section>
+
+  <section class="slide" data-slide="8" hidden>
+    <div class="topline"><span class="brand">完成度与下一步</span><span>诚实边界</span></div>
+    <div class="section-title"><span class="pill gold">真实单场景竖线</span><h2>已经证明能跑通，但还不能说已经全面投产</h2></div>
+    <div class="final-panel">
+      <div class="card">
+        <span class="pill green">已经完成</span>
+        <ul class="boundary-list">
+          <li>真实 904003 告警进入正式排障单</li>
+          <li>三次 Guance-only 只读取证</li>
+          <li>失败与正常请求样本对照</li>
+          <li>确定性结论、弃权与人工确认边界</li>
+          <li>业务结果与开发证据双视图</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="pill gold">投产前必须完成</span>
+        <ul class="boundary-list">
+          <li class="pending">由各系统负责人核对查询字段和时间窗口</li>
+          <li class="pending">冻结至少 20 个真实可执行目标</li>
+          <li class="pending">运行 20–30 条历史影子样本</li>
+          <li class="pending">让二线和首次接手系统的开发真实试用</li>
+          <li class="pending">形成人员效果基线、p50/p95 与误判/弃权准入线</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-claim">让更多人能排障，让重大问题更快收敛，并把一次经验变成下一次可复用的组织能力。</div>
+    <div class="page-no">08 / 08</div>
+  </section>
+  <script>
+    const requested = Number(new URLSearchParams(location.search).get('slide') || 1);
+    document.querySelectorAll('.slide').forEach((node) => {
+      node.hidden = Number(node.dataset.slide) !== requested;
+    });
+  </script>
+</body>
+</html>

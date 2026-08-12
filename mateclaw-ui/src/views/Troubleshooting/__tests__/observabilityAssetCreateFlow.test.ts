@@ -16,6 +16,7 @@ vi.mock('@/api', () => ({
   troubleshootingApi: {
     evidenceCatalog: () => evidenceCatalog(),
     observabilityAssets: () => observabilityAssets(),
+    evidenceContracts: () => Promise.resolve({ data: { workspaceId: '1', contracts: [] } }),
     listSops: () => listSops(),
   },
 }))
@@ -47,6 +48,7 @@ describe('observability asset create flow', () => {
     app.component('ElButton', buttonStub)
     app.component('ElInput', inputStub)
     app.component('ElDialog', dialogStub)
+    app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
     app.mount(host)
@@ -82,6 +84,7 @@ describe('observability asset create flow', () => {
     app.component('ElButton', buttonStub)
     app.component('ElInput', inputStub)
     app.component('ElDialog', dialogStub)
+    app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
     app.mount(host)
@@ -123,6 +126,7 @@ describe('observability asset create flow', () => {
       app.component('ElButton', buttonStub)
       app.component('ElInput', inputStub)
       app.component('ElDialog', dialogStub)
+      app.component('ElDrawer', drawerStub)
       app.component('ElTable', tableStub)
       app.component('ElTableColumn', tableColumnStub)
       app.mount(host)
@@ -150,6 +154,7 @@ describe('observability asset create flow', () => {
     app.component('ElButton', buttonStub)
     app.component('ElInput', inputStub)
     app.component('ElDialog', dialogStub)
+    app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
     app.mount(host)
@@ -157,7 +162,8 @@ describe('observability asset create flow', () => {
 
     expect(host.textContent).toContain('3/5')
     const progressButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('查看进度'))
+      .find(button => button.textContent?.includes('3/5')
+        || button.className?.includes?.('onboarding-progress-trigger'))
     expect(progressButton).toBeTruthy()
     progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
@@ -205,13 +211,16 @@ describe('observability asset create flow', () => {
     app.component('ElButton', buttonStub)
     app.component('ElInput', inputStub)
     app.component('ElDialog', dialogStub)
+    app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
     app.mount(host)
     await settle()
 
     const progressButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('查看进度'))
+      .find(button => button.textContent?.includes('/5')
+        || button.className?.includes?.('onboarding-progress-trigger'))
+    expect(progressButton).toBeTruthy()
     progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
     const continueButton = [...host.querySelectorAll('button')]
@@ -267,6 +276,22 @@ const dialogStub = defineComponent({
   setup(props, { slots }) {
     return () => props.modelValue
       ? h('section', { 'data-dialog-title': props.title }, [slots.default?.(), slots.footer?.()])
+      : null
+  },
+})
+
+const drawerStub = defineComponent({
+  name: 'ElDrawer',
+  props: {
+    modelValue: { type: Boolean, default: false },
+    title: { type: String, default: '' },
+  },
+  setup(props, { slots }) {
+    return () => props.modelValue
+      ? h('aside', { 'data-drawer-title': props.title, class: 'drawer-stub' }, [
+        slots.default?.(),
+        slots.footer?.(),
+      ])
       : null
   },
 })

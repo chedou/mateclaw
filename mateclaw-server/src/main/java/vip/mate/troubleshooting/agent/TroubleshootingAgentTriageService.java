@@ -76,6 +76,7 @@ public final class TroubleshootingAgentTriageService {
             Executors.newThreadPerTaskExecutor(
                     Thread.ofVirtual().name("troubleshooting-agent-budget-", 0).factory());
     private final TroubleshootingAgentProperties properties;
+    private final OpenDiscoveryAgentGate agentGate;
     private final AgentService agentService;
     private final AgentBindingService bindingService;
     private final TroubleshootingEvidenceSessionRegistry sessions;
@@ -89,6 +90,7 @@ public final class TroubleshootingAgentTriageService {
     @Autowired
     public TroubleshootingAgentTriageService(
             TroubleshootingAgentProperties properties,
+            OpenDiscoveryAgentGate agentGate,
             AgentService agentService,
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
@@ -97,7 +99,7 @@ public final class TroubleshootingAgentTriageService {
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             ChatStreamTracker streamTracker) {
-        this(properties, agentService, bindingService, sessions, stateMachine,
+        this(properties, agentGate, agentService, bindingService, sessions, stateMachine,
                 openDiscoveryPersistence, objectMapper, modelEvidenceProjector,
                 Clock.systemUTC(), streamTracker);
     }
@@ -112,8 +114,14 @@ public final class TroubleshootingAgentTriageService {
             ObjectMapper objectMapper,
             Clock clock,
             ChatStreamTracker streamTracker) {
-        this(properties, agentService, bindingService, sessions, stateMachine,
-                openDiscoveryPersistence, objectMapper,
+        this(properties,
+                new OpenDiscoveryAgentGate(properties, agentService, bindingService),
+                agentService,
+                bindingService,
+                sessions,
+                stateMachine,
+                openDiscoveryPersistence,
+                objectMapper,
                 new TroubleshootingEvidenceModelProjector(
                         new DeterministicLogTraceCompressor()),
                 clock,
@@ -131,7 +139,33 @@ public final class TroubleshootingAgentTriageService {
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             Clock clock,
             ChatStreamTracker streamTracker) {
+        this(properties,
+                new OpenDiscoveryAgentGate(properties, agentService, bindingService),
+                agentService,
+                bindingService,
+                sessions,
+                stateMachine,
+                openDiscoveryPersistence,
+                objectMapper,
+                modelEvidenceProjector,
+                clock,
+                streamTracker);
+    }
+
+    TroubleshootingAgentTriageService(
+            TroubleshootingAgentProperties properties,
+            OpenDiscoveryAgentGate agentGate,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingEvidenceSessionRegistry sessions,
+            DiagnosisStateMachine stateMachine,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
+            ObjectMapper objectMapper,
+            TroubleshootingEvidenceModelProjector modelEvidenceProjector,
+            Clock clock,
+            ChatStreamTracker streamTracker) {
         this.properties = properties;
+        this.agentGate = agentGate;
         this.agentService = agentService;
         this.bindingService = bindingService;
         this.sessions = sessions;
@@ -439,47 +473,7 @@ public final class TroubleshootingAgentTriageService {
     }
 
     private AgentEntity requireSafeConfiguration(long workspaceId) {
-        if (!properties.isEnabled()) {
-            throw configurationConflict("troubleshooting miss-path Agent is disabled");
-        }
-        if (properties.getAgentId() <= 0
-                || properties.getMaxIterations() <= 0
-                || properties.getMaxEvidenceRequests() < 3
-                || properties.getMaxPromptChars() < MIN_PROMPT_CHARS
-                || properties.getTriageTimeout() == null
-                || properties.getTriageTimeout().toMillis() <= 0
-                || properties.getTriageTimeout().compareTo(MAX_SYNC_TRIAGE_TIMEOUT) > 0) {
-            throw configurationConflict("troubleshooting Agent limits are not configured");
-        }
-
-        AgentEntity agent;
-        try {
-            agent = agentService.getAgent(properties.getAgentId());
-        } catch (RuntimeException unavailable) {
-            throw configurationConflict("configured troubleshooting Agent is unavailable");
-        }
-        if (!Boolean.TRUE.equals(agent.getEnabled())
-                || agent.getWorkspaceId() == null
-                || agent.getWorkspaceId() != workspaceId
-                || !"react".equalsIgnoreCase(agent.getAgentType())
-                || agent.getModelName() == null
-                || agent.getModelName().isBlank()
-                || !Boolean.TRUE.equals(agent.getSkillsDisabled())
-                || !Boolean.TRUE.equals(agent.getWikiDisabled())
-                || Boolean.TRUE.equals(agent.getToolsDisabled())
-                || agent.getMaxIterations() == null
-                || agent.getMaxIterations() <= 0
-                || agent.getMaxIterations() > properties.getMaxIterations()) {
-            throw configurationConflict(
-                    "troubleshooting Agent must be enabled, workspace-local, ReAct, "
-                            + "explicitly model-pinned, skill/wiki-disabled, and iteration-bounded");
-        }
-        Set<String> bindings = bindingService.getBoundToolNames(agent.getId());
-        if (!REQUIRED_BINDINGS.equals(bindings)) {
-            throw configurationConflict(
-                    "troubleshooting Agent requires exactly one read-only tool binding");
-        }
-        return agent;
+        return agentGate.requireReadyAgent(workspaceId);
     }
 
     private String invokeAgentWithinBudget(

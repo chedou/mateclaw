@@ -50,16 +50,19 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
             new TypeReference<>() { };
 
     private final TroubleshootingObservabilityAssetMapper mapper;
-    private final ObjectMapper objectMapper;
     private final EvidenceProperties properties;
+    private final EvidenceContractService evidenceContracts;
+    private final ObjectMapper objectMapper;
 
     public ObservabilityAssetService(
             TroubleshootingObservabilityAssetMapper mapper,
-            ObjectMapper objectMapper,
-            EvidenceProperties properties) {
+            EvidenceProperties properties,
+            EvidenceContractService evidenceContracts,
+            ObjectMapper objectMapper) {
         this.mapper = mapper;
-        this.objectMapper = objectMapper;
         this.properties = properties == null ? new EvidenceProperties() : properties;
+        this.evidenceContracts = evidenceContracts;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -120,7 +123,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                 .sorted(Comparator.comparing(ObservabilityAssetView::system)
                         .thenComparing(ObservabilityAssetView::service))
                 .toList();
-        return new ObservabilityAssetCatalogView(workspaceId, assets, contractOptions());
+        return new ObservabilityAssetCatalogView(workspaceId, assets, contractOptions(workspaceId));
     }
 
     /** Inserts the next immutable revision after validating every source-side dimension. */
@@ -149,6 +152,9 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         String reason = safeText(declaration.reason(), "reason", MAX_REASON, null);
 
         ValidatedBindings validated = validateBindings(
+                workspaceId,
+                system,
+                service,
                 declaration.signalBindings(), declaration.parameters(),
                 environment, region, cluster, namespace,
                 declaration.enabled());
@@ -183,6 +189,9 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
     }
 
     private ValidatedBindings validateBindings(
+            long workspaceId,
+            String system,
+            String service,
             Map<String, String> rawBindings,
             Map<String, String> rawParameters,
             String environment,
@@ -201,7 +210,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                 throw invalid("a signal binding must be unique after normalization");
             }
             String reference = safeScope(entry.getValue(), "contractRef");
-            EvidenceProperties.Binding binding = exactBinding(reference);
+            EvidenceProperties.Binding binding = exactBinding(workspaceId, reference);
             if (binding == null) {
                 throw invalid("reviewed query contract '" + reference + "' is not installed");
             }
@@ -209,6 +218,12 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                     || !signal.equals(normalize(binding.getSignalKind()))) {
                 throw invalid("query contract '" + reference
                         + "' has no exact matching signal kind");
+            }
+            EvidenceContractCatalogView.EvidenceContractView contractView =
+                    evidenceContracts.detail(workspaceId, reference, false);
+            if (!evidenceContracts.allowsModule(contractView, system, service)) {
+                throw invalid("query contract '" + reference
+                        + "' scope does not allow this system/module");
             }
             signalBindings.put(signal, reference);
             boundContracts.put(reference, binding);
@@ -434,37 +449,20 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         return Map.copyOf(result);
     }
 
-    private List<ObservabilityAssetCatalogView.ContractOption> contractOptions() {
-        Map<String, Set<String>> inferredSignals = inferredSignals();
+    private List<ObservabilityAssetCatalogView.ContractOption> contractOptions(long workspaceId) {
         List<ObservabilityAssetCatalogView.ContractOption> options = new ArrayList<>();
-        for (Map.Entry<String, EvidenceProperties.Binding> entry : bindings().entrySet()) {
-            String reference = entry.getKey();
-            EvidenceProperties.Binding binding = entry.getValue();
-            if (blank(reference) || binding == null) {
+        for (EvidenceContractCatalogView.EvidenceContractView contract
+                : evidenceContracts.catalog(workspaceId, false).contracts()) {
+            if (!CanonicalEvidenceSchema.supports(contract.signalKind())) {
                 continue;
             }
-            String signal = normalize(binding.getSignalKind());
-            if (blank(signal)) {
-                Set<String> inferred = inferredSignals.getOrDefault(normalize(reference), Set.of());
-                signal = inferred.size() == 1 ? inferred.iterator().next() : "";
-            }
-            if (!CanonicalEvidenceSchema.supports(signal)) {
-                continue;
-            }
-            List<String> required = (binding.getAssetParameters() == null
-                    ? List.<String>of() : binding.getAssetParameters()).stream()
-                    .filter(value -> !blank(value))
-                    .map(this::normalize)
-                    .distinct()
-                    .sorted()
-                    .toList();
             options.add(new ObservabilityAssetCatalogView.ContractOption(
-                    reference.trim(),
-                    signal,
-                    textOr(binding.getScenario(), signal),
-                    textOr(binding.getQuestion(), "该合同要回答什么问题？"),
-                    textOr(binding.getSummary(), signal),
-                    required));
+                    contract.contractRef(),
+                    contract.signalKind(),
+                    contract.scenario(),
+                    contract.question(),
+                    contract.summary(),
+                    contract.requiredAssetParameters()));
         }
         return options.stream()
                 .sorted(Comparator.comparing(
@@ -474,35 +472,8 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                 .toList();
     }
 
-    private Map<String, Set<String>> inferredSignals() {
-        Map<String, Set<String>> inferred = new LinkedHashMap<>();
-        for (EvidenceProperties.AssetBinding asset : deploymentAssets()) {
-            for (Map.Entry<String, String> entry : safeEntries(
-                    asset == null ? null : asset.getSignalBindings())) {
-                if (blank(entry.getKey()) || blank(entry.getValue())) {
-                    continue;
-                }
-                inferred.computeIfAbsent(normalize(entry.getValue()), ignored -> new LinkedHashSet<>())
-                        .add(normalize(entry.getKey()));
-            }
-        }
-        return inferred;
-    }
-
-    private EvidenceProperties.Binding exactBinding(String reference) {
-        List<EvidenceProperties.Binding> matches = bindings().entrySet().stream()
-                .filter(entry -> !blank(entry.getKey())
-                        && normalize(entry.getKey()).equals(normalize(reference)))
-                .map(Map.Entry::getValue)
-                .filter(value -> value != null)
-                .toList();
-        return matches.size() == 1 ? matches.getFirst() : null;
-    }
-
-    private Map<String, EvidenceProperties.Binding> bindings() {
-        Map<String, EvidenceProperties.Binding> configured =
-                properties.getGuance().getBindings();
-        return configured == null ? Map.of() : configured;
+    private EvidenceProperties.Binding exactBinding(long workspaceId, String reference) {
+        return evidenceContracts.find(workspaceId, reference).orElse(null);
     }
 
     private List<EvidenceProperties.AssetBinding> deploymentAssets() {

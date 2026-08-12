@@ -30,6 +30,9 @@
 | `guanceyun-error-logs` | `error_log_scan` | 本轮新增 | ERROR 数量、受影响链路数、最新关联 ID |
 | `guanceyun-error-logs` | `monitor_event_scan` | 本轮新增 | 告警数量、最新级别、最新规则名 |
 | `guanceyun-k8s-pod-info` | `k8s_workload_health` | 本轮新增 | Pod/容器计数、异常容器数、CPU/内存高水位 |
+| `guanceyun-k8s-pod-info` | `k8s_pod_status` | 通用方法库补充 | 按服务聚合 Pod running / 非 running |
+| `guanceyun-k8s-pod-info` | `k8s_node_status` | 通用方法库补充 | 按服务反查 Node/主机数与资源水位 |
+| `guanceyun-k8s-pod-info` | `host_status` | 通用方法库补充 | 按服务反查落地主机数与 CPU/内存水位 |
 | `guanceyun-dial-testing` | `synthetic_probe` | 已有并复用 | 状态码、目标 URL、拨测任务名 |
 
 这些维度会自动出现在“智能排障 → 取证查询目录”的系统/模块、查询合同、路由与绑定、联调与验收视图中。

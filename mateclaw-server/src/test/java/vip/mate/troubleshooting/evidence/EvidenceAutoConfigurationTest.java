@@ -203,7 +203,10 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry("contrast_sample", List.of("guance"))
                             .containsEntry("error_log_scan", List.of("guance"))
                             .containsEntry("monitor_event_scan", List.of("guance"))
-                            .containsEntry("k8s_workload_health", List.of("guance"));
+                            .containsEntry("k8s_workload_health", List.of("guance"))
+                            .containsEntry("k8s_pod_status", List.of("guance"))
+                            .containsEntry("k8s_node_status", List.of("guance"))
+                            .containsEntry("host_status", List.of("guance"));
 
                     EvidenceProperties.Guance guance = properties.getGuance();
                     assertThat(guance.isEnabled()).isFalse();
@@ -213,6 +216,12 @@ class EvidenceAutoConfigurationTest {
                     assertThat(guance.getTimeout()).isEqualTo(java.time.Duration.ofSeconds(45));
                     assertThat(context.getBean(EvidenceHttpTransport.class))
                             .isInstanceOf(NativeCurlEvidenceHttpTransport.class);
+                    assertThat(guance.getBindings())
+                            .containsKeys(
+                                    "guance-service-pod-status",
+                                    "guance-service-node-status",
+                                    "guance-service-host-status",
+                                    "csdp-k8s-workload-health");
                     assertThat(guance.getAssetBindings()).hasSize(3);
                     assertThat(guance.getAssetBindings().get(0)).satisfies(asset -> {
                                 assertThat(asset.getWorkspaceId()).isEqualTo(1L);
@@ -234,7 +243,16 @@ class EvidenceAutoConfigurationTest {
                                                 "csdp-monitor-event-scan")
                                         .containsEntry(
                                                 "k8s_workload_health",
-                                                "csdp-k8s-workload-health");
+                                                "csdp-k8s-workload-health")
+                                        .containsEntry(
+                                                "k8s_pod_status",
+                                                "guance-service-pod-status")
+                                        .containsEntry(
+                                                "k8s_node_status",
+                                                "guance-service-node-status")
+                                        .containsEntry(
+                                                "host_status",
+                                                "guance-service-host-status");
                             });
                     assertThat(guance.getAssetBindings().get(1)).satisfies(asset -> {
                         assertThat(asset.getWorkspaceId()).isEqualTo(1L);

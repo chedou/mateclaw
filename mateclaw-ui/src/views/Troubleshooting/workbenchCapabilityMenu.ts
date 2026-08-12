@@ -27,22 +27,22 @@ export const WORKBENCH_PRIMARY_CAPABILITIES: ReadonlyArray<WorkbenchCapabilityNa
     command: 'observability-assets',
     section: 'modules',
     label: '接入系统',
-    description: '新增系统、模块和资源范围',
+    description: '登记系统模块，并在模块里选择取证方法',
   },
 ]
 
 export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGroup> = [
   {
     key: 'advanced',
-    label: '高级设置',
+    label: '更多配置',
     items: [
       {
-        key: 'evidence-tools',
-        command: 'observability-assets',
-        section: 'tools',
-        label: '取证方法',
-        description: '配置日志、调用链和拨测方法',
-      },
+    key: 'evidence-tools',
+    command: 'observability-assets',
+    section: 'tools',
+    label: '取证方法',
+    description: '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
+  },
       {
         key: 'evidence-source',
         command: 'observability-assets',
@@ -83,8 +83,8 @@ export const EVIDENCE_SETUP_SECTIONS: ReadonlyArray<{
   label: string
   description: string
 }> = [
-  { key: 'modules', label: '接入系统', description: '新增要排障的系统和模块，并填写环境、集群等资源范围。' },
-  { key: 'tools', label: '取证方法', description: '配置发生故障时要查询的日志、调用链、拨测和服务状态。' },
+  { key: 'modules', label: '接入系统', description: '登记要排障的系统和模块；点进模块即可勾选取证方法、查看数据源缺口并试跑。' },
+  { key: 'tools', label: '取证方法', description: '方法库：配置查什么、要哪些参数、作用域是通用还是指定系统/模块；查询模板由管理员维护。' },
   { key: 'source', label: '数据连接', description: '检查系统能否只读访问观测云并正常获取排障数据。' },
 ]
 

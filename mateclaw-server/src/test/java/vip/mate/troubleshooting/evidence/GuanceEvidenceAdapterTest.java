@@ -578,6 +578,51 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void omitsOptionalMonitorCheckerAndStillQueriesWarningEvents() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "event_count", "latest_status", "latest_checker"],
+                    "values": [[1753434723000, 2, "warning", "any-checker"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "E",
+                "监控事件聚合巡检",
+                "E::monitor:(count(*) as event_count,last(`df_status`) as latest_status,"
+                        + "last(`df_monitor_checker_name`) as latest_checker) "
+                        + "{ `df_status` IN ['critical', 'error', 'warning']"
+                        + "{{?monitor_checker}} AND `df_monitor_checker_name` = '{{monitor_checker}}'"
+                        + "{{/monitor_checker}} } "
+                        + "[{{window_span}}::{{window_span}}]",
+                Map.of(),
+                1);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("monitor_event_scan", binding), objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-MONITOR-SCAN-OPTIONAL",
+                "monitor_event_scan",
+                "scan monitor events",
+                Map.of(),
+                "-15m",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsEntry("event_count", 2);
+        assertThat(transport.body)
+                .contains("`df_status` IN ['critical', 'error', 'warning']")
+                .doesNotContain("df_monitor_checker_name` =")
+                .doesNotContain("{{monitor_checker}}")
+                .doesNotContain("{{?monitor_checker}}");
+    }
+
+    @Test
     void mergesTheFourBoundedK8sSkillQueriesAndRejectsUnsafeTargets() throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """
                 {

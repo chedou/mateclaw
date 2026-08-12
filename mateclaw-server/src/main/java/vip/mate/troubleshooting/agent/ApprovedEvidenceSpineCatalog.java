@@ -89,6 +89,9 @@ public final class ApprovedEvidenceSpineCatalog {
         }
         try {
             Set<String> platforms = safePlatforms(plan.getPermittedPlatforms());
+            for (String extra : extraPlatforms()) {
+                platforms = withPlatform(platforms, extra);
+            }
             EvidenceSpinePlan evidencePlan = new EvidenceSpinePlan(
                     TroubleshootingEvidenceSessionRegistry.ONLINE_SEARCH_REQUEST_ID,
                     TroubleshootingEvidenceSessionRegistry.ONLINE_TRACE_REQUEST_ID,
@@ -99,6 +102,20 @@ public final class ApprovedEvidenceSpineCatalog {
         } catch (IllegalArgumentException invalid) {
             return null;
         }
+    }
+
+    private List<String> extraPlatforms() {
+        List<String> configured = properties.getExtraPermittedPlatforms();
+        return configured == null ? List.of() : configured;
+    }
+
+    private Set<String> withPlatform(Set<String> platforms, String platform) {
+        if (platform == null || !SAFE_PLATFORM.matcher(platform.trim()).matches()) {
+            return platforms;
+        }
+        Set<String> expanded = new LinkedHashSet<>(platforms);
+        expanded.add(normalize(platform));
+        return Set.copyOf(expanded);
     }
 
     private String safeKey(String value) {

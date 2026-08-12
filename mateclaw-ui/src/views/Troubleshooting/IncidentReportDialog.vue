@@ -47,6 +47,24 @@
         <b>{{ routePreview.title }}</b>
         <p>{{ routePreview.detail }}</p>
       </div>
+      <el-alert
+        v-if="routePreview.tone === 'BOUNDED_DISCOVERY' && openDiscoveryReadiness"
+        :type="openDiscoveryAlertType"
+        :closable="false"
+        show-icon
+        class="dialog-alert"
+        :title="openDiscoveryTitle"
+      >
+        <p>{{ openDiscoveryReadiness.nextAction }}</p>
+        <p v-if="openDiscoveryReadiness.visiblePlanCount">
+          当前系统可见计划 {{ openDiscoveryReadiness.visiblePlanCount }} /
+          已配置 {{ openDiscoveryReadiness.configuredPlanCount }}
+          <template v-if="!openDiscoveryReadiness.trueSourcePermitted"> · 仍仅 recorded-replay</template>
+        </p>
+        <ul v-if="openDiscoveryReadiness.blockers.length" class="readiness-blockers">
+          <li v-for="blocker in openDiscoveryReadiness.blockers.slice(0, 4)" :key="blocker">{{ blocker }}</li>
+        </ul>
+      </el-alert>
       <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">
         演练记录（推荐；不参与五分钟生产事件去重）
       </el-checkbox>
@@ -65,19 +83,49 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import type { OpenDiscoveryReadiness } from '@/api'
 import type { FormalIncidentForm } from './incidentReport'
 import { INCIDENT_SEVERITY_OPTIONS } from './intakeDialog'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 
-defineProps<{
+const props = defineProps<{
   routePreview: { tone: string; title: string; detail: string }
   loading: boolean
   canSubmit: boolean
+  openDiscoveryReadiness?: OpenDiscoveryReadiness | null
 }>()
 
 const open = defineModel<boolean>({ required: true })
 const form = defineModel<FormalIncidentForm>('form', { required: true })
 defineEmits<{ submit: [] }>()
+
+const openDiscoveryAlertType = computed(() => {
+  const status = props.openDiscoveryReadiness?.status
+  if (status === 'READY_FOR_BOUNDED_FALLBACK') return 'success'
+  if (status === 'READY_FOR_REHEARSAL') return 'warning'
+  return 'error'
+})
+
+const openDiscoveryTitle = computed(() => {
+  switch (props.openDiscoveryReadiness?.status) {
+    case 'READY_FOR_BOUNDED_FALLBACK':
+      return '开放调查兜底可用（真源计划已允许）'
+    case 'READY_FOR_REHEARSAL':
+      return '开放调查可演练，尚未接真源'
+    case 'DISABLED':
+      return '开放调查未启用'
+    default:
+      return '开放调查尚未就绪'
+  }
+})
 </script>
 
 <style scoped src="./intakeDialog.css"></style>
+<style scoped>
+.readiness-blockers {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+</style>

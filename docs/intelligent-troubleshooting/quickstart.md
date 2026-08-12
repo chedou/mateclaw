@@ -1,5 +1,8 @@
 # Quickstart：从零到走完一个案子
 
+> Guance 真源路演六用法见 [`demo-runbook.md`](./demo-runbook.md)；
+> 复验：`./scripts/troubleshooting-demo-verify.sh all`。
+>
 > 目标：**新克隆的仓库 → 明确的启动步骤 → 一份可读的诊断、一条可评审的知识、
 > 一个走到关闭的案子**，全程 fixture。
 >

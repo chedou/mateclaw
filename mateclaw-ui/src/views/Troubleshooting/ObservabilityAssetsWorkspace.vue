@@ -1,6 +1,6 @@
 <template>
   <CapabilityWorkspaceShell
-    :eyebrow="setupSection === 'modules' ? '智能排障' : '高级设置'"
+    :eyebrow="setupSection === 'modules' ? '智能排障' : '更多配置'"
     :title="activeSetupSection.label"
     :description="activeSetupSection.description"
     :refresh-loading="loading"
@@ -27,20 +27,25 @@
         />
         <el-select
           v-if="setupSection === 'tools'"
-          v-model="toolStatusFilter"
+          v-model="contractScopeFilter"
           class="status-filter"
-          aria-label="按工具状态筛选"
+          aria-label="按作用域筛选"
         >
-          <el-option label="全部状态" value="ALL" />
-          <el-option label="可运行" value="READY" />
-          <el-option label="待补齐" value="BLOCKED" />
-          <el-option label="未启用" value="NOT_ENABLED" />
+          <el-option label="全部作用域" value="ALL" />
+          <el-option label="通用" value="GENERIC" />
+          <el-option label="指定系统" value="SYSTEM" />
+          <el-option label="指定模块" value="MODULE" />
         </el-select>
         <template v-if="setupSection === 'modules'">
           <el-button @click="moduleChooserOpen = true">新增模块</el-button>
           <el-button type="primary" @click="openNewSystem">新增系统</el-button>
         </template>
-        <el-button v-if="setupSection === 'source'" type="primary" @click="openGuanceValidation()">检查数据连接</el-button>
+        <el-button
+          v-if="setupSection === 'tools'"
+          type="primary"
+          @click="openNewEvidenceContract"
+        >新增取证方法</el-button>
+        <el-button v-if="setupSection === 'source'" type="primary" :loading="loading" @click="loadCatalog">刷新连接状态</el-button>
       </div>
 
       <!--
@@ -115,9 +120,10 @@
                 v-if="!isRecordedReplay(scope.row.platform)"
                 type="primary"
                 text
-                @click="openGuanceValidation()"
-              >检查 / 验收</el-button>
-              <span v-else class="muted-action">无需联调</span>
+                :loading="loading"
+                @click="loadCatalog"
+              >刷新状态</el-button>
+              <span v-else class="muted-action">演示回放</span>
             </template>
           </el-table-column>
         </el-table>
@@ -179,88 +185,72 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="260" align="right" fixed="right">
+          <el-table-column label="操作" min-width="280" align="right" fixed="right">
             <template #default="scope">
-              <el-button
-                v-if="scope.row.asset"
-                text
-                @click="openAssetDetail(scope.row.asset)"
-              >查看</el-button>
-              <el-button type="primary" text @click="openModuleEntryConfig(scope.row)">
-                {{ scope.row.asset?.origin === 'WORKSPACE' ? '修改' : '登记 / 接管' }}
-              </el-button>
-              <el-button text @click="openModuleOnboarding(scope.row)">查看进度</el-button>
+              <el-button type="primary" text @click="openModuleWorkspace(scope.row)">打开配置</el-button>
+              <el-button text @click="openModuleWorkspace(scope.row)">查看</el-button>
+              <el-button text @click="openModuleWorkspace(scope.row, 'tools')">取证方法</el-button>
             </template>
           </el-table-column>
         </el-table>
       </section>
 
-      <section v-else-if="setupSection === 'tools' && filteredToolRows.length" class="list-workspace tool-list-workspace">
+      <section v-else-if="setupSection === 'tools'" class="list-workspace tool-list-workspace">
         <div class="list-heading">
           <div>
-            <h2>取证方法列表</h2>
-            <p>显示 {{ filteredToolRows.length }} / {{ allToolRows.length }} 条；每行只保留当前最需要的操作。</p>
+            <h2>取证方法库</h2>
+            <p>
+              方法本体都在这里维护和修改（含部署发布的）。新增、修改都在右侧侧栏完成，不弹窗。
+              作用域可选「通用」或指定系统/模块；模块接入时再勾选用哪些。
+            </p>
           </div>
         </div>
-        <el-table :data="filteredToolRows" class="management-table tool-table" stripe>
-          <el-table-column label="系统 / 模块" min-width="210">
+        <el-table
+          v-if="filteredEvidenceContracts.length"
+          :data="filteredEvidenceContracts"
+          class="management-table tool-table"
+          stripe
+        >
+          <el-table-column label="取证方法" min-width="280">
             <template #default="scope">
               <div class="table-primary-cell">
-                <b>{{ scope.row.entry.service }}</b>
-                <small>{{ scope.row.entry.system }} · {{ scope.row.entry.displayName }}</small>
+                <b>{{ signalKindLabel(scope.row.signalKind) }} · {{ scope.row.scenario }}</b>
+                <small><code>{{ scope.row.contractRef }}</code> · {{ scope.row.question }}</small>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="取证方法" min-width="260">
-            <template #default="scope">
-              <button type="button" class="table-primary-cell table-detail-trigger" @click="openToolDetail(scope.row)">
-                <b>{{ signalKindLabel(scope.row.tool.signalKind) }} · {{ scope.row.tool.scenario }}</b>
-                <small><code>{{ scope.row.tool.contractRef }}</code></small>
-              </button>
-            </template>
-          </el-table-column>
-          <el-table-column label="查询通道" min-width="190" class-name="optional-column" label-class-name="optional-column">
+          <el-table-column label="作用域" min-width="180">
             <template #default="scope">
               <div class="table-primary-cell compact-cell">
-                <b>{{ toolRouteLabel(scope.row.tool) }}</b>
-                <small>{{ toolBindingLabel(scope.row.tool) }}</small>
+                <b>{{ contractScopeLabel(scope.row) }}</b>
+                <small>{{ contractScopeDetail(scope.row) }}</small>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="就绪状态" min-width="175">
+          <el-table-column label="来源" width="110">
             <template #default="scope">
-              <div class="status-cell">
-                <el-tag :type="toolStateTagType(scope.row.tool)" effect="plain" size="small">
-                  {{ scope.row.tool.statusLabel }}
-                </el-tag>
-                <small>{{ toolNextStepLabel(scope.row.tool) }}</small>
-              </div>
+              <el-tag effect="plain" size="small">
+                {{ scope.row.origin === 'WORKSPACE' ? '页面维护' : '部署发布' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="参数" min-width="160" class-name="optional-column" label-class-name="optional-column">
+            <template #default="scope">
+              {{ scope.row.requiredAssetParameters.join('、') || '无额外参数' }}
             </template>
           </el-table-column>
           <el-table-column label="操作" width="120" align="right" fixed="right">
             <template #default="scope">
-              <el-button
-                v-if="toolNeedsModuleConfig(scope.row.tool)"
-                type="primary"
-                text
-                @click="openModuleConfigFor(scope.row.entry)"
-              >补齐配置</el-button>
-              <el-button
-                v-else-if="!toolListTrialBlocker(scope.row)"
-                type="primary"
-                text
-                @click="scope.row.row && openTrialForToolListRow(scope.row)"
-              >只读试跑</el-button>
-              <el-button v-else type="warning" text @click="openToolDetail(scope.row)">查看阻断</el-button>
+              <el-button type="primary" text @click="openEvidenceContractEditor(scope.row)">修改</el-button>
             </template>
           </el-table-column>
         </el-table>
-      </section>
-      <section v-else-if="setupSection === 'tools' && hasModules" class="setup-empty">
-        <h2>还没有可管理的取证方法</h2>
-        <p>{{ query || toolStatusFilter !== 'ALL'
-          ? '没有匹配当前搜索和状态筛选的工具。'
-          : '当前部署还没有可用的取证方法。' }}</p>
+        <el-empty
+          v-else
+          :description="query
+            ? '没有匹配当前搜索的取证方法'
+            : '还没有取证方法；点右上角新增，或等待平台发布部署方法'"
+        />
       </section>
       <!--
         空态分两种，原来只有一句话概括了它们：源没通时先去联调，源通了就登记模块。
@@ -288,6 +278,497 @@
       <el-empty v-else description="没有匹配当前搜索的系统模块" />
     </div>
 
+    <el-drawer
+      v-model="moduleWorkspaceOpen"
+      :size="moduleWorkspacePanel === 'overview' ? 'min(720px, 100%)' : 'min(880px, 100%)'"
+      destroy-on-close
+      class="module-workspace-drawer"
+      :title="moduleWorkspaceDrawerTitle"
+      @closed="moduleWorkspacePanel = 'overview'"
+    >
+      <template v-if="moduleWorkspaceTarget">
+        <div v-if="moduleWorkspacePanel !== 'overview'" class="module-workspace-nav">
+          <el-button text type="primary" @click="backToModuleOverview">← 回到模块总览</el-button>
+        </div>
+
+        <template v-if="moduleWorkspacePanel === 'overview'">
+          <header class="module-workspace-head">
+            <div>
+              <p class="scope-line">{{ moduleWorkspaceTarget.system }}</p>
+              <h2>{{ moduleWorkspaceTarget.service }}</h2>
+              <p>{{ moduleWorkspaceTarget.displayName }}</p>
+            </div>
+            <el-tag
+              v-if="moduleWorkspaceOnboarding"
+              :type="moduleWorkspaceOnboarding.status === 'READY_FOR_PILOT' ? 'success' : 'warning'"
+              effect="plain"
+            >
+              {{ moduleWorkspaceOnboarding.completedSteps }}/{{ moduleWorkspaceOnboarding.totalSteps }} 已完成
+            </el-tag>
+          </header>
+
+          <section class="module-workspace-guide" data-workspace-focus="scope">
+            <b>你只需要做一件事</b>
+            <p>
+              点下面按钮，填清楚「服务在哪跑」和「出故障要查什么」。
+              密钥、查询语句不用你配。后面的操作都在这个侧栏里完成，不会再弹窗。
+            </p>
+            <el-button type="primary" size="large" @click="openModuleEntryConfig(moduleWorkspaceTarget)">
+              {{ moduleWorkspaceTarget.asset?.origin === 'WORKSPACE' ? '去改配置' : '去填配置' }}
+            </el-button>
+            <small>
+              {{ moduleWorkspaceTarget.asset
+                ? `当前：${moduleWorkspaceTarget.asset.environment || '环境未填'} · 已选 ${Object.keys(moduleWorkspaceTarget.asset.signalBindings || {}).length} 种方法`
+                : '还没登记过，先填一次就能保存' }}
+            </small>
+          </section>
+
+          <section class="module-workspace-block" data-workspace-focus="tools">
+            <div class="module-workspace-block-head">
+              <div>
+                <h3>出故障时会查这些</h3>
+                <p>这里只看状态。要增删方法，还是点上面的「去填 / 去改配置」。</p>
+              </div>
+            </div>
+            <div v-if="moduleWorkspaceTools.length" class="module-tool-list">
+              <article
+                v-for="tool in moduleWorkspaceTools"
+                :key="tool.contractRef"
+                class="module-tool-card"
+              >
+                <div class="module-tool-main">
+                  <div>
+                    <b>{{ signalKindLabel(tool.signalKind) }}</b>
+                    <p>{{ tool.question }}</p>
+                  </div>
+                  <el-tag :type="toolStateTagType(tool)" effect="plain" size="small">
+                    {{ tool.statusLabel }}
+                  </el-tag>
+                </div>
+                <small class="module-tool-next">{{ toolNextStepLabel(tool) }}</small>
+                <div class="module-tool-actions">
+                  <el-button
+                    v-if="toolNeedsModuleConfig(tool)"
+                    type="primary"
+                    text
+                    @click="openModuleEntryConfig(moduleWorkspaceTarget)"
+                  >去补齐</el-button>
+                  <el-button
+                    text
+                    @click="openToolDetail({
+                      entry: moduleWorkspaceTarget,
+                      tool,
+                      row: contractRowFor(moduleWorkspaceTarget, tool),
+                    })"
+                  >看说明</el-button>
+                  <el-button
+                    type="primary"
+                    text
+                    :disabled="Boolean(toolListTrialBlocker({
+                      entry: moduleWorkspaceTarget,
+                      tool,
+                      row: contractRowFor(moduleWorkspaceTarget, tool),
+                    }))"
+                    @click="openTrialForToolListRow({
+                      entry: moduleWorkspaceTarget,
+                      tool,
+                      row: contractRowFor(moduleWorkspaceTarget, tool),
+                    })"
+                  >试一下能不能查到</el-button>
+                </div>
+              </article>
+            </div>
+            <el-empty
+              v-else
+              :image-size="48"
+              description="平台还没发布可用方法；开发这边先把服务位置登记好即可"
+            />
+          </section>
+
+          <section class="module-workspace-block" data-workspace-focus="source">
+            <div class="module-workspace-block-head">
+              <div>
+                <h3>观测云连得上吗</h3>
+                <p>只在这里看结果。不通的话找平台改部署配置，不是在页面里填密钥。</p>
+              </div>
+              <el-button :loading="loading" @click="loadCatalog">刷新状态</el-button>
+            </div>
+            <el-alert
+              v-if="realSourceReady"
+              type="success"
+              :closable="false"
+              show-icon
+              class="module-workspace-alert"
+              title="已连上，可以试跑取证方法"
+            />
+            <el-alert
+              v-else-if="replayOnly"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="module-workspace-alert"
+              title="现在只有演示回放，查不到真实生产数据；模块配置仍可先填"
+            />
+            <el-alert
+              v-else
+              type="warning"
+              :closable="false"
+              show-icon
+              class="module-workspace-alert"
+              title="还没连上；你可以先填模块配置，但「试一下」会失败"
+            />
+            <ul class="module-source-list">
+              <li v-for="source in moduleWorkspaceSources" :key="source.platform">
+                <div class="module-source-main">
+                  <b>{{ source.platform }}</b>
+                  <el-tag :type="sourceStateTagType(source)" effect="plain" size="small">
+                    {{ sourceStateLabel(source) }}
+                  </el-tag>
+                </div>
+                <div class="source-checks">
+                  <el-tag :type="sourceCheckTagType(source.endpointStatus)" effect="plain" size="small">
+                    {{ sourceCheckLabel(source.endpointStatus, '端点') }}
+                  </el-tag>
+                  <el-tag :type="sourceCheckTagType(source.credentialStatus)" effect="plain" size="small">
+                    {{ sourceCheckLabel(source.credentialStatus, '凭据') }}
+                  </el-tag>
+                </div>
+                <small v-if="source.detail">{{ source.detail }}</small>
+              </li>
+            </ul>
+            <p v-if="!moduleWorkspaceSources.length" class="empty-inline">当前部署还没有观测云数据源信息。</p>
+          </section>
+        </template>
+
+        <section v-else-if="moduleWorkspacePanel === 'edit'" class="module-workspace-panel">
+          <el-alert
+            type="info"
+            :closable="false"
+            class="asset-dialog-alert"
+            title="这里只保存系统、模块范围和所选取证方法。API Key、端点主机、原始 DQL 与原始日志不进入配置，由服务端保管。"
+          />
+          <el-alert
+            type="warning"
+            :closable="false"
+            class="asset-dialog-alert"
+            title="修改会保存为新版本，不会覆盖原来的生产审计记录。"
+          />
+          <el-alert
+            :type="assetDraftReadiness.ready ? 'success' : 'info'"
+            :closable="false"
+            show-icon
+            class="asset-dialog-alert"
+            :title="assetDraftReadiness.ready ? '可以保存了' : `还缺 ${assetDraftReadiness.missing.length} 项`"
+            :description="assetDraftReadiness.ready
+              ? '保存后就能回来试跑。'
+              : `请补齐：${assetDraftReadiness.missing.join('、')}`"
+          />
+          <el-form label-position="top" class="asset-form">
+            <div class="asset-form-grid">
+              <el-form-item label="系统标识">
+                <el-input v-model="assetForm.system" :disabled="assetForm.systemLocked" placeholder="例如 CSDP" />
+              </el-form-item>
+              <el-form-item label="模块 / 服务标识">
+                <el-input v-model="assetForm.service" :disabled="assetForm.serviceLocked" placeholder="例如 csdp-session-service" />
+              </el-form-item>
+              <el-form-item label="显示名称">
+                <el-input v-model="assetForm.displayName" placeholder="例如 CSDP 会话服务" />
+              </el-form-item>
+              <el-form-item label="观测平台">
+                <el-input v-model="assetForm.platform" disabled />
+              </el-form-item>
+              <el-form-item label="环境（必填）">
+                <el-input v-model="assetForm.environment" placeholder="prod / staging" />
+              </el-form-item>
+              <el-form-item :label="metadataFieldLabel('region', '区域')">
+                <el-input v-model="assetForm.region" placeholder="cn-south-1" />
+              </el-form-item>
+              <el-form-item :label="metadataFieldLabel('cluster', '集群')">
+                <el-input v-model="assetForm.cluster" placeholder="csdp-prod" />
+              </el-form-item>
+              <el-form-item :label="metadataFieldLabel('namespace', '命名空间')">
+                <el-input v-model="assetForm.namespace" placeholder="csdp" />
+              </el-form-item>
+            </div>
+            <el-form-item label="选择这个模块的取证方法">
+              <p class="field-help">发生故障时，系统会按照这里选择的方法查询日志、调用链、拨测或服务状态。</p>
+              <div v-if="contractGroups.length" class="contract-binding-grid">
+                <div v-for="group in contractGroups" :key="group.signalKind" class="contract-binding-row">
+                  <div>
+                    <b>{{ signalKindLabel(group.signalKind) }}</b>
+                    <small>{{ group.options[0]?.scenario }}</small>
+                  </div>
+                  <el-select
+                    v-model="assetForm.contractRefs[group.signalKind]"
+                    clearable
+                    filterable
+                    placeholder="不绑定该证据维度"
+                  >
+                    <el-option
+                      v-for="option in group.options"
+                      :key="option.contractRef"
+                      :label="`${option.question}（${option.contractRef}）`"
+                      :value="option.contractRef"
+                    />
+                  </el-select>
+                </div>
+              </div>
+              <el-empty v-else :image-size="56" description="当前还没有可选择的取证方法，请先由平台管理员发布" />
+            </el-form-item>
+            <section v-if="editableAssetParameters.length" class="asset-parameter-section">
+              <div class="asset-parameter-heading">
+                <b>取证时要查询哪个资源</b>
+                <small>这些值固定当前模块的查询范围，排障时不会临时改到其他系统。</small>
+              </div>
+              <div class="asset-form-grid">
+                <el-form-item
+                  v-for="parameter in editableAssetParameters"
+                  :key="parameter"
+                  :label="assetParameterLabel(parameter)"
+                >
+                  <el-input
+                    v-model="assetForm.parameters[parameter]"
+                    :placeholder="`填写 ${parameter} 的精确值`"
+                  />
+                </el-form-item>
+              </div>
+            </section>
+            <div class="asset-enabled-row">
+              <div><b>启用资产</b><small>停用后该系统模块不再回落到部署默认授权。</small></div>
+              <el-switch v-model="assetForm.enabled" />
+            </div>
+            <el-form-item label="变更原因">
+              <el-input
+                v-model="assetForm.reason"
+                type="textarea"
+                :rows="3"
+                maxlength="500"
+                show-word-limit
+                placeholder="说明为什么接入、调整或停用这个生产观测资产"
+              />
+            </el-form-item>
+          </el-form>
+          <div class="module-workspace-actions">
+            <el-button @click="backToModuleOverview">取消</el-button>
+            <el-button
+              type="primary"
+              :loading="assetSaving"
+              :disabled="!assetDraftReadiness.ready"
+              @click="saveAsset"
+            >保存</el-button>
+          </div>
+        </section>
+
+        <section v-else-if="moduleWorkspacePanel === 'tool' && toolDetailTarget" class="module-workspace-panel">
+          <div class="tool-detail-heading">
+            <div>
+              <small>{{ toolDetailTarget.entry.system }} / {{ toolDetailTarget.entry.service }}</small>
+              <h3>{{ signalKindLabel(toolDetailTarget.tool.signalKind) }} · {{ toolDetailTarget.tool.scenario }}</h3>
+              <p>{{ toolDetailTarget.tool.question }}</p>
+            </div>
+            <el-tag :type="toolStateTagType(toolDetailTarget.tool)" effect="plain">
+              {{ toolDetailTarget.tool.statusLabel }}
+            </el-tag>
+          </div>
+          <div class="checklist">
+            <div
+              v-for="item in toolDetailTarget.tool.checklist"
+              :key="item.key"
+              class="checklist-item"
+              :class="{ done: item.done }"
+            >
+              <span class="check-mark">{{ item.done ? '✓' : '○' }}</span>
+              <div><b>{{ item.label }}</b><small>{{ item.detail }}</small></div>
+            </div>
+          </div>
+          <div v-if="toolDetailTarget.tool.contract?.blockers?.length" class="blocker-box">
+            <b>现在卡住的原因</b>
+            <ul><li v-for="blocker in toolDetailTarget.tool.contract.blockers" :key="blocker">{{ blocker }}</li></ul>
+          </div>
+          <details v-if="toolDetailTarget.tool.contract" class="contract-spec">
+            <summary>取证方法详情：需要什么 · 返回什么 · 执行限制</summary>
+            <div class="detail-grid">
+              <section class="detail-card">
+                <div class="card-title"><small>INPUT</small><h3>需要传什么</h3></div>
+                <el-table :data="toolDetailTarget.tool.contract.parameters" size="small">
+                  <el-table-column prop="name" label="参数" min-width="120" />
+                  <el-table-column label="来源" min-width="140">
+                    <template #default="scope">{{ parameterSourceLabel(scope.row.source) }}</template>
+                  </el-table-column>
+                  <el-table-column label="要求" width="72">
+                    <template #default="scope">{{ scope.row.required ? '必填' : '可兜底' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="description" label="说明" min-width="180" />
+                </el-table>
+              </section>
+              <section class="detail-card">
+                <div class="card-title"><small>OUTPUT</small><h3>规范返回</h3></div>
+                <div class="tag-list">
+                  <el-tag v-for="field in toolDetailTarget.tool.contract.canonicalOutputs" :key="field" effect="plain">{{ field }}</el-tag>
+                </div>
+              </section>
+              <section class="detail-card">
+                <div class="card-title"><small>FIXED</small><h3>服务端固定条件</h3></div>
+                <div class="tag-list">
+                  <el-tag
+                    v-for="condition in toolDetailTarget.tool.contract.fixedConditions"
+                    :key="condition"
+                    type="info"
+                    effect="plain"
+                  >{{ condition }}</el-tag>
+                  <span v-if="!toolDetailTarget.tool.contract.fixedConditions.length" class="empty-inline">未记录</span>
+                </div>
+              </section>
+            </div>
+          </details>
+          <section v-if="toolDetailTarget.tool.contract" class="trial-history">
+            <div class="trial-history-heading">
+              <div><small>AUDIT</small><h3>最近只读试跑</h3></div>
+              <el-button text :loading="trialHistoryLoading" @click="loadTrialHistory">刷新</el-button>
+            </div>
+            <el-table v-if="trialHistory.length" :data="trialHistory" size="small">
+              <el-table-column label="结果" width="110">
+                <template #default="scope">
+                  <el-tag :type="scope.row.status === 'OBSERVED' ? 'success' : scope.row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
+                    {{ trialStatusLabel(scope.row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="资产版本" width="100"><template #default="scope">v{{ scope.row.assetVersion }}</template></el-table-column>
+              <el-table-column label="返回字段" min-width="180"><template #default="scope">{{ scope.row.canonicalFields.join('、') || '无' }}</template></el-table-column>
+              <el-table-column prop="durationMs" label="耗时" width="90" />
+              <el-table-column prop="actor" label="操作人" width="120" />
+              <el-table-column prop="completedAt" label="完成时间" min-width="160" />
+            </el-table>
+            <el-empty v-else :image-size="40" description="还没有只读试跑记录" />
+          </section>
+          <div class="module-workspace-actions">
+            <el-button
+              v-if="toolNeedsModuleConfig(toolDetailTarget.tool)"
+              type="primary"
+              @click="openModuleConfigFor(toolDetailTarget.entry)"
+            >去补齐配置</el-button>
+            <el-button
+              v-if="toolDetailTarget.row"
+              @click="openRouteEditor(toolDetailTarget.row)"
+            >改查询顺序</el-button>
+            <el-button
+              type="primary"
+              :disabled="Boolean(toolListTrialBlocker(toolDetailTarget))"
+              @click="openTrialForToolListRow(toolDetailTarget)"
+            >试一下能不能查到</el-button>
+          </div>
+        </section>
+
+        <section v-else-if="moduleWorkspacePanel === 'trial' && trialTarget" class="module-workspace-panel">
+          <div class="route-scope">
+            <span>本次只查询</span>
+            <b>{{ trialTarget.system }} / {{ trialTarget.service }} / {{ trialTarget.contract.contractRef }}</b>
+            <small>系统资产中的资源范围和服务端查询条件不可在此修改。</small>
+          </div>
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="只验证这个取证方法能否返回规范证据，不会创建排障单，也不代表真源已验收。"
+            class="asset-dialog-alert"
+          />
+          <el-alert
+            v-if="trialError"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="trialError"
+            class="asset-dialog-alert"
+          />
+          <el-form label-position="top">
+            <el-form-item
+              v-for="parameter in trialParameters"
+              :key="parameter.name"
+              :label="`${trialParameterLabel(parameter.name)}${parameter.required ? '（必填）' : ''}`"
+            >
+              <el-input
+                v-model="trialParameterValues[parameter.name]"
+                maxlength="256"
+                :placeholder="parameter.description"
+              />
+            </el-form-item>
+            <div class="trial-time-grid">
+              <el-form-item label="查询时间范围">
+                <el-select v-model="trialWindow">
+                  <el-option label="最近 5 分钟" value="-5m" />
+                  <el-option label="最近 15 分钟" value="-15m" />
+                  <el-option label="最近 30 分钟" value="-30m" />
+                  <el-option label="最近 1 小时" value="-1h" />
+                  <el-option label="最近 24 小时" value="-24h" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="故障发生时间（不选则用当前时间）">
+                <el-date-picker
+                  v-model="trialOccurredAt"
+                  type="datetime"
+                  placeholder="使用当前时间"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </div>
+          </el-form>
+          <section v-if="trialResult" class="trial-result">
+            <div>
+              <b>{{ trialResult.status === 'OBSERVED'
+                ? '已拿到规范证据'
+                : trialResult.status === 'FAILED'
+                  ? '数据源查询失败'
+                  : '查询成功，但这个时间范围没有完整证据' }}</b>
+              <small>资产 v{{ trialResult.assetVersion }} · {{ trialResult.durationMs }} 毫秒 · {{ trialResult.source }}</small>
+            </div>
+            <div class="tag-list output-tags">
+              <el-tag v-for="field in trialResult.canonicalFields" :key="field" effect="plain">{{ field }}</el-tag>
+            </div>
+            <p>{{ trialResult.warning }}</p>
+          </section>
+          <div class="module-workspace-actions">
+            <el-button @click="backToModuleOverview">回到总览</el-button>
+            <el-button type="primary" :loading="trialRunning" @click="runTrial">执行只读查询</el-button>
+          </div>
+        </section>
+
+        <section v-else-if="moduleWorkspacePanel === 'route' && routeTarget" class="module-workspace-panel">
+          <div class="route-scope">
+            <span>当前模块</span>
+            <b>{{ routeTarget.system }} / {{ routeTarget.service }}</b>
+            <small>{{ signalKindLabel(routeTarget.contract.signalKind) }} · {{ routeTarget.contract.contractRef }}</small>
+          </div>
+          <el-form label-position="top">
+            <el-form-item label="按顺序选择适配器">
+              <div class="route-platform-editor">
+                <div v-for="(platform, index) in routePlatforms" :key="`${platform}-${index}`" class="route-platform-row">
+                  <el-select v-model="routePlatforms[index]" filterable allow-create>
+                    <el-option
+                      v-for="source in catalog?.sources || []"
+                      :key="source.platform"
+                      :label="source.platform"
+                      :value="source.platform"
+                    />
+                  </el-select>
+                  <el-button text :disabled="index === 0" @click="moveRoutePlatform(index, -1)">上移</el-button>
+                  <el-button text :disabled="index === routePlatforms.length - 1" @click="moveRoutePlatform(index, 1)">下移</el-button>
+                  <el-button text type="danger" @click="routePlatforms.splice(index, 1)">删除</el-button>
+                </div>
+                <el-button @click="routePlatforms.push('guance')">增加适配器</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="变更原因">
+              <el-input v-model="routeReason" type="textarea" :rows="3" maxlength="500" show-word-limit />
+            </el-form-item>
+          </el-form>
+          <div class="module-workspace-actions">
+            <el-button @click="moduleWorkspacePanel = toolDetailTarget ? 'tool' : 'overview'">取消</el-button>
+            <el-button type="primary" :loading="routeSaving" @click="saveRoute">保存路由</el-button>
+          </div>
+        </section>
+      </template>
+    </el-drawer>
+
     <el-dialog v-model="moduleChooserOpen" title="选择模块所属系统" width="520px" destroy-on-close>
       <p class="dialog-help">新模块会复用所选系统标识；如果是全新系统，请使用“新增系统”。</p>
       <div class="system-choice-list">
@@ -303,269 +784,6 @@
       </div>
       <el-empty v-if="!systemChoices.length" :image-size="48" description="尚无可选系统，请先新增系统" />
       <template #footer><el-button @click="moduleChooserOpen = false">取消</el-button></template>
-    </el-dialog>
-
-    <el-dialog v-model="toolDetailOpen" title="取证方法详情" width="900px" destroy-on-close>
-      <template v-if="toolDetailTarget">
-        <div class="tool-detail-heading">
-          <div>
-            <small>{{ toolDetailTarget.entry.system }} / {{ toolDetailTarget.entry.service }}</small>
-            <h3>{{ signalKindLabel(toolDetailTarget.tool.signalKind) }} · {{ toolDetailTarget.tool.scenario }}</h3>
-            <p>{{ toolDetailTarget.tool.question }}</p>
-            <code>{{ toolDetailTarget.tool.contractRef }}</code>
-          </div>
-          <el-tag :type="toolStateTagType(toolDetailTarget.tool)" effect="plain">
-            {{ toolDetailTarget.tool.statusLabel }}
-          </el-tag>
-        </div>
-
-        <div class="checklist">
-          <div
-            v-for="item in toolDetailTarget.tool.checklist"
-            :key="item.key"
-            class="checklist-item"
-            :class="{ done: item.done }"
-          >
-            <span class="check-mark">{{ item.done ? '✓' : '○' }}</span>
-            <div><b>{{ item.label }}</b><small>{{ item.detail }}</small></div>
-          </div>
-        </div>
-
-        <div v-if="toolDetailTarget.tool.contract?.blockers?.length" class="blocker-box">
-          <b>阻断点</b>
-          <ul><li v-for="blocker in toolDetailTarget.tool.contract.blockers" :key="blocker">{{ blocker }}</li></ul>
-        </div>
-
-        <details v-if="toolDetailTarget.tool.contract" class="contract-spec">
-          <summary>取证方法详情：需要什么 · 返回什么 · 执行限制</summary>
-          <div class="axis-grid">
-            <article>
-              <span>路由</span>
-              <strong>{{ routeOriginLabel(toolDetailTarget.tool.contract.route.origin) }}</strong>
-              <small>{{ toolDetailTarget.tool.contract.route.platforms.join(' → ') || '未选择适配器' }}</small>
-            </article>
-            <article>
-              <span>绑定</span>
-              <strong>{{ bindingStatusLabel(toolDetailTarget.tool.contract.binding.status) }}</strong>
-              <small>{{ toolDetailTarget.tool.contract.binding.bindingRef || '未绑定' }}</small>
-            </article>
-            <article>
-              <span>预算</span>
-              <strong>{{ toolDetailTarget.tool.contract.budget.queryCount }} 查询 · {{ toolDetailTarget.tool.contract.budget.maxRows }} 行</strong>
-              <small>超时 {{ formatTrialTimeout(toolDetailTarget.tool.contract.budget.timeoutMs) }}</small>
-            </article>
-          </div>
-          <div class="detail-grid">
-            <section class="detail-card">
-              <div class="card-title"><small>INPUT</small><h3>需要传什么</h3></div>
-              <el-table :data="toolDetailTarget.tool.contract.parameters" size="small">
-                <el-table-column prop="name" label="参数" min-width="120" />
-                <el-table-column label="来源" min-width="140">
-                  <template #default="scope">{{ parameterSourceLabel(scope.row.source) }}</template>
-                </el-table-column>
-                <el-table-column label="要求" width="72">
-                  <template #default="scope">{{ scope.row.required ? '必填' : '可兜底' }}</template>
-                </el-table-column>
-                <el-table-column prop="description" label="说明" min-width="180" />
-              </el-table>
-            </section>
-            <section class="detail-card">
-              <div class="card-title"><small>OUTPUT</small><h3>规范返回</h3></div>
-              <div class="tag-list">
-                <el-tag v-for="field in toolDetailTarget.tool.contract.canonicalOutputs" :key="field" effect="plain">{{ field }}</el-tag>
-              </div>
-            </section>
-            <section class="detail-card">
-              <div class="card-title"><small>FIXED</small><h3>服务端固定条件</h3></div>
-              <div class="tag-list">
-                <el-tag
-                  v-for="condition in toolDetailTarget.tool.contract.fixedConditions"
-                  :key="condition"
-                  type="info"
-                  effect="plain"
-                >{{ condition }}</el-tag>
-                <span v-if="!toolDetailTarget.tool.contract.fixedConditions.length" class="empty-inline">未记录</span>
-              </div>
-            </section>
-          </div>
-        </details>
-
-        <section v-if="toolDetailTarget.tool.contract" class="trial-history">
-          <div class="trial-history-heading">
-            <div><small>AUDIT</small><h3>最近只读试跑</h3></div>
-            <el-button text :loading="trialHistoryLoading" @click="loadTrialHistory">刷新</el-button>
-          </div>
-          <el-table v-if="trialHistory.length" :data="trialHistory" size="small">
-            <el-table-column label="结果" width="110">
-              <template #default="scope">
-                <el-tag :type="scope.row.status === 'OBSERVED' ? 'success' : scope.row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
-                  {{ trialStatusLabel(scope.row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="资产版本" width="100"><template #default="scope">v{{ scope.row.assetVersion }}</template></el-table-column>
-            <el-table-column label="返回字段" min-width="180"><template #default="scope">{{ scope.row.canonicalFields.join('、') || '无' }}</template></el-table-column>
-            <el-table-column prop="durationMs" label="耗时" width="90" />
-            <el-table-column prop="actor" label="操作人" width="120" />
-            <el-table-column prop="completedAt" label="完成时间" min-width="160" />
-          </el-table>
-          <el-empty v-else :image-size="40" description="还没有只读试跑记录" />
-        </section>
-      </template>
-      <template #footer>
-        <el-button @click="toolDetailOpen = false">关闭</el-button>
-        <el-button
-          v-if="toolDetailTarget && toolNeedsModuleConfig(toolDetailTarget.tool)"
-          @click="openModuleConfigFor(toolDetailTarget.entry)"
-        >配置模块与绑定</el-button>
-        <el-button
-          v-if="toolDetailTarget?.row"
-          @click="openRouteEditor(toolDetailTarget.row)"
-        >修改路由</el-button>
-        <el-button
-          v-if="toolDetailTarget?.tool.contract?.route.origin === 'WORKSPACE' && toolDetailTarget.row"
-          @click="withdrawRoute(toolDetailTarget.row)"
-        >恢复默认路由</el-button>
-        <el-button
-          v-if="toolDetailTarget"
-          type="primary"
-          :disabled="Boolean(toolListTrialBlocker(toolDetailTarget))"
-          @click="openTrialForToolListRow(toolDetailTarget)"
-        >管理员只读试跑</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="trialDialogOpen" title="管理员只读试跑" width="620px" destroy-on-close>
-      <template v-if="trialTarget">
-        <div class="route-scope">
-          <span>本次只查询</span>
-          <b>{{ trialTarget.system }} / {{ trialTarget.service }} / {{ trialTarget.contract.contractRef }}</b>
-          <small>系统资产中的资源范围和服务端查询条件不可在此修改。</small>
-        </div>
-        <el-alert
-          type="warning"
-          :closable="false"
-          title="只验证这个取证方法能否返回规范证据，不会创建排障单，也不代表真源已验收。"
-          class="asset-dialog-alert"
-        />
-        <el-alert
-          v-if="trialError"
-          type="error"
-          :closable="false"
-          show-icon
-          :title="trialError"
-          class="asset-dialog-alert"
-        />
-        <el-form label-position="top">
-          <el-form-item
-            v-for="parameter in trialParameters"
-            :key="parameter.name"
-            :label="`${trialParameterLabel(parameter.name)}${parameter.required ? '（必填）' : ''}`"
-          >
-            <el-input
-              v-model="trialParameterValues[parameter.name]"
-              maxlength="256"
-              :placeholder="parameter.description"
-            />
-          </el-form-item>
-          <div class="trial-time-grid">
-            <el-form-item label="查询时间范围">
-              <el-select v-model="trialWindow">
-                <el-option label="最近 5 分钟" value="-5m" />
-                <el-option label="最近 15 分钟" value="-15m" />
-                <el-option label="最近 30 分钟" value="-30m" />
-                <el-option label="最近 1 小时" value="-1h" />
-                <el-option label="最近 24 小时" value="-24h" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="故障发生时间（不选则用当前时间）">
-              <el-date-picker
-                v-model="trialOccurredAt"
-                type="datetime"
-                placeholder="使用当前时间"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </div>
-        </el-form>
-        <section v-if="trialResult" class="trial-result">
-          <div>
-            <b>{{ trialResult.status === 'OBSERVED'
-              ? '已拿到规范证据'
-              : trialResult.status === 'FAILED'
-                ? '数据源查询失败'
-                : '查询成功，但这个时间范围没有完整证据' }}</b>
-            <small>资产 v{{ trialResult.assetVersion }} · {{ trialResult.durationMs }} 毫秒 · {{ trialResult.source }}</small>
-          </div>
-          <div class="tag-list output-tags">
-            <el-tag v-for="field in trialResult.canonicalFields" :key="field" effect="plain">{{ field }}</el-tag>
-          </div>
-          <p>{{ trialResult.warning }}</p>
-        </section>
-      </template>
-      <template #footer>
-        <el-button @click="trialDialogOpen = false">关闭</el-button>
-        <el-button type="primary" :loading="trialRunning" @click="runTrial">执行只读查询</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="routeDialogOpen" title="修改 Workspace 取证路由" width="560px">
-      <template v-if="routeTarget">
-        <div class="route-scope">
-          <span>作用域</span>
-          <b>{{ routeTarget.system }} / {{ routeTarget.contract.signalKind }}</b>
-          <small>该声明优先于部署默认路由</small>
-        </div>
-        <el-form label-position="top">
-          <el-form-item label="按顺序选择适配器">
-            <el-checkbox-group v-model="routePlatforms" class="source-checkboxes">
-              <el-checkbox
-                v-for="source in catalog?.sources || []"
-                :key="source.platform"
-                :value="source.platform"
-              >
-                {{ source.platform }}
-                <small>{{ source.status }}</small>
-              </el-checkbox>
-            </el-checkbox-group>
-            <p class="form-help">
-              这里只会出现当前部署已装配的适配器；可以预先声明暂不可用来源，
-              但目录会继续标记为不可运行。全部不选表示“该维度明确不取证”，不会回落到部署默认。
-            </p>
-            <div v-if="routePlatforms.length" class="route-priority">
-              <p>调用顺序（前面的来源优先）</p>
-              <div v-for="(platform, index) in routePlatforms" :key="platform" class="priority-row">
-                <em>{{ index + 1 }}</em>
-                <b>{{ platform }}</b>
-                <el-button
-                  text
-                  :disabled="index === 0"
-                  @click="moveRoutePlatform(index, -1)"
-                >上移</el-button>
-                <el-button
-                  text
-                  :disabled="index === routePlatforms.length - 1"
-                  @click="moveRoutePlatform(index, 1)"
-                >下移</el-button>
-              </div>
-            </div>
-          </el-form-item>
-          <el-form-item label="变更原因">
-            <el-input
-              v-model="routeReason"
-              type="textarea"
-              :rows="3"
-              maxlength="500"
-              show-word-limit
-              placeholder="说明为什么要修改生产取证路由"
-            />
-          </el-form-item>
-        </el-form>
-      </template>
-      <template #footer>
-        <el-button @click="routeDialogOpen = false">取消</el-button>
-        <el-button type="primary" :loading="routeSaving" @click="saveRoute">保存声明</el-button>
-      </template>
     </el-dialog>
 
     <el-dialog
@@ -634,207 +852,116 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="assetDetailOpen"
-      title="模块取证配置详情"
-      width="720px"
+    <el-drawer
+      v-model="contractDrawerOpen"
+      size="min(880px, 100%)"
       destroy-on-close
+      class="contract-library-drawer"
+      :title="contractDrawerTitle"
+      @closed="resetContractForm"
     >
-      <template v-if="assetDetail">
-        <div class="asset-detail-heading">
-          <div>
-            <small>{{ assetDetail.origin === 'WORKSPACE' ? `Workspace v${assetDetail.version}` : '部署默认' }}</small>
-            <h3>{{ assetDetail.displayName || assetDetail.service }}</h3>
-            <p>{{ assetDetail.system }} / {{ assetDetail.service }}</p>
-          </div>
-          <el-tag :type="assetDetail.enabled ? 'success' : 'info'">
-            {{ assetDetail.enabled ? '已启用' : '已停用' }}
-          </el-tag>
-        </div>
-
-        <dl class="asset-detail-grid">
-          <div><dt>观测平台</dt><dd>{{ assetDetail.platform }}</dd></div>
-          <div><dt>环境</dt><dd>{{ assetDetail.environment || '未记录' }}</dd></div>
-          <div><dt>区域</dt><dd>{{ assetDetail.region || '未记录' }}</dd></div>
-          <div><dt>集群</dt><dd>{{ assetDetail.cluster || '未记录' }}</dd></div>
-          <div><dt>命名空间</dt><dd>{{ assetDetail.namespace || '未记录' }}</dd></div>
-          <div><dt>最后变更</dt><dd>{{ assetDetail.changedAt || '未记录' }}</dd></div>
-          <div><dt>变更人</dt><dd>{{ assetDetail.changedBy || '未记录' }}</dd></div>
-          <div class="wide"><dt>变更原因</dt><dd>{{ assetDetail.reason || '未记录' }}</dd></div>
-        </dl>
-
-        <section class="asset-detail-section">
-          <h4>这个模块会使用的取证方法</h4>
-          <div class="asset-contracts">
-            <el-tag
-              v-for="(contractRef, signalKind) in assetDetail.signalBindings"
-              :key="`${signalKind}/${contractRef}`"
-              effect="plain"
-            >{{ signalKind }} · {{ contractRef }}</el-tag>
-            <span v-if="!Object.keys(assetDetail.signalBindings).length" class="empty-inline">未绑定</span>
-          </div>
-        </section>
-
-        <section class="asset-detail-section">
-          <h4>查询使用的资源标识</h4>
-          <dl v-if="Object.keys(assetDetail.parameters).length" class="asset-parameter-list">
-            <div v-for="(value, name) in assetDetail.parameters" :key="name">
-              <dt>{{ assetParameterLabel(name) }}</dt><dd>{{ value }}</dd>
-            </div>
-          </dl>
-          <p v-else class="empty-inline">当前取证方法不需要补充资源范围。</p>
-        </section>
-
-        <el-alert
-          type="info"
-          :closable="false"
-          title="修改会保存为新版本，不会覆盖原来的生产审计记录。"
-        />
-      </template>
-      <template #footer>
-        <el-button @click="assetDetailOpen = false">关闭</el-button>
-        <el-button v-if="assetDetail" type="primary" @click="editAssetFromDetail">
-          {{ assetDetail.origin === 'WORKSPACE' ? '修改模块配置' : '接管模块配置' }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="assetDialogOpen"
-      :title="assetDialogTitle"
-      width="760px"
-      destroy-on-close
-    >
-      <!--
-        这条边界原来印在页面顶部，对着一个还没开始配的人说「你填的东西不含密钥」——
-        那时他还没填任何东西。它回答的是「我在这个表单里填的会被存成什么」，
-        所以贴在表单上。
-      -->
       <el-alert
         type="info"
         :closable="false"
         class="asset-dialog-alert"
-        title="这里只保存系统、模块范围和所选取证方法。API Key、端点主机、原始 DQL 与原始日志不进入配置，由服务端保管。"
-      />
-      <el-alert
-        type="warning"
-        :closable="false"
-        class="asset-dialog-alert"
-        title="修改会保存为新版本，不会覆盖原来的生产审计记录；已停用的 Workspace 资产也会阻止回落到部署默认。"
-      />
-      <el-alert
-        :type="assetDraftReadiness.ready ? 'success' : 'info'"
-        :closable="false"
-        show-icon
-        class="asset-dialog-alert"
-        :title="assetDraftReadiness.ready ? '接管信息已齐全' : `接管前还缺 ${assetDraftReadiness.missing.length} 项`"
-        :description="assetDraftReadiness.ready
-          ? '保存后会生成 Workspace 不可变资产版本，随后才能执行管理员只读试跑。'
-          : `请由系统负责人确认：${assetDraftReadiness.missing.join('、')}`"
+        title="作用域选「通用」后任意模块可勾选；选系统/模块则只有匹配范围能用。部署发布的方法也可在此修改，保存后成为页面版本，并覆盖同名的部署发布方法。"
       />
       <el-form label-position="top" class="asset-form">
         <div class="asset-form-grid">
-          <el-form-item label="系统标识">
-            <el-input v-model="assetForm.system" :disabled="assetForm.systemLocked" placeholder="例如 CSDP" />
+          <el-form-item label="方法标识">
+            <el-input
+              v-model="contractForm.contractRef"
+              :disabled="contractForm.contractRefLocked"
+              placeholder="例如 csdp-message-send-log-search"
+            />
+            <p class="field-help">给这条取证方法起的唯一 ID，供模块勾选时引用；创建后不可改。</p>
           </el-form-item>
-          <el-form-item label="模块 / 服务标识">
-            <el-input v-model="assetForm.service" :disabled="assetForm.serviceLocked" placeholder="例如 csdp-session-service" />
+          <el-form-item label="证据维度">
+            <el-select v-model="contractForm.signalKind" filterable>
+              <el-option label="日志检索" value="log_search" />
+              <el-option label="链路日志包" value="log_trace_bundle" />
+              <el-option label="对比样本" value="contrast_sample" />
+              <el-option label="错误日志巡检" value="error_log_scan" />
+              <el-option label="监控告警" value="monitor_event_scan" />
+              <el-option label="K8s 工作负载" value="k8s_workload_health" />
+              <el-option label="服务 Pod 状态" value="k8s_pod_status" />
+              <el-option label="服务 Node 状态" value="k8s_node_status" />
+              <el-option label="服务主机状态" value="host_status" />
+              <el-option label="拨测" value="synthetic_probe" />
+            </el-select>
           </el-form-item>
-          <el-form-item label="显示名称">
-            <el-input v-model="assetForm.displayName" placeholder="例如 CSDP 会话服务" />
+          <el-form-item label="作用域">
+            <el-select v-model="contractForm.scopeType">
+              <el-option label="通用（所有模块可用）" value="GENERIC" />
+              <el-option label="指定系统" value="SYSTEM" />
+              <el-option label="指定系统 + 模块" value="MODULE" />
+            </el-select>
           </el-form-item>
-          <el-form-item label="观测平台">
-            <el-input v-model="assetForm.platform" disabled />
+          <el-form-item v-if="contractForm.scopeType !== 'GENERIC'" label="系统">
+            <el-input v-model="contractForm.system" placeholder="例如 CSDP" />
           </el-form-item>
-          <el-form-item label="环境（必填）">
-            <el-input v-model="assetForm.environment" placeholder="prod / staging" />
+          <el-form-item v-if="contractForm.scopeType === 'MODULE'" label="模块 / 服务">
+            <el-input v-model="contractForm.service" placeholder="例如 csdp-session-service" />
           </el-form-item>
-          <el-form-item :label="metadataFieldLabel('region', '区域')">
-            <el-input v-model="assetForm.region" placeholder="cn-south-1" />
+          <el-form-item label="场景名">
+            <el-input v-model="contractForm.scenario" placeholder="例如 会话消息发送失败" />
           </el-form-item>
-          <el-form-item :label="metadataFieldLabel('cluster', '集群')">
-            <el-input v-model="assetForm.cluster" placeholder="csdp-prod" />
+          <el-form-item label="要回答的问题">
+            <el-input v-model="contractForm.question" placeholder="发生故障时要查清什么" />
           </el-form-item>
-          <el-form-item :label="metadataFieldLabel('namespace', '命名空间')">
-            <el-input v-model="assetForm.namespace" placeholder="csdp" />
+          <el-form-item label="摘要">
+            <el-input v-model="contractForm.summary" placeholder="一句话说明" />
+          </el-form-item>
+          <el-form-item label="命名空间">
+            <el-input v-model="contractForm.namespace" placeholder="L / T / M" />
           </el-form-item>
         </div>
-
-        <el-form-item label="选择这个模块的取证方法">
-          <p class="field-help">发生故障时，系统会按照这里选择的方法查询日志、调用链、拨测或服务状态。</p>
-          <div v-if="contractGroups.length" class="contract-binding-grid">
-            <div v-for="group in contractGroups" :key="group.signalKind" class="contract-binding-row">
-              <div>
-                <b>{{ signalKindLabel(group.signalKind) }}</b>
-                <small>{{ group.options[0]?.scenario }}</small>
-              </div>
-              <el-select
-                v-model="assetForm.contractRefs[group.signalKind]"
-                clearable
-                filterable
-                placeholder="不绑定该证据维度"
-              >
-                <el-option
-                  v-for="option in group.options"
-                  :key="option.contractRef"
-                  :label="`${option.question}（${option.contractRef}）`"
-                  :value="option.contractRef"
-                />
-              </el-select>
-            </div>
-          </div>
-          <el-empty v-else :image-size="56" description="当前还没有可选择的取证方法，请先由平台管理员发布" />
+        <el-form-item label="模块需填写的参数（逗号分隔）">
+          <el-input
+            v-model="contractForm.requiredAssetParametersText"
+            placeholder="例如 namespace,deployment"
+          />
         </el-form-item>
-
-        <section v-if="editableAssetParameters.length" class="asset-parameter-section">
-          <div class="asset-parameter-heading">
-            <b>取证时要查询哪个资源</b>
-            <small>这些值固定当前模块的查询范围，排障时不会临时改到其他系统。</small>
-          </div>
-          <div class="asset-form-grid">
-            <el-form-item
-              v-for="parameter in editableAssetParameters"
-              :key="parameter"
-              :label="assetParameterLabel(parameter)"
-            >
-              <el-input
-                v-model="assetForm.parameters[parameter]"
-                :placeholder="`填写 ${parameter} 的精确值`"
-              />
-            </el-form-item>
-          </div>
-        </section>
-
+        <el-form-item label="固定条件说明（每行一条，给人看的）">
+          <el-input
+            v-model="contractForm.fixedConditionsText"
+            type="textarea"
+            :rows="3"
+            placeholder="例如：日志源=csp-rpc-msg"
+          />
+        </el-form-item>
+        <el-form-item label="查询模板（DQL）">
+          <el-input
+            v-model="contractForm.queryTemplate"
+            type="textarea"
+            :rows="5"
+            placeholder="L::`index`:(...) { ... } [{{window_span}}::{{window_span}}]"
+          />
+        </el-form-item>
         <div class="asset-enabled-row">
-          <div><b>启用资产</b><small>停用后该系统模块不再回落到部署默认授权。</small></div>
-          <el-switch v-model="assetForm.enabled" />
+          <div><b>启用该方法</b><small>停用后模块不能再新绑到它。</small></div>
+          <el-switch v-model="contractForm.enabled" />
         </div>
         <el-form-item label="变更原因">
           <el-input
-            v-model="assetForm.reason"
+            v-model="contractForm.reason"
             type="textarea"
-            :rows="3"
+            :rows="2"
             maxlength="500"
             show-word-limit
-            placeholder="说明为什么接入、调整或停用这个生产观测资产"
           />
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="assetDialogOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="assetSaving"
-          :disabled="!assetDraftReadiness.ready"
-          @click="saveAsset"
-        >保存新版本</el-button>
-      </template>
-    </el-dialog>
+      <div class="module-workspace-actions">
+        <el-button @click="contractDrawerOpen = false">取消</el-button>
+        <el-button type="primary" :loading="contractSaving" @click="saveEvidenceContract">保存</el-button>
+      </div>
+    </el-drawer>
   </CapabilityWorkspaceShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { vLoading } from 'element-plus/es/components/loading/index'
@@ -842,7 +969,9 @@ import {
   troubleshootingApi,
   type EvidenceCatalogSource,
   type EvidenceCatalogModule,
+  type EvidenceContractCatalog,
   type EvidenceContractTrial,
+  type EvidenceContractView,
   type EvidenceQueryCatalog,
   type EvidenceQueryContract,
   type ObservabilityAsset,
@@ -872,7 +1001,6 @@ import {
   EVIDENCE_SETUP_SECTIONS,
   normalizeEvidenceSetupSection,
   safeTroubleshootingReturnPath,
-  workbenchOverlayLocation,
 } from './workbenchCapabilityMenu'
 
 type ContractRow = {
@@ -929,28 +1057,66 @@ const route = useRoute()
 const router = useRouter()
 const catalog = ref<EvidenceQueryCatalog | null>(null)
 const assetCatalog = ref<ObservabilityAssetCatalog | null>(null)
+const evidenceContractCatalog = ref<EvidenceContractCatalog | null>(null)
+const query = ref('')
+const contractScopeFilter = ref<'ALL' | 'GENERIC' | 'SYSTEM' | 'MODULE'>('ALL')
+const toolStatusFilter = ref<'ALL' | ModuleToolSetup['status']>('ALL')
+const contractDrawerOpen = ref(false)
+const contractSaving = ref(false)
+const contractForm = ref(emptyContractForm())
+
+function emptyContractForm() {
+  return {
+    contractRef: '',
+    contractRefLocked: false,
+    signalKind: 'log_search',
+    scopeType: 'GENERIC' as 'GENERIC' | 'SYSTEM' | 'MODULE',
+    system: '',
+    service: '',
+    scenario: '',
+    question: '',
+    summary: '',
+    namespace: 'L',
+    requiredAssetParametersText: '',
+    fixedConditionsText: '',
+    queryTemplate: '',
+    enabled: true,
+    expectedVersion: undefined as number | undefined,
+    reason: '',
+    editingOrigin: '' as '' | 'DEPLOYMENT' | 'WORKSPACE',
+  }
+}
+
+const contractDrawerTitle = computed(() => {
+  if (!contractForm.value.contractRefLocked) return '新增取证方法'
+  if (contractForm.value.editingOrigin === 'DEPLOYMENT') {
+    return `修改取证方法（将保存为页面版本）· ${contractForm.value.contractRef}`
+  }
+  return `修改取证方法 · ${contractForm.value.contractRef}`
+})
+
+function resetContractForm() {
+  contractForm.value = emptyContractForm()
+}
 const loading = ref(false)
 const error = ref('')
-const query = ref('')
-const toolStatusFilter = ref<'ALL' | ModuleToolSetup['status']>('ALL')
 const selectedModuleKey = ref('')
 const selectedToolRef = ref('')
 const selectedKey = ref('')
-const routeDialogOpen = ref(false)
 const routeSaving = ref(false)
 const routeTarget = ref<ContractRow | null>(null)
 const routePlatforms = ref<string[]>([])
 const routeReason = ref('')
 const moduleChooserOpen = ref(false)
-const assetDialogOpen = ref(false)
 const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
-const assetDetailOpen = ref(false)
-const assetDetail = ref<ObservabilityAsset | null>(null)
 const playbooks = ref<SopSummary[] | null>(null)
 const onboardingDialogOpen = ref(false)
 const onboardingTarget = ref<SetupModuleEntry | null>(null)
-const trialDialogOpen = ref(false)
+const moduleWorkspaceOpen = ref(false)
+const moduleWorkspaceTarget = ref<SetupModuleEntry | null>(null)
+const moduleWorkspaceFocus = ref<'scope' | 'tools' | 'source'>('scope')
+const moduleWorkspacePanel = ref<'overview' | 'edit' | 'tool' | 'trial' | 'route'>('overview')
 const trialRunning = ref(false)
 const trialHistoryLoading = ref(false)
 const trialTarget = ref<ContractRow | null>(null)
@@ -960,7 +1126,6 @@ const trialOccurredAt = ref<Date | null>(null)
 const trialResult = ref<EvidenceContractTrial | null>(null)
 const trialError = ref('')
 const trialHistory = ref<EvidenceContractTrial[]>([])
-const toolDetailOpen = ref(false)
 const toolDetailTarget = ref<ToolListRow | null>(null)
 const setupSection = computed(() => normalizeEvidenceSetupSection(route.query.section))
 const activeSetupSection = computed(() => EVIDENCE_SETUP_SECTIONS.find(
@@ -1032,12 +1197,50 @@ const systemChoices = computed(() => {
 })
 const showListToolbar = computed(() => setupSection.value === 'source'
   ? Boolean(catalog.value?.sources?.length)
-  : hasModules.value)
+  : setupSection.value === 'tools'
+    ? true
+    : hasModules.value)
 const listSearchPlaceholder = computed(() => ({
   modules: '搜索系统或模块',
-  tools: '搜索系统、模块或工具',
+  tools: '搜索方法标识、场景或问题',
   source: '搜索数据源或支持的取证类型',
 }[setupSection.value]))
+
+const filteredEvidenceContracts = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  return (evidenceContractCatalog.value?.contracts || []).filter(contract => {
+    if (contractScopeFilter.value !== 'ALL'
+      && String(contract.scopeType).toUpperCase() !== contractScopeFilter.value) {
+      return false
+    }
+    if (!keyword) return true
+    return [
+      contract.contractRef,
+      contract.scenario,
+      contract.question,
+      contract.summary,
+      contract.system,
+      contract.service,
+      signalKindLabel(contract.signalKind),
+    ].some(value => String(value || '').toLowerCase().includes(keyword))
+  })
+})
+
+function contractScopeLabel(contract: EvidenceContractView) {
+  const scope = String(contract.scopeType || '').toUpperCase()
+  if (scope === 'SYSTEM') return '指定系统'
+  if (scope === 'MODULE') return '指定模块'
+  return '通用'
+}
+
+function contractScopeDetail(contract: EvidenceContractView) {
+  const scope = String(contract.scopeType || '').toUpperCase()
+  if (scope === 'SYSTEM') return contract.system || '未填系统'
+  if (scope === 'MODULE') {
+    return [contract.system, contract.service].filter(Boolean).join(' / ') || '未填系统/模块'
+  }
+  return '任意系统模块都可勾选'
+}
 
 const filteredSources = computed(() => {
   const keyword = query.value.trim().toLowerCase()
@@ -1145,8 +1348,46 @@ const onboardingReadiness = computed(() => onboardingTarget.value
   ? moduleOnboarding(onboardingTarget.value)
   : null)
 
+const moduleWorkspaceOnboarding = computed(() => moduleWorkspaceTarget.value
+  ? moduleOnboarding(moduleWorkspaceTarget.value)
+  : null)
+
+const moduleWorkspaceTools = computed(() => {
+  const entry = moduleWorkspaceTarget.value
+  if (!entry) return [] as ModuleToolSetup[]
+  return buildModuleToolSetups({
+    options: assetCatalog.value?.contracts || [],
+    module: entry.module,
+    asset: entry.asset,
+    sourceReady: sourceReady.value,
+  })
+})
+
+const moduleWorkspaceSources = computed(() => (catalog.value?.sources || [])
+  .filter(source => !isRecordedReplay(source.platform) || source.status === 'READY'))
+
+const moduleWorkspaceDrawerTitle = computed(() => {
+  const target = moduleWorkspaceTarget.value
+  const base = target ? `${target.system} / ${target.service}` : '模块配置'
+  const form = assetForm.value
+  const editTitle = !form.systemLocked
+    ? '新增系统及第一个模块'
+    : !form.serviceLocked
+      ? `给 ${form.system || '当前系统'} 新增模块`
+      : form.expectedVersion
+        ? `修改配置 · ${base}`
+        : `填写配置 · ${base}`
+  return ({
+    overview: base,
+    edit: editTitle,
+    tool: `方法说明 · ${base}`,
+    trial: `试一下 · ${base}`,
+    route: `查询顺序 · ${base}`,
+  })[moduleWorkspacePanel.value]
+})
+
 const onboardingNextActionLabel = computed(() => ({
-  source: '去检查数据连接',
+  source: '查看连接状态',
   asset: '去登记模块',
   tools: '去配置取证方法',
   playbook: '去排障规则库',
@@ -1238,13 +1479,6 @@ const assetDraftReadiness = computed(() => observabilityAssetDraftReadiness({
   requiredAssetParameters: requiredAssetParameters.value,
   reason: assetForm.value.reason,
 }))
-const assetDialogTitle = computed(() => {
-  const form = assetForm.value
-  if (form.expectedVersion) return '修改系统模块取证配置'
-  if (!form.systemLocked) return '新增系统及第一个模块'
-  if (!form.serviceLocked) return `给 ${form.system || '当前系统'} 新增模块`
-  return '登记已有系统模块取证配置'
-})
 const trialParameters = computed(() => (trialTarget.value?.contract.parameters || []).filter(
   parameter => (parameter.source === 'EVIDENCE_REQUEST_TARGET'
     && !['monitor_checker', 'deployment', 'namespace', 'cluster', 'region', 'environment']
@@ -1322,8 +1556,95 @@ function moduleOriginTagType(entry: SetupModuleEntry): 'success' | 'info' | 'war
 
 function openModuleEntryConfig(entry: SetupModuleEntry) {
   selectSetupModule(entry)
-  if (entry.asset) openAssetEditor(entry.asset)
-  else openExistingModuleRegistration(entry)
+  if (entry.asset) prepareAssetEditor(entry.asset)
+  else prepareExistingModuleRegistration(entry)
+  showAssetEditor()
+}
+
+function backToModuleOverview() {
+  moduleWorkspacePanel.value = 'overview'
+}
+
+function draftModuleEntry(): SetupModuleEntry {
+  const form = assetForm.value
+  return {
+    system: form.system || 'new-system',
+    service: form.service || 'new-module',
+    displayName: form.displayName || form.service || '新模块',
+    asset: null,
+    module: null,
+  }
+}
+
+function showAssetEditor() {
+  if (!moduleWorkspaceOpen.value || !moduleWorkspaceTarget.value) {
+    moduleWorkspaceTarget.value = draftModuleEntry()
+    onboardingTarget.value = moduleWorkspaceTarget.value
+    moduleWorkspaceOpen.value = true
+  }
+  moduleWorkspacePanel.value = 'edit'
+}
+
+function openModuleWorkspace(entry: SetupModuleEntry, focus: 'scope' | 'tools' | 'source' = 'scope') {
+  selectSetupModule(entry)
+  moduleWorkspaceTarget.value = entry
+  moduleWorkspaceFocus.value = focus
+  moduleWorkspacePanel.value = 'overview'
+  moduleWorkspaceOpen.value = true
+  onboardingTarget.value = entry
+  void nextTick(() => {
+    document
+      .querySelector(`.module-workspace-drawer [data-workspace-focus="${focus}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+
+function openModuleOnboarding(entry: SetupModuleEntry) {
+  selectSetupModule(entry)
+  onboardingTarget.value = entry
+  onboardingDialogOpen.value = true
+}
+
+function continueModuleOnboarding() {
+  const target = onboardingTarget.value || moduleWorkspaceTarget.value
+  const next = (onboardingTarget.value
+    ? onboardingReadiness.value
+    : moduleWorkspaceOnboarding.value)?.nextStep
+  if (!target || !next) return
+  onboardingDialogOpen.value = false
+  if (next.action === 'asset') {
+    openModuleWorkspace(target, 'scope')
+    openModuleEntryConfig(target)
+    return
+  }
+  if (next.action === 'source') {
+    openModuleWorkspace(target, 'source')
+    return
+  }
+  if (next.action === 'tools') {
+    openModuleWorkspace(target, 'tools')
+    return
+  }
+  if (next.action === 'playbook') {
+    void router.push({
+      path: '/troubleshooting/sops',
+      query: { returnTo: route.fullPath, system: target.system, service: target.service },
+    })
+    return
+  }
+  if (next.action === 'acceptance') {
+    void router.push({
+      path: '/troubleshooting',
+      query: {
+        capability: 'guance',
+        system: target.system,
+        service: target.service,
+        returnTo: route.fullPath,
+      },
+    })
+    return
+  }
+  openModuleWorkspace(target, 'source')
 }
 
 function selectSetupModule(entry: SetupModuleEntry) {
@@ -1357,24 +1678,32 @@ function toolNeedsModuleConfig(tool: ModuleToolSetup) {
 }
 
 function openModuleConfigFor(entry: SetupModuleEntry) {
-  toolDetailOpen.value = false
   selectSetupModule(entry)
-  if (entry.asset) openAssetEditor(entry.asset)
-  else openExistingModuleRegistration(entry)
+  if (entry.asset) prepareAssetEditor(entry.asset)
+  else prepareExistingModuleRegistration(entry)
+  ensureModuleWorkspace(entry)
+  showAssetEditor()
+}
+
+function ensureModuleWorkspace(entry: SetupModuleEntry) {
+  moduleWorkspaceTarget.value = entry
+  onboardingTarget.value = entry
+  moduleWorkspaceOpen.value = true
 }
 
 function openToolDetail(target: ToolListRow) {
   toolDetailTarget.value = target
   selectSetupModule(target.entry)
   selectTool(target.tool)
-  toolDetailOpen.value = true
+  ensureModuleWorkspace(target.entry)
+  moduleWorkspacePanel.value = 'tool'
   void loadTrialHistory()
 }
 
 function openTrialForToolListRow(target: ToolListRow) {
-  toolDetailOpen.value = false
   selectSetupModule(target.entry)
   selectTool(target.tool)
+  ensureModuleWorkspace(target.entry)
   if (target.row) openTrialForRow(target.row)
 }
 
@@ -1438,7 +1767,8 @@ function trialParameterLabel(name: string) {
     trace_id: '链路标识',
     deployment: 'Deployment 名称',
     namespace: '命名空间',
-    monitor_checker: '拨测任务标识',
+    probe_name: '拨测任务名',
+    monitor_checker: '监控规则标识',
   }[name] || name
 }
 
@@ -1453,6 +1783,8 @@ function trialStatusLabel(status: EvidenceContractTrial['status']) {
 function openTrialForRow(row: ContractRow) {
   selectedKey.value = contractKey(row.system, row.service, row.contract)
   if (rowTrialBlocker(row)) return
+  const entry = setupModules.value.find(item =>
+    moduleKey(item.system, item.service) === moduleKey(row.system, row.service))
   trialTarget.value = row
   trialParameterValues.value = Object.fromEntries(
     row.contract.parameters
@@ -1466,7 +1798,9 @@ function openTrialForRow(row: ContractRow) {
   trialOccurredAt.value = null
   trialResult.value = null
   trialError.value = ''
-  trialDialogOpen.value = true
+  if (entry) ensureModuleWorkspace(entry)
+  else ensureModuleWorkspace(draftModuleEntry())
+  moduleWorkspacePanel.value = 'trial'
 }
 
 async function runTrial() {
@@ -1540,15 +1874,17 @@ async function loadCatalog() {
       status: 'approved',
       limit: 500,
     })
-    const [catalogResponse, assetResponse, playbookResponse] = await Promise.all([
+    const [catalogResponse, assetResponse, contractResponse, playbookResponse] = await Promise.all([
       troubleshootingApi.evidenceCatalog(),
       troubleshootingApi.observabilityAssets(),
+      troubleshootingApi.evidenceContracts().catch(() => ({ data: null })),
       playbookRequest && typeof playbookRequest.then === 'function'
         ? playbookRequest.catch(() => null)
         : Promise.resolve(null),
     ])
     catalog.value = catalogResponse.data
     assetCatalog.value = assetResponse.data
+    evidenceContractCatalog.value = contractResponse.data
     playbooks.value = playbookResponse?.data || null
     const preferredSystem = typeof route.query.system === 'string' ? route.query.system : ''
     const preferredService = typeof route.query.service === 'string' ? route.query.service : ''
@@ -1564,6 +1900,13 @@ async function loadCatalog() {
       selectedToolRef.value = ''
       selectedKey.value = ''
     }
+    if (moduleWorkspaceOpen.value && moduleWorkspaceTarget.value) {
+      const current = moduleWorkspaceTarget.value
+      moduleWorkspaceTarget.value = setupModules.value.find(entry =>
+        moduleKey(entry.system, entry.service) === moduleKey(current.system, current.service))
+        || null
+      if (!moduleWorkspaceTarget.value) moduleWorkspaceOpen.value = false
+    }
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : '系统接入配置加载失败'
   } finally {
@@ -1571,49 +1914,116 @@ async function loadCatalog() {
   }
 }
 
-function openModuleOnboarding(entry: SetupModuleEntry) {
-  onboardingTarget.value = entry
-  onboardingDialogOpen.value = true
-}
-
-function continueModuleOnboarding() {
-  const target = onboardingTarget.value
-  const next = onboardingReadiness.value?.nextStep
-  if (!target || !next) return
-  onboardingDialogOpen.value = false
-  if (next.action === 'asset') {
-    openModuleEntryConfig(target)
-    return
-  }
-  if (next.action === 'source') {
-    selectSetupSection('source')
-    return
-  }
-  if (next.action === 'tools') {
-    void router.push({
-      path: route.path,
-      query: {
-        ...route.query,
-        section: 'tools',
-        system: target.system,
-        service: target.service,
-      },
-    })
-    return
-  }
-  if (next.action === 'playbook') {
-    void router.push({
-      path: '/troubleshooting/sops',
-      query: { returnTo: route.fullPath, system: target.system, service: target.service },
-    })
-    return
-  }
-  openGuanceValidation({ system: target.system, service: target.service })
-}
-
 function openNewSystem() {
   assetForm.value = emptyAssetForm()
-  assetDialogOpen.value = true
+  moduleWorkspaceTarget.value = draftModuleEntry()
+  onboardingTarget.value = moduleWorkspaceTarget.value
+  moduleWorkspaceOpen.value = true
+  moduleWorkspacePanel.value = 'edit'
+}
+
+function openNewEvidenceContract() {
+  contractForm.value = emptyContractForm()
+  contractDrawerOpen.value = true
+}
+
+async function openEvidenceContractEditor(contract: EvidenceContractView) {
+  contractForm.value = emptyContractForm()
+  contractForm.value.contractRef = contract.contractRef
+  contractForm.value.contractRefLocked = true
+  contractForm.value.editingOrigin = contract.origin === 'WORKSPACE' ? 'WORKSPACE' : 'DEPLOYMENT'
+  contractForm.value.signalKind = contract.signalKind || 'log_search'
+  contractForm.value.scopeType = (String(contract.scopeType || 'GENERIC').toUpperCase() as
+    'GENERIC' | 'SYSTEM' | 'MODULE')
+  contractForm.value.system = contract.system || ''
+  contractForm.value.service = contract.service || ''
+  contractForm.value.scenario = contract.scenario || ''
+  contractForm.value.question = contract.question || ''
+  contractForm.value.summary = contract.summary || ''
+  contractForm.value.namespace = contract.namespace || 'L'
+  contractForm.value.requiredAssetParametersText =
+    (contract.requiredAssetParameters || []).join(',')
+  contractForm.value.fixedConditionsText = (contract.fixedConditions || []).join('\n')
+  contractForm.value.enabled = contract.enabled !== false
+  if (contract.origin === 'WORKSPACE' && contract.version > 0) {
+    contractForm.value.expectedVersion = contract.version
+  } else {
+    // 部署发布的方法第一次在页面保存：写入 Workspace 版本并覆盖同名部署方法
+    contractForm.value.expectedVersion = undefined
+    contractForm.value.reason = `修改部署发布方法 ${contract.contractRef}`
+  }
+  try {
+    const detail = await troubleshootingApi.evidenceContractDetail(contract.contractRef)
+    contractForm.value.queryTemplate = detail.data.queryTemplate || ''
+    if (detail.data.origin === 'WORKSPACE' && detail.data.version > 0) {
+      contractForm.value.expectedVersion = detail.data.version
+      contractForm.value.editingOrigin = 'WORKSPACE'
+      if (!contractForm.value.reason) contractForm.value.reason = ''
+    }
+  } catch {
+    contractForm.value.queryTemplate = ''
+  }
+  contractDrawerOpen.value = true
+}
+
+async function saveEvidenceContract() {
+  const form = contractForm.value
+  if (!form.contractRef.trim() || !form.scenario.trim() || !form.question.trim()) {
+    ElMessage.warning('请填写方法标识、场景和问题')
+    return
+  }
+  if (!form.queryTemplate.trim()) {
+    ElMessage.warning('请填写查询模板')
+    return
+  }
+  if (!form.reason.trim()) {
+    ElMessage.warning('请填写变更原因')
+    return
+  }
+  if (form.scopeType !== 'GENERIC' && !form.system.trim()) {
+    ElMessage.warning('指定作用域时请填写系统')
+    return
+  }
+  if (form.scopeType === 'MODULE' && !form.service.trim()) {
+    ElMessage.warning('指定模块时请填写模块/服务标识')
+    return
+  }
+  contractSaving.value = true
+  try {
+    await troubleshootingApi.declareEvidenceContract({
+      contractRef: form.contractRef.trim(),
+      signalKind: form.signalKind,
+      scopeType: form.scopeType,
+      system: form.scopeType === 'GENERIC' ? undefined : form.system.trim(),
+      service: form.scopeType === 'MODULE' ? form.service.trim() : undefined,
+      scenario: form.scenario.trim(),
+      question: form.question.trim(),
+      summary: form.summary.trim() || form.scenario.trim(),
+      namespace: form.namespace.trim() || 'L',
+      maxRows: 200,
+      queryTemplate: form.queryTemplate.trim(),
+      fixedConditions: form.fixedConditionsText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean),
+      requiredAssetParameters: form.requiredAssetParametersText
+        .split(/[,，]/)
+        .map(item => item.trim())
+        .filter(Boolean),
+      enabled: form.enabled,
+      expectedVersion: form.expectedVersion,
+      reason: form.reason.trim(),
+    })
+    contractDrawerOpen.value = false
+    ElMessage.success(form.expectedVersion || form.contractRefLocked
+      ? '取证方法已更新'
+      : '取证方法已保存')
+    await loadCatalog()
+  } catch (failure) {
+    ElMessage.error(failure instanceof Error ? failure.message : '取证方法保存失败')
+  } finally {
+    contractSaving.value = false
+  }
 }
 
 function openModuleForSystem(system: string) {
@@ -1622,7 +2032,10 @@ function openModuleForSystem(system: string) {
     assetForm.value.system = system
     assetForm.value.systemLocked = true
   }
-  assetDialogOpen.value = true
+  moduleWorkspaceTarget.value = draftModuleEntry()
+  onboardingTarget.value = moduleWorkspaceTarget.value
+  moduleWorkspaceOpen.value = true
+  moduleWorkspacePanel.value = 'edit'
 }
 
 function chooseSystemForNewModule(system: string) {
@@ -1631,6 +2044,11 @@ function chooseSystemForNewModule(system: string) {
 }
 
 function openExistingModuleRegistration(entry: SetupModuleEntry) {
+  prepareExistingModuleRegistration(entry)
+  showAssetEditor()
+}
+
+function prepareExistingModuleRegistration(entry: SetupModuleEntry) {
   assetForm.value = emptyAssetForm()
   assetForm.value.system = entry.system
   assetForm.value.service = entry.service
@@ -1649,22 +2067,17 @@ function openExistingModuleRegistration(entry: SetupModuleEntry) {
       ? entry.asset.version
       : undefined
   }
-  assetDialogOpen.value = true
-}
-
-function openAssetDetail(asset: ObservabilityAsset) {
-  assetDetail.value = asset
-  assetDetailOpen.value = true
-}
-
-function editAssetFromDetail() {
-  if (!assetDetail.value) return
-  const asset = assetDetail.value
-  assetDetailOpen.value = false
-  openAssetEditor(asset)
 }
 
 function openAssetEditor(asset: ObservabilityAsset) {
+  prepareAssetEditor(asset)
+  const entry = setupModules.value.find(item =>
+    moduleKey(item.system, item.service) === moduleKey(asset.system, asset.service))
+  if (entry) ensureModuleWorkspace(entry)
+  showAssetEditor()
+}
+
+function prepareAssetEditor(asset: ObservabilityAsset) {
   assetForm.value = {
     system: asset.system,
     service: asset.service,
@@ -1682,7 +2095,6 @@ function openAssetEditor(asset: ObservabilityAsset) {
     systemLocked: true,
     serviceLocked: true,
   }
-  assetDialogOpen.value = true
 }
 
 function metadataFieldLabel(parameter: string, label: string) {
@@ -1738,7 +2150,7 @@ async function saveAsset() {
       expectedVersion: form.expectedVersion,
       reason: form.reason.trim(),
     })
-    assetDialogOpen.value = false
+    if (moduleWorkspaceOpen.value) moduleWorkspacePanel.value = 'overview'
     ElMessage.success(form.expectedVersion ? '模块取证配置已追加新版本' : '模块取证配置已登记')
     await loadCatalog()
   } catch (failure) {
@@ -1761,26 +2173,15 @@ function formatTrialTimeout(milliseconds: number) {
   return `${milliseconds} 毫秒`
 }
 
-function openGuanceValidation(scope?: { system: string; service: string }) {
-  const returnTo = safeTroubleshootingReturnPath(route.query.returnTo)
-    || '/troubleshooting?view=list'
-  const location = workbenchOverlayLocation('guance', returnTo)
-  void router.push({
-    ...location,
-    query: {
-      ...location.query,
-      ...(scope?.system ? { system: scope.system } : {}),
-      ...(scope?.service ? { service: scope.service } : {}),
-    },
-  })
-}
-
 function openRouteEditor(row: ContractRow) {
-  toolDetailOpen.value = false
+  const entry = setupModules.value.find(item =>
+    moduleKey(item.system, item.service) === moduleKey(row.system, row.service))
+  if (entry) ensureModuleWorkspace(entry)
+  else ensureModuleWorkspace(draftModuleEntry())
   routeTarget.value = row
   routePlatforms.value = [...row.contract.route.platforms]
   routeReason.value = ''
-  routeDialogOpen.value = true
+  moduleWorkspacePanel.value = 'route'
 }
 
 function moveRoutePlatform(index: number, offset: -1 | 1) {
@@ -1800,7 +2201,9 @@ async function saveRoute() {
       platforms: routePlatforms.value,
       reason: routeReason.value.trim(),
     })
-    routeDialogOpen.value = false
+    if (moduleWorkspaceOpen.value) {
+      moduleWorkspacePanel.value = toolDetailTarget.value ? 'tool' : 'overview'
+    }
     ElMessage.success(routePlatforms.value.length
       ? 'Workspace 取证路由已更新'
       : '已明确停用该证据路由')
@@ -1902,6 +2305,78 @@ onMounted(loadCatalog)
   line-height: 1.35;
 }
 .onboarding-progress-trigger:hover small { color: var(--mc-primary); }
+.module-workspace-nav { margin-bottom: 12px; }
+.module-workspace-panel { display: grid; gap: 4px; }
+.module-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mc-border-light);
+}
+.module-workspace-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.module-workspace-head h2 { margin: 4px 0 6px; font-size: 22px; }
+.module-workspace-head p { margin: 0; color: var(--mc-text-secondary); }
+.module-workspace-guide {
+  margin-bottom: 18px;
+  padding: 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--mc-primary) 28%, var(--mc-border-light));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mc-primary) 6%, var(--mc-bg));
+}
+.module-workspace-guide b { display: block; margin-bottom: 8px; font-size: 16px; }
+.module-workspace-guide p { margin: 0 0 14px; color: var(--mc-text-secondary); line-height: 1.55; }
+.module-workspace-guide small { display: block; margin-top: 10px; color: var(--mc-text-secondary); line-height: 1.45; }
+.module-workspace-alert { margin-bottom: 14px; }
+.module-workspace-block {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 12px;
+  background: var(--mc-bg-elevated);
+}
+.module-workspace-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.module-workspace-block-head h3 { margin: 0 0 4px; font-size: 15px; }
+.module-workspace-block-head p { margin: 0; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.5; }
+.module-tool-list { display: grid; gap: 10px; }
+.module-tool-card {
+  padding: 12px 14px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 10px;
+  background: var(--mc-bg-muted);
+}
+.module-tool-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.module-tool-main b { display: block; margin-bottom: 4px; }
+.module-tool-main p { margin: 0 0 6px; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.45; }
+.module-tool-next { display: block; margin: 8px 0; color: var(--mc-text-secondary); font-size: 11px; }
+.module-tool-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.module-source-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.module-source-list li {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--mc-bg-muted);
+}
+.module-source-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.module-source-list small { color: var(--mc-text-secondary); line-height: 1.45; }
+@media (max-width: 960px) {
+  .setup-grid.compact { grid-template-columns: 1fr; }
+}
 .onboarding-dialog-heading {
   display: flex;
   align-items: flex-start;

@@ -89,10 +89,12 @@ describe('formal workbench incident report boundary', () => {
     const discovery = formalIncidentRoutePreview({
       ...baseForm,
       errorCode: '',
+      traceId: '',
     })
     expect(discovery.tone).toBe('BOUNDED_DISCOVERY')
-    expect(discovery.title).toBe('受限只读调查 · 未命中路径')
-    expect(discovery.detail).toContain('fail-closed')
+    expect(discovery.title).toContain('开放调查')
+    expect(discovery.title).toContain('MEDIUM')
+    expect(discovery.detail).toContain('已批准的取证计划')
   })
 
   it('rejects DQL and raw log text before it can leave the browser form', () => {

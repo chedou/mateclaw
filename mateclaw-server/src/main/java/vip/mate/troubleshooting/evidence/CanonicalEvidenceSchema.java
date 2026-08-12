@@ -70,6 +70,25 @@ public final class CanonicalEvidenceSchema {
                     "unhealthy_container_count", FieldType.NUMBER,
                     "max_cpu_percent", FieldType.NUMBER,
                     "max_memory_percent", FieldType.NUMBER))),
+            // Service-scoped Guance object/metric views. Field names stay
+            // disjoint from k8s_workload_health so detectSignalKind stays unique.
+            Map.entry("k8s_pod_status", scalar(Map.of(
+                    "pod_count", FieldType.NUMBER,
+                    "running_pod_count", FieldType.NUMBER,
+                    "non_running_pod_count", FieldType.NUMBER))),
+            Map.entry("k8s_node_status", scalar(
+                    Map.of(
+                            "node_count", FieldType.NUMBER,
+                            "related_host_count", FieldType.NUMBER,
+                            "max_node_cpu_percent", FieldType.NUMBER,
+                            "max_node_memory_percent", FieldType.NUMBER),
+                    Set.of("max_node_cpu_percent", "max_node_memory_percent"))),
+            Map.entry("host_status", scalar(
+                    Map.of(
+                            "host_count", FieldType.NUMBER,
+                            "max_host_cpu_percent", FieldType.NUMBER,
+                            "max_host_memory_percent", FieldType.NUMBER),
+                    Set.of("max_host_cpu_percent", "max_host_memory_percent"))),
             Map.entry("incident_impact", scalar(
                     Map.of(
                             "function_scope", FieldType.STRING,
@@ -127,6 +146,9 @@ public final class CanonicalEvidenceSchema {
             case "error_log_scan" -> validErrorLogScan(observed);
             case "monitor_event_scan" -> validMonitorEventScan(observed);
             case "k8s_workload_health" -> validK8sWorkloadHealth(observed);
+            case "k8s_pod_status" -> validK8sPodStatus(observed);
+            case "k8s_node_status" -> validK8sNodeStatus(observed);
+            case "host_status" -> validHostStatus(observed);
             default -> true;
         };
     }
@@ -286,6 +308,50 @@ public final class CanonicalEvidenceSchema {
                 && running + unhealthy <= containers
                 && validNonNegativeFiniteNumber(observed.get("max_cpu_percent"))
                 && validNonNegativeFiniteNumber(observed.get("max_memory_percent"));
+    }
+
+    private static boolean validK8sPodStatus(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(
+                observed, "pod_count", "running_pod_count", "non_running_pod_count")) {
+            return false;
+        }
+        Long pods = CanonicalNumberParser.parseExactLong(observed.get("pod_count"));
+        Long running = CanonicalNumberParser.parseExactLong(observed.get("running_pod_count"));
+        Long nonRunning = CanonicalNumberParser.parseExactLong(
+                observed.get("non_running_pod_count"));
+        return running <= pods
+                && nonRunning <= pods
+                && running + nonRunning <= pods;
+    }
+
+    private static boolean validK8sNodeStatus(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(observed, "node_count", "related_host_count")) {
+            return false;
+        }
+        if (observed.containsKey("max_node_cpu_percent")
+                && !validNonNegativeFiniteNumber(observed.get("max_node_cpu_percent"))) {
+            return false;
+        }
+        if (observed.containsKey("max_node_memory_percent")
+                && !validNonNegativeFiniteNumber(observed.get("max_node_memory_percent"))) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean validHostStatus(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(observed, "host_count")) {
+            return false;
+        }
+        if (observed.containsKey("max_host_cpu_percent")
+                && !validNonNegativeFiniteNumber(observed.get("max_host_cpu_percent"))) {
+            return false;
+        }
+        if (observed.containsKey("max_host_memory_percent")
+                && !validNonNegativeFiniteNumber(observed.get("max_host_memory_percent"))) {
+            return false;
+        }
+        return true;
     }
 
     private static boolean validNonNegativeCounts(

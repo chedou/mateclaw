@@ -40,6 +40,13 @@ public class TroubleshootingAgentProperties {
      */
     private Map<String, ScenarioEvidencePlan> approvedScenarioPlans = new LinkedHashMap<>();
 
+    /**
+     * Optional platforms merged into every approved plan at resolve time.
+     * Example: set {@code MATECLAW_TROUBLESHOOTING_OPEN_DISCOVERY_EXTRA_PLATFORMS=guance}
+     * after a true-source window so night-time fallback can leave recorded-replay.
+     */
+    private List<String> extraPermittedPlatforms = List.of();
+
     @Getter
     @Setter
     public static class ScenarioEvidencePlan {

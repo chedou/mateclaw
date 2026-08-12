@@ -154,14 +154,27 @@ mateclaw:
       # Separate from the normal conversation window because this invocation
       # deliberately bypasses ambient conversation context.
       max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}
-      # Initial approved Scenario Playbook. The model can return only this key;
-      # search term, window and source allowlist remain server-owned. The plan is
-      # deliberately replay-only until Guance T7/T8 verification is complete.
+      # Initial approved Scenario plans. The model can return only these keys;
+      # search term, window and source allowlist remain server-owned. Default
+      # plans stay replay-only; set
+      # Optional platforms merged into every approved plan (e.g. guance after T7).
+      # Override with MATECLAW_TROUBLESHOOTING_AGENT_EXTRA_PERMITTED_PLATFORMS=guance
+      extra-permitted-platforms: []
       approved-scenario-plans:
         message_send_failed:
           enabled: true
           system: CSDP
           search-term: message_send_failed
+          window: -15m
+          workspace-ids: ["${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}"]
+          permitted-platforms: [recorded-replay]
+        # Pilot fallback key for ITGW unknown / unregistered-code alerts.
+        # Recorded-replay fixtures may be empty; with guance extra platforms
+        # the spine can collect against authorized ITGW assets after T6/T7.
+        itgw_access_failed:
+          enabled: true
+          system: ITGW
+          search-term: itgw_access_failed
           window: -15m
           workspace-ids: ["${MATECLAW_TROUBLESHOOTING_SYNTHESIS_FIXTURE_WORKSPACE_ID:1}"]
           permitted-platforms: [recorded-replay]
@@ -198,43 +211,215 @@ mateclaw:
         # Empty by default. A real query requires an explicitly activated
         # deployment profile with one exact workspace/system/service mapping.
         asset-bindings: []
-        # Draft bindings only. Measurement names and canonical aliases remain
-        # unverified until T7 is completed against the CSDP intranet workspace.
+        # GENERIC Guance method library baseline. Patterns follow verified
+        # CSDP pilot DQL (RE(`.*`) + service / window_span / optional filters).
+        # Optional clauses use {{?name}}...{{/name}}: when the external value is
+        # absent, the clause is omitted and the query still runs on runtime context.
+        # Scene-specific CSDP contracts live in application-csdp-guance-evidence-pilot.yml.
         bindings:
-          log_count:
+          guance-service-log-count:
+            signal-kind: log_count
             namespace: L
-            summary: 错误码日志计数
-            query-template: "L::csdp_wechat_log:(count,trace_id) {service='{{service}}',error_code='{{error_code}}'} [{{window}}]"
-            field-aliases: {}
-          log_search:
-            namespace: L
-            summary: 错误码或场景关键词日志取样
+            summary: 按服务统计日志命中数（通用）
+            scenario: 通用日志计数
+            question: 故障窗口内该服务命中了多少条日志？
+            fixed-conditions:
+              - 按报障服务精确过滤
+              - 未传错误码时按服务全量计数；传入 error_code 时追加 @code 过滤
             max-rows: 1
-            query-template: "L::csdp_wechat_log:(count,ps_id,message) {service='{{service}}' AND (error_code='{{search_term}}' OR message=~'{{search_term}}')} [{{window}}]"
-            field-aliases:
-              count: match_count
-              message: sample_message
-          log_trace_bundle:
+            query-template: >-
+              L::RE(`.*`):(count(*) as count,last(`@trace_id`) as trace_id)
+              { `service` = '{{service}}'{{?error_code}} AND `@code` = {{error_code}}{{/error_code}} }
+              [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+          guance-service-log-search:
+            signal-kind: log_search
             namespace: L
-            summary: PS ID 全链路日志包
+            summary: 按服务检索日志样本（通用）
+            scenario: 通用日志检索
+            question: 故障窗口内该服务是否出现需要继续追踪的日志？
+            fixed-conditions:
+              - 按报障服务精确过滤
+              - 未传 search_term / error_code 时仍按服务取样；传入后追加收窄条件
+            max-rows: 1
+            query-template: >-
+              L::RE(`.*`):(count(*) as match_count,last(`@trace_id`) as ps_id,last(`@msg`) as sample_message)
+              { `service` = '{{service}}'{{?error_code}} AND `@code` = {{error_code}}{{/error_code}}{{?search_term}} AND query_string(`message`, "{{search_term}}"){{/search_term}} }
+              [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+          guance-service-trace-bundle:
+            signal-kind: log_trace_bundle
+            namespace: L
+            summary: 按关联 ID 还原服务调用链日志（通用）
+            scenario: 通用链路还原
+            question: 这次请求经过了哪些日志步骤？
+            fixed-conditions:
+              - 关联 ID（ps_id）只能来自前一步规范化证据或试跑目标
+              - 按报障服务精确过滤，避免串到无关服务
             max-rows: 200
-            query-template: "L::csdp_wechat_log:(ps_id,service,status,message,duration_ms) {ps_id='{{ps_id}}'} [{{window}}]"
+            query-template: >-
+              L::RE(`.*`):(message)
+              { `service` = '{{service}}' AND query_string(`message`, "{{ps_id}}") }
             field-aliases:
               time: timestamp
-              status: level
-          metric:
-            namespace: M
-            summary: Mongo 连接与慢查询水位
-            query-template: "M::mongodb:(reachable,connections_current,connections_available,slow_query_count,baseline_slow) {host='{{host}}'} [{{window}}]"
+              "[message@trace_id]": ps_id
+              "[message@level]": level
+              "[message@msg]": message
+          guance-service-error-scan:
+            signal-kind: error_log_scan
+            namespace: L
+            summary: 按服务聚合 ERROR 日志（通用）
+            scenario: 通用错误日志巡检
+            question: 故障窗口内该服务出现了多少 ERROR，涉及多少条调用链？
+            fixed-conditions:
+              - 业务日志级别=message JSON 中的 level:ERROR
+              - 未传 error_code 时按服务统计全部 ERROR；传入后追加 @code 过滤
+              - 仅返回聚合计数与最新关联 ID，不返回原始日志
+            max-rows: 1
+            query-template: >-
+              L::RE(`.*`):(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
+              { `service` = '{{service}}' AND query_string(`message`, "level:ERROR"){{?error_code}} AND `@code` = {{error_code}}{{/error_code}} }
+              [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+          guance-monitor-event-scan:
+            signal-kind: monitor_event_scan
+            namespace: E
+            summary: warning 及以上监控事件聚合（通用）
+            scenario: 通用监控告警巡检
+            question: 故障窗口内是否触发了 warning、error 或 critical 监控事件？
+            fixed-conditions:
+              - 事件源=monitor
+              - 级别=warning、error、critical
+              - 未传 monitor_checker 时统计窗口内全部告警；传入后按规则名精确过滤
+              - 仅返回数量、最新级别与规则名，不返回告警正文
+            max-rows: 1
+            query-template: >-
+              E::monitor:(count(*) as event_count,last(`df_status`) as latest_status,last(`df_monitor_checker_name`) as latest_checker)
+              { `df_status` IN ['critical', 'error', 'warning']{{?monitor_checker}} AND `df_monitor_checker_name` = '{{monitor_checker}}'{{/monitor_checker}} }
+              [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+          guance-k8s-workload-health:
+            signal-kind: k8s_workload_health
+            namespace: O+M
+            summary: Kubernetes 工作负载状态与资源聚合（通用）
+            scenario: 通用 K8s 工作负载健康检查
+            question: 目标 Deployment 是否存在异常容器、CPU 或内存高水位？
+            fixed-conditions:
+              - 对象源=docker_containers
+              - deployment / namespace 由模块资产固定，不接受外部临时改写
+              - 非 running 容器计入 unhealthy_container_count
+            max-rows: 1
+            query-templates:
+              - >-
+                O::docker_containers:(count_distinct(`pod_name`) as pod_count,count(*) as container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' }
+              - >-
+                O::docker_containers:(count(*) as running_container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' AND `state` = 'running' }
+              - >-
+                O::docker_containers:(count(*) as unhealthy_container_count)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' AND `state` != 'running' }
+              - >-
+                M::docker_containers:(max(`cpu_usage_percent`) as max_cpu_percent,max(`mem_used_percent`) as max_memory_percent)
+                { `deployment` = '{{deployment}}' AND `namespace` = '{{namespace}}' }
+                [{{window_span}}::{{window_span}}]
+            field-aliases: {}
+            asset-parameters:
+              - deployment
+              - namespace
+          guance-service-pod-status:
+            signal-kind: k8s_pod_status
+            namespace: O
+            summary: 按服务聚合 Pod 运行状态（通用）
+            scenario: 通用服务 Pod 状态
+            question: 该服务当前有多少 Pod，是否存在非 running？
+            fixed-conditions:
+              - 对象源=docker_containers
+              - 默认按报障服务过滤；可选 deployment / namespace / node_name 进一步收窄
+              - 仅返回 Pod 计数，不返回 Pod 清单或日志正文
+            max-rows: 1
+            query-templates:
+              - >-
+                O::docker_containers:(count_distinct(`pod_name`) as pod_count)
+                { `service` = '{{service}}'{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}}{{?node_name}} AND `node_name` = '{{node_name}}'{{/node_name}} }
+              - >-
+                O::docker_containers:(count_distinct(`pod_name`) as running_pod_count)
+                { `service` = '{{service}}' AND `state` = 'running'{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}}{{?node_name}} AND `node_name` = '{{node_name}}'{{/node_name}} }
+              - >-
+                O::docker_containers:(count_distinct(`pod_name`) as non_running_pod_count)
+                { `service` = '{{service}}' AND `state` != 'running'{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}}{{?node_name}} AND `node_name` = '{{node_name}}'{{/node_name}} }
+            field-aliases: {}
+          guance-service-node-status:
+            signal-kind: k8s_node_status
+            namespace: O
+            summary: 按服务聚合承载 Node/主机（通用）
+            scenario: 通用服务 Node 状态
+            question: 承载该服务的 Node/主机有多少？
+            fixed-conditions:
+              - 对象源=docker_containers（按服务反查 host）
+              - 当前环境以 host 近似 node 基数（不猜测 kubelet/node_name 字段）
+              - 默认按报障服务过滤；可选 host / deployment / namespace 收窄
+            max-rows: 1
+            query-templates:
+              - >-
+                O::docker_containers:(count_distinct(`host`) as node_count)
+                { `service` = '{{service}}'{{?host}} AND `host` = '{{host}}'{{/host}}{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}} }
+              - >-
+                O::docker_containers:(count_distinct(`host`) as related_host_count)
+                { `service` = '{{service}}'{{?host}} AND `host` = '{{host}}'{{/host}}{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}} }
+            field-aliases: {}
+          guance-service-host-status:
+            signal-kind: host_status
+            namespace: O
+            summary: 按服务聚合落地主机（通用）
+            scenario: 通用服务主机状态
+            question: 该服务落在哪些主机上？
+            fixed-conditions:
+              - 对象源=docker_containers（按服务反查 host）
+              - 默认按报障服务过滤；可选 host / deployment / namespace 收窄
+              - 仅返回主机计数；CPU/内存字段可选，有则附带
+            max-rows: 1
+            query-template: >-
+              O::docker_containers:(count_distinct(`host`) as host_count)
+              { `service` = '{{service}}'{{?host}} AND `host` = '{{host}}'{{/host}}{{?deployment}} AND `deployment` = '{{deployment}}'{{/deployment}}{{?namespace}} AND `namespace` = '{{namespace}}'{{/namespace}} }
+            field-aliases: {}
+          # CloudDial. probe_name must be ASCII-safe for asset/request interpolation.
+          # Chinese dial task names must be fixed inside a reviewed contract DQL
+          # (see csdp-session-synthetic-probe / csp-prm-miniapp-synthetic-probe).
+          guance-service-synthetic-probe:
+            signal-kind: synthetic_probe
+            namespace: D
+            summary: HTTP 拨测最近状态（通用）
+            scenario: 通用拨测可用性
+            question: 指定拨测任务最近一次状态码与目标 URL 是什么？
+            fixed-conditions:
+              - 拨测数据集=http_dial_testing
+              - probe_name 由模块资产固定；须为安全字符集（字母数字与 ._:/-）
+              - 中文任务名不要当外部参数，改为场景合同写死 DQL
+              - 真源多字段拆 series，故用 last() 分查询再合并
+            max-rows: 1
+            query-templates:
+              - >-
+                D::http_dial_testing:(last(`status_code`) as status_code)
+                { `name` = '{{probe_name}}' }
+              - >-
+                D::http_dial_testing:(last(`url`) as url)
+                { `name` = '{{probe_name}}' }
+              - >-
+                D::http_dial_testing:(last(`name`) as name)
+                { `name` = '{{probe_name}}' }
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
             field-aliases:
-              op_slow_count: slow_query_count
-          trace:
-            namespace: T
-            summary: 失败调用链定位
-            query-template: "T::tracing:(failed_hop,status,duration_ms) {trace_id='{{trace_id}}'} [{{window}}]"
-            field-aliases:
-              resource: failed_hop
-              duration: duration_ms
+              url: target_url
+              name: probe_name
+            asset-parameters:
+              - probe_name
       recorded-replay:
         enabled: ${MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED:false}
         resource: classpath:/troubleshooting/evidence/recorded-replay-catalog.json

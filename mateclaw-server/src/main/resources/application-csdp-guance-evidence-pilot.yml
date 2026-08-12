@@ -8,6 +8,12 @@ spring:
 # and are never stored in this profile.
 mateclaw:
   troubleshooting:
+    # 稀疏真源下 SendMsg 竖线需要 ≥ 数小时窗；与 CTI 告警窗不同，这里用 -6h。
+    agent:
+      approved-scenario-plans:
+        message_send_failed:
+          window: -6h
+          permitted-platforms: [guance]
     evidence:
       # The pilot is Guance-only. It must fail closed instead of silently
       # replacing a missing live result with Recorded Replay evidence.
@@ -19,6 +25,11 @@ mateclaw:
           error_log_scan: [guance]
           monitor_event_scan: [guance]
           k8s_workload_health: [guance]
+          k8s_pod_status: [guance]
+          k8s_node_status: [guance]
+          host_status: [guance]
+          # CloudDial 拨测：复用已核实的 http_dial_testing 合同形状（见 csp-clouddial-pilot）。
+          synthetic_probe: [guance]
       guance:
         base-url: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:http://df-openapi.prd.sangfor.com}
         # The local TUN path closes Java HTTP sockets but accepts the same
@@ -40,6 +51,11 @@ mateclaw:
               error_log_scan: csdp-application-error-scan
               monitor_event_scan: csdp-monitor-event-scan
               k8s_workload_health: csdp-k8s-workload-health
+              k8s_pod_status: guance-service-pod-status
+              k8s_node_status: guance-service-node-status
+              host_status: guance-service-host-status
+              # 拨测任务名含中文，必须写死在已审核 DQL 中，不能作为外部/资产参数插值。
+              synthetic_probe: csdp-session-synthetic-probe
           # CTI 创建会话失败已在 2026-08-07 的 csdp-task 真实告警窗口
           # 验证。Guance 未返回可靠的 cluster 字段，因此这里只授权
           # 精确 service，不猜测 sz4-s-zaibei 的字段映射。
@@ -64,6 +80,10 @@ mateclaw:
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
           # never interpolated into DQL. The source filter is fixed here.
+          # SendMsg 与 CTI 一样：不写 DQL 相对时间后缀，只用 API timeRange。
+          # 旧版 `[{{window_span}}::{{window_span}}]` 相对「现在」，与
+          # occurredAt 锚定的绝对窗相交后，短窗 Playbook（如 -15m）在稀疏
+          # 真源上会恒空，而 spine preview 传 -6h 却能命中——竖线因此断掉。
           csdp-message-send-log-search:
             signal-kind: log_search
             namespace: L
@@ -77,7 +97,14 @@ mateclaw:
             query-template: >-
               L::`csp-rpc-msg`:(count(*) as match_count,last(`@trace_id`) as ps_id,last(`@msg`) as sample_message)
               { query_string(`message`, "failed AND sendmsg") }
-              [{{window_span}}::{{window_span}}]
+            # 单桶聚合：避免 count(*) 被拆成多时间桶而与 last(@trace_id) 对不齐。
+            query-options:
+              max-point-count: 1
+              interval: 21600
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
             field-aliases: {}
           csdp-message-send-trace-bundle:
             signal-kind: log_trace_bundle
@@ -112,27 +139,32 @@ mateclaw:
             fixed-conditions:
               - 失败终态=failed AND sendmsg
               - 成功终态=success AND sendmsg AND NOT failed
-              - 对照特征=message_length_eq_2875
+              # 2026-07-31 真源核验为 2875；2026-08-12 联调窗内失败样本为 2011
+              #（同链另有 1800 事件），成功样本该长度计数为 0，故改为 2011。
+              - 对照特征=message_length_eq_2011
             max-rows: 1
             query-templates:
               - >-
                 L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_sample_count)
                 { query_string(`message`, "failed AND sendmsg") }
-                [{{window_span}}::{{window_span}}]
               - >-
                 L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as failure_match_count)
-                { query_string(`message`, "failed AND sendmsg") AND message_length = 2875 }
-                [{{window_span}}::{{window_span}}]
+                { query_string(`message`, "failed AND sendmsg") AND message_length = 2011 }
               - >-
                 L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_sample_count)
                 { query_string(`message`, "success AND sendmsg AND NOT failed") }
-                [{{window_span}}::{{window_span}}]
               - >-
                 L::`csp-rpc-msg`:(count_distinct(`@trace_id`) as success_match_count)
-                { query_string(`message`, "success AND sendmsg AND NOT failed") AND message_length = 2875 }
-                [{{window_span}}::{{window_span}}]
+                { query_string(`message`, "success AND sendmsg AND NOT failed") AND message_length = 2011 }
+            query-options:
+              max-point-count: 1
+              interval: 21600
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
             constant-fields:
-              discriminating_feature: message_length_eq_2875
+              discriminating_feature: message_length_eq_2011
             field-aliases: {}
           # The precise measurement name was not exposed by the Guance response.
           # The verified cross-measurement read stays bounded by exact service,
@@ -307,6 +339,36 @@ mateclaw:
             constant-fields:
               discriminating_feature: itgw_content_policy_blocked
             field-aliases: {}
+          # Reuses the verified CSP CloudDial envelope against the CSDP homepage
+          # availability probe. Chinese probe names stay fixed in DQL.
+          csdp-session-synthetic-probe:
+            signal-kind: synthetic_probe
+            namespace: D
+            summary: CSDP 首页可用性拨测状态
+            scenario: 服务拨测可用性
+            question: 客服数字化平台首页的观测云拨测任务是否异常？
+            fixed-conditions:
+              - 拨测数据集=http_dial_testing
+              - 拨测任务=客服数字化平台-首页-可用性监控
+              - 真源会把多字段拆成多 series，故用 last() 分查询再合并
+            # Real Guance splits raw (`status_code`,`url`,`name`) into three
+            # series and can exceed the row budget. Aggregate last() fragments
+            # keep one point per field and merge via compound scalar.
+            max-rows: 1
+            query-templates:
+              - "D::http_dial_testing:(last(`status_code`) as status_code) { `name` = '客服数字化平台-首页-可用性监控' }"
+              - "D::http_dial_testing:(last(`url`) as url) { `name` = '客服数字化平台-首页-可用性监控' }"
+              - "D::http_dial_testing:(last(`name`) as name) { `name` = '客服数字化平台-首页-可用性监控' }"
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            field-aliases:
+              url: target_url
+              name: probe_name
           # Sanitized import of guanceyun-error-logs. It exposes only aggregate
           # canonical facts; raw message/content/host rows remain inside Guance.
           csdp-application-error-scan:
@@ -344,12 +406,12 @@ mateclaw:
             fixed-conditions:
               - 事件源=monitor
               - 级别=warning、error、critical
-              - 监控规则名必须来自已审核 Playbook 的精确目标
+              - 监控规则名可选：未传 monitor_checker 时统计窗口内全部 warning 及以上事件
               - 仅返回数量、最新级别与规则名，不返回告警正文
             max-rows: 1
             query-template: >-
               E::monitor:(count(*) as event_count,last(`df_status`) as latest_status,last(`df_monitor_checker_name`) as latest_checker)
-              { `df_status` IN ['critical', 'error', 'warning'] AND `df_monitor_checker_name` = '{{monitor_checker}}' }
+              { `df_status` IN ['critical', 'error', 'warning']{{?monitor_checker}} AND `df_monitor_checker_name` = '{{monitor_checker}}'{{/monitor_checker}} }
               [{{window_span}}::{{window_span}}]
             query-options:
               max-point-count: 720
@@ -359,8 +421,8 @@ mateclaw:
               disable-sampling: true
               time-zone: Asia/Shanghai
             field-aliases: {}
-            asset-parameters:
-              - monitor_checker
+            # monitor_checker is optional request/target input. When omitted the
+            # contract still aggregates all warning+ events in the window.
           # Sanitized import of guanceyun-k8s-pod-info. Deployment and
           # namespace are fixed by the exact Workspace observability asset.
           # There is no runtime fallback across guessed Guance measurements.

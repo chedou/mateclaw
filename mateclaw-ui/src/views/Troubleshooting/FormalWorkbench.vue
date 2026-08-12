@@ -173,6 +173,7 @@
       v-model="incidentReportOpen"
       v-model:form="incidentReportForm"
       :route-preview="incidentRoutePreview"
+      :open-discovery-readiness="openDiscoveryReadiness"
       :loading="incidentReportLoading"
       :can-submit="canSubmitIncidentReport"
       @submit="reportIncident"
@@ -284,6 +285,7 @@ import {
   type EvidenceChainPreviewRequest,
   type GuanceEvidenceAcceptanceView,
   type HistoricalCaseKnowledgeImportResult,
+  type OpenDiscoveryReadiness,
   type RecommendedAction,
   type StoredDiagnosis,
   type TopologyProbeEvidenceRun,
@@ -402,6 +404,7 @@ const deploymentTopologyScenarioLoading = ref(false)
 
 const scenarioLauncherOpen = ref(false)
 const incidentReportOpen = ref(false)
+const openDiscoveryReadiness = ref<OpenDiscoveryReadiness | null>(null)
 const messageSendScenarioOpen = ref(false)
 const ctiCreateConversationScenarioOpen = ref(false)
 const deploymentTopologyScenarioOpen = ref(false)
@@ -794,7 +797,7 @@ async function reportIncident() {
   } catch (error) {
     const routeBoundary = incidentRoutePreview.value.tone === 'DETERMINISTIC'
       ? '错误码未命中已审核 Playbook 时，受限未命中路径会按设计 fail-closed。'
-      : '受限只读调查未启用或未通过配置校验时会按设计 fail-closed。'
+      : '开放调查未启用或配置不合规时会按设计 fail-closed。'
     ElMessage.error(`上报未创建：${errorText(error)} ${routeBoundary}`)
   } finally {
     incidentReportLoading.value = false
@@ -985,6 +988,24 @@ function canApprove(action: RecommendedAction) { return action.actionType === 'M
 function canRecordOutcome(action: RecommendedAction) { return action.actionType === 'MANUAL_WRITE' && action.approvalStatus === 'APPROVED_NOT_EXECUTED' && canTransfer.value }
 function openApprove(action: RecommendedAction) { targetAction.value = action; approveOpen.value = true }
 function openOutcome(action: RecommendedAction) { targetAction.value = action; outcomeOpen.value = true }
+
+watch(
+  [incidentReportOpen, () => incidentReportForm.system, () => incidentRoutePreview.value.tone],
+  async ([open, system, tone]) => {
+    if (!open || tone !== 'BOUNDED_DISCOVERY') {
+      openDiscoveryReadiness.value = null
+      return
+    }
+    try {
+      const { data } = await troubleshootingApi.openDiscoveryReadiness({
+        ...(system.trim() ? { system: system.trim() } : {}),
+      })
+      openDiscoveryReadiness.value = data
+    } catch {
+      openDiscoveryReadiness.value = null
+    }
+  },
+)
 
 watch(
   [() => route.query.view, () => route.query.diagnosisId],

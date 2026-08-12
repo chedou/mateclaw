@@ -13,12 +13,12 @@ import {
 } from '../workbenchCapabilityMenu'
 
 describe('troubleshooting secondary navigation information architecture', () => {
-  it('keeps daily navigation small and moves specialist controls under advanced settings', () => {
+  it('keeps daily navigation small and moves specialist controls under more configuration', () => {
     const groupedItems = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
     const items = [...WORKBENCH_PRIMARY_CAPABILITIES, ...groupedItems]
 
     expect(WORKBENCH_CAPABILITY_GROUPS.map(group => group.label)).toEqual([
-      '高级设置',
+      '更多配置',
       '复盘与沉淀',
     ])
     expect(WORKBENCH_PRIMARY_CAPABILITIES.map(item => ({
@@ -45,8 +45,8 @@ describe('troubleshooting secondary navigation information architecture', () => 
       { section: 'source', label: '数据连接' },
     ])
     expect(items.map(item => item.description)).toEqual([
-      '新增系统、模块和资源范围',
-      '配置日志、调用链和拨测方法',
+      '登记系统模块，并在模块里选择取证方法',
+      '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
       '检查观测云能否正常读取',
       '场景、步骤与判断标准',
       '用真实样本验证效果',

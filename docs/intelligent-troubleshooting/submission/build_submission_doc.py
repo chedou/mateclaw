@@ -113,7 +113,7 @@ def configure_document(doc: Document) -> None:
     section.right_margin = Inches(1)
     section.header_distance = Inches(0.492)
     section.footer_distance = Inches(0.492)
-    set_repeat_header(section, "MateClaw 智能排障", "作品方案 · 2026-08-10")
+    set_repeat_header(section, "MateClaw 智能排障", "作品方案 · 2026-08-11")
     add_page_number(section.footer.paragraphs[0])
 
     styles = doc.styles
@@ -271,7 +271,7 @@ def build() -> None:
              align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
     add_text(doc, "MateClaw 智能排障", bold=True, color=BLACK, size=26,
              align=WD_ALIGN_PARAGRAPH.CENTER, after=5)
-    add_text(doc, "让每一次排障都有证据、有过程、可复核", color=ACCENT, size=15,
+    add_text(doc, "让排障能力不再只掌握在少数熟手手里", color=ACCENT, size=15,
              align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
     add_text(doc, "作品方案｜场景描述 · AI 工具使用 · 效能提升 · Demo 与投产计划",
              bold=True, color=MUTED, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, after=24)
@@ -290,7 +290,7 @@ def build() -> None:
         ("核心方法", "三次取证 + 成功对照 + 确定性判断"),
         ("真实排障单", "diag-acee292e…ec2e"),
         ("安全边界", "零生产写；错误码路径零模型调用"),
-        ("版本日期", "2026-08-10"),
+        ("版本日期", "2026-08-11"),
     ]
     for i in range(4):
         for j, pair in enumerate((left[i], right[i])):
@@ -309,7 +309,7 @@ def build() -> None:
     add_callout(
         doc,
         "作品主张",
-        "MateClaw 不是把大模型接到日志搜索框，而是把真实只读取证、审核规则、确定性判断和人工处置串成一条可审计证据链。",
+        "MateClaw 让二线能够基于平台开展标准化排障，让三线开发快速进入陌生系统的有效调查，并在重大故障中帮助开发团队基于同一份证据快速收敛问题范围。",
         fill=GREEN_PALE,
         accent=GREEN,
     )
@@ -318,7 +318,7 @@ def build() -> None:
 
     add_page_break(doc)
     doc.add_heading("作品摘要", level=1)
-    add_text(doc, "MateClaw 智能排障把线上告警转化为一张可追溯的排障单：系统依据审核过的排障方法，从观测云连续读取失败请求、关联日志和正常请求对照，用确定性规则形成可复核结论，再由负责人确认和处置。")
+    add_text(doc, "MateClaw 智能排障首先解决三个真实问题：二线看到告警却不知道下一步怎么查；三线开发接手陌生系统时过度依赖少数熟手；重大故障中多人重复查询、判断口径不一，问题范围迟迟无法收敛。平台把已经验证的调查方法、真实证据和人工责任边界放进同一张排障单。")
     add_callout(doc, "已验证的真实结果", "CSDP 的 csdp-wechat 服务在 ITGW 904003 故障窗口中，2 个失败请求均出现“内容拦截”，36 个正常请求均未出现；本次系统调查阶段记录约 4 秒。", fill=WARM)
 
     doc.add_heading("核心能力一览", level=2)
@@ -340,7 +340,35 @@ def build() -> None:
     add_bullet(doc, "平台不执行生产变更；确认结论只推进排障单状态。")
 
     doc.add_heading("一、场景描述", level=1)
-    doc.add_heading("1.1 业务痛点", level=2)
+    doc.add_heading("1.1 项目要解决的三个真实问题", level=2)
+    add_table(
+        doc,
+        ["使用者 / 场景", "现在遇到的问题", "平台首先要交付的结果"],
+        [
+            ("二线", "看到告警现象，但不知道该查什么、如何判断", "按已审核方法启动并推进只读调查；证据不足时说清缺什么、为什么升级"),
+            ("三线开发", "接手陌生系统时不熟悉字段、关联 ID 和历史经验，排障依赖少数熟手", "先获得清晰调查路径、证据和结论，降低对系统熟悉度与个人经验的依赖"),
+            ("重大故障团队", "多人重复查询、信息口径不一，异常与故障的关系难以确认", "统一证据、判断口径和责任边界，快速收敛问题范围并减少无效沟通"),
+        ],
+        widths=[1.25, 2.6, 2.65],
+        font_size=8.8,
+    )
+    add_callout(doc, "不是降低开发要求", "平台降低的是排障对系统熟悉度、少数专家和个人记忆的依赖；真实字段核对、最终因果确认和生产处置仍由授权人员负责。", fill=PALE, accent=BLUE)
+
+    doc.add_heading("1.2 三个问题与三种处理方式不能混为一谈", level=2)
+    add_text(doc, "三个问题说的是作品要交付的业务结果；三种处理方式说的是平台面对不同成熟度场景时的工作方式。")
+    add_table(
+        doc,
+        ["场景成熟度", "平台怎么做", "当前状态"],
+        [
+            ("已有审核方法", "直接执行冻结查询和确定性条件", "ITGW 904003 真实案例已跑通"),
+            ("新问题已由人解决", "结案后形成候选方法，经回放和人工审核后再复用", "候选、回放和审核机制已实现"),
+            ("完全没有方法", "只允许受限、只读的探索，无证据即停止", "通用自主规划尚未通过投产验证"),
+        ],
+        widths=[1.45, 3.25, 1.8],
+        font_size=8.8,
+    )
+
+    doc.add_heading("1.3 排障过程中的共性断点", level=2)
     for item in (
         "入口信息不完整：告警有系统、服务和现象，但缺少稳定调查路径。",
         "证据分散：失败日志、同一请求的关联日志以及正常请求分布在不同查询中。",
@@ -348,7 +376,7 @@ def build() -> None:
         "经验难沉淀：查询条件、判断标准和停止原因没有变成可复用资产。",
     ):
         add_number(doc, item)
-    doc.add_heading("1.2 真实案例", level=2)
+    doc.add_heading("1.4 真实案例", level=2)
     add_table(
         doc,
         ["字段", "内容"],
@@ -365,6 +393,33 @@ def build() -> None:
     )
     add_text(doc, "系统先查失败请求并取得真实关联 ID，再读取同一 ID 下的关联日志，最后在同一时间窗口选择正常请求做对照。两条确定性判断条件成立后，规则把异常环节定位到 ITGW 内容安全策略拦截。")
     add_callout(doc, "为什么仍然“待确认”", "证据支持异常特征与故障有关，但生产处置与最终因果确认仍由授权负责人完成；平台不会把相关性包装成自动修复。", fill=PALE, accent=BLUE)
+
+    doc.add_heading("1.5 谁负责接入，开发怎么开始", level=2)
+    add_text(doc, "接入分成一次性准备与日常排障两条路径。平台管理员统一配置数据源，系统负责人维护本系统观测资产与查询规则；开发和值班人员日常只需要从告警创建排障单，不必自己编写 DQL。")
+    add_table(
+        doc,
+        ["角色", "操作入口", "主要职责"],
+        [
+            ("平台管理员", "取证接入 → 数据源联调", "配置并验证 Guance 连接、认证、超时和只读边界；同一数据源统一配置"),
+            ("系统负责人", "系统与模块、查询规则", "登记系统、服务和环境，维护失败、关联日志与正常对照规则"),
+            ("审核负责人", "排障规则库、路由与绑定", "完成只读试跑、回放、规则审核和版本启用"),
+            ("开发 / 值班", "智能排障 → 排障工作台", "从告警创建排障单，查看证据，确认、驳回或转人工"),
+        ],
+        widths=[1.15, 2.0, 3.35],
+        font_size=8.8,
+    )
+    doc.add_heading("开发的五步使用路径", level=3)
+    for index, item in enumerate((
+        "收到告警后进入排障工作台，点击创建排障单。",
+        "填写系统、服务、精确告警时间、错误码和故障现象。",
+        "系统自动选择已审核方法并执行只读取证，开发不需要编写 DQL。",
+        "详情页先看结论，需要复核时再看关键节点、完整过程和证据关系。",
+        "负责人确认或驳回，在平台外完成生产处置并登记结果。",
+    ), start=1):
+        paragraph = add_text(doc, f"{index}. {item}", after=4)
+        paragraph.paragraph_format.left_indent = Inches(0.25)
+        paragraph.paragraph_format.first_line_indent = Inches(-0.25)
+    add_callout(doc, "无法自动调查时怎么办", "系统未接入、规则未审核或真实证据不可用时，平台会明确显示配置缺口或“证据不足”，并转回人工排障；不会用 Demo、历史猜测或模型回答替代真实证据。", fill=PALE, accent=BLUE)
 
     doc.add_heading("二、方案设计", level=1)
     doc.add_heading("2.1 七阶段主流程", level=2)
@@ -436,7 +491,20 @@ def build() -> None:
         font_size=9,
     )
     add_text(doc, "当前真实记录：三次 Guance-only 查询取得规范化证据；系统调查阶段约 4 秒；2 个失败请求均出现异常特征，36 个正常请求均未出现；2 条确定性判断条件成立。")
-    add_text(doc, "以上是一条案例记录，不代表所有系统的平均效率。正式效能结论要在 20–30 条历史样本上统计补问、系统调查和人工采纳三个阶段的 p50/p95。", color=MUTED, size=9.5)
+    add_callout(doc, "4 秒证明了什么", "它只证明这条已审核方法能在真实 Guance 数据上完成一次系统调查，不等于已证明二线独立排障、三线快速上手和重大故障收敛效率。", fill=WARM)
+    doc.add_heading("三个问题的效果验收", level=2)
+    add_table(
+        doc,
+        ["要验证的问题", "真实试用方式", "主要指标"],
+        [
+            ("二线能基于平台排障", "让二线人员不由三线代操，独立处理已审核场景", "独立完成率、升级比例、首个可读结论耗时"),
+            ("三线开发能快速上手", "让不熟悉该系统的开发完成同一批排障任务", "首次排障耗时、求助次数、证据完整度"),
+            ("重大故障能更快收敛", "在真实演练或历史复盘中让多角色共用同一证据链", "范围收敛耗时、重复查询数、无效转交数"),
+        ],
+        widths=[1.6, 2.75, 2.15],
+        font_size=8.6,
+    )
+    add_text(doc, "以上人员效果指标尚待真实试用。此外，仍需在 20–30 条历史样本上统计补问、系统调查和人工采纳三个阶段的 p50/p95。", color=MUTED, size=9.5)
 
     add_page_break(doc)
     doc.add_heading("五、Demo 与效果示意", level=1)
@@ -480,7 +548,7 @@ def build() -> None:
         paragraph.paragraph_format.left_indent = Inches(0.25)
         paragraph.paragraph_format.first_line_indent = Inches(-0.25)
 
-    add_callout(doc, "作品价值", "MateClaw 让开发更快看到系统查了什么、为什么得出这个判断、什么情况下会停止，并让一次真实排障变成下一次可审核、可重复执行的组织能力。", fill=GREEN_PALE, accent=GREEN)
+    add_callout(doc, "作品价值", "MateClaw 让二线能基于平台启动和推进标准化排障，让三线开发降低进入陌生系统调查的前置门槛，让重大故障团队围绕同一份证据快速收敛范围；并让一次真实排障变成下一次可审核、可重复执行的组织能力。", fill=GREEN_PALE, accent=GREEN)
     add_text(doc, "Demo 入口（需本地服务和登录态）：http://127.0.0.1:5173/troubleshooting?view=detail&diagnosisId=diag-acee292ecd7647288e2c39e80007ec2e", color=MUTED, size=8.8, after=0)
 
     doc.save(OUTPUT)
