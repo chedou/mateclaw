@@ -18,6 +18,7 @@
       :capture-disabled-reason="evaluationCaptureDisabledReason"
       :replay-capture-enabled="canCaptureReplayEvaluationSample"
       :replay-capture-disabled-reason="replayCaptureDisabledReason"
+      :start-pilot-setup="route.query.pilotSetup === '1'"
       @back="closeCapabilityWorkspace"
       @open-diagnosis="openDiagnosisFromEvaluation"
       @open-validation="openCurrentEvaluationValidation"
@@ -53,7 +54,7 @@
       @launch="openTroubleshootingScenario"
       @open-diagnosis="openDiagnosisFromList"
       @pilot-refresh="loadPilotPlan"
-      @pilot-setup="openEvaluationLedger"
+      @pilot-setup="openPilotSetup"
       @pilot-launch-formal="launchFormalPilotIncident"
       @pilot-open-diagnosis="openPilotDiagnosis"
       @pilot-open-evaluation="openPilotEvaluation"
@@ -1042,6 +1043,18 @@ async function openEvaluationLedger() {
   await router.push({ path: '/troubleshooting', query })
 }
 
+async function openPilotSetup() {
+  if (!canManageTroubleshooting.value) return
+  await router.push({
+    path: '/troubleshooting',
+    query: {
+      ...workbenchQueryWithoutCapability(),
+      capability: 'ledger',
+      pilotSetup: '1',
+    },
+  })
+}
+
 async function openCurrentEvaluationValidation() {
   if (!canManageTroubleshooting.value) return
   await router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
@@ -1070,6 +1083,7 @@ function workbenchQueryWithoutCapability() {
   const query = { ...route.query }
   delete query.capability
   delete query.focus
+  delete query.pilotSetup
   return query
 }
 

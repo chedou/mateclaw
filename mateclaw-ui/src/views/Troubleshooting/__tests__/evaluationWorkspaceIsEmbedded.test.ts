@@ -75,6 +75,7 @@ describe('troubleshooting capability workspaces', () => {
 
   it('configures an exact Workspace pilot without creating a second ledger', () => {
     expect(evaluationWorkspaceSource).toContain('<EvaluationPilotPlanPanel')
+    expect(evaluationWorkspaceSource).toContain(':start-open="startPilotSetup"')
     expect(evaluationWorkspaceSource).toContain('@updated="pilotPlan = $event"')
     expect(evaluationWorkspaceSource).toContain('troubleshootingApi.pilotPlan()')
     expect(evaluationPilotPlanPanelSource).toContain('先固定试点范围和三位负责人')
@@ -84,6 +85,10 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationPilotPlanPanelSource).toContain('expectedVersion: props.plan?.version || 0')
     expect(evaluationPilotPlanPanelSource).toContain('三类职责必须由 3 名不同的工作区成员承担')
     expect(evaluationPilotPlanPanelSource).toContain('当前未取得至少 3 名工作区成员')
+    expect(evaluationPilotPlanPanelSource).toContain('startOpen?: boolean')
+    expect(evaluationPilotPlanPanelSource).toContain('autoOpenConsumed')
+    expect(evaluationPilotPlanPanelSource).toContain('当前工作区只有 {{ members.length }} / 3 名成员')
+    expect(evaluationPilotPlanPanelSource).toContain('先去添加成员')
     expect(evaluationWorkspaceSource).not.toContain('pilotSampleApi')
   })
 })

@@ -40,8 +40,8 @@
       :closable="false"
       show-icon
     >
-      当前工作区少于 3 名成员，无法把二线、三线和数据负责人分开。
-      <el-button text type="primary" @click="openMemberSettings">去成员管理</el-button>
+      当前工作区只有 {{ members.length }} / 3 名成员。现在先补齐成员，才能把二线、三线和数据负责人分开。
+      <el-button text type="primary" @click="openMemberSettings">先去添加成员</el-button>
     </el-alert>
 
     <div class="pilot-setup-grid">
@@ -110,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import {
@@ -149,13 +149,19 @@ const ROLE_FIELDS: ReadonlyArray<{ key: PilotRole; label: string; help: string }
   },
 ]
 
-const props = defineProps<{ plan: TroubleshootingPilotPlan | null }>()
+const props = withDefaults(defineProps<{
+  plan: TroubleshootingPilotPlan | null
+  startOpen?: boolean
+}>(), {
+  startOpen: false,
+})
 const emit = defineEmits<{ updated: [plan: TroubleshootingPilotPlan] }>()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const members = ref<WorkspacePilotMember[]>([])
 const membersLoading = ref(false)
 const setupOpen = ref(false)
+const autoOpenConsumed = ref(false)
 const saving = ref(false)
 const form = reactive({
   name: '',
@@ -207,6 +213,16 @@ async function openSetup() {
   setupOpen.value = true
   await loadMembers()
 }
+
+watch(
+  [() => props.startOpen, () => props.plan],
+  ([startOpen, plan]) => {
+    if (!startOpen || !plan || autoOpenConsumed.value || !canManage.value) return
+    autoOpenConsumed.value = true
+    void openSetup()
+  },
+  { immediate: true },
+)
 
 function hydrateForm() {
   const plan = props.plan

@@ -28,6 +28,7 @@
 
         <EvaluationPilotPlanPanel
           :plan="pilotPlan"
+          :start-open="startPilotSetup"
           @updated="pilotPlan = $event"
         />
 
@@ -591,6 +592,7 @@ const props = withDefaults(defineProps<{
   captureDisabledReason?: string
   replayCaptureEnabled?: boolean
   replayCaptureDisabledReason?: string
+  startPilotSetup?: boolean
 }>(), {
   currentDiagnosisId: null,
   currentDiagnosisStatus: null,
@@ -601,6 +603,7 @@ const props = withDefaults(defineProps<{
   captureDisabledReason: '先完成一次可用的取证预览，再采集历史样本。',
   replayCaptureEnabled: false,
   replayCaptureDisabledReason: '当前 Diagnosis 不在可管理的回放范围。',
+  startPilotSetup: false,
 })
 
 const emit = defineEmits<{

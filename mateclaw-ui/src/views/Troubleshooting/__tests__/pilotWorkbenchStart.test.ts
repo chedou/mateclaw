@@ -32,7 +32,13 @@ describe('pilot workbench start', () => {
   it('keeps pilot setup and evaluation curation behind manage permission', () => {
     expect(diagnosisListSource).toContain("pilotPrompt.kind === 'SETUP' && canManage")
     expect(diagnosisListSource).toContain("pilotPrompt.kind === 'HANDOFF_EVALUATION' && canManage")
-    expect(formalWorkbenchSource).toContain('@pilot-setup="openEvaluationLedger"')
+    expect(formalWorkbenchSource).toContain('@pilot-setup="openPilotSetup"')
     expect(formalWorkbenchSource).toContain('@pilot-open-evaluation="openPilotEvaluation"')
+  })
+
+  it('takes an administrator from the list directly into the expanded setup form', () => {
+    expect(formalWorkbenchSource).toContain(':start-pilot-setup="route.query.pilotSetup === \'1\'"')
+    expect(formalWorkbenchSource).toContain("pilotSetup: '1'")
+    expect(formalWorkbenchSource).toContain('delete query.pilotSetup')
   })
 })
