@@ -585,6 +585,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         / "docs/intelligent-troubleshooting/"
         "t7-owner-contract-intake.recommended.template.json"
     )
+    ui_recommended_output_path = (
+        args.repo
+        / "mateclaw-ui/src/assets/troubleshooting/"
+        "t7-owner-contract-intake.recommended.template.json"
+    )
     try:
         template = build_current_template(args.repo)
         expected = render_json(template)
@@ -593,6 +598,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.write:
             _write_atomic(output_path, expected)
             _write_atomic(recommended_output_path, expected_recommended)
+            _write_atomic(ui_recommended_output_path, expected_recommended)
         elif args.check:
             if not output_path.exists() or output_path.read_text(encoding="utf-8") != expected:
                 print("stale T7 owner contract intake template", file=sys.stderr)
@@ -604,6 +610,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             ):
                 print(
                     "stale T7 owner contract recommended worksheet",
+                    file=sys.stderr,
+                )
+                return 1
+            if (
+                not ui_recommended_output_path.exists()
+                or ui_recommended_output_path.read_text(encoding="utf-8")
+                != expected_recommended
+            ):
+                print(
+                    "stale troubleshooting UI T7 owner contract worksheet",
                     file=sys.stderr,
                 )
                 return 1

@@ -49,7 +49,7 @@ describe('troubleshooting secondary navigation information architecture', () => 
     ])
     expect(items.map(item => item.description)).toEqual([
       '登记系统模块，并在模块里选择取证方法',
-      '先登记 10 条重点故障怎么查（还不能验收）',
+      '登记首批 20 条重点故障怎么查（准备材料，不等于验收）',
       '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
       '检查观测云能否正常读取',
       '场景、步骤与判断标准',

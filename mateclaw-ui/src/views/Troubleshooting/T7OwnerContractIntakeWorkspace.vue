@@ -2,7 +2,7 @@
   <CapabilityWorkspaceShell
     eyebrow="智能排障"
     title="标准查登记"
-    description="把重点故障登记成可查清单（先做 10 条）。登记齐了只表示草稿可用，还不能点正式验收；仓库完整验收仍要 20 条。"
+    description="把权威首批 20 条重点故障登记成可交接的查询清单。登记齐只表示材料已准备，仍需开发冻结运行目录和 Owner 正式验收。"
     @back="returnToWorkbench"
     @refresh="reloadFromTemplate"
   >
@@ -12,7 +12,7 @@
       show-icon
       class="page-alert"
       title="这是登记表，不是验收按钮"
-      description="不要把已有的 message-send / CTI创建会话 / ITGW 那三套查询名填进别的故障。历史时间按此前演示日锚定草稿，正式上线前请用各故障自己的告警再核对。"
+      description="每条都要用自己的真实告警核对服务、检索键、绑定和历史时间。不要复用 message-send、CTI 或 ITGW 的查询名，也不要填 API Key、DQL 全文或原始日志。"
     />
 
     <div class="status-bar">
@@ -22,7 +22,7 @@
         <span :class="validationTone">{{ validationLabel }}</span>
       </div>
       <div class="status-actions">
-        <el-button type="success" plain @click="fillFirstBatchDrafts">填充首批开发草稿</el-button>
+        <el-button type="success" plain @click="fillFirstBatchDrafts">生成开发侧引用草稿</el-button>
         <el-button @click="confirmReload">重置模板</el-button>
         <el-button @click="triggerImport">导入 JSON</el-button>
         <el-button @click="exportDocument">导出 JSON</el-button>
@@ -42,8 +42,8 @@
       :closable="false"
       show-icon
       class="page-alert"
-      title="已按演示信息预填首批 10 条"
-      description="消息域锚定 2026-07-31 SendMsg 真源日；CTI 域锚定 2026-08-07 17:24+08 演示日；微信工单锚定 2026-08-07 17:12+08 ITGW 同日窗口。来源编号带 draft-anchor: 前缀，便于你之后换成真实告警号。"
+      title="已加载权威首批 20 条候选，Owner 事实尚未填写"
+      description="批次固定为 15 条有日志特征提示、2 条只有业务上下文、3 条仍有来源缺口。提示只帮助定位材料，不能替代 Owner 对真实服务、查询绑定和历史故障时间的确认。"
     />
 
     <el-alert
@@ -229,6 +229,16 @@ const activeRow = computed(() => selectedRows.value.find(row => row.selectorKey 
 const activeContract = computed<OwnerContract | null>(() => activeRow.value?.ownerContract ?? null)
 const FIELD_LABELS_ZH: Record<string, string> = {
   ownerTeam: '责任团队',
+  ownerLevel: '故障等级',
+  ownerScenario: '故障场景',
+  verifiedRuntimeService: '运行服务名',
+  candidateReference: '候选材料引用',
+  serverQueryContractReference: '查询方法引用',
+  safeSearchTerm: '安全检索键',
+  window: '查询时间窗',
+  anomalyCriterionReference: '异常判据引用',
+  diagnosisRuleReference: '诊断规则引用',
+  bindingRefs: '三类查询绑定',
   historicalOccurredAt: '历史故障时间',
   historicalSourceReference: '历史来源引用',
 }
@@ -297,11 +307,8 @@ function restoreDraft() {
     const raw = localStorage.getItem(draftStorageKey(workspaceStore.currentWorkspaceId))
     if (!raw) return
     const parsed = JSON.parse(raw) as OwnerContractDocument
-    if (
-      parsed?.preparationFingerprint !== template.preparationFingerprint
-      || parsed?.windowTargetRange?.minimum !== template.windowTargetRange.minimum
-    ) {
-      ElMessage.warning('本地草稿与当前首批 10 条模板不一致，已忽略草稿')
+    if (!matchesAuthoritativeWorksheet(parsed)) {
+      ElMessage.warning('本地草稿与当前权威首批 20 条模板不一致，已忽略草稿')
       return
     }
     worksheet.value = parsed
@@ -341,7 +348,7 @@ function fillFirstBatchDrafts() {
     ownerTeam: 'CSDP',
     window: '-6h',
   })
-  ElMessage.success(`已为 ${count} 条生成开发侧引用/binding 草稿；请补每条历史时间与来源编号`)
+  ElMessage.success(`已为 ${count} 条生成不可执行的开发侧引用草稿；请逐条补齐 Owner 事实`)
 }
 
 function runValidation() {
@@ -375,8 +382,8 @@ async function onImportFile(event: Event) {
     })
     const text = await file.text()
     const parsed = JSON.parse(text) as OwnerContractDocument
-    if (parsed?.preparationFingerprint !== template.preparationFingerprint) {
-      ElMessage.error('导入文件指纹与当前推荐模板不一致')
+    if (!matchesAuthoritativeWorksheet(parsed)) {
+      ElMessage.error('导入文件与当前权威首批 20 条模板不一致')
       return
     }
     worksheet.value = parsed
@@ -386,6 +393,22 @@ async function onImportFile(event: Event) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error('导入失败：JSON 无效或已取消')
   }
+}
+
+function matchesAuthoritativeWorksheet(document: OwnerContractDocument | null | undefined): boolean {
+  if (
+    document?.preparationFingerprint !== template.preparationFingerprint
+    || document?.contractVersion !== template.contractVersion
+    || !Array.isArray(document.contracts)
+    || document.contracts.length !== template.contracts.length
+  ) return false
+  return document.contracts.every((row, index) => {
+    const expected = template.contracts[index]
+    return row.selectorKey === expected.selectorKey
+      && row.preparationTier === expected.preparationTier
+      && row.selectedForWindow === expected.selectedForWindow
+      && JSON.stringify(row.sourceHints) === JSON.stringify(expected.sourceHints)
+  })
 }
 </script>
 

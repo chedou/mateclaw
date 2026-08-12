@@ -33,7 +33,7 @@ function conclusionAnswer(type: ConclusionType): string {
 
 function nextStepState(status: DiagnosisStatus): FiveQuestionState {
   if (status === 'CLOSED' || status === 'TRANSFERRED' || status === 'CONFIRMED') return 'DONE'
-  if (status === 'READY_FOR_HUMAN' || status === 'AWAITING_APPROVAL') return 'ACTIVE'
+  if (status === 'READY_FOR_HUMAN') return 'ACTIVE'
   return 'PENDING'
 }
 

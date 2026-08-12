@@ -36,7 +36,7 @@ export const WORKBENCH_PRIMARY_CAPABILITIES: ReadonlyArray<WorkbenchCapabilityNa
     key: 't7-owner-contract',
     command: 't7-owner-contract',
     label: '标准查登记',
-    description: '先登记 10 条重点故障怎么查（还不能验收）',
+    description: '登记首批 20 条重点故障怎么查（准备材料，不等于验收）',
     requiredCapability: 'view:troubleshooting',
   },
 ]

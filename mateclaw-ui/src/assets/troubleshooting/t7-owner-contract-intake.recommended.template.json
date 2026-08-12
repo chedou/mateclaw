@@ -7,9 +7,9 @@
     "nextAuthority": "server-owned recording target catalog + T7 preflight + owner acceptance"
   },
   "preparationContractVersion": "t7-guance-contract-preparation.v1",
-  "preparationFingerprint": "a6cd84c76f4ac6bfc64587098de8c3f80c5088d07bb74efb553c0ee25da69f46",
+  "preparationFingerprint": "bb429134fe5cb0ac9ced12d5ae7addb6264480060efde9c0a32e1f1ae1ed9660",
   "windowTargetRange": {
-    "minimum": 10,
+    "minimum": 20,
     "maximum": 28
   },
   "availableOwnerCandidateCount": 28,
@@ -40,8 +40,26 @@
           "Customer_IMLoginDataFail_001"
         ]
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:101010",
@@ -66,23 +84,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-CTI",
-        "ownerLevel": "P0",
-        "ownerScenario": "Pulsar投递失败导致调度阻塞",
-        "verifiedRuntimeService": "csdp-task",
-        "candidateReference": "cand:batch10:101010",
-        "serverQueryContractReference": "q:batch10:101010:v1",
-        "safeSearchTerm": "Cti_DispatchPulsarFailed_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:101010:v1",
-        "diagnosisRuleReference": "rule:batch10:101010:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-101010-log-search",
-          "log_trace_bundle": "csdp-batch10-101010-trace-bundle",
-          "contrast_sample": "csdp-batch10-101010-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:24:00Z",
-        "historicalSourceReference": "draft-anchor:cti-day-20260807:101010"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -108,23 +126,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-CTI",
-        "ownerLevel": "P0",
-        "ownerScenario": "排队入队失败",
-        "verifiedRuntimeService": "csdp-task",
-        "candidateReference": "cand:batch10:101015",
-        "serverQueryContractReference": "q:batch10:101015:v1",
-        "safeSearchTerm": "Cti_EnqueueFailed_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:101015:v1",
-        "diagnosisRuleReference": "rule:batch10:101015:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-101015-log-search",
-          "log_trace_bundle": "csdp-batch10-101015-trace-bundle",
-          "contrast_sample": "csdp-batch10-101015-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:25:00Z",
-        "historicalSourceReference": "draft-anchor:cti-day-20260807:101015"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -148,8 +166,26 @@
           "Partner_IMLoginDataFail_001"
         ]
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:201011",
@@ -172,8 +208,26 @@
           "Conversation_AcceptFailed_001"
         ]
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:401007",
@@ -198,23 +252,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-CTI",
-        "ownerLevel": "P0",
-        "ownerScenario": "CSP IM登录接口",
-        "verifiedRuntimeService": "csdp-task",
-        "candidateReference": "cand:batch10:401007",
-        "serverQueryContractReference": "q:batch10:401007:v1",
-        "safeSearchTerm": "Conversation_CspLoginFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:401007:v1",
-        "diagnosisRuleReference": "rule:batch10:401007:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-401007-log-search",
-          "log_trace_bundle": "csdp-batch10-401007-trace-bundle",
-          "contrast_sample": "csdp-batch10-401007-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:26:00Z",
-        "historicalSourceReference": "draft-anchor:cti-day-20260807:401007"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -238,8 +292,26 @@
           "Customer_GetOpenIdFailed_001"
         ]
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:IM2002",
@@ -264,23 +336,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-客户IM",
-        "ownerLevel": "P0",
-        "ownerScenario": "Redis不可用导致消息静默丢失",
-        "verifiedRuntimeService": "csdp-session-service",
-        "candidateReference": "cand:batch10:im2002",
-        "serverQueryContractReference": "q:batch10:im2002:v1",
-        "safeSearchTerm": "Middleware_MsgCacheFailed_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:im2002:v1",
-        "diagnosisRuleReference": "rule:batch10:im2002:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-im2002-log-search",
-          "log_trace_bundle": "csdp-batch10-im2002-trace-bundle",
-          "contrast_sample": "csdp-batch10-im2002-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-07-31T04:00:00Z",
-        "historicalSourceReference": "draft-anchor:sendmsg-day-20260731:im2002"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -306,23 +378,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-客户IM",
-        "ownerLevel": "P0",
-        "ownerScenario": "MongoDB不可用导致消息无法持久化",
-        "verifiedRuntimeService": "csdp-session-service",
-        "candidateReference": "cand:batch10:im3002",
-        "serverQueryContractReference": "q:batch10:im3002:v1",
-        "safeSearchTerm": "Middleware_MsgPersistDBFailed_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:im3002:v1",
-        "diagnosisRuleReference": "rule:batch10:im3002:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-im3002-log-search",
-          "log_trace_bundle": "csdp-batch10-im3002-trace-bundle",
-          "contrast_sample": "csdp-batch10-im3002-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-07-31T04:05:00Z",
-        "historicalSourceReference": "draft-anchor:sendmsg-day-20260731:im3002"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -344,8 +416,26 @@
         "hasLogSignatureHint": true,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:501001",
@@ -370,23 +460,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-CTI",
-        "ownerLevel": "P1",
-        "ownerScenario": "IM登录",
-        "verifiedRuntimeService": "csdp-task",
-        "candidateReference": "cand:batch10:501001",
-        "serverQueryContractReference": "q:batch10:501001:v1",
-        "safeSearchTerm": "Third_CTILoginDataFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:501001:v1",
-        "diagnosisRuleReference": "rule:batch10:501001:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-501001-log-search",
-          "log_trace_bundle": "csdp-batch10-501001-trace-bundle",
-          "contrast_sample": "csdp-batch10-501001-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:27:00Z",
-        "historicalSourceReference": "draft-anchor:cti-day-20260807:501001"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -412,23 +502,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-微信侧",
-        "ownerLevel": "P1",
-        "ownerScenario": "获取工单信息",
-        "verifiedRuntimeService": "csdp-wechat",
-        "candidateReference": "cand:batch10:workorder-customerdetailfail-004",
-        "serverQueryContractReference": "q:batch10:workorder-customerdetailfail-004:v1",
-        "safeSearchTerm": "Workorder_CustomerDetailFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:workorder-customerdetailfail-004:v1",
-        "diagnosisRuleReference": "rule:batch10:workorder-customerdetailfail-004:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-workorder-customerdetailfail-004-log-search",
-          "log_trace_bundle": "csdp-batch10-workorder-customerdetailfail-004-trace-bundle",
-          "contrast_sample": "csdp-batch10-workorder-customerdetailfail-004-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:12:00Z",
-        "historicalSourceReference": "draft-anchor:wechat-day-20260807:workorder-detail"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -454,23 +544,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-微信侧",
-        "ownerLevel": "P1",
-        "ownerScenario": "数据查询的异常",
-        "verifiedRuntimeService": "csdp-wechat",
-        "candidateReference": "cand:batch10:workorder-customerlistfail-003",
-        "serverQueryContractReference": "q:batch10:workorder-customerlistfail-003:v1",
-        "safeSearchTerm": "Workorder_CustomerListFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:workorder-customerlistfail-003:v1",
-        "diagnosisRuleReference": "rule:batch10:workorder-customerlistfail-003:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-workorder-customerlistfail-003-log-search",
-          "log_trace_bundle": "csdp-batch10-workorder-customerlistfail-003-trace-bundle",
-          "contrast_sample": "csdp-batch10-workorder-customerlistfail-003-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:13:00Z",
-        "historicalSourceReference": "draft-anchor:wechat-day-20260807:workorder-list"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -496,23 +586,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-微信侧",
-        "ownerLevel": "P1",
-        "ownerScenario": "icare创建问题单",
-        "verifiedRuntimeService": "csdp-wechat",
-        "candidateReference": "cand:batch10:workorder-emergencycreatefail-005",
-        "serverQueryContractReference": "q:batch10:workorder-emergencycreatefail-005:v1",
-        "safeSearchTerm": "Workorder_EmergencyCreateFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:workorder-emergencycreatefail-005:v1",
-        "diagnosisRuleReference": "rule:batch10:workorder-emergencycreatefail-005:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-workorder-emergencycreatefail-005-log-search",
-          "log_trace_bundle": "csdp-batch10-workorder-emergencycreatefail-005-trace-bundle",
-          "contrast_sample": "csdp-batch10-workorder-emergencycreatefail-005-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:14:00Z",
-        "historicalSourceReference": "draft-anchor:wechat-day-20260807:workorder-emergency"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -538,23 +628,23 @@
       },
       "selectedForWindow": true,
       "ownerContract": {
-        "ownerTeam": "CSDP-微信侧",
-        "ownerLevel": "P1",
-        "ownerScenario": "icare创建问题单",
-        "verifiedRuntimeService": "csdp-wechat",
-        "candidateReference": "cand:batch10:workorder-upgradeservicefail-006",
-        "serverQueryContractReference": "q:batch10:workorder-upgradeservicefail-006:v1",
-        "safeSearchTerm": "Workorder_UpgradeServiceFail_001",
-        "window": "-6h",
-        "anomalyCriterionReference": "crit:batch10:workorder-upgradeservicefail-006:v1",
-        "diagnosisRuleReference": "rule:batch10:workorder-upgradeservicefail-006:v1",
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
         "bindingRefs": {
-          "log_search": "csdp-batch10-workorder-upgradeservicefail-006-log-search",
-          "log_trace_bundle": "csdp-batch10-workorder-upgradeservicefail-006-trace-bundle",
-          "contrast_sample": "csdp-batch10-workorder-upgradeservicefail-006-contrast"
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
         },
-        "historicalOccurredAt": "2026-08-07T09:15:00Z",
-        "historicalSourceReference": "draft-anchor:wechat-day-20260807:workorder-upgrade"
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
       }
     },
     {
@@ -576,8 +666,26 @@
         "hasLogSignatureHint": false,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:301035",
@@ -598,8 +706,26 @@
         "hasLogSignatureHint": false,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:101011",
@@ -636,8 +762,26 @@
         "hasLogSignatureHint": false,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:101031",
@@ -674,8 +818,26 @@
         "hasLogSignatureHint": false,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:301012",
@@ -784,8 +946,26 @@
         "hasLogSignatureHint": false,
         "signatureErrorCodes": []
       },
-      "selectedForWindow": false,
-      "ownerContract": null
+      "selectedForWindow": true,
+      "ownerContract": {
+        "ownerTeam": "<replace:owner-team>",
+        "ownerLevel": "<P0|P1|P2>",
+        "ownerScenario": "<replace:owner-verified-scenario>",
+        "verifiedRuntimeService": "<replace:runtime-service>",
+        "candidateReference": "<replace:candidate-reference>",
+        "serverQueryContractReference": "<replace:query-contract-reference>",
+        "safeSearchTerm": "<replace:safe-search-term>",
+        "window": "<replace:bounded-window>",
+        "anomalyCriterionReference": "<replace:criterion-reference>",
+        "diagnosisRuleReference": "<replace:rule-reference>",
+        "bindingRefs": {
+          "log_search": "<replace:log-search-binding>",
+          "log_trace_bundle": "<replace:trace-binding>",
+          "contrast_sample": "<replace:contrast-binding>"
+        },
+        "historicalOccurredAt": "<replace:UTC-whole-seconds>",
+        "historicalSourceReference": "<replace:historical-source-reference>"
+      }
     },
     {
       "selectorKey": "csdp:903001",

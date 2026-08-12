@@ -137,7 +137,8 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Bind a digital employee as the OPEN_DISCOVERY executor. */
   bindOpenDiscoveryAgent: (data: { agentId: number | string; prepareEvidenceTool?: boolean }) =>
     http.put<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding', {
-      agentId: Number(data.agentId),
+      // Preserve 64-bit Snowflake IDs exactly; Jackson accepts the decimal string for Long.
+      agentId: String(data.agentId),
       prepareEvidenceTool: data.prepareEvidenceTool ?? true,
     }),
 

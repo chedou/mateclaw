@@ -980,7 +980,7 @@ export interface OpenDiscoveryPlanSummary {
 export interface OpenDiscoveryReadiness {
   status: OpenDiscoveryReadinessStatus
   agentEnabled: boolean
-  configuredAgentId: number
+  configuredAgentId: string | number
   configuredAgentName?: string
   agentBindingSource?: 'WORKSPACE' | 'CONFIG' | 'NONE' | string
   agentReady: boolean
@@ -993,8 +993,8 @@ export interface OpenDiscoveryReadiness {
 }
 
 export interface OpenDiscoveryAgentBinding {
-  workspaceId: number
-  agentId: number
+  workspaceId: string | number
+  agentId: string | number
   agentName?: string | null
   source: 'WORKSPACE' | 'CONFIG' | 'NONE' | string
   boundBy?: string | null

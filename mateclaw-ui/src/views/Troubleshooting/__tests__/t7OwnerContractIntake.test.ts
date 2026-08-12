@@ -13,20 +13,21 @@ import {
 describe('t7OwnerContractIntake validation', () => {
   const template = recommendedTemplate as OwnerContractDocument
 
-  it('ships the first-batch worksheet already filled for page use', () => {
+  it('ships the exact authoritative 20-row worksheet without invented owner facts', () => {
     const selected = template.contracts.filter(row => row.selectedForWindow)
-    expect(selected).toHaveLength(10)
-    expect(selected.every(row => ownerContractCompleteness(row.ownerContract).complete)).toBe(true)
-    expect(selected.every(row => row.ownerContract?.historicalSourceReference.startsWith('draft-anchor:'))).toBe(true)
+    expect(selected).toHaveLength(20)
+    expect(selected.reduce<Record<string, number>>((counts, row) => {
+      counts[row.preparationTier] = (counts[row.preparationTier] || 0) + 1
+      return counts
+    }, {})).toEqual({ A_HINTED: 15, B_CONTEXT_ONLY: 2, C_SOURCE_GAPS: 3 })
+    expect(selected.every(row => !ownerContractCompleteness(row.ownerContract).complete)).toBe(true)
+    expect(selected.every(row => row.ownerContract?.historicalSourceReference.includes('<replace:'))).toBe(true)
 
     const result = validateOwnerInput(template, template, new Date('2026-08-12T00:00:00Z'))
-    expect(result).toMatchObject({
-      ok: true,
-      status: 'PREPARED_NOT_EXECUTABLE',
-      selectedCount: 10,
-      canAcceptT7: false,
-      canWriteRuntimeCatalog: false,
-    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.some(issue => issue.includes('unresolved placeholder'))).toBe(true)
+    }
   })
 
   it('still rejects unresolved placeholders if a row is emptied', () => {
@@ -71,13 +72,17 @@ describe('t7OwnerContractIntake validation', () => {
         historicalSourceReference: '<replace:historical-source-reference>',
       }
     }
-    expect(applyFirstBatchDeveloperDrafts(worksheet)).toBe(10)
+    expect(applyFirstBatchDeveloperDrafts(worksheet)).toBe(20)
     const selected = worksheet.contracts.filter(row => row.selectedForWindow)
-    expect(new Set(selected.map(row => row.ownerContract!.candidateReference)).size).toBe(10)
+    expect(new Set(selected.map(row => row.ownerContract!.candidateReference)).size).toBe(20)
     expect(selected.every(row => !row.ownerContract!.bindingRefs.log_search.includes('message-send'))).toBe(true)
-    expect(ownerRemainingFields(selected[0].ownerContract)).toEqual([
+    const hinted = selected.find(row => row.selectorKey === 'csdp:101010')!
+    expect(ownerRemainingFields(hinted.ownerContract)).toEqual([
       'historicalOccurredAt',
       'historicalSourceReference',
     ])
+    const sourceGap = selected.find(row => row.preparationTier === 'C_SOURCE_GAPS')!
+    expect(ownerRemainingFields(sourceGap.ownerContract)).toContain('ownerLevel')
+    expect(ownerRemainingFields(sourceGap.ownerContract)).toContain('safeSearchTerm')
   })
 })

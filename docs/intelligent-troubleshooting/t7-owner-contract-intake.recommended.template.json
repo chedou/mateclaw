@@ -7,7 +7,7 @@
     "nextAuthority": "server-owned recording target catalog + T7 preflight + owner acceptance"
   },
   "preparationContractVersion": "t7-guance-contract-preparation.v1",
-  "preparationFingerprint": "a6cd84c76f4ac6bfc64587098de8c3f80c5088d07bb74efb553c0ee25da69f46",
+  "preparationFingerprint": "bb429134fe5cb0ac9ced12d5ae7addb6264480060efde9c0a32e1f1ae1ed9660",
   "windowTargetRange": {
     "minimum": 20,
     "maximum": 28

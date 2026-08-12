@@ -5,22 +5,9 @@
 
 export const T7_OWNER_CONTRACT_VERSION = 't7-owner-contract-intake.v1'
 export const T7_OWNER_VALIDATION_VERSION = 't7-owner-contract-validation.v1'
-/** UI 首批目标：先定 10 条。仓库正式 T7 intake 仍是 20（见 docs Python 校验器）。 */
-export const T7_MIN_SELECTED = 10
+/** 与仓库权威 T7 intake 保持一致；不足 20 条不得显示准备完成。 */
+export const T7_MIN_SELECTED = 20
 export const T7_MAX_SELECTED = 30
-/** 本页默认优先展示的 10 条（与 binding 对齐核对表一致）。 */
-export const T7_PRIORITY_SELECTORS = [
-  'csdp:IM2002',
-  'csdp:IM3002',
-  'csdp:101010',
-  'csdp:101015',
-  'csdp:401007',
-  'csdp:501001',
-  'csdp:Workorder_CustomerDetailFail_004',
-  'csdp:Workorder_CustomerListFail_003',
-  'csdp:Workorder_EmergencyCreateFail_005',
-  'csdp:Workorder_UpgradeServiceFail_006',
-] as const
 
 export const OWNER_LEVELS = ['P0', 'P1', 'P2'] as const
 export type OwnerLevel = (typeof OWNER_LEVELS)[number]
@@ -354,7 +341,7 @@ export function selectorSlug(selectorKey: string): string {
 }
 
 /**
- * 为首批行生成唯一的开发侧引用 / 新 binding 名，并带上提示字段。
+ * 为正式首批行生成唯一的开发侧引用 / 新 binding 草稿名，并带上提示字段。
  * 不填 historicalOccurredAt / historicalSourceReference（必须 Owner 用真实告警）。
  * 绝不写入 csdp-message-send-* / csdp-cti-* / csdp-itgw-*。
  */
@@ -371,14 +358,14 @@ export function applyDeveloperDraft(row: OwnerContractRow, options?: {
   if (serviceDraft) base.verifiedRuntimeService = serviceDraft
 
   base.window = options?.window || '-6h'
-  base.candidateReference = `cand:batch10:${slug}`
-  base.serverQueryContractReference = `q:batch10:${slug}:v1`
-  base.anomalyCriterionReference = `crit:batch10:${slug}:v1`
-  base.diagnosisRuleReference = `rule:batch10:${slug}:v1`
+  base.candidateReference = `cand:t7-draft:${slug}`
+  base.serverQueryContractReference = `q:t7-draft:${slug}:v1`
+  base.anomalyCriterionReference = `crit:t7-draft:${slug}:v1`
+  base.diagnosisRuleReference = `rule:t7-draft:${slug}:v1`
   base.bindingRefs = {
-    log_search: `csdp-batch10-${slug}-log-search`,
-    log_trace_bundle: `csdp-batch10-${slug}-trace-bundle`,
-    contrast_sample: `csdp-batch10-${slug}-contrast`,
+    log_search: `csdp-t7-draft-${slug}-log-search`,
+    log_trace_bundle: `csdp-t7-draft-${slug}-trace-bundle`,
+    contrast_sample: `csdp-t7-draft-${slug}-contrast`,
   }
   // Keep historical fields for Owner — do not invent alert times.
   if (!fieldLooksFilled(base.historicalOccurredAt)) {
@@ -405,13 +392,30 @@ export function applyFirstBatchDeveloperDrafts(
 
 export function ownerRemainingFields(contract: OwnerContract | null): string[] {
   if (!contract) {
-    return ['ownerTeam', 'historicalOccurredAt', 'historicalSourceReference']
+    return [...OWNER_CONTRACT_FIELDS]
   }
-  const remaining: string[] = []
-  if (!fieldLooksFilled(contract.ownerTeam)) remaining.push('ownerTeam')
-  if (!fieldLooksFilled(contract.historicalOccurredAt)) remaining.push('historicalOccurredAt')
-  if (!fieldLooksFilled(contract.historicalSourceReference)) remaining.push('historicalSourceReference')
-  return remaining
+  const values: Record<(typeof OWNER_CONTRACT_FIELDS)[number], unknown> = {
+    ownerTeam: contract.ownerTeam,
+    ownerLevel: contract.ownerLevel,
+    ownerScenario: contract.ownerScenario,
+    verifiedRuntimeService: contract.verifiedRuntimeService,
+    candidateReference: contract.candidateReference,
+    serverQueryContractReference: contract.serverQueryContractReference,
+    safeSearchTerm: contract.safeSearchTerm,
+    window: contract.window,
+    anomalyCriterionReference: contract.anomalyCriterionReference,
+    diagnosisRuleReference: contract.diagnosisRuleReference,
+    bindingRefs: contract.bindingRefs,
+    historicalOccurredAt: contract.historicalOccurredAt,
+    historicalSourceReference: contract.historicalSourceReference,
+  }
+  return OWNER_CONTRACT_FIELDS.filter((field) => {
+    if (field === 'bindingRefs') {
+      return CORE_SIGNALS.some(signal => !fieldLooksFilled(contract.bindingRefs?.[signal] || ''))
+    }
+    const value = values[field]
+    return typeof value !== 'string' || !fieldLooksFilled(value)
+  })
 }
 
 type NormalizedOwnerContract = {
@@ -683,7 +687,7 @@ export function validateOwnerInput(
 }
 
 export function draftStorageKey(workspaceId: string | number | null | undefined): string {
-  return `mc-standard-query-intake:v3:${workspaceId ?? 'default'}`
+  return `mc-standard-query-intake:v4:${workspaceId ?? 'default'}`
 }
 
 export function downloadOwnerDocument(document: OwnerContractDocument, filename = 'standard-query-intake.local.json') {

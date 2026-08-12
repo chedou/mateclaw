@@ -313,6 +313,14 @@ class T7OwnerContractIntakeTest(unittest.TestCase):
                 "t7-owner-contract-intake.recommended.template.json"
             ).read_text(encoding="utf-8"),
         )
+        self.assertEqual(
+            render_json(build_current_recommended_worksheet(REPO)),
+            (
+                REPO
+                / "mateclaw-ui/src/assets/troubleshooting/"
+                "t7-owner-contract-intake.recommended.template.json"
+            ).read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":
