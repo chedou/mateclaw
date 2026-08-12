@@ -7,10 +7,18 @@ import type {
 } from '@/api'
 import {
   buildEvaluationPilotQueue,
+  buildPilotMemberProgress,
   buildPilotWorkbenchPrompt,
 } from '../evaluationPilot'
 
 describe('evaluation pilot hand-off queue', () => {
+  it('keeps the three distinct pilot roles as one visible member prerequisite', () => {
+    expect(buildPilotMemberProgress(1)).toEqual({ memberCount: 1, missingCount: 2, ready: false })
+    expect(buildPilotMemberProgress(2)).toEqual({ memberCount: 2, missingCount: 1, ready: false })
+    expect(buildPilotMemberProgress(3)).toEqual({ memberCount: 3, missingCount: 0, ready: true })
+    expect(buildPilotMemberProgress(5)).toEqual({ memberCount: 5, missingCount: 0, ready: true })
+  })
+
   it('turns persisted formal diagnoses into one truthful next action', () => {
     const diagnoses = [
       diagnosis('diag-open', 'READY_FOR_HUMAN', false, '2026-08-13T08:00:00Z'),

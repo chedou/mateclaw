@@ -35,13 +35,22 @@
     </header>
 
     <el-alert
-      v-if="members.length < 3 && !membersLoading"
+      v-if="!membersLoading && (membersLoadFailed || members.length < 3)"
       type="warning"
       :closable="false"
       show-icon
     >
-      当前工作区只有 {{ members.length }} / 3 名成员。现在先补齐成员，才能把二线、三线和数据负责人分开。
-      <el-button text type="primary" @click="openMemberSettings">先去添加成员</el-button>
+      <template v-if="membersLoadFailed">
+        暂时无法读取工作区成员，不能确认三人门槛。
+        <el-button text type="primary" @click="loadMembers">重新读取</el-button>
+      </template>
+      <template v-else-if="canManageMembers">
+        当前工作区只有 {{ members.length }} / 3 名成员。现在先补齐成员，才能把二线、三线和数据负责人分开。
+        <el-button text type="primary" @click="openMemberSettings">先去添加成员</el-button>
+      </template>
+      <template v-else>
+        当前工作区只有 {{ members.length }} / 3 名成员。当前账号不能添加成员，请联系工作区管理员补齐成员。
+      </template>
     </el-alert>
 
     <div class="pilot-setup-grid">
@@ -111,7 +120,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import {
   troubleshootingApi,
@@ -120,6 +129,7 @@ import {
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import { pilotPlanReady } from './evaluationPilot'
+import { pilotMemberSettingsLocation } from './workbenchCapabilityMenu'
 
 type PilotRole = 'secondLineUserId' | 'thirdLineUserId' | 'sourceOwnerUserId'
 
@@ -156,10 +166,12 @@ const props = withDefaults(defineProps<{
   startOpen: false,
 })
 const emit = defineEmits<{ updated: [plan: TroubleshootingPilotPlan] }>()
+const route = useRoute()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const members = ref<WorkspacePilotMember[]>([])
 const membersLoading = ref(false)
+const membersLoadFailed = ref(false)
 const setupOpen = ref(false)
 const autoOpenConsumed = ref(false)
 const saving = ref(false)
@@ -175,9 +187,12 @@ const form = reactive({
 
 const canManage = computed(() => workspaceStore.can('manage:troubleshooting')
   || workspaceStore.isAtLeast('admin'))
+const canManageMembers = computed(() => workspaceStore.can('manage:settings'))
 const configured = computed(() => pilotPlanReady(props.plan))
 const formIssue = computed(() => {
   if (!canManage.value) return '当前角色无权修改试点设置。'
+  if (membersLoading.value) return '正在读取工作区成员，请稍候。'
+  if (membersLoadFailed.value) return '工作区成员读取失败，请重试后再保存。'
   if (!form.name.trim()) return '请填写试点名称。'
   if (!form.modules.length) return '至少配置一个系统 / 服务。'
   const normalizedModules = form.modules.map(module => ({
@@ -191,7 +206,7 @@ const formIssue = computed(() => {
   }
   const moduleKeys = normalizedModules.map(module => `${module.system}\u0000${module.service}`)
   if (new Set(moduleKeys).size !== moduleKeys.length) return '系统 / 服务范围不能重复。'
-  if (!membersLoading.value && members.value.length < 3) {
+  if (members.value.length < 3) {
     return '当前未取得至少 3 名工作区成员，请先补齐成员或重试加载。'
   }
   const people = ROLE_FIELDS.map(role => form[role.key])
@@ -199,8 +214,7 @@ const formIssue = computed(() => {
     return '请分别选择二线、三线和数据取证负责人。'
   }
   if (new Set(people).size !== people.length) return '三类职责必须由 3 名不同的工作区成员承担。'
-  if (!membersLoading.value
-    && people.some(userId => !members.value.some(member => String(member.userId) === userId))) {
+  if (people.some(userId => !members.value.some(member => String(member.userId) === userId))) {
     return '已选人员不在当前工作区，请重新选择。'
   }
   if (!form.reason.trim()) return '请填写本次固定或调整试点的原因。'
@@ -241,14 +255,17 @@ async function loadMembers() {
   const workspaceId = workspaceStore.currentWorkspaceId
   if (!workspaceId) {
     members.value = []
+    membersLoadFailed.value = true
     return
   }
   membersLoading.value = true
+  membersLoadFailed.value = false
   try {
     const response = await workspaceTeamApi.listMembers(workspaceId)
     members.value = (response.data || []) as WorkspacePilotMember[]
   } catch (error) {
     members.value = []
+    membersLoadFailed.value = true
     ElMessage.error(`加载工作区成员失败：${errorText(error)}`)
   } finally {
     membersLoading.value = false
@@ -303,7 +320,8 @@ async function save() {
 }
 
 function openMemberSettings() {
-  void router.push('/settings/members')
+  if (!canManageMembers.value) return
+  void router.push(pilotMemberSettingsLocation(route.fullPath))
 }
 
 function errorText(error: unknown) {

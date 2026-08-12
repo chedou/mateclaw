@@ -44,6 +44,26 @@ export interface PilotWorkbenchPrompt {
   scope: TroubleshootingPilotPlan['modules'][number] | null
 }
 
+export interface PilotMemberProgress {
+  memberCount: number
+  missingCount: number
+  ready: boolean
+}
+
+const PILOT_REQUIRED_MEMBER_COUNT = 3
+
+export function buildPilotMemberProgress(memberCount: number): PilotMemberProgress {
+  const normalizedCount = Number.isFinite(memberCount)
+    ? Math.max(0, Math.floor(memberCount))
+    : 0
+  const missingCount = Math.max(0, PILOT_REQUIRED_MEMBER_COUNT - normalizedCount)
+  return {
+    memberCount: normalizedCount,
+    missingCount,
+    ready: missingCount === 0,
+  }
+}
+
 const STAGE_COPY: Record<EvaluationPilotStage, {
   stageLabel: string
   nextAction: string

@@ -4,6 +4,7 @@ import capabilityWorkspaceSource from '../CapabilityWorkspaceShell.vue?raw'
 import caseKnowledgeWorkspaceSource from '../CaseKnowledgeImportWorkspace.vue?raw'
 import evaluationPilotPlanPanelSource from '../EvaluationPilotPlanPanel.vue?raw'
 import evaluationWorkspaceSource from '../EvaluationSampleLedgerWorkspace.vue?raw'
+import membersWorkspaceSource from '../../Security/Members/index.vue?raw'
 
 describe('troubleshooting capability workspaces', () => {
   it('renders diagnosis evaluation inside the work area instead of a dialog', () => {
@@ -89,6 +90,18 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationPilotPlanPanelSource).toContain('autoOpenConsumed')
     expect(evaluationPilotPlanPanelSource).toContain('当前工作区只有 {{ members.length }} / 3 名成员')
     expect(evaluationPilotPlanPanelSource).toContain('先去添加成员')
+    expect(evaluationPilotPlanPanelSource)
+      .toContain("const canManageMembers = computed(() => workspaceStore.can('manage:settings'))")
+    expect(evaluationPilotPlanPanelSource).toContain('pilotMemberSettingsLocation(route.fullPath)')
+    expect(evaluationPilotPlanPanelSource).toContain('请联系工作区管理员补齐成员')
+    expect(evaluationPilotPlanPanelSource).toContain('暂时无法读取工作区成员')
+    expect(evaluationPilotPlanPanelSource).toContain('工作区成员读取失败，请重试后再保存')
+    expect(membersWorkspaceSource).toContain('来自智能排障试点')
+    expect(membersWorkspaceSource).toContain('还需添加 {{ pilotMemberProgress.missingCount }} 名成员')
+    expect(membersWorkspaceSource).toContain('成员已满足试点要求')
+    expect(membersWorkspaceSource).toContain('暂时无法读取成员数量')
+    expect(membersWorkspaceSource).toContain('返回试点配置')
+    expect(membersWorkspaceSource).toContain('pilotMemberReturnPath(route.query.source, route.query.returnTo)')
     expect(evaluationWorkspaceSource).not.toContain('pilotSampleApi')
   })
 })

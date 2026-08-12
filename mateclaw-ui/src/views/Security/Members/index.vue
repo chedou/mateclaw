@@ -1,5 +1,27 @@
 <template>
   <div class="settings-section">
+    <section
+      v-if="pilotReturnTo"
+      class="pilot-member-handoff"
+      aria-label="智能排障试点成员准备"
+    >
+      <div>
+        <span>来自智能排障试点</span>
+        <strong v-if="loading">正在核对成员数量</strong>
+        <strong v-else-if="memberLoadFailed">暂时无法读取成员数量</strong>
+        <strong v-else-if="!pilotMemberProgress.ready">
+          还需添加 {{ pilotMemberProgress.missingCount }} 名成员
+        </strong>
+        <strong v-else>成员已满足试点要求</strong>
+        <p v-if="!loading && memberLoadFailed">当前无法确认三人门槛，请刷新页面后再继续试点配置。</p>
+        <p v-else-if="!loading && !pilotMemberProgress.ready">
+          当前 Workspace 有 {{ pilotMemberProgress.memberCount }} 名成员；至少需要 3 名，才能分别指定二线、三线和数据取证负责人。
+        </p>
+        <p v-else-if="!loading">当前 Workspace 有 {{ pilotMemberProgress.memberCount }} 名成员，可以返回并继续分配三类负责人。</p>
+      </div>
+      <button class="btn-secondary" @click="returnToPilot">返回试点配置</button>
+    </section>
+
     <div class="section-header">
       <div>
         <h2 class="section-title">{{ t('security.members.title') }}</h2>
@@ -117,13 +139,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { mcToast } from '@/composables/useMcToast'
 import { workspaceTeamApi } from '@/api/index'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
+import { buildPilotMemberProgress } from '@/views/Troubleshooting/evaluationPilot'
+import { pilotMemberReturnPath } from '@/views/Troubleshooting/workbenchCapabilityMenu'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 interface Member {
   id: number
@@ -138,7 +165,10 @@ interface Member {
 const store = useWorkspaceStore()
 const members = ref<Member[]>([])
 const loading = ref(false)
+const memberLoadFailed = ref(false)
 const showAddDialog = ref(false)
+const pilotReturnTo = computed(() => pilotMemberReturnPath(route.query.source, route.query.returnTo))
+const pilotMemberProgress = computed(() => buildPilotMemberProgress(members.value.length))
 
 const defaultForm = () => ({ username: '', password: '', nickname: '', role: 'member' })
 const newMemberForm = reactive(defaultForm())
@@ -149,12 +179,18 @@ onMounted(() => {
 
 async function fetchMembers() {
   const wsId = store.currentWorkspaceId
-  if (!wsId) return
+  if (!wsId) {
+    members.value = []
+    memberLoadFailed.value = true
+    return
+  }
   loading.value = true
+  memberLoadFailed.value = false
   try {
     const res: any = await workspaceTeamApi.listMembers(wsId)
     members.value = res.data || []
   } catch (e: any) {
+    memberLoadFailed.value = true
     mcToast.error(e.message)
   } finally {
     loading.value = false
@@ -174,10 +210,15 @@ async function addMember() {
     mcToast.success(t('security.members.messages.addSuccess'))
     showAddDialog.value = false
     Object.assign(newMemberForm, defaultForm())
-    fetchMembers()
+    await fetchMembers()
   } catch (e: any) {
     mcToast.error(e?.msg || e?.message || t('security.members.messages.addFailed'))
   }
+}
+
+function returnToPilot() {
+  if (!pilotReturnTo.value) return
+  void router.push(pilotReturnTo.value)
 }
 
 async function updateRole(member: Member, role: string) {
@@ -216,6 +257,45 @@ function formatDate(dateStr: string) {
 </style>
 
 <style scoped>
+.pilot-member-handoff {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--mc-primary, #D97757);
+  background: var(--mc-bg-muted);
+}
+
+.pilot-member-handoff > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pilot-member-handoff span {
+  color: var(--mc-primary, #D97757);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pilot-member-handoff strong {
+  color: var(--mc-text-primary);
+  font-size: 15px;
+}
+
+.pilot-member-handoff p {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.pilot-member-handoff .btn-secondary {
+  flex: none;
+}
+
 .member-info {
   display: flex;
   align-items: center;
@@ -273,5 +353,16 @@ function formatDate(dateStr: string) {
   margin-top: 4px;
   font-size: 12px;
   color: var(--mc-text-tertiary);
+}
+
+@media (max-width: 680px) {
+  .pilot-member-handoff {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pilot-member-handoff .btn-secondary {
+    width: 100%;
+  }
 }
 </style>

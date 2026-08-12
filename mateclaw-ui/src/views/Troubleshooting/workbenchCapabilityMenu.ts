@@ -114,6 +114,9 @@ const WORKBENCH_OVERLAY_CAPABILITIES = new Set<WorkbenchOverlayCapability>([
   'case-knowledge',
 ])
 
+const PILOT_MEMBER_SOURCE = 'troubleshooting-pilot'
+const DEFAULT_PILOT_SETUP_RETURN = '/troubleshooting?view=list&capability=ledger&pilotSetup=1'
+
 function firstQueryValue(value: unknown): unknown {
   return Array.isArray(value) ? value[0] : value
 }
@@ -123,6 +126,23 @@ export function safeTroubleshootingReturnPath(value: unknown): string | null {
   if (typeof candidate !== 'string') return null
   if (!/^\/troubleshooting(?:[?#]|$)/.test(candidate)) return null
   return candidate
+}
+
+export function pilotMemberSettingsLocation(
+  preferredReturnPath?: unknown,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/settings/members',
+    query: {
+      source: PILOT_MEMBER_SOURCE,
+      returnTo: safeTroubleshootingReturnPath(preferredReturnPath) || DEFAULT_PILOT_SETUP_RETURN,
+    },
+  }
+}
+
+export function pilotMemberReturnPath(source: unknown, returnTo: unknown): string | null {
+  if (firstQueryValue(source) !== PILOT_MEMBER_SOURCE) return null
+  return safeTroubleshootingReturnPath(returnTo)
 }
 
 export function normalizeWorkbenchOverlayCapability(

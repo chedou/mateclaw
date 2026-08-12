@@ -8,6 +8,8 @@ import {
   normalizeEvidenceSetupSection,
   normalizeWorkbenchOverlayCapability,
   observabilityAssetsLocation,
+  pilotMemberReturnPath,
+  pilotMemberSettingsLocation,
   safeTroubleshootingReturnPath,
   t7OwnerContractLocation,
   workbenchOverlayLocation,
@@ -139,6 +141,31 @@ describe('troubleshooting secondary navigation information architecture', () => 
     expect(safeTroubleshootingReturnPath('/troubleshooting/evidence-catalog?tab=routes')).toBeNull()
     expect(safeTroubleshootingReturnPath('/troubleshooting/sops')).toBeNull()
     expect(safeTroubleshootingReturnPath('/troubleshooting-other')).toBeNull()
+  })
+
+  it('keeps the pilot member hand-off local and returns to the expanded setup', () => {
+    expect(pilotMemberSettingsLocation(
+      '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+    )).toEqual({
+      path: '/settings/members',
+      query: {
+        source: 'troubleshooting-pilot',
+        returnTo: '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+      },
+    })
+    expect(pilotMemberSettingsLocation('https://example.com')).toEqual({
+      path: '/settings/members',
+      query: {
+        source: 'troubleshooting-pilot',
+        returnTo: '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+      },
+    })
+    expect(pilotMemberReturnPath(
+      'troubleshooting-pilot',
+      '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+    )).toBe('/troubleshooting?view=list&capability=ledger&pilotSetup=1')
+    expect(pilotMemberReturnPath('other', '/troubleshooting?view=list')).toBeNull()
+    expect(pilotMemberReturnPath('troubleshooting-pilot', 'https://example.com')).toBeNull()
   })
 
   it('keeps the legacy Guance overlay deep link only as a compatibility action', () => {
