@@ -12,6 +12,52 @@
         这里只积累脱敏样本与人工确认的标准答案。样本够多不等于验收通过，也不会自动得出“已经省时”的结论。
       </el-alert>
 
+      <section class="pilot-relay" aria-labelledby="pilot-relay-title">
+        <header class="pilot-relay-head">
+          <div>
+            <span>试点闭环</span>
+            <h2 id="pilot-relay-title">试点接力队列</h2>
+            <p>系统只根据已保存的正式排障单、真源样本和影子运行，告诉下一位负责人现在只补哪一步。</p>
+          </div>
+          <div class="pilot-relay-metrics" aria-label="试点接力队列统计">
+            <div><b>{{ pilotSummary.formal }}</b><span>正式排障单</span></div>
+            <div><b>{{ pilotSummary.closed }}</b><span>已登记结果</span></div>
+            <div><b>{{ pilotSummary.ready }}</b><span>可进入周复盘</span></div>
+          </div>
+        </header>
+
+        <div v-if="pilotVisibleRows.length" class="pilot-relay-list">
+          <button
+            v-for="row in pilotVisibleRows"
+            :key="row.diagnosisId"
+            type="button"
+            class="pilot-relay-row"
+            :class="[{ active: row.diagnosisId === currentDiagnosisId }, `stage-${row.stage.toLowerCase()}`]"
+            @click="openDiagnosis(row.diagnosisId)"
+          >
+            <span class="pilot-relay-stage"><i></i><b>{{ row.stageLabel }}</b></span>
+            <span class="pilot-relay-case">
+              <strong>{{ row.system }} / {{ row.service }}</strong>
+              <small>Diagnosis {{ row.diagnosisId }}<template v-if="row.errorCode"> · {{ row.errorCode }}</template></small>
+            </span>
+            <span class="pilot-relay-owner"><small>当前接力人</small><b>{{ row.ownerLabel }}</b></span>
+            <span class="pilot-relay-action"><small>现在只做这一件事</small><b>{{ row.nextAction }}</b></span>
+            <span class="pilot-relay-open">打开排障单 →</span>
+          </button>
+          <p v-if="pilotQueue.length > pilotVisibleRows.length" class="pilot-relay-overflow">
+            先展示最需要接力的 {{ pilotVisibleRows.length }} 张；其余 {{ pilotQueue.length - pilotVisibleRows.length }} 张继续保留在队列中。
+          </p>
+        </div>
+        <div v-else-if="!loading" class="pilot-relay-empty">
+          <div><b>还没有正式排障单</b><span>先回排障工作台创建真实记录；演练记录不会进入这条效果接力队列。</span></div>
+          <el-button plain @click="$emit('back')">返回排障工作台</el-button>
+        </div>
+
+        <p class="pilot-relay-boundary">
+          最近最多读取 100 张排障单。演练、Recorded Replay 和 fixture 不计入真实效果；这里也不替代 T7 正式录制批次验收。
+        </p>
+      </section>
+
       <section v-if="currentDiagnosisId" class="current-pilot-card">
         <header>
           <div>
@@ -494,6 +540,7 @@ import {
   type BaselineClassification,
   type BaselineEvaluationLedger,
   type BaselineEvaluationRun,
+  type DiagnosisSummary,
   type DiagnosisStatus,
   type EvidenceEvaluationSample,
   type EvidenceEvaluationSampleLedger,
@@ -518,6 +565,7 @@ import {
 } from './evaluationSamples'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 import { evidenceComparisonNarrative } from './evidencePlainLanguage'
+import { buildEvaluationPilotQueue } from './evaluationPilot'
 
 type DrawerPanel = 'detail' | 'reference' | 'capture' | 'metrics' | 'replay'
 
@@ -553,6 +601,9 @@ const emit = defineEmits<{
 const ledger = ref<EvidenceEvaluationSampleLedger | null>(null)
 const baselineLedger = ref<BaselineEvaluationLedger | null>(null)
 const northStar = ref<EvaluationNorthStarComparison | null>(null)
+const pilotDiagnoses = ref<DiagnosisSummary[]>([])
+const pilotLedger = ref<EvidenceEvaluationSampleLedger | null>(null)
+const pilotBaselineLedger = ref<BaselineEvaluationLedger | null>(null)
 const loading = ref(false)
 const captureLoading = ref(false)
 const replayCaptureLoading = ref(false)
@@ -593,6 +644,19 @@ const baselineCards = computed(() => baselineLedger.value
 const northStarCards = computed(() => northStar.value
   ? evaluationNorthStarCards(northStar.value)
   : [])
+const pilotQueue = computed(() => buildEvaluationPilotQueue(
+  pilotDiagnoses.value,
+  pilotLedger.value?.samples || [],
+  pilotBaselineLedger.value?.runs || [],
+))
+const pilotVisibleRows = computed(() => pilotQueue.value.slice(0, 6))
+const pilotSummary = computed(() => ({
+  formal: pilotDiagnoses.value.filter(diagnosis => !diagnosis.rehearsal).length,
+  closed: pilotDiagnoses.value.filter(
+    diagnosis => !diagnosis.rehearsal && diagnosis.status === 'CLOSED',
+  ).length,
+  ready: pilotQueue.value.filter(row => row.stage === 'READY_FOR_REVIEW').length,
+}))
 const currentSamples = computed(() => ledger.value?.samples.filter(
   sample => sample.diagnosisId === props.currentDiagnosisId,
 ) || [])
@@ -767,14 +831,33 @@ async function loadLedger() {
       diagnosisId: onlyCurrent.value ? props.currentDiagnosisId || undefined : undefined,
       limit: 100,
     }
-    const [sampleResponse, baselineResponse, northStarResponse] = await Promise.all([
+    const portfolioSampleRequest = onlyCurrent.value
+      ? troubleshootingApi.evaluationSamples({ limit: 100 })
+      : null
+    const portfolioBaselineRequest = onlyCurrent.value
+      ? troubleshootingApi.evaluationBaselineRuns({ limit: 100 })
+      : null
+    const [
+      sampleResponse,
+      baselineResponse,
+      northStarResponse,
+      diagnosisResponse,
+      portfolioSampleResponse,
+      portfolioBaselineResponse,
+    ] = await Promise.all([
       troubleshootingApi.evaluationSamples(params),
       troubleshootingApi.evaluationBaselineRuns(params),
       troubleshootingApi.evaluationNorthStar(params),
+      troubleshootingApi.list({ limit: 100 }),
+      portfolioSampleRequest,
+      portfolioBaselineRequest,
     ])
     ledger.value = sampleResponse.data
     baselineLedger.value = baselineResponse.data
     northStar.value = northStarResponse.data
+    pilotDiagnoses.value = diagnosisResponse.data
+    pilotLedger.value = portfolioSampleResponse?.data || sampleResponse.data
+    pilotBaselineLedger.value = portfolioBaselineResponse?.data || baselineResponse.data
     if (selectedSampleId.value && !ledger.value?.samples.some(sample => sample.sampleId === selectedSampleId.value)) {
       selectedSampleId.value = null
       if (drawerPanel.value === 'detail' || drawerPanel.value === 'reference') {
@@ -783,7 +866,7 @@ async function loadLedger() {
       }
     }
   } catch (error) {
-    ElMessage.error(`加载评估样本失败：${errorText(error)}`)
+    ElMessage.error(`加载试点评估进度失败：${errorText(error)}`)
   } finally {
     loading.value = false
   }
@@ -1009,6 +1092,149 @@ function errorText(error: unknown) {
 }
 
 .ledger-alert { margin: 0; }
+
+.pilot-relay {
+  display: grid;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 16px;
+  border: 1px solid var(--mc-border);
+  border-radius: 10px;
+  background: var(--mc-bg-elevated);
+}
+
+.pilot-relay-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.pilot-relay-head > div:first-child > span {
+  color: var(--mc-primary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.pilot-relay-head h2 {
+  margin: 3px 0 0;
+  color: var(--mc-text-primary);
+  font-size: 17px;
+}
+
+.pilot-relay-head p,
+.pilot-relay-boundary,
+.pilot-relay-overflow {
+  margin: 5px 0 0;
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.pilot-relay-metrics {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pilot-relay-metrics div {
+  display: grid;
+  min-width: 84px;
+  padding: 8px 11px;
+  text-align: center;
+}
+
+.pilot-relay-metrics div + div { border-left: 1px solid var(--mc-border-light); }
+.pilot-relay-metrics b { color: var(--mc-text-primary); font-size: 15px; }
+.pilot-relay-metrics span { margin-top: 2px; color: var(--mc-text-tertiary); font-size: 9px; }
+
+.pilot-relay-list {
+  display: grid;
+  border-top: 1px solid var(--mc-border-light);
+}
+
+.pilot-relay-row {
+  display: grid;
+  grid-template-columns: 126px minmax(170px, .8fr) 130px minmax(260px, 1.5fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--mc-border-light);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pilot-relay-row:hover,
+.pilot-relay-row.active {
+  background: color-mix(in srgb, var(--mc-primary) 6%, transparent);
+}
+
+.pilot-relay-row.active { box-shadow: inset 3px 0 0 var(--mc-primary); }
+.pilot-relay-row > span { min-width: 0; }
+.pilot-relay-stage { display: flex; align-items: center; gap: 7px; }
+.pilot-relay-stage i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--mc-warning);
+}
+.stage-ready_for_review .pilot-relay-stage i { background: var(--mc-success); }
+.stage-baseline_blocked .pilot-relay-stage i { background: var(--mc-danger); }
+.stage-accuracy_only .pilot-relay-stage i { background: var(--mc-text-tertiary); }
+.pilot-relay-stage b,
+.pilot-relay-case strong,
+.pilot-relay-owner b,
+.pilot-relay-action b { color: var(--mc-text-primary); font-size: 11px; }
+.pilot-relay-case,
+.pilot-relay-owner,
+.pilot-relay-action { display: grid; gap: 3px; }
+.pilot-relay-case small,
+.pilot-relay-owner small,
+.pilot-relay-action small { color: var(--mc-text-tertiary); font-size: 9px; }
+.pilot-relay-case small {
+  overflow: hidden;
+  font-family: var(--mc-mono, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pilot-relay-action b {
+  color: var(--mc-text-secondary);
+  font-weight: 500;
+  line-height: 1.45;
+}
+.pilot-relay-open {
+  color: var(--mc-primary);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pilot-relay-overflow { padding: 8px 4px 0; }
+
+.pilot-relay-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px dashed var(--mc-border);
+  border-radius: 8px;
+  background: var(--mc-bg-muted);
+}
+
+.pilot-relay-empty div { display: grid; gap: 4px; }
+.pilot-relay-empty b { font-size: 12px; }
+.pilot-relay-empty span { color: var(--mc-text-secondary); font-size: 11px; }
+.pilot-relay-boundary { margin: 0; color: var(--mc-text-tertiary); }
 
 .current-pilot-card {
   display: grid;
@@ -1452,6 +1678,21 @@ function errorText(error: unknown) {
 .drawer-empty p { margin: 0; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 900px) {
+  .pilot-relay-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pilot-relay-metrics { width: 100%; }
+  .pilot-relay-metrics div { flex: 1; min-width: 0; }
+
+  .pilot-relay-row {
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .pilot-relay-open { grid-column: 2; }
+
   .status-bar {
     align-items: flex-start;
     flex-direction: column;
@@ -1474,6 +1715,16 @@ function errorText(error: unknown) {
 }
 
 @media (max-width: 620px) {
+  .pilot-relay { padding: 13px; }
+  .pilot-relay-row { grid-template-columns: 1fr; }
+  .pilot-relay-stage,
+  .pilot-relay-case,
+  .pilot-relay-owner,
+  .pilot-relay-action,
+  .pilot-relay-open { grid-column: 1; }
+  .pilot-relay-empty { align-items: stretch; flex-direction: column; }
+  .pilot-relay-empty .el-button { width: 100%; }
+
   .pilot-steps,
   .north-star-list,
   .human-baseline-fields { grid-template-columns: 1fr; }

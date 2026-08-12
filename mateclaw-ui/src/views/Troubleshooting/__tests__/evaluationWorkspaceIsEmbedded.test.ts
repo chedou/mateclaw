@@ -64,4 +64,11 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationWorkspaceSource).toContain('历史回放和演练样本不登记人工耗时')
     expect(evaluationWorkspaceSource).toContain('只统计真实 Guance、非演练样本')
   })
+
+  it('shows one operational hand-off queue for the next formal pilot record', () => {
+    expect(evaluationWorkspaceSource).toContain('试点接力队列')
+    expect(evaluationWorkspaceSource).toContain('buildEvaluationPilotQueue')
+    expect(evaluationWorkspaceSource).toContain('演练、Recorded Replay 和 fixture 不计入真实效果')
+    expect(evaluationWorkspaceSource).toContain('openDiagnosis(row.diagnosisId)')
+  })
 })
