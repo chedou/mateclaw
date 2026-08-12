@@ -445,7 +445,7 @@ public record EvidenceEvaluationSample(
                 ReferenceStatus.READY_FOR_EVALUATION,
                 reference,
                 expectedDisposition,
-                null,
+                humanBaseline,
                 authoritativeOutcome,
                 version + 1,
                 capturedBy,

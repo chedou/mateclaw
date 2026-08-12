@@ -116,10 +116,10 @@ public class EvidenceEvaluationSampleController {
                 currentActor()));
     }
 
-    /** Source-separated model latency, token and structural quality facts; no gate verdict. */
     /**
-     * Answers 「省不省时间」 for a shadow cohort — and says what the number
-     * leaves out, next to the number.
+     * Compares human and machine time for the real Guance, non-fixture shadow
+     * cohort. Replay and rehearsal records remain available in the accuracy
+     * ledger but never enter this effect comparison.
      */
     @GetMapping("/north-star")
     @RequireWorkspaceRole("admin")

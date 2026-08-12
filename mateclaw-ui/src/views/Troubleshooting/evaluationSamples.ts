@@ -3,6 +3,8 @@ import type {
   BaselineCohortMetrics,
   BaselineEvaluationStatus,
   BaselineEvaluationSummary,
+  EvaluationHumanBaseline,
+  EvaluationNorthStarComparison,
   EvaluationExpectedDisposition,
   EvaluationSampleReferenceStatus,
   EvaluationLatencySummary,
@@ -53,6 +55,15 @@ export interface BaselineMetricCard {
   composedLatency: string
   tokens: string
   systemConfidence: string
+}
+
+export interface NorthStarMetricCard {
+  key: 'MEASURED' | 'ESTIMATED' | 'MACHINE'
+  label: string
+  count: number
+  p50: string
+  p95: string
+  note: string
 }
 
 export function parseEvaluationIntentKeys(input: string): ParsedIntentKeys {
@@ -107,7 +118,7 @@ export function evaluationSourceCaptureContext(
 }
 
 export function evaluationReferenceStatusLabel(value: EvaluationSampleReferenceStatus) {
-  return value === 'READY_FOR_EVALUATION' ? '可进入评估集' : '待人工参考解'
+  return value === 'READY_FOR_EVALUATION' ? '可进入效果评估' : '待人工标准答案'
 }
 
 export function evaluationSourceLabel(value: EvaluationSampleSourcePlatform) {
@@ -116,6 +127,44 @@ export function evaluationSourceLabel(value: EvaluationSampleSourcePlatform) {
 
 export function evaluationExpectedDispositionLabel(value: EvaluationExpectedDisposition) {
   return value === 'DRAFT' ? '预期生成草案' : '预期安全拒答'
+}
+
+export function evaluationHumanBaselineLabel(value: EvaluationHumanBaseline) {
+  const source = value.basis === 'MEASURED'
+    ? '来自工单或聊天时间戳（实测）'
+    : '来自处置人回忆（估算）'
+  return `${value.minutesToLocate} 分钟 · ${source}`
+}
+
+export function evaluationNorthStarCards(
+  comparison: EvaluationNorthStarComparison,
+): NorthStarMetricCard[] {
+  return [
+    {
+      key: 'MEASURED',
+      label: '人工排障 · 时间戳实测',
+      count: comparison.measured.count,
+      p50: minutePercentile(comparison.measured.count, comparison.measured.p50Minutes, 'P50'),
+      p95: minutePercentile(comparison.measured.count, comparison.measured.p95Minutes, 'P95'),
+      note: '从工单、群聊或事件系统时间戳取得，可作为正式耗时证据。',
+    },
+    {
+      key: 'ESTIMATED',
+      label: '人工排障 · 处置人估算',
+      count: comparison.estimated.count,
+      p50: minutePercentile(comparison.estimated.count, comparison.estimated.p50Minutes, 'P50'),
+      p95: minutePercentile(comparison.estimated.count, comparison.estimated.p95Minutes, 'P95'),
+      note: '来自处置人回忆，只单独参考，不能冒充时间戳实测。',
+    },
+    {
+      key: 'MACHINE',
+      label: '影子基线 · 机器给出可复核结果',
+      count: comparison.machineRunCount,
+      p50: millisecondPercentile(comparison.machineRunCount, comparison.machineP50Ms, 'P50'),
+      p95: millisecondPercentile(comparison.machineRunCount, comparison.machineP95Ms, 'P95'),
+      note: '只包含证据与单模型基线运行，不包含人的复核和生产处置时间。',
+    },
+  ]
 }
 
 export function baselineStatusLabel(value: BaselineEvaluationStatus) {
@@ -219,6 +268,16 @@ function latencyCard(
     ),
     total: latencyPair(latency.sampleCount, latency.totalP50Ms, latency.totalP95Ms),
   }
+}
+
+function minutePercentile(count: number, value: number | null, label: string) {
+  return count <= 0 || value === null ? `${label} 暂无数据` : `${label} ${value} 分钟`
+}
+
+function millisecondPercentile(count: number, value: number | null, label: string) {
+  if (count <= 0 || value === null) return `${label} 暂无数据`
+  if (value < 1000) return `${label} ${value} ms`
+  return `${label} ${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)} 秒`
 }
 
 function latencyPair(sampleCount: number, p50: number | null, p95: number | null) {

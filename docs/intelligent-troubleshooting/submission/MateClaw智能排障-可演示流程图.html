@@ -63,8 +63,11 @@
     .summary-rollout-step span{color:var(--muted);font-size:11px;line-height:1.6}
     .summary-rollout-gate{display:flex;align-items:flex-start;gap:10px;margin-top:8px;padding:10px 12px;border-left:3px solid var(--red);background:var(--red-soft);color:#78423b;font-size:11px}
     .summary-rollout-gate b{flex:0 0 auto}
+    .summary-evaluation{margin-top:9px;padding:12px 13px;border:1px solid rgba(52,93,126,.24);border-radius:8px;background:var(--blue-soft)}
+    .summary-evaluation>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.summary-evaluation>header b{color:var(--blue);font-size:13px}.summary-evaluation>header span{color:#526a7c;font-size:10px}
+    .summary-evaluation-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.summary-evaluation-step{padding:8px 9px;border:1px solid rgba(52,93,126,.18);border-radius:7px;background:rgba(255,255,255,.78)}.summary-evaluation-step b,.summary-evaluation-step span{display:block}.summary-evaluation-step b{font-size:11px}.summary-evaluation-step span{margin-top:2px;color:var(--muted);font-size:9px;line-height:1.5}.summary-evaluation-boundary{margin-top:8px;color:#526a7c;font-size:10px}.summary-evaluation-boundary b{color:var(--blue)}
     @media(max-width:1120px){.summary-alert-intake{grid-template-columns:1fr}.summary-entry-grid{grid-template-columns:1fr 1fr}.summary-entry.api{grid-column:1/-1}}
-    @media(max-width:760px){.summary-alert-facts,.summary-intake-actions{grid-template-columns:1fr 1fr}.summary-entry-grid,.summary-rollout{grid-template-columns:1fr}.summary-entry.api{grid-column:auto}.summary-rollout-step+.summary-rollout-step{border-top:1px solid var(--line);border-left:0}.summary-rollout-gate{flex-direction:column;gap:3px}}
+    @media(max-width:760px){.summary-alert-facts,.summary-intake-actions{grid-template-columns:1fr 1fr}.summary-entry-grid,.summary-rollout,.summary-evaluation-flow{grid-template-columns:1fr}.summary-entry.api{grid-column:auto}.summary-rollout-step+.summary-rollout-step{border-top:1px solid var(--line);border-left:0}.summary-rollout-gate,.summary-evaluation>header{flex-direction:column;gap:3px}}
   </style>
 </head>
 <body>
@@ -155,8 +158,9 @@
         <div class="summary-rollout">
           <article class="summary-rollout-step"><small>已确认 · 试点范围</small><strong>只选 CTI 与 ITGW 两个真源场景</strong><span>先用已经在真实 Guance 上跑过的路径，不同时扩 K8s、HCI、多 Agent 和更多系统。</span></article>
           <article class="summary-rollout-step pending"><small>待确认 · 试点人员</small><strong>固定 1 名二线、1 名三线、1 名系统负责人</strong><span>二线负责首次发起，三线复核证据，系统或 Guance 负责人确认查询口径与最终处置。</span></article>
-          <article class="summary-rollout-step current"><small>当前推进 · 每周闭环</small><strong>用真实告警完成演练、确认与结果登记</strong><span>同时记录人工基线、系统调查耗时、人的采纳耗时和最终结果，用事实判断是否降低排障成本。</span></article>
+          <article class="summary-rollout-step current"><small>当前推进 · 每周闭环</small><strong>从已关闭排障单直接进入试点评估</strong><span>保存脱敏真源样本、人工标准答案和原来人工定位耗时；准确性与耗时分开复盘。</span></article>
         </div>
+        <div class="summary-evaluation"><header><b>怎样证明试点真的有效</b><span>入口与记录装置已补齐，正式真实样本仍待试点人员积累</span></header><div class="summary-evaluation-flow"><div class="summary-evaluation-step"><b>1. 完成真实排障</b><span>负责人确认结果、完成平台外处置并关闭排障单。</span></div><div class="summary-evaluation-step"><b>2. 保存脱敏真源样本</b><span>重新执行已审核的 Guance 只读查询，不保存原始日志。</span></div><div class="summary-evaluation-step"><b>3. 冻结人工标准答案</b><span>记录正确步骤；人工耗时注明时间戳实测或处置人估算。</span></div><div class="summary-evaluation-step"><b>4. 分开看两个结果</b><span>先看“判断准不准”，再并列看人工与机器耗时，不自动算节省。</span></div></div><div class="summary-evaluation-boundary"><b>真实性边界：</b>只有真实 Guance、非演练样本进入耗时效果统计；Recorded Replay 和 fixture 只验证“准不准”。人的复核与采纳成本尚未计量，因此当前不能宣称“已节省多少时间”。</div></div>
         <div class="summary-rollout-gate"><b>扩大范围前的门槛</b><span>Owner 查询目标冻结、正式批次验收和效果对照通过前，只做受控试点；当前正式录制仍为 0 / 20，不能宣称全面投产。</span></div>
       </section>
       <div class="summary-actions"><button class="btn primary" id="openDetailsBtn" type="button">进入完整演示 →</button><a class="btn" href="http://127.0.0.1:5173/troubleshooting?view=list" target="_blank" rel="noreferrer">打开排障工作台</a><span>完整演示包含：用户入口、五问主线、三种处理方式、Tool 取证、七步调查与角色分工。</span></div>

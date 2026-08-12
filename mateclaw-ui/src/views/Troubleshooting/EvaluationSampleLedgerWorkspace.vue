@@ -9,8 +9,62 @@
   >
     <div class="evaluation-ledger-workspace">
       <el-alert type="warning" :closable="false" show-icon class="ledger-alert">
-        这里只积累脱敏样本与人工参考解。样本够多不等于验收通过，也不会自动关闭演示标记。
+        这里只积累脱敏样本与人工确认的标准答案。样本够多不等于验收通过，也不会自动得出“已经省时”的结论。
       </el-alert>
+
+      <section v-if="currentDiagnosisId" class="current-pilot-card">
+        <header>
+          <div>
+            <span>当前排障单怎样进入试点评估</span>
+            <strong>Diagnosis {{ currentDiagnosisId }}</strong>
+          </div>
+          <el-tag v-if="currentDiagnosisRehearsal" type="warning" effect="plain" size="small">演练记录</el-tag>
+          <el-tag v-else type="success" effect="plain" size="small">正式记录</el-tag>
+        </header>
+
+        <ol class="pilot-steps">
+          <li v-for="step in currentPilotSteps" :key="step.key" :class="step.state">
+            <i>{{ step.index }}</i>
+            <div><b>{{ step.label }}</b><small>{{ step.detail }}</small></div>
+            <span>{{ step.stateLabel }}</span>
+          </li>
+        </ol>
+
+        <div class="pilot-next-action">
+          <div>
+            <b>{{ currentPilotAction.title }}</b>
+            <p>{{ currentPilotAction.detail }}</p>
+            <small v-if="currentDiagnosisRehearsal">演练记录可用于操作复盘，但不计入正式投产效果样本。</small>
+          </div>
+          <el-button
+            v-if="currentPilotAction.kind === 'VALIDATE'"
+            type="primary"
+            plain
+            @click="$emit('open-validation')"
+          >检查当前数据连接</el-button>
+          <el-button
+            v-else-if="currentPilotAction.kind === 'CAPTURE'"
+            type="primary"
+            @click="openCaptureDrawer"
+          >采集当前排障样本</el-button>
+          <el-button
+            v-else-if="currentPilotAction.kind === 'CLOSE'"
+            type="primary"
+            plain
+            @click="$emit('back')"
+          >返回详情登记结果</el-button>
+          <el-button
+            v-else-if="currentPilotAction.kind === 'REFERENCE' && currentPrimarySample"
+            type="primary"
+            @click="openReference(currentPrimarySample)"
+          >填写人工标准答案</el-button>
+          <el-button
+            v-else-if="currentPilotAction.kind === 'DETAIL' && currentPrimarySample"
+            plain
+            @click="selectSample(currentPrimarySample)"
+          >查看当前样本</el-button>
+        </div>
+      </section>
 
       <div class="status-bar">
         <div class="status-metrics">
@@ -21,6 +75,7 @@
             <b>{{ progress.label }}</b>
             <el-progress :percentage="progress.percent" :stroke-width="6" :show-text="false" />
           </div>
+          <small class="progress-note">{{ progress.note }}</small>
         </div>
         <div class="status-actions">
           <el-switch
@@ -90,7 +145,7 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else-if="!loading" description="台账还没有采集样本。点「采集样本」写入评估台账；「回放」只验证取证链，不会写入这里。" :image-size="64" />
+        <el-empty v-else-if="!loading" description="当前还没有评估样本。先从一张真实排障单采集脱敏证据；历史回放只验证链路，不替代真实效果样本。" :image-size="64" />
       </div>
 
       <el-drawer
@@ -202,6 +257,32 @@
             </div>
           </section>
 
+          <section v-if="northStar" class="metrics-block north-star-comparison">
+            <div class="section-title">
+              <span>试点是否真的省时间</span>
+              <el-tag size="small" type="info" effect="plain">
+                {{ northStar.withHumanBaseline }} / {{ northStar.sampleCount }} 条有人工基线
+              </el-tag>
+            </div>
+            <p class="metric-explanation">
+              这里只统计真实 Guance、非演练样本；人工实测、人工估算和影子机器耗时分开呈现，
+              不直接相减，也不省略人的复核成本。
+            </p>
+            <div class="metric-list north-star-list">
+              <article v-for="card in northStarCards" :key="card.key">
+                <header><b>{{ card.label }}</b><small>{{ card.count }} 条</small></header>
+                <dl>
+                  <div><dt>中位数</dt><dd>{{ card.p50 }}</dd></div>
+                  <div><dt>较慢样本</dt><dd>{{ card.p95 }}</dd></div>
+                </dl>
+                <p>{{ card.note }}</p>
+              </article>
+            </div>
+            <ul class="metric-caveats">
+              <li v-for="caveat in northStar.caveats" :key="caveat">{{ caveat }}</li>
+            </ul>
+          </section>
+
           <section v-if="baselineLedger" class="metrics-block">
             <div class="section-title">
               <span>单模型基线摘要</span>
@@ -225,7 +306,7 @@
         <div v-else-if="drawerPanel === 'reference' && referenceSample" class="drawer-panel">
           <el-button text type="primary" class="back-link" @click="drawerPanel = 'detail'">← 回到样本详情</el-button>
           <p class="panel-lead">
-            每行一个步骤键。结果、恢复验证和关闭时间由服务端读取已关闭的 Diagnosis，浏览器不能改。
+            请把人工认可的判断步骤写成可检查的步骤标识。最终结果、恢复验证和关闭时间由服务端读取，浏览器不能改。
           </p>
           <div class="reference-form">
             <label class="disposition-field">
@@ -235,8 +316,51 @@
                 <el-option label="证据不足时安全拒答" value="ABSTAIN" />
               </el-select>
             </label>
+            <section
+              v-if="sampleCountsTowardEffect(referenceSample)"
+              class="human-baseline-form"
+            >
+              <header>
+                <div>
+                  <b>记录原来人工定位要多久</b>
+                  <small>不填仍可评估“准不准”，但不能据此宣称“省时间”。标准答案冻结后不能补填。</small>
+                </div>
+                <el-switch v-model="referenceForm.includeHumanBaseline" />
+              </header>
+              <div v-if="referenceForm.includeHumanBaseline" class="human-baseline-fields">
+                <label>
+                  <span>从收到告警到定位问题（分钟）</span>
+                  <el-input-number
+                    v-model="referenceForm.minutesToLocate"
+                    :min="1"
+                    :max="43200"
+                    controls-position="right"
+                  />
+                </label>
+                <label>
+                  <span>这个时间从哪里来</span>
+                  <el-select v-model="referenceForm.baselineBasis">
+                    <el-option label="工单 / 群聊时间戳（实测）" value="MEASURED" />
+                    <el-option label="处置人回忆（估算）" value="ESTIMATED" />
+                  </el-select>
+                </label>
+                <label class="baseline-note-field">
+                  <span>依据说明（不要粘贴原始日志）</span>
+                  <el-input
+                    v-model="referenceForm.baselineNote"
+                    maxlength="500"
+                    show-word-limit
+                    placeholder="例如：工单创建 17:12，开发首次定位 17:46"
+                  />
+                </label>
+              </div>
+            </section>
+            <section v-else class="human-baseline-excluded">
+              <b>本样本只验证“准不准”</b>
+              <p>历史回放和演练样本不登记人工耗时，也不会进入真实效果对照。</p>
+            </section>
             <label>
-              <span>必须步骤（按顺序）</span>
+              <span>标准答案必须包含哪些步骤（按顺序，每行一个步骤标识）</span>
               <el-input
                 v-model="referenceForm.required"
                 type="textarea"
@@ -245,7 +369,7 @@
               />
             </label>
             <label>
-              <span>禁止步骤</span>
+              <span>明确禁止哪些步骤（每行一个步骤标识）</span>
               <el-input
                 v-model="referenceForm.forbidden"
                 type="textarea"
@@ -261,7 +385,7 @@
               :loading="referenceLoading"
               :disabled="Boolean(referenceError)"
               @click="finalizeReference"
-            >冻结参考解</el-button>
+            >保存并冻结人工标准答案</el-button>
           </div>
         </div>
 
@@ -288,6 +412,10 @@
             <div v-if="sample.expectedDisposition">
               <dt>期望行为</dt>
               <dd>{{ evaluationExpectedDispositionLabel(sample.expectedDisposition) }}</dd>
+            </div>
+            <div v-if="sample.humanBaseline">
+              <dt>人工定位耗时</dt>
+              <dd>{{ evaluationHumanBaselineLabel(sample.humanBaseline) }}</dd>
             </div>
             <div><dt>采集时间</dt><dd class="mono">{{ shortTime(sample.capturedAt) }}</dd></div>
           </dl>
@@ -327,7 +455,7 @@
               plain
               :disabled="currentDiagnosisStatus !== 'CLOSED'"
               @click="openReference(sample)"
-            >{{ currentDiagnosisStatus === 'CLOSED' ? '填写参考解' : '关闭后填写参考解' }}</el-button>
+            >{{ currentDiagnosisStatus === 'CLOSED' ? '填写人工标准答案' : '登记结果并关闭后填写' }}</el-button>
             <el-button
               v-if="sample.referenceStatus === 'READY_FOR_EVALUATION' && baselineRunnable(sample)"
               type="primary"
@@ -341,7 +469,7 @@
             >{{ baselineUnavailableReason(sample) }}</span>
           </div>
           <p v-if="sample.referenceStatus === 'READY_FOR_EVALUATION'" class="immutable-mark">
-            参考解已冻结 · v{{ sample.version }}
+            人工标准答案已冻结 · v{{ sample.version }}
           </p>
           </template>
         </div>
@@ -370,6 +498,8 @@ import {
   type EvidenceEvaluationSample,
   type EvidenceEvaluationSampleLedger,
   type EvaluationExpectedDisposition,
+  type EvaluationHumanBaselineBasis,
+  type EvaluationNorthStarComparison,
 } from '@/api'
 import {
   type EvaluationSampleCaptureContext,
@@ -377,7 +507,9 @@ import {
   baselineStatusLabel,
   evaluationBaselineCards,
   evaluationExpectedDispositionLabel,
+  evaluationHumanBaselineLabel,
   evaluationLatencyCards,
+  evaluationNorthStarCards,
   evaluationReferenceStatusLabel,
   evaluationSampleProgress,
   evaluationSourceCaptureContext,
@@ -392,6 +524,7 @@ type DrawerPanel = 'detail' | 'reference' | 'capture' | 'metrics' | 'replay'
 const props = withDefaults(defineProps<{
   currentDiagnosisId?: string | null
   currentDiagnosisStatus?: DiagnosisStatus | null
+  currentDiagnosisRehearsal?: boolean
   captureContext?: EvaluationSampleCaptureContext | null
   replayCaptureContext?: EvaluationSampleCaptureContext | null
   captureEnabled?: boolean
@@ -401,6 +534,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   currentDiagnosisId: null,
   currentDiagnosisStatus: null,
+  currentDiagnosisRehearsal: false,
   captureContext: null,
   replayCaptureContext: null,
   captureEnabled: false,
@@ -412,11 +546,13 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   back: []
   'open-diagnosis': [diagnosisId: string]
+  'open-validation': []
   captured: [sample: EvidenceEvaluationSample]
 }>()
 
 const ledger = ref<EvidenceEvaluationSampleLedger | null>(null)
 const baselineLedger = ref<BaselineEvaluationLedger | null>(null)
+const northStar = ref<EvaluationNorthStarComparison | null>(null)
 const loading = ref(false)
 const captureLoading = ref(false)
 const replayCaptureLoading = ref(false)
@@ -431,7 +567,19 @@ const referenceForm = reactive<{
   required: string
   forbidden: string
   expectedDisposition: EvaluationExpectedDisposition
-}>({ required: '', forbidden: '', expectedDisposition: 'DRAFT' })
+  includeHumanBaseline: boolean
+  minutesToLocate: number
+  baselineBasis: EvaluationHumanBaselineBasis
+  baselineNote: string
+}>({
+  required: '',
+  forbidden: '',
+  expectedDisposition: 'DRAFT',
+  includeHumanBaseline: false,
+  minutesToLocate: 30,
+  baselineBasis: 'MEASURED',
+  baselineNote: '',
+})
 
 const progress = computed(() => ledger.value
   ? evaluationSampleProgress(ledger.value.summary)
@@ -442,6 +590,100 @@ const latencyCards = computed(() => ledger.value
 const baselineCards = computed(() => baselineLedger.value
   ? evaluationBaselineCards(baselineLedger.value.summary)
   : [])
+const northStarCards = computed(() => northStar.value
+  ? evaluationNorthStarCards(northStar.value)
+  : [])
+const currentSamples = computed(() => ledger.value?.samples.filter(
+  sample => sample.diagnosisId === props.currentDiagnosisId,
+) || [])
+const currentPrimarySample = computed(() => currentSamples.value.find(sampleCountsTowardEffect)
+  || currentSamples.value.find(sample => sample.sourcePlatform === 'GUANCE')
+  || currentSamples.value[0]
+  || null)
+const currentPilotSteps = computed(() => {
+  const sample = currentPrimarySample.value
+  const closed = props.currentDiagnosisStatus === 'CLOSED'
+  const ready = sample?.referenceStatus === 'READY_FOR_EVALUATION'
+  const realEffectSample = sample ? sampleCountsTowardEffect(sample) : false
+  return [
+    {
+      key: 'DIAGNOSIS', index: 1, label: '选定排障单',
+      detail: '系统、服务、取证时间和最终处置都绑定在同一张单上。',
+      state: 'done', stateLabel: '已选定',
+    },
+    {
+      key: 'CAPTURE', index: 2, label: '保存脱敏证据样本',
+      detail: sample
+        ? realEffectSample
+          ? '已保存真实 Guance、非演练样本，可用于后续效果对照。'
+          : `已保存 ${evaluationSourceLabel(sample.sourcePlatform)} 样本，只用于准确性回归。`
+        : '重新执行一次服务端只读取证，不保存原始日志。',
+      state: sample ? 'done' : 'current', stateLabel: sample ? '已采集' : '下一步',
+    },
+    {
+      key: 'CLOSE', index: 3, label: '登记真实处置结果',
+      detail: closed ? '排障单已关闭，结果和恢复验证由服务端读取。' : '先由负责人确认、完成平台外处置并关闭排障单。',
+      state: closed ? 'done' : sample ? 'current' : 'pending', stateLabel: closed ? '已登记' : '待完成',
+    },
+    {
+      key: 'REFERENCE', index: 4, label: '填写人工标准答案与耗时',
+      detail: ready
+        ? realEffectSample
+          ? '标准答案已冻结，可运行基线并进入真实效果统计。'
+          : '标准答案已冻结，只进入“准不准”回归，不进入真实耗时对照。'
+        : !sample
+          ? '先采集真实 Guance 样本；排障单关闭后再填写正确步骤与人工耗时。'
+          : realEffectSample
+            ? '写明正确步骤；有依据时补充原来人工定位所需时间。'
+            : '写明正确步骤；回放和演练样本不登记人工耗时。',
+      state: ready ? 'done' : closed && sample ? 'current' : 'pending', stateLabel: ready ? '可评估' : '待完成',
+    },
+  ]
+})
+const currentPilotAction = computed(() => {
+  const sample = currentPrimarySample.value
+  if (!sample) {
+    return props.captureEnabled
+      ? {
+          kind: 'CAPTURE' as const,
+          title: '下一步：采集当前排障样本',
+          detail: '会重新执行服务端已审核的只读查询；输入不变时复用已有采集版本。',
+        }
+      : {
+          kind: 'VALIDATE' as const,
+          title: '下一步：先取得一次可采集的真源预览',
+          detail: props.captureDisabledReason,
+        }
+  }
+  if (props.currentDiagnosisStatus !== 'CLOSED') {
+    return {
+      kind: 'CLOSE' as const,
+      title: '下一步：回到详情登记真实结果',
+      detail: '先完成复核和平台外处置，再登记是否恢复、实际原因并关闭排障单。',
+    }
+  }
+  if (sample.referenceStatus === 'EVIDENCE_CAPTURED') {
+    if (!sampleCountsTowardEffect(sample)) {
+      return {
+        kind: 'REFERENCE' as const,
+        title: '下一步：填写人工标准答案（仅验证准确性）',
+        detail: '该样本属于回放或演练，不登记人工耗时，也不会进入真实效果对照。',
+      }
+    }
+    return {
+      kind: 'REFERENCE' as const,
+      title: '下一步：填写人工确认的标准答案',
+      detail: '同时补充原来人工定位耗时；无法确认耗时时可以不填，但不能宣称省时。',
+    }
+  }
+  return {
+    kind: 'DETAIL' as const,
+    title: sampleCountsTowardEffect(sample) ? '当前样本已进入真实效果评估集' : '当前样本已进入准确性回归集',
+    detail: sampleCountsTowardEffect(sample)
+      ? '可以运行影子基线并在“查看指标”中核对准确性和耗时；这仍不等于 T8 已通过。'
+      : '可以运行影子基线核对准确性，但这条记录不参与真实耗时效果统计。',
+  }
+})
 const captureFormValid = computed(() => {
   const parsed = parseEvaluationIntentKeys(captureForm.scenarioKey)
   return parsed.invalid.length === 0
@@ -465,6 +707,16 @@ const referenceError = computed(() => {
   if (invalid.length) return `以下内容不是结构化 intent key：${invalid.join('、')}`
   if (parsedRequired.value.values.length > 20 || parsedForbidden.value.values.length > 20) {
     return '必须步骤和禁止步骤各最多 20 个。'
+  }
+  if (referenceForm.includeHumanBaseline) {
+    if (!Number.isInteger(referenceForm.minutesToLocate)
+      || referenceForm.minutesToLocate <= 0
+      || referenceForm.minutesToLocate > 43200) {
+      return '人工定位耗时必须是 1–43200 之间的整数分钟。'
+    }
+    if (!referenceForm.baselineNote.trim()) {
+      return '请简要说明人工耗时来自哪个工单、群聊时间戳或谁的估算。'
+    }
   }
   const overlap = parsedRequired.value.values.find(value => parsedForbidden.value.values.includes(value))
   return overlap ? `intent key 不能同时为必须与禁止：${overlap}` : ''
@@ -491,7 +743,7 @@ const drawerTitle = computed(() => {
   if (drawerPanel.value === 'replay') return TROUBLESHOOTING_UI_LABELS.historyReplay
   if (drawerPanel.value === 'capture') return '采集样本'
   if (drawerPanel.value === 'metrics') return '时延与基线指标'
-  if (drawerPanel.value === 'reference') return '填写参考解'
+  if (drawerPanel.value === 'reference') return '填写人工标准答案'
   if (selectedSample.value) return selectedSample.value.scenarioKey
   return '样本详情'
 })
@@ -499,6 +751,7 @@ const drawerTitle = computed(() => {
 onMounted(() => {
   syncCaptureForm()
   referenceSample.value = null
+  onlyCurrent.value = Boolean(props.currentDiagnosisId)
   void loadLedger()
 })
 watch(() => props.captureContext, syncCaptureForm, { deep: true })
@@ -514,12 +767,14 @@ async function loadLedger() {
       diagnosisId: onlyCurrent.value ? props.currentDiagnosisId || undefined : undefined,
       limit: 100,
     }
-    const [sampleResponse, baselineResponse] = await Promise.all([
+    const [sampleResponse, baselineResponse, northStarResponse] = await Promise.all([
       troubleshootingApi.evaluationSamples(params),
       troubleshootingApi.evaluationBaselineRuns(params),
+      troubleshootingApi.evaluationNorthStar(params),
     ])
     ledger.value = sampleResponse.data
     baselineLedger.value = baselineResponse.data
+    northStar.value = northStarResponse.data
     if (selectedSampleId.value && !ledger.value?.samples.some(sample => sample.sampleId === selectedSampleId.value)) {
       selectedSampleId.value = null
       if (drawerPanel.value === 'detail' || drawerPanel.value === 'reference') {
@@ -617,6 +872,10 @@ function openReference(sample: EvidenceEvaluationSample) {
   referenceForm.required = ''
   referenceForm.forbidden = ''
   referenceForm.expectedDisposition = 'DRAFT'
+  referenceForm.includeHumanBaseline = false
+  referenceForm.minutesToLocate = 30
+  referenceForm.baselineBasis = 'MEASURED'
+  referenceForm.baselineNote = ''
   drawerPanel.value = 'reference'
 }
 
@@ -630,11 +889,18 @@ async function finalizeReference() {
       requiredStepIntents: parsedRequired.value.values,
       forbiddenStepIntents: parsedForbidden.value.values,
       expectedDisposition: referenceForm.expectedDisposition,
+      humanBaseline: referenceForm.includeHumanBaseline
+        ? {
+            minutesToLocate: referenceForm.minutesToLocate,
+            basis: referenceForm.baselineBasis,
+            note: referenceForm.baselineNote.trim(),
+          }
+        : null,
     })
     referenceSample.value = null
     drawerPanel.value = 'detail'
     await loadLedger()
-    ElMessage.success('参考解已冻结；权威结果来自已关闭的 Diagnosis')
+    ElMessage.success('人工标准答案已冻结；权威结果来自已关闭的排障单')
   } catch (error) {
     ElMessage.error(`参考解冻结失败：${errorText(error)}`)
   } finally {
@@ -658,9 +924,13 @@ function baselineCaptureContext(sample: EvidenceEvaluationSample) {
   )
 }
 
+function sampleCountsTowardEffect(sample: EvidenceEvaluationSample) {
+  return sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode
+}
+
 function baselineUnavailableReason(sample: EvidenceEvaluationSample) {
   if (!sample.modelInputHash || !sample.evidenceOccurredAt || !sample.expectedDisposition) {
-    return '旧样本需重新采集并冻结参考解'
+    return '旧样本需重新采集并冻结人工标准答案'
   }
   if (sample.diagnosisId !== props.currentDiagnosisId) return '打开 Diagnosis 后运行'
   const context = baselineCaptureContext(sample)
@@ -740,6 +1010,91 @@ function errorText(error: unknown) {
 
 .ledger-alert { margin: 0; }
 
+.current-pilot-card {
+  display: grid;
+  gap: 13px;
+  flex: 0 0 auto;
+  padding: 15px 16px;
+  border: 1px solid var(--mc-border);
+  border-radius: 10px;
+  background: var(--mc-bg-elevated);
+}
+
+.current-pilot-card > header,
+.pilot-next-action,
+.human-baseline-form > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.current-pilot-card > header span,
+.current-pilot-card > header strong { display: block; }
+.current-pilot-card > header span {
+  color: var(--mc-primary);
+  font-size: 11px;
+  font-weight: 750;
+}
+.current-pilot-card > header strong {
+  margin-top: 4px;
+  color: var(--mc-text-primary);
+  font: 600 12px var(--mc-mono, monospace);
+}
+
+.pilot-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pilot-steps li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 4px 8px;
+  padding: 10px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 8px;
+  background: var(--mc-bg);
+}
+
+.pilot-steps li > i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--mc-text-tertiary);
+  background: var(--mc-bg-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+.pilot-steps li > div b,
+.pilot-steps li > div small { display: block; }
+.pilot-steps li > div b { color: var(--mc-text-primary); font-size: 11px; }
+.pilot-steps li > div small { margin-top: 3px; color: var(--mc-text-secondary); font-size: 10px; line-height: 1.45; }
+.pilot-steps li > span { grid-column: 2; color: var(--mc-text-tertiary); font-size: 10px; }
+.pilot-steps li.done > i { color: var(--mc-status-success-text); background: var(--mc-status-success-bg); }
+.pilot-steps li.done > span { color: var(--mc-status-success-text); }
+.pilot-steps li.current { border-color: var(--mc-primary); background: var(--mc-primary-bg); }
+.pilot-steps li.current > i { color: var(--mc-text-inverse); background: var(--mc-primary); }
+.pilot-steps li.current > span { color: var(--mc-primary); font-weight: 700; }
+.pilot-steps li.pending { border-style: dashed; }
+
+.pilot-next-action {
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--mc-border-light);
+}
+.pilot-next-action b { display: block; font-size: 12px; }
+.pilot-next-action p { margin: 3px 0 0; color: var(--mc-text-secondary); font-size: 11px; line-height: 1.55; }
+.pilot-next-action small { display: block; margin-top: 4px; color: var(--mc-warning); font-size: 10px; }
+.pilot-next-action .el-button { flex: none; }
+
 .status-bar {
   display: flex;
   align-items: center;
@@ -760,6 +1115,13 @@ function errorText(error: unknown) {
   min-width: 0;
   color: var(--mc-text-secondary);
   font-size: 12px;
+}
+
+.progress-note {
+  flex-basis: 100%;
+  color: var(--mc-text-tertiary);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .progress-inline {
@@ -927,6 +1289,9 @@ function errorText(error: unknown) {
 }
 
 .metric-list p { margin: 8px 0; }
+.metric-explanation { margin: 0; color: var(--mc-text-secondary); font-size: 11px; line-height: 1.55; }
+.north-star-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.metric-caveats { display: grid; gap: 4px; margin: 0; padding-left: 17px; color: var(--mc-text-secondary); font-size: 10px; line-height: 1.5; }
 
 .metric-list dl {
   display: grid;
@@ -1041,6 +1406,31 @@ function errorText(error: unknown) {
   gap: 12px;
 }
 
+.human-baseline-form {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 9px;
+  background: var(--mc-bg-muted);
+}
+.human-baseline-excluded {
+  padding: 13px;
+  border: 1px dashed var(--mc-border);
+  border-radius: 9px;
+  background: var(--mc-bg-muted);
+}
+.human-baseline-excluded b { display: block; font-size: 12px; }
+.human-baseline-excluded p { margin: 4px 0 0; color: var(--mc-text-secondary); font-size: 10px; line-height: 1.5; }
+.human-baseline-form header b,
+.human-baseline-form header small { display: block; }
+.human-baseline-form header b { font-size: 12px; }
+.human-baseline-form header small { margin-top: 4px; color: var(--mc-text-secondary); font-size: 10px; line-height: 1.5; }
+.human-baseline-fields { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 10px; }
+.human-baseline-fields :deep(.el-input-number),
+.human-baseline-fields :deep(.el-select) { width: 100%; }
+.baseline-note-field { grid-column: 1 / -1; }
+
 .disposition-field :deep(.el-select) { width: 100%; }
 
 .reference-error {
@@ -1079,5 +1469,16 @@ function errorText(error: unknown) {
 
   .meta-grid { grid-template-columns: 1fr; }
   .meta-grid > div:nth-child(odd) { padding-right: 0; }
+  .pilot-steps,
+  .north-star-list { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 620px) {
+  .pilot-steps,
+  .north-star-list,
+  .human-baseline-fields { grid-template-columns: 1fr; }
+  .pilot-next-action { align-items: stretch; flex-direction: column; }
+  .pilot-next-action .el-button { width: 100%; }
+  .baseline-note-field { grid-column: auto; }
 }
 </style>

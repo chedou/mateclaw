@@ -337,6 +337,15 @@ public class EvidenceEvaluationSampleService {
                 .orElseThrow(() -> notFound(
                         "evaluation sample not found: " + normalizedSampleId));
 
+        if (humanBaseline != null
+                && (sample.sourcePlatform()
+                        != EvidenceEvaluationSample.SourcePlatform.GUANCE
+                || sample.diagnosisFixtureMode())) {
+            throw invalid(
+                    "a human time baseline is only valid for a real Guance Diagnosis; "
+                            + "Recorded Replay and fixture samples only measure correctness");
+        }
+
         List<String> required = intentKeys(requiredStepIntents, "requiredStepIntents");
         List<String> forbidden = intentKeys(forbiddenStepIntents, "forbiddenStepIntents");
         if (required.stream().anyMatch(forbidden::contains)) {
@@ -445,15 +454,43 @@ public class EvidenceEvaluationSampleService {
             String diagnosisId,
             int limit,
             List<BaselineEvaluationRun> runs) {
-        List<EvidenceEvaluationSample> samples =
-                list(workspaceId, diagnosisId, limit).samples();
-        return NorthStarComparison.from(
-                samples.size(),
-                samples.stream()
+        List<EvidenceEvaluationSample> realSamples =
+                list(workspaceId, diagnosisId, limit).samples().stream()
+                        .filter(sample -> sample.sourcePlatform()
+                                == EvidenceEvaluationSample.SourcePlatform.GUANCE)
+                        .filter(sample -> !sample.diagnosisFixtureMode())
+                        .toList();
+        LinkedHashSet<String> realSampleIds = new LinkedHashSet<>();
+        realSamples.forEach(sample -> realSampleIds.add(sample.sampleId()));
+        List<BaselineEvaluationRun> realRuns = List.copyOf(
+                        runs == null ? List.of() : runs)
+                .stream()
+                .filter(run -> run.sourcePlatform()
+                        == EvidenceEvaluationSample.SourcePlatform.GUANCE)
+                .filter(run -> !run.evidenceFixtureMode() && !run.diagnosisFixtureMode())
+                .filter(run -> realSampleIds.contains(run.sampleId()))
+                .toList();
+        NorthStarComparison comparison = NorthStarComparison.from(
+                realSamples.size(),
+                realSamples.stream()
                         .map(EvidenceEvaluationSample::humanBaseline)
                         .filter(baseline -> baseline != null)
                         .toList(),
-                runs);
+                realRuns);
+        List<String> caveats = new ArrayList<>();
+        caveats.add(
+                "耗时效果只统计真实 Guance 且非演练样本；Recorded Replay 和 fixture "
+                        + "只参与「准不准」回归");
+        caveats.addAll(comparison.caveats());
+        return new NorthStarComparison(
+                comparison.sampleCount(),
+                comparison.withHumanBaseline(),
+                comparison.measured(),
+                comparison.estimated(),
+                comparison.machineP50Ms(),
+                comparison.machineP95Ms(),
+                comparison.machineRunCount(),
+                caveats);
     }
 
     private EvidenceSpinePlan safePlan(String searchTerm, String window) {

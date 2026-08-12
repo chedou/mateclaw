@@ -22,6 +22,7 @@ import type {
   EvidenceChainPreviewRequest,
   EvidenceEvaluationSample,
   EvidenceEvaluationSampleLedger,
+  EvaluationNorthStarComparison,
   EvidenceQueryCatalog,
   EvidenceContractTrial,
   EvidenceContractTrialRequest,
@@ -291,6 +292,12 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   evaluationSamples: (params?: { diagnosisId?: string; limit?: number }) =>
     http.get<EvidenceEvaluationSampleLedger>(
       '/troubleshooting/evaluation-samples', { params },
+    ),
+
+  /** Human historical time next to the shadow machine baseline; no savings verdict. */
+  evaluationNorthStar: (params?: { diagnosisId?: string; limit?: number }) =>
+    http.get<EvaluationNorthStarComparison>(
+      '/troubleshooting/evaluation-samples/north-star', { params },
     ),
 
   /** Stores human-authored intent keys; closure outcome is derived by the server. */

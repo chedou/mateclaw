@@ -331,8 +331,8 @@ class EvidenceEvaluationSampleServiceTest {
                 null,
                 "operator@example.com",
                 NOW.minusSeconds(10));
-        Fixture fixture = fixture(true, DiagnosisStatus.CLOSED, closure);
-        EvidenceEvaluationSample captured = capturedSample(true);
+        Fixture fixture = fixture(false, DiagnosisStatus.CLOSED, closure);
+        EvidenceEvaluationSample captured = capturedSample(false);
         when(fixture.store.get(7L, captured.sampleId()))
                 .thenReturn(Optional.of(captured));
         when(fixture.store.finalizeReference(eq(7L), any(), eq(0)))
@@ -344,6 +344,11 @@ class EvidenceEvaluationSampleServiceTest {
                 0,
                 List.of("locate_failed_request", "trace_ps_id", "verify_recovery"),
                 List.of("restart_production"),
+                EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                new EvidenceEvaluationSample.HumanBaseline(
+                        45,
+                        EvidenceEvaluationSample.HumanBaseline.Basis.MEASURED,
+                        "工单时间戳"),
                 "reviewer@example.com");
 
         assertThat(finalized.referenceStatus())
@@ -357,6 +362,72 @@ class EvidenceEvaluationSampleServiceTest {
                         "trace_ps_id->verify_recovery");
         assertThat(finalized.outcome().outcome()).isEqualTo(ClosureOutcome.RECOVERED);
         assertThat(finalized.outcome().summary()).isEqualTo("人工扩容连接池后恢复");
+        assertThat(finalized.humanBaseline().minutesToLocate()).isEqualTo(45L);
+    }
+
+    @Test
+    void humanTimeBaselineIsRejectedForFixtureAndRecordedReplaySamples() {
+        ClosureRecord closure = new ClosureRecord(
+                ClosureOutcome.RECOVERED,
+                "人工确认恢复",
+                true,
+                "业务验证通过",
+                null,
+                "operator@example.com",
+                NOW.minusSeconds(10));
+        EvidenceEvaluationSample.HumanBaseline baseline =
+                new EvidenceEvaluationSample.HumanBaseline(
+                        45,
+                        EvidenceEvaluationSample.HumanBaseline.Basis.MEASURED,
+                        "工单时间戳");
+
+        Fixture fixtureDiagnosis = fixture(true, DiagnosisStatus.CLOSED, closure);
+        EvidenceEvaluationSample fixtureSample = capturedSample(true);
+        when(fixtureDiagnosis.store.get(7L, fixtureSample.sampleId()))
+                .thenReturn(Optional.of(fixtureSample));
+        assertThatThrownBy(() -> fixtureDiagnosis.service.finalizeReference(
+                7L,
+                fixtureSample.sampleId(),
+                0,
+                List.of("locate_failed_request"),
+                List.of("restart_production"),
+                EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                baseline,
+                "reviewer"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("only valid for a real Guance Diagnosis");
+        verify(fixtureDiagnosis.store, never())
+                .finalizeReference(anyLong(), any(), anyInt());
+
+        Fixture replayDiagnosis = fixture(false, DiagnosisStatus.CLOSED, closure);
+        EvidenceEvaluationSample replaySample = EvidenceEvaluationSample.capturedReplay(
+                "eval-replay-baseline",
+                "b".repeat(64),
+                "diag-1",
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                replayPreview(),
+                "c".repeat(64),
+                NOW,
+                false,
+                "admin",
+                NOW);
+        when(replayDiagnosis.store.get(7L, replaySample.sampleId()))
+                .thenReturn(Optional.of(replaySample));
+        assertThatThrownBy(() -> replayDiagnosis.service.finalizeReference(
+                7L,
+                replaySample.sampleId(),
+                0,
+                List.of("locate_failed_request"),
+                List.of("restart_production"),
+                EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                baseline,
+                "reviewer"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("only valid for a real Guance Diagnosis");
+        verify(replayDiagnosis.store, never())
+                .finalizeReference(anyLong(), any(), anyInt());
     }
 
     @Test
@@ -484,6 +555,84 @@ class EvidenceEvaluationSampleServiceTest {
         assertThat(ledger.toString()).doesNotContain("passed", "T8_PASSED");
     }
 
+    @Test
+    void northStarUsesOnlyMatchingRealGuanceSamplesAndRuns() {
+        Fixture fixture = fixture(false, DiagnosisStatus.CLOSED, null);
+        EvidenceEvaluationSample.HumanBaseline measured =
+                new EvidenceEvaluationSample.HumanBaseline(
+                        40,
+                        EvidenceEvaluationSample.HumanBaseline.Basis.MEASURED,
+                        "工单时间戳");
+        EvidenceEvaluationSample.OutcomeSnapshot outcome =
+                new EvidenceEvaluationSample.OutcomeSnapshot(
+                        ClosureOutcome.RECOVERED,
+                        "人工确认恢复",
+                        true,
+                        NOW);
+        EvidenceEvaluationSample real = capturedGuance(
+                "eval-real", "d".repeat(64), false)
+                .finalizeReference(
+                        reference("eval-real"),
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        measured,
+                        outcome,
+                        "reviewer",
+                        NOW);
+        EvidenceEvaluationSample fixtureSample = capturedGuance(
+                "eval-fixture", "e".repeat(64), true)
+                .finalizeReference(
+                        reference("eval-fixture"),
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        measured,
+                        outcome,
+                        "reviewer",
+                        NOW);
+        EvidenceEvaluationSample replay = EvidenceEvaluationSample.capturedReplay(
+                "eval-replay",
+                "f".repeat(64),
+                "diag-1",
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                replayPreview(),
+                "a".repeat(64),
+                NOW,
+                false,
+                "admin",
+                NOW)
+                .finalizeReference(
+                        reference("eval-replay"),
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        measured,
+                        outcome,
+                        "reviewer",
+                        NOW);
+        when(fixture.store.list(7L, null, 100))
+                .thenReturn(List.of(real, fixtureSample, replay));
+
+        NorthStarComparison comparison = fixture.service.northStar(
+                7L,
+                null,
+                100,
+                List.of(
+                        baselineRun("run-real", real, 100, 200),
+                        baselineRun("run-fixture", fixtureSample, 100, 300),
+                        baselineRun("run-replay", replay, 100, 400),
+                        baselineRun(
+                                "run-unmatched",
+                                capturedGuance("eval-unmatched", "1".repeat(64), false),
+                                100,
+                                500)));
+
+        assertThat(comparison.sampleCount()).isEqualTo(1);
+        assertThat(comparison.withHumanBaseline()).isEqualTo(1);
+        assertThat(comparison.measured().p50Minutes()).isEqualTo(40L);
+        assertThat(comparison.machineRunCount()).isEqualTo(1);
+        assertThat(comparison.machineP50Ms()).isEqualTo(300L);
+        assertThat(comparison.caveats())
+                .anyMatch(caveat -> caveat.contains("只统计真实 Guance 且非演练样本"));
+    }
+
     private Fixture fixture(
             boolean diagnosisFixtureMode,
             DiagnosisStatus status,
@@ -548,6 +697,70 @@ class EvidenceEvaluationSampleServiceTest {
                 fullPreview(),
                 diagnosisFixtureMode,
                 "admin",
+                NOW);
+    }
+
+    private EvidenceEvaluationSample capturedGuance(
+            String sampleId,
+            String sampleKey,
+            boolean diagnosisFixtureMode) {
+        return EvidenceEvaluationSample.captured(
+                sampleId,
+                sampleKey,
+                "diag-1",
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                fullPreview(),
+                diagnosisFixtureMode,
+                "admin",
+                NOW);
+    }
+
+    private BaselineEvaluationRun baselineRun(
+            String runId,
+            EvidenceEvaluationSample sample,
+            long evidenceDurationMs,
+            long modelDurationMs) {
+        return new BaselineEvaluationRun(
+                runId,
+                "2".repeat(64),
+                sample.sampleId(),
+                sample.diagnosisId(),
+                Math.max(sample.version(), 1),
+                sample.sourcePlatform(),
+                sample.evidence().fixtureMode(),
+                sample.diagnosisFixtureMode(),
+                sample.evidence().stage(),
+                "3".repeat(64),
+                BaselineEvaluationRun.Status.SCORED,
+                List.of(),
+                new BaselineEvaluationRun.ValidationSnapshot(true, true, List.of()),
+                new BaselineEvaluationRun.QualitySnapshot(
+                        EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                        BaselineEvaluationRun.ActualDisposition.DRAFT,
+                        BaselineEvaluationRun.Classification.HELPFUL,
+                        true,
+                        1.0,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        false),
+                new BaselineEvaluationRun.ModelSnapshot(
+                        "provider",
+                        "model",
+                        "v1",
+                        NOW,
+                        1,
+                        null,
+                        null,
+                        null),
+                evidenceDurationMs,
+                modelDurationMs,
+                evidenceDurationMs + modelDurationMs,
+                "reviewer",
                 NOW);
     }
 

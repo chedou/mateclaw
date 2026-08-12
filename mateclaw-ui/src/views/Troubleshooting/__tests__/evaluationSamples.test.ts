@@ -5,7 +5,9 @@ import {
   evaluationSourceCaptureContext,
   evaluationBaselineCards,
   evaluationExpectedDispositionLabel,
+  evaluationHumanBaselineLabel,
   evaluationLatencyCards,
+  evaluationNorthStarCards,
   evaluationReferenceStatusLabel,
   evaluationSampleProgress,
   parseEvaluationIntentKeys,
@@ -117,7 +119,57 @@ describe('evaluation sample helpers', () => {
     expect(progress.percent).toBe(85)
     expect(progress.note).toContain('不代表 T8 已通过')
     expect(JSON.stringify(progress)).not.toContain('通过验收')
-    expect(evaluationReferenceStatusLabel('EVIDENCE_CAPTURED')).toBe('待人工参考解')
+    expect(evaluationReferenceStatusLabel('EVIDENCE_CAPTURED')).toBe('待人工标准答案')
+  })
+
+  it('keeps measured, estimated and machine time visibly separate', () => {
+    const cards = evaluationNorthStarCards({
+      sampleCount: 5,
+      withHumanBaseline: 4,
+      measured: { count: 3, p50Minutes: 42, p95Minutes: 81 },
+      estimated: { count: 1, p50Minutes: 60, p95Minutes: 60 },
+      machineP50Ms: 820,
+      machineP95Ms: 1700,
+      machineRunCount: 5,
+      caveats: ['机器耗时不含人的复核时间'],
+    })
+
+    expect(cards).toEqual([
+      expect.objectContaining({
+        key: 'MEASURED',
+        label: '人工排障 · 时间戳实测',
+        count: 3,
+        p50: 'P50 42 分钟',
+        p95: 'P95 81 分钟',
+      }),
+      expect.objectContaining({
+        key: 'ESTIMATED',
+        label: '人工排障 · 处置人估算',
+        count: 1,
+        p50: 'P50 60 分钟',
+      }),
+      expect.objectContaining({
+        key: 'MACHINE',
+        label: '影子基线 · 机器给出可复核结果',
+        count: 5,
+        p50: 'P50 820 ms',
+        p95: 'P95 1.7 秒',
+      }),
+    ])
+    expect(JSON.stringify(cards)).not.toContain('节省')
+  })
+
+  it('labels the source strength of a human baseline next to its duration', () => {
+    expect(evaluationHumanBaselineLabel({
+      minutesToLocate: 34,
+      basis: 'MEASURED',
+      note: '工单时间戳',
+    })).toBe('34 分钟 · 来自工单或聊天时间戳（实测）')
+    expect(evaluationHumanBaselineLabel({
+      minutesToLocate: 45,
+      basis: 'ESTIMATED',
+      note: '处置人回忆',
+    })).toContain('估算')
   })
 
   it('formats source-separated descriptive latency without inventing missing values', () => {

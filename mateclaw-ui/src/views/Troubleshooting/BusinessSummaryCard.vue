@@ -99,7 +99,14 @@
       >复核后确认定位</el-button>
       <el-button v-if="canTransfer" :disabled="actionLoading" @click="$emit('transfer')">转给其他人继续查</el-button>
       <el-button v-if="canClose" :disabled="actionLoading" @click="$emit('close')">登记结果并关闭</el-button>
+      <el-button
+        v-if="status === 'CLOSED' && canEvaluate"
+        type="primary"
+        plain
+        @click="$emit('evaluate')"
+      >把这张单纳入试点评估</el-button>
       <span v-if="status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
+      <span v-else-if="status === 'CLOSED' && !canEvaluate">请有管理权限的负责人把这张单纳入试点评估。</span>
       <span v-else>这些按钮只记录人的判断和处置结果，MateClaw 不执行生产变更。</span>
     </div>
   </section>
@@ -136,6 +143,7 @@ interface Props {
   canOperate: boolean
   canTransfer: boolean
   canClose: boolean
+  canEvaluate: boolean
   rehearsal: boolean
   actionLoading: boolean
   status: DiagnosisStatus | null
@@ -170,8 +178,10 @@ const reviewGuidance = computed(() => {
       detail: '转派信息和已有证据已经保留，接手人不需要从头查；处理完成后仍要登记真实结果。',
     },
     CLOSED: {
-      title: '这张排障单已经完成归档',
-      detail: '最终结果、恢复验证和方法反馈已经保存，可用于效果评估和后续知识审核。',
+      title: '结果已登记，下一步验证这套方法是否真的有效',
+      detail: props.canEvaluate
+        ? '把这张单纳入试点评估：保存脱敏证据、人工确认的标准答案和原来人工定位所需时间。'
+        : '最终结果已经保存；请有管理权限的负责人把它纳入试点评估和后续知识审核。',
     },
   }
   return props.status
@@ -183,6 +193,7 @@ defineEmits<{
   confirm: []
   transfer: []
   close: []
+  evaluate: []
 }>()
 
 const impactMetricList = computed(() => {

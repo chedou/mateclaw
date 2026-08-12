@@ -1521,6 +1521,13 @@ export interface TopologyProbeEvidenceRun {
 export type EvaluationSampleSourcePlatform = 'GUANCE' | 'RECORDED_REPLAY'
 export type EvaluationSampleReferenceStatus = 'EVIDENCE_CAPTURED' | 'READY_FOR_EVALUATION'
 export type EvaluationExpectedDisposition = 'DRAFT' | 'ABSTAIN'
+export type EvaluationHumanBaselineBasis = 'MEASURED' | 'ESTIMATED'
+
+export interface EvaluationHumanBaseline {
+  minutesToLocate: number
+  basis: EvaluationHumanBaselineBasis
+  note: string
+}
 
 export interface EvaluationEvidenceSnapshot {
   stage: Exclude<GuanceSpinePreviewStage, 'BLOCKED'>
@@ -1575,6 +1582,8 @@ export interface EvidenceEvaluationSample {
   referenceStatus: EvaluationSampleReferenceStatus
   referenceSolution: EvaluationReferenceSolution | null
   expectedDisposition: EvaluationExpectedDisposition | null
+  /** Optional human time before MateClaw; measured and estimated cohorts never mix. */
+  humanBaseline: EvaluationHumanBaseline | null
   outcome: EvaluationOutcomeSnapshot | null
   version: number
   capturedBy: string
@@ -1645,6 +1654,25 @@ export interface FinalizeEvaluationSampleReferenceRequest {
   requiredStepIntents: string[]
   forbiddenStepIntents: string[]
   expectedDisposition: EvaluationExpectedDisposition
+  humanBaseline: EvaluationHumanBaseline | null
+}
+
+export interface EvaluationNorthStarCohort {
+  count: number
+  p50Minutes: number | null
+  p95Minutes: number | null
+}
+
+/** Descriptive pilot comparison. It deliberately contains no saved-time verdict. */
+export interface EvaluationNorthStarComparison {
+  sampleCount: number
+  withHumanBaseline: number
+  measured: EvaluationNorthStarCohort
+  estimated: EvaluationNorthStarCohort
+  machineP50Ms: number | null
+  machineP95Ms: number | null
+  machineRunCount: number
+  caveats: string[]
 }
 
 export type BaselineEvaluationStatus =

@@ -11,6 +11,7 @@
       v-if="evaluationWorkspaceActive"
       :current-diagnosis-id="current?.diagnosis.diagnosisId || null"
       :current-diagnosis-status="current?.diagnosis.status || null"
+      :current-diagnosis-rehearsal="current?.diagnosis.rehearsal || false"
       :capture-context="evaluationCaptureContext"
       :replay-capture-context="replayEvaluationCaptureContextValue"
       :capture-enabled="canCaptureEvaluationSample"
@@ -19,6 +20,7 @@
       :replay-capture-disabled-reason="replayCaptureDisabledReason"
       @back="closeCapabilityWorkspace"
       @open-diagnosis="openDiagnosisFromEvaluation"
+      @open-validation="openCurrentEvaluationValidation"
     />
 
     <CaseKnowledgeImportWorkspace
@@ -120,12 +122,14 @@
           :can-operate="canOperateTroubleshooting"
           :can-transfer="canTransfer"
           :can-close="canClose"
+          :can-evaluate="canManageTroubleshooting"
           :rehearsal="current.diagnosis.rehearsal"
           :action-loading="actionLoading"
           :status="current.diagnosis.status"
           @confirm="store.confirmDiagnosis"
           @transfer="transferOpen = true"
           @close="closeOpen = true"
+          @evaluate="openEvaluationLedger"
         />
 
         <ScenarioEvidenceRunCard
@@ -982,6 +986,12 @@ async function openEvaluationLedger() {
   if (!canManageTroubleshooting.value) return
   const query = { ...route.query, capability: 'ledger' }
   await router.push({ path: '/troubleshooting', query })
+}
+
+async function openCurrentEvaluationValidation() {
+  if (!canManageTroubleshooting.value) return
+  await router.push({ path: '/troubleshooting', query: workbenchQueryWithoutCapability() })
+  openDataSourceValidation()
 }
 
 async function prepareEvaluationWorkspace() {

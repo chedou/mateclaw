@@ -40,4 +40,28 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationWorkspaceSource).toContain('<SynthesisPreviewDialog embedded')
     expect(evaluationWorkspaceSource).not.toContain("historyReplayOpen")
   })
+
+  it('guides one closed diagnosis into the existing pilot evaluation ledger', () => {
+    expect(formalWorkbenchSource).toContain(':can-evaluate="canManageTroubleshooting"')
+    expect(formalWorkbenchSource).toContain('@evaluate="openEvaluationLedger"')
+    expect(formalWorkbenchSource).toContain('@open-validation="openCurrentEvaluationValidation"')
+    expect(evaluationWorkspaceSource).toContain('当前排障单怎样进入试点评估')
+    expect(evaluationWorkspaceSource).toContain('采集当前排障样本')
+    expect(evaluationWorkspaceSource).toContain('返回详情登记结果')
+    expect(evaluationWorkspaceSource).toContain('填写人工标准答案')
+    expect(evaluationWorkspaceSource).toContain('currentDiagnosisRehearsal')
+  })
+
+  it('captures a truthful human baseline before freezing the standard answer', () => {
+    expect(evaluationWorkspaceSource).toContain('记录原来人工定位要多久')
+    expect(evaluationWorkspaceSource).toContain('工单 / 群聊时间戳（实测）')
+    expect(evaluationWorkspaceSource).toContain('处置人回忆（估算）')
+    expect(evaluationWorkspaceSource).toContain('humanBaseline: referenceForm.includeHumanBaseline')
+    expect(evaluationWorkspaceSource).toContain('evaluationNorthStar')
+    expect(evaluationWorkspaceSource).toContain('试点是否真的省时间')
+    expect(evaluationWorkspaceSource).toContain('不直接相减，也不省略人的复核成本')
+    expect(evaluationWorkspaceSource).toContain("sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode")
+    expect(evaluationWorkspaceSource).toContain('历史回放和演练样本不登记人工耗时')
+    expect(evaluationWorkspaceSource).toContain('只统计真实 Guance、非演练样本')
+  })
 })
