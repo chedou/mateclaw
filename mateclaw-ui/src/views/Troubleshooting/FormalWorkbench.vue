@@ -715,7 +715,11 @@ function openKnownScenarioPicker() {
   scenarioLauncherOpen.value = true
 }
 
-async function onConversationReady(payload: { diagnosisId: string; created: boolean | null }) {
+async function onConversationReady(payload: {
+  diagnosisId: string
+  created: boolean | null
+  rehearsal: boolean
+}) {
   conversationIntakeOpen.value = false
   statusFilter.value = ''
   investigationModeFilter.value = ''
@@ -724,7 +728,9 @@ async function onConversationReady(payload: { diagnosisId: string; created: bool
   if (payload.created === false) {
     ElMessage.info('已打开既有排障单（对话入口汇合到同一张单）')
   } else {
-    ElMessage.success('对话资料已齐，已生成排障单')
+    ElMessage.success(payload.rehearsal
+      ? '对话资料已齐，已生成演练排障单'
+      : '对话资料已齐，已生成正式排障单')
   }
 }
 

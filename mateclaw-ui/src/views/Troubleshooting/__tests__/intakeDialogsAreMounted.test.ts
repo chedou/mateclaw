@@ -5,6 +5,7 @@ import incidentDialogSource from '../IncidentReportDialog.vue?raw'
 import messageSendDialogSource from '../MessageSendScenarioDialog.vue?raw'
 import ctiDialogSource from '../CtiCreateConversationScenarioDialog.vue?raw'
 import deploymentDialogSource from '../DeploymentTopologyScenarioDialog.vue?raw'
+import conversationDialogSource from '../ConversationIntakeDialog.vue?raw'
 
 const INTAKE_DIALOGS = [
   'IncidentReportDialog',
@@ -39,6 +40,10 @@ describe('the troubleshooting intake dialogs', () => {
     expect(formalWorkbenchSource).toContain('@pick-conversation="openConversationIntake"')
     expect(incidentDialogSource).toContain('这是已登记场景？')
     expect(incidentDialogSource).toContain('改用对话补问')
+    expect(incidentDialogSource).toContain('故障发生时间（有就填）')
+    expect(incidentDialogSource).toContain('v-model="form.occurredAt"')
+    expect(conversationDialogSource).toContain('演练模式（推荐首次使用）')
+    expect(conversationDialogSource).toContain('rehearsal: rehearsal.value')
     expect(scenarioDialogSource).toContain('返回粘贴告警')
   })
 })

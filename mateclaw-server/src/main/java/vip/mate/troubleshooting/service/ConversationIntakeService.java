@@ -59,7 +59,8 @@ public class ConversationIntakeService {
             long workspaceId,
             String reporterRef,
             String conversationId,
-            String text) {
+            String text,
+            boolean rehearsal) {
         if (reporterRef == null || reporterRef.isBlank()) {
             throw new MateClawException(
                     "err.troubleshooting.actor_required",
@@ -94,7 +95,8 @@ public class ConversationIntakeService {
         String prompt = decision.prompt();
         if (decision.status() == IntakeSessionStatus.READY) {
             StoredDiagnosis stored = intakeService.report(
-                    sessions.getReady(workspaceId, decision.intakeSessionId()));
+                    sessions.getReady(workspaceId, decision.intakeSessionId()),
+                    rehearsal);
             diagnosisId = stored.diagnosis().diagnosisId();
             created = stored.created();
             prompt = summaryRenderer.render(
@@ -112,7 +114,8 @@ public class ConversationIntakeService {
                 decision.duplicate(),
                 decision.outOfOrder(),
                 diagnosisId,
-                created);
+                created,
+                rehearsal);
     }
 
     public record ConversationTurnResult(
@@ -124,6 +127,7 @@ public class ConversationIntakeService {
             boolean duplicate,
             boolean outOfOrder,
             String diagnosisId,
-            Boolean created) {
+            Boolean created,
+            boolean rehearsal) {
     }
 }

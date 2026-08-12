@@ -11,6 +11,7 @@ export interface FormalIncidentForm {
   severity: IncidentSeverity
   errorCode: string
   traceId: string
+  occurredAt: string
   rehearsal: boolean
 }
 
@@ -29,6 +30,7 @@ export const EMPTY_FORMAL_INCIDENT: FormalIncidentForm = {
   severity: 'P2',
   errorCode: '',
   traceId: '',
+  occurredAt: '',
   rehearsal: true,
 }
 
@@ -40,6 +42,7 @@ const ACCESS_LOG_BODY = /^\s*\S+\s+\S+\s+\S+\s+\[[^\n]{1,128}\]\s+"(?:GET|POST|P
 const SAFE_TRACE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const MAX_IDENTIFIER_LENGTH = 128
 const MAX_TITLE_LENGTH = 500
+const ISO_OCCURRED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/
 
 function clean(value: string) {
   return value.trim()
@@ -62,6 +65,15 @@ export function formalIncidentFormErrors(form: FormalIncidentForm) {
   if (clean(form.service).length > MAX_IDENTIFIER_LENGTH) errors.push('故障服务最多 128 个字符')
   if (clean(form.title).length > MAX_TITLE_LENGTH) errors.push('故障现象最多 500 个字符')
   if (clean(form.errorCode).length > MAX_IDENTIFIER_LENGTH) errors.push('错误码最多 128 个字符')
+  const occurredAt = clean(form.occurredAt)
+  if (occurredAt) {
+    const parsed = Date.parse(occurredAt)
+    if (!ISO_OCCURRED_AT.test(occurredAt) || !Number.isFinite(parsed)) {
+      errors.push('故障发生时间必须是带时区的有效时间')
+    } else if (parsed > Date.now() + 5 * 60 * 1000) {
+      errors.push('故障发生时间不能晚于当前时间')
+    }
+  }
   if (containsDeveloperEvidence(form.system)) errors.push('故障系统不能包含 DQL、原始日志或堆栈正文')
   if (containsDeveloperEvidence(form.service)) errors.push('故障服务不能包含 DQL、原始日志或堆栈正文')
   if (containsDeveloperEvidence(form.title)) errors.push('故障现象不能包含 DQL、原始日志或堆栈正文')
@@ -96,6 +108,7 @@ export function buildFormalIncidentReport(form: FormalIncidentForm): IncidentRep
   const title = clean(form.title)
   const errorCode = clean(form.errorCode)
   const traceId = clean(form.traceId)
+  const occurredAt = clean(form.occurredAt)
 
   return {
     system,
@@ -104,6 +117,7 @@ export function buildFormalIncidentReport(form: FormalIncidentForm): IncidentRep
     severity: form.severity,
     ...(errorCode ? { errorCode } : {}),
     ...(traceId ? { traceId } : {}),
+    ...(occurredAt ? { occurredAt } : {}),
     intakeSource: 'web:formal-workbench',
     completeness: completeness(errorCode, traceId),
     rehearsal: form.rehearsal,

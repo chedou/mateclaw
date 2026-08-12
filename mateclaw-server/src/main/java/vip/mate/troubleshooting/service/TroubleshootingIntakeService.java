@@ -170,6 +170,11 @@ public class TroubleshootingIntakeService {
 
     /** Starts investigation from a complete, durably persisted channel intake. */
     public StoredDiagnosis report(IntakeSession session) {
+        return report(session, false);
+    }
+
+    /** Starts a Web conversation intake with an explicit rehearsal boundary. */
+    public StoredDiagnosis report(IntakeSession session, boolean rehearsal) {
         if (session == null || session.status() != IntakeSessionStatus.READY
                 || session.readyAt() == null) {
             throw badRequest("READY intake session is required");
@@ -192,7 +197,7 @@ public class TroubleshootingIntakeService {
                 session.workspaceId(),
                 incident,
                 List.of(),
-                false,
+                rehearsal,
                 session.reportedAt(),
                 session.readyAt(),
                 session.intakeSessionId());

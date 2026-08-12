@@ -41,7 +41,8 @@ public class ConversationIntakeController {
                 resolveWorkspace(workspaceId),
                 currentActor(),
                 request.conversationId(),
-                request.text()));
+                request.text(),
+                request.isRehearsal()));
     }
 
     private long resolveWorkspace(Long workspaceId) {
@@ -61,6 +62,12 @@ public class ConversationIntakeController {
 
     public record ConversationTurnRequest(
             @Size(max = 128) String conversationId,
-            @NotBlank @Size(max = 4000) String text) {
+            @NotBlank @Size(max = 4000) String text,
+            Boolean rehearsal) {
+
+        /** First-time Web use is rehearsal unless the operator explicitly opts into formal intake. */
+        public boolean isRehearsal() {
+            return rehearsal == null || rehearsal;
+        }
     }
 }

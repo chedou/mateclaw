@@ -13,6 +13,7 @@ const baseForm: FormalIncidentForm = {
   severity: 'P2',
   errorCode: ' 903001 ',
   traceId: ' trace-safe-001 ',
+  occurredAt: '2026-08-07T17:12:00+08:00',
   rehearsal: true,
 }
 
@@ -27,12 +28,13 @@ describe('formal workbench incident report boundary', () => {
       severity: 'P2',
       errorCode: '903001',
       traceId: 'trace-safe-001',
+      occurredAt: '2026-08-07T17:12:00+08:00',
       intakeSource: 'web:formal-workbench',
       completeness: 'STRUCTURED',
       rehearsal: true,
     })
     for (const forbidden of [
-      'incidentId', 'impact', 'occurredAt', 'rawInput', 'evidence', 'slaRemaining',
+      'incidentId', 'impact', 'rawInput', 'evidence', 'slaRemaining',
     ]) {
       expect(request).not.toHaveProperty(forbidden)
     }
@@ -54,6 +56,7 @@ describe('formal workbench incident report boundary', () => {
       ...baseForm,
       errorCode: '',
       traceId: '',
+      occurredAt: '',
       rehearsal: false,
     })
 
@@ -61,6 +64,19 @@ describe('formal workbench incident report boundary', () => {
     expect(request.rehearsal).toBe(false)
     expect(request).not.toHaveProperty('errorCode')
     expect(request).not.toHaveProperty('traceId')
+    expect(request).not.toHaveProperty('occurredAt')
+  })
+
+  it('rejects an invalid or future incident time instead of querying the wrong window', () => {
+    expect(formalIncidentFormErrors({
+      ...baseForm,
+      occurredAt: '2026-08-07 17:12:00',
+    })).toContain('故障发生时间必须是带时区的有效时间')
+
+    expect(formalIncidentFormErrors({
+      ...baseForm,
+      occurredAt: '2999-01-01T00:00:00Z',
+    })).toContain('故障发生时间不能晚于当前时间')
   })
 
   it('requires the three fields needed for a useful workbench incident', () => {

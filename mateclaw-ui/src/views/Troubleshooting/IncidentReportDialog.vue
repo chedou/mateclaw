@@ -37,6 +37,16 @@
         <el-form-item label="错误码（有就填）">
           <el-input v-model="form.errorCode" maxlength="128" placeholder="例如 904003；没有可留空" />
         </el-form-item>
+        <el-form-item label="故障发生时间（有就填）">
+          <el-date-picker
+            v-model="form.occurredAt"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            placeholder="不填则按当前时间调查"
+            style="width: 100%"
+          />
+          <span class="incident-field-hint">历史告警请填写原始时间，系统会据此确定取证窗口。</span>
+        </el-form-item>
       </div>
       <el-form-item label="故障现象" required>
         <el-input
@@ -164,6 +174,13 @@ const openDiscoveryTitle = computed(() => {
 .readiness-blockers {
   margin: 8px 0 0;
   padding-left: 18px;
+  line-height: 1.5;
+}
+.incident-field-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--mc-text-tertiary);
+  font-size: 11px;
   line-height: 1.5;
 }
 </style>

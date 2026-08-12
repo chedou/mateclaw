@@ -38,6 +38,7 @@ export interface IncidentReportRequest {
   severity: IncidentSeverity
   errorCode?: string
   traceId?: string
+  occurredAt?: string
   intakeSource: 'web:formal-workbench'
   completeness: IncidentCompleteness
   rehearsal: boolean
@@ -47,6 +48,7 @@ export interface IncidentReportRequest {
 export interface ConversationTurnRequest {
   conversationId?: string | null
   text: string
+  rehearsal: boolean
 }
 
 export interface ConversationTurnResult {
@@ -59,6 +61,7 @@ export interface ConversationTurnResult {
   outOfOrder: boolean
   diagnosisId: string | null
   created: boolean | null
+  rehearsal: boolean
 }
 
 /** Explicit topology-scenario intake; routing, Playbook and Tool keys are server-owned. */

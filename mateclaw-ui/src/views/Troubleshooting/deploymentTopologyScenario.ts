@@ -26,7 +26,7 @@ export const EMPTY_DEPLOYMENT_TOPOLOGY_SCENARIO: DeploymentTopologyScenarioForm 
 }
 
 function asIncidentForm(form: DeploymentTopologyScenarioForm): FormalIncidentForm {
-  return { ...form, errorCode: '' }
+  return { ...form, errorCode: '', occurredAt: '' }
 }
 
 export function deploymentTopologyScenarioFormErrors(

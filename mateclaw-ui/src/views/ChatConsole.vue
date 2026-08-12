@@ -1364,13 +1364,16 @@ function goTroubleshootingForm() {
 async function onConversationIntakeReady(payload: {
   diagnosisId: string
   created: boolean | null
+  rehearsal: boolean
 }) {
   conversationIntakeOpen.value = false
   exitTroubleshootingIntakeMode()
   if (payload.created === false) {
     ElMessage.info(`已汇合既有排障单 ${payload.diagnosisId}；结论已留在抽屉对话`)
   } else {
-    ElMessage.success(`排障单 ${payload.diagnosisId} 结论已回写对话（未跳转工作台）`)
+    ElMessage.success(
+      `${payload.rehearsal ? '演练' : '正式'}排障单 ${payload.diagnosisId} 结论已回写对话（未跳转工作台）`,
+    )
   }
 }
 
@@ -1429,6 +1432,7 @@ async function runTroubleshootingIntakeTurn(text: string) {
     const { data } = await troubleshootingApi.conversationTurn({
       conversationId: tsIntakeConversationId.value,
       text: trimmed,
+      rehearsal: true,
     })
     tsIntakeActive.value = true
     tsIntakeConversationId.value = data.conversationId
@@ -1439,7 +1443,7 @@ async function runTroubleshootingIntakeTurn(text: string) {
       ElMessage.success(
         data.created === false
           ? `已汇合既有排障单；结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`
-          : `排障结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`,
+          : `演练排障结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`,
       )
     }
   } catch (error: any) {

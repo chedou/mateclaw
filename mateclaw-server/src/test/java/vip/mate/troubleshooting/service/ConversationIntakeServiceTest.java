@@ -71,10 +71,11 @@ class ConversationIntakeServiceTest {
         when(sessions.accept(any())).thenReturn(IntakeDecision.from(awaiting, false, false));
 
         ConversationIntakeService.ConversationTurnResult result = service.turn(
-                1L, "admin", "conv-1", "消息发不出去了");
+                1L, "admin", "conv-1", "消息发不出去了", true);
 
         assertThat(result.status()).isEqualTo(IntakeSessionStatus.AWAITING_INPUT.name());
         assertThat(result.diagnosisId()).isNull();
+        assertThat(result.rehearsal()).isTrue();
         assertThat(result.prompt()).contains("还需要");
         ArgumentCaptor<IntakeMessageEnvelope> envelope = ArgumentCaptor.forClass(IntakeMessageEnvelope.class);
         verify(sessions).accept(envelope.capture());
@@ -117,7 +118,7 @@ class ConversationIntakeServiceTest {
         when(sessions.getReady(1L, "intake-2")).thenReturn(ready);
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-ready");
-        when(intakeService.report(ready)).thenReturn(new StoredDiagnosis(diagnosis, 1, true));
+        when(intakeService.report(ready, true)).thenReturn(new StoredDiagnosis(diagnosis, 1, true));
 
         BusinessSummary summary = mock(BusinessSummary.class);
         DiagnosisExperienceProjection projection = mock(DiagnosisExperienceProjection.class);
@@ -128,14 +129,16 @@ class ConversationIntakeServiceTest {
 
         ConversationIntakeService.ConversationTurnResult result = service.turn(
                 1L, "admin", "conv-2",
-                "系统: CSDP\n服务: csdp-wechat\n客户ID: 未知\n发生时间: 2026-08-07 17:12:00\n错误码: 904003");
+                "系统: CSDP\n服务: csdp-wechat\n客户ID: 未知\n发生时间: 2026-08-07 17:12:00\n错误码: 904003",
+                true);
 
         assertThat(result.status()).isEqualTo("READY");
         assertThat(result.diagnosisId()).isEqualTo("diag-ready");
         assertThat(result.created()).isTrue();
+        assertThat(result.rehearsal()).isTrue();
         assertThat(result.prompt()).contains("结论：证据不足");
         assertThat(result.prompt()).contains("正式工作台");
-        verify(intakeService).report(eq(ready));
+        verify(intakeService).report(eq(ready), eq(true));
         verify(summaryRenderer).render(summary);
     }
 }

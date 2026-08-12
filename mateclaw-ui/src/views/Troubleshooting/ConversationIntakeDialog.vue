@@ -11,6 +11,14 @@
       <p class="conv-hint">补充时可按行填写：系统 / 服务 / 客户ID / 发生时间；错误码有就写。</p>
     </div>
 
+    <div class="conv-mode">
+      <el-checkbox
+        v-model="rehearsal"
+        :disabled="loading || messages.length > 0"
+      >演练模式（推荐首次使用）</el-checkbox>
+      <span>{{ rehearsal ? '生成演练排障单，不占用生产去重窗口' : '生成正式排障单，适用于真实值班告警' }}</span>
+    </div>
+
     <div ref="threadEl" class="conv-thread" aria-live="polite">
       <div v-if="!messages.length" class="conv-empty">
         例如先发：「CSDP 消息发不出去了」或直接贴告警摘要。
@@ -64,7 +72,7 @@ type ChatMessage = { role: ChatRole; text: string }
 const open = defineModel<boolean>({ required: true })
 const emit = defineEmits<{
   'switch-form': []
-  ready: [payload: { diagnosisId: string; created: boolean | null }]
+  ready: [payload: { diagnosisId: string; created: boolean | null; rehearsal: boolean }]
 }>()
 
 const draft = ref('')
@@ -73,6 +81,7 @@ const conversationId = ref<string | null>(null)
 const diagnosisId = ref<string | null>(null)
 const messages = ref<ChatMessage[]>([])
 const threadEl = ref<HTMLElement | null>(null)
+const rehearsal = ref(true)
 
 const canSend = computed(() =>
   !loading.value && !diagnosisId.value && draft.value.trim().length > 0,
@@ -88,6 +97,7 @@ function resetLocal() {
   conversationId.value = null
   diagnosisId.value = null
   messages.value = []
+  rehearsal.value = true
 }
 
 async function scrollToBottom() {
@@ -107,6 +117,7 @@ async function send() {
     const { data } = await troubleshootingApi.conversationTurn({
       conversationId: conversationId.value,
       text,
+      rehearsal: rehearsal.value,
     })
     applyTurn(data)
   } catch (error: any) {
@@ -123,10 +134,15 @@ async function send() {
 
 function applyTurn(data: ConversationTurnResult) {
   conversationId.value = data.conversationId
+  rehearsal.value = data.rehearsal
   messages.value.push({ role: 'assistant', text: data.prompt })
   if (data.status === 'READY' && data.diagnosisId) {
     diagnosisId.value = data.diagnosisId
-    emit('ready', { diagnosisId: data.diagnosisId, created: data.created })
+    emit('ready', {
+      diagnosisId: data.diagnosisId,
+      created: data.created,
+      rehearsal: data.rehearsal,
+    })
   }
 }
 </script>
@@ -149,6 +165,22 @@ function applyTurn(data: ConversationTurnResult) {
   margin-top: 8px !important;
   color: var(--mc-text-tertiary) !important;
   font-size: 12px !important;
+}
+.conv-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -4px 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--mc-border);
+  border-radius: var(--mc-radius-sm, 8px);
+  background: var(--mc-bg);
+}
+.conv-mode span {
+  padding-left: 24px;
+  color: var(--mc-text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .conv-thread {
   display: flex;
