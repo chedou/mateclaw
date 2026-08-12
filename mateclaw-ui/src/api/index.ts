@@ -1076,7 +1076,7 @@ export const workspaceTeamApi = {
   update: (id: string | number, data: any) => http.put(`/workspaces/${id}`, data),
   delete: (id: string | number) => http.delete(`/workspaces/${id}`),
   listMembers: (id: string | number) => http.get(`/workspaces/${id}/members`),
-  addMember: (id: string | number, data: { username: string; password?: string; nickname?: string; role?: string }) =>
+  addMember: (id: string | number, data: { username: string; createUser?: boolean; password?: string; nickname?: string; role?: string }) =>
     http.post(`/workspaces/${id}/members`, data),
   updateMemberRole: (id: string | number, memberId: string | number, role: string) =>
     http.put(`/workspaces/${id}/members/${memberId}`, { role }),

@@ -8,6 +8,7 @@ import type {
 import {
   buildEvaluationPilotQueue,
   buildPilotScopeSuggestions,
+  buildPilotTeamRepairPlan,
   buildPilotTeamReadiness,
   buildPilotWorkbenchPrompt,
   pilotMemberCanOwnResponsibility,
@@ -122,6 +123,47 @@ describe('evaluation pilot hand-off queue', () => {
     expect(pilotMemberCanOwnResponsibility(
       'THIRD_LINE', { role: 'admin', active: false },
     )).toBe(false)
+  })
+
+  it('turns the overlapping operator and administrator gaps into exact setup actions', () => {
+    expect(buildPilotTeamRepairPlan({
+      memberCount: 1,
+      operatorCount: 1,
+      adminCount: 1,
+      missingOperatorCount: 2,
+      missingAdminCount: 1,
+      ready: false,
+    })).toEqual({
+      addAdminCount: 1,
+      addMemberCount: 1,
+      promoteAdminCount: 0,
+    })
+
+    expect(buildPilotTeamRepairPlan({
+      memberCount: 3,
+      operatorCount: 3,
+      adminCount: 1,
+      missingOperatorCount: 0,
+      missingAdminCount: 1,
+      ready: false,
+    })).toEqual({
+      addAdminCount: 0,
+      addMemberCount: 0,
+      promoteAdminCount: 1,
+    })
+
+    expect(buildPilotTeamRepairPlan({
+      memberCount: 3,
+      operatorCount: 3,
+      adminCount: 2,
+      missingOperatorCount: 0,
+      missingAdminCount: 0,
+      ready: true,
+    })).toEqual({
+      addAdminCount: 0,
+      addMemberCount: 0,
+      promoteAdminCount: 0,
+    })
   })
 
   it('turns persisted formal diagnoses into one truthful next action', () => {

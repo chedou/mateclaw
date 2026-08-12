@@ -56,6 +56,12 @@ export interface PilotTeamReadiness {
   ready: boolean
 }
 
+export interface PilotTeamRepairPlan {
+  addAdminCount: number
+  addMemberCount: number
+  promoteAdminCount: number
+}
+
 export interface PilotWorkspaceMemberAccess {
   role?: string | null
   active?: boolean | null
@@ -110,6 +116,25 @@ export function buildPilotTeamReadiness(
     missingOperatorCount,
     missingAdminCount,
     ready: missingOperatorCount === 0 && missingAdminCount === 0,
+  }
+}
+
+/**
+ * Converts the overlapping operator/admin thresholds into a minimum sequence
+ * an administrator can actually carry out. A newly added admin satisfies both
+ * thresholds, so it must not be counted again as a plain member.
+ */
+export function buildPilotTeamRepairPlan(
+  readiness: PilotTeamReadiness,
+): PilotTeamRepairPlan {
+  const addAdminCount = Math.min(
+    readiness.missingOperatorCount,
+    readiness.missingAdminCount,
+  )
+  return {
+    addAdminCount,
+    addMemberCount: Math.max(0, readiness.missingOperatorCount - addAdminCount),
+    promoteAdminCount: Math.max(0, readiness.missingAdminCount - addAdminCount),
   }
 }
 

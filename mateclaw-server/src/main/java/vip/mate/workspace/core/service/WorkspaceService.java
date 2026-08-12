@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vip.mate.auth.model.UserEntity;
+import vip.mate.auth.service.AuthService;
 import vip.mate.exception.MateClawException;
 import vip.mate.i18n.I18nService;
 import vip.mate.wiki.service.WikiKnowledgeBaseService;
@@ -42,6 +44,7 @@ public class WorkspaceService {
     private final ConversationMapper conversationMapper;
     private final WikiKnowledgeBaseService wikiKnowledgeBaseService;
     private final I18nService i18n;
+    private final AuthService authService;
 
     /** 默认工作区 slug */
     public static final String DEFAULT_SLUG = "default";
@@ -279,6 +282,60 @@ public class WorkspaceService {
         evictMembershipCache(workspaceId, userId);
         log.info("Added member to workspace: userId={}, workspaceId={}, role={}", userId, workspaceId, member.getRole());
         return member;
+    }
+
+    /**
+     * Resolve or create a user account and add it to a workspace as one atomic
+     * operation. Account creation remains a global-admin capability; workspace
+     * admins may only link an account that already exists.
+     *
+     * @param createUser {@code null} preserves the legacy password-implies-create
+     *                   request contract; explicit {@code false} never creates
+     */
+    @Transactional
+    public WorkspaceMemberEntity addMemberByUsername(Long workspaceId,
+                                                       String username,
+                                                       String password,
+                                                       String nickname,
+                                                       String role,
+                                                       Boolean createUser,
+                                                       boolean accountCreationAllowed) {
+        String normalizedRole = normalizeAssignableRole(role);
+        boolean explicitCreate = Boolean.TRUE.equals(createUser);
+        if (explicitCreate && !accountCreationAllowed) {
+            throw new MateClawException("err.workspace.insufficient_permission", 403,
+                    "Only a global administrator can create a MateClaw account");
+        }
+
+        UserEntity target = authService.findByUsername(username);
+        if (target != null && explicitCreate) {
+            throw new MateClawException("err.auth.username_exists",
+                    "Username already exists: " + username
+                            + ". Choose add existing account instead of create new account.");
+        }
+        if (target == null) {
+            boolean shouldCreate = explicitCreate
+                    || createUser == null && password != null && !password.isBlank();
+            if (!shouldCreate) {
+                throw new MateClawException("err.workspace.user_not_found",
+                        "User not found: " + username
+                                + ". Choose create new account only after confirming this person has no account.");
+            }
+            if (!accountCreationAllowed) {
+                throw new MateClawException("err.workspace.insufficient_permission", 403,
+                        "Only a global administrator can create a MateClaw account");
+            }
+            if (password == null || password.isBlank()) {
+                throw new MateClawException("err.workspace.user_not_found",
+                        "User not found: " + username + ". Provide a password to create the account.");
+            }
+            UserEntity newUser = new UserEntity();
+            newUser.setUsername(username);
+            newUser.setPassword(password);
+            newUser.setNickname(nickname == null || nickname.isBlank() ? username : nickname);
+            target = authService.createUser(newUser);
+        }
+        return addMember(workspaceId, target.getId(), normalizedRole);
     }
 
     public WorkspaceMemberEntity updateMemberRole(Long workspaceId, Long userId, String role) {

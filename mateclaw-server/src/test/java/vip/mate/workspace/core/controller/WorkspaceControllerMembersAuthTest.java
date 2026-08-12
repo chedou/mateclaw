@@ -5,13 +5,17 @@ import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import vip.mate.auth.model.UserEntity;
 import vip.mate.auth.service.AuthService;
+import vip.mate.exception.MateClawException;
 import vip.mate.workspace.core.model.WorkspaceMemberEntity;
 import vip.mate.workspace.core.service.WorkspaceService;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -74,6 +78,86 @@ class WorkspaceControllerMembersAuthTest {
 
         assertThat(members).extracting(WorkspaceMemberEntity::getActive)
                 .containsExactly(true, false, false);
+    }
+
+    @Test
+    void addExistingMemberDelegatesWithoutAccountCreationPermission() {
+        WorkspaceService workspaceService = mock(WorkspaceService.class);
+        AuthService authService = mock(AuthService.class);
+        WorkspaceController controller = new WorkspaceController(workspaceService, authService);
+        when(authService.findByUsername("admin")).thenReturn(user(1L, "admin", true));
+        WorkspaceMemberEntity expected = member(88L, "member");
+        when(workspaceService.addMemberByUsername(
+                7L, "existing-user", null, null, "member", false, false)).thenReturn(expected);
+        Map<String, Object> request = new HashMap<>();
+        request.put("username", "existing-user");
+        request.put("createUser", false);
+        request.put("role", "member");
+
+        WorkspaceMemberEntity result = controller.addMember(
+                7L, request, new TestingAuthenticationToken("admin", "pw")).getData();
+
+        assertThat(result).isSameAs(expected);
+        verify(workspaceService).addMemberByUsername(
+                7L, "existing-user", null, null, "member", false, false);
+        verify(authService, never()).createUser(any());
+    }
+
+    @Test
+    void addNewMemberDelegatesGlobalAdminAuthorityExplicitly() {
+        WorkspaceService workspaceService = mock(WorkspaceService.class);
+        AuthService authService = mock(AuthService.class);
+        WorkspaceController controller = new WorkspaceController(workspaceService, authService);
+        UserEntity globalAdmin = user(1L, "admin", true);
+        globalAdmin.setRole("admin");
+        when(authService.findByUsername("admin")).thenReturn(globalAdmin);
+        WorkspaceMemberEntity expected = member(88L, "admin");
+        when(workspaceService.addMemberByUsername(
+                7L, "new-reviewer", "temporary-password", "三线复核人", "admin", true, true))
+                .thenReturn(expected);
+        Map<String, Object> request = new HashMap<>();
+        request.put("username", "new-reviewer");
+        request.put("password", "temporary-password");
+        request.put("nickname", "三线复核人");
+        request.put("createUser", true);
+        request.put("role", "admin");
+
+        WorkspaceMemberEntity result = controller.addMember(
+                7L, request, new TestingAuthenticationToken("admin", "pw")).getData();
+
+        assertThat(result).isSameAs(expected);
+        verify(workspaceService, never()).requirePermission(anyLong(), anyLong(), anyString());
+        verify(workspaceService).addMemberByUsername(
+                7L, "new-reviewer", "temporary-password", "三线复核人", "admin", true, true);
+    }
+
+    @Test
+    void addNewMemberDoesNotGrantAccountCreationAuthorityToWorkspaceAdmin() {
+        WorkspaceService workspaceService = mock(WorkspaceService.class);
+        AuthService authService = mock(AuthService.class);
+        WorkspaceController controller = new WorkspaceController(workspaceService, authService);
+        when(authService.findByUsername("workspace-admin"))
+                .thenReturn(user(9L, "workspace-admin", true));
+        when(workspaceService.addMemberByUsername(
+                7L, "new-user", "password", null, "member", true, false))
+                .thenThrow(new MateClawException(
+                        "err.workspace.insufficient_permission", 403,
+                        "Only a global administrator can create a MateClaw account"));
+        Map<String, Object> request = new HashMap<>();
+        request.put("username", "new-user");
+        request.put("password", "password");
+        request.put("createUser", true);
+        request.put("role", "member");
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> controller.addMember(
+                        7L, request, new TestingAuthenticationToken("workspace-admin", "pw")));
+
+        assertThat(error.getCode()).isEqualTo(403);
+        verify(workspaceService).requirePermission(7L, 9L, "admin");
+        verify(workspaceService).addMemberByUsername(
+                7L, "new-user", "password", null, "member", true, false);
     }
 
     private WorkspaceMemberEntity member(long userId, String role) {

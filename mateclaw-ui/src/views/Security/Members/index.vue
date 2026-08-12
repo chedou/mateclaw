@@ -5,7 +5,7 @@
       class="pilot-member-handoff"
       aria-label="智能排障试点成员准备"
     >
-      <div>
+      <div class="pilot-member-copy">
         <span>来自智能排障试点</span>
         <strong v-if="loading">正在核对成员数量</strong>
         <strong v-else-if="memberLoadFailed">暂时无法读取成员数量</strong>
@@ -18,8 +18,32 @@
           试点需要 3 名能操作排障的成员，其中至少 2 名具有管理员或所有者角色。
         </p>
         <p v-else-if="!loading">当前角色结构可以完成三类职责，可以返回并继续分配负责人。</p>
+        <div v-if="!loading && !memberLoadFailed && !pilotTeamReadiness.ready" class="pilot-repair-plan">
+          <b>照着补齐即可：</b>
+          <span v-if="pilotRepairPlan.addAdminCount">
+            新增 {{ pilotRepairPlan.addAdminCount }} 名管理员
+          </span>
+          <span v-if="pilotRepairPlan.addMemberCount">
+            新增 {{ pilotRepairPlan.addMemberCount }} 名二线成员
+          </span>
+          <span v-if="pilotRepairPlan.promoteAdminCount">
+            将 {{ pilotRepairPlan.promoteAdminCount }} 名现有成员调整为管理员
+          </span>
+        </div>
       </div>
-      <button class="btn-secondary" @click="returnToPilot">返回试点配置</button>
+      <div class="pilot-member-actions">
+        <button
+          v-if="!loading && pilotRepairPlan.addAdminCount"
+          class="btn-primary"
+          @click="openAddMemberDialog('admin')"
+        >添加管理员</button>
+        <button
+          v-if="!loading && pilotRepairPlan.addMemberCount"
+          class="btn-secondary"
+          @click="openAddMemberDialog('member')"
+        >添加二线成员</button>
+        <button class="btn-secondary" @click="returnToPilot">返回试点配置</button>
+      </div>
     </section>
 
     <div class="section-header">
@@ -27,7 +51,7 @@
         <h2 class="section-title">{{ t('security.members.title') }}</h2>
         <p class="section-desc">{{ t('security.members.desc') }}</p>
       </div>
-      <button class="btn-primary" @click="showAddDialog = true">
+      <button class="btn-primary" @click="openAddMemberDialog('member')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
@@ -100,21 +124,43 @@
         <div class="modal">
           <div class="modal-header">
             <h3>{{ t('security.members.addDialog.title') }}</h3>
-            <button class="modal-close" @click="showAddDialog = false">&times;</button>
+            <button class="modal-close" @click="closeAddMemberDialog">&times;</button>
           </div>
           <div class="modal-body">
             <div class="form-grid" style="grid-template-columns: 1fr;">
-              <div class="form-group">
-                <label>{{ t('security.members.addDialog.username') }} <span class="required">*</span></label>
-                <input v-model.trim="newMemberForm.username" type="text" class="form-input" :placeholder="t('security.members.addDialog.usernamePlaceholder')" />
-                <span class="form-hint">{{ t('security.members.addDialog.usernameHint') }}</span>
+              <div class="account-mode-selector" role="group" aria-label="选择成员账号来源">
+                <button
+                  type="button"
+                  :class="{ active: accountMode === 'existing' }"
+                  @click="accountMode = 'existing'"
+                >
+                  <b>加入已有账号</b>
+                  <small>只关联现有 MateClaw 用户，不修改密码</small>
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: accountMode === 'new' }"
+                  :disabled="!canCreateAccounts"
+                  :title="canCreateAccounts ? '' : '只有全局管理员可以创建 MateClaw 账号'"
+                  @click="accountMode = 'new'"
+                >
+                  <b>新建账号并加入</b>
+                  <small v-if="canCreateAccounts">仅当这位同事还没有平台账号时使用</small>
+                  <small v-else>请联系全局管理员创建账号后，再使用已有账号加入</small>
+                </button>
               </div>
               <div class="form-group">
-                <label>{{ t('security.members.addDialog.password') }}</label>
+                <label>{{ accountMode === 'existing' ? '已有账号用户名' : '新账号用户名' }} <span class="required">*</span></label>
+                <input v-model.trim="newMemberForm.username" type="text" class="form-input" placeholder="输入准确的 MateClaw 用户名" />
+                <span class="form-hint" v-if="accountMode === 'existing'">找不到账号时会明确报错，不会自动创建。</span>
+                <span class="form-hint" v-else>创建后会立即加入当前工作区；请通过安全渠道交付初始密码。</span>
+              </div>
+              <div v-if="accountMode === 'new'" class="form-group">
+                <label>{{ t('security.members.addDialog.password') }} <span class="required">*</span></label>
                 <input v-model="newMemberForm.password" type="password" class="form-input" :placeholder="t('security.members.addDialog.passwordPlaceholder')" />
-                <span class="form-hint">{{ t('security.members.addDialog.passwordHint') }}</span>
+                <span class="form-hint">新账号必须设置初始密码；已有账号的密码绝不会在这里修改。</span>
               </div>
-              <div class="form-group">
+              <div v-if="accountMode === 'new'" class="form-group">
                 <label>{{ t('security.members.addDialog.nickname') }}</label>
                 <input v-model.trim="newMemberForm.nickname" type="text" class="form-input" :placeholder="t('security.members.addDialog.nicknamePlaceholder')" />
               </div>
@@ -129,8 +175,8 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-secondary" @click="showAddDialog = false">{{ t('security.members.actions.cancel') }}</button>
-            <button class="btn-primary" @click="addMember" :disabled="!newMemberForm.username">{{ t('security.members.actions.confirm') }}</button>
+            <button class="btn-secondary" @click="closeAddMemberDialog">{{ t('security.members.actions.cancel') }}</button>
+            <button class="btn-primary" @click="addMember" :disabled="addMemberDisabled">{{ t('security.members.actions.confirm') }}</button>
           </div>
         </div>
       </div>
@@ -145,7 +191,10 @@ import { useI18n } from 'vue-i18n'
 import { mcToast } from '@/composables/useMcToast'
 import { workspaceTeamApi } from '@/api/index'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
-import { buildPilotTeamReadiness } from '@/views/Troubleshooting/evaluationPilot'
+import {
+  buildPilotTeamReadiness,
+  buildPilotTeamRepairPlan,
+} from '@/views/Troubleshooting/evaluationPilot'
 import { pilotMemberReturnPath } from '@/views/Troubleshooting/workbenchCapabilityMenu'
 
 const { t } = useI18n()
@@ -170,9 +219,14 @@ const memberLoadFailed = ref(false)
 const showAddDialog = ref(false)
 const pilotReturnTo = computed(() => pilotMemberReturnPath(route.query.source, route.query.returnTo))
 const pilotTeamReadiness = computed(() => buildPilotTeamReadiness(members.value))
+const pilotRepairPlan = computed(() => buildPilotTeamRepairPlan(pilotTeamReadiness.value))
 
 const defaultForm = () => ({ username: '', password: '', nickname: '', role: 'member' })
 const newMemberForm = reactive(defaultForm())
+const accountMode = ref<'existing' | 'new'>('existing')
+const canCreateAccounts = computed(() => store.isGlobalAdmin)
+const addMemberDisabled = computed(() => !newMemberForm.username
+  || (accountMode.value === 'new' && !newMemberForm.password))
 
 onMounted(() => {
   fetchMembers()
@@ -204,17 +258,29 @@ async function addMember() {
   try {
     await workspaceTeamApi.addMember(wsId, {
       username: newMemberForm.username,
-      password: newMemberForm.password || undefined,
-      nickname: newMemberForm.nickname || undefined,
+      createUser: accountMode.value === 'new',
+      password: accountMode.value === 'new' ? newMemberForm.password : undefined,
+      nickname: accountMode.value === 'new' ? newMemberForm.nickname || undefined : undefined,
       role: newMemberForm.role,
     })
     mcToast.success(t('security.members.messages.addSuccess'))
-    showAddDialog.value = false
-    Object.assign(newMemberForm, defaultForm())
+    closeAddMemberDialog()
     await fetchMembers()
   } catch (e: any) {
     mcToast.error(e?.msg || e?.message || t('security.members.messages.addFailed'))
   }
+}
+
+function openAddMemberDialog(role: 'admin' | 'member' | 'viewer' = 'member') {
+  accountMode.value = 'existing'
+  Object.assign(newMemberForm, defaultForm(), { role })
+  showAddDialog.value = true
+}
+
+function closeAddMemberDialog() {
+  showAddDialog.value = false
+  accountMode.value = 'existing'
+  Object.assign(newMemberForm, defaultForm())
 }
 
 function returnToPilot() {
@@ -269,7 +335,7 @@ function formatDate(dateStr: string) {
   background: var(--mc-bg-muted);
 }
 
-.pilot-member-handoff > div {
+.pilot-member-copy {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -293,9 +359,73 @@ function formatDate(dateStr: string) {
   line-height: 1.55;
 }
 
-.pilot-member-handoff .btn-secondary {
+.pilot-repair-plan {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.pilot-repair-plan b {
+  color: var(--mc-text-primary);
+  font-size: 11px;
+}
+
+.pilot-repair-plan span {
+  padding: 3px 7px;
+  border: 1px solid var(--mc-border);
+  border-radius: 999px;
+  background: var(--mc-bg-elevated);
+  color: var(--mc-text-secondary);
+  font-size: 10px;
+}
+
+.pilot-member-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
   flex: none;
 }
+
+.pilot-member-actions .btn-primary,
+.pilot-member-actions .btn-secondary {
+  flex: none;
+}
+
+.account-mode-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.account-mode-selector > button {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid var(--mc-border);
+  border-radius: var(--mc-radius-sm);
+  background: var(--mc-bg-elevated);
+  color: var(--mc-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-mode-selector > button.active {
+  border-color: var(--mc-primary, #D97757);
+  background: rgba(217, 119, 87, 0.08);
+}
+
+.account-mode-selector > button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.account-mode-selector b { color: var(--mc-text-primary); font-size: 12px; }
+.account-mode-selector small { font-size: 10px; line-height: 1.45; }
 
 .member-info {
   display: flex;
@@ -362,8 +492,16 @@ function formatDate(dateStr: string) {
     flex-direction: column;
   }
 
-  .pilot-member-handoff .btn-secondary {
+  .pilot-member-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pilot-member-actions .btn-primary,
+  .pilot-member-actions .btn-secondary {
     width: 100%;
   }
+
+  .account-mode-selector { grid-template-columns: 1fr; }
 }
 </style>
