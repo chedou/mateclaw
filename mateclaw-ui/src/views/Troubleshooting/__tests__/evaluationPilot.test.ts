@@ -3,6 +3,7 @@ import type {
   BaselineEvaluationRun,
   DiagnosisSummary,
   EvidenceEvaluationSample,
+  TroubleshootingPilotPlan,
 } from '@/api'
 import { buildEvaluationPilotQueue } from '../evaluationPilot'
 
@@ -24,17 +25,44 @@ describe('evaluation pilot hand-off queue', () => {
     ]
     const runs = [run('sample-ready', 'SCORED', 'HELPFUL')]
 
-    expect(buildEvaluationPilotQueue(diagnoses, samples, runs).map(row => [
+    expect(buildEvaluationPilotQueue(diagnoses, samples, runs, pilotPlan()).map(row => [
       row.diagnosisId,
       row.stage,
       row.ownerLabel,
     ])).toEqual([
-      ['diag-open', 'NEEDS_CLOSURE', '二线 / 三线'],
-      ['diag-sample', 'NEEDS_REAL_SAMPLE', '系统 / Guance 负责人'],
-      ['diag-reference', 'NEEDS_REFERENCE', '三线复核人'],
-      ['diag-baseline', 'NEEDS_BASELINE', '试点管理员'],
-      ['diag-ready', 'READY_FOR_REVIEW', '二线 + 三线 + Owner'],
+      ['diag-open', 'NEEDS_CLOSURE', '二线小周'],
+      ['diag-sample', 'NEEDS_REAL_SAMPLE', '观测负责人'],
+      ['diag-reference', 'NEEDS_REFERENCE', '三线小陈'],
+      ['diag-baseline', 'NEEDS_BASELINE', '三线小陈'],
+      ['diag-ready', 'READY_FOR_REVIEW', '二线小周、三线小陈、观测负责人'],
     ])
+  })
+
+  it('shows no pilot queue until an exact scope and three owners are configured', () => {
+    const unconfigured = { ...pilotPlan(), configured: false, modules: [] }
+
+    expect(buildEvaluationPilotQueue(
+      [diagnosis('diag-formal', 'CLOSED', false, '2026-08-13T04:00:00Z')],
+      [],
+      [],
+      unconfigured,
+    )).toEqual([])
+  })
+
+  it('admits only diagnoses inside the declared system and service scope', () => {
+    const inScope = diagnosis('diag-wechat', 'READY_FOR_HUMAN', false, '2026-08-13T04:00:00Z')
+    const wrongService = {
+      ...diagnosis('diag-other', 'READY_FOR_HUMAN', false, '2026-08-13T05:00:00Z'),
+      service: 'csdp-customer',
+    }
+    const wrongSystem = {
+      ...diagnosis('diag-other-system', 'READY_FOR_HUMAN', false, '2026-08-13T06:00:00Z'),
+      system: 'ICARE',
+    }
+
+    expect(buildEvaluationPilotQueue(
+      [wrongService, wrongSystem, inScope], [], [], pilotPlan(),
+    ).map(row => row.diagnosisId)).toEqual(['diag-wechat'])
   })
 
   it('excludes Replay and fixture samples from formal pilot progress', () => {
@@ -44,7 +72,7 @@ describe('evaluation pilot hand-off queue', () => {
     const fixture = sample('sample-fixture', 'diag-formal', 'READY_FOR_EVALUATION', true)
     fixture.diagnosisFixtureMode = true
 
-    expect(buildEvaluationPilotQueue([formal], [replay, fixture], []).at(0)?.stage)
+    expect(buildEvaluationPilotQueue([formal], [replay, fixture], [], pilotPlan()).at(0)?.stage)
       .toBe('NEEDS_REAL_SAMPLE')
   })
 
@@ -56,6 +84,7 @@ describe('evaluation pilot hand-off queue', () => {
       [formal],
       [accuracyOnly],
       [run('sample-accuracy', 'SCORED', 'HELPFUL')],
+      pilotPlan(),
     )
 
     expect(row.stage).toBe('ACCURACY_ONLY')
@@ -70,9 +99,38 @@ describe('evaluation pilot hand-off queue', () => {
       [formal],
       [ready],
       [run('sample-ready', 'MODEL_REJECTED', 'TECHNICAL_FAILURE')],
+      pilotPlan(),
     ).at(0)?.stage).toBe('BASELINE_BLOCKED')
   })
 })
+
+function pilotPlan(): TroubleshootingPilotPlan {
+  return {
+    workspaceId: '7',
+    configured: true,
+    enabled: true,
+    version: 1,
+    name: 'CSDP 首批试点',
+    modules: [{ system: 'csdp', service: 'csdp-wechat' }],
+    secondLine: member('11', '二线小周'),
+    thirdLine: member('12', '三线小陈'),
+    sourceOwner: member('13', '观测负责人'),
+    changedBy: 'admin',
+    changedAt: '2026-08-13T03:00:00Z',
+    changeReason: '固定首批范围与负责人',
+    blockers: [],
+  }
+}
+
+function member(userId: string, displayName: string) {
+  return {
+    userId,
+    username: `user-${userId}`,
+    nickname: displayName,
+    displayName,
+    workspaceRole: 'member',
+  }
+}
 
 function diagnosis(
   diagnosisId: string,

@@ -1006,6 +1006,48 @@ export interface OpenDiscoveryAgentBinding {
   ready: boolean
 }
 
+export interface TroubleshootingPilotModuleScope {
+  system: string
+  service: string
+}
+
+export interface TroubleshootingPilotMember {
+  /** Backend-issued Snowflake identifier; keep as a string when editing. */
+  userId: string | number
+  username?: string | null
+  nickname?: string | null
+  displayName: string
+  workspaceRole?: string | null
+}
+
+/** Latest immutable first-wave pilot declaration for the current Workspace. */
+export interface TroubleshootingPilotPlan {
+  workspaceId: string | number
+  configured: boolean
+  enabled: boolean
+  version: number
+  name?: string | null
+  modules: TroubleshootingPilotModuleScope[]
+  secondLine?: TroubleshootingPilotMember | null
+  thirdLine?: TroubleshootingPilotMember | null
+  sourceOwner?: TroubleshootingPilotMember | null
+  changedBy?: string | null
+  changedAt?: string | null
+  changeReason?: string | null
+  blockers: string[]
+}
+
+export interface DeclareTroubleshootingPilotPlanRequest {
+  name: string
+  modules: TroubleshootingPilotModuleScope[]
+  secondLineUserId: string | number
+  thirdLineUserId: string | number
+  sourceOwnerUserId: string | number
+  enabled: boolean
+  expectedVersion: number
+  reason: string
+}
+
 export type EvidenceRouteOrigin = 'WORKSPACE' | 'DEPLOYMENT' | 'UNCONFIGURED'
 
 export interface EvidenceCatalogSource {

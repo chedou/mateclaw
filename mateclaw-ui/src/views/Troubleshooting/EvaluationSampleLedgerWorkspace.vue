@@ -26,6 +26,11 @@
           </div>
         </header>
 
+        <EvaluationPilotPlanPanel
+          :plan="pilotPlan"
+          @updated="pilotPlan = $event"
+        />
+
         <div v-if="pilotVisibleRows.length" class="pilot-relay-list">
           <button
             v-for="row in pilotVisibleRows"
@@ -49,7 +54,8 @@
           </p>
         </div>
         <div v-else-if="!loading" class="pilot-relay-empty">
-          <div><b>还没有正式排障单</b><span>先回排障工作台创建真实记录；演练记录不会进入这条效果接力队列。</span></div>
+          <div v-if="pilotConfigured"><b>当前试点范围还没有正式排障单</b><span>只有命中上述系统 / 服务的真实记录才会进入；演练记录不计入。</span></div>
+          <div v-else><b>试点交接队列尚未启用</b><span>先配置精确范围和三位工作区负责人；系统不会用全量排障单伪装试点进度。</span></div>
           <el-button plain @click="$emit('back')">返回排障工作台</el-button>
         </div>
 
@@ -534,6 +540,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
+import EvaluationPilotPlanPanel from './EvaluationPilotPlanPanel.vue'
 import SynthesisPreviewDialog from './SynthesisPreviewDialog.vue'
 import {
   troubleshootingApi,
@@ -547,6 +554,7 @@ import {
   type EvaluationExpectedDisposition,
   type EvaluationHumanBaselineBasis,
   type EvaluationNorthStarComparison,
+  type TroubleshootingPilotPlan,
 } from '@/api'
 import {
   type EvaluationSampleCaptureContext,
@@ -565,7 +573,11 @@ import {
 } from './evaluationSamples'
 import { TROUBLESHOOTING_UI_LABELS } from './workbenchView'
 import { evidenceComparisonNarrative } from './evidencePlainLanguage'
-import { buildEvaluationPilotQueue } from './evaluationPilot'
+import {
+  buildEvaluationPilotQueue,
+  matchesPilotScope,
+  pilotPlanReady,
+} from './evaluationPilot'
 
 type DrawerPanel = 'detail' | 'reference' | 'capture' | 'metrics' | 'replay'
 
@@ -604,6 +616,7 @@ const northStar = ref<EvaluationNorthStarComparison | null>(null)
 const pilotDiagnoses = ref<DiagnosisSummary[]>([])
 const pilotLedger = ref<EvidenceEvaluationSampleLedger | null>(null)
 const pilotBaselineLedger = ref<BaselineEvaluationLedger | null>(null)
+const pilotPlan = ref<TroubleshootingPilotPlan | null>(null)
 const loading = ref(false)
 const captureLoading = ref(false)
 const replayCaptureLoading = ref(false)
@@ -644,17 +657,20 @@ const baselineCards = computed(() => baselineLedger.value
 const northStarCards = computed(() => northStar.value
   ? evaluationNorthStarCards(northStar.value)
   : [])
+const pilotConfigured = computed(() => pilotPlanReady(pilotPlan.value))
 const pilotQueue = computed(() => buildEvaluationPilotQueue(
   pilotDiagnoses.value,
   pilotLedger.value?.samples || [],
   pilotBaselineLedger.value?.runs || [],
+  pilotPlan.value,
 ))
 const pilotVisibleRows = computed(() => pilotQueue.value.slice(0, 6))
+const pilotScopedDiagnoses = computed(() => pilotDiagnoses.value.filter(
+  diagnosis => !diagnosis.rehearsal && matchesPilotScope(diagnosis, pilotPlan.value),
+))
 const pilotSummary = computed(() => ({
-  formal: pilotDiagnoses.value.filter(diagnosis => !diagnosis.rehearsal).length,
-  closed: pilotDiagnoses.value.filter(
-    diagnosis => !diagnosis.rehearsal && diagnosis.status === 'CLOSED',
-  ).length,
+  formal: pilotScopedDiagnoses.value.length,
+  closed: pilotScopedDiagnoses.value.filter(diagnosis => diagnosis.status === 'CLOSED').length,
   ready: pilotQueue.value.filter(row => row.stage === 'READY_FOR_REVIEW').length,
 }))
 const currentSamples = computed(() => ledger.value?.samples.filter(
@@ -844,6 +860,7 @@ async function loadLedger() {
       diagnosisResponse,
       portfolioSampleResponse,
       portfolioBaselineResponse,
+      pilotPlanResponse,
     ] = await Promise.all([
       troubleshootingApi.evaluationSamples(params),
       troubleshootingApi.evaluationBaselineRuns(params),
@@ -851,6 +868,7 @@ async function loadLedger() {
       troubleshootingApi.list({ limit: 100 }),
       portfolioSampleRequest,
       portfolioBaselineRequest,
+      troubleshootingApi.pilotPlan(),
     ])
     ledger.value = sampleResponse.data
     baselineLedger.value = baselineResponse.data
@@ -858,6 +876,7 @@ async function loadLedger() {
     pilotDiagnoses.value = diagnosisResponse.data
     pilotLedger.value = portfolioSampleResponse?.data || sampleResponse.data
     pilotBaselineLedger.value = portfolioBaselineResponse?.data || baselineResponse.data
+    pilotPlan.value = pilotPlanResponse.data
     if (selectedSampleId.value && !ledger.value?.samples.some(sample => sample.sampleId === selectedSampleId.value)) {
       selectedSampleId.value = null
       if (drawerPanel.value === 'detail' || drawerPanel.value === 'reference') {
@@ -1685,7 +1704,6 @@ function errorText(error: unknown) {
 
   .pilot-relay-metrics { width: 100%; }
   .pilot-relay-metrics div { flex: 1; min-width: 0; }
-
   .pilot-relay-row {
     grid-template-columns: 120px minmax(0, 1fr);
     align-items: start;
@@ -1724,7 +1742,6 @@ function errorText(error: unknown) {
   .pilot-relay-open { grid-column: 1; }
   .pilot-relay-empty { align-items: stretch; flex-direction: column; }
   .pilot-relay-empty .el-button { width: 100%; }
-
   .pilot-steps,
   .north-star-list,
   .human-baseline-fields { grid-template-columns: 1fr; }

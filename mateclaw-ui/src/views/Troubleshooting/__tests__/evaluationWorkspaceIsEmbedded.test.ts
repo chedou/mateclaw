@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import formalWorkbenchSource from '../FormalWorkbench.vue?raw'
 import capabilityWorkspaceSource from '../CapabilityWorkspaceShell.vue?raw'
 import caseKnowledgeWorkspaceSource from '../CaseKnowledgeImportWorkspace.vue?raw'
+import evaluationPilotPlanPanelSource from '../EvaluationPilotPlanPanel.vue?raw'
 import evaluationWorkspaceSource from '../EvaluationSampleLedgerWorkspace.vue?raw'
 
 describe('troubleshooting capability workspaces', () => {
@@ -70,5 +71,19 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationWorkspaceSource).toContain('buildEvaluationPilotQueue')
     expect(evaluationWorkspaceSource).toContain('演练、Recorded Replay 和 fixture 不计入真实效果')
     expect(evaluationWorkspaceSource).toContain('openDiagnosis(row.diagnosisId)')
+  })
+
+  it('configures an exact Workspace pilot without creating a second ledger', () => {
+    expect(evaluationWorkspaceSource).toContain('<EvaluationPilotPlanPanel')
+    expect(evaluationWorkspaceSource).toContain('@updated="pilotPlan = $event"')
+    expect(evaluationWorkspaceSource).toContain('troubleshootingApi.pilotPlan()')
+    expect(evaluationPilotPlanPanelSource).toContain('先固定试点范围和三位负责人')
+    expect(evaluationPilotPlanPanelSource).toContain('troubleshootingApi.declarePilotPlan')
+    expect(evaluationPilotPlanPanelSource).toContain('workspaceTeamApi.listMembers')
+    expect(evaluationPilotPlanPanelSource).toContain("workspaceStore.isAtLeast('admin')")
+    expect(evaluationPilotPlanPanelSource).toContain('expectedVersion: props.plan?.version || 0')
+    expect(evaluationPilotPlanPanelSource).toContain('三类职责必须由 3 名不同的工作区成员承担')
+    expect(evaluationPilotPlanPanelSource).toContain('当前未取得至少 3 名工作区成员')
+    expect(evaluationWorkspaceSource).not.toContain('pilotSampleApi')
   })
 })

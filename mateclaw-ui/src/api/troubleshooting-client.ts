@@ -16,6 +16,7 @@ import type {
   DeploymentTopologyAssetSummary,
   DeploymentTopologyImportResult,
   DeploymentTopologySopResult,
+  DeclareTroubleshootingPilotPlanRequest,
   DiagnosisDerivation,
   DiagnosisExperienceProjection,
   DiagnosisSummary,
@@ -63,6 +64,7 @@ import type {
   StoredBaselineEvaluationRun,
   StoredDiagnosis,
   StoredEvidenceEvaluationSample,
+  TroubleshootingPilotPlan,
   TopologyProbeEvidenceRun,
 } from './troubleshooting-contracts'
 
@@ -146,6 +148,19 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Clear workspace binding and fall back to process config agent-id. */
   clearOpenDiscoveryAgentBinding: () =>
     http.delete<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding'),
+
+  /** Latest immutable first-wave pilot declaration for this Workspace. */
+  pilotPlan: () =>
+    http.get<TroubleshootingPilotPlan>('/troubleshooting/pilot-plan'),
+
+  /** Appends a new pilot revision; member ids remain exact decimal strings. */
+  declarePilotPlan: (data: DeclareTroubleshootingPilotPlanRequest) =>
+    http.put<TroubleshootingPilotPlan>('/troubleshooting/pilot-plan', {
+      ...data,
+      secondLineUserId: String(data.secondLineUserId),
+      thirdLineUserId: String(data.thirdLineUserId),
+      sourceOwnerUserId: String(data.sourceOwnerUserId),
+    }),
 
   /** Scenario-oriented contract directory; reads configuration without querying a source. */
   evidenceCatalog: () => http.get<EvidenceQueryCatalog>(

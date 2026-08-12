@@ -2,6 +2,7 @@ import type {
   BaselineEvaluationRun,
   DiagnosisSummary,
   EvidenceEvaluationSample,
+  TroubleshootingPilotPlan,
 } from '@/api'
 
 export type EvaluationPilotStage =
@@ -28,42 +29,34 @@ export interface EvaluationPilotQueueRow {
 
 const STAGE_COPY: Record<EvaluationPilotStage, {
   stageLabel: string
-  ownerLabel: string
   nextAction: string
 }> = {
   NEEDS_CLOSURE: {
     stageLabel: '待登记结果',
-    ownerLabel: '二线 / 三线',
     nextAction: '复核候选定位，完成平台外处置后登记结果并关闭排障单。',
   },
   NEEDS_REAL_SAMPLE: {
     stageLabel: '待采集真源样本',
-    ownerLabel: '系统 / Guance 负责人',
     nextAction: '重新执行已审核的只读查询，仅保存脱敏 Guance 证据样本。',
   },
   NEEDS_REFERENCE: {
     stageLabel: '待填人工标准答案',
-    ownerLabel: '三线复核人',
     nextAction: '记录正确排查步骤；有工单或群聊时间戳时，一并登记原来人工定位耗时。',
   },
   NEEDS_BASELINE: {
     stageLabel: '待跑影子基线',
-    ownerLabel: '试点管理员',
     nextAction: '用冻结证据运行单模型基线，分开核对准确性和机器耗时。',
   },
   BASELINE_BLOCKED: {
     stageLabel: '影子运行需复核',
-    ownerLabel: '模型 / 试点管理员',
     nextAction: '上次影子运行没有形成可评估结果；先核对模型配置或校验失败原因。',
   },
   ACCURACY_ONLY: {
     stageLabel: '仅准确性样本',
-    ownerLabel: '周复盘负责人',
     nextAction: '这个冻结版本没有人工耗时，只能验证“准不准”，不进入省时对照；下一条真实样本必须补齐耗时依据。',
   },
   READY_FOR_REVIEW: {
     stageLabel: '可进入周复盘',
-    ownerLabel: '二线 + 三线 + Owner',
     nextAction: '一起复盘判断是否准确、人工与机器耗时，以及最终处置是否真正解决问题。',
   },
 }
@@ -76,7 +69,10 @@ export function buildEvaluationPilotQueue(
   diagnoses: ReadonlyArray<DiagnosisSummary>,
   samples: ReadonlyArray<EvidenceEvaluationSample>,
   runs: ReadonlyArray<BaselineEvaluationRun>,
+  plan: TroubleshootingPilotPlan | null,
 ): EvaluationPilotQueueRow[] {
+  if (!pilotPlanReady(plan)) return []
+
   const latestSampleByDiagnosis = new Map<string, EvidenceEvaluationSample>()
   samples
     .filter(sample => sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode)
@@ -99,6 +95,7 @@ export function buildEvaluationPilotQueue(
 
   return diagnoses
     .filter(diagnosis => !diagnosis.rehearsal)
+    .filter(diagnosis => matchesPilotScope(diagnosis, plan))
     .map((diagnosis) => {
       const sample = latestSampleByDiagnosis.get(diagnosis.diagnosisId) || null
       const stage = pilotStage(diagnosis, sample, sample ? runsBySample.get(sample.sampleId) || [] : [])
@@ -110,6 +107,7 @@ export function buildEvaluationPilotQueue(
         updatedAt: diagnosis.updateTime,
         stage,
         ...STAGE_COPY[stage],
+        ownerLabel: stageOwner(stage, plan),
         sampleId: sample?.sampleId || null,
       }
     })
@@ -118,6 +116,55 @@ export function buildEvaluationPilotQueue(
       if (stageOrder !== 0) return stageOrder
       return sortableTime(right.updatedAt) - sortableTime(left.updatedAt)
     })
+}
+
+export function pilotPlanReady(
+  plan: TroubleshootingPilotPlan | null,
+): plan is TroubleshootingPilotPlan & {
+  secondLine: NonNullable<TroubleshootingPilotPlan['secondLine']>
+  thirdLine: NonNullable<TroubleshootingPilotPlan['thirdLine']>
+  sourceOwner: NonNullable<TroubleshootingPilotPlan['sourceOwner']>
+} {
+  return Boolean(plan?.configured
+    && plan.enabled
+    && plan.modules.length
+    && plan.secondLine
+    && plan.thirdLine
+    && plan.sourceOwner
+    && !plan.blockers.length)
+}
+
+export function matchesPilotScope(
+  diagnosis: Pick<DiagnosisSummary, 'system' | 'service'>,
+  plan: TroubleshootingPilotPlan | null,
+) {
+  if (!pilotPlanReady(plan)) return false
+  const system = normalizeScopePart(diagnosis.system)
+  const service = normalizeScopePart(diagnosis.service)
+  return plan.modules.some(module => normalizeScopePart(module.system) === system
+    && normalizeScopePart(module.service) === service)
+}
+
+function stageOwner(
+  stage: EvaluationPilotStage,
+  plan: TroubleshootingPilotPlan & {
+    secondLine: NonNullable<TroubleshootingPilotPlan['secondLine']>
+    thirdLine: NonNullable<TroubleshootingPilotPlan['thirdLine']>
+    sourceOwner: NonNullable<TroubleshootingPilotPlan['sourceOwner']>
+  },
+) {
+  if (stage === 'NEEDS_CLOSURE') return plan.secondLine.displayName
+  if (stage === 'NEEDS_REAL_SAMPLE') return plan.sourceOwner.displayName
+  if (stage === 'READY_FOR_REVIEW') {
+    return [plan.secondLine, plan.thirdLine, plan.sourceOwner]
+      .map(member => member.displayName)
+      .join('、')
+  }
+  return plan.thirdLine.displayName
+}
+
+function normalizeScopePart(value: string) {
+  return value.trim().toLocaleLowerCase()
 }
 
 function pilotStage(
