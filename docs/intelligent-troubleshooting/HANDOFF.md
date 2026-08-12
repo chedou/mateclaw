@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-10
+> 更新时间：2026-08-13
 >
 > 仓库：`chedou/mateclaw`
 >
@@ -12,7 +12,7 @@
 >
 > 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.5 / 蓝图 v0.19**
 
-## 0. 当前总体进度（2026-08-03）
+## 0. 当前总体进度（2026-08-13）
 
 | 轴 | 当前事实 | 下一步 |
 |---|---|---|
@@ -20,6 +20,7 @@
 | T0.7 CI 基线 | GitHub Actions 6 次真实运行，前 2 次失败后最近 4 次连续成功；最新 run #6 总耗时 93s、主 job 89s | 89s 已严格上界证明 clone-to-diagnosis < 300s；继续作为默认路径回归，不冒充真源验收 |
 | T7 真源批次 | 本机真实只读预检前 4 格通过；服务端冻结未录制目标仍为 **0 / 20** | 窗口外先完成至少 20 份真实 owner 合同并冻结目标，再约内网窗口 |
 | Owner 接力 | 建议工作表已精确选好 **15 A + 2 B + 3 C = 20** 条，结构完整但占位符故意不可校验 | Owner 替换全部占位符；校验会一次列出全部安全字段路径，成功仍只是 `PREPARED_NOT_EXECUTABLE` |
+| 日常使用入口 | Web 表单、Web 对话、详情“五问”和 Workspace 数字员工绑定已接入同一 Diagnosis 主线 | 用一条新真实告警完成带登录态整链；真实企微通道与新一轮 Guance 真源仍需单独验收 |
 | 源质量 | `csdp:101014` 同时指向“一键授权登录”和“Pulsar 调度失败”，禁止代码猜测 | 保持隔离并行回源；不计入也不阻塞其余 28 条中的首批 20 条 |
 | T0.9 / 置信度 | 来源等级已先于 T0.8 落地；系统置信度由服务端事实派生并由人工 oracle 判分，拒绝 `0 / 0` | 等真实样本后再标定阈值 |
 | T0.10 结构账 | v4 §5 已逐项标明 `IMPLEMENTED / PARTIAL / NOT_IMPLEMENTED / PENDING-EVIDENCE`，并映射真实代码名 | 不新增空壳合同；selector 等 P4 真实场景来源，EvidenceBundle 等统一 plan/持久化边界后收敛 |
@@ -1345,6 +1346,26 @@ T31 受限开放调查运行审计（2026-08-12）：
 - V198 的 H2/MySQL/Kingbase 迁移形状已由 `TroubleshootingMigrationTest` 覆盖；本地后端在本轮为切换
   新代码已停止，但新进程未成功保持运行。进入下一次真实告警试用前，必须用 JDK 21 重启并
   直接确认 Flyway V198 已应用、`18088` 监听和详情投影可读；不得用单测代替这项运行验收。
+
+T32 告警入口、数字员工绑定与推广接力（2026-08-13，代码基线 `16a7cad8`）：
+
+- 新增认证 Web 对话入口 `POST /api/v1/troubleshooting/conversation/turns`，直接复用现有
+  `IntakeSession` 与 `TroubleshootingIntakeService`：信息不齐时继续补问，READY 后创建同一张
+  Diagnosis，并把同一份 `BusinessSummary` 留在对话中。Chat Console 只对高置信报障意图自动切入、
+  中置信先询问、低置信继续普通对话，不把全部聊天强行改造成排障。
+- V200 新增 Workspace 级 OPEN_DISCOVERY 数字员工绑定；管理员可在不重启进程的情况下选择员工，
+  也可显式准备唯一的 `TroubleshootingEvidenceTool`。Workspace 绑定优先于进程级 agent id，
+  但不会绕过 Agent 总开关、Workspace、模型、迭代预算或工具白名单校验。这是单个受限调查员工的
+  配置接缝，不代表多 Agent、自主组合 K8s/HCI/Guance 工具或生产写能力已经投产。
+- 正式工作台新增“对话发起排障”与“日常五问”进度条，统一回答“发生了什么、走哪种调查方式、
+  查了什么、证据说明什么、下一步怎么办”；详情仍只读取已持久化事实，缺失项继续明确显示未记录。
+- 新增 `/troubleshooting/t7-owner-contract`“标准查登记”页，支持首批 10 条 owner 草稿的本地编辑、
+  JSON 导入导出和完整性校验。校验通过只返回 `PREPARED_NOT_EXECUTABLE`，必须由开发写入服务端
+  catalog 并完成 owner 复核；它不等于仓库规定的 T7 正式 20 条目标，更不等于 T8 效果验收。
+- 本轮复核通过后端聚焦测试 `11/11`（对话 Intake、Workspace Agent 绑定、Intake reducer）和前端
+  聚焦测试 `33/33`（聊天意图、五问、标准查登记及正式入口挂载）。本机 `18088` 与 `5173` 均有监听，
+  未携带登录态访问后端健康接口返回预期 `401`，证明 HTTP 服务可达；尚未完成带登录态的浏览器整链、
+  真实企微通道告警或新一轮真实 Guance 取证验收，不能把聚焦测试写成已投产。
 
 后端定向测试命令：
 
