@@ -39,6 +39,36 @@ class TroubleshootingPlaybookVersionServiceTest {
             new ObjectMapper().findAndRegisterModules();
 
     @Test
+    void resolvesOnlyOneActiveSystemForAnExactRoute() {
+        TroubleshootingPlaybookVersionMapper mapper =
+                mock(TroubleshootingPlaybookVersionMapper.class);
+        TroubleshootingPlaybookVersionService service =
+                new TroubleshootingPlaybookVersionService(mapper, objectMapper);
+        when(mapper.listActiveSystemsForExactRoute(
+                7L, "csdp-wechat", "904003"))
+                .thenReturn(List.of("CSDP"));
+
+        assertThat(service.uniqueActiveSystemForExactRoute(
+                7L, "csdp-wechat", "904003"))
+                .contains("CSDP");
+    }
+
+    @Test
+    void refusesAnAmbiguousExactRouteWithoutPickingTheFirstSystem() {
+        TroubleshootingPlaybookVersionMapper mapper =
+                mock(TroubleshootingPlaybookVersionMapper.class);
+        TroubleshootingPlaybookVersionService service =
+                new TroubleshootingPlaybookVersionService(mapper, objectMapper);
+        when(mapper.listActiveSystemsForExactRoute(
+                7L, "shared-service", "904003"))
+                .thenReturn(List.of("CSDP", "OTHER"));
+
+        assertThat(service.uniqueActiveSystemForExactRoute(
+                7L, "shared-service", "904003"))
+                .isEmpty();
+    }
+
+    @Test
     void resolvesOnlyTheExactImmutablePlaybookVersion() {
         TroubleshootingPlaybookVersionMapper mapper =
                 mock(TroubleshootingPlaybookVersionMapper.class);

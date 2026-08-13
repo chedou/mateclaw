@@ -1789,6 +1789,24 @@ T55 Owner 15 字段目录统一（2026-08-13）：
   `git diff --check` 通过。
 - 本轮没有添加成员、保存试点计划或写入真实查询事实；Workspace 仍为 `1 / 3`，正式录制仍为 **`0 / 20`**。
 
+T56 原始告警一轮分析闭环（2026-08-13）：
+
+- 解决“告警已包含 `904003`，却因 Incident 没有 errorCode 进入 disabled miss-path Agent”的根因。
+  Intake 现仅从明确的“错误码 / error code”标签，或带“失败 / 错误”语义的括号码中提取；
+  `Error: timeout`、订单号、用户 ID、服务名和严重级不会被误升为确定性路由。多个候选码冲突时继续追问。
+- 当原告警没有系统标识、但已给出 `service + errorCode` 时，服务端只查同 Workspace 中
+  `active + APPROVED` 的精确选择器，并且仅在结果唯一时补全 system；0 条或 2 条及以上都不猜测。
+  该查询直接读 V186 权威版本表的 distinct system（limit 2），不扫描前端列表投影。
+- Chat 的“发起排障（粘贴告警）”现明确提示可直接粘贴整段告警。分析完成后抽屉保持打开，
+  直接显示业务结论，并提供“查看排障详情”，不再出现已成功但结果被立即关闭的断点。
+- 登录态真实浏览器验证已用用户提供的完整 ITGW 告警生成演练单
+  `diag-156cfe707066424cad311e7d8c6b67aa`：冻结 `csdp:904003`、Playbook
+  `playbook-97824512-a76e-464d-a48d-f4b91b6520fe@v2`，页面明确显示包含观测云只读证据，得到
+  `LOCATED / HIGH`和候选定位“ITGW 内容安全策略拦截请求”。这一结论仍需开发人工复核，
+  本次为演练记录，不会冒充 T7 正式录制或投产效果样本。
+- 最终回归：后端排障域与 Skill manifest `932 / 932`，前端 `344 / 344`，`vue-tsc --noEmit`
+  与 `git diff --check` 通过；Spec / Standards 双轴复审均 PASS。
+
 后端定向测试命令：
 
 ```bash

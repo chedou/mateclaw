@@ -104,6 +104,12 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
                 .singleElement()
                 .extracting("playbookId")
                 .isEqualTo("playbook-1");
+        assertThat(mapper.listActiveSystemsForExactRoute(
+                7L, "order-svc", "903001"))
+                .containsExactly("CSDP");
+        assertThat(mapper.listActiveSystemsForExactRoute(
+                8L, "order-svc", "903001"))
+                .isEmpty();
         assertThat(mapper.listUnverifiedKnowledgeEvidenceGradesAfter(0L, 10))
                 .singleElement()
                 .extracting("playbookId")

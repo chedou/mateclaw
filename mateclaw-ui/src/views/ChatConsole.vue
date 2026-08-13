@@ -1366,13 +1366,12 @@ async function onConversationIntakeReady(payload: {
   created: boolean | null
   rehearsal: boolean
 }) {
-  conversationIntakeOpen.value = false
   exitTroubleshootingIntakeMode()
   if (payload.created === false) {
-    ElMessage.info(`已汇合既有排障单 ${payload.diagnosisId}；结论已留在抽屉对话`)
+    ElMessage.info(`已汇合既有排障单 ${payload.diagnosisId}；分析结果已显示在排障对话`)
   } else {
     ElMessage.success(
-      `${payload.rehearsal ? '演练' : '正式'}排障单 ${payload.diagnosisId} 结论已回写对话（未跳转工作台）`,
+      `${payload.rehearsal ? '演练' : '正式'}排障单 ${payload.diagnosisId} 已生成；分析结果已显示在排障对话`,
     )
   }
 }

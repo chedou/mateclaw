@@ -40,6 +40,23 @@ describe('chatTroubleshootingIntent', () => {
     })).toBe(true)
   })
 
+  it('auto-starts for the full monitoring alert format used by on-call staff', () => {
+    const text = `客服数字化(WECHAT)-【ITGW访问失败】-事件
+■【紧急】2026-08-07 17:12:00 (r/e4d3f5)
+集群：sz3-s-k8s
+服务：csdp-wechat
+数量：6
+异常：ITGW访问失败【904003】
+说明：异常事件`
+
+    expect(classifyChatTroubleshootingIntent(text)).toBe('HIGH')
+    expect(shouldAutoStartTroubleshootingIntake(text, {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+    })).toBe(true)
+  })
+
   it('respects suppress and permission gates', () => {
     const text = '告警：会话创建失败'
     expect(shouldOfferTroubleshootingIntake(text, {

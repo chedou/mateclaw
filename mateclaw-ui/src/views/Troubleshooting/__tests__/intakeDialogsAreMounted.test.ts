@@ -7,6 +7,7 @@ import ctiDialogSource from '../CtiCreateConversationScenarioDialog.vue?raw'
 import deploymentDialogSource from '../DeploymentTopologyScenarioDialog.vue?raw'
 import conversationDialogSource from '../ConversationIntakeDialog.vue?raw'
 import firstUseGuideSource from '../FirstUseGuideDrawer.vue?raw'
+import chatConsoleSource from '../../ChatConsole.vue?raw'
 
 const INTAKE_DIALOGS = [
   'IncidentReportDialog',
@@ -51,6 +52,19 @@ describe('the troubleshooting intake dialogs', () => {
     expect(incidentDialogSource).toContain('v-model="form.occurredAt"')
     expect(conversationDialogSource).toContain('演练模式（推荐首次使用）')
     expect(conversationDialogSource).toContain('rehearsal: rehearsal.value')
+    expect(conversationDialogSource).toContain('直接粘贴完整告警')
+    expect(conversationDialogSource).toContain('查看排障详情')
+    expect(conversationDialogSource).toContain("query: { view: 'detail', diagnosisId: diagnosisId.value }")
     expect(scenarioDialogSource).toContain('返回粘贴告警')
+  })
+
+  it('keeps the completed analysis visible in Chat instead of closing the result drawer', () => {
+    const handler = chatConsoleSource.match(
+      /async function onConversationIntakeReady[\s\S]*?\n}\n\nfunction exitTroubleshootingIntakeMode/,
+    )?.[0]
+
+    expect(handler).toBeTruthy()
+    expect(handler).not.toContain('conversationIntakeOpen.value = false')
+    expect(handler).toContain('分析结果已显示在排障对话')
   })
 })

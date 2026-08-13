@@ -13,6 +13,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
+import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -47,6 +48,7 @@ public class TroubleshootingIntakeSessionService {
     private final TroubleshootingIntakeInvestigationMapper investigationMapper;
     private final ObjectMapper objectMapper;
     private final IntakeSessionReducer reducer;
+    private final TroubleshootingSopPersistenceService sopPersistence;
     private final TransactionTemplate transactionTemplate;
     private final ReentrantLock[] locks = new ReentrantLock[LOCK_STRIPES];
 
@@ -56,14 +58,16 @@ public class TroubleshootingIntakeSessionService {
             TroubleshootingIntakeMessageReceiptMapper receiptMapper,
             TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            TroubleshootingSopPersistenceService sopPersistence) {
         this(
                 sessionMapper,
                 receiptMapper,
                 investigationMapper,
                 objectMapper,
                 new IntakeSessionReducer(),
-                new TransactionTemplate(transactionManager));
+                new TransactionTemplate(transactionManager),
+                sopPersistence);
     }
 
     TroubleshootingIntakeSessionService(
@@ -72,7 +76,18 @@ public class TroubleshootingIntakeSessionService {
             TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
             IntakeSessionReducer reducer) {
-        this(sessionMapper, receiptMapper, investigationMapper, objectMapper, reducer, null);
+        this(sessionMapper, receiptMapper, investigationMapper, objectMapper, reducer, null, null);
+    }
+
+    TroubleshootingIntakeSessionService(
+            TroubleshootingIntakeSessionMapper sessionMapper,
+            TroubleshootingIntakeMessageReceiptMapper receiptMapper,
+            TroubleshootingIntakeInvestigationMapper investigationMapper,
+            ObjectMapper objectMapper,
+            IntakeSessionReducer reducer,
+            TroubleshootingSopPersistenceService sopPersistence) {
+        this(sessionMapper, receiptMapper, investigationMapper, objectMapper, reducer, null,
+                sopPersistence);
     }
 
     private TroubleshootingIntakeSessionService(
@@ -81,12 +96,14 @@ public class TroubleshootingIntakeSessionService {
             TroubleshootingIntakeInvestigationMapper investigationMapper,
             ObjectMapper objectMapper,
             IntakeSessionReducer reducer,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            TroubleshootingSopPersistenceService sopPersistence) {
         this.sessionMapper = sessionMapper;
         this.receiptMapper = receiptMapper;
         this.investigationMapper = investigationMapper;
         this.objectMapper = objectMapper;
         this.reducer = reducer;
+        this.sopPersistence = sopPersistence;
         this.transactionTemplate = transactionTemplate;
         for (int index = 0; index < locks.length; index++) {
             locks[index] = new ReentrantLock();
@@ -245,6 +262,7 @@ public class TroubleshootingIntakeSessionService {
             return IntakeDecision.from(current, false, true);
         }
         IntakeSession next = reducer.accept(current, envelope);
+        next = resolveExactOperationalRoute(next, envelope);
         if (next.equals(current)) {
             return IntakeDecision.from(current, false, false);
         }
@@ -271,11 +289,27 @@ public class TroubleshootingIntakeSessionService {
         String sessionId = newSessionId();
         claimMessage(envelope, sessionId);
         IntakeSession created = reducer.start(sessionId, envelope);
+        created = resolveExactOperationalRoute(created, envelope);
         insert(routingKey, created, envelope.deliveryConversationId());
         if (created.status() == IntakeSessionStatus.READY) {
             enqueueInvestigation(created);
         }
         return IntakeDecision.from(created, false, false);
+    }
+
+    private IntakeSession resolveExactOperationalRoute(
+            IntakeSession session,
+            IntakeMessageEnvelope envelope) {
+        if (sopPersistence == null || session == null
+                || session.system() != null
+                || session.service() == null
+                || session.errorCode() == null) {
+            return session;
+        }
+        return sopPersistence.findUniqueOperationalSystem(
+                        session.workspaceId(), session.service(), session.errorCode())
+                .map(system -> reducer.acceptResolvedSystem(session, envelope, system))
+                .orElse(session);
     }
 
     private void enqueueInvestigation(IntakeSession session) {

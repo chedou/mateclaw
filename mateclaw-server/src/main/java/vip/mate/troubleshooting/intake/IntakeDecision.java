@@ -70,6 +70,9 @@ public record IntakeDecision(
         if (notBlank(session.customerRef())) {
             recognized.put("客户ID", session.customerRef());
         }
+        if (notBlank(session.errorCode())) {
+            recognized.put("错误码", session.errorCode());
+        }
         if (session.occurredAt() != null) {
             recognized.put("发生时间", session.occurredAt().toString());
         }

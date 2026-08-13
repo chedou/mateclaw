@@ -191,6 +191,30 @@ class SopLifecycleTest {
     }
 
     @Test
+    void resolvesSystemOnlyFromOneExactOperationalServiceAndErrorCodeRoute() {
+        when(playbookVersions.uniqueActiveSystemForExactRoute(
+                WORKSPACE_ID, "csdp-wechat", "904003"))
+                .thenReturn(java.util.Optional.of("CSDP"));
+
+        assertThat(service.findUniqueOperationalSystem(
+                WORKSPACE_ID, "csdp-wechat", "904003"))
+                .contains("CSDP");
+        verify(playbookVersions).uniqueActiveSystemForExactRoute(
+                WORKSPACE_ID, "csdp-wechat", "904003");
+    }
+
+    @Test
+    void ambiguousOperationalRoutesNeverGuessASystem() {
+        when(playbookVersions.uniqueActiveSystemForExactRoute(
+                WORKSPACE_ID, "shared-service", "904003"))
+                .thenReturn(java.util.Optional.empty());
+
+        assertThat(service.findUniqueOperationalSystem(
+                WORKSPACE_ID, "shared-service", "904003"))
+                .isEmpty();
+    }
+
+    @Test
     void listsAFullCandidateContractWithTheSameIndexedIdentity() {
         SopEntry candidate = service.register(
                 WORKSPACE_ID, sop("candidate", false));

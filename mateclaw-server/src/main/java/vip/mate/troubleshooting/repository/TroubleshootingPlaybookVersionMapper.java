@@ -123,6 +123,27 @@ public interface TroubleshootingPlaybookVersionMapper
             @Param("system") String system,
             @Param("limit") int limit);
 
+    /**
+     * At most two live systems for an exact service/error-code selector.
+     * Two rows are enough to prove ambiguity without scanning the registry.
+     */
+    @Select("""
+            SELECT DISTINCT system
+              FROM mate_troubleshooting_playbook_version
+             WHERE workspace_id = #{workspaceId}
+               AND service = #{service}
+               AND error_code = #{errorCode}
+               AND active_selector_key = selector_key
+               AND status = 'APPROVED'
+               AND deleted = 0
+             ORDER BY system ASC
+             LIMIT 2
+            """)
+    List<String> listActiveSystemsForExactRoute(
+            @Param("workspaceId") long workspaceId,
+            @Param("service") String service,
+            @Param("errorCode") String errorCode);
+
     @Select(SELECT_COLUMNS + """
               FROM mate_troubleshooting_playbook_version
              WHERE source_origin = 'MANUAL'

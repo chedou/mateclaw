@@ -9,10 +9,12 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +30,21 @@ public final class IntakeSessionReducer {
     /** Embedded wall-clock in pasted alert banners, e.g. 【重要】2026-08-12 16:36:00. */
     private static final Pattern EMBEDDED_LOCAL_TIME = Pattern.compile(
             "(20\\d{2}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?)");
+    /**
+     * Explicit business error code embedded in an alert symptom, for example
+     * {@code 异常：ITGW访问失败【904003】}. This is not a fuzzy number extractor:
+     * the identifier must be bracketed and attached to failure/error wording.
+     */
+    private static final Pattern EXPLICIT_ERROR_CODE = Pattern.compile(
+            "(?m)^\\s*(?:错误码|error(?:[ _-]*code))\\s*[:：]\\s*"
+                    + "(?:【\\s*)?([A-Za-z0-9][A-Za-z0-9._-]{2,127})(?:\\s*】)?\\s*$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern FAILURE_SYMPTOM_ERROR_CODE = Pattern.compile(
+            "(?m)^\\s*(?:(?:异常|现象)\\s*[:：][^\\r\\n]{0,100}?"
+                    + "(?:失败|错误)[^\\r\\n]{0,80}?"
+                    + "|错误\\s*[:：][^\\r\\n]{0,180}?)"
+                    + "【\\s*(\\d{5,12})\\s*】\\s*$",
+            Pattern.CASE_INSENSITIVE);
     /**
      * Infra dial-probe / VM health alerts rarely name a customer; the product
      * already accepts the explicit token “未知”, so we only fill it when the
@@ -90,6 +107,41 @@ public final class IntakeSessionReducer {
                 first(parsed.traceId(), current.traceId()),
                 parsed.occurredAt() == null ? current.occurredAt() : parsed.occurredAt(),
                 mergeAttachments(current.attachments(), envelope.attachments()),
+                current.reportedAt(),
+                current.readyAt(),
+                current.timeline());
+    }
+
+    /**
+     * Applies a server-owned exact route match to an incomplete intake.
+     *
+     * <p>The route resolver may fill only the system when one and only one
+     * operational Playbook matches the already parsed service + explicit error
+     * code. It cannot invent a code from prose or choose between ambiguous
+     * systems.</p>
+     */
+    IntakeSession acceptResolvedSystem(
+            IntakeSession current,
+            IntakeMessageEnvelope envelope,
+            String resolvedSystem) {
+        if (current == null || current.status() == IntakeSessionStatus.READY) {
+            return current;
+        }
+        if (!isMissing(current.system()) || isMissing(resolvedSystem)
+                || isMissing(current.service()) || isMissing(current.errorCode())) {
+            return current;
+        }
+        return build(
+                current.intakeSessionId(),
+                envelope,
+                current.symptom(),
+                resolvedSystem,
+                current.service(),
+                current.customerRef(),
+                current.errorCode(),
+                current.traceId(),
+                current.occurredAt(),
+                current.attachments(),
                 current.reportedAt(),
                 current.readyAt(),
                 current.timeline());
@@ -182,7 +234,7 @@ public final class IntakeSessionReducer {
         String system = fields.get("system");
         String service = first(fields.get("service"), inferService(symptom));
         String customerRef = fields.get("customerRef");
-        if (isMissing(customerRef) && looksLikeInfraAlertWithoutCustomer(raw)) {
+        if (isMissing(customerRef) && looksLikeAlertWithoutCustomer(raw)) {
             customerRef = "未知";
         }
         Instant occurredAt = parseOccurredAt(fields.get("occurredAt"));
@@ -194,7 +246,7 @@ public final class IntakeSessionReducer {
                 system,
                 service,
                 customerRef,
-                fields.get("errorCode"),
+                resolveErrorCode(fields.get("errorCode"), raw),
                 fields.get("traceId"),
                 occurredAt);
     }
@@ -248,8 +300,58 @@ public final class IntakeSessionReducer {
         return cleaned;
     }
 
-    private boolean looksLikeInfraAlertWithoutCustomer(String raw) {
-        return raw != null && INFRA_ALERT_WITHOUT_CUSTOMER.matcher(raw).find();
+    private boolean looksLikeAlertWithoutCustomer(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        if (INFRA_ALERT_WITHOUT_CUSTOMER.matcher(raw).find()) {
+            return true;
+        }
+        // A structured service alarm often has no customer dimension. Keep the
+        // truth explicit as “未知” only when service, anomaly and event time are
+        // all present; an ordinary free-text report must still be followed up.
+        return Pattern.compile("(?m)^\\s*服务\\s*[:：]").matcher(raw).find()
+                && Pattern.compile("(?m)^\\s*(?:异常|现象)\\s*[:：]").matcher(raw).find()
+                && extractEmbeddedTime(raw) != null;
+    }
+
+    private String resolveErrorCode(String explicitFieldValue, String text) {
+        if (text == null || text.isBlank()) {
+            return normalizeErrorCode(explicitFieldValue);
+        }
+        Set<String> candidates = new LinkedHashSet<>();
+        String normalizedField = normalizeErrorCode(explicitFieldValue);
+        if (normalizedField != null) {
+            candidates.add(normalizedField);
+        }
+        collectErrorCodes(EXPLICIT_ERROR_CODE, text, candidates);
+        collectErrorCodes(FAILURE_SYMPTOM_ERROR_CODE, text, candidates);
+        // Conflicting bracketed codes must be clarified instead of selecting
+        // whichever one happened to appear first.
+        return candidates.size() == 1 ? candidates.iterator().next() : null;
+    }
+
+    private String normalizeErrorCode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim();
+        if (normalized.startsWith("【") && normalized.endsWith("】")) {
+            normalized = normalized.substring(1, normalized.length() - 1).trim();
+        }
+        return normalized.matches("[A-Za-z0-9][A-Za-z0-9._-]{2,127}")
+                ? normalized
+                : null;
+    }
+
+    private void collectErrorCodes(
+            Pattern pattern,
+            String text,
+            Set<String> candidates) {
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            candidates.add(matcher.group(1));
+        }
     }
 
     private Instant extractEmbeddedTime(String text) {
@@ -365,14 +467,14 @@ public final class IntakeSessionReducer {
                 .replace("-", "")
                 .replace(" ", "");
         return switch (key) {
-            case "现象", "问题", "问题现象", "symptom", "title", "监控项" -> "symptom";
+            case "现象", "异常", "问题", "问题现象", "symptom", "title", "监控项" -> "symptom";
             case "系统", "system", "业务系统" -> "system";
             case "服务", "service", "运行服务", "服务名" -> "service";
             case "客户id", "客户", "租户id", "customerid", "customerref", "影响对象" -> "customerRef";
             case "发生时间", "时间", "occurredat", "告警时间" -> "occurredAt";
             case "错误码", "errorcode" -> "errorCode";
             case "traceid", "psid", "psid/traceid" -> "traceId";
-            case "告警分组", "告警级别", "告警url", "报警url" -> "ignore";
+            case "集群", "数量", "说明", "告警分组", "告警级别", "告警url", "报警url" -> "ignore";
             default -> null;
         };
     }

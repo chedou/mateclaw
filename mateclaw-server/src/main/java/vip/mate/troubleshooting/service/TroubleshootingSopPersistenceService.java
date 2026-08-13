@@ -248,6 +248,24 @@ public class TroubleshootingSopPersistenceService {
         return entity == null ? null : read(entity);
     }
 
+    /**
+     * Resolves a missing system only when one operational route matches the
+     * already structured service and explicit error code.
+     *
+     * <p>This is intentionally not fuzzy text routing. Ambiguous/no matches
+     * stay empty so Intake can ask the reporter instead of elevating a guess to
+     * deterministic Playbook authority.</p>
+     */
+    public java.util.Optional<String> findUniqueOperationalSystem(
+            long workspaceId, String service, String errorCode) {
+        if (workspaceId <= 0 || service == null || service.isBlank()
+                || errorCode == null || errorCode.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return playbookVersions.uniqueActiveSystemForExactRoute(
+                workspaceId, service.trim(), errorCode.trim());
+    }
+
     /** Reads the latest contract for governance UI, including candidate/deprecated. */
     public SopEntry findLatest(long workspaceId, String system, String errorCode) {
         String routeKey = system.trim().toLowerCase(Locale.ROOT) + ":" + errorCode.trim();

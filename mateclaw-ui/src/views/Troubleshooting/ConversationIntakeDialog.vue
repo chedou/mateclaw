@@ -7,8 +7,8 @@
     @closed="resetLocal"
   >
     <div class="conv-guide">
-      <p>像在群里报障一样，先说现象；缺什么系统会追问。资料齐后生成<strong>同一张排障单</strong>。</p>
-      <p class="conv-hint">补充时可按行填写：系统 / 服务 / 客户ID / 发生时间；错误码有就写。</p>
+      <p><strong>直接粘贴完整告警</strong>，系统会识别服务、错误码和发生时间，匹配已审核的排障方法并开始只读调查。</p>
+      <p class="conv-hint">资料不足时系统会继续追问；有错误码请保留在告警原文中。</p>
     </div>
 
     <div class="conv-mode">
@@ -51,6 +51,12 @@
       <el-button text @click="$emit('switch-form')">改用表单填写</el-button>
       <el-button @click="open = false">关闭</el-button>
       <el-button
+        v-if="diagnosisId"
+        type="primary"
+        @click="goDiagnosisDetail"
+      >查看排障详情</el-button>
+      <el-button
+        v-else
         type="primary"
         :loading="loading"
         :disabled="!canSend"
@@ -63,6 +69,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { troubleshootingApi } from '@/api'
 import type { ConversationTurnResult } from '@/api'
 
@@ -70,6 +77,7 @@ type ChatRole = 'user' | 'assistant'
 type ChatMessage = { role: ChatRole; text: string }
 
 const open = defineModel<boolean>({ required: true })
+const router = useRouter()
 const emit = defineEmits<{
   'switch-form': []
   ready: [payload: { diagnosisId: string; created: boolean | null; rehearsal: boolean }]
@@ -144,6 +152,15 @@ function applyTurn(data: ConversationTurnResult) {
       rehearsal: data.rehearsal,
     })
   }
+}
+
+function goDiagnosisDetail() {
+  if (!diagnosisId.value) return
+  open.value = false
+  router.push({
+    path: '/troubleshooting',
+    query: { view: 'detail', diagnosisId: diagnosisId.value },
+  })
 }
 </script>
 

@@ -11,6 +11,7 @@ import vip.mate.MateClawApplication;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
+import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -28,6 +29,9 @@ class TroubleshootingIntakeSessionWiringTest {
             .withBean(
                     TroubleshootingIntakeInvestigationMapper.class,
                     () -> mock(TroubleshootingIntakeInvestigationMapper.class))
+            .withBean(
+                    TroubleshootingSopPersistenceService.class,
+                    () -> mock(TroubleshootingSopPersistenceService.class))
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
             .withBean(
                     PlatformTransactionManager.class,

@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -140,5 +141,60 @@ class ConversationIntakeServiceTest {
         assertThat(result.prompt()).contains("正式工作台");
         verify(intakeService).report(eq(ready), eq(true));
         verify(summaryRenderer).render(summary);
+    }
+
+    @Test
+    @DisplayName("完整 ITGW 告警一轮进入已审核规则并返回原因结论")
+    void fullItgwAlertReturnsADiagnosisAndCauseInOneTurn() {
+        String alert = """
+                客服数字化(WECHAT)-【ITGW访问失败】-事件
+                ■【紧急】2026-08-07 17:12:00 (r/e4d3f5)
+                集群：sz3-s-k8s
+                服务：csdp-wechat
+                数量：6
+                异常：ITGW访问失败【904003】
+                说明：异常事件
+                """;
+        AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
+        when(sessions.accept(any())).thenAnswer(call -> {
+            IntakeMessageEnvelope envelope = call.getArgument(0);
+            IntakeSession parsed = new IntakeSessionReducer().start("intake-itgw", envelope);
+            IntakeSession ready = new IntakeSession(
+                    parsed.intakeSessionId(), parsed.contractVersion(), parsed.workspaceId(),
+                    parsed.source(), parsed.conversationRef(), parsed.reporterRef(),
+                    IntakeSessionStatus.READY, parsed.symptom(), "CSDP", parsed.service(),
+                    parsed.customerRef(), parsed.errorCode(), parsed.traceId(), parsed.occurredAt(),
+                    parsed.attachments(), List.of(), parsed.reportedAt(), parsed.lastMessageAt(),
+                    parsed.lastMessageAt(), parsed.timeline());
+            storedSession.set(ready);
+            return IntakeDecision.from(ready, false, false);
+        });
+        when(sessions.getReady(1L, "intake-itgw"))
+                .thenAnswer(call -> storedSession.get());
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.diagnosisId()).thenReturn("diag-itgw");
+        when(intakeService.report(any(IntakeSession.class), eq(true)))
+                .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
+        BusinessSummary summary = mock(BusinessSummary.class);
+        DiagnosisExperienceProjection projection = mock(DiagnosisExperienceProjection.class);
+        when(projection.businessSummary()).thenReturn(summary);
+        when(projectionService.project(1L, "diag-itgw")).thenReturn(projection);
+        when(summaryRenderer.render(summary)).thenReturn(
+                "结论：ITGW 内容安全策略拦截请求\n正式工作台：/troubleshooting?diagnosisId=diag-itgw");
+
+        ConversationIntakeService.ConversationTurnResult result = service.turn(
+                1L, "admin", null, alert, true);
+
+        assertThat(result.status()).isEqualTo("READY");
+        assertThat(result.diagnosisId()).isEqualTo("diag-itgw");
+        assertThat(result.prompt()).contains("ITGW 内容安全策略拦截请求");
+        ArgumentCaptor<IntakeSession> reported = ArgumentCaptor.forClass(IntakeSession.class);
+        verify(intakeService).report(reported.capture(), eq(true));
+        assertThat(reported.getValue())
+                .extracting(
+                        IntakeSession::system,
+                        IntakeSession::service,
+                        IntakeSession::errorCode)
+                .containsExactly("CSDP", "csdp-wechat", "904003");
     }
 }

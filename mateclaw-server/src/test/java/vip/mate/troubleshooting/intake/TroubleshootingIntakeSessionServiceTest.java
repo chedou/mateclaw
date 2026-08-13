@@ -17,6 +17,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeMessageReceiptMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeInvestigationMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingIntakeSessionMapper;
+import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -39,6 +40,7 @@ class TroubleshootingIntakeSessionServiceTest {
     @Mock private TroubleshootingIntakeSessionMapper sessionMapper;
     @Mock private TroubleshootingIntakeMessageReceiptMapper receiptMapper;
     @Mock private TroubleshootingIntakeInvestigationMapper investigationMapper;
+    @Mock private TroubleshootingSopPersistenceService sopPersistence;
 
     private ObjectMapper objectMapper;
     private TroubleshootingIntakeSessionService service;
@@ -95,6 +97,84 @@ class TroubleshootingIntakeSessionServiceTest {
         assertEquals("msg-1", receipt.getValue().getSourceMessageId());
         assertEquals(session.getValue().getIntakeSessionId(),
                 receipt.getValue().getIntakeSessionId());
+    }
+
+    @Test
+    void exactApprovedRouteCompletesAPastedAlertWithoutGuessingTheSystem() throws Exception {
+        service = new TroubleshootingIntakeSessionService(
+                sessionMapper,
+                receiptMapper,
+                investigationMapper,
+                objectMapper,
+                new IntakeSessionReducer(),
+                sopPersistence);
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(null);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
+                .thenReturn(1);
+        when(investigationMapper.insert(any(TroubleshootingIntakeInvestigationEntity.class)))
+                .thenReturn(1);
+        when(sopPersistence.findUniqueOperationalSystem(7L, "csdp-wechat", "904003"))
+                .thenReturn(java.util.Optional.of("CSDP"));
+
+        IntakeDecision decision = service.accept(envelope(
+                "msg-itgw",
+                """
+                客服数字化(WECHAT)-【ITGW访问失败】-事件
+                ■【紧急】2026-08-07 17:12:00 (r/e4d3f5)
+                集群：sz3-s-k8s
+                服务：csdp-wechat
+                数量：6
+                异常：ITGW访问失败【904003】
+                说明：异常事件
+                """,
+                at(10, 0)));
+
+        assertEquals(IntakeSessionStatus.READY, decision.status());
+        ArgumentCaptor<TroubleshootingIntakeSessionEntity> stored =
+                ArgumentCaptor.forClass(TroubleshootingIntakeSessionEntity.class);
+        verify(sessionMapper).insert(stored.capture());
+        IntakeSession session = objectMapper.readValue(
+                stored.getValue().getAggregateJson(), IntakeSession.class);
+        assertEquals("CSDP", session.system());
+        assertEquals("csdp-wechat", session.service());
+        assertEquals("904003", session.errorCode());
+        assertTrue(session.missingFields().isEmpty());
+        verify(investigationMapper).insert(
+                any(TroubleshootingIntakeInvestigationEntity.class));
+    }
+
+    @Test
+    void missingOrAmbiguousRouteStaysInFollowUpAndNeverStartsInvestigation() {
+        service = new TroubleshootingIntakeSessionService(
+                sessionMapper,
+                receiptMapper,
+                investigationMapper,
+                objectMapper,
+                new IntakeSessionReducer(),
+                sopPersistence);
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(null);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
+                .thenReturn(1);
+        when(sopPersistence.findUniqueOperationalSystem(7L, "csdp-wechat", "904003"))
+                .thenReturn(java.util.Optional.empty());
+
+        IntakeDecision decision = service.accept(envelope(
+                "msg-itgw-no-route",
+                "服务：csdp-wechat\n异常：ITGW访问失败【904003】\n"
+                        + "发生时间：2026-08-07 17:12:00",
+                at(10, 0)));
+
+        assertEquals(IntakeSessionStatus.AWAITING_INPUT, decision.status());
+        assertEquals(List.of("system"), decision.missingFields());
+        assertTrue(decision.prompt().contains("错误码=904003"));
+        verify(investigationMapper, never()).insert(
+                any(TroubleshootingIntakeInvestigationEntity.class));
     }
 
     @Test

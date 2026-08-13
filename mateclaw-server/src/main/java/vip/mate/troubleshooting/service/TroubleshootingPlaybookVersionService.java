@@ -79,6 +79,24 @@ public class TroubleshootingPlaybookVersionService {
     }
 
     /**
+     * Resolves the system dimension only when one live authority exactly
+     * matches service + error code in the same workspace.
+     */
+    public Optional<String> uniqueActiveSystemForExactRoute(
+            long workspaceId,
+            String service,
+            String errorCode) {
+        validateWorkspace(workspaceId);
+        List<String> systems = mapper.listActiveSystemsForExactRoute(
+                workspaceId,
+                required(service, "service"),
+                required(errorCode, "errorCode"));
+        return systems.size() == 1
+                ? Optional.of(systems.getFirst())
+                : Optional.empty();
+    }
+
+    /**
      * Reads one immutable version by its own identity, at whatever version it is.
      *
      * <p>Unlike {@link #findByRef} this does not demand a known version number:
