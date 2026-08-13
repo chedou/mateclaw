@@ -60,6 +60,7 @@ public class TroubleshootingIntakeService {
     private final EvidenceSourceRouter evidenceRouter;
     private final EvidenceSpineOrchestrator evidenceSpineOrchestrator;
     private final TroubleshootingAgentTriageService agentTriageService;
+    private final ScenarioSymptomRouter scenarioRouter;
     private final Clock clock;
 
     public TroubleshootingIntakeService(
@@ -133,6 +134,11 @@ public class TroubleshootingIntakeService {
         this.evidenceRouter = evidenceRouter;
         this.evidenceSpineOrchestrator = evidenceSpineOrchestrator;
         this.agentTriageService = agentTriageService;
+        // Derived rather than injected: it reads the same registry and holds no
+        // state of its own, so every existing constructor keeps its arity.
+        this.scenarioRouter = sopPersistence == null
+                ? null
+                : new ScenarioSymptomRouter(sopPersistence);
         this.clock = clock;
     }
 
@@ -221,21 +227,37 @@ public class TroubleshootingIntakeService {
         requireSafeIncidentText(sanitizedIncident);
         List<EvidenceResult> sanitizedSuppliedEvidence =
                 TroubleshootingEvidenceSanitizer.sanitizeSupplied(evidence);
+        SopEntry sop = null;
         String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
         if (routeMissReason != null) {
-            return triageRouteMiss(
-                    workspaceId,
-                    sanitizedIncident,
-                    sanitizedSuppliedEvidence,
-                    rehearsal,
-                    routeMissReason,
-                    reportedAt,
-                    intakeReadyAt == null ? clock.instant() : intakeReadyAt,
-                    intakeSessionId);
+            // An alert raised by symptom rather than by error code can still be
+            // owned by a reviewed Playbook. Only a unique declared match counts;
+            // anything else keeps the miss reason it already had.
+            ScenarioSymptomRouter.ScenarioRoute scenarioRoute =
+                    scenarioRouter == null || !symptomRoutable(sanitizedIncident)
+                            ? null
+                            : scenarioRouter.route(workspaceId, sanitizedIncident);
+            if (scenarioRoute != null && scenarioRoute.matched()) {
+                sop = scenarioRoute.playbook();
+            } else {
+                return triageRouteMiss(
+                        workspaceId,
+                        sanitizedIncident,
+                        sanitizedSuppliedEvidence,
+                        rehearsal,
+                        scenarioRoute == null
+                                ? routeMissReason
+                                : routeMissReason + "; " + scenarioRoute.missReason(),
+                        reportedAt,
+                        intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                        intakeSessionId);
+            }
         }
 
-        SopEntry sop = sopPersistence.find(
-                workspaceId, sanitizedIncident.system(), sanitizedIncident.errorCode());
+        if (sop == null) {
+            sop = sopPersistence.find(
+                    workspaceId, sanitizedIncident.system(), sanitizedIncident.errorCode());
+        }
         if (sop == null) {
             return triageRouteMiss(
                     workspaceId,
@@ -320,6 +342,19 @@ public class TroubleshootingIntakeService {
         // orchestrator above so trace/contrast receive the observed correlation ID.
         return new PlaybookEvidenceCollector(evidenceRouter)
                 .collect(workspaceId, sop, incident, supplied);
+    }
+
+    /**
+     * Whether a symptom may stand in for the missing error code.
+     *
+     * <p>Only the absent code is substitutable. An unstructured report is a
+     * different failure: its system and service were never confirmed, so
+     * matching its free text against a Playbook would attach reviewed authority
+     * to fields nobody has verified. Those keep going to the miss path, where
+     * Intake can still ask for the structured fields.
+     */
+    private boolean symptomRoutable(IncidentContext incident) {
+        return incident.completeness() != IncidentCompleteness.SYMPTOM;
     }
 
     private String deterministicRouteMissReason(IncidentContext incident) {

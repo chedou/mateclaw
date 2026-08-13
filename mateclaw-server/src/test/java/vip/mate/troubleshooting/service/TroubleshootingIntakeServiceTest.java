@@ -44,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -217,7 +218,11 @@ class TroubleshootingIntakeServiceTest {
                 incident,
                 List.of(),
                 false,
-                "incident carries no errorCode; deterministic routing needs one",
+                // The miss path is told that symptom routing was tried and why it
+                // failed, so "no route" can be distinguished from "never looked".
+                "incident carries no errorCode; deterministic routing needs one;"
+                        + " no approved scenario Playbook for 'CSDP' declares"
+                        + " a trigger matching this symptom",
                 NOW,
                 NOW))
                 .thenReturn(stored);
@@ -231,7 +236,7 @@ class TroubleshootingIntakeServiceTest {
         StoredDiagnosis result = wired.report(WORKSPACE_ID, incident, List.of(), false);
 
         assertThat(result).isSameAs(stored);
-        verifyNoInteractions(sopPersistence, diagnosisService, evidenceRouter);
+        verifyNoInteractions(diagnosisService, evidenceRouter);
     }
 
     @Test
@@ -677,7 +682,9 @@ class TroubleshootingIntakeServiceTest {
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("no errorCode");
 
-        verifyNoInteractions(sopPersistence, diagnosisService);
+        // The registry is consulted for a scenario owner first; only the absence
+        // of one leaves the miss path, which is unwired here.
+        verifyNoInteractions(diagnosisService);
     }
 
     @Test
@@ -699,6 +706,84 @@ class TroubleshootingIntakeServiceTest {
     }
 
     // ---------- fixtures ----------
+
+    /**
+     * A monitoring platform raises dial-test failures by symptom, so requiring
+     * an error code meant no reviewed Playbook could ever own this whole class
+     * of alert; every one of them spent a model call to reach an abstention.
+     */
+    @Test
+    void anAlertWithNoErrorCodeReachesTheScenarioPlaybookInsteadOfTheAgent() {
+        SopEntry probe = scenarioSop();
+        when(sopPersistence.list(eq(WORKSPACE_ID), eq("approved"), eq("CSDP"), anyInt()))
+                .thenReturn(List.of(scenarioSummary(probe)));
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", probe.errorCode())).thenReturn(probe);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        wired.report(
+                WORKSPACE_ID,
+                incident(null, IncidentCompleteness.STRUCTURED),
+                List.of(evidence()),
+                false);
+
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), any(), eq(probe), any(),
+                anyBoolean(), anyBoolean(), any(), any());
+        verifyNoInteractions(agentTriageService);
+    }
+
+    /**
+     * A symptom may replace only the missing code. An unstructured report never
+     * had its system and service confirmed, so matching its text would attach
+     * reviewed authority to fields nobody verified.
+     */
+    @Test
+    void anUnstructuredReportIsNotRoutedByItsSymptomEvenWhenAPlaybookWouldMatch() {
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
+        when(agentTriageService.triage(
+                anyLong(), any(), any(), anyBoolean(), any(), any(), any()))
+                .thenReturn(stored);
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        wired.report(
+                WORKSPACE_ID,
+                incident(null, IncidentCompleteness.SYMPTOM),
+                List.of(),
+                false);
+
+        verify(sopPersistence, never()).list(anyLong(), any(), any(), anyInt());
+        verify(agentTriageService).triage(
+                anyLong(), any(), any(), anyBoolean(), any(), any(), any());
+    }
+
+    private SopEntry scenarioSop() {
+        return new SopEntry(
+                "sop-topology", SopEntry.CURRENT_CONTRACT_VERSION, "CSDP",
+                "scenario:deployment_topology_probe", "order-svc",
+                "部署拓扑拨测", "", "availability", "SRE", "approved", true,
+                List.of(new EvidenceRequest("EV-1", "log_count", "确认发生", Map.of(), "-15m", true)),
+                List.of(new AnomalyCriterion("error_present", "EV-1", "错误码日志出现",
+                        new Criterion.NumericGte("count", 1))),
+                List.of(new DiagnosisRule("R-a", List.of("error_present"),
+                        "拨测失败", "目标不可达", Confidence.HIGH, false)),
+                List.of(),
+                List.of("订单创建超时"));
+    }
+
+    private SopSummary scenarioSummary(SopEntry entry) {
+        return new SopSummary(
+                entry.sopId(), entry.routingKey(), entry.system(), entry.errorCode(),
+                entry.service(), entry.status(), entry.verified(), entry.operational(),
+                java.time.LocalDateTime.now(), java.time.LocalDateTime.now(),
+                1, null, null, null, null, null);
+    }
 
     private IncidentContext incident(String errorCode, IncidentCompleteness completeness) {
         return new IncidentContext(
