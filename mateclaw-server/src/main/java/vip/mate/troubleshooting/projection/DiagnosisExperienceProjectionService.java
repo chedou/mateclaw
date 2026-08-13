@@ -56,6 +56,7 @@ public class DiagnosisExperienceProjectionService {
     private final InvestigationTraceProjector investigationTraceProjector;
     private final ScenarioEvidenceRunAuditService scenarioEvidenceRuns;
     private final OpenDiscoveryRunAuditService openDiscoveryRuns;
+    private final SystemOnboardingGapService onboardingGaps;
 
     public DiagnosisExperienceProjectionService(
             TroubleshootingPersistenceService persistence,
@@ -65,7 +66,8 @@ public class DiagnosisExperienceProjectionService {
             TroubleshootingPlaybookVersionService playbookVersions,
             InvestigationTraceProjector investigationTraceProjector,
             ScenarioEvidenceRunAuditService scenarioEvidenceRuns,
-            OpenDiscoveryRunAuditService openDiscoveryRuns) {
+            OpenDiscoveryRunAuditService openDiscoveryRuns,
+            SystemOnboardingGapService onboardingGaps) {
         this.persistence = persistence;
         this.derivationService = derivationService;
         this.evidenceProjector = evidenceProjector;
@@ -74,6 +76,7 @@ public class DiagnosisExperienceProjectionService {
         this.investigationTraceProjector = investigationTraceProjector;
         this.scenarioEvidenceRuns = scenarioEvidenceRuns;
         this.openDiscoveryRuns = openDiscoveryRuns;
+        this.onboardingGaps = onboardingGaps;
     }
 
     public DiagnosisExperienceProjection project(long workspaceId, String diagnosisId) {
@@ -100,15 +103,22 @@ public class DiagnosisExperienceProjectionService {
         ImpactView impact = evidenceFacts.impact();
         capabilityLimits.addAll(evidenceFacts.capabilityLimits());
 
+        // Only an abstention can be caused by an unonboarded system; a conclusion
+        // that reached a verdict already had the layers it needed.
+        List<SystemOnboardingGap> gaps =
+                conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE
+                        ? onboardingGaps.inspect(workspaceId, diagnosis.incident())
+                        : List.of();
+
         BusinessSummary business = new BusinessSummary(
                 diagnosis.diagnosisId(),
                 conclusionType,
                 headline(conclusionType),
-                narrative(diagnosis, conclusionType),
+                narrative(diagnosis, conclusionType, gaps),
                 confidence,
                 problem(diagnosis),
                 impact,
-                nextStep(diagnosis, conclusionType),
+                nextStep(diagnosis, conclusionType, gaps),
                 diagnosis.status(),
                 diagnosis.timings(),
                 diagnosis.fixtureMode());
@@ -235,7 +245,14 @@ public class DiagnosisExperienceProjectionService {
         };
     }
 
-    private String narrative(Diagnosis diagnosis, ConclusionType conclusionType) {
+    private String narrative(
+            Diagnosis diagnosis,
+            ConclusionType conclusionType,
+            List<SystemOnboardingGap> gaps) {
+        if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE && !gaps.isEmpty()) {
+            return "这个系统还没有接入到可取证的状态，所以本次一条证据都没有采集到，"
+                    + "也没有给出根因。下面列出的是配置缺口，不是报障人要补的材料。";
+        }
         return switch (conclusionType) {
             case LOCATED -> "经过审核的排障规则命中，当前定位为："
                     + fallback(diagnosis.rootCause(), diagnosis.summary(), "已定位异常")
@@ -253,7 +270,13 @@ public class DiagnosisExperienceProjectionService {
         return fallback(diagnosis.incident().title(), diagnosis.summary(), "待确认故障现象");
     }
 
-    private NextStep nextStep(Diagnosis diagnosis, ConclusionType conclusionType) {
+    private NextStep nextStep(
+            Diagnosis diagnosis,
+            ConclusionType conclusionType,
+            List<SystemOnboardingGap> gaps) {
+        if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE && !gaps.isEmpty()) {
+            return onboardingNextStep(diagnosis, gaps);
+        }
         String team = fallback(diagnosis.routeToTeam(), "责任开发");
         return switch (conclusionType) {
             case LOCATED -> {
@@ -283,6 +306,30 @@ public class DiagnosisExperienceProjectionService {
                     "补齐缺失的日志、调用链或指标证据后重新调查。",
                     "证据不足，系统已弃权且没有给出根因；" + WRITE_BOUNDARY);
         };
+    }
+
+    private NextStep onboardingNextStep(
+            Diagnosis diagnosis,
+            List<SystemOnboardingGap> gaps) {
+        StringBuilder text = new StringBuilder("「")
+                .append(fallback(diagnosis.incident().system(), "该系统"))
+                .append("」还没接入到可取证状态，还差 ")
+                .append(gaps.size())
+                .append(" 层：");
+        for (int index = 0; index < gaps.size(); index++) {
+            text.append('\n')
+                    .append(index + 1)
+                    .append(". ")
+                    .append(gaps.get(index).title())
+                    .append(" —— ")
+                    .append(gaps.get(index).detail());
+        }
+        text.append("\n这些要").append(gaps.get(0).owner())
+                .append("在排障配置里补齐；报障人再补日志也不会改变结果。");
+        return new NextStep(
+                "先完成系统接入",
+                text.toString(),
+                "系统尚未接入，本次没有取到任何证据，也没有给出根因；" + WRITE_BOUNDARY);
     }
 
     private List<EvidenceStep> evidenceSteps(

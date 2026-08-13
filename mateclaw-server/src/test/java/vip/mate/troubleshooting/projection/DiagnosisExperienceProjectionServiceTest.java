@@ -45,6 +45,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -77,6 +79,9 @@ class DiagnosisExperienceProjectionServiceTest {
     @Mock
     private OpenDiscoveryRunAuditService openDiscoveryRuns;
 
+    @Mock
+    private SystemOnboardingGapService onboardingGaps;
+
     private DiagnosisExperienceProjectionService service;
 
     @BeforeEach
@@ -89,7 +94,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 playbookVersions,
                 new InvestigationTraceProjector(),
                 runAudits,
-                openDiscoveryRuns);
+                openDiscoveryRuns,
+                onboardingGaps);
     }
 
     @Test
@@ -370,6 +376,45 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(InvestigationMode.OPEN_DISCOVERY);
         assertThat(result.developerEvidence().routeAuthority())
                 .isEqualTo(RouteAuthority.MODEL_PROPOSED);
+    }
+
+    /**
+     * An unonboarded system collects nothing, so telling the reporter to bring
+     * more logs points them at evidence no configured path would have read.
+     */
+    @Test
+    void anUnonboardedSystemAsksForConfigurationRatherThanMoreEvidence() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(abstainedDiagnosis(), 0, true));
+        when(onboardingGaps.inspect(eq(WORKSPACE_ID), any())).thenReturn(List.of(
+                new SystemOnboardingGap(
+                        SystemOnboardingGapKind.EVIDENCE_ROUTE,
+                        "这个系统没有声明取证路由",
+                        "没有显式声明就不会有默认源",
+                        "工作区管理员")));
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.businessSummary().nextStep().label()).isEqualTo("先完成系统接入");
+        assertThat(result.businessSummary().nextStep().text())
+                .contains("这个系统没有声明取证路由")
+                .contains("工作区管理员");
+        assertThat(result.businessSummary().nextStep().text())
+                .as("the reporter cannot close a configuration gap by adding logs")
+                .doesNotContain("补齐缺失的日志");
+        assertThat(result.businessSummary().narrative()).contains("配置缺口");
+    }
+
+    @Test
+    void aFullyOnboardedSystemKeepsTheOrdinaryEvidenceShortageWording() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(abstainedDiagnosis(), 0, true));
+        when(onboardingGaps.inspect(eq(WORKSPACE_ID), any())).thenReturn(List.of());
+
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.businessSummary().nextStep().label()).isEqualTo("下一步");
+        assertThat(result.businessSummary().nextStep().text()).contains("补齐缺失的日志");
     }
 
     @Test
