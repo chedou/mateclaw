@@ -1,0 +1,75 @@
+# Test-environment overlay for docker-compose.yml.
+#
+# Usage (the base file is always required; this one only overrides):
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+# or just run scripts/deploy-test-env.sh, which passes both.
+#
+# Three things this adds, each for a reason that bit us in the base stack:
+#
+#  1. Variables the base compose never forwards. `.env.example` documents
+#     MATECLAW_PUBLIC_BASE_URL, MATECLAW_OPENAPI_EXPOSE_UI and the whole
+#     MATECLAW_TROUBLESHOOTING_* block, but docker-compose.yml has no
+#     `environment:` entry for them, so setting them in .env silently does
+#     nothing under Docker. A test environment is exactly where someone will
+#     try to switch those on and conclude the feature is broken.
+#
+#  2. A predictable heap. Nothing in the repo sets -Xmx, so the JVM takes 25%
+#     of whatever the host has. The same image then behaves differently on a
+#     8 GB and a 64 GB box. MaxRAMPercentage against an explicit mem_limit
+#     makes the sizing a property of this file instead of the hardware.
+#
+# Deliberately contains nothing database-specific, so the same overrides apply
+# whether the stack runs on the bundled PostgreSQL (docker-compose.yml) or an
+# external MySQL (docker-compose.mysql.yml). The PostgreSQL loopback port lives
+# in docker-compose.pg-test.yml for that reason.
+
+services:
+  mateclaw-server:
+    environment:
+      # ---- forwarded because the base compose does not ----
+      #
+      # Absolute origin used when a deep link has to survive leaving the
+      # browser (IM messages, copied links). Without it the server falls back
+      # to the request host, which is wrong behind a proxy.
+      MATECLAW_PUBLIC_BASE_URL: ${MATECLAW_PUBLIC_BASE_URL:-}
+      # Swagger stays admin-only on the production DB profiles. A test box is
+      # the sanctioned place to open it; still defaults to closed.
+      MATECLAW_OPENAPI_EXPOSE_UI: ${MATECLAW_OPENAPI_EXPOSE_UI:-false}
+      #
+      # Troubleshooting read-only evidence. Every switch defaults to OFF and
+      # must stay off until a workspace owner has verified the real Guance
+      # measurement/field contract. Turning these on does not by itself make
+      # evidence trustworthy — fixtureMode remains true until verified data
+      # actually arrives.
+      MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED: ${MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED:-false}
+      MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL: ${MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL:-}
+      MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY: ${MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY:-}
+      MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP: ${MATECLAW_TROUBLESHOOTING_GUANCE_ALLOW_INSECURE_HTTP:-false}
+      MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED: ${MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED:-false}
+      MATECLAW_TROUBLESHOOTING_AGENT_ENABLED: ${MATECLAW_TROUBLESHOOTING_AGENT_ENABLED:-false}
+      MATECLAW_TROUBLESHOOTING_AGENT_ID: ${MATECLAW_TROUBLESHOOTING_AGENT_ID:-0}
+      MATECLAW_TROUBLESHOOTING_WORKBENCH_BASE_URL: ${MATECLAW_TROUBLESHOOTING_WORKBENCH_BASE_URL:-}
+      # The miss-path Agent's budget. Defaults mirror application.yml, so
+      # leaving these unset changes nothing; they are forwarded only so a test
+      # run can be tightened without rebuilding the image.
+      MATECLAW_TROUBLESHOOTING_AGENT_MAX_ITERATIONS: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_ITERATIONS:-6}
+      MATECLAW_TROUBLESHOOTING_AGENT_MAX_EVIDENCE_REQUESTS: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_EVIDENCE_REQUESTS:-6}
+      MATECLAW_TROUBLESHOOTING_AGENT_TRIAGE_TIMEOUT: ${MATECLAW_TROUBLESHOOTING_AGENT_TRIAGE_TIMEOUT:-20s}
+      MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:-32000}
+      #
+      # ---- heap ----
+      #
+      # Replaces, not extends, the ENV set in the Dockerfile — so the timezone
+      # and encoding flags have to be repeated here or CJK output and
+      # timestamps regress.
+      JAVA_TOOL_OPTIONS: >-
+        -Duser.timezone=Asia/Shanghai
+        -Dsun.jnu.encoding=UTF-8
+        -XX:MaxRAMPercentage=${TEST_JVM_MAX_RAM_PERCENT:-45}
+        -XX:+ExitOnOutOfMemoryError
+
+    # Sized against shm_size: 2gb, which is charged to this same container.
+    # At the 45% default the heap gets ~2.7 GB of the 6 GB, leaving room for
+    # the 2 GB /dev/shm plus JVM off-heap and Chromium's own processes.
+    mem_limit: ${TEST_MEM_LIMIT:-6g}
+    cpus: ${TEST_CPUS:-4}

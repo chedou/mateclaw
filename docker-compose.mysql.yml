@@ -1,0 +1,79 @@
+# MateClaw against an EXTERNAL MySQL server.
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.mysql.yml \
+#                  -f docker-compose.test.yml up -d
+#
+# This is an overlay on the base stack, so the server definition is never
+# duplicated and cannot drift. Two things have to be undone, and ordinary
+# merging cannot undo anything:
+#
+#   `depends_on` is a mapping, and merging a mapping only adds and overwrites
+#   keys — there is no way to subtract one. Left alone, the server would keep
+#   waiting for a PostgreSQL container this deployment does not run. The
+#   `!override` tag replaces the whole attribute instead of merging into it.
+#
+#   The `postgres` service itself cannot be deleted by an overlay either, so it
+#   is parked behind a profile that nothing activates. Compose then skips it.
+#   It has no `build:`, so it costs nothing at build time either.
+#
+# Both tags are part of the Compose merge specification, but they were added in
+# Compose v2.24+. scripts/deploy-test-env.sh verifies the merged model really
+# lost the PostgreSQL dependency before starting anything, because an older
+# Compose that ignored the tag would otherwise hang on a health gate that can
+# never pass.
+#
+# What you must supply in .env (or via scripts/deploy-test-env.sh --db-host):
+#   DB_HOST      your MySQL server address
+#   DB_PORT      3306 unless it is non-standard
+#   DB_NAME      mateclaw
+#   DB_USERNAME  an account that can reach DB_NAME
+#   DB_PASSWORD  its password
+#
+# Create the database yourself before the first start, and be explicit:
+#
+#   CREATE DATABASE mateclaw CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+#
+# application-mysql.yml does connect with createDatabaseIfNotExist=true, and
+# its comment there claims every CREATE TABLE pins utf8mb4 so the database
+# default cannot matter. That is not quite true: of the 121 CREATE TABLE
+# statements under db/migration/mysql, 101 pin a charset and 20 inherit
+# whatever the database was created with. On a server whose default is utf8mb4
+# (MySQL 8) auto-creation lands in the right place anyway; on MySQL 5.7, whose
+# default is latin1, those 20 tables would silently reject Chinese text. One
+# explicit CREATE DATABASE removes the question.
+#
+# Requires MySQL 5.7 or newer either way — 12 migrations use JSON columns.
+# 8.0 is the safe choice.
+#
+# The account also needs DDL rights on that database: Flyway runs all 196
+# migrations at every startup.
+#
+# DB_ADMIN_PASSWORD goes unused here. It exists only to bootstrap the bundled
+# PostgreSQL container, and so does docker/postgres/init/10-app-role.sh — with
+# an external MySQL, nobody creates the application account for you.
+
+services:
+  # Kept in the model so the overlay stays a pure diff, but never started:
+  # no command activates this profile.
+  postgres:
+    profiles:
+      - unused-with-external-mysql
+
+  mateclaw-server:
+    # Replaces the inherited {postgres, searxng} gate rather than adding to it.
+    # An external database is also not ours to health-check from here; the
+    # server fails fast by itself if it cannot connect.
+    depends_on: !override
+      searxng:
+        condition: service_healthy
+
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql
+      # The base file hardcodes the compose-internal PostgreSQL; these have to
+      # point at the real server instead.
+      DB_HOST: ${DB_HOST:?DB_HOST is required — set your MySQL server address in .env}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-mateclaw}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required in .env}

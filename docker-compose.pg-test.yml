@@ -1,0 +1,16 @@
+# PostgreSQL-only test overlay: publish the database on loopback.
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.test.yml \
+#                  -f docker-compose.pg-test.yml up -d
+#
+# The base file publishes no port at all so production cannot be reached from
+# outside the compose network. A test box needs psql from the host shell, which
+# is what this adds — and nothing more.
+
+services:
+  postgres:
+    # Loopback only. Do NOT change this to "5432:5432" or 0.0.0.0; that binds
+    # the database to every interface on the host.
+    ports:
+      - "127.0.0.1:${TEST_DB_HOST_PORT:-5432}:5432"
