@@ -270,12 +270,33 @@ type OwnerProgressFieldKey =
   | 'historicalOccurredAt'
   | 'historicalSourceReference'
 
-type OwnerProgressField = {
+type NormalizedOwnerContract = {
+  ownerTeam: string
+  ownerLevel: string
+  ownerScenario: string
+  verifiedRuntimeService: string
+  candidateReference: string
+  serverQueryContractReference: string
+  safeSearchTerm: string
+  window: string
+  anomalyCriterionReference: string
+  diagnosisRuleReference: string
+  log_search: string
+  log_trace_bundle: string
+  contrast_sample: string
+  historicalOccurredAt: string
+  historicalSourceReference: string
+}
+
+type OwnerFieldSpec = {
   key: OwnerProgressFieldKey
   section: OwnerContractSectionKey
   label: string
+  normalizedKey: keyof NormalizedOwnerContract
+  uniqueAcrossSelected?: boolean
+  queryIdentity?: boolean
   read: (contract: OwnerContract) => unknown
-  valid: (value: unknown, asOf: Date) => boolean
+  normalize: (value: unknown, fieldPath: string, asOf: Date, issues: string[]) => string | null
 }
 
 const OWNER_SECTION_LABELS: Record<OwnerContractSectionKey, string> = {
@@ -290,88 +311,114 @@ function passes(check: (issues: string[]) => unknown): boolean {
   return result !== null && issues.length === 0
 }
 
-const OWNER_PROGRESS_FIELDS: OwnerProgressField[] = [
+function requireOwnerLevel(value: unknown, fieldPath: string, issues: string[]): string | null {
+  const normalized = requireString(value, fieldPath, 2, issues)
+  if (normalized === null) return null
+  if (!OWNER_LEVELS.includes(normalized as OwnerLevel)) {
+    issues.push(`${fieldPath} must be P0, P1, or P2`)
+    return null
+  }
+  return normalized
+}
+
+/**
+ * Single catalog of the 15 owner facts. Progress UI and final validation both
+ * derive field order, labels, uniqueness and query identity from this list.
+ */
+const OWNER_FIELD_SPECS: readonly OwnerFieldSpec[] = [
   {
-    key: 'ownerTeam', section: 'INCIDENT', label: '责任团队', read: contract => contract.ownerTeam,
-    valid: value => passes(issues => requireString(value, 'ownerTeam', 128, issues)),
+    key: 'ownerTeam', section: 'INCIDENT', label: '责任团队', normalizedKey: 'ownerTeam',
+    read: contract => contract.ownerTeam,
+    normalize: (value, path, _asOf, issues) => requireString(value, path, 128, issues),
   },
   {
-    key: 'ownerLevel', section: 'INCIDENT', label: '故障等级', read: contract => contract.ownerLevel,
-    valid: (value) => {
-      const issues: string[] = []
-      const normalized = requireString(value, 'ownerLevel', 2, issues)
-      return normalized !== null
-        && issues.length === 0
-        && OWNER_LEVELS.includes(normalized as OwnerLevel)
-    },
+    key: 'ownerLevel', section: 'INCIDENT', label: '故障等级', normalizedKey: 'ownerLevel',
+    read: contract => contract.ownerLevel,
+    normalize: (value, path, _asOf, issues) => requireOwnerLevel(value, path, issues),
   },
   {
-    key: 'ownerScenario', section: 'INCIDENT', label: '故障场景', read: contract => contract.ownerScenario,
-    valid: value => passes(issues => requireString(value, 'ownerScenario', 160, issues)),
+    key: 'ownerScenario', section: 'INCIDENT', label: '故障场景', normalizedKey: 'ownerScenario',
+    read: contract => contract.ownerScenario,
+    normalize: (value, path, _asOf, issues) => requireString(value, path, 160, issues),
   },
   {
     key: 'verifiedRuntimeService', section: 'INCIDENT', label: '真实运行服务',
+    normalizedKey: 'verifiedRuntimeService', queryIdentity: true,
     read: contract => contract.verifiedRuntimeService,
-    valid: value => passes(issues => requireIdentifier(value, 'verifiedRuntimeService', issues)),
+    normalize: (value, path, _asOf, issues) => requireIdentifier(value, path, issues),
   },
   {
     key: 'historicalOccurredAt', section: 'INCIDENT', label: '故障发生时间',
+    normalizedKey: 'historicalOccurredAt',
     read: contract => contract.historicalOccurredAt,
-    valid: (value, asOf) => passes(issues => requireOccurredAt(value, 'historicalOccurredAt', asOf, issues)),
+    normalize: (value, path, asOf, issues) => requireOccurredAt(value, path, asOf, issues),
   },
   {
     key: 'historicalSourceReference', section: 'INCIDENT', label: '告警或工单号',
+    normalizedKey: 'historicalSourceReference', uniqueAcrossSelected: true,
     read: contract => contract.historicalSourceReference,
-    valid: value => passes(issues => requireReference(value, 'historicalSourceReference', issues)),
+    normalize: (value, path, _asOf, issues) => requireReference(value, path, issues),
   },
   {
-    key: 'safeSearchTerm', section: 'QUERY', label: '安全检索键', read: contract => contract.safeSearchTerm,
-    valid: value => passes(issues => requireIdentifier(value, 'safeSearchTerm', issues)),
+    key: 'safeSearchTerm', section: 'QUERY', label: '安全检索键',
+    normalizedKey: 'safeSearchTerm', queryIdentity: true,
+    read: contract => contract.safeSearchTerm,
+    normalize: (value, path, _asOf, issues) => requireIdentifier(value, path, issues),
   },
   {
-    key: 'window', section: 'QUERY', label: '查询时间窗', read: contract => contract.window,
-    valid: value => passes(issues => requireWindow(value, 'window', issues)),
+    key: 'window', section: 'QUERY', label: '查询时间窗',
+    normalizedKey: 'window', queryIdentity: true,
+    read: contract => contract.window,
+    normalize: (value, path, _asOf, issues) => requireWindow(value, path, issues),
   },
   {
     key: 'serverQueryContractReference', section: 'QUERY', label: '服务端查法编号',
+    normalizedKey: 'serverQueryContractReference', uniqueAcrossSelected: true,
     read: contract => contract.serverQueryContractReference,
-    valid: value => passes(issues => requireReference(value, 'serverQueryContractReference', issues)),
+    normalize: (value, path, _asOf, issues) => requireReference(value, path, issues),
   },
   {
     key: 'bindingRefs.log_search', section: 'QUERY', label: '失败日志查询',
+    normalizedKey: 'log_search', queryIdentity: true,
     read: contract => contract.bindingRefs?.log_search,
-    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.log_search', issues)),
+    normalize: (value, path, _asOf, issues) => requireIdentifier(value, path, issues),
   },
   {
     key: 'bindingRefs.log_trace_bundle', section: 'QUERY', label: '关联调用还原',
+    normalizedKey: 'log_trace_bundle', queryIdentity: true,
     read: contract => contract.bindingRefs?.log_trace_bundle,
-    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.log_trace_bundle', issues)),
+    normalize: (value, path, _asOf, issues) => requireIdentifier(value, path, issues),
   },
   {
     key: 'bindingRefs.contrast_sample', section: 'QUERY', label: '成功失败对照',
+    normalizedKey: 'contrast_sample', queryIdentity: true,
     read: contract => contract.bindingRefs?.contrast_sample,
-    valid: value => passes(issues => requireIdentifier(value, 'bindingRefs.contrast_sample', issues)),
+    normalize: (value, path, _asOf, issues) => requireIdentifier(value, path, issues),
   },
   {
     key: 'candidateReference', section: 'DECISION', label: '候选材料编号',
+    normalizedKey: 'candidateReference', uniqueAcrossSelected: true,
     read: contract => contract.candidateReference,
-    valid: value => passes(issues => requireReference(value, 'candidateReference', issues)),
+    normalize: (value, path, _asOf, issues) => requireReference(value, path, issues),
   },
   {
     key: 'anomalyCriterionReference', section: 'DECISION', label: '异常判据编号',
+    normalizedKey: 'anomalyCriterionReference', uniqueAcrossSelected: true,
     read: contract => contract.anomalyCriterionReference,
-    valid: value => passes(issues => requireReference(value, 'anomalyCriterionReference', issues)),
+    normalize: (value, path, _asOf, issues) => requireReference(value, path, issues),
   },
   {
     key: 'diagnosisRuleReference', section: 'DECISION', label: '诊断规则编号',
+    normalizedKey: 'diagnosisRuleReference', uniqueAcrossSelected: true,
     read: contract => contract.diagnosisRuleReference,
-    valid: value => passes(issues => requireReference(value, 'diagnosisRuleReference', issues)),
+    normalize: (value, path, _asOf, issues) => requireReference(value, path, issues),
   },
 ]
 
-const OWNER_PROGRESS_FIELD_BY_KEY = new Map(
-  OWNER_PROGRESS_FIELDS.map(field => [field.key, field] as const),
-)
+const OWNER_FIELD_BY_KEY = new Map(OWNER_FIELD_SPECS.map(field => [field.key, field] as const))
+const OWNER_UNIQUE_FIELDS = OWNER_FIELD_SPECS.filter(field => field.uniqueAcrossSelected)
+const OWNER_QUERY_IDENTITY_FIELDS = OWNER_FIELD_SPECS.filter(field => field.queryIdentity)
+export const T7_OWNER_FACT_COUNT = OWNER_FIELD_SPECS.length
 
 export function emptyOwnerContract(): OwnerContract {
   return {
@@ -434,13 +481,13 @@ function buildOwnerContractProgress(
 ): OwnerContractProgress {
   const validFields = new Set<OwnerProgressFieldKey>()
   if (contract) {
-    for (const field of OWNER_PROGRESS_FIELDS) {
-      if (field.valid(field.read(contract), asOf)) validFields.add(field.key)
+    for (const field of OWNER_FIELD_SPECS) {
+      if (progressFieldValid(contract, field.key, asOf)) validFields.add(field.key)
     }
   }
 
   const sections = (Object.keys(OWNER_SECTION_LABELS) as OwnerContractSectionKey[]).map((key) => {
-    const fields = OWNER_PROGRESS_FIELDS.filter(field => field.section === key)
+    const fields = OWNER_FIELD_SPECS.filter(field => field.section === key)
     const filled = fields.filter(field => validFields.has(field.key)).length
     const issues = sectionIssues.get(key) || []
     return {
@@ -452,7 +499,7 @@ function buildOwnerContractProgress(
       ...(issues.length > 0 ? { issue: issues.join('；') } : {}),
     }
   })
-  const invalidLabels = OWNER_PROGRESS_FIELDS
+  const invalidLabels = OWNER_FIELD_SPECS
     .filter(field => !validFields.has(field.key))
     .map(field => field.label)
   const issues = [
@@ -461,7 +508,7 @@ function buildOwnerContractProgress(
   ]
   return {
     filled: validFields.size,
-    total: OWNER_PROGRESS_FIELDS.length,
+    total: OWNER_FIELD_SPECS.length,
     complete: sections.every(section => section.complete),
     sections,
     issues,
@@ -473,8 +520,12 @@ function progressFieldValid(
   key: OwnerProgressFieldKey,
   asOf: Date,
 ): boolean {
-  const field = OWNER_PROGRESS_FIELD_BY_KEY.get(key)
-  return Boolean(contract && field?.valid(field.read(contract), asOf))
+  const field = OWNER_FIELD_BY_KEY.get(key)
+  return Boolean(
+    contract
+    && field
+    && passes(issues => field.normalize(field.read(contract), field.key, asOf, issues)),
+  )
 }
 
 export function ownerContractBatchProgress(
@@ -510,36 +561,19 @@ export function ownerContractBatchProgress(
     }
   }
 
-  const uniqueFields: Array<{
-    key: OwnerProgressFieldKey
-    section: OwnerContractSectionKey
-    issue: string
-  }> = [
-    { key: 'candidateReference', section: 'DECISION', issue: '候选材料编号与其他条目重复' },
-    { key: 'serverQueryContractReference', section: 'QUERY', issue: '服务端查法编号与其他条目重复' },
-    { key: 'anomalyCriterionReference', section: 'DECISION', issue: '异常判据编号与其他条目重复' },
-    { key: 'diagnosisRuleReference', section: 'DECISION', issue: '诊断规则编号与其他条目重复' },
-    { key: 'historicalSourceReference', section: 'INCIDENT', issue: '告警或工单号与其他条目重复' },
-  ]
-  for (const definition of uniqueFields) {
+  for (const definition of OWNER_UNIQUE_FIELDS) {
     markDuplicates((contract) => {
       if (!progressFieldValid(contract, definition.key, asOf)) return null
-      return String(OWNER_PROGRESS_FIELD_BY_KEY.get(definition.key)!.read(contract)).trim()
-    }, definition.section, definition.issue)
+      return String(definition.read(contract)).trim()
+    }, definition.section, `${definition.label}与其他条目重复`)
   }
 
-  const queryIdentityFields: OwnerProgressFieldKey[] = [
-    'verifiedRuntimeService',
-    'safeSearchTerm',
-    'window',
-    'bindingRefs.log_search',
-    'bindingRefs.log_trace_bundle',
-    'bindingRefs.contrast_sample',
-  ]
   markDuplicates((contract) => {
-    if (!queryIdentityFields.every(key => progressFieldValid(contract, key, asOf))) return null
-    return queryIdentityFields
-      .map(key => String(OWNER_PROGRESS_FIELD_BY_KEY.get(key)!.read(contract)).trim())
+    if (!OWNER_QUERY_IDENTITY_FIELDS.every(field => progressFieldValid(contract, field.key, asOf))) {
+      return null
+    }
+    return OWNER_QUERY_IDENTITY_FIELDS
+      .map(field => String(field.read(contract)).trim())
       .join('\0')
   }, 'QUERY', '与其他条目的查询方法重复')
 
@@ -693,24 +727,6 @@ export function ownerRemainingFields(contract: OwnerContract | null): string[] {
   })
 }
 
-type NormalizedOwnerContract = {
-  ownerTeam: string
-  ownerLevel: string
-  ownerScenario: string
-  verifiedRuntimeService: string
-  candidateReference: string
-  serverQueryContractReference: string
-  safeSearchTerm: string
-  window: string
-  anomalyCriterionReference: string
-  diagnosisRuleReference: string
-  log_search: string
-  log_trace_bundle: string
-  contrast_sample: string
-  historicalOccurredAt: string
-  historicalSourceReference: string
-}
-
 function normalizeOwnerContract(
   value: unknown,
   selector: string,
@@ -727,100 +743,21 @@ function normalizeOwnerContract(
     return null
   }
 
-  const ownerTeam = requireString(value.ownerTeam, `${selector}.ownerTeam`, 128, issues)
-  const ownerLevel = requireString(value.ownerLevel, `${selector}.ownerLevel`, 2, issues)
-  if (ownerLevel !== null && !OWNER_LEVELS.includes(ownerLevel as OwnerLevel)) {
-    issues.push(`${selector}.ownerLevel must be P0, P1, or P2`)
+  const ownerContract = value as OwnerContract
+  const normalized: Partial<NormalizedOwnerContract> = {}
+  for (const field of OWNER_FIELD_SPECS) {
+    const result = field.normalize(
+      field.read(ownerContract),
+      `${selector}.${field.key}`,
+      asOf,
+      issues,
+    )
+    if (result !== null) normalized[field.normalizedKey] = result
   }
-  const ownerScenario = requireString(value.ownerScenario, `${selector}.ownerScenario`, 160, issues)
-  const verifiedRuntimeService = requireIdentifier(
-    value.verifiedRuntimeService,
-    `${selector}.verifiedRuntimeService`,
-    issues,
-  )
-  const candidateReference = requireReference(
-    value.candidateReference,
-    `${selector}.candidateReference`,
-    issues,
-  )
-  const serverQueryContractReference = requireReference(
-    value.serverQueryContractReference,
-    `${selector}.serverQueryContractReference`,
-    issues,
-  )
-  const safeSearchTerm = requireIdentifier(value.safeSearchTerm, `${selector}.safeSearchTerm`, issues)
-  const window = requireWindow(value.window, `${selector}.window`, issues)
-  const anomalyCriterionReference = requireReference(
-    value.anomalyCriterionReference,
-    `${selector}.anomalyCriterionReference`,
-    issues,
-  )
-  const diagnosisRuleReference = requireReference(
-    value.diagnosisRuleReference,
-    `${selector}.diagnosisRuleReference`,
-    issues,
-  )
-  const logSearch = requireIdentifier(bindingRefs.log_search, `${selector}.bindingRefs.log_search`, issues)
-  const logTraceBundle = requireIdentifier(
-    bindingRefs.log_trace_bundle,
-    `${selector}.bindingRefs.log_trace_bundle`,
-    issues,
-  )
-  const contrastSample = requireIdentifier(
-    bindingRefs.contrast_sample,
-    `${selector}.bindingRefs.contrast_sample`,
-    issues,
-  )
-  const historicalOccurredAt = requireOccurredAt(
-    value.historicalOccurredAt,
-    `${selector}.historicalOccurredAt`,
-    asOf,
-    issues,
-  )
-  const historicalSourceReference = requireReference(
-    value.historicalSourceReference,
-    `${selector}.historicalSourceReference`,
-    issues,
-  )
-
-  if (
-    ownerTeam === null
-    || ownerLevel === null
-    || !OWNER_LEVELS.includes(ownerLevel as OwnerLevel)
-    || ownerScenario === null
-    || verifiedRuntimeService === null
-    || candidateReference === null
-    || serverQueryContractReference === null
-    || safeSearchTerm === null
-    || window === null
-    || anomalyCriterionReference === null
-    || diagnosisRuleReference === null
-    || logSearch === null
-    || logTraceBundle === null
-    || contrastSample === null
-    || historicalOccurredAt === null
-    || historicalSourceReference === null
-  ) {
+  if (OWNER_FIELD_SPECS.some(field => normalized[field.normalizedKey] == null)) {
     return null
   }
-
-  return {
-    ownerTeam,
-    ownerLevel,
-    ownerScenario,
-    verifiedRuntimeService,
-    candidateReference,
-    serverQueryContractReference,
-    safeSearchTerm,
-    window,
-    anomalyCriterionReference,
-    diagnosisRuleReference,
-    log_search: logSearch,
-    log_trace_bundle: logTraceBundle,
-    contrast_sample: contrastSample,
-    historicalOccurredAt,
-    historicalSourceReference,
-  }
+  return normalized as NormalizedOwnerContract
 }
 
 export function validateOwnerInput(
@@ -909,28 +846,16 @@ export function validateOwnerInput(
     }
   }
 
-  const uniqueFields = [
-    'candidateReference',
-    'serverQueryContractReference',
-    'anomalyCriterionReference',
-    'diagnosisRuleReference',
-    'historicalSourceReference',
-  ] as const
-  for (const field of uniqueFields) {
-    const values = normalizedContracts.map(contract => contract[field])
+  for (const field of OWNER_UNIQUE_FIELDS) {
+    const values = normalizedContracts.map(contract => contract[field.normalizedKey])
     if (new Set(values).size !== values.length) {
-      return { ok: false, issues: [`${field} must be unique across selected contracts`] }
+      return { ok: false, issues: [`${field.normalizedKey} must be unique across selected contracts`] }
     }
   }
 
-  const queryIdentities = normalizedContracts.map(contract => [
-    contract.verifiedRuntimeService,
-    contract.safeSearchTerm,
-    contract.window,
-    contract.log_search,
-    contract.log_trace_bundle,
-    contract.contrast_sample,
-  ].join('\0'))
+  const queryIdentities = normalizedContracts.map(contract => OWNER_QUERY_IDENTITY_FIELDS
+    .map(field => contract[field.normalizedKey])
+    .join('\0'))
   if (new Set(queryIdentities).size !== queryIdentities.length) {
     return { ok: false, issues: ['query semantics must be unique across selected contracts'] }
   }

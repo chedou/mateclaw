@@ -8,6 +8,7 @@ import {
   ownerContractCompleteness,
   ownerRemainingFields,
   ownerContractSectionProgress,
+  T7_OWNER_FACT_COUNT,
   validateOwnerInput,
   type OwnerContract,
   type OwnerContractDocument,
@@ -193,6 +194,30 @@ describe('t7OwnerContractIntake validation', () => {
     })
     expect(nextIncompleteOwnerSelector(selected, selected[0].selectorKey, asOf))
       .toBe(selected[1].selectorKey)
+  })
+
+  it('derives progress completeness and final validation from the same 15-field catalog', () => {
+    expect(T7_OWNER_FACT_COUNT).toBe(15)
+    const worksheet = cloneRecommendedWorksheet(template)
+    const selected = worksheet.contracts.filter(row => row.selectedForWindow)
+    selected.forEach((row, index) => {
+      row.ownerContract = completeOwnerContract(index)
+    })
+    const asOf = new Date('2026-08-13T00:00:00Z')
+    const progress = ownerContractBatchProgress(selected, asOf)
+    expect([...progress.values()].every(item => item.complete && item.total === T7_OWNER_FACT_COUNT)).toBe(true)
+
+    const result = validateOwnerInput(worksheet, template, asOf)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.status).toBe('PREPARED_NOT_EXECUTABLE')
+      expect(result.selectedCount).toBe(20)
+      expect(result.canAcceptT7).toBe(false)
+    }
+
+    selected[0].ownerContract!.window = '-25h'
+    expect(ownerContractBatchProgress(selected, asOf).get(selected[0].selectorKey)?.complete).toBe(false)
+    expect(validateOwnerInput(worksheet, template, asOf).ok).toBe(false)
   })
 })
 

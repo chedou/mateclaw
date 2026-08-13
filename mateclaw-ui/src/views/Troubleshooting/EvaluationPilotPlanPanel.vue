@@ -34,27 +34,66 @@
       <el-button text @click="setupOpen = false">收起</el-button>
     </header>
 
-    <el-alert
-      v-if="!membersLoading && (membersLoadFailed || !pilotTeamReadiness.ready)"
-      type="warning"
-      :closable="false"
-      show-icon
-    >
-      <template v-if="membersLoadFailed">
-        暂时无法读取工作区成员，不能确认三人门槛。
-        <el-button text type="primary" @click="loadMembers">重新读取</el-button>
-      </template>
-      <template v-else-if="canManageMembers">
-        当前工作区共 {{ pilotTeamReadiness.memberCount }} 名成员，其中
-        {{ pilotTeamReadiness.operatorCount }} 名能推进排障、{{ pilotTeamReadiness.adminCount }} 名能维护评估。
-        试点需要 3 名能操作排障的成员，其中至少 2 名管理员或所有者。
-        <el-button text type="primary" @click="openMemberSettings">去补齐成员与角色</el-button>
-      </template>
-      <template v-else>
-        当前成员与角色还不能完成三类职责。当前账号不能调整成员，请联系工作区管理员：
-        准备 3 名能操作排障的成员，其中至少 2 名管理员或所有者。
-      </template>
-    </el-alert>
+    <section class="pilot-preparation" aria-label="开始试点前，两件事可以并行准备">
+      <header>
+        <div>
+          <small>开始试点前</small>
+          <b>两件事可以并行准备</b>
+        </div>
+        <span>团队管理员准备成员，Guance Owner 同时登记真实查法；不必互相等待。</span>
+      </header>
+      <div class="pilot-preparation-grid">
+        <article :class="{ ready: pilotTeamReadiness.ready && !membersLoadFailed }">
+          <i>1</i>
+          <div>
+            <div class="pilot-preparation-title">
+              <b>补齐试点成员</b>
+              <em v-if="membersLoading">正在读取</em>
+              <em v-else-if="membersLoadFailed">读取失败</em>
+              <em v-else-if="pilotTeamReadiness.ready">人员已就绪</em>
+              <em v-else>还未就绪</em>
+            </div>
+            <p v-if="membersLoading">正在核对当前成员与角色。</p>
+            <p v-else-if="membersLoadFailed">暂时无法读取工作区成员，不能确认三人门槛。</p>
+            <p v-else-if="pilotTeamReadiness.ready">
+              已有 {{ pilotTeamReadiness.operatorCount }} 名成员能推进排障，其中
+              {{ pilotTeamReadiness.adminCount }} 名能维护评估。
+            </p>
+            <p v-else>
+              当前共 {{ pilotTeamReadiness.memberCount }} 名成员：
+              {{ pilotTeamReadiness.operatorCount }} 名能推进排障，{{ pilotTeamReadiness.adminCount }} 名能维护评估。
+              需要 3 名可操作成员，其中至少 2 名管理员或所有者。
+            </p>
+            <div class="pilot-preparation-actions">
+              <el-button v-if="membersLoadFailed" text type="primary" @click="loadMembers">重新读取</el-button>
+              <el-button
+                v-else-if="!pilotTeamReadiness.ready && canManageMembers"
+                text
+                type="primary"
+                @click="openMemberSettings"
+              >去补齐成员与角色</el-button>
+              <span v-else-if="!pilotTeamReadiness.ready">当前账号不能调整成员，请联系工作区管理员。</span>
+              <span v-else>现在可以在下方分配三类负责人。</span>
+            </div>
+          </div>
+        </article>
+
+        <article>
+          <i>2</i>
+          <div>
+            <div class="pilot-preparation-title">
+              <b>登记真实查法</b>
+              <em>待 Owner 核实</em>
+            </div>
+            <p>逐条确认首批 20 条重点故障在观测云怎么查、查哪些字段、怎样判断。</p>
+            <div class="pilot-preparation-actions">
+              <el-button text type="primary" @click="openOwnerContract">去登记真实查法</el-button>
+              <span>登记材料不等于 T7 验收；正式完成数仍由服务端目录和 Owner 验收决定。</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
 
     <div class="pilot-setup-grid">
       <label class="pilot-field wide">
@@ -166,7 +205,10 @@ import {
   type PilotResponsibility,
   type PilotScopeSuggestion,
 } from './evaluationPilot'
-import { pilotMemberSettingsLocation } from './workbenchCapabilityMenu'
+import {
+  pilotMemberSettingsLocation,
+  t7OwnerContractLocation,
+} from './workbenchCapabilityMenu'
 
 type PilotRole = 'secondLineUserId' | 'thirdLineUserId' | 'sourceOwnerUserId'
 
@@ -396,6 +438,10 @@ function openMemberSettings() {
   void router.push(pilotMemberSettingsLocation(route.fullPath))
 }
 
+function openOwnerContract() {
+  void router.push(t7OwnerContractLocation(route.fullPath))
+}
+
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -513,6 +559,102 @@ function errorText(error: unknown) {
 }
 .pilot-setup-panel > footer > span { margin-right: auto; }
 
+.pilot-preparation {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--mc-border-light);
+  border-radius: 8px;
+  background: var(--mc-bg-elevated);
+}
+
+.pilot-preparation > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pilot-preparation > header > div { display: grid; gap: 2px; }
+.pilot-preparation > header small {
+  color: var(--mc-primary);
+  font-size: 9px;
+  font-weight: 750;
+}
+.pilot-preparation > header b { font-size: 12px; }
+.pilot-preparation > header > span {
+  color: var(--mc-text-tertiary);
+  font-size: 9px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.pilot-preparation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pilot-preparation-grid > article {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--mc-status-warning-border, var(--mc-border-light));
+  border-radius: 8px;
+  background: var(--mc-status-warning-bg, var(--mc-bg-muted));
+}
+
+.pilot-preparation-grid > article.ready {
+  border-color: var(--mc-status-success-border, var(--mc-border-light));
+  background: var(--mc-status-success-bg, var(--mc-bg-muted));
+}
+
+.pilot-preparation-grid > article > i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--mc-bg-elevated);
+  background: var(--mc-primary);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.pilot-preparation-grid > article > div { display: grid; gap: 5px; min-width: 0; }
+.pilot-preparation-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pilot-preparation-title b { font-size: 10px; }
+.pilot-preparation-title em {
+  color: var(--mc-text-tertiary);
+  font-size: 8px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.pilot-preparation-grid p {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.pilot-preparation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.pilot-preparation-actions > span {
+  color: var(--mc-text-tertiary);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
 .pilot-setup-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -619,6 +761,8 @@ function errorText(error: unknown) {
   .pilot-plan-summary { align-items: flex-start; flex-wrap: wrap; }
   .pilot-plan-people { order: 3; flex-basis: 100%; }
   .pilot-setup-grid { grid-template-columns: 1fr 1fr; }
+  .pilot-preparation > header { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .pilot-preparation > header > span { text-align: left; }
 }
 
 @media (max-width: 620px) {
@@ -627,6 +771,7 @@ function errorText(error: unknown) {
   .pilot-plan-people { display: grid; grid-template-columns: 1fr 1fr; }
   .pilot-plan-people em { margin-left: 0; }
   .pilot-setup-grid { grid-template-columns: 1fr; }
+  .pilot-preparation-grid { grid-template-columns: 1fr; }
   .pilot-scope-suggestion-list { grid-template-columns: 1fr; }
   .pilot-field.wide,
   .enabled-field { grid-column: auto; }

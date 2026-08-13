@@ -89,6 +89,15 @@ describe('troubleshooting secondary navigation information architecture', () => 
         returnTo: '/troubleshooting?view=detail&diagnosisId=diag-1',
       },
     })
+
+    expect(t7OwnerContractLocation(
+      '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+    )).toEqual({
+      path: '/troubleshooting/t7-owner-contract',
+      query: {
+        returnTo: '/troubleshooting?view=list&capability=ledger&pilotSetup=1',
+      },
+    })
   })
 
   it('keeps advanced and learning controls collapsed while opening active deep links', () => {

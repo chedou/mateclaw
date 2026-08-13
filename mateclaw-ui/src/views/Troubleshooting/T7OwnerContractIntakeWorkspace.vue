@@ -85,7 +85,7 @@
           </div>
           <div class="selector-meta">
             <span :class="completenessClass(row)">
-              {{ rowProgress(row).complete ? '已就绪' : `已核对 ${rowProgress(row).filled}/15` }}
+              {{ rowProgress(row).complete ? '已就绪' : `已核对 ${rowProgress(row).filled}/${T7_OWNER_FACT_COUNT}` }}
             </span>
             <small>{{ row.sourceHints.scenarios[0] || row.sourceHints.modules[0] || '无场景提示' }}</small>
           </div>
@@ -251,6 +251,7 @@ import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
 import { safeTroubleshootingReturnPath } from './workbenchCapabilityMenu'
 import {
   T7_MIN_SELECTED,
+  T7_OWNER_FACT_COUNT,
   applyFirstBatchDeveloperDrafts,
   applySourceHintsDraft,
   cloneRecommendedWorksheet,
@@ -347,7 +348,7 @@ function completenessClass(row: OwnerContractRow) {
 function emptyProgress(): OwnerContractProgress {
   return {
     filled: 0,
-    total: 15,
+    total: T7_OWNER_FACT_COUNT,
     complete: false,
     sections: [],
     issues: [],
