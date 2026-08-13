@@ -273,7 +273,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                         + "' is not declared as asset-owned by a selected query contract");
             }
             if (parameters.putIfAbsent(
-                    name, safeParameterValue(entry.getValue(), name, true)) != null) {
+                    name, safeParameterLabel(entry.getValue(), name)) != null) {
                 throw invalid("asset parameter names must be unique after normalization");
             }
         }
@@ -553,6 +553,27 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         }
         if (trimmed.contains("://")) {
             throw invalid(field + " must not contain a URI endpoint");
+        }
+        return trimmed;
+    }
+
+    /**
+     * Contract-declared query parameters name observed objects rather than
+     * deployment resources, so they accept any script while still excluding
+     * every character that carries meaning inside a DQL literal.
+     */
+    private String safeParameterLabel(String value, String field) {
+        if (blank(value)) {
+            throw invalid(field + " must not be blank");
+        }
+        String trimmed = value.trim();
+        // Checked before the charset so a credential-shaped value is named as
+        // such; both rejections are otherwise indistinguishable to the admin.
+        if (!TroubleshootingSecretRedactor.redact(trimmed).equals(trimmed)) {
+            throw invalid(field + " must not contain secret material");
+        }
+        if (!EvidenceParameterValuePolicy.safeLabel(trimmed)) {
+            throw invalid(field + " must be a bounded safe name");
         }
         return trimmed;
     }

@@ -388,6 +388,92 @@ class GuanceEvidenceAdapterTest {
         assertThat(transport.body).doesNotContain("secret-key");
     }
 
+    /**
+     * Without this, every Chinese-named dial task needs its own reviewed contract
+     * with the name hardcoded in DQL, so onboarding cost scales per probe.
+     */
+    @Test
+    void oneGenericProbeContractServesAChineseDialTaskNamedByTheAsset() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "status_code", "url", "name"],
+                    "values": [[1753434723000, 502, "https://icarenew.sangfor.com/index.html",
+                      "sf-icare-app-虚机-拨测检测异常"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "D",
+                "HTTP 拨测最近状态（通用）",
+                "D::http_dial_testing:(`status_code`, `url`, `name`) "
+                        + "{ `name` = '{{probe_name}}' }",
+                Map.of(
+                        "url", "target_url",
+                        "name", "probe_name"),
+                1);
+        binding.setAssetParameters(List.of("probe_name"));
+        binding.setQueryOptions(cloudDialQueryOptions());
+        EvidenceProperties.Guance config = guanceConfig("synthetic_probe", binding);
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-icare", WORKSPACE_ID, "icare", "sf-icare-app", "guance", true,
+                Map.of("synthetic_probe", "synthetic_probe"),
+                Map.of("probe_name", "sf-icare-app-虚机-拨测检测异常"), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-CJK-PROBE-1", "synthetic_probe", "read the authorized dial task",
+                Map.of(), "-5m", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incident("icare", "sf-icare-app"));
+
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("q").asText()).isEqualTo(
+                "D::http_dial_testing:(`status_code`, `url`, `name`) "
+                        + "{ `name` = 'sf-icare-app-虚机-拨测检测异常' }");
+        assertThat(result.status())
+                .as("reason: %s", result.summary())
+                .isNotEqualTo(EvidenceStatus.MISSING);
+        assertThat(result.observed()).containsEntry(
+                "probe_name", "sf-icare-app-虚机-拨测检测异常");
+    }
+
+    @Test
+    void anAssetParameterStillCannotCarryDqlSyntaxIntoTheRenderedQuery() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Binding binding = binding(
+                "D",
+                "HTTP 拨测最近状态（通用）",
+                "D::http_dial_testing:(last(`status_code`) as status_code) "
+                        + "{ `name` = '{{probe_name}}' }",
+                Map.of(),
+                1);
+        binding.setAssetParameters(List.of("probe_name"));
+        binding.setQueryOptions(cloudDialQueryOptions());
+        EvidenceProperties.Guance config = guanceConfig("synthetic_probe", binding);
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-icare", WORKSPACE_ID, "icare", "sf-icare-app", "guance", true,
+                Map.of("synthetic_probe", "synthetic_probe"),
+                Map.of("probe_name", "任务' OR `service` = 'x"), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-CJK-PROBE-2", "synthetic_probe", "injection attempt",
+                Map.of(), "-5m", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incident("icare", "sf-icare-app"));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
+
     @Test
     void normalizesALogSearchSampleWithoutRequiringAnErrorCode() throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """

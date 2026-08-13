@@ -400,7 +400,9 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (asset.workspaceOwned()) {
             for (String name : assetParameterNames(binding)) {
                 String value = asset.parameters().get(name);
-                if (!safeReference(value)) {
+                // Admin-declared and never request-supplied, so this may name an
+                // observed object in any script; render() applies the same rule.
+                if (!EvidenceParameterValuePolicy.safeLabel(value)) {
                     return null;
                 }
                 parameters.put(name, value.trim());
@@ -734,6 +736,13 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             } else if ("window_span".equals(key)) {
                 if (!WINDOW.matcher(value).matches() || value.startsWith("-")) {
                     throw new IllegalArgumentException("unsafe window span value");
+                }
+            } else if (assetParameters.containsKey(key)) {
+                // Asset-owned values are declared by a workspace admin, never by
+                // the browser or the model, so they may carry a human-authored
+                // name such as a Chinese CloudDial task.
+                if (!EvidenceParameterValuePolicy.safeLabel(value)) {
+                    throw new IllegalArgumentException("unsafe query template value: " + key);
                 }
             } else if (!SAFE_VALUE.matcher(value).matches()) {
                 throw new IllegalArgumentException("unsafe query template value: " + key);
