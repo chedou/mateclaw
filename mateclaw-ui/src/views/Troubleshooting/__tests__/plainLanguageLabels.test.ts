@@ -43,7 +43,7 @@ describe('troubleshooting operator copy uses plain language', () => {
 
   it('labels rehearsal and production diagnosis details by their persisted record type', () => {
     expect(formalWorkbenchSource).toContain(
-      "current.diagnosis.rehearsal ? '演练排障工作台' : '正式排障工作台'",
+      "current.diagnosis.rehearsal ? '演练' : '正式排障'",
     )
   })
 

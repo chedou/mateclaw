@@ -4,6 +4,9 @@
 > 校验通过只表示 `PREPARED_NOT_EXECUTABLE`，不能写运行目录、不能授权 T7，也不能替 owner 提交
 > `ACCEPTED`。
 
+> **要逐字段知道"这一格填什么、从哪查、填错报什么"**，看
+> [`t7-owner-field-guide.md`](./t7-owner-field-guide.md)。本文只讲流程与分工。
+
 ## 当前分层
 
 | 档位 | 数量 | 已有材料 | 仍然必须由 owner 做什么 |

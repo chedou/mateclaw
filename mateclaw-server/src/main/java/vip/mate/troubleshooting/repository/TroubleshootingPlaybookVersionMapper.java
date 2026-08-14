@@ -144,6 +144,30 @@ public interface TroubleshootingPlaybookVersionMapper
             @Param("service") String service,
             @Param("errorCode") String errorCode);
 
+    /**
+     * At most two live systems for a service, regardless of error code.
+     *
+     * <p>Monitoring alerts routinely name a service without carrying an error
+     * code. Two rows are still enough to prove ambiguity, and two rows must
+     * leave the system unresolved: a service owned by more than one system is
+     * exactly the case where guessing would hand deterministic authority to
+     * the wrong Playbook.</p>
+     */
+    @Select("""
+            SELECT DISTINCT system
+              FROM mate_troubleshooting_playbook_version
+             WHERE workspace_id = #{workspaceId}
+               AND service = #{service}
+               AND active_selector_key = selector_key
+               AND status = 'APPROVED'
+               AND deleted = 0
+             ORDER BY system ASC
+             LIMIT 2
+            """)
+    List<String> listActiveSystemsForService(
+            @Param("workspaceId") long workspaceId,
+            @Param("service") String service);
+
     @Select(SELECT_COLUMNS + """
               FROM mate_troubleshooting_playbook_version
              WHERE source_origin = 'MANUAL'

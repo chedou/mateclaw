@@ -744,7 +744,11 @@ export interface BusinessSummary {
   diagnosisId: string
   conclusionType: ConclusionType
   headline: string
+  /** Null unless the conclusion actually names a cause; never set when abstained. */
+  rootCause: string | null
   narrative: string
+  /** Plain-language counts behind the conclusion; null when no contrast was collected. */
+  keyEvidence: string | null
   confidence: Confidence
   problem: string
   impact: ImpactView
@@ -964,6 +968,45 @@ export interface GuanceEvidenceReadiness {
   uniqueAssetAuthorized: boolean
   signals: GuanceSignalReadiness[]
   blockers: string[]
+}
+
+/** Whether these settings are the workspace's own row or the deployment yml. */
+export type EvidenceSettingsOrigin = 'DEPLOYMENT' | 'WORKSPACE'
+
+/**
+ * One workspace's evidence source settings as the browser is allowed to see them.
+ *
+ * <p>There is deliberately no field carrying the API key. The credential is
+ * write-only across this API: the UI can show that one exists and how it ends,
+ * but never reads it back.
+ */
+export interface EvidenceSettingsView {
+  workspaceId: number
+  guanceEnabled: boolean
+  guanceBaseUrl: string | null
+  guanceApiKeyPresent: boolean
+  /** `null` when no key is stored, otherwise a hint such as `****a1b2`. */
+  guanceApiKeyMask: string | null
+  guanceAllowInsecureHttp: boolean
+  replayEnabled: boolean
+  agentEnabled: boolean
+  version: number
+  changedBy: string | null
+  changeReason: string | null
+  origin: EvidenceSettingsOrigin
+}
+
+/** One owner-submitted change; see `saveEvidenceSettings` for the key semantics. */
+export interface EvidenceSettingsUpdate {
+  guanceEnabled: boolean
+  guanceBaseUrl: string | null
+  /** Omit to keep the stored key, `''` to clear it, a value to replace it. */
+  guanceApiKey?: string | null
+  guanceAllowInsecureHttp: boolean
+  replayEnabled: boolean
+  agentEnabled: boolean
+  expectedVersion: number
+  changeReason: string | null
 }
 
 export type OpenDiscoveryReadinessStatus =

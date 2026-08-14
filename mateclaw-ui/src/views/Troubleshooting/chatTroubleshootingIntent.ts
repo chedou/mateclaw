@@ -7,9 +7,11 @@
 
 export type ChatTroubleshootingIntent = 'HIGH' | 'MEDIUM' | 'LOW'
 
-const FIELD_LINE = /(?:^|\n)\s*(?:系统|服务|错误码|发生时间|客户(?:ID|id)?|现象|问题(?:现象)?|trace(?:id)?|ps(?:id)?)\s*[:：]/im
+const FIELD_LINE = /(?:^|\n)\s*(?:系统|服务|集群|错误码|发生时间|客户(?:ID|id)?|现象|问题(?:现象)?|trace(?:id)?|ps(?:id)?)\s*[:：]/im
 const ERROR_CODE_BRACKET = /【\s*\d{3,8}\s*】|\berror[_ ]?code\b\s*[=:：]?\s*\d{3,8}/i
-const ALERT_FAILURE = /告警|报障|排障|故障|ITGW|访问失败|发送失败|发不出去|创建会话失败|会话创建失败|超时|异常码|失败/
+// 慢请求 belongs here even though nothing failed: a latency alert is still an
+// alert, and it is the one shape that carries no error code to score on.
+const ALERT_FAILURE = /告警|报障|排障|故障|ITGW|访问失败|发送失败|发不出去|创建会话失败|会话创建失败|超时|慢请求|超限制|异常码|失败/
 const WEAK_OPS = /观测云|Guance|调用链|trace[_ ]?id|ps[_ ]?id|生产故障/i
 const CLEARLY_GENERAL = /^(写一|帮我写|翻译|总结一下|什么是|讲个笑话|今天天气)|```[\s\S]{40,}/
 

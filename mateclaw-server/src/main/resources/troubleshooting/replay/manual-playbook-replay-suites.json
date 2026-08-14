@@ -1359,6 +1359,306 @@
           }
         ]
       }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-url-slow-request/v2",
+      "suiteVersion": 2,
+      "selectorKey": "csdp:scenario:url_slow_request",
+      "requiredEvidenceRequestId": "SYNTH-LOG-SEARCH",
+      "sourceReference": "guance-aggregate-2026-08-06-csdp-wechat-url-slow-request",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-url-slow-request-v2",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "scenario:url_slow_request",
+        "service": "csdp-wechat",
+        "title": "URL 慢请求：合作伙伴工单升级链路核查",
+        "cause": "慢请求高度集中在经代理转发的工单升级路由，该路由同步等待外部 IT 网关 upToCtiV2；同窗口其他代理路由的慢请求率低两个数量级",
+        "category": "latency",
+        "ownerTeam": "客服数字化平台组",
+        "status": "candidate",
+        "verified": false,
+        "symptomTriggers": [
+          "url慢请求",
+          "慢请求"
+        ],
+        "evidenceRequests": [
+          {
+            "requestId": "SYNTH-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "按慢请求告警码取样并取出关联 ID",
+            "target": {
+              "search_term": "url_slow_request"
+            },
+            "window": "-12h",
+            "required": true
+          },
+          {
+            "requestId": "SYNTH-TRACE-BUNDLE",
+            "signalKind": "log_trace_bundle",
+            "purpose": "按关联 ID 取回最慢一次请求的全链路日志，定位耗时落在哪一跳",
+            "target": {
+              "ps_id": "replay-ps-csdp-wechat-slow-001"
+            },
+            "window": "-12h",
+            "required": true
+          },
+          {
+            "requestId": "SYNTH-CONTRAST-SAMPLE",
+            "signalKind": "contrast_sample",
+            "purpose": "与同窗口其他代理路由对照，区分「这条路由真的慢」与「整体都慢」",
+            "target": {
+              "scenario_key": "url_slow_request",
+              "exclude_ps_id": "replay-ps-csdp-wechat-slow-001"
+            },
+            "window": "-12h",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "slow_requests_present",
+            "sourceRequestId": "SYNTH-LOG-SEARCH",
+            "description": "窗口内存在慢请求日志",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "one_route_dominates_slowness",
+            "sourceRequestId": "SYNTH-CONTRAST-SAMPLE",
+            "description": "慢请求集中在单一下游路由，而非同窗口普遍劣化",
+            "rule": {
+              "kind": "failure_success_rate_contrast",
+              "failureMatchField": "failure_match_count",
+              "failureSampleField": "failure_sample_count",
+              "successMatchField": "success_match_count",
+              "successSampleField": "success_sample_count",
+              "minFailureRate": 0.2,
+              "maxSuccessRate": 0.02,
+              "minRateDelta": 0.15
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-URL-SLOW-ITGW-SYNC-WAIT",
+            "requiredSignals": [
+              "slow_requests_present",
+              "one_route_dominates_slowness"
+            ],
+            "rootCause": "工单升级链路同步等待外部 IT 网关 upToCtiV2",
+            "summary": "慢请求并非整体劣化：对照显示工单升级路由的慢请求率远高于同窗口其他代理路由，调用链把耗时定位在同步等待外部 IT 网关 upToCtiV2 这一跳。网关侧基线延迟需由其 owner 确认。",
+            "confidence": "MEDIUM",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "USR-A1",
+            "actionType": "AUTO_READONLY",
+            "title": "只读复核慢请求路由分布与成功样本对照",
+            "description": "只读查看同窗口聚合对照，不执行任何生产变更。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "USR-A2",
+            "actionType": "HUMAN_CONTACT",
+            "title": "向 IT 网关 owner 核实 upToCtiV2 基线延迟与幂等语义",
+            "description": "由网关 owner 在平台之外核查；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-url-slow-request-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-URL-SLOW-ITGW-SYNC-WAIT",
+        "evidence": [
+          {
+            "requestId": "SYNTH-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 110
+            }
+          },
+          {
+            "requestId": "SYNTH-TRACE-BUNDLE",
+            "status": "ANOMALY",
+            "observed": {
+              "ps_id": "replay-ps-csdp-wechat-slow-001"
+            }
+          },
+          {
+            "requestId": "SYNTH-CONTRAST-SAMPLE",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "itgw_upto_cti_sync_wait",
+              "failure_sample_count": 71,
+              "failure_match_count": 28,
+              "success_sample_count": 21412,
+              "success_match_count": 35
+            }
+          }
+        ]
+      }
+    },
+    {
+      "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
+      "suiteId": "csdp-search-username-limit-1009/v1",
+      "suiteVersion": 1,
+      "selectorKey": "csdp:1009",
+      "requiredEvidenceRequestId": "SYNTH-LOG-SEARCH",
+      "sourceReference": "recorded-evidence-2026-08-14-csdp-wechat-1009",
+      "exampleCandidate": {
+        "sopId": "manual-csdp-search-username-limit-1009-v1",
+        "contractVersion": "sop.v1",
+        "system": "CSDP",
+        "errorCode": "1009",
+        "service": "csdp-wechat",
+        "title": "搜索用户名超限制 1009 路径核查",
+        "cause": "搜索用户名超过业务上限被拦截",
+        "category": "business_rule",
+        "ownerTeam": "客服数字化平台组",
+        "status": "candidate",
+        "verified": false,
+        "evidenceRequests": [
+          {
+            "requestId": "SYNTH-LOG-SEARCH",
+            "signalKind": "log_search",
+            "purpose": "按 1009 取样失败请求并取出关联 ID",
+            "target": {
+              "search_term": "search_username_over_limit"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "SYNTH-TRACE-BUNDLE",
+            "signalKind": "log_trace_bundle",
+            "purpose": "按关联 ID 还原同一次搜索调用链",
+            "target": {
+              "ps_id": "replay-ps-csdp-wechat-1009-001"
+            },
+            "window": "-15m",
+            "required": true
+          },
+          {
+            "requestId": "SYNTH-CONTRAST-SAMPLE",
+            "signalKind": "contrast_sample",
+            "purpose": "对比同窗口成功搜索是否也命中用户名超限特征",
+            "target": {
+              "scenario_key": "search_username_over_limit",
+              "exclude_ps_id": "replay-ps-csdp-wechat-1009-001"
+            },
+            "window": "-15m",
+            "required": true
+          }
+        ],
+        "anomalyCriteria": [
+          {
+            "signal": "username_search_limit_present",
+            "sourceRequestId": "SYNTH-LOG-SEARCH",
+            "description": "故障窗口内至少存在一条 1009 失败请求",
+            "rule": {
+              "kind": "numeric_gte",
+              "field": "match_count",
+              "threshold": 1
+            }
+          },
+          {
+            "signal": "username_limit_discriminated",
+            "sourceRequestId": "SYNTH-CONTRAST-SAMPLE",
+            "description": "用户名超限特征集中出现在失败样本而非成功样本",
+            "rule": {
+              "kind": "failure_success_rate_contrast",
+              "failureMatchField": "failure_match_count",
+              "failureSampleField": "failure_sample_count",
+              "successMatchField": "success_match_count",
+              "successSampleField": "success_sample_count",
+              "minFailureRate": 0.9,
+              "maxSuccessRate": 0.1,
+              "minRateDelta": 0.8
+            }
+          }
+        ],
+        "diagnosisRules": [
+          {
+            "ruleId": "RULE-SEARCH-USERNAME-OVER-LIMIT",
+            "requiredSignals": [
+              "username_search_limit_present",
+              "username_limit_discriminated"
+            ],
+            "rootCause": "搜索用户名超过业务上限被拦截",
+            "summary": "告警声明窗口内 4 条失败。回放夹具按该计数固化：4 条失败全部命中用户名超限特征，同规模成功对照未命中。定位为搜索接口的用户名上限拦截，不是基础设施故障。对照数字来自回放夹具，不是观测云拉取。",
+            "confidence": "MEDIUM",
+            "conclusionType": "LOCATED",
+            "abstained": false
+          }
+        ],
+        "actions": [
+          {
+            "actionId": "UN-A1",
+            "actionType": "AUTO_READONLY",
+            "title": "只读复核 1009 失败与成功搜索对照",
+            "description": "只读查看规范化计数和调用链骨架，不执行任何生产变更。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          },
+          {
+            "actionId": "UN-A2",
+            "actionType": "HUMAN_CONTACT",
+            "title": "向客服数字化 owner 核实搜索用户名上限配置",
+            "description": "由 owner 核对上限值、调用方是否应截断或提示，并同步失败后的用户可见文案；平台只提供证据。",
+            "requiresApproval": false,
+            "approvalStatus": "NOT_REQUIRED",
+            "executionStatus": "PENDING"
+          }
+        ]
+      },
+      "positiveCase": {
+        "caseId": "recorded-search-username-limit-1009-positive",
+        "cohort": "POSITIVE",
+        "expectedDisposition": "MATCHED",
+        "expectedRuleId": "RULE-SEARCH-USERNAME-OVER-LIMIT",
+        "evidence": [
+          {
+            "requestId": "SYNTH-LOG-SEARCH",
+            "status": "ANOMALY",
+            "observed": {
+              "match_count": 4,
+              "ps_id": "replay-ps-csdp-wechat-1009-001"
+            }
+          },
+          {
+            "requestId": "SYNTH-TRACE-BUNDLE",
+            "status": "ANOMALY",
+            "observed": {
+              "ps_id": "replay-ps-csdp-wechat-1009-001"
+            }
+          },
+          {
+            "requestId": "SYNTH-CONTRAST-SAMPLE",
+            "status": "ANOMALY",
+            "observed": {
+              "discriminating_feature": "username_search_over_limit",
+              "failure_sample_count": 4,
+              "failure_match_count": 4,
+              "success_sample_count": 4,
+              "success_match_count": 0
+            }
+          }
+        ]
+      }
     }
   ]
 }

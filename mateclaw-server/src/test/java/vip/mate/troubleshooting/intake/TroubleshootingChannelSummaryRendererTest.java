@@ -25,11 +25,44 @@ class TroubleshootingChannelSummaryRendererTest {
         String text = renderer.render(summary());
 
         assertThat(text)
-                .startsWith("[LOCATED · MEDIUM]")
-                .contains("能力边界：仅完成只读取证，未执行任何生产变更。")
+                .contains("仅完成只读取证，未执行任何生产变更。")
                 .contains("Recorded Replay · 非真实观测云")
                 .contains("http://127.0.0.1:5173/troubleshooting?diagnosisId=diag-1")
                 .doesNotContain("DeveloperEvidenceView");
+    }
+
+    /**
+     * The reader is a service manager, not an operator of this system. Leading
+     * with `LOCATED · MEDIUM` asked them to learn our enum names before they
+     * could tell whether the line underneath was worth acting on.
+     */
+    @Test
+    void leadsWithTheVerdictAndItsStrengthInWordsRatherThanEnumNames() {
+        TroubleshootingChannelSummaryRenderer renderer =
+                new TroubleshootingChannelSummaryRenderer("http://127.0.0.1:5173");
+
+        String text = renderer.render(summary());
+
+        assertThat(text)
+                .startsWith("已定位 · 结论依据有限")
+                .doesNotContain("LOCATED")
+                .doesNotContain("MEDIUM");
+    }
+
+    /** The cause and the counts behind it are the two facts worth acting on. */
+    @Test
+    void showsTheRootCauseAndTheCountsThatSupportIt() {
+        TroubleshootingChannelSummaryRenderer renderer =
+                new TroubleshootingChannelSummaryRenderer("http://127.0.0.1:5173");
+
+        String text = renderer.render(summary());
+
+        assertThat(text)
+                .contains("根因：会话服务异常")
+                .contains("关键数字：71 个异常请求中有 28 个出现同一异常特征")
+                .doesNotContain("问题：")
+                .doesNotContain("说明：")
+                .doesNotContain("影响：");
     }
 
     private BusinessSummary summary() {
@@ -38,7 +71,9 @@ class TroubleshootingChannelSummaryRendererTest {
                 "diag-1",
                 ConclusionType.LOCATED,
                 "已定位会话消息发送失败",
+                "会话服务异常",
                 "日志证据指向会话服务异常。",
+                "71 个异常请求中有 28 个出现同一异常特征；21412 个正常请求中只有 35 个出现。",
                 Confidence.MEDIUM,
                 "会话消息发送失败",
                 new ImpactView(

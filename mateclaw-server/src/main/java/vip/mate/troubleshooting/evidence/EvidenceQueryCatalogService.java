@@ -98,13 +98,13 @@ public class EvidenceQueryCatalogService {
         List<EvidenceQueryCatalogView.SystemView> systems = systems(
                 workspaceId, declarations);
         return new EvidenceQueryCatalogView(
-                CONTRACT_VERSION, workspaceId, sources(), systems);
+                CONTRACT_VERSION, workspaceId, sources(workspaceId), systems);
     }
 
-    private List<EvidenceQueryCatalogView.SourceView> sources() {
+    private List<EvidenceQueryCatalogView.SourceView> sources(long workspaceId) {
         return adapters.stream()
                 .filter(adapter -> adapter != null)
-                .map(this::safeHealth)
+                .map(adapter -> safeHealth(workspaceId, adapter))
                 .sorted(Comparator.comparing(
                         EvidenceQueryCatalogView.SourceView::platform,
                         String.CASE_INSENSITIVE_ORDER))
@@ -112,10 +112,10 @@ public class EvidenceQueryCatalogService {
     }
 
     private EvidenceQueryCatalogView.SourceView safeHealth(
-            EvidenceSourceAdapter adapter) {
+            long workspaceId, EvidenceSourceAdapter adapter) {
         List<String> supportedSignals = supportedSignals(adapter);
-        String endpointStatus = endpointStatus(adapter);
-        String credentialStatus = credentialStatus(adapter);
+        String endpointStatus = endpointStatus(workspaceId, adapter);
+        String credentialStatus = credentialStatus(workspaceId, adapter);
         try {
             EvidenceSourceHealth health = adapter.health();
             if (health == null) {
@@ -151,21 +151,21 @@ public class EvidenceQueryCatalogService {
         }
     }
 
-    private String endpointStatus(EvidenceSourceAdapter adapter) {
+    private String endpointStatus(long workspaceId, EvidenceSourceAdapter adapter) {
         if (!GUANCE.equals(normalize(adapter.platform()))) {
             return "NOT_REPORTED";
         }
-        return guanceAdapter != null && guanceAdapter.endpointConfigured()
+        return guanceAdapter != null && guanceAdapter.endpointConfigured(workspaceId)
                 ? "CONFIGURED" : "MISSING";
     }
 
-    private String credentialStatus(EvidenceSourceAdapter adapter) {
+    private String credentialStatus(long workspaceId, EvidenceSourceAdapter adapter) {
         if (!GUANCE.equals(normalize(adapter.platform()))) {
             return "NOT_REPORTED";
         }
         return guanceAdapter == null
                 ? GuanceEvidenceReadiness.CredentialState.MISSING.name()
-                : guanceAdapter.credentialState().name();
+                : guanceAdapter.credentialState(workspaceId).name();
     }
 
     private List<EvidenceQueryCatalogView.SystemView> systems(
@@ -285,14 +285,14 @@ public class EvidenceQueryCatalogService {
                 == GuanceEvidenceReadiness.SignalStatus.READY_FOR_VALIDATION
                 || inspection.status()
                 == GuanceEvidenceReadiness.SignalStatus.CANONICAL_RESULT_OBSERVED;
-        boolean runtimeReady = guanceAdapter.enabled()
-                && guanceAdapter.endpointConfigured()
-                && guanceAdapter.credentialState()
+        boolean runtimeReady = guanceAdapter.enabled(workspaceId)
+                && guanceAdapter.endpointConfigured(workspaceId)
+                && guanceAdapter.credentialState(workspaceId)
                 == GuanceEvidenceReadiness.CredentialState.CONFIGURED;
         boolean assetReady = asset.enabled() && asset.scopeCount() == 1;
         boolean runnable = assetReady && routed && bindingReady && runtimeReady;
         List<String> blockers = blockers(
-                asset, route, routed, bindingReady, runtimeReady, inspection);
+                workspaceId, asset, route, routed, bindingReady, runtimeReady, inspection);
         Presentation fallback = PRESENTATIONS.getOrDefault(
                 signalKind, new Presentation(signalKind, "该查询合同要回答什么问题？"));
 
@@ -321,6 +321,7 @@ public class EvidenceQueryCatalogService {
     }
 
     private List<String> blockers(
+            long workspaceId,
             AssetDescriptor asset,
             EvidenceQueryCatalogView.RouteView route,
             boolean routed,
@@ -341,11 +342,11 @@ public class EvidenceQueryCatalogService {
         } else if (!routed) {
             blockers.add("当前路由没有选择 Guance 适配器");
         }
-        if (!guanceAdapter.enabled()) {
+        if (!guanceAdapter.enabled(workspaceId)) {
             blockers.add("Guance 适配器未启用");
-        } else if (!guanceAdapter.endpointConfigured()) {
+        } else if (!guanceAdapter.endpointConfigured(workspaceId)) {
             blockers.add("Guance 查询端点未正确配置");
-        } else if (guanceAdapter.credentialState()
+        } else if (guanceAdapter.credentialState(workspaceId)
                 != GuanceEvidenceReadiness.CredentialState.CONFIGURED) {
             blockers.add("Guance 运行时凭据未配置");
         }

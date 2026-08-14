@@ -6,8 +6,15 @@
 本文所有事实均来自当前仓库源码，关键项在文末「事实来源」列了文件位置。
 凡是本文没写的，就是没核实过的，不要照着猜。
 
-> **未经端到端验证。** 编写本文的环境没有可用的 Docker 守护进程，因此镜像构建与
-> 容器编排逻辑只做过语法与配置层面的检查，没有真实跑通过一次完整部署。
+> **验证到哪一步了。**
+> - 编排合并：已用 Docker Compose v2.40.3 实测。MySQL 模式下 `!override` 确实移除了
+>   PostgreSQL 健康门，合并结果只剩 `mateclaw-server` + `searxng`，环境变量注入正确；
+>   PostgreSQL 模式不受影响。
+> - 镜像构建与启动：已实测。服务端镜像可构建（约 1.23 GB），容器起来后
+>   `/actuator/health` 返回 `UP`，197 个 Flyway 迁移（含 V203）全部应用成功。
+> - **仍未验证：连接外部 MySQL。** 上述启动验证用的是容器内 H2，`mysql` profile
+>   没有对真实 MySQL 跑过。这是首次部署最可能出问题的一环。
+>
 > 首次部署请按第 7 节逐步确认，遇到与本文不符的现象以实际输出为准。
 
 ---
@@ -82,12 +89,51 @@ cd mateclaw
 ```
 
 - `--db-host`：MySQL 服务器地址
-- `--base-url`：**别人在浏览器里访问这套系统的地址**。不是 localhost，除非只在本机用。
-  它会同时写入三个配置项（公开基址、排障工作台基址、CORS 白名单）
+- `--base-url`：**别人在浏览器地址栏里看到的那个地址**，域名和 IP 都可以
 
-脚本会从 `.env.example` 生成 `.env`，自动填入随机的 `JWT_SECRET` 和 `SEARXNG_SECRET`，
-然后**主动停下来**，提示你补 MySQL 账号密码。这是有意为之：这两个值必须匹配你服务器上
-已存在的账号，脚本编一个随机密码只会生成一份看起来很像样、实际登不上的配置。
+#### `--base-url` 到底填什么
+
+填**用户实际访问用的 origin**，不是容器地址，也不是内网回环地址。域名完全可以，而且有域名就该用域名：
+
+| 场景 | 填什么 |
+|---|---|
+| 直接用 IP 访问 | `http://10.0.0.5:18080` |
+| 有域名，直连 18080 | `http://mateclaw-test.example.com:18080` |
+| 域名 + nginx 反代 + TLS | `https://mateclaw-test.example.com`（不带端口） |
+| 只在本机测 | `http://localhost:18080` |
+
+注意最后两种的区别：反代场景下端口是 nginx 的 443，不是容器的 18080，所以**不能带端口**。
+填错的典型症状是页面能打开，但企微里收到的排障链接点开是 404 或连不上。
+
+它会写进三个配置项：
+
+| 配置项 | 影响 |
+|---|---|
+| `MATECLAW_PUBLIC_BASE_URL` | 生成文件的下载绝对链接、IM 通道回链 |
+| `MATECLAW_TROUBLESHOOTING_WORKBENCH_BASE_URL` | 排障深链 `{base}/troubleshooting?diagnosisId=…` |
+| `MATECLAW_CORS_ALLOWED_ORIGINS` | 浏览器跨域白名单 |
+
+**为什么不能让程序自己猜？** 不配的话服务端只能回落到请求的 Host 头。在反代后面那就是内网地址，
+页面上看着没问题——因为浏览器本来就在那个页面上；但一旦链接离开浏览器（发进企微、被复制转发），
+收到的人就打不开了。所以凡是要"活着离开浏览器"的链接，都必须有一个显式的绝对地址。
+
+脚本会从 `.env.example` 生成 `.env`，自动填入随机的 `JWT_SECRET`、`SEARXNG_SECRET`
+和 `MATECLAW_SETTING_KEY`，然后**主动停下来**，提示你补 MySQL 账号密码。这是有意为之：
+这两个值必须匹配你服务器上已存在的账号，脚本编一个随机密码只会生成一份看起来很像样、
+实际登不上的配置。
+
+#### `MATECLAW_SETTING_KEY` 要备份
+
+它是落库凭据的加密口令（AES-256-GCM），保护公众号 `app_secret`、**观测云 API Key**
+这类存在数据库里的密钥。
+
+- **留空不会报错**，但会回落到编译进镜像的默认口令——那把钥匙每套安装都一样、且随代码公开，
+  只算混淆不算保护。所以脚本在新建 `.env` 时直接给你生成一个。
+- **它是解开已有密文的唯一钥匙。** 换掉或丢了，库里已存的密钥就再也读不出来，只能逐个重填。
+  所以请连同 `.env` 一起备份。
+- 如果你的 `.env` 是在这次改动之前生成的（里面没有这一项），脚本**不会**帮你补，只会警告。
+  这是刻意的：库里如果已经存了密文，写进一把新钥匙等于把它们全部作废。空库随时可以补上，
+  用过的库要先想清楚。
 
 ### 2.3 填 MySQL 账号
 
@@ -119,6 +165,30 @@ DB_PASSWORD=你在 2.1 里设的密码
 5. 起容器，轮询健康检查，最多等 5 分钟
 
 看到 `[deploy] server is UP` 就成了。
+
+---
+
+### 2.5 关于多机部署
+
+先区分两种"多机"，它们的答案完全不同。
+
+**应用和数据库分开在两台机器上** —— 这正是本文的默认场景，MySQL 在别的机器上，
+`--db-host` 指过去就行，`--base-url` 填应用那台的访问地址。没有任何额外问题。
+
+**跑多个应用实例、前面挂负载均衡** —— **测试环境请只起一个实例。**
+这套系统目前只是部分支持横向扩展，以下几处状态是节点本地的：
+
+| 组件 | 问题 |
+|---|---|
+| 企微通道 | `WeComChannelAdapter.requiresSingleLeader()` 返回 `true`，且入站 `req_id` 存在节点内存的 `ConcurrentHashMap` 里。只有持有该上下文的那个节点能回消息 |
+| `/app/data` 文件 | 上传、生成文件、聊天附件落在各自节点的卷里，另一个节点读不到 |
+| 取证会话注册表 | 未命中路 Agent 的工具会话在内存里，不跨节点 |
+| Webchat | 应用内文档明确写着当前是单实例，多实例在路线图上 |
+
+已经做好的部分是：REST 鉴权是无状态 JWT（`SessionCreationPolicy.STATELESS`），轮询转发没问题；
+通道 leader 用 ShedLock 选举；排障的运行键用数据库租约领取。
+也就是说**底子是往多实例走的，但还没走完**。真要多实例，至少得先解决共享存储和会话粘滞，
+那超出测试环境的范围。
 
 ---
 
@@ -165,7 +235,8 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compos
 `MATECLAW_OPENAPI_EXPOSE_UI` 和整个 `MATECLAW_TROUBLESHOOTING_*` 段落，但
 `docker-compose.yml` 根本没有把它们传进容器。也就是说**在 Docker 下往 `.env` 里写这些值
 是完全没有效果的**，而测试环境恰恰是最可能有人去打开这些开关、然后得出"这功能是坏的"
-结论的地方。
+结论的地方。（排障开关现在已改为数据库配置，见 §5.2；这里保留转发是为了让首次部署仍有
+一个可用的默认值，以及让 `MATECLAW_SECURITY_SSRF_ALLOWLIST` 这类部署级边界能生效。）
 
 **固定堆大小。** 仓库里没有任何地方设 `-Xmx`，JVM 默认吃宿主机内存的 25%。同一个镜像在
 8 GB 和 64 GB 机器上行为完全不同。覆盖文件用 `mem_limit` 配合 `MaxRAMPercentage`，
@@ -213,18 +284,44 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compos
 另外，全新库并不是"一个供应商都没有"——种子数据会插入一批供应商记录，只是 `api_key` 为空、
 处于禁用状态，需要你填 key 并启用。
 
-### 5.2 智能排障模块开关（默认全关）
+### 5.2 智能排障模块开关（默认全关，页面上改）
 
-| 环境变量 | 默认 | 含义 |
+**这几个开关现在存在数据库里，按 Workspace 生效，不需要改 `.env`、也不需要重启。**
+
+入口：**智能排障 → 更多配置 → 数据连接**，页面顶部的「数据源连接设置」卡片。需要
+`manage:troubleshooting` 能力，也就是 workspace **admin 及以上**；普通成员看不到这张卡。
+
+| 页面上的项 | 默认 | 含义 |
 |---|---|---|
-| `MATECLAW_TROUBLESHOOTING_GUANCE_ENABLED` | `false` | 观测云真源取证 |
-| `MATECLAW_TROUBLESHOOTING_GUANCE_BASE_URL` | 空 | 观测云地址 |
-| `MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY` | 空 | 观测云密钥 |
-| `MATECLAW_TROUBLESHOOTING_REPLAY_ENABLED` | `false` | 录制回放（fixture，非真实数据） |
-| `MATECLAW_TROUBLESHOOTING_AGENT_ENABLED` | `false` | 未命中路 Agent |
-| `MATECLAW_TROUBLESHOOTING_AGENT_ID` | `0` | 专用 Agent 的 ID |
+| 观测云（Guance） | 关 | 真源取证总开关 |
+| 观测云 API 地址 | 空 | 只填到域名和端口，不带查询路径 |
+| 观测云 API Key | 空 | 只写不读，见下 |
+| 允许 http 明文端点 | 关 | 仅内网确无 TLS 时使用，平时不显示 |
+| 受控回放（Recorded Replay） | 关 | fixture 样本，非真实数据 |
+| 未命中路 Agent | 关 | OPEN_DISCOVERY 兜底调查 |
 
-改 `.env` 后需要重启：`./scripts/deploy-test-env.sh up`。
+几点需要知道：
+
+- **API Key 只写不读。** 存进去就用 AES-256-GCM 加密，页面只回显 `****a1b2` 这样的尾号提示。
+  改地址时把密钥框留空就是"保持不变"；要清除得点那个显式的清除按钮。这样改个地址不会顺手把凭据抹了。
+- **内网地址还要过出站白名单。** 页面允许 admin 选地址，但一个内网/私网主机能不能被访问，
+  仍由部署环境的 `MATECLAW_SECURITY_SSRF_ALLOWLIST` 决定（逗号分隔，支持主机名、IP、IPv4 CIDR）。
+  没加进白名单的私网地址在保存时就会被拒。这是有意的两把钥匙：**Workspace 决定用哪个地址，
+  部署决定内网里有哪些地址存在**，避免一个 admin 账号被盗就能把取证请求指向任意内网服务。
+- **改地址会让已有的 T7 验收失效**，需要 owner 重新验收，这是刻意的：端点变了，之前那次核实就不算数了。
+- 每次保存都会写审计（谁、什么时候、改了什么、变更说明），但**不记录密钥本身**。
+- 并发保存有乐观锁。两个人同时改，后提交的会被拒绝并提示重新载入，而不是悄悄覆盖对方的密钥。
+
+仍然留在 `.env` 里的只有这两个：
+
+| 环境变量 | 默认 | 为什么不在数据库 |
+|---|---|---|
+| `MATECLAW_TROUBLESHOOTING_AGENT_ID` | `0` | 已有独立的"数字员工绑定"页面管理 |
+| `MATECLAW_SECURITY_SSRF_ALLOWLIST` | 空 | 部署级安全边界，不能让被管理的一方自己放开 |
+
+数据库里没有该 Workspace 的记录时，页面显示的是 `.env` 里的值，标记为「继承部署默认值」；
+第一次保存后就转为「本 Workspace 配置」，之后不再跟随 `.env` 变化。也就是说**老部署不改任何东西，
+行为和以前完全一致**。
 
 **重要：把开关打开不等于取到的证据就可信。** 在 workspace owner 完成观测云
 measurement / 字段契约核实之前，`fixtureMode` 恒为 true，结论不具备真实性。
@@ -283,6 +380,11 @@ measurement / 字段契约核实之前，`fixtureMode` 恒为 true，结论不�
 10. **改掉默认密码**
 11. 中文没乱码：随便建个带中文名的对象，刷新后确认显示正常
 12. 在 `设置 → 模型管理` 配一个 LLM key，发一条消息验证能通
+13. 启动日志里**没有** `[SettingCrypto] No MATECLAW_SETTING_KEY set`：
+    `./scripts/deploy-test-env.sh logs | grep SettingCrypto`
+    有这条就说明落库密钥在用公开的默认口令，回到 §2.2
+14. 排障配置卡可用：用 admin 打开「智能排障 → 更多配置 → 数据连接」，
+    确认顶部出现「数据源连接设置」，且标着「继承部署默认值」
 
 ---
 

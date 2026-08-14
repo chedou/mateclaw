@@ -307,6 +307,196 @@
       },
       "source": "recorded-replay:mq-backlog",
       "collectedAt": "2026-08-02T04:10:00Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "scenario:url_slow_request",
+      "requestId": "SYNTH-LOG-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "url_slow_request"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-url-slow-request/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：URL 慢请求（code 1010）取样",
+      "observed": {
+        "match_count": 110,
+        "ps_id": "replay-ps-csdp-wechat-slow-001",
+        "sample_message": "[Controller-Finish] Request completed with slow execution: POST /openapi/v1/csdp-wechat-proxy/general-request (duration: 35.74s)"
+      },
+      "source": "recorded-replay:csdp-wechat-url-slow-request",
+      "collectedAt": "2026-08-06T04:00:00Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "scenario:url_slow_request",
+      "requestId": "SYNTH-TRACE-BUNDLE",
+      "signalKind": "log_trace_bundle",
+      "target": {
+        "ps_id": "replay-ps-csdp-wechat-slow-001"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-url-slow-request/trace-bundle",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：最慢一次请求（35.74s）的全链路日志",
+      "observed": {
+        "ps_id": "replay-ps-csdp-wechat-slow-001",
+        "entries": [
+          {
+            "timestamp": 1785979822000,
+            "service": "csdp-wechat",
+            "level": "INFO",
+            "message": "[BeforeRouter] Request started: POST /openapi/v1/csdp-wechat-proxy/general-request"
+          },
+          {
+            "timestamp": 1785979822100,
+            "service": "csdp-wechat",
+            "level": "INFO",
+            "message": "ProxyController: 路由 POST /scl/v1/partner/workorder/upgradesrv -> PartnerWorkOrderController.WorkOrderPartnerUpgradeService"
+          },
+          {
+            "timestamp": 1785979822200,
+            "service": "csdp-wechat",
+            "level": "INFO",
+            "message": "AKSK 签名校验通过；Redis 命中 partner 会话",
+            "duration_ms": 180
+          },
+          {
+            "timestamp": 1785979853000,
+            "service": "it-gw",
+            "level": "ERROR",
+            "message": "HTTP请求失败 case/workOrderPhase/channel/upToCtiV2：context deadline exceeded (Client.Timeout exceeded while awaiting headers)，try count:1",
+            "duration_ms": 31000
+          },
+          {
+            "timestamp": 1785979857600,
+            "service": "it-gw",
+            "level": "WARN",
+            "message": "重试第 2 次返回 HTTP 200，业务返回：当前工单已经升级cti，请勿重复请求",
+            "duration_ms": 4600
+          },
+          {
+            "timestamp": 1785979857740,
+            "service": "csdp-wechat",
+            "level": "WARN",
+            "message": "[Controller-Finish] Request completed with slow execution: POST /openapi/v1/csdp-wechat-proxy/general-request (duration: 35.74s)",
+            "duration_ms": 35740
+          }
+        ]
+      },
+      "source": "recorded-replay:csdp-wechat-url-slow-request",
+      "collectedAt": "2026-08-06T04:00:01Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "scenario:url_slow_request",
+      "requestId": "SYNTH-CONTRAST-SAMPLE",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "url_slow_request",
+        "exclude_ps_id": "replay-ps-csdp-wechat-slow-001"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-url-slow-request/contrast-sample",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：工单升级路由与同窗口其他代理路由的慢请求率对照",
+      "observed": {
+        "discriminating_feature": "itgw_upto_cti_sync_wait",
+        "failure_sample_count": 71,
+        "failure_match_count": 28,
+        "success_sample_count": 21412,
+        "success_match_count": 35
+      },
+      "source": "recorded-replay:csdp-wechat-url-slow-request",
+      "collectedAt": "2026-08-06T04:00:02Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "1009",
+      "requestId": "SYNTH-LOG-SEARCH",
+      "signalKind": "log_search",
+      "target": {
+        "search_term": "search_username_over_limit"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-1009/log-search",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：搜索用户名超限制（1009）取样；计数来自告警声明的数量 4",
+      "observed": {
+        "match_count": 4,
+        "ps_id": "replay-ps-csdp-wechat-1009-001",
+        "sample_message": "search username exceeds configured limit, errorCode=1009"
+      },
+      "source": "recorded-replay:csdp-wechat-1009",
+      "collectedAt": "2026-08-14T05:06:00Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "1009",
+      "requestId": "SYNTH-TRACE-BUNDLE",
+      "signalKind": "log_trace_bundle",
+      "target": {
+        "ps_id": "replay-ps-csdp-wechat-1009-001"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-1009/trace-bundle",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：一次 1009 搜索调用链骨架",
+      "observed": {
+        "ps_id": "replay-ps-csdp-wechat-1009-001",
+        "entries": [
+          {
+            "timestamp": 1786683960000,
+            "service": "csdp-wechat",
+            "level": "INFO",
+            "message": "search customer by username started"
+          },
+          {
+            "timestamp": 1786683960200,
+            "service": "csdp-wechat",
+            "level": "WARN",
+            "message": "username exceeds configured search limit, return 1009"
+          },
+          {
+            "timestamp": 1786683960300,
+            "service": "csdp-wechat",
+            "level": "INFO",
+            "message": "search request completed with errorCode=1009"
+          }
+        ]
+      },
+      "source": "recorded-replay:csdp-wechat-1009",
+      "collectedAt": "2026-08-14T05:06:01Z"
+    },
+    {
+      "system": "CSDP",
+      "service": "csdp-wechat",
+      "errorCode": "1009",
+      "requestId": "SYNTH-CONTRAST-SAMPLE",
+      "signalKind": "contrast_sample",
+      "target": {
+        "scenario_key": "search_username_over_limit",
+        "exclude_ps_id": "replay-ps-csdp-wechat-1009-001"
+      },
+      "namespace": "L",
+      "query": "recorded:csdp-wechat-1009/contrast-sample",
+      "status": "ANOMALY",
+      "summary": "脱敏回放：用户名超限特征在失败与成功对照中的命中率；对照为夹具而非观测云拉取",
+      "observed": {
+        "discriminating_feature": "username_search_over_limit",
+        "failure_sample_count": 4,
+        "failure_match_count": 4,
+        "success_sample_count": 4,
+        "success_match_count": 0
+      },
+      "source": "recorded-replay:csdp-wechat-1009",
+      "collectedAt": "2026-08-14T05:06:02Z"
     }
   ]
 }

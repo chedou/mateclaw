@@ -6,6 +6,7 @@ import vip.mate.agent.AgentService;
 import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.model.AgentEntity;
 import vip.mate.exception.MateClawException;
+import vip.mate.troubleshooting.evidence.WorkspaceEvidenceSettingsService;
 import vip.mate.troubleshooting.repository.TroubleshootingOpenDiscoveryAgentBindingMapper;
 import vip.mate.troubleshooting.model.TroubleshootingOpenDiscoveryAgentBindingEntity;
 
@@ -36,17 +37,29 @@ public final class OpenDiscoveryAgentGate {
     private final AgentService agentService;
     private final AgentBindingService bindingService;
     private final TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings;
+    /** Nullable; absent means enablement can only come from application.yml. */
+    private final WorkspaceEvidenceSettingsService workspaceSettings;
 
     @Autowired
     public OpenDiscoveryAgentGate(
             TroubleshootingAgentProperties properties,
             AgentService agentService,
             AgentBindingService bindingService,
-            TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings) {
+            TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings,
+            @Autowired(required = false) WorkspaceEvidenceSettingsService workspaceSettings) {
         this.properties = properties;
         this.agentService = agentService;
         this.bindingService = bindingService;
         this.workspaceBindings = workspaceBindings;
+        this.workspaceSettings = workspaceSettings;
+    }
+
+    public OpenDiscoveryAgentGate(
+            TroubleshootingAgentProperties properties,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingOpenDiscoveryAgentBindingMapper workspaceBindings) {
+        this(properties, agentService, bindingService, workspaceBindings, null);
     }
 
     /** Test / legacy constructor without workspace bindings. */
@@ -54,7 +67,25 @@ public final class OpenDiscoveryAgentGate {
             TroubleshootingAgentProperties properties,
             AgentService agentService,
             AgentBindingService bindingService) {
-        this(properties, agentService, bindingService, null);
+        this(properties, agentService, bindingService, null, null);
+    }
+
+    /**
+     * Whether the miss path is switched on for this workspace.
+     *
+     * <p>Was process-wide, which meant enabling it for one pilot tenant
+     * enabled it for every tenant that happened to have an agent bound. The
+     * workspace row now decides; without one, the deployment default stands.
+     */
+    boolean agentEnabled(long workspaceId) {
+        if (workspaceSettings == null || workspaceId <= 0) {
+            return properties.isEnabled();
+        }
+        try {
+            return workspaceSettings.effective(workspaceId).agentEnabled();
+        } catch (RuntimeException lookupFailure) {
+            return properties.isEnabled();
+        }
     }
 
     public long resolveAgentId(long workspaceId) {
@@ -92,7 +123,7 @@ public final class OpenDiscoveryAgentGate {
 
     private Inspection inspect(long workspaceId, long agentId) {
         List<String> blockers = new ArrayList<>();
-        if (!properties.isEnabled()) {
+        if (!agentEnabled(workspaceId)) {
             blockers.add("开放调查开关未打开（mateclaw.troubleshooting.agent.enabled）");
         }
         if (agentId <= 0) {
@@ -155,7 +186,7 @@ public final class OpenDiscoveryAgentGate {
         }
 
         Status status;
-        if (!properties.isEnabled()) {
+        if (!agentEnabled(workspaceId)) {
             status = Status.DISABLED;
         } else if (!blockers.isEmpty()) {
             status = Status.MISCONFIGURED;
@@ -167,7 +198,7 @@ public final class OpenDiscoveryAgentGate {
 
     /** Same fail-closed rules triage uses before any model call. */
     public AgentEntity requireReadyAgent(long workspaceId) {
-        if (!properties.isEnabled()) {
+        if (!agentEnabled(workspaceId)) {
             throw configurationConflict("troubleshooting miss-path Agent is disabled");
         }
         long agentId = resolveAgentId(workspaceId);

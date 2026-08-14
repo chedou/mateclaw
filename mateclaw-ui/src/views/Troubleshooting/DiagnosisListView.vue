@@ -2,9 +2,8 @@
   <section class="traditional-list-page">
     <header class="list-page-head">
       <div>
-        <span class="eyebrow">MateClaw · Troubleshooting</span>
         <h1>排障队列</h1>
-        <p>有告警就发起；点一条记录进入详情处置。</p>
+        <p>粘贴告警，或点一条记录进入详情。</p>
       </div>
       <div class="list-page-head-actions">
         <WorkbenchViewSwitch mode="LIST" @change="emit('switch-view')" />
@@ -218,16 +217,12 @@
         <div class="empty-mark">MC</div>
         <h2>{{ rows.length ? '没有匹配的记录' : '还没有诊断记录' }}</h2>
         <p v-if="rows.length">尝试调整搜索关键词或筛选条件。</p>
-        <p v-else>有告警？点「发起排障」填表，或在表单里改用对话补问。生成排障单后进入详情继续。</p>
+        <p v-else>点「发起排障」，把告警贴进去。</p>
         <el-button v-if="!rows.length && (canOperate || canManage)" type="primary" plain @click="emit('launch')">
           {{ TROUBLESHOOTING_UI_LABELS.launch }}
         </el-button>
       </div>
     </div>
-
-    <footer class="list-page-foot">
-      <span>正式入口 · 真实 API</span>
-    </footer>
   </section>
 </template>
 
@@ -360,12 +355,12 @@ function onSelectionChange(rows: DiagnosisSummary[]) {
 .list-page-head h1 { margin:6px 0 4px; font-size:28px; letter-spacing:-.035em; }
 .list-page-head p { margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-sm); }
 .list-page-head-actions { display:flex; align-items:center; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
-.pilot-workbench-strip { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr) minmax(170px,.42fr); align-items:center; gap:28px; margin-top:24px; padding:20px 0; border-top:1px solid var(--mc-border); border-bottom:1px solid var(--mc-border); background:linear-gradient(90deg,var(--mc-status-info-bg),transparent 72%); }
+.pilot-workbench-strip { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(220px,.55fr); align-items:center; gap:20px; margin-top:16px; padding:12px 0; border-top:1px solid var(--mc-border); border-bottom:1px solid var(--mc-border); }
 .pilot-copy>span,.pilot-owner-action>span { color:var(--mc-primary); font-size:10px; font-weight:750; letter-spacing:.08em; }
-.pilot-copy h2 { margin:5px 0 4px; color:var(--mc-text-primary); font-size:18px; letter-spacing:-.02em; }
-.pilot-copy p { max-width:720px; margin:0; color:var(--mc-text-secondary); font-size:12px; line-height:1.6; }
-.pilot-copy code { display:inline-block; margin-top:8px; color:var(--mc-primary); font-size:10px; }
-.pilot-progress { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; margin:0; padding:0; list-style:none; }
+.pilot-copy h2 { margin:4px 0 0; color:var(--mc-text-primary); font-size:16px; letter-spacing:-.02em; }
+.pilot-copy p { display:none; }
+.pilot-copy code { display:inline-block; margin-top:6px; color:var(--mc-primary); font-size:10px; }
+.pilot-progress { display:none; }
 .pilot-progress li { position:relative; display:grid; justify-items:center; gap:6px; color:var(--mc-text-tertiary); font-size:10px; text-align:center; }
 .pilot-progress li::before { position:absolute; top:10px; right:50%; left:-50%; height:1px; background:var(--mc-border); content:''; }
 .pilot-progress li:first-child::before { display:none; }

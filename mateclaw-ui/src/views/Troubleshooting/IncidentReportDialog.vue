@@ -6,14 +6,7 @@
     destroy-on-close
   >
     <div class="launch-guide">
-      <p class="launch-lead">
-        把告警原样整理进来即可。你只需要系统、服务和现象；可选填错误码与时间线索。
-      </p>
-      <ul class="launch-checklist">
-        <li>不要粘贴原始日志、DQL 或密钥</li>
-        <li>会生成或复用<strong>同一张排障单</strong></li>
-        <li>全程只读，不会改生产</li>
-      </ul>
+      <p class="launch-lead">把告警里的系统、服务和现象填进来即可。不要贴日志、DQL 或密钥。</p>
     </div>
 
     <el-form label-position="top" @submit.prevent="$emit('submit')">

@@ -239,6 +239,10 @@ public class TroubleshootingIntakeService {
                             : scenarioRouter.route(workspaceId, sanitizedIncident);
             if (scenarioRoute != null && scenarioRoute.matched()) {
                 sop = scenarioRoute.playbook();
+                // The alert named no code; the matched Playbook names the route.
+                // Stamping it here is what lets the scenario lane reuse the one
+                // deterministic engine instead of growing a parallel one.
+                sanitizedIncident = sanitizedIncident.withResolvedRoute(sop.errorCode());
             } else {
                 return triageRouteMiss(
                         workspaceId,

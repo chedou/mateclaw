@@ -60,7 +60,8 @@ class TroubleshootingControllerProjectionTest {
         mvc.perform(get("/api/v1/troubleshooting/diagnoses/diag-1/projection")
                         .header("X-Workspace-Id", "7"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.businessSummary.conclusionType").value("LOCATED"))
+                .andExpect(jsonPath("$.data.businessSummary.rootCause")
+                        .value("订单服务 Mongo 连接池耗尽"))
                 .andExpect(jsonPath("$.data.businessSummary.fixtureMode").value(true))
                 .andExpect(jsonPath("$.data.businessSummary.timings.intakeCost").value("PT2S"))
                 .andExpect(jsonPath("$.data.businessSummary.timings.investigateCost").value("PT3S"))
@@ -230,7 +231,8 @@ class TroubleshootingControllerProjectionTest {
         DiagnosisExperienceProjection.BusinessSummary business =
                 new DiagnosisExperienceProjection.BusinessSummary(
                         "diag-1", ConclusionType.LOCATED,
-                        "已定位异常环节", "确定性判据已命中。", Confidence.HIGH,
+                        "已定位异常环节", "订单服务 Mongo 连接池耗尽",
+                        "确定性判据已命中。", null, Confidence.HIGH,
                         "订单创建超时", impact,
                         new DiagnosisExperienceProjection.NextStep(
                                 "定位结果", "请开发复核", "平台不执行生产变更"),

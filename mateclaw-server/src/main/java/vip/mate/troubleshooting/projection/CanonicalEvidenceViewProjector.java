@@ -107,7 +107,10 @@ final class CanonicalEvidenceViewProjector {
                 BlastRadius.UNKNOWN,
                 List.of(),
                 null,
-                "当前 intake 只保存文本影响描述，未保存有证据引用的客户数、用户数或扩散范围。"
+                // Says why the number is missing in terms of the reader's world.
+                // The previous wording explained our storage design to a service
+                // manager, which reads as an internal defect report.
+                "报障信息里没有可核实的客户数或影响范围，系统不做推断。"
         );
     }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
+import { createPinia } from 'pinia'
 import type { EvidenceQueryCatalog, ObservabilityAssetCatalog } from '@/api'
 
 const evidenceCatalog = vi.fn()
@@ -108,6 +109,9 @@ describe('evidence setup gate', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const app = createApp(Page)
+    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+    app.use(createPinia())
     app.mount(host)
     await nextTick()
     await Promise.resolve()

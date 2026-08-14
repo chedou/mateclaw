@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DeveloperEvidenceView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DraftView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceStep;
@@ -46,7 +47,7 @@ import java.util.Optional;
 public class DiagnosisExperienceProjectionService {
 
     private static final String WRITE_BOUNDARY =
-            "系统只帮你查证据、推进工单；改生产环境要人在外面做完，再回来登记结果。";
+            "不改生产环境；处置完成后回来登记。";
 
     private final TroubleshootingPersistenceService persistence;
     private final DiagnosisDerivationService derivationService;
@@ -114,7 +115,9 @@ public class DiagnosisExperienceProjectionService {
                 diagnosis.diagnosisId(),
                 conclusionType,
                 headline(conclusionType),
+                businessRootCause(diagnosis, conclusionType),
                 narrative(diagnosis, conclusionType, gaps),
+                keyEvidence(evidenceFacts.contrast()),
                 confidence,
                 problem(diagnosis),
                 impact,
@@ -238,10 +241,18 @@ public class DiagnosisExperienceProjectionService {
 
     private String headline(ConclusionType conclusionType) {
         return switch (conclusionType) {
-            case LOCATED -> "已通过受控证据定位到异常环节";
+            case LOCATED -> "已定位到出问题的环节";
             case EXCLUDED -> "现有证据已排除当前假设";
             case HYPOTHESIS -> "已形成需要人工确认的根因假设";
             case INSUFFICIENT_EVIDENCE -> "证据不足，系统已停止自动判断";
+        };
+    }
+
+    /** Null unless the conclusion actually names a cause the reader can act on. */
+    private String businessRootCause(Diagnosis diagnosis, ConclusionType conclusionType) {
+        return switch (conclusionType) {
+            case LOCATED, HYPOTHESIS -> normalizeNullable(diagnosis.rootCause());
+            case EXCLUDED, INSUFFICIENT_EVIDENCE -> null;
         };
     }
 
@@ -254,16 +265,44 @@ public class DiagnosisExperienceProjectionService {
                     + "也没有给出根因。下面列出的是配置缺口，不是报障人要补的材料。";
         }
         return switch (conclusionType) {
-            case LOCATED -> "经过审核的排障规则命中，当前定位为："
-                    + fallback(diagnosis.rootCause(), diagnosis.summary(), "已定位异常")
-                    + "。请结合开发证据复核后推进处置。";
+            // The Playbook author already wrote the explanation for this exact
+            // failure; a generic template that says the rule matched tells the
+            // reader about our machinery instead of about their outage.
+            case LOCATED -> fallback(
+                    diagnosis.summary(),
+                    "经过审核的排障规则命中。请结合开发证据复核后推进处置。");
             case EXCLUDED -> "判据不支持当前假设。这是排除结论，不代表已经定位根因。";
-            case HYPOTHESIS -> "只读证据支持以下待确认方向："
-                    + fallback(diagnosis.rootCause(), diagnosis.summary(), "待人工确认")
-                    + "。该结论未经过确定性 SOP 判据裁决。";
+            case HYPOTHESIS -> fallback(
+                    diagnosis.summary(),
+                    "只读证据支持上述待确认方向，该结论未经过确定性 SOP 判据裁决。");
             case INSUFFICIENT_EVIDENCE -> "关键证据缺失或互相矛盾，系统没有给出根因。"
                     + "请先补齐开发证据台列出的缺口，再重新调查。";
         };
+    }
+
+    /**
+     * States the comparison in counts, so the reader can judge the conclusion
+     * instead of trusting it.
+     *
+     * <p>Reads the already-validated canonical contrast rather than the raw
+     * observed map: a second parser here would be a second chance to disagree
+     * with the developer view about what the same evidence said. The feature is
+     * left unnamed because the root cause line above already names it, and a
+     * second code-to-Chinese table would only drift from the one the developer
+     * view uses.</p>
+     */
+    private String keyEvidence(ContrastView contrast) {
+        if (contrast == null || !contrast.available()
+                || contrast.failedRequests() == null || contrast.normalRequests() == null) {
+            return null;
+        }
+        return "异常 "
+                + contrast.failedRequests().requestsWithFeature()
+                + "/" + contrast.failedRequests().totalRequests()
+                + " 命中同一特征，正常 "
+                + contrast.normalRequests().requestsWithFeature()
+                + "/" + contrast.normalRequests().totalRequests()
+                + "。";
     }
 
     private String problem(Diagnosis diagnosis) {
@@ -280,18 +319,16 @@ public class DiagnosisExperienceProjectionService {
         String team = fallback(diagnosis.routeToTeam(), "责任开发");
         return switch (conclusionType) {
             case LOCATED -> {
-                RecommendedAction action = diagnosis.recommendedActions().stream().findFirst().orElse(null);
-                if (action == null) {
+                List<RecommendedAction> actions = diagnosis.recommendedActions();
+                if (actions.isEmpty()) {
                     yield new NextStep(
                             "定位结果",
                             "请 " + team + " 复核定位结果并决定系统外处置方式。",
                             WRITE_BOUNDARY);
                 }
-                yield new NextStep(
-                        "解决方案",
-                        action.title() + (action.description().isBlank()
-                                ? "" : "：" + action.description()),
-                        WRITE_BOUNDARY);
+                // Not 「解决方案」: the capability boundary on this very field
+                // says the system locates and does not hand over a fix.
+                yield new NextStep("定位结果", actionChecklist(actions), WRITE_BOUNDARY);
             }
             case EXCLUDED -> new NextStep(
                     "排除结论",
@@ -305,6 +342,35 @@ public class DiagnosisExperienceProjectionService {
                     "下一步",
                     "补齐缺失的日志、调用链或指标证据后重新调查。",
                     "证据不足，系统已弃权且没有给出根因；" + WRITE_BOUNDARY);
+        };
+    }
+
+    /**
+     * Every recommended action, each marked with who performs it.
+     *
+     * <p>Showing only the first one hid the action that actually needed a
+     * person: the read-only review the system can run itself came first, so the
+     * reader was told to wait for us while the real next move — asking the
+     * gateway owner — was never mentioned.</p>
+     */
+    private String actionChecklist(List<RecommendedAction> actions) {
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < actions.size(); index++) {
+            RecommendedAction action = actions.get(index);
+            if (index > 0) {
+                text.append('\n');
+            }
+            text.append(index + 1).append(". ").append(action.title())
+                    .append(' ').append(performerOf(action));
+        }
+        return text.toString();
+    }
+
+    private String performerOf(RecommendedAction action) {
+        return switch (action.actionType()) {
+            case AUTO_READONLY -> "— 系统可代做";
+            case HUMAN_CONTACT -> "— 需人去联系确认";
+            case MANUAL_WRITE, MANUAL_UNKNOWN -> "— 需人在平台外完成，再回来登记结果";
         };
     }
 
@@ -491,6 +557,10 @@ public class DiagnosisExperienceProjectionService {
             }
         }
         return "待确认";
+    }
+
+    private String normalizeNullable(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

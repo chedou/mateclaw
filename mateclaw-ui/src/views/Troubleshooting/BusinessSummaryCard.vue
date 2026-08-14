@@ -15,28 +15,26 @@
             {{ confidencePresentation.label }}
           </span>
         </div>
-        <h2>{{ business.headline }}</h2>
-        <p>{{ business.narrative }}</p>
+        <h2>{{ business.rootCause || business.headline }}</h2>
+        <p v-if="!business.rootCause">{{ business.narrative }}</p>
       </div>
     </div>
 
     <div class="summary-grid">
-      <article>
-        <span class="section-label">问题</span>
-        <strong>{{ business.problem }}</strong>
+      <article v-if="business.keyEvidence">
+        <span class="section-label">关键数字</span>
+        <strong>{{ business.keyEvidence }}</strong>
       </article>
-      <article>
+      <article v-if="showImpact">
         <span class="section-label">影响</span>
         <strong>{{ business.impact.functionScope }}</strong>
         <div v-if="impactMetricList.length" class="impact-metrics">
           <span v-for="metric in impactMetricList" :key="metric">{{ metric }}</span>
         </div>
-        <small>{{ blastRadiusLabel(business.impact.blastRadius) }} · {{ business.impact.note }}</small>
       </article>
       <article>
         <span class="section-label">{{ business.nextStep.label }}</span>
         <strong>{{ business.nextStep.text }}</strong>
-        <small class="capability-boundary">{{ business.nextStep.capabilityBoundary }}</small>
       </article>
     </div>
 
@@ -52,11 +50,11 @@
       </small>
     </section>
 
-    <section class="north-star">
-      <header>
-        <span class="ns-title">北极星耗时 · 三个阶段分别计量</span>
-        <span class="ns-note">三段由不同的人承担，不合成总时长——合成之后就分不清该优化哪一段。</span>
-      </header>
+    <details class="north-star">
+      <summary>
+        <span class="ns-title">耗时</span>
+        <span class="ns-note">补问 / 调查 / 采纳分开计，不合成总时长</span>
+      </summary>
 
       <ol class="ns-stages">
         <li v-for="stage in stages" :key="stage.key" class="ns-stage" :class="stage.key + ' ' + stage.state">
@@ -77,9 +75,9 @@
       </ol>
 
       <p v-if="!stagesComplete" class="ns-incomplete">
-        有阶段尚未记录，因此不显示占比——在不完整的数据上画比例会凭空暗示一个系统并不知道的总量。
+        有阶段尚未记录，因此不显示占比。
       </p>
-    </section>
+    </details>
 
     <section class="human-review-guide" :class="status?.toLowerCase()">
       <div>
@@ -107,7 +105,7 @@
       >把这张单纳入试点评估</el-button>
       <span v-if="status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
       <span v-else-if="status === 'CLOSED' && !canEvaluate">请有管理权限的负责人把这张单纳入试点评估。</span>
-      <span v-else>这些按钮只记录人的判断和处置结果，MateClaw 不执行生产变更。</span>
+      <span v-else>只记录人的判断和结果，不改生产。</span>
     </div>
   </section>
 </template>
@@ -115,7 +113,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type {
-  BlastRadius,
   BusinessSummary,
   ClosureRecord,
   DiagnosisStatus,
@@ -132,10 +129,6 @@ import {
   formatWorkbenchTime as shortTime,
 } from './workbenchView'
 import { diagnosisConfidencePresentation } from './evidencePlainLanguage'
-
-const BLAST_RADIUS_LABEL: Record<BlastRadius, string> = {
-  SINGLE_CUSTOMER: '单客户影响', MULTI_CUSTOMER: '多客户影响', SYSTEM_WIDE: '系统级影响', UNKNOWN: '影响范围未知',
-}
 
 interface Props {
   business: BusinessSummary | null
@@ -201,7 +194,12 @@ const impactMetricList = computed(() => {
   return impact ? impactMetrics(impact.affectedCustomers, impact.affectedUsers) : []
 })
 
-function blastRadiusLabel(value: BlastRadius) { return BLAST_RADIUS_LABEL[value] }
+const showImpact = computed(() => {
+  const impact = props.business?.impact
+  if (!impact) return false
+  return impact.blastRadius !== 'UNKNOWN'
+    || impactMetricList.value.length > 0
+})
 
 function timeRange(from: string | null, to: string | null, pending = false) {
   if (!from && !to) return pending ? '尚未发生交接' : '阶段时间戳尚未纳入 Diagnosis'
@@ -218,20 +216,19 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .confidence-badge.high { color:var(--mc-success); background:var(--mc-status-success-bg); } .confidence-badge.medium { color:var(--mc-warning); background:var(--mc-status-warning-bg); } .confidence-badge.low { color:var(--mc-danger); background:var(--mc-status-error-bg); }
 .verdict-copy h2 { margin:14px 0 7px; font-size:clamp(21px,2vw,29px); line-height:1.25; letter-spacing:-.035em; } .verdict-copy>p { max-width:820px; margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-sm); line-height:1.75; }
 .section-label { display:block; color:var(--mc-text-tertiary); font-size:12px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
-.summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
-.summary-grid article { min-height:130px; padding:17px 18px; } .summary-grid article+article { border-left:1px solid var(--mc-border); }
-.summary-grid strong { display:block; margin:10px 0 8px; font-size:var(--mc-text-sm); line-height:1.55; } .summary-grid small { display:block; color:var(--mc-text-secondary); font-size:12px; line-height:1.55; }
-.impact-metrics { display:flex; gap:7px; margin:8px 0; } .impact-metrics span { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-info-text); background:var(--mc-status-info-bg); font-size:12px; } .capability-boundary { color:var(--mc-warning)!important; }
+.summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
+.summary-grid article { padding:14px 16px; }
+.summary-grid article:nth-child(even) { border-left:1px solid var(--mc-border); }
+.summary-grid strong { display:block; margin:8px 0 0; font-size:var(--mc-text-sm); line-height:1.55; white-space:pre-line; }
+.impact-metrics { display:flex; gap:7px; margin:8px 0 0; } .impact-metrics span { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-info-text); background:var(--mc-status-info-bg); font-size:12px; }
 .closure-result { display:grid; grid-template-columns:180px minmax(0,1fr) auto; align-items:center; gap:18px; margin-top:14px; padding:14px 16px; border:1px solid var(--mc-success); border-radius:var(--mc-radius-sm); background:var(--mc-status-success-bg); }
 .closure-result div b { display:block; margin-top:5px; color:var(--mc-success); font-size:var(--mc-text-sm); } .closure-result>strong { font-size:var(--mc-text-sm); line-height:1.55; } .closure-result>small { color:var(--mc-text-secondary); font-size:12px; text-align:right; }
-/* North-star timings: three stages, deliberately not one strip.
-   Each stage owns a lane, a colour and an owner label, because the three costs
-   are paid by three different parties and get optimised in different ways. */
-.north-star { margin-top:14px; padding:14px 16px 12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
-.north-star header { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.north-star { margin-top:14px; padding:10px 16px 12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
+.north-star > summary { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; cursor:pointer; list-style:none; }
+.north-star > summary::-webkit-details-marker { display:none; }
 .ns-title { color:var(--mc-text-primary); font-size:12px; font-weight:600; letter-spacing:.04em; }
 .ns-note { color:var(--mc-text-tertiary); font-size:12px; }
-.ns-stages { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0; padding:0; list-style:none; }
+.ns-stages { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:10px 0 0; padding:0; list-style:none; }
 .ns-stage { display:grid; gap:5px; padding:10px 12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg); border-left-width:3px; }
 .ns-stage.intake { border-left-color:var(--mc-primary); }
 .ns-stage.investigate { border-left-color:var(--mc-success); }
@@ -261,6 +258,6 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .human-review-guide small { grid-column:2; color:var(--mc-status-purple-text); font-size:11px; line-height:1.5; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--mc-border); } .lifecycle-bar>span { margin-left:5px; color:var(--mc-text-secondary); font-size:12px; }
 .active { color:var(--mc-primary)!important; } .success { color:var(--mc-success)!important; } .warning { color:var(--mc-warning)!important; } .muted { color:var(--mc-text-tertiary)!important; }
-@media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}}
-@media(max-width:760px){.ns-stages,.human-review-guide{grid-template-columns:1fr}.human-review-guide small{grid-column:1}.north-star header{flex-direction:column;gap:4px}.lifecycle-bar{align-items:flex-start;flex-direction:column}.lifecycle-bar>span{margin-left:0}}
+@media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border)}.summary-grid article:nth-child(even){border-left:0}}
+@media(max-width:760px){.ns-stages,.human-review-guide{grid-template-columns:1fr}.human-review-guide small{grid-column:1}.north-star>summary{flex-direction:column;gap:4px}.lifecycle-bar{align-items:flex-start;flex-direction:column}.lifecycle-bar>span{margin-left:0}}
 </style>

@@ -205,7 +205,9 @@ class ClosureNotificationPollerTest {
                 "diag-1",
                 ConclusionType.LOCATED,
                 "已定位会话消息发送失败",
+                "会话服务异常",
                 "证据指向会话服务异常。",
+                null,
                 Confidence.MEDIUM,
                 "会话消息发送失败",
                 new ImpactView(

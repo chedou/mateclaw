@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, inject, nextTick, provide } from 'vue'
+import { createPinia } from 'pinia'
 import type { EvidenceQueryCatalog, ObservabilityAssetCatalog } from '@/api'
 
 const evidenceCatalog = vi.fn()
@@ -51,6 +52,9 @@ describe('observability asset create flow', () => {
     app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
+    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+    app.use(createPinia())
     app.mount(host)
     await settle()
 
@@ -87,6 +91,9 @@ describe('observability asset create flow', () => {
     app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
+    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+    app.use(createPinia())
     app.mount(host)
     await settle()
 
@@ -129,6 +136,9 @@ describe('observability asset create flow', () => {
       app.component('ElDrawer', drawerStub)
       app.component('ElTable', tableStub)
       app.component('ElTableColumn', tableColumnStub)
+      // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+      // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+      app.use(createPinia())
       app.mount(host)
       await settle()
 
@@ -157,6 +167,9 @@ describe('observability asset create flow', () => {
     app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
+    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+    app.use(createPinia())
     app.mount(host)
     await settle()
 
@@ -214,6 +227,9 @@ describe('observability asset create flow', () => {
     app.component('ElDrawer', drawerStub)
     app.component('ElTable', tableStub)
     app.component('ElTableColumn', tableColumnStub)
+    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
+    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
+    app.use(createPinia())
     app.mount(host)
     await settle()
 

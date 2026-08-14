@@ -147,6 +147,32 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void pastedCsdpAlertExtractsAFourDigitBracketedBusinessCode() {
+        String alert = """
+                客服数字化(WECHAT)-【客户-搜索用户名超限制】-事件
+                ■【紧急】2026-08-14 13:06:00 (r/93bf1d)
+                集群：sz3-s-k8s
+                服务：csdp-wechat
+                数量：4
+                异常：客户-搜索用户名超限制【1009】
+                说明：异常事件
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-1009",
+                envelope("msg-1009", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.AWAITING_INPUT, session.status());
+        assertEquals("客户-搜索用户名超限制【1009】", session.symptom());
+        assertEquals("1009", session.errorCode(),
+                "CSDP 已有 4 位业务码；超限制不是失败二字，但不能因此丢掉括号里的码");
+        assertEquals("csdp-wechat", session.service());
+        assertEquals("未知", session.customerRef());
+        assertEquals(Instant.parse("2026-08-14T05:06:00Z"), session.occurredAt());
+        assertEquals(List.of("system"), session.missingFields());
+    }
+
+    @Test
     void conflictingBracketedErrorCodesAreNotGuessed() {
         IntakeSession session = reducer.start(
                 "intake-conflicting-codes",

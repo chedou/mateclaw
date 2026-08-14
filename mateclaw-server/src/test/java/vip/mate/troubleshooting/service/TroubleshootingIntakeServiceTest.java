@@ -35,6 +35,7 @@ import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -178,6 +179,41 @@ class TroubleshootingIntakeServiceTest {
 
         wired.report(WORKSPACE_ID, incident, List.of(evidence()), false);
 
+        verifyNoInteractions(agentTriageService);
+    }
+
+    /**
+     * The seam the scenario lane lives or dies on. Routing by symptom and
+     * running a deterministic diagnosis were each covered on their own, and
+     * between them sat a guard that rejected every incident without an error
+     * code — so a monitoring alert reached its reviewed Playbook and then got
+     * refused by the engine that Playbook exists to drive.
+     *
+     * <p>Stamping the matched selector onto the incident is what closes it:
+     * the diagnosis then names the exact route that decided it, and the alert
+     * that named no code still gets one deterministic answer.</p>
+     */
+    @Test
+    void anAlertRoutedBySymptomReachesTheDeterministicEngineNamingItsRoute() {
+        SopEntry scenario = new SopEntry(
+                "sop-url-slow", null, "CSDP", "scenario:url_slow_request", "order-svc",
+                "URL 慢请求", "", "", null, "approved", true,
+                List.of(), List.of(), List.of(), List.of(), List.of("慢请求"));
+        when(sopPersistence.list(eq(WORKSPACE_ID), eq("approved"), eq("CSDP"), anyInt()))
+                .thenReturn(List.of(summaryFor(scenario)));
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "scenario:url_slow_request"))
+                .thenReturn(scenario);
+        when(diagnosisService.diagnoseAndPersist(
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
+                .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
+
+        intake.report(WORKSPACE_ID, slowRequestAlert(), List.of(evidence()), false);
+
+        ArgumentCaptor<IncidentContext> routed = ArgumentCaptor.forClass(IncidentContext.class);
+        verify(diagnosisService).diagnoseAndPersist(
+                eq(WORKSPACE_ID), routed.capture(), eq(scenario), any(),
+                anyBoolean(), anyBoolean(), any(), any());
+        assertThat(routed.getValue().errorCode()).isEqualTo("scenario:url_slow_request");
         verifyNoInteractions(agentTriageService);
     }
 
@@ -790,6 +826,21 @@ class TroubleshootingIntakeServiceTest {
                 "inc-1", "CSDP", "order-svc", errorCode, "订单创建超时",
                 "P0", "订单创建成功率下降", "7f3a91c", NOW, "21:18",
                 "alert_webhook", completeness, "[ALERT] code=" + errorCode);
+    }
+
+    /** A monitoring alert as on-call staff paste it: a symptom and no code. */
+    private IncidentContext slowRequestAlert() {
+        return new IncidentContext(
+                "inc-slow-1", "CSDP", "order-svc", null, "URL慢请求", "P1",
+                IncidentImpact.unknown("未知"), null, NOW, null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED, "URL慢请求");
+    }
+
+    private SopSummary summaryFor(SopEntry entry) {
+        return new SopSummary(
+                entry.sopId(), entry.routingKey(), entry.system(), entry.errorCode(),
+                entry.service(), entry.status(), entry.verified(), entry.operational(),
+                LocalDateTime.now(), LocalDateTime.now(), 1, null, null, null, null, null);
     }
 
     private SopEntry sop() {

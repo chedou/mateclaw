@@ -57,6 +57,39 @@ describe('chatTroubleshootingIntent', () => {
     })).toBe(true)
   })
 
+  it('auto-starts for a latency alert that carries no error code', () => {
+    const text = `客服数字化(WECHAT)-【URL慢请求】-事件
+■【紧急】2026-08-06 12:00:00 (r/0009b2)
+集群：sz3-s-k8s
+服务：csdp-wechat
+数量：110
+说明：异常事件`
+
+    expect(classifyChatTroubleshootingIntent(text)).toBe('HIGH')
+    expect(shouldAutoStartTroubleshootingIntake(text, {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+    })).toBe(true)
+  })
+
+  it('auto-starts for a four-digit CSDP business-code alert', () => {
+    const text = `客服数字化(WECHAT)-【客户-搜索用户名超限制】-事件
+■【紧急】2026-08-14 13:06:00 (r/93bf1d)
+集群：sz3-s-k8s
+服务：csdp-wechat
+数量：4
+异常：客户-搜索用户名超限制【1009】
+说明：异常事件`
+
+    expect(classifyChatTroubleshootingIntent(text)).toBe('HIGH')
+    expect(shouldAutoStartTroubleshootingIntake(text, {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+    })).toBe(true)
+  })
+
   it('respects suppress and permission gates', () => {
     const text = '告警：会话创建失败'
     expect(shouldOfferTroubleshootingIntake(text, {

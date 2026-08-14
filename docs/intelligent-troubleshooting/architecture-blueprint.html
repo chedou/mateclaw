@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
-  <title>IT 智能排障系统 · MateClaw 架构蓝图 v0.19</title>
+  <title>IT 智能排障系统 · MateClaw 架构蓝图 v0.20</title>
   <style>
     :root {
       --paper: #f4f6f8;
@@ -135,7 +135,7 @@
 <body>
   <header>
     <div class="wrap">
-      <div class="eyebrow">MateClaw-only · Architecture Blueprint v0.19</div>
+      <div class="eyebrow">MateClaw-only · Architecture Blueprint v0.20</div>
       <h1>观测证据驱动的<br>智能排障系统</h1>
       <p class="lead">从一条不完整报障，到一个带证据、可交接、可复用的定位结论。中心不是错误码查表，也不是自由 Agent，而是一条证据脊柱。</p>
       <div class="meta">
@@ -146,7 +146,7 @@
         <span class="pill">自动化边界 · 只读</span>
         <span class="pill">Loop Engineering · 有界可回放</span>
         <span class="pill">Multi-Agent · 结构化反证</span>
-        <span class="pill"><a href="./versions/index.html">版本历史 · v0.7–v0.19</a></span>
+        <span class="pill"><a href="./versions/index.html">版本历史 · v0.7–v0.20</a></span>
       </div>
     </div>
   </header>
@@ -185,7 +185,7 @@
       <div class="head"><div class="num">03</div><div><h2>总体架构图</h2><p class="sub">从入口、证据脊柱、受控可插拔的只读 Tool 层，到在线排障与知识生产两个闭环；同时把“系统能扩什么、模型能看什么、平台不能写什么”画在边界上。</p></div></div>
       <figure class="diagram-shell">
         <div class="diagram-canvas"><a href="./diagrams/mateclaw-troubleshooting-architecture.svg" target="_blank" rel="noopener"><img src="./diagrams/mateclaw-troubleshooting-architecture.svg" alt="MateClaw 智能排障总体架构图" loading="lazy"></a></div>
-        <figcaption class="diagram-caption"><p>自 v0.18 起，拓扑快照是 Workspace 资产，拨测是场景 Playbook 调用只读 Tool，Guance CloudDial 只是 Adapter；结果归并到同一 Diagnosis / EvidenceBundle。v0.19 不改变这张图的语义。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-architecture.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-architecture.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
+        <figcaption class="diagram-caption"><p>自 v0.18 起，拓扑快照是 Workspace 资产，拨测是场景 Playbook 调用只读 Tool，Guance CloudDial 只是 Adapter；结果归并到同一 Diagnosis / EvidenceBundle。v0.19、v0.20 不改变这张图的语义。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-architecture.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-architecture.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
       </figure>
     </section>
 
@@ -193,7 +193,7 @@
       <div class="head"><div class="num">04</div><div><h2>端到端流程图</h2><p class="sub">从报障字段补齐、三类调查路径、EvidenceBundle 完整性判断，到人工关闭与 Playbook candidate 审核，明确每一个分支和回路。</p></div></div>
       <figure class="diagram-shell portrait">
         <div class="diagram-canvas"><a href="./diagrams/mateclaw-troubleshooting-flow.svg" target="_blank" rel="noopener"><img src="./diagrams/mateclaw-troubleshooting-flow.svg" alt="MateClaw 智能排障端到端流程图" loading="lazy"></a></div>
-        <figcaption class="diagram-caption"><p>关键回路：校验发现证据缺口且预算尚存才允许继续；到限必须 abstain。v0.19 新增的是回放资格来源与隔离规则，不改变 v0.18 已归位的资产、Tool 和安全证据回流主链。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-flow.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-flow.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
+        <figcaption class="diagram-caption"><p>关键回路：校验发现证据缺口且预算尚存才允许继续；到限必须 abstain。v0.19 新增的是回放资格来源与隔离规则；v0.20 只在资产授权键上补场景维度，两版都不改变 v0.18 已归位的资产、Tool 和安全证据回流主链。</p><span class="diagram-actions"><a href="./diagrams/mateclaw-troubleshooting-flow.drawio">编辑 Draw.io</a><a href="./diagrams/mateclaw-troubleshooting-flow.svg" target="_blank" rel="noopener">打开 SVG</a></span></figcaption>
       </figure>
     </section>
 
@@ -321,7 +321,7 @@ PASS / NEEDS_EVIDENCE / REJECT / UNAVAILABLE</p><p>报告是审核输入，不�
     <section>
       <div class="head"><div class="num">11</div><div><h2>实施路线与体验原型</h2><p class="sub">最短 fixture 闭环和正式双投影已落地；当前进入真实数据授权、字段核实与影子样本阶段。</p></div></div>
       <div class="roadmap">
-        <div class="step"><b>P0 · DONE</b><div><h3>产品事实、v4.5/v0.19 架构、架构评审、第一性原理评价、投影合同已选定</h3><p>D19 已锁定录制正例 + 判据形状生成且不降晋升门；Loop 与结构化反证仍保持 PENDING-EVIDENCE。</p></div></div>
+        <div class="step"><b>P0 · DONE</b><div><h3>产品事实、v4.6/v0.20 架构、架构评审、第一性原理评价、投影合同已选定</h3><p>D19 已锁定录制正例 + 判据形状生成且不降晋升门；D20 已为资产授权键补上场景维度；Loop 与结构化反证仍保持 PENDING-EVIDENCE。</p></div></div>
         <div class="step"><b>P1 · DONE</b><div><h3>无错误码证据→PlaybookDraft→比较→candidate</h3><p>固定会议案例、一次模型归纳；未引入 Loop Controller 或多 Agent。</p></div></div>
         <div class="step"><b>P2 · NOW</b><div><h3>真实 Guance + 首个 Scenario/Tool 证据闭环</h3><p>先打通 deployment_topology_probe 在同一 Diagnosis 的资产选择、有界取证、证据历史和详情投影；不借此提前实现 Loop / 多 Agent。</p></div></div>
         <div class="step"><b>P3 · PARTIAL</b><div><h3>企业微信 IntakeSession 与原路闭环</h3><p>普通 @ 消息接管、补问、READY 原子入队、异步只读调查、幂等 Diagnosis、leader 路由恢复、reply-context 就绪闸门、平台 ACK、持久最终投递、纯文本业务摘要、Web 深链与安全受限的关闭 outcome 原路 @ 通知已完成；交互卡片仍需单独平台评审。</p></div></div>
@@ -338,7 +338,7 @@ PASS / NEEDS_EVIDENCE / REJECT / UNAVAILABLE</p><p>报告是审核输入，不�
     </section>
 
     <footer>
-      <span>IT 智能排障 · MateClaw 架构蓝图 v0.19 · 2026-08-01</span>
+      <span>IT 智能排障 · MateClaw 架构蓝图 v0.20 · 2026-08-14</span>
       <span>证据先于推理 · Loop 必须有界 · 反证不是裁决 · 自动化止于只读</span>
     </footer>
   </main>

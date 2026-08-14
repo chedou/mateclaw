@@ -256,6 +256,56 @@ class RecordedReplayAdapterTest {
     }
 
     @Test
+    void bundledCatalogReplaysTheRecordedCsdp1009UsernameLimit() {
+        EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
+        config.setEnabled(true);
+        RecordedReplayAdapter adapter = new RecordedReplayAdapter(
+                config,
+                new ObjectMapper(),
+                new ClassPathResource("troubleshooting/evidence/recorded-replay-catalog.json"),
+                CLOCK);
+        IncidentContext incident = incident("csdp-wechat", "1009");
+
+        EvidenceResult search = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "SYNTH-LOG-SEARCH", "log_search", "find recorded failures",
+                        Map.of("search_term", "search_username_over_limit"), "-15m", true),
+                incident);
+        EvidenceResult trace = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "SYNTH-TRACE-BUNDLE", "log_trace_bundle", "restore the call chain",
+                        Map.of("ps_id", "replay-ps-csdp-wechat-1009-001"), "-15m", true),
+                incident);
+        EvidenceResult contrast = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "SYNTH-CONTRAST-SAMPLE", "contrast_sample", "compare cohorts",
+                        Map.of(
+                                "scenario_key", "search_username_over_limit",
+                                "exclude_ps_id", "replay-ps-csdp-wechat-1009-001"),
+                        "-15m", true),
+                incident);
+
+        assertThat(search.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(search.observed())
+                .containsEntry("match_count", 4)
+                .containsEntry("ps_id", "replay-ps-csdp-wechat-1009-001");
+        assertThat(trace.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(trace.observed()).containsEntry("ps_id", "replay-ps-csdp-wechat-1009-001");
+        assertThat(contrast.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(contrast.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "discriminating_feature", "username_search_over_limit",
+                "failure_sample_count", 4,
+                "failure_match_count", 4,
+                "success_sample_count", 4,
+                "success_match_count", 0));
+        assertThat(search.source()).isEqualTo("recorded-replay:csdp-wechat-1009");
+        assertThat(adapter.health().verified()).isFalse();
+    }
+
+    @Test
     void reportsOnlyAnExactRegisteredCoreFixtureAsAvailable() {
         EvidenceProperties.RecordedReplay config = new EvidenceProperties.RecordedReplay();
         config.setEnabled(true);

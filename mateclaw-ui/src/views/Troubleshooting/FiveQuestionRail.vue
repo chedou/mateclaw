@@ -1,9 +1,5 @@
 <template>
   <nav v-if="items.length" class="five-question-rail" aria-label="日常排障五问">
-    <header class="fq-head">
-      <span class="fq-kicker">日常五问</span>
-      <span class="fq-note">从告警进同一张排障单后，按这五问推进；证据不够就停，人不改生产。</span>
-    </header>
     <ol class="fq-list">
       <li
         v-for="item in items"
@@ -12,12 +8,11 @@
         :class="item.state.toLowerCase()"
       >
         <div class="fq-top">
-          <span class="fq-index">第 {{ item.index }} 问</span>
+          <span class="fq-index">{{ item.index }}</span>
           <span class="fq-state">{{ stateLabel(item.state) }}</span>
         </div>
         <strong>{{ item.title }}</strong>
-        <small>{{ item.hint }}</small>
-        <p>{{ item.answer }}</p>
+        <p v-if="item.state === 'ACTIVE' || item.state === 'STOPPED'">{{ item.answer }}</p>
       </li>
     </ol>
   </nav>
@@ -47,33 +42,11 @@ function stateLabel(state: FiveQuestionState): string {
 <style scoped>
 .five-question-rail {
   margin: 0 0 14px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--mc-border);
-  border-radius: var(--mc-radius-md);
-  background: var(--mc-bg);
-}
-.fq-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 14px;
-  margin-bottom: 12px;
-}
-.fq-kicker {
-  color: var(--mc-primary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.fq-note {
-  color: var(--mc-text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
 }
 .fq-list {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -81,12 +54,11 @@ function stateLabel(state: FiveQuestionState): string {
 .fq-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 132px;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px 12px;
   border: 1px solid var(--mc-border);
   border-radius: var(--mc-radius-sm, 8px);
-  background: var(--mc-bg-muted);
+  background: var(--mc-bg);
 }
 .fq-item.done {
   border-color: color-mix(in srgb, var(--mc-primary) 28%, var(--mc-border));

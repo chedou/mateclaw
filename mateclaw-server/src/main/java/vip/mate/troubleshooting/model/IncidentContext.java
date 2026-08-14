@@ -63,6 +63,31 @@ public record IncidentContext(
                 rawInput);
     }
 
+    /**
+     * Stamps a server-resolved route onto an alert that named no error code.
+     *
+     * <p>An alert routed by symptom is decided by an approved Playbook whose
+     * selector is {@code scenario:<key>}. Carrying that selector on the
+     * incident keeps one invariant intact: a deterministic diagnosis always
+     * names the exact route that produced it, so the record can be re-read and
+     * re-derived later. Without it, the scenario lane would have to be a second
+     * diagnosis path with weaker identity.</p>
+     *
+     * <p>Only the server calls this, and only when the report named no code.
+     * Overwriting a reported code would let routing rewrite the evidence of
+     * what was actually reported.</p>
+     */
+    public IncidentContext withResolvedRoute(String resolvedErrorCode) {
+        String resolved = required(resolvedErrorCode, "resolvedErrorCode");
+        if (errorCode != null) {
+            throw new IllegalStateException(
+                    "incident already names error code " + errorCode);
+        }
+        return new IncidentContext(
+                incidentId, system, service, resolved, title, severity, impact,
+                traceId, occurredAt, slaRemaining, intakeSource, completeness, rawInput);
+    }
+
     private static String required(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");

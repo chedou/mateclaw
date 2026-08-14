@@ -28,6 +28,8 @@ import type {
   EvidenceContractTrial,
   EvidenceContractTrialRequest,
   EvidenceRouteDeclaration,
+  EvidenceSettingsUpdate,
+  EvidenceSettingsView,
   FinalizeEvaluationSampleReferenceRequest,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
@@ -148,6 +150,22 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Clear workspace binding and fall back to process config agent-id. */
   clearOpenDiscoveryAgentBinding: () =>
     http.delete<OpenDiscoveryAgentBinding>('/troubleshooting/open-discovery/agent-binding'),
+
+  /** Which evidence sources this workspace has switched on, with the key masked. */
+  evidenceSettings: () =>
+    http.get<EvidenceSettingsView>('/troubleshooting/evidence-settings'),
+
+  /**
+   * Saves the workspace's evidence source settings.
+   *
+   * <p>`guanceApiKey` is three-valued and the distinction matters: omit it to
+   * keep the stored credential (the form cannot show it, so an owner editing
+   * only the URL has nothing to resend), pass `''` to clear it, pass a value to
+   * replace it. `expectedVersion` must echo the version that was read, so a
+   * concurrent edit fails instead of silently overwriting someone's key.
+   */
+  saveEvidenceSettings: (data: EvidenceSettingsUpdate) =>
+    http.put<EvidenceSettingsView>('/troubleshooting/evidence-settings', data),
 
   /** Latest immutable first-wave pilot declaration for this Workspace. */
   pilotPlan: () =>

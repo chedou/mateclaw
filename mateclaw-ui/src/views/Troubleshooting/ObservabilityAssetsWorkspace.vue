@@ -80,11 +80,16 @@
         </ul>
       </section>
 
+      <EvidenceSourceSettingsCard
+        v-if="setupSection === 'source' && canManageTroubleshooting"
+        @saved="loadCatalog"
+      />
+
       <section v-if="setupSection === 'source'" class="list-workspace source-list-workspace">
         <div class="list-heading">
           <div>
             <h2>数据源列表</h2>
-            <p>共 {{ filteredSources.length }} 个数据源；API Key 由部署环境注入，不在页面保存。</p>
+            <p>共 {{ filteredSources.length }} 个数据源；下面是各适配器的实际就绪状态，改配置请用上方设置卡。</p>
           </div>
         </div>
         <el-table v-if="filteredSources.length" :data="filteredSources" class="management-table" stripe>
@@ -980,6 +985,8 @@ import {
   type SopSummary,
 } from '@/api'
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
+import EvidenceSourceSettingsCard from './EvidenceSourceSettingsCard.vue'
+import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import {
   assetParameterLabel,
   bindingStatusLabel,
@@ -1055,6 +1062,10 @@ function emptyAssetForm(): AssetForm {
 
 const route = useRoute()
 const router = useRouter()
+// 后端对写入要求 admin（manage:troubleshooting 就是 admin 及以上），
+// 前端用同一条线，避免页面给了按钮而服务端拒绝。
+const workspaceStore = useWorkspaceStore()
+const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troubleshooting'))
 const catalog = ref<EvidenceQueryCatalog | null>(null)
 const assetCatalog = ref<ObservabilityAssetCatalog | null>(null)
 const evidenceContractCatalog = ref<EvidenceContractCatalog | null>(null)

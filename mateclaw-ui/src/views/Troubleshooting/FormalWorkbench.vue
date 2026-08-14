@@ -81,7 +81,7 @@
       <div v-if="!business || !developer || !current" class="detail-empty">
         <div class="empty-mark">MC</div>
         <h1>从粘贴告警开始</h1>
-        <p>点「发起排障」，填系统、服务和现象即可生成排障单；详情里再按五问推进。</p>
+        <p>点「发起排障」，把告警原文贴进去即可。</p>
         <el-button
           v-if="canOperateTroubleshooting || canManageTroubleshooting"
           type="primary"
@@ -95,8 +95,7 @@
         <header class="work-head">
           <div>
             <span class="eyebrow">
-              {{ current.diagnosis.rehearsal ? '演练排障工作台' : '正式排障工作台' }}
-              · Diagnosis {{ business.diagnosisId }}
+              {{ current.diagnosis.rehearsal ? '演练' : '正式排障' }}
             </span>
             <h1>{{ business.problem }}</h1>
           </div>

@@ -2,6 +2,8 @@ package vip.mate.troubleshooting.intake;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import vip.mate.troubleshooting.model.ConclusionType;
+import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
 
 import java.net.URLEncoder;
@@ -25,36 +27,50 @@ public class TroubleshootingChannelSummaryRenderer {
         if (summary == null) {
             throw new IllegalArgumentException("business summary is required");
         }
+        // Scan-first: verdict, the cause, the counts, the next human move.
+        // The workbench still has the Playbook explanation and impact notes.
         StringBuilder text = new StringBuilder()
-                .append('[')
-                .append(summary.conclusionType())
+                .append(conclusionLabel(summary.conclusionType()))
                 .append(" · ")
-                .append(summary.confidence())
-                .append("] ")
-                .append(summary.headline())
-                .append("\n问题：")
-                .append(summary.problem())
-                .append("\n结论：")
-                .append(summary.narrative())
-                .append("\n影响：")
-                .append(summary.impact().functionScope());
-        if (!summary.impact().note().isBlank()) {
-            text.append("（").append(summary.impact().note()).append('）');
+                .append(confidenceLabel(summary.confidence()));
+        if (summary.rootCause() != null) {
+            text.append("\n根因：").append(summary.rootCause());
+        } else {
+            text.append('\n').append(summary.headline());
+            if (!summary.narrative().isBlank()) {
+                text.append('\n').append(summary.narrative());
+            }
         }
-        text.append("\n下一步：")
-                .append(summary.nextStep().label())
-                .append(" — ")
-                .append(summary.nextStep().text());
+        if (summary.keyEvidence() != null) {
+            text.append("\n关键数字：").append(summary.keyEvidence());
+        }
+        text.append("\n下一步：").append(summary.nextStep().text());
         if (summary.nextStep().capabilityBoundary() != null) {
-            text.append("\n能力边界：")
-                    .append(summary.nextStep().capabilityBoundary());
+            text.append('\n').append(summary.nextStep().capabilityBoundary());
         }
         if (summary.fixtureMode()) {
             text.append('\n').append(FIXTURE_NOTICE);
         }
-        text.append("\n正式工作台：")
+        text.append("\n详情：")
                 .append(workbenchLink(summary.diagnosisId()));
         return text.toString();
+    }
+
+    String conclusionLabel(ConclusionType conclusionType) {
+        return switch (conclusionType) {
+            case LOCATED -> "已定位";
+            case EXCLUDED -> "已排除";
+            case HYPOTHESIS -> "待确认假设";
+            case INSUFFICIENT_EVIDENCE -> "证据不足";
+        };
+    }
+
+    String confidenceLabel(Confidence confidence) {
+        return switch (confidence) {
+            case HIGH -> "结论依据充分";
+            case MEDIUM -> "结论依据有限";
+            case LOW -> "仅供人工核查";
+        };
     }
 
     public String workbenchLink(String diagnosisId) {

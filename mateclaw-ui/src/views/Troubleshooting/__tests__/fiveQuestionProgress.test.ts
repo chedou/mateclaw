@@ -7,7 +7,9 @@ function business(overrides: Partial<BusinessSummary> = {}): BusinessSummary {
     diagnosisId: 'd-1',
     conclusionType: 'HYPOTHESIS',
     headline: '候选结论',
+    rootCause: null,
     narrative: '说明',
+    keyEvidence: null,
     confidence: 'MEDIUM',
     problem: 'CSDP / csdp-wechat · ITGW 失败 904003',
     impact: {

@@ -304,6 +304,57 @@ class TroubleshootingPlaybookVersionServiceTest {
         assertThat(retired.deprecatedAt()).isNotNull();
     }
 
+    /**
+     * A scenario Playbook is reachable only through the symptoms it declares.
+     * Dropping them while freezing the version produces the worst kind of
+     * silent failure: the reviewer approves a contract that answers 「URL慢请求」
+     * and the live version answers nothing, with every other field intact.
+     */
+    @Test
+    void promotionKeepsTheSymptomsTheApprovedScenarioClaims() {
+        TroubleshootingPlaybookVersionMapper mapper =
+                mock(TroubleshootingPlaybookVersionMapper.class);
+        TroubleshootingPlaybookVersionService service =
+                new TroubleshootingPlaybookVersionService(mapper, objectMapper);
+        SopEntry candidate = scenarioSop("manual-url-slow", List.of("url慢请求", "慢请求"));
+        when(mapper.findByReview(7L, "review-slow")).thenReturn(null);
+        when(mapper.findActive(7L, candidate.routingKey())).thenReturn(null);
+        when(mapper.maxPlaybookVersion(7L, candidate.routingKey())).thenReturn(null);
+        when(mapper.insert(any(TroubleshootingPlaybookVersionEntity.class)))
+                .thenAnswer(call -> {
+                    ((TroubleshootingPlaybookVersionEntity) call.getArgument(0)).setId(9L);
+                    return 1;
+                });
+
+        ApprovedPlaybookVersion approved = service.promote(
+                7L,
+                new KnowledgePromotionMaterial(
+                        KnowledgeOrigin.MANUAL,
+                        "manual-url-slow",
+                        candidate.routingKey(),
+                        KnowledgeEvidenceGrade.AUTHORED_FIXTURE,
+                        candidate),
+                "review-slow",
+                1,
+                true,
+                null,
+                null,
+                "reviewer-a",
+                "固定正负例均通过",
+                eligibleSnapshot());
+
+        assertThat(approved.playbook().symptomTriggers())
+                .containsExactlyInAnyOrder("url慢请求", "慢请求");
+    }
+
+    private SopEntry scenarioSop(String sopId, List<String> symptomTriggers) {
+        return new SopEntry(
+                sopId, SopEntry.CURRENT_CONTRACT_VERSION, "CSDP",
+                "scenario:url_slow_request", "csdp-wechat", "URL 慢请求",
+                "", "", "客服组", "candidate", false,
+                List.of(), List.of(), List.of(), List.of(), symptomTriggers);
+    }
+
     private TroubleshootingPlaybookVersionEntity approvedEntity(
             String playbookId,
             int playbookVersion,

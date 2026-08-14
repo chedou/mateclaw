@@ -126,7 +126,8 @@ public final class HistoricalKnowledgeEvidenceGradeReconciler
                     stored.evidenceRequests(),
                     stored.anomalyCriteria(),
                     stored.diagnosisRules(),
-                    stored.actions());
+                    stored.actions(),
+                    stored.symptomTriggers());
             return replayCatalog.evidenceGrade(
                     version.getSelectorKey(), candidate);
         } catch (JsonProcessingException | RuntimeException invalidLegacyRow) {

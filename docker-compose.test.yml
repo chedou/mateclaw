@@ -57,6 +57,13 @@ services:
       MATECLAW_TROUBLESHOOTING_AGENT_TRIAGE_TIMEOUT: ${MATECLAW_TROUBLESHOOTING_AGENT_TRIAGE_TIMEOUT:-20s}
       MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:-32000}
       #
+      # The deployment's half of the workspace-editable evidence endpoint. A
+      # workspace owner picks the Guance URL in the UI, but an on-prem address
+      # is only reachable if the host is listed here — the workspace chooses
+      # the URL, the deployment still chooses which internal hosts exist.
+      # Comma-separated hostnames, IPs or IPv4 CIDR blocks; keep it narrow.
+      MATECLAW_SECURITY_SSRF_ALLOWLIST: ${MATECLAW_SECURITY_SSRF_ALLOWLIST:-}
+      #
       # ---- heap ----
       #
       # Replaces, not extends, the ENV set in the Dockerfile — so the timezone

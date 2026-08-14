@@ -85,6 +85,43 @@
   按接力队列完成 Guance 样本、人工标准答案、可追溯人工基线与影子运行；随后按同一口径连续积累，
   不用一次技术跑通替代效果证明。
 
+### 无错误码告警竖线补完（2026-08-14）
+
+`96644552` 让症状路由能找到已审核 Playbook，但**接缝没通**：路由与确定性引擎各自有测试，
+中间那道"没有错误码就拒绝"的守卫无人覆盖，于是监控告警走到自己的 Playbook 面前被引擎挡回。
+本轮补完三处，`csdp:scenario:url_slow_request` 现可一轮出结论：
+
+- `IncidentContext.withResolvedRoute` 由服务端把命中的 `scenario:<key>` 盖到无错误码的告警上，
+  确定性诊断因此仍然指名它是被哪条精确路由判定的；已上报的错误码不可被覆盖。
+- 晋升时不再丢 `symptomTriggers`。三处 `SopEntry` 构造调用曾使用 15 参兼容构造器静默丢弃该字段，
+  结果是审阅者批准了一份声称回答「URL慢请求」的合同，而生效版本什么都不回答。
+- 无错误码时按 `service` 在已生效 Playbook 唯一反查 `system`，歧义 fail closed；
+  reducer 相应放宽为"有 service 即可接受服务端反查结果"。
+- 回归测试补在**接缝**上，不是各自一侧：`anAlertRoutedBySymptomReachesTheDeterministicEngineNamingItsRoute`
+  与 `promotionKeepsTheSymptomsTheApprovedScenarioClaims`。
+- 端到端脚本 `scripts/troubleshooting-url-slow-request-demo.sh`（配 `.env.demo.local`）自动完成
+  注册 → 回放证明 → 审阅 → 批准，再粘原文核验六道闸门。
+- **边界**：证据来自 2026-08-06 真实数据的**脱敏回放**，`fixtureMode=true`，不是观测云真源。
+  切真源仍需 D20 场景维度授权与 T7 owner 验收，本轮不构成 T7/T8 通过。
+
+通道/对话业务摘要已改为：先说根因和对照数字，再列每一步由谁做；不再把
+`LOCATED · MEDIUM` 枚举名和「intake 只保存文本影响描述」这种内部存储说明抛给服务经理。
+`BusinessSummary` 新增可空 `rootCause` / `keyEvidence`；弃权不得命名因。
+
+### 4 位业务码 1009（2026-08-14）
+
+今天 13:06 的告警 `异常：客户-搜索用户名超限制【1009】` 原先两处独立缺口：解析器只认
+5 位以上且必须带「失败|错误」，知识库也没有 `csdp:1009`。本轮两处都补上：
+
+- 解析器收下 4 位括号码，触发词加上 `超限制|超时|拦截|限流|拒绝`。仍拒绝
+  `异常：下游返回用户ID【123456】` 这种没有失败/限制措辞的数字。CSDP 知识目录里已有
+  `1004`/`1008`，5 位下限是抄 903001 形状时的失误。
+- 已审核查法走**录制回放**，不是观测云。失败计数取自告警「数量：4」，对照 4/4 vs 0/4
+  是判据形状夹具。`csdp-wechat` 的真源 `log_search` 仍绑 904003 合同，打开观测云会
+  串证。Playbook `manual-csdp-search-username-limit-1009-v1` / selector `csdp:1009`。
+- 端到端脚本 `scripts/troubleshooting-csdp-1009-demo.sh`。
+- **边界**：`fixtureMode=true`，不构成 T7/T8 通过。
+
 ---
 
 ## 待办速览（2026-08-13）
@@ -727,7 +764,9 @@ python3 docs/intelligent-troubleshooting/l0/t7_target_preparation.py --check
 python3 docs/intelligent-troubleshooting/l0/t7_owner_contract_intake.py --check
 ```
 
-Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md)。
+Owner 的可填写接力包见 [`t7-owner-contract-intake.md`](./t7-owner-contract-intake.md)；
+15 个字段各自的取值来源、格式与报错见
+[`t7-owner-field-guide.md`](./t7-owner-field-guide.md)。
 [`t7-owner-contract-intake.recommended.template.json`](./t7-owner-contract-intake.recommended.template.json)
 已把首批低成本的 15 条 A + 2 条 B + `csdp:101017 / csdp:101062 / csdp:301045` 三条 C
 精确选中并展开 20 份合同；每个占位符都故意不能通过校验。

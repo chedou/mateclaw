@@ -36,18 +36,60 @@ public class GuanceBindingFingerprintService {
 
     private final EvidenceProperties properties;
     private final WorkspaceObservabilityAssets workspaceAssets;
+    /**
+     * Nullable; when present the endpoint half of the digest comes from the
+     * workspace row instead of application.yml. Without this an owner could
+     * repoint Guance from the UI and a T7 acceptance taken against the old
+     * endpoint would still compare equal — the acceptance would silently
+     * outlive the configuration it certified.
+     */
+    private final WorkspaceEvidenceSettingsService workspaceSettings;
 
     public GuanceBindingFingerprintService(EvidenceProperties properties) {
-        this(properties, WorkspaceObservabilityAssets.NONE);
+        this(properties, WorkspaceObservabilityAssets.NONE, null);
+    }
+
+    public GuanceBindingFingerprintService(
+            EvidenceProperties properties,
+            WorkspaceObservabilityAssets workspaceAssets) {
+        this(properties, workspaceAssets, null);
     }
 
     @Autowired
     public GuanceBindingFingerprintService(
             EvidenceProperties properties,
-            WorkspaceObservabilityAssets workspaceAssets) {
+            WorkspaceObservabilityAssets workspaceAssets,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            WorkspaceEvidenceSettingsService workspaceSettings) {
         this.properties = properties == null ? new EvidenceProperties() : properties;
         this.workspaceAssets = workspaceAssets == null
                 ? WorkspaceObservabilityAssets.NONE : workspaceAssets;
+        this.workspaceSettings = workspaceSettings;
+    }
+
+    /**
+     * The endpoint values that participate in the digest.
+     *
+     * <p>Only the endpoint and its scheme policy: the credential stays out of
+     * the digest by design, so rotating a key does not invalidate a
+     * field-level acceptance that the rotation cannot affect.
+     */
+    private EffectiveEvidenceSettings endpointSettings(long workspaceId) {
+        if (workspaceSettings != null) {
+            try {
+                return workspaceSettings.effective(workspaceId);
+            } catch (RuntimeException ignored) {
+                // Fall through to the deployment values rather than emitting a
+                // fingerprint that silently drops the endpoint entirely.
+            }
+        }
+        EvidenceProperties.Guance guance = properties.getGuance();
+        // The fingerprint covers the endpoint, never the credential, so this
+        // supplier is expected to go unused here.
+        return new EffectiveEvidenceSettings(
+                guance.isEnabled(), guance.getBaseUrl(), guance::getApiKey,
+                guance.isAllowInsecureHttp(), false, false,
+                EffectiveEvidenceSettings.Origin.DEPLOYMENT);
     }
 
     /**
@@ -133,10 +175,11 @@ public class GuanceBindingFingerprintService {
         digest.add("workspaceId", Long.toString(workspaceId));
         digest.add("system", normalizedSystem);
         digest.add("service", normalizedService);
-        digest.add("baseUrl", trim(properties.getGuance().getBaseUrl()));
+        EffectiveEvidenceSettings endpoint = endpointSettings(workspaceId);
+        digest.add("baseUrl", trim(endpoint.guanceBaseUrl()));
         digest.add("queryPath", trim(properties.getGuance().getQueryPath()));
         digest.add("allowInsecureHttp",
-                Boolean.toString(properties.getGuance().isAllowInsecureHttp()));
+                Boolean.toString(endpoint.guanceAllowInsecureHttp()));
         digest.add("timeout", String.valueOf(properties.getGuance().getTimeout()));
         digest.add("asset.origin", asset.origin());
         digest.add("asset.version", Integer.toString(asset.version()));

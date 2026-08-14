@@ -185,6 +185,47 @@ class ManualPlaybookReplaySuiteCatalogTest {
                 .containsEntry("success_match_count", 0D);
     }
 
+    @Test
+    void theCsdp1009RouteUsesRecordedComparisonEvidenceForALocatedConclusion() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        ManualPlaybookReplaySuiteCatalog catalog =
+                new ManualPlaybookReplaySuiteCatalog(
+                        objectMapper,
+                        new ManualPlaybookReplayFingerprint(objectMapper),
+                        new ManualPlaybookReplayEvaluator(
+                                new CriterionEvaluator(), new DiagnosisRuleEvaluator()),
+                        new ClassPathResource(
+                                "troubleshooting/replay/manual-playbook-replay-suites.json"));
+
+        ManualPlaybookReplaySuiteCatalog.ResolvedSuite resolved =
+                catalog.find("csdp:1009").orElseThrow();
+        SopEntry candidate = resolved.suite().exampleCandidate();
+
+        assertThat(candidate.service()).isEqualTo("csdp-wechat");
+        assertThat(candidate.errorCode()).isEqualTo("1009");
+        assertThat(candidate.evidenceRequests())
+                .extracting(request -> request.signalKind())
+                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
+        assertThat(candidate.diagnosisRules()).singleElement()
+                .satisfies(rule -> {
+                    assertThat(rule.confidence().name()).isEqualTo("MEDIUM");
+                    assertThat(rule.conclusionType().name()).isEqualTo("LOCATED");
+                    assertThat(rule.rootCause()).contains("用户名", "上限");
+                    assertThat(rule.requiredSignals())
+                            .containsExactly(
+                                    "username_search_limit_present",
+                                    "username_limit_discriminated");
+                });
+        assertThat(resolved.evidenceGrade())
+                .isEqualTo(KnowledgeEvidenceGrade.RECORDED_AGGREGATE);
+        assertThat(resolved.suite().cases())
+                .extracting(ManualPlaybookReplaySuite.ReplayCase::expectedDisposition)
+                .containsExactly(
+                        ManualPlaybookReplaySuite.Disposition.MATCHED,
+                        ManualPlaybookReplaySuite.Disposition.EXCLUDED,
+                        ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+    }
+
     /**
      * The 903001 fixture is the only Playbook carrying a production-write
      * action, and that is now its job.

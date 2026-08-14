@@ -548,10 +548,17 @@ mateclaw:
       retain-days: 7
   security:
     # Hosts/IPs/CIDR blocks allowed through the SSRF guards (browser, hooks, image
-    # download) even though they are loopback/private/link-local/metadata. Each
-    # entry is a literal hostname, a literal IP, or an IPv4 CIDR block. Keep narrow.
-    # Example: [192.168.100.100, 192.168.100.0/24, internal.corp]
-    ssrf-allowlist: []
+    # download, troubleshooting evidence endpoints) even though they are
+    # loopback/private/link-local/metadata. Each entry is a literal hostname, a
+    # literal IP, or an IPv4 CIDR block. Keep narrow.
+    #
+    # Also the deployment's half of the workspace-editable Guance endpoint: an
+    # owner chooses the URL from the UI, but a private address is only reachable
+    # if it is listed here. Cloud-metadata endpoints stay blocked regardless.
+    #
+    # Comma-separated in the environment variable:
+    #   MATECLAW_SECURITY_SSRF_ALLOWLIST=10.0.0.9,192.168.100.0/24,guance.internal
+    ssrf-allowlist: ${MATECLAW_SECURITY_SSRF_ALLOWLIST:}
   # RFC-014: Anthropic prompt cache 标记
   llm:
     cache:

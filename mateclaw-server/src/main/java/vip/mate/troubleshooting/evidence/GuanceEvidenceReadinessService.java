@@ -79,12 +79,12 @@ public class GuanceEvidenceReadinessService {
                 .filter(candidate -> candidate.signalKind().equals(signal))
                 .map(GuanceEvidenceReadiness.SignalReadiness::status)
                 .anyMatch(this::readyOrObserved));
-        boolean endpointConfigured = adapter.endpointConfigured();
+        boolean endpointConfigured = adapter.endpointConfigured(workspaceId);
         GuanceEvidenceReadiness.CredentialState credentials =
                 GuanceEvidenceReadiness.CredentialState.NOT_INSPECTED;
 
         GuanceEvidenceReadiness.Status status;
-        if (!adapter.enabled()) {
+        if (!adapter.enabled(workspaceId)) {
             status = GuanceEvidenceReadiness.Status.DISABLED;
             blockers.add("Guance adapter is disabled");
         } else if (!uniqueAsset || !coreAuthorized) {
@@ -93,7 +93,7 @@ public class GuanceEvidenceReadinessService {
         } else {
             // Credential material is inspected only after the exact tenant/resource
             // boundary and both core signal bindings have passed fail-closed checks.
-            credentials = adapter.credentialState();
+            credentials = adapter.credentialState(workspaceId);
             if (!endpointConfigured
                     || credentials != GuanceEvidenceReadiness.CredentialState.CONFIGURED) {
                 status = GuanceEvidenceReadiness.Status.CONFIGURATION_INCOMPLETE;
@@ -114,7 +114,7 @@ public class GuanceEvidenceReadinessService {
                 safeSystem,
                 safeService,
                 status,
-                adapter.enabled(),
+                adapter.enabled(workspaceId),
                 endpointConfigured,
                 credentials,
                 uniqueAsset,

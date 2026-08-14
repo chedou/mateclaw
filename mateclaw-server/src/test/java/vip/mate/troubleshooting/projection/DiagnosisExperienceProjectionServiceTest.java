@@ -9,6 +9,8 @@ import vip.mate.troubleshooting.agent.OpenDiscoveryRunAudit;
 import vip.mate.troubleshooting.agent.OpenDiscoveryRunAuditService;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAudit;
 import vip.mate.troubleshooting.evidence.ScenarioEvidenceRunAuditService;
+import vip.mate.troubleshooting.model.ActionType;
+import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.BlastRadius;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.ConclusionType;
@@ -19,6 +21,7 @@ import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.ExecutionStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
@@ -26,6 +29,7 @@ import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
@@ -141,6 +145,10 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(business.timings().investigateCost())
                 .isEqualTo(java.time.Duration.ofSeconds(164));
         assertThat(business.fixtureMode()).isTrue();
+        assertThat(business.rootCause()).isEqualTo("Mongo 连接池打满");
+        assertThat(business.headline()).isEqualTo("已定位到出问题的环节");
+        assertThat(business.narrative()).isEqualTo("连接池利用率达到 100%");
+        assertThat(business.keyEvidence()).isNull();
 
         DiagnosisExperienceProjection.DeveloperEvidenceView developer = result.developerEvidence();
         assertThat(developer.investigationMode())
@@ -243,6 +251,12 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo("失败请求与正常请求的结构化对照已记录。");
         assertThat(developer.contrast().evidenceRefs())
                 .containsExactly("SYNTH-CONTRAST-SAMPLE");
+        assertThat(result.businessSummary().rootCause())
+                .isEqualTo("session-state 并发状态写入冲突");
+        assertThat(result.businessSummary().narrative())
+                .isEqualTo("会话状态写入冲突");
+        assertThat(result.businessSummary().keyEvidence())
+                .isEqualTo("异常 92/100 命中同一特征，正常 3/100。");
         assertThat(developer.capabilityLimits())
                 .noneMatch(item -> item.contains("尚未保存完整调用链 hop 和成功样本对照"));
     }
@@ -582,6 +596,71 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void listsEveryRecommendedActionAndWhoPerformsIt() {
+        Diagnosis located = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-1", "run-1", incident(),
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.ERROR_CODE_PLAYBOOK,
+                RouteAuthority.EXPLICIT,
+                ConclusionType.LOCATED,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "对照显示工单升级路由更慢", "工单升级链路同步等待外部 IT 网关",
+                Confidence.MEDIUM, false,
+                "csdp:scenario:url_slow_request", "URL 慢请求",
+                new PlaybookVersionRef("playbook-url-slow", 2),
+                List.of(), List.of(),
+                List.of(
+                        new RecommendedAction(
+                                "USR-A1", ActionType.AUTO_READONLY,
+                                "只读复核慢请求路由分布",
+                                "只读查看同窗口聚合对照，不执行任何生产变更。",
+                                false, ApprovalStatus.NOT_REQUIRED, ExecutionStatus.PENDING),
+                        new RecommendedAction(
+                                "USR-A2", ActionType.HUMAN_CONTACT,
+                                "向 IT 网关 owner 核实 upToCtiV2 基线延迟",
+                                "由网关 owner 在平台之外核查；平台只提供证据。",
+                                false, ApprovalStatus.NOT_REQUIRED, ExecutionStatus.PENDING)),
+                "客服组", true, true, List.of(), List.of());
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(located, 0, true));
+        when(derivationService.explain(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(derivation());
+
+        DiagnosisExperienceProjection.NextStep next =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).businessSummary().nextStep();
+
+        assertThat(next.label()).isEqualTo("定位结果");
+        assertThat(next.text())
+                .contains("1. 只读复核慢请求路由分布")
+                .contains("系统可代做")
+                .contains("2. 向 IT 网关 owner 核实 upToCtiV2 基线延迟")
+                .contains("需人去联系确认");
+    }
+
+    @Test
+    void refusesToNameACauseWhenTheConclusionIsAnAbstention() {
+        DiagnosisExperienceProjection.ImpactView impact = new DiagnosisExperienceProjection.ImpactView(
+                "订单创建", null, null,
+                BlastRadius.UNKNOWN,
+                List.of(), null, "未测量");
+        DiagnosisExperienceProjection.NextStep next = new DiagnosisExperienceProjection.NextStep(
+                "下一步", "补齐证据", "证据不足，系统已弃权且没有给出根因");
+        assertThatThrownBy(() -> new DiagnosisExperienceProjection.BusinessSummary(
+                DIAGNOSIS_ID,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                "证据不足，系统已停止自动判断",
+                "Mongo 连接池打满",
+                "关键证据缺失。",
+                null,
+                Confidence.LOW,
+                "订单超时", impact, next, DiagnosisStatus.READY_FOR_HUMAN,
+                NorthStarTimings.unrecorded(), false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not name a root cause");
+    }
+
+    @Test
     void rejectsPreciseImpactCountsWithoutEvidenceReferences() {
         assertThatThrownBy(() -> new DiagnosisExperienceProjection.ImpactView(
                 "订单创建", 12, null,
@@ -604,7 +683,7 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThatThrownBy(() -> new DiagnosisExperienceProjection.BusinessSummary(
                 DIAGNOSIS_ID,
                 ConclusionType.EXCLUDED,
-                "已排除当前假设", "证据不支持当前假设。", Confidence.HIGH,
+                "已排除当前假设", null, "证据不支持当前假设。", null, Confidence.HIGH,
                 "订单超时", impact, next, DiagnosisStatus.READY_FOR_HUMAN,
                 timings, false))
                 .isInstanceOf(IllegalArgumentException.class)

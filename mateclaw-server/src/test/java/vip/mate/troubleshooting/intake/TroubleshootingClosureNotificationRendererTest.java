@@ -28,7 +28,7 @@ class TroubleshootingClosureNotificationRendererTest {
 
         assertThat(text)
                 .startsWith("排障闭环 · 已恢复")
-                .contains("原诊断：[LOCATED · MEDIUM]")
+                .contains("原诊断：已定位 · 结论依据有限 · ")
                 .contains("处理结果：连接池扩容后恢复")
                 .contains("恢复验证：已验证")
                 .contains("能力边界：仅完成只读取证，未执行任何生产变更。")
@@ -68,7 +68,9 @@ class TroubleshootingClosureNotificationRendererTest {
                 "diag-1",
                 ConclusionType.LOCATED,
                 "已定位会话消息发送失败",
+                "会话服务异常",
                 "日志证据指向会话服务异常。",
+                null,
                 Confidence.MEDIUM,
                 "会话消息发送失败",
                 new ImpactView(

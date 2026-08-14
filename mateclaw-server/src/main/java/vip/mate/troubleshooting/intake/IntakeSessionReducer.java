@@ -32,8 +32,11 @@ public final class IntakeSessionReducer {
             "(20\\d{2}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?)");
     /**
      * Explicit business error code embedded in an alert symptom, for example
-     * {@code 异常：ITGW访问失败【904003】}. This is not a fuzzy number extractor:
-     * the identifier must be bracketed and attached to failure/error wording.
+     * {@code 异常：ITGW访问失败【904003】} or {@code 异常：客户-搜索用户名超限制【1009】}.
+     * This is not a fuzzy number extractor: the identifier must be bracketed
+     * and attached to failure/limit wording. Four digits are in scope because
+     * CSDP already publishes 4-digit codes (1004, 1008, 1009); five was an
+     * accidental floor copied from 903001-shaped alerts.
      */
     private static final Pattern EXPLICIT_ERROR_CODE = Pattern.compile(
             "(?m)^\\s*(?:错误码|error(?:[ _-]*code))\\s*[:：]\\s*"
@@ -41,17 +44,18 @@ public final class IntakeSessionReducer {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern FAILURE_SYMPTOM_ERROR_CODE = Pattern.compile(
             "(?m)^\\s*(?:(?:异常|现象)\\s*[:：][^\\r\\n]{0,100}?"
-                    + "(?:失败|错误)[^\\r\\n]{0,80}?"
+                    + "(?:失败|错误|超限制|超时|拦截|限流|拒绝)[^\\r\\n]{0,80}?"
                     + "|错误\\s*[:：][^\\r\\n]{0,180}?)"
-                    + "【\\s*(\\d{5,12})\\s*】\\s*$",
+                    + "【\\s*(\\d{4,12})\\s*】\\s*$",
             Pattern.CASE_INSENSITIVE);
     /**
-     * Infra dial-probe / VM health alerts rarely name a customer; the product
-     * already accepts the explicit token “未知”, so we only fill it when the
-     * pasted text itself signals that class of alert.
+     * Infra dial-probe / VM health / cluster alerts rarely name a customer; the
+     * product already accepts the explicit token “未知”, so we only fill it when
+     * the pasted text itself signals that class of alert. A 集群 dimension is
+     * such a signal: it addresses a deployment, not a customer.
      */
     private static final Pattern INFRA_ALERT_WITHOUT_CUSTOMER = Pattern.compile(
-            "拨测|虚机|主机|存活检测|监控项|告警分组|告警级别|告警URL",
+            "拨测|虚机|主机|存活检测|监控项|集群|告警分组|告警级别|告警URL",
             Pattern.CASE_INSENSITIVE);
 
     public IntakeSession start(String intakeSessionId, IntakeMessageEnvelope envelope) {
@@ -115,10 +119,16 @@ public final class IntakeSessionReducer {
     /**
      * Applies a server-owned exact route match to an incomplete intake.
      *
-     * <p>The route resolver may fill only the system when one and only one
-     * operational Playbook matches the already parsed service + explicit error
-     * code. It cannot invent a code from prose or choose between ambiguous
-     * systems.</p>
+     * <p>The route resolver may fill only the system, and only when one and
+     * only one operational Playbook matches the already parsed service — with
+     * the explicit error code when the report carries one, by service alone
+     * when it does not. It cannot invent a code from prose or choose between
+     * ambiguous systems; that single-authority check belongs to the resolver
+     * and stays outside this reducer.</p>
+     *
+     * <p>Requiring an error code here would exclude exactly the reports that
+     * need the lookup most: monitoring alerts name a service and never carry
+     * a code.</p>
      */
     IntakeSession acceptResolvedSystem(
             IntakeSession current,
@@ -128,7 +138,7 @@ public final class IntakeSessionReducer {
             return current;
         }
         if (!isMissing(current.system()) || isMissing(resolvedSystem)
-                || isMissing(current.service()) || isMissing(current.errorCode())) {
+                || isMissing(current.service())) {
             return current;
         }
         return build(

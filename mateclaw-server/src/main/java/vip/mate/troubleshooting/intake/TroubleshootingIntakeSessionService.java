@@ -302,12 +302,18 @@ public class TroubleshootingIntakeSessionService {
             IntakeMessageEnvelope envelope) {
         if (sopPersistence == null || session == null
                 || session.system() != null
-                || session.service() == null
-                || session.errorCode() == null) {
+                || session.service() == null) {
             return session;
         }
-        return sopPersistence.findUniqueOperationalSystem(
-                        session.workspaceId(), session.service(), session.errorCode())
+        // A monitoring alert names a service and no error code. Falling back to
+        // the service-only lookup keeps the same single-authority rule; it only
+        // stops requiring a code the alert never had.
+        java.util.Optional<String> resolved = session.errorCode() == null
+                ? sopPersistence.findUniqueOperationalSystemForService(
+                        session.workspaceId(), session.service())
+                : sopPersistence.findUniqueOperationalSystem(
+                        session.workspaceId(), session.service(), session.errorCode());
+        return resolved
                 .map(system -> reducer.acceptResolvedSystem(session, envelope, system))
                 .orElse(session);
     }

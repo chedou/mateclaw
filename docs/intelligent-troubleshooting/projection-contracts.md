@@ -68,7 +68,9 @@ public record BusinessSummary(
         String diagnosisId,
         ConclusionType conclusionType,   // LOCATED | EXCLUDED | HYPOTHESIS | INSUFFICIENT_EVIDENCE
         String headline,                 // 一句话结论，面向业务措辞，不含服务名/字段名
-        String narrative,                // 2–3 句解释，含能力边界的自然语言表达
+        String rootCause,                // 可空；只有 LOCATED / HYPOTHESIS 才命名因；弃权不得带
+        String narrative,                // 2–3 句解释：优先用 Playbook 作者写的 summary，不套「规则命中」模板
+        String keyEvidence,              // 可空；对照样本的计数白话，不含 DQL / 特征码
         Confidence confidence,           // HIGH | MEDIUM | LOW，枚举不是浮点
         String problem,                  // 报障现象（来自 Intake，不是模型改写）
         ImpactView impact,
@@ -104,7 +106,7 @@ public record NextStep(
 **服务端不变量（写进 record 构造器）：**
 
 - `EXCLUDED` 时 `confidence` 不得为 `HIGH`；
-- `INSUFFICIENT_EVIDENCE` 时 `confidence` 恒 `LOW`；
+- `INSUFFICIENT_EVIDENCE` 时 `confidence` 恒 `LOW`，且 `rootCause` 必须为空；
 - `affectedCustomers/affectedUsers` 非空时 `evidenceRefs` 不得为空——**精确人数必须有证据引用**；
 - `affectedCustomers/affectedUsers` 非空时 `observedAt` 也不得为空；每条引用必须通过 canonical
   `incident_impact` schema，全部公共字段和出现的声明人数都不得互相矛盾；
@@ -255,9 +257,8 @@ public record NorthStarTimings(
 三段**必须分开显示**，禁止只给总时长——否则无法判断该优化补问、调查还是呈现（v4 §5.10 / D14）。
 未发生的阶段保持 `null`，前端显示「未发生」，不得用 `0`。
 
-**前端呈现规则（2026-08-01 落地）**：三段渲染为三个独立阶段卡，各自带序号、
-**成本归属方**（补问=报障人↔助手 / 调查=平台 / 采纳=处置人）和专属色轨——
-因为这三笔成本由三方承担、优化手段也各不相同，视觉上必须一眼可分。
+**前端呈现规则（2026-08-14）**：默认收在「耗时」折叠条里，避免挡住结论；展开后仍是三个独立阶段卡，
+各自带序号、**成本归属方**和专属色轨。禁止合成总时长（v4 §5.10 / D14）。
 
 占比条**只在三段全部已记录时才画**。在部分记录的数据上画比例，等于凭空暗示一个
 系统并不知道的总量；缺记录时改为显示一行说明。`未发生`（PENDING）与

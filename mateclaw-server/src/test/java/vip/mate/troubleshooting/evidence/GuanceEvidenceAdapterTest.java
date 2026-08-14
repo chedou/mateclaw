@@ -67,6 +67,107 @@ class GuanceEvidenceAdapterTest {
         assertThat(adapter.health().detail()).contains("authorization");
     }
 
+    // ---- workspace-owned endpoint, credential and enablement (V203) ----
+    //
+    // These three used to be process-wide yml values. Now a workspace row can
+    // override them at runtime, so the adapter has to read the row on the call
+    // path rather than the config it was constructed with.
+
+    @Test
+    void aWorkspaceRowSuppliesTheEndpointAndCredentialInsteadOfTheDeploymentConfig() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setBaseUrl("https://deployment.example.invalid");
+        config.setApiKey("deployment-key");
+        config.setBindings(Map.of(
+                "csdp-order-log-count", config.getBindings().get("log_count")));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID, "CSDP", "order-svc", Map.of("log_count", "csdp-order-log-count"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings(EffectiveEvidenceSettings.resolved(
+                        true, "https://workspace.example.invalid", "workspace-key",
+                        false, false, false,
+                        EffectiveEvidenceSettings.Origin.WORKSPACE)),
+                CLOCK);
+
+        adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        // What matters here is where the request went and what authenticated
+        // it, not what came back — normalization is covered elsewhere.
+        assertThat(transport.calls.get()).isEqualTo(1);
+        assertThat(transport.uri.toString())
+                .startsWith("https://workspace.example.invalid");
+        assertThat(transport.headers).containsEntry("DF-API-KEY", "workspace-key");
+        assertThat(transport.headers.values())
+                .as("the deployment credential must not leak into a workspace-owned call")
+                .doesNotContain("deployment-key");
+    }
+
+    @Test
+    void aWorkspaceThatSwitchedGuanceOffIsNotCalledEvenThoughTheDeploymentEnabledIt() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setBindings(Map.of(
+                "csdp-order-log-count", config.getBindings().get("log_count")));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID, "CSDP", "order-svc", Map.of("log_count", "csdp-order-log-count"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings(EffectiveEvidenceSettings.resolved(
+                        false, "https://workspace.example.invalid", "workspace-key",
+                        false, false, false,
+                        EffectiveEvidenceSettings.Origin.WORKSPACE)),
+                CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isZero();
+    }
+
+    @Test
+    void aWorkspaceEndpointPointingAtLoopbackIsBlockedOnTheCallPathNotOnlyOnSave() {
+        // Simulates a row written straight into the database, bypassing the
+        // service that validates on save.
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        config.setBindings(Map.of(
+                "csdp-order-log-count", config.getBindings().get("log_count")));
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID, "CSDP", "order-svc", Map.of("log_count", "csdp-order-log-count"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings(EffectiveEvidenceSettings.resolved(
+                        true, "https://127.0.0.1:9529", "workspace-key",
+                        false, false, false,
+                        EffectiveEvidenceSettings.Origin.WORKSPACE)),
+                CLOCK);
+
+        EvidenceResult result = adapter.collect(WORKSPACE_ID, request("-15m"), incident());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get())
+                .as("the outbound guard must run before the request leaves")
+                .isZero();
+    }
+
+    /** A settings service stubbed to one fixed answer, with the real SSRF guard. */
+    private WorkspaceEvidenceSettingsService settings(EffectiveEvidenceSettings effective) {
+        WorkspaceEvidenceSettingsService service =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(service.effective(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(effective);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            vip.mate.tool.browser.UrlSafetyChecker.check(invocation.getArgument(0), List.of(), false);
+            return null;
+        }).when(service).assertReachableEndpoint(org.mockito.ArgumentMatchers.anyString());
+        return service;
+    }
+
     @Test
     void resolvesAConcreteBindingOnlyForTheExactWorkspaceSystemServiceAndSignal() {
         CapturingTransport transport = new CapturingTransport(200, """
@@ -379,7 +480,11 @@ class GuanceEvidenceAdapterTest {
         assertThat(query.path("_funcList").isArray()).isTrue();
         assertThat(query.path("funcList").isArray()).isTrue();
         assertThat(query.path("maxPointCount").asInt()).isEqualTo(720);
-        assertThat(query.path("interval").asInt()).isEqualTo(10);
+        // Window-derived, not the configured 10s: `limit` bounds scanned buckets,
+        // so a short interval silently truncates a scalar read to the last few
+        // seconds. See aScalarProbeAggregatesTheWholeWindowInsteadOfTheLastFewSeconds.
+        assertThat(query.path("interval").asLong())
+                .isEqualTo(Duration.ofMinutes(5).toSeconds());
         assertThat(query.path("align_time").asBoolean()).isTrue();
         assertThat(query.path("sorder_by").isArray()).isTrue();
         assertThat(query.path("slimit").asInt()).isEqualTo(20);
@@ -441,6 +546,92 @@ class GuanceEvidenceAdapterTest {
                 .isNotEqualTo(EvidenceStatus.MISSING);
         assertThat(result.observed()).containsEntry(
                 "probe_name", "sf-icare-app-虚机-拨测检测异常");
+    }
+
+    @Test
+    void aScalarProbeAggregatesTheWholeWindowInsteadOfTheLastFewSeconds()
+            throws Exception {
+        // Guance's `limit` bounds scanned aggregation buckets, not returned rows.
+        // The contract sends limit = maxRows + 1 = 2, so the configured 10s
+        // interval narrowed every scalar read to the last 20 seconds and a 30s
+        // dial task read empty 5 times out of 6 against the live deployment.
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "status_code", "url", "name"],
+                    "values": [[1753434723000, 200, "https://icarenew.sangfor.com/x",
+                      "icare-app服务-虚机"]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "D",
+                "HTTP 拨测最近状态（通用）",
+                "D::http_dial_testing:(`status_code`, `url`, `name`) "
+                        + "{ `name` = '{{probe_name}}' }",
+                Map.of("url", "target_url", "name", "probe_name"),
+                1);
+        binding.setAssetParameters(List.of("probe_name"));
+        binding.setQueryOptions(cloudDialQueryOptions());
+        EvidenceProperties.Guance config = guanceConfig("synthetic_probe", binding);
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-icare", WORKSPACE_ID, "icare", "icare-app", "guance", true,
+                Map.of("synthetic_probe", "synthetic_probe"),
+                Map.of("probe_name", "icare-app服务-虚机"), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+
+        adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "EV-PROBE-WINDOW-1", "synthetic_probe",
+                        "read the authorized dial task", Map.of(), "-30m", true),
+                incident("icare", "icare-app"));
+
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("interval").asLong())
+                .as("the whole window must collapse into one bucket so last() "
+                        + "means last-in-window")
+                .isEqualTo(Duration.ofMinutes(30).toSeconds());
+        assertThat(query.path("limit").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void aRowSetSignalKeepsItsConfiguredIntervalBecauseItNeedsThePoints()
+            throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "链路还原",
+                "L::`csdp`:(`time`, `service`, `level`, `message`, `duration_ms`, "
+                        + "`ps_id`) { `ps_id` = '{{ps_id}}' }",
+                Map.of(),
+                20);
+        binding.setQueryOptions(cloudDialQueryOptions());
+        EvidenceProperties.Guance config = guanceConfig("log_trace_bundle", binding);
+        config.setAssetBindings(List.of());
+        WorkspaceObservabilityAssets assets = assets(new WorkspaceObservabilityAsset(
+                "asset-csdp", WORKSPACE_ID, "csdp", "csdp-wechat", "guance", true,
+                Map.of("log_trace_bundle", "log_trace_bundle"), Map.of(), 1));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, assets, CLOCK);
+
+        adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "EV-TRACE-WINDOW-1", "log_trace_bundle", "restore the trace",
+                        Map.of("ps_id", "PS-1"), "-30m", true),
+                incident("csdp", "csdp-wechat"));
+
+        JsonNode query = objectMapper.readTree(transport.body)
+                .path("queries").path(0).path("query");
+        assertThat(query.path("interval").asLong())
+                .as("a trace needs its individual points, not one aggregate")
+                .isEqualTo(cloudDialQueryOptions().getInterval());
     }
 
     @Test

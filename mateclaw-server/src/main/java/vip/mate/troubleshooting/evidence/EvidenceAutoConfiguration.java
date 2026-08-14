@@ -44,11 +44,15 @@ public class EvidenceAutoConfiguration {
             ObjectMapper objectMapper,
             EvidenceHttpTransport transport,
             ObjectProvider<WorkspaceObservabilityAssets> workspaceAssets,
-            ObjectProvider<WorkspaceEvidenceContracts> workspaceContracts) {
+            ObjectProvider<WorkspaceEvidenceContracts> workspaceContracts,
+            ObjectProvider<WorkspaceEvidenceSettingsService> workspaceSettings) {
         return new GuanceEvidenceAdapter(
                 properties.getGuance(), objectMapper, transport,
                 workspaceAssets.getIfAvailable(() -> WorkspaceObservabilityAssets.NONE),
                 workspaceContracts.getIfAvailable(() -> WorkspaceEvidenceContracts.NONE),
+                // Absent only in slices that do not component-scan the service;
+                // the adapter then reads application.yml exactly as before.
+                workspaceSettings.getIfAvailable(),
                 Clock.systemUTC());
     }
 

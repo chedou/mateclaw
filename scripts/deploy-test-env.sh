@@ -141,6 +141,11 @@ generate_env_file() {
     set_env_value DB_ENGINE      "$DB_ENGINE"   "$ENV_FILE"
     set_env_value JWT_SECRET     "$(secret 48)" "$ENV_FILE"
     set_env_value SEARXNG_SECRET "$(secret 48)" "$ENV_FILE"
+    # Generated here rather than left blank because the fallback is a passphrase
+    # compiled into the image, shared by every install. Only ever generated on a
+    # fresh .env: this key decrypts secrets already in the database, so silently
+    # replacing it on an existing deployment would orphan them.
+    set_env_value MATECLAW_SETTING_KEY "$(secret 48)" "$ENV_FILE"
     # A test box is the sanctioned place for a browsable API doc; production DB
     # profiles keep it admin-only.
     set_env_value MATECLAW_OPENAPI_EXPOSE_UI true "$ENV_FILE"
@@ -174,6 +179,15 @@ ensure_env_file() {
         fi
         set_env_value DB_ENGINE "$DB_ENGINE" "$ENV_FILE"
         [ -n "$DB_HOST_ARG" ] && set_env_value DB_HOST "$DB_HOST_ARG" "$ENV_FILE"
+        # Reported, not fixed. Writing a key here would make every secret already
+        # encrypted under the built-in passphrase unreadable, so the operator has
+        # to decide: safe on a fresh database, a re-entry job on a used one.
+        if [ -z "$(env_value MATECLAW_SETTING_KEY)" ]; then
+            warn "MATECLAW_SETTING_KEY is empty: stored secrets are encrypted with the
+       passphrase built into the image, which is the same on every install.
+       On a fresh database, set it now (openssl rand -base64 48) and back it up.
+       On a database already holding secrets, changing it makes them unreadable."
+        fi
         apply_base_url
         return
     fi
@@ -195,6 +209,22 @@ require_mysql_settings() {
         || die "DB_PASSWORD is still the placeholder from .env.example"
     log "MySQL target: ${user}@${host}:$(env_value DB_PORT)/$(env_value DB_NAME)"
     verify_postgres_gate_removed
+}
+
+# The counterpart to require_mysql_settings. docker-compose.yml cannot demand
+# this itself: its interpolation runs before profiles are resolved, so a `:?`
+# there would also reject external-MySQL deployments that never start the
+# container. Here the chosen engine is known, so the demand can be made exactly
+# where it applies.
+require_postgres_settings() {
+    [ "$DB_ENGINE" = "postgres" ] || return 0
+    local admin_password
+    admin_password="$(env_value DB_ADMIN_PASSWORD)"
+    [ -n "$admin_password" ] \
+        || die "DB_ADMIN_PASSWORD is empty in .env, and the bundled PostgreSQL cannot
+       initialize without a superuser password. Set it to a strong value."
+    [ "$admin_password" != "change-me-strong-admin-password" ] \
+        || die "DB_ADMIN_PASSWORD is still the placeholder from .env.example"
 }
 
 # docker-compose.mysql.yml drops the PostgreSQL health gate with the `!override`
@@ -248,6 +278,7 @@ cmd_up() {
     preflight
     ensure_env_file
     require_mysql_settings
+    require_postgres_settings
     log "database engine: $DB_ENGINE"
     log "building images (the first run pulls a multi-GB Playwright base image)"
     compose build
