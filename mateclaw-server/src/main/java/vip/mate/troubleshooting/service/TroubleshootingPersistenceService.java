@@ -251,7 +251,7 @@ public class TroubleshootingPersistenceService {
             query.eq(TroubleshootingDiagnosisEntity::getStatus, status.trim());
         }
         if (system != null && !system.isBlank()) {
-            query.eq(TroubleshootingDiagnosisEntity::getSystem, system.trim());
+            query.eq(TroubleshootingDiagnosisEntity::getSystemName, system.trim());
         }
         if (investigationMode != null) {
             query.eq(

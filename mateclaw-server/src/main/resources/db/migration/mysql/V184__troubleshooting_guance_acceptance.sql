@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_guance_acceptance (
     acceptance_id        VARCHAR(128) NOT NULL,
     scope_key            VARCHAR(64)  NOT NULL,
     binding_fingerprint  VARCHAR(64)  NOT NULL,
-    system               VARCHAR(96)  NOT NULL,
+    `system`             VARCHAR(96)  NOT NULL,
     service              VARCHAR(192) NOT NULL,
     aggregate_json       LONGTEXT     NOT NULL,
     version              INT          NOT NULL DEFAULT 0,

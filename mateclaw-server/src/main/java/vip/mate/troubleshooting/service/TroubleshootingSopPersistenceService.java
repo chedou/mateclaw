@@ -151,7 +151,7 @@ public class TroubleshootingSopPersistenceService {
             query.eq(TroubleshootingSopEntity::getStatus, status.trim());
         }
         if (system != null && !system.isBlank()) {
-            query.eq(TroubleshootingSopEntity::getSystem, system.trim());
+            query.eq(TroubleshootingSopEntity::getSystemName, system.trim());
         }
         return mapper.selectList(query);
     }

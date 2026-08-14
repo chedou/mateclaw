@@ -15,7 +15,7 @@ public class TroubleshootingObservabilityAssetEntity {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private Long workspaceId;
-    private String system;
+    private String systemName;
     private String service;
     private String displayName;
     private String platform;
@@ -32,4 +32,12 @@ public class TroubleshootingObservabilityAssetEntity {
     private String changedBy;
     private String changeReason;
     private LocalDateTime createTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS mate_plugin (
     author        VARCHAR(128),
     entrypoint    VARCHAR(256) NOT NULL,
     jar_path      VARCHAR(512),
-    config_json   TEXT          NOT NULL DEFAULT ('{}'),
+    -- MySQL only permits expression defaults on TEXT from 8.0.13 onward.
+    -- PluginManager always writes an explicit JSON object, so no database
+    -- default is required and this shape remains compatible with MySQL 8.0.11.
+    config_json   TEXT          NOT NULL,
     enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
     status        VARCHAR(32)  NOT NULL DEFAULT 'LOADED',
     error_message TEXT,

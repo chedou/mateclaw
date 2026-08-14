@@ -18,7 +18,7 @@ public class TroubleshootingDeploymentTopologyEntity {
     private Long workspaceId;
     private String topologyId;
     private String name;
-    private String system;
+    private String systemName;
     private String systemLabel;
     private String schemaVersion;
     private LocalDateTime exportedAt;
@@ -34,4 +34,12 @@ public class TroubleshootingDeploymentTopologyEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

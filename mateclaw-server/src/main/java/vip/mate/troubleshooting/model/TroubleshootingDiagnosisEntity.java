@@ -22,7 +22,7 @@ public class TroubleshootingDiagnosisEntity {
     private String diagnosisId;
     private String caseId;
     private String runId;
-    private String system;
+    private String systemName;
 
     @TableField(value = "error_code", updateStrategy = FieldStrategy.ALWAYS)
     private String errorCode;
@@ -75,4 +75,12 @@ public class TroubleshootingDiagnosisEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

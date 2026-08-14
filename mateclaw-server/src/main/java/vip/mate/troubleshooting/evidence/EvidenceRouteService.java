@@ -78,10 +78,10 @@ public class EvidenceRouteService implements WorkspaceEvidenceRoutes {
                 new LambdaQueryWrapper<TroubleshootingEvidenceRouteEntity>()
                         .eq(TroubleshootingEvidenceRouteEntity::getWorkspaceId, workspaceId)
                         .eq(TroubleshootingEvidenceRouteEntity::getDeleted, 0)
-                        .orderByAsc(TroubleshootingEvidenceRouteEntity::getSystem)
+                        .orderByAsc(TroubleshootingEvidenceRouteEntity::getSystemName)
                         .orderByAsc(TroubleshootingEvidenceRouteEntity::getSignalKind);
         if (!blank(system)) {
-            query.eq(TroubleshootingEvidenceRouteEntity::getSystem, normalize(system));
+            query.eq(TroubleshootingEvidenceRouteEntity::getSystemName, normalize(system));
         }
         return mapper.selectList(query).stream().map(this::view).toList();
     }
@@ -245,7 +245,7 @@ public class EvidenceRouteService implements WorkspaceEvidenceRoutes {
         return mapper.selectOne(
                 new LambdaQueryWrapper<TroubleshootingEvidenceRouteEntity>()
                         .eq(TroubleshootingEvidenceRouteEntity::getWorkspaceId, workspaceId)
-                        .eq(TroubleshootingEvidenceRouteEntity::getSystem, system)
+                        .eq(TroubleshootingEvidenceRouteEntity::getSystemName, system)
                         .eq(TroubleshootingEvidenceRouteEntity::getSignalKind, signalKind)
                         .eq(TroubleshootingEvidenceRouteEntity::getDeleted, 0));
     }

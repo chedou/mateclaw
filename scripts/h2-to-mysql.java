@@ -11,9 +11,9 @@
 /// checksums would make every later `flyway migrate` fail validation.
 ///
 /// Usage (Java 21 runs this file directly, no compile step):
+///   MATECLAW_MIGRATION_DB_PASSWORD=... \
 ///   java -cp h2.jar:mysql-connector-j.jar scripts/h2-to-mysql.java \
-///        <h2-url> <mysql-url> <mysql-user> <mysql-password> <verify|copy> \
-///        <expected-schema>
+///        <h2-url> <mysql-url> <mysql-user> <verify|copy> <expected-schema>
 ///
 /// `verify` opens both databases, compares the table and column inventory, and
 /// prints what a copy would move — without writing anything.
@@ -22,8 +22,13 @@
 /// before anything is written. Copying empties each target table first, so on a
 /// server hosting unrelated databases a mistyped URL would otherwise be
 /// destructive; this turns that into a refusal.
+///
+/// `copy` additionally requires MATECLAW_MIGRATION_ALLOW_REPLACE=true. The
+/// target's table and column inventory must exactly match the H2 source (apart
+/// from Flyway's own history table), otherwise both verify and copy fail closed.
 
 import java.sql.*;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -33,23 +38,34 @@ class Main {
     private static final int BATCH = 500;
 
     private static final String HISTORY = "flyway_schema_history";
+    private static final String PASSWORD_ENV = "MATECLAW_MIGRATION_DB_PASSWORD";
+    private static final String REPLACE_ENV = "MATECLAW_MIGRATION_ALLOW_REPLACE";
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 6) {
+        if (args.length != 5) {
             System.err.println(
-                    "usage: <h2-url> <mysql-url> <user> <password> <verify|copy> <expected-schema>");
+                    "usage: <h2-url> <mysql-url> <user> <verify|copy> <expected-schema>\n"
+                            + "password must be supplied via " + PASSWORD_ENV);
             System.exit(2);
         }
         String h2Url = args[0];
         String myUrl = args[1];
         String myUser = args[2];
-        String myPass = args[3];
-        boolean copy = "copy".equals(args[4]);
-        if (!copy && !"verify".equals(args[4])) {
+        String myPass = System.getenv(PASSWORD_ENV);
+        if (myPass == null || myPass.isBlank()) {
+            System.err.println("refusing to run: " + PASSWORD_ENV + " is empty");
+            System.exit(2);
+        }
+        boolean copy = "copy".equals(args[3]);
+        if (!copy && !"verify".equals(args[3])) {
             System.err.println("mode must be 'verify' or 'copy'");
             System.exit(2);
         }
-        String expectedSchema = args[5];
+        if (copy && !"true".equals(System.getenv(REPLACE_ENV))) {
+            System.err.println("refusing to replace target data: set " + REPLACE_ENV + "=true");
+            System.exit(2);
+        }
+        String expectedSchema = args[4];
 
         try (Connection h2 = DriverManager.getConnection(h2Url, "sa", "");
              Connection my = DriverManager.getConnection(myUrl, myUser, myPass)) {
@@ -65,39 +81,49 @@ class Main {
             my.setAutoCommit(false);
 
             List<String> tables = sourceTables(h2);
-            Set<String> targetTables = targetTables(my);
+            Set<String> sourceTableSet = new LinkedHashSet<>(tables);
+            Set<String> targetTableSet = targetTables(my);
+            targetTableSet.remove(HISTORY);
 
-            List<String> missing = new ArrayList<>();
+            Set<String> absentFromMySql = difference(sourceTableSet, targetTableSet);
+            Set<String> absentFromH2 = difference(targetTableSet, sourceTableSet);
+            if (!absentFromMySql.isEmpty() || !absentFromH2.isEmpty()) {
+                throw new SQLException("schema table inventory differs; absent from MySQL="
+                        + absentFromMySql + ", absent from H2=" + absentFromH2);
+            }
+
+            Map<String, List<String>> columnsByTable = new LinkedHashMap<>();
+            Map<String, List<String>> generatedColumnsByTable = new LinkedHashMap<>();
             List<String> planned = new ArrayList<>();
             long totalRows = 0;
 
             for (String table : tables) {
-                if (!targetTables.contains(table)) {
-                    missing.add(table);
-                    continue;
+                List<String> sourceColumns = sourceColumns(h2, table);
+                List<String> targetColumns = targetColumns(my, table);
+                if (!new LinkedHashSet<>(sourceColumns).equals(new LinkedHashSet<>(targetColumns))) {
+                    throw new SQLException("schema column inventory differs for " + table
+                            + "; H2=" + sourceColumns + ", MySQL=" + targetColumns);
+                }
+                List<String> writableColumns = targetWritableColumns(my, table);
+                if (!new LinkedHashSet<>(sourceColumns).containsAll(writableColumns)) {
+                    throw new SQLException("MySQL writable columns are absent from H2 for " + table
+                            + "; writable=" + writableColumns + ", H2=" + sourceColumns);
+                }
+                columnsByTable.put(table, writableColumns);
+                List<String> generatedColumns = sourceColumns.stream()
+                        .filter(column -> !writableColumns.contains(column))
+                        .toList();
+                if (!generatedColumns.isEmpty()) {
+                    generatedColumnsByTable.put(table, generatedColumns);
                 }
                 long rows = count(h2, table);
-                if (rows == 0) {
-                    continue;
-                }
                 planned.add(table);
                 totalRows += rows;
             }
 
-            if (!missing.isEmpty()) {
-                // Not fatal on its own — an empty table absent from the target is
-                // noise — but a populated one means the two dialects' migration
-                // sets have drifted, and silently skipping it would lose data.
-                System.out.println("tables present in H2 but not in MySQL:");
-                for (String table : missing) {
-                    long rows = count(h2, table);
-                    System.out.printf("  %-52s %d rows%s%n",
-                            table, rows, rows > 0 ? "   <-- WOULD LOSE DATA" : "");
-                }
-                System.out.println();
-            }
-
             System.out.printf("%d tables to copy, %d rows total%n", planned.size(), totalRows);
+            generatedColumnsByTable.forEach((table, columns) ->
+                    System.out.printf("  generated by MySQL, not inserted: %s.%s%n", table, columns));
             if (!copy) {
                 for (String table : planned) {
                     System.out.printf("  %-52s %d%n", table, count(h2, table));
@@ -114,7 +140,7 @@ class Main {
 
             long copied = 0;
             for (String table : planned) {
-                long n = copyTable(h2, my, table);
+                long n = copyTable(h2, my, table, columnsByTable.get(table));
                 copied += n;
                 System.out.printf("  %-52s %d%n", table, n);
             }
@@ -143,10 +169,10 @@ class Main {
         }
     }
 
-    private static long copyTable(Connection h2, Connection my, String table) throws SQLException {
-        List<String> columns = intersectColumns(h2, my, table);
+    private static long copyTable(Connection h2, Connection my, String table, List<String> columns)
+            throws SQLException {
         if (columns.isEmpty()) {
-            throw new SQLException("no shared columns for table " + table);
+            throw new SQLException("no columns for table " + table);
         }
 
         exec(my, "DELETE FROM `" + table + "`");
@@ -156,6 +182,7 @@ class Main {
         String insert = "INSERT INTO `" + table + "` (" + cols + ") VALUES (" + marks + ")";
 
         String select = "SELECT " + cols + " FROM `" + table + "`";
+        Map<String, String> targetTypes = targetColumnTypes(my, table);
 
         long rows = 0;
         try (Statement read = h2.createStatement();
@@ -164,7 +191,8 @@ class Main {
             int pending = 0;
             while (rs.next()) {
                 for (int i = 1; i <= columns.size(); i++) {
-                    bind(write, i, read(rs, i), table, columns.get(i - 1));
+                    String column = columns.get(i - 1);
+                    bind(write, i, read(rs, i), table, column, targetTypes.get(column));
                 }
                 write.addBatch();
                 rows++;
@@ -193,13 +221,26 @@ class Main {
         return rs.wasNull() ? null : value;
     }
 
-    private static void bind(PreparedStatement ps, int index, Object value, String table, String column)
+    private static void bind(PreparedStatement ps, int index, Object value, String table, String column,
+                             String targetType)
             throws SQLException {
         if (value == null) {
             ps.setNull(index, Types.NULL);
             return;
         }
         try {
+            // H2 exposes its JSON values as UTF-8 byte arrays. Binding those
+            // bytes directly makes MySQL treat them as CHARACTER SET binary,
+            // which JSON columns reject. Only convert when the target metadata
+            // explicitly says JSON; ordinary BLOB/VARBINARY values stay bytes.
+            if ("json".equalsIgnoreCase(targetType)) {
+                if (value instanceof byte[] bytes) {
+                    ps.setString(index, new String(bytes, StandardCharsets.UTF_8));
+                } else {
+                    ps.setString(index, value.toString());
+                }
+                return;
+            }
             // H2 hands back an offset for TIMESTAMP WITH TIME ZONE; MySQL DATETIME
             // has no offset to store it in, so normalize rather than let the driver
             // guess. The schema is Asia/Shanghai throughout, so the instant is
@@ -245,34 +286,48 @@ class Main {
         return out;
     }
 
-    /**
-     * Columns the two schemas share, in source order. A column on only one side
-     * is reported: the target keeps its default, and a source-only column would
-     * otherwise be dropped without anyone noticing.
-     */
-    private static List<String> intersectColumns(Connection h2, Connection my, String table)
-            throws SQLException {
-        List<String> source = columns(h2, table, """
+    private static List<String> sourceColumns(Connection h2, String table) throws SQLException {
+        return columns(h2, table, """
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema = 'PUBLIC' AND LOWER(table_name) = ?
                 ORDER BY ordinal_position""");
-        Set<String> target = new HashSet<>(columns(my, table, """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = DATABASE() AND LOWER(table_name) = ?"""));
+    }
 
-        List<String> shared = new ArrayList<>();
-        List<String> dropped = new ArrayList<>();
-        for (String c : source) {
-            if (target.contains(c)) {
-                shared.add(c);
-            } else {
-                dropped.add(c);
+    private static List<String> targetColumns(Connection my, String table) throws SQLException {
+        return columns(my, table, """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND LOWER(table_name) = ?
+                ORDER BY ordinal_position""");
+    }
+
+    /**
+     * MySQL rejects explicit values for virtual/stored generated columns. Their
+     * definitions are still covered by the full column-inventory check above;
+     * copying the ordinary source columns lets MySQL recompute them itself.
+     * AUTO_INCREMENT columns remain writable so original identifiers survive.
+     */
+    private static List<String> targetWritableColumns(Connection my, String table) throws SQLException {
+        return columns(my, table, """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND LOWER(table_name) = ?
+                  AND UPPER(COALESCE(extra, '')) NOT LIKE '%GENERATED%'
+                ORDER BY ordinal_position""");
+    }
+
+    private static Map<String, String> targetColumnTypes(Connection my, String table) throws SQLException {
+        Map<String, String> out = new HashMap<>();
+        String sql = """
+                SELECT column_name, data_type FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND LOWER(table_name) = ?""";
+        try (PreparedStatement ps = my.prepareStatement(sql)) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.put(rs.getString(1).toLowerCase(Locale.ROOT), rs.getString(2));
+                }
             }
         }
-        if (!dropped.isEmpty()) {
-            System.out.printf("    %s: columns absent in MySQL, not copied: %s%n", table, dropped);
-        }
-        return shared;
+        return out;
     }
 
     private static List<String> columns(Connection c, String table, String sql) throws SQLException {
@@ -294,6 +349,12 @@ class Main {
             rs.next();
             return rs.getString(1);
         }
+    }
+
+    private static Set<String> difference(Set<String> left, Set<String> right) {
+        Set<String> result = new LinkedHashSet<>(left);
+        result.removeAll(right);
+        return result;
     }
 
     private static long count(Connection c, String table) throws SQLException {

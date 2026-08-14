@@ -17,7 +17,7 @@
 CREATE TABLE IF NOT EXISTS mate_troubleshooting_evidence_route (
     id            BIGINT       NOT NULL PRIMARY KEY,
     workspace_id  BIGINT       NOT NULL,
-    system        VARCHAR(128) NOT NULL,
+    `system`      VARCHAR(128) NOT NULL,
     signal_kind   VARCHAR(128) NOT NULL,
     platforms     VARCHAR(512) NOT NULL,
     updated_by    VARCHAR(128) NOT NULL,
@@ -29,6 +29,6 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_evidence_route (
     -- Exactly one live route per (workspace, system, signal kind): two rows
     -- answering the same question would let insertion order decide which
     -- source is queried.
-    UNIQUE KEY uk_ts_evidence_route (workspace_id, system, signal_kind),
-    KEY idx_ts_evidence_route_system (workspace_id, system)
+    UNIQUE KEY uk_ts_evidence_route (workspace_id, `system`, signal_kind),
+    KEY idx_ts_evidence_route_system (workspace_id, `system`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

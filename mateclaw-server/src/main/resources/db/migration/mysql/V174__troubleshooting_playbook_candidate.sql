@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_playbook_candidate (
     record_id            VARCHAR(128) NOT NULL,
     generation_key       VARCHAR(64)  NOT NULL,
     source_incident_id   VARCHAR(128) NOT NULL,
-    system               VARCHAR(96)  NOT NULL,
+    `system`             VARCHAR(96)  NOT NULL,
     service              VARCHAR(192) NOT NULL,
     scenario_key         VARCHAR(128) NOT NULL,
     origin               VARCHAR(32)  NOT NULL,

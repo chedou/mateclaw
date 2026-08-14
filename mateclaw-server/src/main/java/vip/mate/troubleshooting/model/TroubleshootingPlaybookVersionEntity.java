@@ -20,7 +20,7 @@ public class TroubleshootingPlaybookVersionEntity {
     private String selectorKey;
     private Integer playbookVersion;
     private String activeSelectorKey;
-    private String system;
+    private String systemName;
     private String errorCode;
     private String service;
     private String status;
@@ -44,4 +44,12 @@ public class TroubleshootingPlaybookVersionEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

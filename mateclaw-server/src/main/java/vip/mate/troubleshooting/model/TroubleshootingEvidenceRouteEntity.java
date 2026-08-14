@@ -21,7 +21,7 @@ public class TroubleshootingEvidenceRouteEntity {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private Long workspaceId;
-    private String system;
+    private String systemName;
     private String signalKind;
     /** Ordered, comma-separated platform names. Empty string = collect nothing here. */
     private String platforms;
@@ -34,4 +34,12 @@ public class TroubleshootingEvidenceRouteEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

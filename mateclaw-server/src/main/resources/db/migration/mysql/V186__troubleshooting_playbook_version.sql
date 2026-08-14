@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_playbook_version (
     selector_key           VARCHAR(256)  NOT NULL,
     playbook_version       INT           NOT NULL,
     active_selector_key    VARCHAR(256)  NULL,
-    system                 VARCHAR(96)   NOT NULL,
+    `system`               VARCHAR(96)   NOT NULL,
     error_code             VARCHAR(128)  NOT NULL,
     service                VARCHAR(192)  NOT NULL,
     status                 VARCHAR(32)   NOT NULL,
@@ -48,14 +48,14 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_playbook_version (
 
 INSERT INTO mate_troubleshooting_playbook_version (
     id, workspace_id, playbook_id, selector_key, playbook_version,
-    active_selector_key, system, error_code, service, status,
+    active_selector_key, `system`, error_code, service, status,
     source_origin, source_record_id, review_id, review_version,
     approved_by, approval_reason, approval_snapshot_json,
     contract_version, aggregate_json, version, deleted,
     create_time, update_time
 )
 SELECT id, workspace_id, sop_id, route_key, 1,
-       route_key, system, error_code, service, 'APPROVED',
+       route_key, `system`, error_code, service, 'APPROVED',
        'LEGACY', sop_id, NULL, NULL,
        'legacy-migration', 'V186 legacy approved backfill', NULL,
        contract_version, aggregate_json, 0, deleted,

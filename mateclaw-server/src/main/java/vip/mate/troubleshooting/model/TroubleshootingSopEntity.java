@@ -19,7 +19,7 @@ public class TroubleshootingSopEntity {
     private Long workspaceId;
     private String sopId;
     private String routeKey;
-    private String system;
+    private String systemName;
     private String errorCode;
     private String service;
     private String status;
@@ -33,4 +33,12 @@ public class TroubleshootingSopEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

@@ -11,9 +11,9 @@
 >   PostgreSQL 健康门，合并结果只剩 `mateclaw-server` + `searxng`，环境变量注入正确；
 >   PostgreSQL 模式不受影响。
 > - 镜像构建与启动：已实测。服务端镜像可构建（约 1.23 GB），容器起来后
->   `/actuator/health` 返回 `UP`，197 个 Flyway 迁移（含 V203）全部应用成功。
-> - **仍未验证：连接外部 MySQL。** 上述启动验证用的是容器内 H2，`mysql` profile
->   没有对真实 MySQL 跑过。这是首次部署最可能出问题的一环。
+>   `/actuator/health` 返回 `UP`，198 个 Flyway 迁移（含 V204）全部应用成功。
+> - 外部 MySQL：已在 MySQL 8.0.11 上实测建表、H2 全量复制和本地应用启动；110 张业务表、
+>   2,723 行数据逐表行数一致。测试服务器切换属于单独的环境验收，不能由本地结果代替。
 >
 > 首次部署请按第 7 节逐步确认，遇到与本文不符的现象以实际输出为准。
 
@@ -47,10 +47,10 @@ OOM killer 杀掉），所以构建机至少 8 GB 内存。如果部署机比这
 
 | 项目 | 要求 |
 |---|---|
-| 版本 | **5.7 最低，8.0 推荐** —— 有 12 个迁移脚本用了 JSON 列类型 |
+| 版本 | **5.7 最低，8.0 推荐**；当前迁移已在 8.0.11 验证 |
 | 字符集 | 库必须是 `utf8mb4` |
 | 连通性 | 部署机能连到 MySQL 的端口 |
-| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会跑 196 个迁移） |
+| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会检查 198 个迁移） |
 
 **必须先手工建库，且显式指定字符集：**
 
@@ -62,9 +62,9 @@ FLUSH PRIVILEGES;
 ```
 
 为什么不能省这一步：连接串带了 `createDatabaseIfNotExist=true`，看上去能自动建库。
-但 196 个迁移里 121 条 `CREATE TABLE` 只有 101 条显式写了 `utf8mb4`，**剩下 20 张表
-继承库的默认字符集**。MySQL 8 服务端默认就是 utf8mb4，自动建库碰巧没事；MySQL 5.7
-默认 latin1，那 20 张表会在写中文时静默出错。手工建库一次，这个问题就不存在了。
+但 198 个迁移里 121 条 `CREATE TABLE` 只有 101 条显式写了 `utf8mb4`，**剩下 20 张表
+继承库的默认字符集**。不同 MySQL 8 安装的服务端默认值可能被运维配置覆盖；若自动创建出的库
+不是 utf8mb4，这 20 张表会继承错误字符集。手工建库一次，这个问题就不存在了。
 
 （`application-mysql.yml` 里有条注释说"所有建表语句都显式指定 utf8mb4，不依赖 DB
 默认字符集"——这条注释不准确，实测是 101/121。）
@@ -168,7 +168,57 @@ DB_PASSWORD=你在 2.1 里设的密码
 
 ---
 
-### 2.5 关于多机部署
+### 2.5 从现有 H2 全量迁移到 MySQL
+
+`up` 只会让 Flyway 创建 MySQL 表，不会自动搬运 H2 里的用户、Workspace、模型配置和排障记录。
+已经使用过 H2 的环境必须做一次停机全量迁移。迁移会让 MySQL 的全部业务表与 H2 快照完全一致，
+所以只能指向本应用的专用 schema，并且必须先备份目标库。
+
+1. 停掉仍在写 H2 的 MateClaw，复制 `mateclaw.mv.db`（以及存在时的
+   `mateclaw.trace.db`）到带时间戳的备份目录。迁移只读这份静止快照，不读运行中的文件。
+2. 先以 `mysql` profile 启动一次目标版本，让 Flyway 在目标 schema 建好同版本结构；健康后再停掉应用。
+3. 用 `mysqldump --defaults-extra-file=<mode-600-client.cnf>` 备份整个目标 schema。不要把密码写在命令参数里。
+4. 准备 H2 与 MySQL JDBC driver，并在当前终端安全读入密码：
+
+   ```bash
+   read -rsp 'MySQL password: ' MATECLAW_MIGRATION_DB_PASSWORD
+   export MATECLAW_MIGRATION_DB_PASSWORD
+   printf '\n'
+   ```
+
+5. 先只读核对结构和行数。`<h2-snapshot>` 不带 `.mv.db` 后缀：
+
+   ```bash
+   java --class-path '<h2.jar>:<mysql-connector-j.jar>' scripts/h2-to-mysql.java \
+     'jdbc:h2:file:<h2-snapshot>;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE' \
+     'jdbc:mysql://<host>:<port>/<db>?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai' \
+     '<user>' verify '<db>'
+   ```
+
+   表或字段集合只要有一处不一致，工具就会 fail closed，不允许进入复制。MySQL 自动生成列仍参与
+   结构核对，但不会被显式写入；MySQL 会依据同版本定义重新计算。H2 的二进制 JSON 值只在目标列
+   确认为 `JSON` 时转成 UTF-8 文本，普通二进制列保持原样。
+
+6. 确认 H2 快照和 MySQL dump 都可恢复后，显式打开一次性替换闸门并执行复制：
+
+   ```bash
+   MATECLAW_MIGRATION_ALLOW_REPLACE=true \
+   java --class-path '<h2.jar>:<mysql-connector-j.jar>' scripts/h2-to-mysql.java \
+     'jdbc:h2:file:<h2-snapshot>;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE' \
+     'jdbc:mysql://<host>:<port>/<db>?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai' \
+     '<user>' copy '<db>'
+   ```
+
+   工具会在一个事务里清空并重写所有业务表（包括源端为 0 行的表），不复制
+   `flyway_schema_history`，结束时逐表反查行数；任何不一致都会返回失败。
+
+7. 清掉终端变量 `unset MATECLAW_MIGRATION_DB_PASSWORD`，再以 MySQL profile 启动 MateClaw。
+   除健康检查外，至少核对登录、Workspace、模型配置、排障单和观测云连接配置。
+
+回滚时先停应用，恢复迁移前的 MySQL dump；若决定回到 H2，则恢复 H2 快照并撤掉
+`SPRING_PROFILES_ACTIVE=mysql`。在两种数据库之间反复来回启动会产生双写分叉，不属于受支持流程。
+
+### 2.6 关于多机部署
 
 先区分两种"多机"，它们的答案完全不同。
 

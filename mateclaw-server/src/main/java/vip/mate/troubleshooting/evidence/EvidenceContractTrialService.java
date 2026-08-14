@@ -244,7 +244,7 @@ public class EvidenceContractTrialService {
                         .orderByDesc(TroubleshootingEvidenceContractTrialEntity::getCompletedAt)
                         .last("LIMIT " + safeLimit);
         if (system != null && !system.isBlank()) {
-            query.eq(TroubleshootingEvidenceContractTrialEntity::getSystem,
+            query.eq(TroubleshootingEvidenceContractTrialEntity::getSystemName,
                     safeScope(system, "system"));
         }
         if (service != null && !service.isBlank()) {

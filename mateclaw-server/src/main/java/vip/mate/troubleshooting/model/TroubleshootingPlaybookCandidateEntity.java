@@ -19,7 +19,7 @@ public class TroubleshootingPlaybookCandidateEntity {
     private String recordId;
     private String generationKey;
     private String sourceIncidentId;
-    private String system;
+    private String systemName;
     private String service;
     private String scenarioKey;
     private String origin;
@@ -34,4 +34,12 @@ public class TroubleshootingPlaybookCandidateEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

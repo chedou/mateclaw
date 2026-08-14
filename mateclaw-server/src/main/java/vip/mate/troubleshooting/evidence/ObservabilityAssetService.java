@@ -333,7 +333,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
                         new LambdaQueryWrapper<TroubleshootingObservabilityAssetEntity>()
                                 .eq(TroubleshootingObservabilityAssetEntity::getWorkspaceId,
                                         workspaceId)
-                                .eq(TroubleshootingObservabilityAssetEntity::getSystem, system)
+                                .eq(TroubleshootingObservabilityAssetEntity::getSystemName, system)
                                 .eq(TroubleshootingObservabilityAssetEntity::getService, service))
                 .stream()
                 .max(Comparator.comparingInt(this::version))

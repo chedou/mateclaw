@@ -16,7 +16,7 @@ public class TroubleshootingEvidenceContractTrialEntity {
     private Long id;
     private String trialId;
     private Long workspaceId;
-    private String system;
+    private String systemName;
     private String service;
     private String contractRef;
     private String signalKind;
@@ -31,4 +31,12 @@ public class TroubleshootingEvidenceContractTrialEntity {
     private String actor;
     private LocalDateTime completedAt;
     private LocalDateTime createTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

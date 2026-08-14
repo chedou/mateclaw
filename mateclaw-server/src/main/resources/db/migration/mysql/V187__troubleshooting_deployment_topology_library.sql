@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_deployment_topology (
     workspace_id             BIGINT        NOT NULL,
     topology_id              VARCHAR(128)  NOT NULL,
     name                     VARCHAR(128)  NOT NULL,
-    system                   VARCHAR(128)  NOT NULL,
+    `system`                 VARCHAR(128)  NOT NULL,
     system_label             VARCHAR(256)  NOT NULL,
     schema_version           VARCHAR(32)   NOT NULL,
     exported_at              TIMESTAMP     NOT NULL,

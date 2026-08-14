@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS mate_troubleshooting_evaluation_sample (
     sample_id               VARCHAR(128) NOT NULL,
     sample_key              VARCHAR(64)  NOT NULL,
     diagnosis_id            VARCHAR(128) NOT NULL,
-    system                  VARCHAR(96)  NOT NULL,
+    `system`                VARCHAR(96)  NOT NULL,
     service                 VARCHAR(192) NOT NULL,
     scenario_key            VARCHAR(128) NOT NULL,
     source_platform         VARCHAR(32)  NOT NULL,

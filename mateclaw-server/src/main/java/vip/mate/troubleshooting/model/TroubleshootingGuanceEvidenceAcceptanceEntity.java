@@ -19,7 +19,7 @@ public class TroubleshootingGuanceEvidenceAcceptanceEntity {
     private String acceptanceId;
     private String scopeKey;
     private String bindingFingerprint;
-    private String system;
+    private String systemName;
     private String service;
     private String aggregateJson;
     private Integer version;
@@ -29,4 +29,12 @@ public class TroubleshootingGuanceEvidenceAcceptanceEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }

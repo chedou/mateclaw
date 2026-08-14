@@ -21,7 +21,7 @@ public class TroubleshootingEvidenceEvaluationSampleEntity {
     private String captureIdentityKey;
     private Integer captureRevision;
     private String diagnosisId;
-    private String system;
+    private String systemName;
     private String service;
     private String scenarioKey;
     private String sourcePlatform;
@@ -37,4 +37,12 @@ public class TroubleshootingEvidenceEvaluationSampleEntity {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public String getSystem() {
+        return systemName;
+    }
+
+    public void setSystem(String system) {
+        this.systemName = system;
+    }
 }
