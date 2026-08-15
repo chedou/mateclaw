@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.test.util.ReflectionTestUtils;
+import vip.mate.agent.context.AgentWorkspaceResolver;
 import vip.mate.agent.context.ChatOrigin;
 import vip.mate.llm.routing.AgentBindingResolver;
 import vip.mate.skill.runtime.SkillFileAccessPolicy;
@@ -17,6 +18,8 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,8 +32,10 @@ class SkillFileToolTest {
         SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
-        when(runtimeService.getActiveSkills()).thenReturn(List.of(
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
+        when(runtimeService.getActiveSkills(any())).thenReturn(List.of(
                 skill("apple-notes", "database", true),
                 skill("ckjia-shopping", "mcp", false),
                 skill("claude-code", "acp", false)));
@@ -48,10 +53,12 @@ class SkillFileToolTest {
         SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ResolvedSkill skill = skill("browser-cdp", "database", true);
         skill.setContent("# Browser CDP\nUse devtools.");
-        when(runtimeService.findActiveSkill("browser-cdp")).thenReturn(skill);
+        when(runtimeService.findActiveSkill(eq("browser-cdp"), any())).thenReturn(skill);
 
         String content = tool.readSkillFile("browser-cdp", "SKILL.md", null, null, null);
 
@@ -70,10 +77,12 @@ class SkillFileToolTest {
         SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ResolvedSkill skill = skill("large-skill", "database", true);
         skill.setContent("line\n".repeat(500));
-        when(runtimeService.findActiveSkill("large-skill")).thenReturn(skill);
+        when(runtimeService.findActiveSkill(eq("large-skill"), any())).thenReturn(skill);
 
         String content = tool.readSkillFile("large-skill", "SKILL.md", 10, 20, null);
 
@@ -94,12 +103,14 @@ class SkillFileToolTest {
         SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ResolvedSkill skill = skill("huge-line-skill", "database", true);
         // 12 KB single line — well past MAX_OUTPUT_CHARS (8KB).
         String hugeLine = "x".repeat(12_000);
         skill.setContent(hugeLine + "\nsecond line\nthird line\n");
-        when(runtimeService.findActiveSkill("huge-line-skill")).thenReturn(skill);
+        when(runtimeService.findActiveSkill(eq("huge-line-skill"), any())).thenReturn(skill);
 
         String content = tool.readSkillFile("huge-line-skill", "SKILL.md", 1, 5, null);
 
@@ -126,12 +137,14 @@ class SkillFileToolTest {
         SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ResolvedSkill skill = skill("large-skill", "database", true);
         // 500 lines * 5 chars = 2500 chars; 250 lines is also above DEFAULT_MAX_LINES (200).
         String body = "line\n".repeat(500);
         skill.setContent(body);
-        when(runtimeService.findActiveSkill("large-skill")).thenReturn(skill);
+        when(runtimeService.findActiveSkill(eq("large-skill"), any())).thenReturn(skill);
 
         String content = tool.readSkillFile("large-skill", "SKILL.md", null, null, null);
 
@@ -148,12 +161,14 @@ class SkillFileToolTest {
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
         AgentBindingResolver bindingResolver = mock(AgentBindingResolver.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ReflectionTestUtils.setField(tool, "agentBindingResolver", bindingResolver);
 
         ResolvedSkill bound = skill("alpha-skill", "database", true);
         ResolvedSkill unbound = skill("beta-skill", "database", true);
-        when(runtimeService.getActiveSkills()).thenReturn(List.of(bound, unbound));
+        when(runtimeService.getActiveSkills(any())).thenReturn(List.of(bound, unbound));
         // Agent 42 is bound only to alpha-skill; beta-skill must not surface.
         when(bindingResolver.getBoundSkillIds(42L)).thenReturn(Set.of(bound.getId()));
 
@@ -171,12 +186,14 @@ class SkillFileToolTest {
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
         AgentBindingResolver bindingResolver = mock(AgentBindingResolver.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ReflectionTestUtils.setField(tool, "agentBindingResolver", bindingResolver);
 
         ResolvedSkill beta = skill("beta-skill", "database", true);
         beta.setContent("# Beta\nsecret body");
-        when(runtimeService.findActiveSkill("beta-skill")).thenReturn(beta);
+        when(runtimeService.findActiveSkill(eq("beta-skill"), any())).thenReturn(beta);
         // Bound to some other skill id, never beta's.
         when(bindingResolver.getBoundSkillIds(42L)).thenReturn(Set.of(999L));
 
@@ -194,11 +211,13 @@ class SkillFileToolTest {
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
         AgentBindingResolver bindingResolver = mock(AgentBindingResolver.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ReflectionTestUtils.setField(tool, "agentBindingResolver", bindingResolver);
 
         ResolvedSkill beta = skill("beta-skill", "database", true);
-        when(runtimeService.findActiveSkill("beta-skill")).thenReturn(beta);
+        when(runtimeService.findActiveSkill(eq("beta-skill"), any())).thenReturn(beta);
         when(bindingResolver.getBoundSkillIds(42L)).thenReturn(Set.of(999L));
 
         ToolContext ctx = ChatOrigin.EMPTY.withAgent(42L).toToolContext();
@@ -214,12 +233,14 @@ class SkillFileToolTest {
         SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
         SkillUsageService usageService = mock(SkillUsageService.class);
         AgentBindingResolver bindingResolver = mock(AgentBindingResolver.class);
-        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
         ReflectionTestUtils.setField(tool, "agentBindingResolver", bindingResolver);
 
         ResolvedSkill beta = skill("beta-skill", "database", true);
         beta.setContent("# Beta\nvisible body");
-        when(runtimeService.findActiveSkill("beta-skill")).thenReturn(beta);
+        when(runtimeService.findActiveSkill(eq("beta-skill"), any())).thenReturn(beta);
         // null == no explicit binding restriction → inherit every enabled skill.
         when(bindingResolver.getBoundSkillIds(42L)).thenReturn(null);
 
@@ -228,6 +249,55 @@ class SkillFileToolTest {
 
         assertTrue(result.contains("visible body"));
         assertFalse(result.contains("is not available for this agent"));
+    }
+
+    @Test
+    @DisplayName("SKILL.md just over the 8KB tool-result cap is still returned whole (no lossy cut)")
+    void readSkillFileReturnsFullSkillMdJustOverToolResultCap() {
+        // Regression: an 8261-char SKILL.md used to be hard-cut to 8000 chars
+        // downstream with a "[TRUNCATED: ... middle omitted]" marker, and the
+        // model fabricated the removed middle. Anything under the full-return
+        // ceiling must arrive intact so every mandatory section is visible.
+        SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
+        SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
+        SkillUsageService usageService = mock(SkillUsageService.class);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
+        ResolvedSkill skill = skill("meeting-skill", "database", true);
+        String body = "# Contract\n" + "instruction line\n".repeat(500) + "\nFINAL_MANDATORY_SECTION";
+        skill.setContent(body);
+        when(runtimeService.findActiveSkill(eq("meeting-skill"), any())).thenReturn(skill);
+
+        String content = tool.readSkillFile("meeting-skill", "SKILL.md", null, null, null);
+
+        assertTrue(body.length() > 8_000, "fixture must exceed the 8KB cap to be a valid regression");
+        assertEquals(body, content, "SKILL.md under the ceiling must be returned byte-for-byte");
+        assertTrue(content.contains("FINAL_MANDATORY_SECTION"),
+                "the trailing mandatory section must survive — losing it is what caused fabrication");
+        assertFalse(content.contains("truncated"), "no truncation banner may be injected");
+    }
+
+    @Test
+    @DisplayName("SKILL.md past the full-return ceiling degrades to resumable pagination, never a middle-cut")
+    void readSkillFileOversizedSkillMdPaginatesResumably() {
+        SkillRuntimeService runtimeService = mock(SkillRuntimeService.class);
+        SkillFileAccessPolicy accessPolicy = mock(SkillFileAccessPolicy.class);
+        SkillUsageService usageService = mock(SkillUsageService.class);
+        AgentWorkspaceResolver workspaceResolver = mock(AgentWorkspaceResolver.class);
+        when(workspaceResolver.resolve(any())).thenReturn(1L);
+        SkillFileTool tool = new SkillFileTool(runtimeService, accessPolicy, usageService, workspaceResolver);
+        ResolvedSkill skill = skill("giant-skill", "database", true);
+        skill.setContent("instruction line\n".repeat(4000)); // ~68KB, past the 32KB ceiling
+        when(runtimeService.findActiveSkill(eq("giant-skill"), any())).thenReturn(skill);
+
+        String content = tool.readSkillFile("giant-skill", "SKILL.md", null, null, null);
+
+        assertTrue(content.startsWith("instruction line"), "page one must begin at the top of the contract");
+        assertTrue(content.contains("startLine="),
+                "must hand back a resumable continuation cursor so the model can finish the read");
+        assertFalse(content.contains("middle omitted"),
+                "degradation must stay resumable — never a lossy middle-cut");
     }
 
     private static ResolvedSkill skill(String name, String source, boolean builtin) {

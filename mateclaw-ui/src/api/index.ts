@@ -208,6 +208,8 @@ export const conversationApi = {
     http.get(`/conversations/${encId(conversationId)}/messages`, { params }),
   getStatus: (conversationId: string) =>
     http.get(`/conversations/${encId(conversationId)}/status`),
+  getTeamWorkerContext: (conversationId: string, params?: { runId?: string; taskId?: string }) =>
+    http.get(`/conversations/${encId(conversationId)}/team-worker-context`, { params }),
   delete: (conversationId: string) =>
     http.delete(`/conversations/${encId(conversationId)}`),
   clearMessages: (conversationId: string) =>
@@ -324,6 +326,43 @@ export const skillApi = {
   curatorReports: () => http.get('/skills/curator/reports'),
   /** Read one curator run report (parsed run.json). */
   curatorReport: (runId: string) => http.get(`/skills/curator/reports/${runId}`),
+
+  // ---- Curator restore points ----
+  /** List recent skill-library restore points (newest first). */
+  /** Skills currently under autonomous curation — the set that can be released. */
+  curatorManaged: () => http.get('/skills/curator/managed'),
+  /** Skills outside autonomous curation, with the reason each one is out. */
+  curatorUnmanaged: () => http.get('/skills/curator/unmanaged'),
+  /**
+   * Hand skills over to autonomous curation. Ids stay strings — 19-digit
+   * snowflake ids lose precision through the JS Number type.
+   */
+  curatorAdopt: (skillIds: string[]) => http.post('/skills/curator/adopt', skillIds),
+  /** Take skills back from autonomous curation. */
+  curatorRelease: (skillIds: string[]) => http.post('/skills/curator/release', skillIds),
+  curatorSnapshots: () => http.get('/skills/curator/snapshots'),
+  /** Capture a restore point on demand. */
+  curatorSnapshotCapture: (reason?: string) =>
+    http.post('/skills/curator/snapshots', null, { params: reason ? { reason } : {} }),
+  /**
+   * Roll the skill library back to a restore point. The id stays a string —
+   * 19-digit snowflake ids lose precision as a JS number.
+   */
+  curatorSnapshotRestore: (snapshotId: string) =>
+    http.post(`/skills/curator/snapshots/${snapshotId}/restore`),
+
+  // ---- Routine mining ----
+  /** Mined recurring-request candidates plus the promotion thresholds. */
+  routines: (status?: string) =>
+    http.get('/skills/routines', { params: status ? { status } : {} }),
+  /** Run a mining sweep now instead of waiting for the nightly job. */
+  routineMine: () => http.post('/skills/routines/mine'),
+  /** Reject a candidate so later sweeps stop re-detecting it. */
+  routineDismiss: (id: string) => http.post(`/skills/routines/${id}/dismiss`),
+  /** Put a dismissed candidate back under observation. */
+  routineReopen: (id: string) => http.post(`/skills/routines/${id}/reopen`),
+  /** Synthesize the skill now, bypassing the recurrence thresholds. */
+  routinePromote: (id: string) => http.post(`/skills/routines/${id}/promote`),
 }
 
 /** Shape returned by GET /skills/{id}/secrets. */
@@ -517,6 +556,12 @@ export const channelApi = {
   /** Batch health for all channels in current workspace. */
   healthAll: () => http.get('/channels/health'),
   /**
+   * List a channel's known conversations (proactive-push targets). Used by
+   * the cron delivery-target picker; a conversation appears here once the
+   * bot has received at least one inbound message in it.
+   */
+  listSessions: (id: string | number) => http.get(`/channels/${id}/sessions`),
+  /**
    * Wizard Step 2 — validate a draft config without persisting.
    * Returns a VerificationResult: { ok, skipped, durationMs, headline,
    * identity, invalidField, hint }.
@@ -571,6 +616,10 @@ export const planApi = {
 // ==================== Model ====================
 export const modelApi = {
   listProviders: () => http.get('/models'),
+  // Provider id + name only. /models carries connection settings and is
+  // admin-only, so anything a workspace member can reach (the agent's
+  // preferred-provider picker) has to read the choices from here.
+  listProviderOptions: () => http.get('/models/options'),
   listEnabled: () => http.get('/models/enabled'),
   get: (id: string | number) => http.get(`/models/${id}`),
   getDefault: () => http.get('/models/default'),
@@ -594,6 +643,9 @@ export const modelApi = {
     http.post(`/models/${providerId}/models`, data),
   removeProviderModel: (providerId: string, modelId: string) =>
     http.delete(`/models/${providerId}/models`, { params: { modelId } }),
+  /** Per-model input context window. Pass null to clear the override. */
+  updateModelContextWindow: (providerId: string, modelId: string, maxInputTokens: number | null) =>
+    http.put(`/models/${providerId}/models/context-window`, { modelId, maxInputTokens }),
   getActive: () => http.get('/models/active'),
   setActive: (data: { providerId: string; model: string }) =>
     http.put('/models/active', data),
@@ -722,6 +774,12 @@ export const agentContextApi = {
     http.put(`/agents/${agentId}/workspace/files/${encodeFilePath(filename)}`, { content }),
   deleteFile: (agentId: string | number, filename: string) =>
     http.delete(`/agents/${agentId}/workspace/files/${encodeFilePath(filename)}`),
+  // Per-owner PERSONAL memory copies written by agents during conversations.
+  // Admin-only on the backend; callers should treat a 403 as "hide the section".
+  listPersonalFiles: (agentId: string | number) =>
+    http.get(`/agents/${agentId}/workspace/memory/personal-files`),
+  getPersonalFile: (agentId: string | number, filename: string, ownerKey: string) =>
+    http.get(`/agents/${agentId}/workspace/memory/personal-file`, { params: { filename, ownerKey } }),
   getPromptFiles: (agentId: string | number) =>
     http.get(`/agents/${agentId}/workspace/prompt-files`),
   setPromptFiles: (agentId: string | number, files: string[]) =>
@@ -804,6 +862,260 @@ export const cronJobApi = {
   runNow: (id: string | number) => http.post(`/cron-jobs/${id}/run`),
   activeRuns: (conversationId: string) =>
     http.get('/cron-jobs/active-runs', { params: { conversationId } }),
+}
+
+// ==================== Agent Teams ====================
+// All ids are strings end-to-end (global Long→String Jackson config) — never
+// coerce them to number, Snowflake ids exceed Number.MAX_SAFE_INTEGER.
+
+export interface AgentTeam {
+  id: string
+  name: string
+  description: string | null
+  leadAgentId: string
+  status: string
+  settings: string | null
+  createTime?: string
+}
+
+export interface TeamVO {
+  team: AgentTeam
+  leadName: string | null
+  leadIcon?: string | null
+  memberCount: number
+}
+
+export interface TeamMemberVO {
+  agentId: string
+  name: string
+  role: 'lead' | 'member' | 'reviewer'
+  icon?: string | null
+}
+
+export interface TeamTask {
+  id: string
+  teamId: string
+  runId?: string | null
+  taskNumber: number
+  subject: string
+  description: string | null
+  status: string
+  priority: number
+  assigneeAgentId: string | null
+  ownerAgentId: string | null
+  blockedBy: string | null
+  requireApproval: boolean | null
+  progressPercent: number | null
+  progressStep: string | null
+  result: string | null
+  reason: string | null
+  dispatchCount: number
+  conversationId: string | null
+  leadConversationId: string | null
+  metadata: string | null
+  createTime?: string
+  updateTime?: string
+}
+
+export interface TeamTaskDeliverable {
+  name: string
+  url: string
+  time?: string
+}
+
+export interface TeamTaskVO {
+  task: TeamTask
+  assigneeName: string | null
+  ownerName: string | null
+  runId?: string | null
+}
+
+export interface TeamTaskComment {
+  id: string
+  taskId: string
+  authorType: string
+  authorId: string
+  commentType: string
+  content: string
+  createTime?: string
+}
+
+export interface TeamTaskEvent {
+  id: string
+  teamId: string
+  taskId: string
+  eventType: string
+  actorType: string | null
+  actorId: string | null
+  detail: string | null
+  createTime?: string
+}
+
+export const teamApi = {
+  list: () => http.get('/teams'),
+  get: (id: string) => http.get(`/teams/${id}`),
+  create: (data: {
+    name: string
+    description?: string
+    leadAgentId: string
+    memberAgentIds: string[]
+  }) => http.post('/teams', data),
+  update: (id: string, data: { name?: string; description?: string; settings?: string }) =>
+    http.put(`/teams/${id}`, data),
+  delete: (id: string) => http.delete(`/teams/${id}`),
+  addMember: (id: string, agentId: string, role: string) =>
+    http.post(`/teams/${id}/members`, { agentId, role }),
+  removeMember: (id: string, agentId: string) => http.delete(`/teams/${id}/members/${agentId}`),
+  listTasks: (id: string, status?: string[], opts?: { limit?: number; offset?: number }) =>
+    http.get(`/teams/${id}/tasks`, {
+      params: {
+        ...(status?.length ? { status: status.join(',') } : {}),
+        ...(opts?.limit != null ? { limit: opts.limit } : {}),
+        ...(opts?.offset != null ? { offset: opts.offset } : {}),
+      },
+    }),
+  taskStats: (id: string) => http.get(`/teams/${id}/tasks/stats`),
+  getTask: (id: string, taskId: string) => http.get(`/teams/${id}/tasks/${taskId}`),
+  createTask: (
+    id: string,
+    data: {
+      subject: string
+      description?: string
+      runId?: string
+      assigneeAgentId: string
+      priority?: number
+      blockedBy?: string[]
+      requireApproval?: boolean
+    },
+  ) => http.post(`/teams/${id}/tasks`, data),
+  listTaskEvents: (id: string, taskId: string) => http.get(`/teams/${id}/tasks/${taskId}/events`),
+  approveTask: (id: string, taskId: string) => http.post(`/teams/${id}/tasks/${taskId}/approve`),
+  rejectTask: (id: string, taskId: string, reason?: string) =>
+    http.post(`/teams/${id}/tasks/${taskId}/reject`, { reason }),
+  retryTask: (id: string, taskId: string) => http.post(`/teams/${id}/tasks/${taskId}/retry`),
+  cancelTask: (id: string, taskId: string, reason?: string) =>
+    http.post(`/teams/${id}/tasks/${taskId}/cancel`, { reason }),
+  commentTask: (id: string, taskId: string, content: string) =>
+    http.post(`/teams/${id}/tasks/${taskId}/comments`, { content }),
+}
+
+export type TeamRunStatus =
+  | 'planning'
+  | 'running'
+  | 'awaiting_review'
+  | 'finalizing'
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'cancelled'
+
+export interface TeamRunProgress {
+  total: number
+  done: number
+  failed: number
+  inReview: number
+  percent: number
+}
+
+export interface TeamRunTask {
+  id: string
+  teamId: string
+  runId: string
+  taskNumber: number
+  subject: string
+  description: string | null
+  status: string
+  priority: number
+  taskType: string
+  assigneeAgentId: string
+  ownerAgentId: string | null
+  blockedBy: string | null
+  requireApproval: boolean | null
+  progressPercent: number | null
+  progressStep: string | null
+  result: string | null
+  reason: string | null
+  conversationId: string | null
+  metadata: string | null
+  createTime: string | null
+  updateTime: string | null
+}
+
+export type TeamRunOutcomeQuality = 'synthesized' | 'fallback' | 'partial' | 'pending'
+export type TeamRunLivenessState = 'live' | 'quiet' | 'stalled' | 'terminal'
+export interface TeamRunDeliverable { id: string; name: string; url: string; type: string; sourceTaskIds: string[]; sourceAgentIds: string[]; createdAt: string | null; verificationStatus: string }
+export interface TeamRunContribution { taskId: string; agentId: string; subject: string; status: string; durationSeconds: number | null; lastActivityAt: string | null; resultSummary: string | null; conversationId: string | null }
+export interface TeamRunAttentionItem { id: string; type: string; severity: string; priority: number; taskId: string | null; message: string; createdAt: string | null }
+export interface TeamRunLiveness { state: TeamRunLivenessState; lastActivityAt: string | null }
+export interface TeamRunMetrics { durationSeconds: number | null; totalTasks: number; completedTasks: number; failedTasks: number; deliverableCount: number }
+export interface TeamRunPage { items: TeamRun[]; nextCursor: string | null }
+
+export interface TeamRun {
+  id: string
+  teamId: string
+  workspaceId: string
+  leadAgentId: string
+  leadConversationId: string
+  originMessageId: string | null
+  title: string
+  objective: string
+  status: TeamRunStatus
+  finalSummary: string | null
+  stopReason: string | null
+  metadata: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createTime: string | null
+  updateTime: string | null
+  projectionCompleteness?: 'full' | 'summary' | string
+  outcomeQuality?: TeamRunOutcomeQuality | null
+  deliverables?: TeamRunDeliverable[]
+  contributions?: TeamRunContribution[]
+  attentionItems?: TeamRunAttentionItem[]
+  liveness?: TeamRunLiveness | null
+  metrics?: TeamRunMetrics | null
+  progress: TeamRunProgress
+  tasks: TeamRunTask[]
+}
+
+export const teamRunApi = {
+  get: (runId: string) => http.get(`/team-runs/${runId}`),
+  listByTeamPage: (
+    teamId: string,
+    options: { activeOnly?: boolean; cursor?: string; limit?: number } = {},
+  ) => {
+    const params: { activeOnly?: boolean; cursor?: string; limit: number } = {
+      limit: options.limit ?? 20,
+    }
+    if (options.activeOnly) params.activeOnly = true
+    if (options.cursor) params.cursor = options.cursor
+    return http.get(`/teams/${teamId}/runs/page`, { params })
+  },
+  listByConversationPage: (
+    conversationId: string,
+    options: { cursor?: string; limit?: number } = {},
+  ) => {
+    const params: { cursor?: string; limit: number } = { limit: options.limit ?? 20 }
+    if (options.cursor) params.cursor = options.cursor
+    return http.get(`/conversations/${encId(conversationId)}/team-runs/page`, { params })
+  },
+  listByTeam: (teamId: string, activeOnly = false, cursor?: string, limit = 30) => {
+    const query = new URLSearchParams()
+    if (activeOnly) query.set('activeOnly', 'true')
+    if (cursor) query.set('cursor', cursor)
+    if (limit !== 30) query.set('limit', String(limit))
+    const suffix = query.size ? `?${query}` : ''
+    return http.get(`/teams/${teamId}/runs${suffix}`)
+  },
+  listByConversation: (conversationId: string, cursor?: string, limit = 30) => {
+    const query = new URLSearchParams()
+    if (cursor) query.set('cursor', cursor)
+    if (limit !== 30) query.set('limit', String(limit))
+    const suffix = query.size ? `?${query}` : ''
+    return http.get(`/conversations/${encId(conversationId)}/team-runs${suffix}`)
+  },
+  cancel: (runId: string, reason?: string) =>
+    http.post(`/team-runs/${runId}/cancel`, { reason }),
 }
 
 // ==================== Wiki Knowledge Base ====================

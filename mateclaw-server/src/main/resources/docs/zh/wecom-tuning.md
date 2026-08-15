@@ -212,7 +212,22 @@ MateClaw 在 link 分支检测到 `mp.weixin.qq.com` 后，会自动给模型追
 - Slack：通过 `filesUploadV2` 直传（参考 [Slack channel](./channels#slack)）
 - 不支持 `sendContentParts` 的渠道（QQ 等）：catch UnsupportedOperationException + log，不让一个不支持的渠道卡住整批分发
 
-文件路径默认在 `data/chat-uploads/{conversationId}/`，但当会话的 Agent / Workspace 配置了 `basePath` 时，附件落在 `{basePath}/chat-uploads/{conversationId}/`（解析优先级：Agent `workspaceBasePath` → Workspace `basePath` → 默认目录 `mateclaw.chat.upload.base-dir`）。读取与清理会同时探测新旧位置，迁移前的旧附件仍可访问。serve URL 是 `/api/v1/chat/files/{conversationId}/{storedName}`，前端 / 渠道附件视图都按这个 URL 读。
+文件路径默认在 `data/chat-uploads/{conversationId}/`，但当会话的 Agent / Workspace 配置了 `basePath` 时，附件落在 `{basePath}/chat-uploads/{conversationId}/`（解析优先级：Agent `workspaceBasePath` → Workspace `basePath` → 默认目录 `mateclaw.chat.upload.base-dir`）。会话目录下默认再按天分文件夹（`{conversationId}/yyyy-MM-dd/{storedName}`，由 `mateclaw.chat.upload.date-folders` 控制，可关闭回平铺布局）。读取与清理会同时探测新旧位置及平铺 / 日期两种布局，迁移前的旧附件仍可访问。serve URL 是 `/api/v1/chat/files/{conversationId}/{storedName}`（保持平铺、不含日期段），前端 / 渠道附件视图都按这个 URL 读。
+
+---
+
+## 进度气泡：长任务不再像卡死（2.0.0+）
+
+2.0.0 之前，企业微信收到消息后只回一条静态"🤔 思考中..."，直到最终答案前**没有任何变化**——30 秒到 3 分钟的长任务普遍被误认为卡死。现在占位气泡是**事件驱动**的：
+
+- **实时工具轨迹**：气泡内容随 agent 执行滚动更新——思考状态、正在调用的工具、已完成的调用与耗时，逐条追加；
+- **按阶段滚动**：每进入一个新阶段（新一轮推理、新的工具调用），气泡原地刷新为当前阶段叙述——一眼看出任务推进到哪了；
+- **原地渐变为答案**：首个真实内容分片到达时取消保活、**复用同一个 stream 槽位**，进度气泡原地变成答案，不留孤儿气泡；
+- **覆写节流**：刷新有最小间隔与"上一次未完成则跳过"双保险，不会触发企业微信的频控。
+
+思考内容与工具轨迹是否展示，仍受渠道编辑页"消息过滤"开关控制——2.0.0 起这两个开关是真正的"过程消息要不要发"，不再只是从最终答案里剥内联标签。
+
+配套的**流式回复管理加固**：stream 槽位的生命周期集中管理，保活、强制收尾、上下文失效各就各位——不再出现"答案发完了气泡还在转"或"槽位悬挂导致下一条消息发不出"的病态。生成的文件（图片、文档）也会通过微信渠道真实送达，而不是只留一个本地链接。
 
 ---
 

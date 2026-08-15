@@ -13,6 +13,7 @@ import vip.mate.agent.context.ChatOrigin;
 import vip.mate.agent.context.ChatOriginHolder;
 import vip.mate.agent.event.AgentLifecycleEvent;
 import vip.mate.agent.model.AgentEntity;
+import vip.mate.agent.progress.ProgressLedgerService;
 import vip.mate.agent.repository.AgentMapper;
 import vip.mate.exception.MateClawException;
 import vip.mate.llm.chatmodel.ThinkingLevelHolder;
@@ -21,6 +22,7 @@ import vip.mate.memory.MemoryProperties;
 import vip.mate.memory.lifecycle.MemoryLifecycleMediator;
 import vip.mate.memory.lifecycle.TurnContext;
 import vip.mate.memory.service.MemoryRecallTracker;
+import vip.mate.team.event.TeamChangedEvent;
 import vip.mate.workspace.conversation.model.ConversationEntity;
 import vip.mate.workspace.conversation.repository.ConversationMapper;
 
@@ -67,6 +69,14 @@ public class AgentService {
      */
     @Autowired(required = false)
     private vip.mate.agent.runtime.RunningConversationRegistry runningConversationRegistry;
+
+    /**
+     * Optional — clears leftover auto-recorded ledger entries when a new
+     * user turn starts. Field-injected so existing test constructors of
+     * {@code AgentService} don't need to supply it.
+     */
+    @Autowired(required = false)
+    private ProgressLedgerService progressLedgerService;
 
     /**
      * Runtime Agent instance cache. Keyed first by agentId, then by a model
@@ -226,20 +236,56 @@ public class AgentService {
     }
 
     /**
-     * Invalidate the cached agent instance whenever one of its workspace files
-     * changes. The system prompt (which embeds MEMORY.md / PROFILE.md / structured
-     * memory) is baked into the cached instance at build time, so memory edits made
-     * via tools, consolidation, or cleanup would otherwise stay invisible until an
-     * agent config change or restart. Rebuilding on the next turn picks them up.
+     * Invalidate the cached agent instance only for shared workspace files that
+     * are baked into the system prompt. Owner-scoped PERSONAL memory rows are
+     * injected per turn, so updating them must not force a cold agent rebuild.
      */
     @org.springframework.context.event.EventListener
     public void onWorkspaceFileChanged(vip.mate.workspace.document.event.WorkspaceFileChangedEvent event) {
-        if (event.agentId() != null) {
+        if (event.agentId() != null && event.affectsSystemPrompt()) {
             agentInstances.remove(event.agentId());
         }
     }
 
+    /**
+     * Invalidate cached agents whenever their team's composition or settings
+     * change. The team context block is baked into the system prompt at build
+     * time, so membership edits would otherwise stay invisible until restart.
+     */
+    @EventListener
+    public void onTeamChanged(TeamChangedEvent event) {
+        if (event.agentIds() != null) {
+            event.agentIds().forEach(agentInstances::remove);
+        }
+    }
+
     // ==================== 运行时入口 ====================
+
+    /**
+     * New-user-turn housekeeping: drop auto-recorded ledger entries left
+     * over from the previous turn. They mark past tool calls as DONE, and
+     * the ledger snapshot's "已完成的步骤不要重复执行" instruction would
+     * otherwise stop the agent from re-running status-query tools when the
+     * user repeats a question that needs fresh data.
+     *
+     * <p>Only the fresh-turn entries ({@code chat} / {@code chatStream} /
+     * {@code chatStructuredStream} / {@code execute}) call this. The
+     * approval-replay entries ({@code chatWithReplay*}) resume the SAME
+     * logical turn after a tool approval and must keep the safety net for
+     * work already done before the pause.
+     */
+    private void clearAutoRecordedForNewTurn(String conversationId) {
+        if (progressLedgerService == null || conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        try {
+            progressLedgerService.clearAutoRecorded(conversationId);
+        } catch (Exception e) {
+            // Ledger housekeeping must never block the chat itself.
+            log.warn("Failed to clear auto-recorded ledger entries for {}: {}",
+                    conversationId, e.getMessage());
+        }
+    }
 
     public String chat(Long agentId, String message, String conversationId) {
         return chat(agentId, message, conversationId, ChatOrigin.EMPTY);
@@ -251,6 +297,7 @@ public class AgentService {
      * down to {@code @Tool} methods via Spring AI {@link org.springframework.ai.chat.model.ToolContext}.
      */
     public String chat(Long agentId, String message, String conversationId, ChatOrigin origin) {
+        clearAutoRecordedForNewTurn(conversationId);
         memoryRecallTracker.trackRecalls(agentId, message);
         BaseAgent agent = getOrBuildAgentForConversation(agentId, conversationId);
         ChatOriginHolder.set(origin != null ? origin : ChatOrigin.EMPTY);
@@ -287,6 +334,7 @@ public class AgentService {
     }
 
     public Flux<String> chatStream(Long agentId, String message, String conversationId, ChatOrigin origin) {
+        clearAutoRecordedForNewTurn(conversationId);
         memoryRecallTracker.trackRecalls(agentId, message);
         BaseAgent agent = getOrBuildAgentForConversation(agentId, conversationId);
         // Capture the origin into a request-scoped holder; cleared on Flux
@@ -323,6 +371,7 @@ public class AgentService {
     public Flux<StreamDelta> chatStructuredStream(Long agentId, String message, String conversationId,
                                                    String requesterId, String thinkingLevel,
                                                    ChatOrigin origin) {
+        clearAutoRecordedForNewTurn(conversationId);
         memoryRecallTracker.trackRecalls(agentId, message);
         BaseAgent agent = getOrBuildAgentForConversation(agentId, conversationId);
 
@@ -369,6 +418,7 @@ public class AgentService {
     }
 
     public String execute(Long agentId, String goal, String conversationId, ChatOrigin origin) {
+        clearAutoRecordedForNewTurn(conversationId);
         memoryRecallTracker.trackRecalls(agentId, goal);
         BaseAgent agent = getOrBuildAgentForConversation(agentId, conversationId);
         ChatOriginHolder.set(origin != null ? origin : ChatOrigin.EMPTY);
@@ -712,22 +762,42 @@ public class AgentService {
     // ==================== StreamDelta ====================
 
     public record StreamDelta(String content, String thinking, String eventType, Map<String, Object> eventData,
-                              boolean persistenceOnly, boolean segmentOnly) {
+                              boolean persistenceOnly, boolean segmentOnly, ContentKind kind) {
 
         // 兼容构造器（广播+持久化）
         public StreamDelta(String content, String thinking) {
-            this(content, thinking, null, null, false, false);
+            this(content, thinking, null, null, false, false, null);
         }
 
         // 显式 5-参构造器：保留旧调用点对 (content, thinking, eventType, eventData, persistenceOnly) 的兼容
         public StreamDelta(String content, String thinking, String eventType,
                            Map<String, Object> eventData, boolean persistenceOnly) {
-            this(content, thinking, eventType, eventData, persistenceOnly, false);
+            this(content, thinking, eventType, eventData, persistenceOnly, false, null);
+        }
+
+        // 兼容构造器：kind 出现之前的 6 参 canonical 形态
+        public StreamDelta(String content, String thinking, String eventType,
+                           Map<String, Object> eventData, boolean persistenceOnly, boolean segmentOnly) {
+            this(content, thinking, eventType, eventData, persistenceOnly, segmentOnly, null);
         }
 
         /** 仅用于持久化，不再广播（内容已由 NodeStreamingChatHelper 实时广播过） */
         public static StreamDelta persistOnly(String content, String thinking) {
-            return new StreamDelta(content, thinking, null, null, true, false);
+            return new StreamDelta(content, thinking, null, null, true, false, null);
+        }
+
+        /** {@link #persistOnly(String, String)} 带内容语义标注的变体。 */
+        public static StreamDelta persistOnly(String content, String thinking, ContentKind kind) {
+            return new StreamDelta(content, thinking, null, null, true, false, kind);
+        }
+
+        /**
+         * Final-answer content of the terminal turn. {@code alreadyStreamed}
+         * decides broadcast suppression exactly like the persistOnly/plain
+         * split at the emission sites did before the kind tag existed.
+         */
+        public static StreamDelta finalAnswer(String content, boolean alreadyStreamed) {
+            return new StreamDelta(content, null, null, null, alreadyStreamed, false, ContentKind.FINAL_ANSWER);
         }
 
         /**
@@ -751,15 +821,20 @@ public class AgentService {
          * persisted content field via this flavor.
          */
         public static StreamDelta segmentOnly(String content, String thinking) {
-            return new StreamDelta(content, thinking, null, null, true, true);
+            return new StreamDelta(content, thinking, null, null, true, true, null);
+        }
+
+        /** {@link #segmentOnly(String, String)} 带内容语义标注的变体。 */
+        public static StreamDelta segmentOnly(String content, String thinking, ContentKind kind) {
+            return new StreamDelta(content, thinking, null, null, true, true, kind);
         }
 
         public static StreamDelta empty() {
-            return new StreamDelta(null, null, null, null, false, false);
+            return new StreamDelta(null, null, null, null, false, false, null);
         }
 
         public static StreamDelta event(String type, Map<String, Object> data) {
-            return new StreamDelta(null, null, type, data, false, false);
+            return new StreamDelta(null, null, type, data, false, false, null);
         }
 
         public boolean isEvent() {

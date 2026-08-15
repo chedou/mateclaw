@@ -68,6 +68,22 @@ class WorkspaceMemorySearchTest {
         org.mockito.Mockito.verify(eventPublisher).publishEvent(captor.capture());
         assertThat(captor.getValue().agentId()).isEqualTo(1000000001L);
         assertThat(captor.getValue().filename()).isEqualTo("MEMORY.md");
+        assertThat(captor.getValue().affectsSystemPrompt()).isTrue();
+    }
+
+    @Test
+    @DisplayName("saveMemoryFile publishes a non-system-prompt change event")
+    void saveMemoryFilePublishesNonInvalidatingChangeEvent() {
+        when(fileMapper.selectOne(any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(null);
+
+        service.saveMemoryFile(1000000001L, "memory/2026-08-14.md", "## 今日\n- 临时笔记", "web:admin");
+
+        ArgumentCaptor<vip.mate.workspace.document.event.WorkspaceFileChangedEvent> captor =
+                ArgumentCaptor.forClass(vip.mate.workspace.document.event.WorkspaceFileChangedEvent.class);
+        org.mockito.Mockito.verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().agentId()).isEqualTo(1000000001L);
+        assertThat(captor.getValue().filename()).isEqualTo("memory/2026-08-14.md");
+        assertThat(captor.getValue().affectsSystemPrompt()).isFalse();
     }
 
     // ---------- tokenize ----------
@@ -247,6 +263,34 @@ class WorkspaceMemorySearchTest {
         // Clip window is 80 chars on each side plus the match (7 chars) plus
         // two "..." markers (6 chars). Should be << original length.
         assertThat(snippet.length()).isLessThan(line.length());
+    }
+
+    @Test
+    @DisplayName("listPersonalFiles restricts to PERSONAL rows and strips content")
+    void listPersonalFilesScopesToPersonalAndStripsContent() {
+        WorkspaceFileEntity row = new WorkspaceFileEntity();
+        row.setFilename("MEMORY.md");
+        row.setOwnerKey("user:admin");
+        row.setScope("PERSONAL");
+        row.setContent("private notes");
+        when(fileMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(row)));
+
+        List<WorkspaceFileEntity> files = service.listPersonalFiles(42L);
+
+        assertThat(files).hasSize(1);
+        assertThat(files.get(0).getContent()).as("listing must not leak content").isNull();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<WorkspaceFileEntity>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        org.mockito.Mockito.verify(fileMapper).selectList(captor.capture());
+        LambdaQueryWrapper<WorkspaceFileEntity> wrapper = captor.getValue();
+        wrapper.getTargetSql();
+
+        List<Object> values = new ArrayList<>(wrapper.getParamNameValuePairs().values());
+        assertThat(values).contains(42L, "PERSONAL");
+        assertThat(values).as("shared scopes must not appear in the filter")
+                .doesNotContain("TEAM", "GLOBAL");
     }
 
     @Test

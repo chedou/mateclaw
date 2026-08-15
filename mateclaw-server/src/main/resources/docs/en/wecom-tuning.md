@@ -212,7 +212,22 @@ Fix: `AsyncTaskMediaDispatcher.forwardToImIfBound(conversationId, parts)`:
 - Slack: via `filesUploadV2` (see [Slack channel](./channels#slack))
 - Channels without `sendContentParts` (QQ, etc.): catch UnsupportedOperationException + log; one unsupported channel doesn't block the rest
 
-Files live at `data/chat-uploads/{conversationId}/` by default, but when the conversation's Agent / Workspace has a `basePath` configured, attachments land under `{basePath}/chat-uploads/{conversationId}/` (precedence: Agent `workspaceBasePath` → Workspace `basePath` → default dir `mateclaw.chat.upload.base-dir`). Reads and cleanup probe both the new and legacy locations, so pre-migration attachments stay accessible. Served at `/api/v1/chat/files/{conversationId}/{storedName}`; frontend and channel attachment views all read by this URL.
+Files live at `data/chat-uploads/{conversationId}/` by default, but when the conversation's Agent / Workspace has a `basePath` configured, attachments land under `{basePath}/chat-uploads/{conversationId}/` (precedence: Agent `workspaceBasePath` → Workspace `basePath` → default dir `mateclaw.chat.upload.base-dir`). Inside the conversation dir, new files are further grouped into per-day sub-directories by default (`{conversationId}/yyyy-MM-dd/{storedName}`, controlled by `mateclaw.chat.upload.date-folders`; disable to keep the flat layout). Reads and cleanup probe both the new and legacy locations and both layouts (flat + date sub-directories), so pre-migration attachments stay accessible. Served at `/api/v1/chat/files/{conversationId}/{storedName}` — the URL stays flat with no date segment; frontend and channel attachment views all read by this URL.
+
+---
+
+## The progress bubble: long tasks no longer look frozen (2.0.0+)
+
+Before 2.0.0, WeCom replied with one static "🤔 Thinking..." bubble that **never changed** until the final answer — a 30-second-to-3-minute task routinely read as a hang. The placeholder bubble is now **event-driven**:
+
+- **Live tool trace**: the bubble rolls with the agent's run — thinking state, the tool being called, completed calls with elapsed time, appended line by line;
+- **Per-stage rolling**: each new stage (a new reasoning round, a new tool call) refreshes the bubble in place with the current stage narration — you can see exactly how far the task has advanced;
+- **Morphs into the answer**: when the first real content chunk arrives, keepalive is cancelled and the **same stream slot is reused** — the progress bubble becomes the answer in place, leaving no orphan bubble;
+- **Overwrite throttling**: refreshes carry a minimum interval plus a skip-if-previous-flush-pending guard, so WeCom's rate limits are never tripped.
+
+Whether thinking content and the tool trace are shown is still governed by the channel's "message filtering" switches — and as of 2.0.0 those switches genuinely control "should process messages be sent", not merely strip inline tags from the final answer.
+
+Alongside it, **streaming reply management is hardened**: stream slot lifecycles are centrally managed — keepalive, forced finish and context invalidation each in their place — so "the answer landed but the bubble keeps spinning" and "a dangling slot blocks the next message" pathologies are gone. Generated files (images, documents) are also actually delivered through the WeChat channel rather than left as a local-only link.
 
 ---
 

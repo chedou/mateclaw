@@ -397,10 +397,10 @@
                   </div>
                 </div>
 
-                <div class="form-group full-width section-divider">
+                <div v-if="supportsMessageFilter" class="form-group full-width section-divider">
                   <label class="section-label">{{ t('channels.messageFilter.title') }}</label>
                 </div>
-                <div class="form-grid">
+                <div v-if="supportsMessageFilter" class="form-grid">
                   <div class="form-group">
                     <label class="form-label">
                       {{ t('channels.messageFilter.filterThinking') }}
@@ -633,6 +633,15 @@ const needsWebhookUrl = computed(() => {
   return true
 })
 
+// Browser-rendered channels stream structured message parts over SSE and let
+// the client decide what to draw (thinking panel, tool cards). They never go
+// through the adapter's outbound text render path, which is the only place the
+// message-filter config is read — so the controls would be inert there.
+const BROWSER_RENDERED_TYPES = ['web', 'webchat']
+const supportsMessageFilter = computed(
+  () => !BROWSER_RENDERED_TYPES.includes(form.value.channelType || ''),
+)
+
 const isLocalhost = computed(() => {
   const host = window.location.hostname
   return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
@@ -657,6 +666,9 @@ const feishuRequiredPermissions = computed(() => {
     { scope: 'im:message', desc: t('channels.feishu.perm.message'), reason: t('channels.feishu.perm.messageReason') },
     { scope: 'im:message.receive_v1', desc: t('channels.feishu.perm.receive'), reason: t('channels.feishu.perm.receiveReason') },
   ]
+  if (channelConfig.value?.card_streaming_enabled !== false) {
+    perms.push({ scope: 'cardkit:card:write', desc: t('channels.feishu.perm.cardkit'), reason: t('channels.feishu.perm.cardkitReason') })
+  }
   if (channelConfig.value?.connection_mode === 'websocket') {
     perms.push({ scope: 'im:resource', desc: t('channels.feishu.perm.resource'), reason: t('channels.feishu.perm.resourceReason') })
   }
