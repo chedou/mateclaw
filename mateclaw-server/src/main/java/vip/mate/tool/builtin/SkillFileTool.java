@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import vip.mate.agent.context.AgentWorkspaceResolver;
 import vip.mate.agent.context.ChatOrigin;
 import vip.mate.agent.context.TokenEstimator;
 import vip.mate.llm.routing.AgentBindingResolver;
@@ -39,9 +40,25 @@ public class SkillFileTool {
     private static final int DEFAULT_MAX_LINES = 200;
     private static final int MAX_OUTPUT_CHARS = 8_000;
 
+    /**
+     * Ceiling for returning SKILL.md in one piece. Below it the full contract
+     * is returned verbatim — the common case, and the only way the model sees
+     * every mandatory section. Above it the read degrades to resumable
+     * pagination (page + "continue with startLine=N" banner) rather than an
+     * unbounded inline dump.
+     *
+     * <p>Deliberately far above {@link #MAX_OUTPUT_CHARS} so ordinary skills
+     * (a few thousand chars) are never split: splitting a contract the model
+     * can silently under-read is the more expensive failure. It matches the
+     * per-turn aggregate budget, the point past which a single result would
+     * dominate the turn regardless.
+     */
+    private static final int MAX_FULL_SKILL_CHARS = 32_000;
+
     private final SkillRuntimeService runtimeService;
     private final SkillFileAccessPolicy accessPolicy;
     private final SkillUsageService usageService;
+    private final AgentWorkspaceResolver workspaceResolver;
 
     @Lazy
     @Autowired
@@ -84,7 +101,7 @@ public class SkillFileTool {
         log.info("Reading skill file: skill={}, path={}", skillName, filePath);
 
         // 查找 active skill
-        ResolvedSkill skill = runtimeService.findActiveSkill(skillName);
+        ResolvedSkill skill = runtimeService.findActiveSkill(skillName, workspaceResolver.resolve(ChatOrigin.from(ctx)));
         if (skill == null) {
             return "Error: Skill '" + skillName + "' not found or not enabled";
         }
@@ -105,8 +122,14 @@ public class SkillFileTool {
                 // pagination via startLine or maxLines. References / scripts are
                 // still paginated below because they can be large supplementary
                 // material the model loads on demand.
+                // Safety valve: an outsized SKILL.md degrades to resumable
+                // pagination instead of an unbounded inline dump. Never a
+                // lossy middle-cut — a contract with its middle silently
+                // removed is what makes models fabricate the missing span;
+                // a page plus an explicit "continue with startLine=N" banner
+                // keeps the read complete-able.
                 boolean paginationRequested = startLine != null || maxLines != null;
-                if (!paginationRequested) {
+                if (!paginationRequested && skill.getContent().length() <= MAX_FULL_SKILL_CHARS) {
                     return skill.getContent();
                 }
                 return paginateSkillContent(skillName, "SKILL.md", skill.getContent(), startLine, maxLines);
@@ -245,7 +268,7 @@ public class SkillFileTool {
     ) {
         log.info("Listing skill files: skill={}", skillName);
 
-        ResolvedSkill skill = runtimeService.findActiveSkill(skillName);
+        ResolvedSkill skill = runtimeService.findActiveSkill(skillName, workspaceResolver.resolve(ChatOrigin.from(ctx)));
         if (skill == null) {
             return "Error: Skill '" + skillName + "' not found or not enabled";
         }
@@ -341,7 +364,7 @@ public class SkillFileTool {
         // entries — no need to thread the (package-private) recommended
         // comparator back through here.
         List<ResolvedSkill> activeSkills = SkillCatalogSorter.sortResolved(
-                runtimeService.getActiveSkills().stream()
+                runtimeService.getActiveSkills(workspaceResolver.resolve(ChatOrigin.from(ctx))).stream()
                         .filter(s -> SkillCatalogSorter.sourceMatches(s, source))
                         .filter(s -> SkillCatalogSorter.runtimeMatches(s, status))
                         .filter(s -> boundSkillIds == null

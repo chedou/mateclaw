@@ -105,6 +105,15 @@ Images handed to a vision-capable model get attached for visual understanding. P
 Files a worker generates via tools (documents / images / audio…) are now **persisted to disk** under `data/generated-files/`, with a 7-day retention window + a 6-hour cleanup sweep and an in-memory LRU on top — download links keep working after a restart and are no longer bounded by the old 10-minute in-memory window. The frontend intercepts `/api/v1/files/generated/{id}` downloads via a global click delegator: success goes through an authenticated fetch → blob download; failure (404/410/expired) just shows a toast, **so a dead link no longer wedges the whole page**.
 :::
 
+### In-browser preview: Office / PDF / HTML / text without downloading (2.0.0+)
+
+Images, audio/video and 3D models always previewed inline — but a Word report the agent generated was just a download button: to glance at it you had to download, find the file, open a local app. Now **document attachments open right in the chat**:
+
+- **Click to preview**: pdf / docx / xlsx / html / markdown / txt / code files open in a glass-styled preview layer from the attachment card — uploaded and AI-generated alike.
+- **Pure client-side rendering**: PDF, Word and Excel parse and render in the browser — nothing leaves your machine, no external preview service, the single-JAR and desktop packaging story is unchanged.
+- **Server fallback for the stubborn formats**: pptx and legacy binary Office (doc / xls / ppt) are converted to PDF server-side before preview; if the converter (LibreOffice) isn't present, they degrade gracefully to download — no error, no hang.
+- **Safe HTML preview**: rendered in a sandboxed iframe — interactive pages and charts fully work (scripts run), but the iframe sits in an opaque origin and cannot read the app's login state or local storage.
+
 ### Primary model can't see images? "Multimodal sidecar" routing
 
 ::: tip Added in 1.3.0
@@ -190,6 +199,15 @@ A conversation is a sequence of messages scoped to a single agent and a single u
 
 The segment representation is what powers the progressive display. It also makes the database the source of truth — the UI can reconstruct any past response exactly as it looked while streaming.
 
+### Rewind and regenerate (2.0.0+)
+
+Two high-frequency actions gained **server-side semantics** in 2.0.0 — no more frontend sleight of hand:
+
+- **Rewind to here**: truncate the conversation back to a message — everything after it is genuinely deleted in the database and the conversation's aggregates (message count, last-message summary) are recomputed. Refresh the page or open from another client and you see the rewound state; "deleted" answers don't resurrect.
+- **Regenerate**: delete the trailing assistant answer and **reuse the original user message** for the re-run — no duplicate user row is inserted. Previously every regenerate added a duplicate question to the database while the old answer haunted the history; now the history stays clean and consistent across refreshes.
+
+The same semantics cover the admin console, the WebChat widget, and the API — all three entrances behave identically. A conversation with an in-flight stream refuses to rewind first, so an actively-writing turn is never truncated.
+
 ### Per-conversation model selection
 
 ::: tip Added in 1.4.0
@@ -258,7 +276,9 @@ Every turn, MateClaw builds the prompt that actually goes to the LLM. Roughly:
 4. **Recent turns** — as many as fit in the token budget
 5. **Current user message** — always last
 
-When the total exceeds `defaultMaxInputTokens × compactTriggerRatio` (default 128000 × 0.75 = 96000), the system calls the LLM to summarize earlier turns, caches the result for 30 minutes, and sends a compact version. If the LLM still returns a `context_length_exceeded` error, emergency trimming kicks in: discard older messages without calling the LLM, keep the last two turns.
+The window comes from the model itself: the model config's `maxInputTokens` first, then a window probed from a local inference server, then the built-in table of known model windows (DeepSeek V4, Gemini, Claude, Kimi K2, …). Only when all three come up empty does it fall back to the global `defaultMaxInputTokens`.
+
+When the total exceeds `window × compactTriggerRatio` (global default 128000 × 0.75 = 96000), the system calls the LLM to summarize earlier turns, caches the result for 30 minutes, and sends a compact version. If the LLM still returns a `context_length_exceeded` error, emergency trimming kicks in: discard older messages without calling the LLM, keep the last two turns.
 
 More detail, plus the security rationale for injecting summaries as `UserMessage` rather than `SystemMessage`, is in [Memory](./memory).
 
@@ -363,6 +383,25 @@ curl http://localhost:18088/api/v1/conversations/conv-abc123/messages \
 curl -X DELETE http://localhost:18088/api/v1/conversations/conv-abc123 \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
+
+---
+
+## Thinking visibility and linear trajectories (2.1.0+)
+
+2.1.0 turns thinking from one ambiguous block into segments ordered by execution:
+
+- inline `<think>` content is extracted live and kept separate from the final answer;
+- each ReAct iteration stays where it occurred, so tool calls and observations do not drift into the next round;
+- wall-clock start/end times produce real duration and phase feedback;
+- Workspace admins use “Show thinking” to control rendering and “Show all iterations” to switch between every round and only the answer-producing round;
+- `mate.agent.reasoning.retention=all|terminal` controls server-side persistence;
+- a conversation owner can request `GET /api/v1/conversations/{conversationId}/trajectory` for a plain-text export of user input, reasoning, tool calls, observations, and the final answer in execution order. Durations come from segment bounds and appear in the UI; the current text export does not include them.
+
+Provisional narration before a tool call becomes `superseded` when real output arrives. The current chat UI renders it inline, while trajectory output preserves it with `content superseded="true"`. Intermediate Team Run announcements fold into the run card instead of becoming repeated final replies.
+
+### Batch conversation deletion
+
+Sessions can batch-delete up to 200 selected conversations. The server deduplicates ids, checks ownership per item, and deletes only conversations the current user may operate. `team_worker` conversations stay out of the normal sidebar, so they do not appear in sidebar batch selection.
 
 ---
 

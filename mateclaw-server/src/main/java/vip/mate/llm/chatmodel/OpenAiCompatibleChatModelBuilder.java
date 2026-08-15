@@ -32,6 +32,7 @@ import vip.mate.llm.service.ModelProviderService;
 
 import java.net.http.HttpClient;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -159,11 +160,11 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
 
         // built-in search: model-level field wins, provider generateKwargs as fallback
         boolean searchEnabled = Boolean.TRUE.equals(runtimeModel.getEnableSearch())
-                || Boolean.TRUE.equals(kwargs.get("enableSearch"));
+                || Boolean.TRUE.equals(ProviderGenerateKwargs.findOptionValue(kwargs, "enableSearch"));
         if (searchEnabled) {
             String strategy = runtimeModel.getSearchStrategy();
             if (!StringUtils.hasText(strategy)) {
-                strategy = (String) kwargs.get("searchStrategy");
+                strategy = (String) ProviderGenerateKwargs.findOptionValue(kwargs, "searchStrategy");
             }
             OpenAiApi.ChatCompletionRequest.WebSearchOptions.SearchContextSize contextSize;
             try {
@@ -183,6 +184,19 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
         // Leaving it null keeps Spring AI from serializing the field; each node controls it
         // when tools are present.
         options.setStreamUsage(true);
+
+        // Forward unrecognized top-level generateKwargs keys as-is via extraBody (e.g. vLLM's
+        // chat_template_kwargs). Get-then-merge rather than overwrite, in case a future addition
+        // to buildOpenAiOptions ever sets extraBody above this point.
+        Map<String, Object> passthroughExtraBody = ProviderGenerateKwargs.collectPassthroughExtraBody(kwargs);
+        if (!passthroughExtraBody.isEmpty()) {
+            Map<String, Object> existingExtraBody = options.getExtraBody();
+            Map<String, Object> mergedExtraBody = (existingExtraBody == null)
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(existingExtraBody);
+            mergedExtraBody.putAll(passthroughExtraBody);
+            options.setExtraBody(mergedExtraBody);
+        }
         return options;
     }
 
@@ -263,7 +277,7 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
         }
 
         boolean kimiSearchEnabled = isKimiProvider(provider)
-                && Boolean.TRUE.equals(kwargs.get("enableSearch"));
+                && Boolean.TRUE.equals(ProviderGenerateKwargs.findOptionValue(kwargs, "enableSearch"));
 
         ApiKey apiKeyImpl = (keyRequired && StringUtils.hasText(apiKey))
                 ? new SimpleApiKey(apiKey.trim())
@@ -281,6 +295,7 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
             public org.springframework.http.ResponseEntity<OpenAiApi.ChatCompletion> chatCompletionEntity(
                     OpenAiApi.ChatCompletionRequest chatRequest,
                     MultiValueMap<String, String> additionalHttpHeader) {
+                chatRequest = OpenAiRequestRewriter.preserveToolSchemaNumbers(chatRequest);
                 chatRequest = OpenAiRequestRewriter.sanitizeReasoningEffortForProvider(chatRequest, provider);
                 chatRequest = OpenAiRequestRewriter.patchReasoningContent(chatRequest, provider);
                 chatRequest = OpenAiRequestRewriter.stripReasoningEffortIfIncompatible(chatRequest);
@@ -302,6 +317,7 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
             public Flux<OpenAiApi.ChatCompletionChunk> chatCompletionStream(
                     OpenAiApi.ChatCompletionRequest chatRequest,
                     MultiValueMap<String, String> additionalHttpHeader) {
+                chatRequest = OpenAiRequestRewriter.preserveToolSchemaNumbers(chatRequest);
                 chatRequest = OpenAiRequestRewriter.sanitizeReasoningEffortForProvider(chatRequest, provider);
                 chatRequest = OpenAiRequestRewriter.patchReasoningContent(chatRequest, provider);
                 chatRequest = OpenAiRequestRewriter.stripReasoningEffortIfIncompatible(chatRequest);
@@ -394,7 +410,7 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
     private static final Pattern OPENAI_BASE_URL_VERSION_SUFFIX = Pattern.compile(".*/v\\d+$");
 
     private String resolveOpenAiCompletionsPath(String baseUrl, Map<String, Object> kwargs) {
-        Object raw = kwargs.get("completionsPath");
+        Object raw = ProviderGenerateKwargs.findOptionValue(kwargs, "completionsPath");
         boolean explicit = raw instanceof String value && StringUtils.hasText(value);
         String path = explicit ? ((String) raw).trim() : "/v1/chat/completions";
         if (!path.startsWith("/")) {
@@ -438,9 +454,19 @@ public class OpenAiCompatibleChatModelBuilder implements ChatModelBuilder {
 
     /**
      * Apply equivalent timeouts to the WebClient backing OpenAI-compatible
-     * STREAMING calls. Without this the streaming path uses a default WebClient
-     * with neither connect nor read timeout, so a stalled provider can hang the
-     * call indefinitely while the failover chain idles (no exception thrown).
+     * STREAMING calls.
+     *
+     * <p><b>Scope caveat (issue #585):</b> {@code setReadTimeout} maps to the
+     * JDK HttpClient's request timeout, which only protects up to the
+     * <em>response headers</em>. Once the headers arrive the clock stops, so
+     * this timeout does <b>not</b> prevent a provider that returns 200 + a
+     * first SSE frame and then goes silent from hanging the body Flux. The
+     * body-level gap is closed by a reactor inter-frame idle timeout applied
+     * at the streaming chokepoint ({@code NodeStreamingChatHelper}, driven by
+     * {@link HttpTimeouts#DEFAULT_STREAM_IDLE_TIMEOUT}) — that is what actually
+     * surfaces a stalled provider to the error path / failover chain. Both
+     * layers are needed: this one catches a provider that never sends headers
+     * at all, the reactor one catches a provider that sends headers then stalls.
      *
      * <p>Uses {@link org.springframework.http.client.reactive.JdkClientHttpConnector}
      * with the same {@link HttpClient} so the dependency surface stays clean

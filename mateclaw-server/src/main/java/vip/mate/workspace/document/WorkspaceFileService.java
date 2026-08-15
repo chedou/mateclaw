@@ -92,7 +92,7 @@ public class WorkspaceFileService {
             existing.setContent(content);
             existing.setFileSize(size);
             fileMapper.updateById(existing);
-            eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+            eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, true));
             return existing;
         }
         WorkspaceFileEntity entity = new WorkspaceFileEntity();
@@ -110,7 +110,7 @@ public class WorkspaceFileService {
         entity.setOwnerKey(SHARED_OWNER_KEY);
         WorkspaceFileEntity saved = insertOrUpdateOnConflict(
                 entity, () -> getFile(agentId, filename), content, size);
-        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, true));
         return saved;
     }
 
@@ -171,6 +171,24 @@ public class WorkspaceFileService {
         wrapper.orderByAsc(WorkspaceFileEntity::getSortOrder)
                 .orderByAsc(WorkspaceFileEntity::getFilename);
         List<WorkspaceFileEntity> files = fileMapper.selectList(wrapper);
+        files.forEach(f -> f.setContent(null));
+        return files;
+    }
+
+    /**
+     * List every owner's PERSONAL memory rows for an agent (metadata only,
+     * content stripped). Admin-surface listing so operators can see that
+     * per-user memory copies exist alongside the shared config files —
+     * reading a row's content goes through
+     * {@link #getMemoryFile(Long, String, String)}.
+     */
+    public List<WorkspaceFileEntity> listPersonalFiles(Long agentId) {
+        List<WorkspaceFileEntity> files = fileMapper.selectList(
+                new LambdaQueryWrapper<WorkspaceFileEntity>()
+                        .eq(WorkspaceFileEntity::getAgentId, agentId)
+                        .eq(WorkspaceFileEntity::getScope, MemoryScope.PERSONAL)
+                        .orderByAsc(WorkspaceFileEntity::getOwnerKey)
+                        .orderByAsc(WorkspaceFileEntity::getFilename));
         files.forEach(f -> f.setContent(null));
         return files;
     }
@@ -237,7 +255,7 @@ public class WorkspaceFileService {
             existing.setContent(content);
             existing.setFileSize(size);
             fileMapper.updateById(existing);
-            eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+            eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, false));
             return existing;
         }
         WorkspaceFileEntity entity = new WorkspaceFileEntity();
@@ -251,7 +269,7 @@ public class WorkspaceFileService {
         entity.setScope(MemoryScope.PERSONAL);
         WorkspaceFileEntity saved = insertOrUpdateOnConflict(
                 entity, () -> getMemoryFile(agentId, filename, ownerKey), content, size);
-        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, false));
         return saved;
     }
 
@@ -270,7 +288,7 @@ public class WorkspaceFileService {
                         .eq(WorkspaceFileEntity::getAgentId, agentId)
                         .eq(WorkspaceFileEntity::getFilename, filename)
                         .in(WorkspaceFileEntity::getScope, MemoryScope.TEAM, MemoryScope.GLOBAL));
-        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, true));
     }
 
     /**
@@ -288,7 +306,7 @@ public class WorkspaceFileService {
                         .eq(WorkspaceFileEntity::getFilename, filename)
                         .eq(WorkspaceFileEntity::getScope, MemoryScope.PERSONAL)
                         .eq(WorkspaceFileEntity::getOwnerKey, ownerKey));
-        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename));
+        eventPublisher.publishEvent(new WorkspaceFileChangedEvent(agentId, filename, false));
     }
 
     /**

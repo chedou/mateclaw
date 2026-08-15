@@ -295,8 +295,12 @@ Tool-guard approval flows arrive as a card with **Approve / Deny** buttons. Tapp
 Replies stream char-by-char into a **single card** instead of waiting for the whole answer before sending.
 
 - `card_streaming_enabled` (default `true`)
-- The first token appears immediately; subsequent updates are throttled at 500ms
+- The first token appears immediately; regular text updates coalesce at 500ms, while phase transitions refresh preferentially behind a 120ms platform safety limit
+- `stream_progress` (default `true`) keeps thinking status, plan steps, tool progress, and stage narration in the same card; completion retains a bounded execution trace above the final answer
+- Set `filter_thinking=false` to show raw model thinking; by default only status and stage progress are shown
+- Set `filter_tool_messages=false` to show tool names and per-tool results; by default only the tool count is shown
 - On CardKit failure it falls back to accumulate-then-send
+- Final update and close operations retry once; if they still fail, a regular Feishu message carries the answer
 
 #### Inbound voice transcription
 
@@ -354,6 +358,7 @@ curl -X POST http://localhost:18088/api/v1/channels \
       "card_format": "auto",
       "card_header": "AI 助手",
       "card_streaming_enabled": true,
+      "stream_progress": true,
       "media_download_enabled": true,
       "enable_done_reaction": true,
       "require_mention": false
@@ -650,7 +655,34 @@ IM channels (WeCom, WeChat, DingTalk) support voice input. Transcription via Das
 
 ## Per-conversation model selection (all IM channels)
 
-As of 1.4.0, IM channel conversations **remember a per-conversation model**, just like web. Each IM conversation seeds a conversation-level model when it's created, and later replies respect that choice rather than always falling back to the agent's default model. See [Chat & Messaging](./chat) for the web-side switching detail.
+As of 1.4.0, IM channel conversations **remember a per-conversation model**, just like web. Each IM conversation seeds a conversation-level model when it's created, and later replies respect that choice rather than always falling back to the agent's default model. See [Chat & Messaging](./chat) for the web-side switching detail. As of 2.0.0 you can also switch right inside the IM with the `/model` magic command (next section).
+
+---
+
+## Channel magic commands (2.0.0+)
+
+In any IM channel, a message that is entirely a `/`-prefixed command is intercepted by a unified dispatcher **before it reaches the LLM** — commands register once and work on every channel, burn no tokens, and respond instantly:
+
+| Command | What it does |
+|------|--------|
+| `/new` | Start a fresh conversation (current context is archived) |
+| `/clear` | Clear the current conversation's context (the conversation itself survives; the 1.8-era clear command folds into this framework) |
+| `/status` | Show the conversation's state — bound employee, model, whether a task is running |
+| `/stop` | Stop the running task — intercepted at the enqueue gate, so it preempts a long task mid-flight |
+| `/model` | With no argument, list available models (current pin marked); `/model <name>` or `/model <provider>:<name>` switches **this conversation's** model, effective from the next message; `/model reset` restores the default. Fuzzy names get suggestion lists |
+| `/help` | List all commands with descriptions |
+
+Every command carries Chinese and English aliases (e.g. `清空` / `新会话` / `状态`) and is case-insensitive. Matching is two-layered: **bare aliases match only as the entire message** ("help me write a report" is a normal prompt, not `/help`); **the slash form matches on the first token with arguments passed through** (which is how `/model qwen-max` carries its argument). A normal message that merely contains `/stop` mid-sentence never misfires. Command confirmations go through the channel's normal render-and-send path, so an already-posted "thinking…" placeholder bubble is properly consumed instead of spinning forever.
+
+---
+
+## Per-stage progress narration on sync IM channels (2.0.0+)
+
+The worst part of long tasks in IM is the "message dropped into a void" feeling. As of 2.0.0, IM channels on the synchronous path (WeCom, WeChat, …) no longer reply with only the final answer:
+
+- each **stage narration** of the agent's run (what it's doing, which tool it called) arrives as a standalone message — you see the task's footsteps on your phone;
+- WeCom goes further with an **event-driven progress bubble** that updates in place — thinking state, live tool trace and elapsed time roll in real time, and the bubble morphs into the final answer when it arrives (details and tuning in [WeCom Deep Tuning](./wecom-tuning));
+- the web SSE and sync IM paths share one **per-turn stream accumulator**, so both sides see identical execution metadata (tool calls, token usage).
 
 ---
 
@@ -659,8 +691,23 @@ As of 1.4.0, IM channel conversations **remember a per-conversation model**, jus
 - **Webhook mode needs HTTPS.** Production deployments should front MateClaw with Nginx + SSL.
 - **Long-connection modes need no public IP.** Telegram Long-Polling, DingTalk Stream, Feishu WebSocket, Discord Gateway, Slack Socket mode, WeCom Long connection — all run behind NAT.
 - **One channel, one agent.** Different channels can point at different agents.
+- **Conversation ids are channel-scoped (2.0.0).** Conversation id generation now encodes the channel identity — two same-type channels created in different workspaces keep separate conversations even for the same external user, so two workspaces' chats can never bleed into one conversation row.
 - **Credentials are encrypted at rest** in `mate_channel`.
 - **China networks** often need `http_proxy` configured for Telegram and Discord.
+
+---
+
+## Proactive push and targeted Cron delivery (2.1.0+)
+
+An employee can proactively notify an IM conversation when the task explicitly asks for it:
+
+1. call `list_channel_sessions` to list recent pushable conversations in the current workspace;
+2. select the exact returned `conversation_id`;
+3. call `send_channel_message` for a one-way text/Markdown notification.
+
+The adapters that currently implement proactive send are QQ, Telegram, WeChat, Slack, Discord, Feishu, DingTalk, and WeCom. The bot must first have received at least one message in that conversation so a verified platform delivery handle exists, and the channel must be running. Guessed ids and cross-workspace targets are rejected; messages are capped at 4096 characters. Ordinary replies still use the current conversation.
+
+Cron edits now retain both delivery channel and target, so changing a schedule or prompt cannot silently lose the destination. This fits scheduled reports, alerts, and asynchronous completion notifications.
 
 ---
 

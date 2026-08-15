@@ -44,6 +44,8 @@ class ChannelMessagePreRouteHandlerTest {
     @Mock private ChannelAdapter adapter;
     @Mock private ChannelMessagePreRouteHandler handler;
 
+    private final InboundMessageDeduplicator inboundMessageDeduplicator =
+            new InboundMessageDeduplicator(new ChannelDedupProperties());
     private ChannelMessageRouter router;
     private ChannelMessage message;
     private ChannelEntity channel;
@@ -62,7 +64,8 @@ class ChannelMessagePreRouteHandlerTest {
                 new ObjectMapper(),
                 streamTracker,
                 chatOriginFactory,
-                errorClassifier);
+                errorClassifier,
+                inboundMessageDeduplicator);
         ReflectionTestUtils.setField(router, "preRouteHandlers", List.of(handler));
         message = ChannelMessage.builder()
                 .messageId("msg-1")

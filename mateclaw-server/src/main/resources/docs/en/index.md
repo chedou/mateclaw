@@ -4,7 +4,7 @@ layout: home
 hero:
   name: MateClaw
   text: The personal AI your IT department can actually sign off on.
-  tagline: Other personal AI agents are built for one person. MateClaw is built for a team — multi-user workspaces, approval-gated sensitive actions, full audit trail, production-grade health monitoring. One JAR on your own machine. Zero data egress.
+  tagline: Other personal AI agents are built for one person. MateClaw is built for a team — multi-user workspaces, approval-gated sensitive actions, full audit trail, production-grade health monitoring. One self-hosted JAR; you control persisted data and outbound integration boundaries.
   image:
     src: /logo.png
     alt: MateClaw
@@ -22,7 +22,10 @@ hero:
 features:
   - icon: 🧑‍💼
     title: Digital employees, not chatbots
-    details: You hire coworkers, not a chat box. Each one has a role, a goal, a backstory, a pixel-art avatar, and a color of their own — five career templates ship ready to use. ReAct + Plan-and-Execute, parallel delegation between employees.
+    details: You hire coworkers, not a chat box. Each one has a role, a goal, a backstory, a pixel-art avatar, and a color of their own — six built-in templates ship ready to use. ReAct + Plan-and-Execute, parallel delegation between employees.
+  - icon: 🤝
+    title: Teams, not lone wolves
+    details: One team request becomes one Team Run — objective, task DAG, worker execution, final synthesis, and deliverables stay together. Chat delivers outcomes, Agents observes live work, and Teams governs history and approvals. In 2.1.0, one round of collaboration is one complete work record.
   - icon: 🧩
     title: Skills are the skeleton, not a plugin
     details: One SKILL.md plus one LESSONS.md that grows with use. Eight starter templates, a five-step creation wizard, pre-flight checks before install. MCP and ACP bridges — even Claude Code and Codex show up as employees.
