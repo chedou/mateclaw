@@ -73,6 +73,37 @@ FLUSH PRIVILEGES;
 
 ## 2. 部署步骤
 
+### 2.0 从本地一键触发 Jenkins 发布
+
+仓库自带 `scripts/release-test-env.sh`，用于触发既有
+`mateclaw-troubleshooting-release` 任务、等待构建结束，并验收健康检查与排障页面。
+Jenkins 用户和 API Token 只从当前终端环境读取，不会写入仓库：
+
+```bash
+export JENKINS_USER='你的 Jenkins 用户名'
+export JENKINS_API_TOKEN='你的 Jenkins API Token'
+./scripts/release-test-env.sh
+```
+
+默认参数已对准当前测试环境：
+
+```text
+Jenkins: http://200.200.4.33:8080
+Job:     mateclaw-troubleshooting-release
+Site:    http://smartfix-sit.sangfor.com
+```
+
+如果后续把 Job 改成参数化分支构建，显式传入参数，不让脚本猜测 Jenkins 的字段名：
+
+```bash
+./scripts/release-test-env.sh \
+  --parameter BRANCH=claude/intelligent-troubleshooting-design
+```
+
+脚本不负责在服务器上重新实现部署逻辑。Jenkins 流水线仍应在部署机检出代码后调用
+`./scripts/deploy-test-env.sh up`；数据库密码、`MATECLAW_SETTING_KEY` 和观测云密钥继续保存在
+Jenkins Credentials 或部署机的 mode-600 `.env` 中。
+
 ### 2.1 取代码
 
 ```bash
