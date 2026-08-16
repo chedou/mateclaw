@@ -18,10 +18,13 @@
 #
 # Parameterized jobs can receive one or more explicit parameters:
 #
-#   ./scripts/release-test-env.sh --parameter BRANCH=claude/intelligent-troubleshooting-design
+#   ./scripts/release-test-env.sh --allow-insecure-http \
+#     --parameter BRANCH=claude/intelligent-troubleshooting-design
 #
-# The Jenkins job remains responsible for checking out the repository and
-# calling scripts/deploy-test-env.sh on its deployment agent.
+# Unless overridden, this script requests ACTION=DEPLOY, sends the current
+# branch, and pins EXPECTED_COMMIT to the local full HEAD. The Jenkins job
+# remains responsible for checkout, image build, migration precheck,
+# maintenance-window switch and container rollback on its deployment agent.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -88,6 +91,25 @@ elif value is not None:
 ' "$path"
 }
 
+has_parameter() {
+    local expected_name="$1" parameter
+    for parameter in "${PARAMETERS[@]-}"; do
+        [ "${parameter%%=*}" = "$expected_name" ] && return 0
+    done
+    return 1
+}
+
+parameter_value() {
+    local expected_name="$1" parameter
+    for parameter in "${PARAMETERS[@]-}"; do
+        if [ "${parameter%%=*}" = "$expected_name" ]; then
+            printf '%s' "${parameter#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 cleanup() {
     [ -z "${AUTH_CONFIG:-}" ] || rm -f "$AUTH_CONFIG"
     [ -z "${HEADER_FILE:-}" ] || rm -f "$HEADER_FILE"
@@ -99,7 +121,16 @@ while [ $# -gt 0 ]; do
         --parameter)
             [ $# -ge 2 ] || die "--parameter needs NAME=VALUE"
             case "$2" in
-                *=*) PARAMETERS+=("$2") ;;
+                *=*)
+                    parameter_name="${2%%=*}"
+                    case "$parameter_name" in
+                        ACTION|BRANCH|EXPECTED_COMMIT) ;;
+                        *) die "unsupported Jenkins parameter '$parameter_name'" ;;
+                    esac
+                    ! has_parameter "$parameter_name" \
+                        || die "duplicate Jenkins parameter '$parameter_name'"
+                    PARAMETERS+=("$2")
+                    ;;
                 *) die "invalid parameter '$2'; expected NAME=VALUE" ;;
             esac
             shift 2
@@ -142,6 +173,28 @@ EXPECTED_COMMIT="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
 case "$EXPECTED_COMMIT" in
     *[!0-9a-f]*|'') die "expected commit must be a hexadecimal Git SHA" ;;
 esac
+[ "${#EXPECTED_COMMIT}" -eq 40 ] \
+    || die "expected commit must be the complete 40-character Git SHA"
+if ! has_parameter ACTION; then
+    PARAMETERS+=("ACTION=DEPLOY")
+fi
+if ! has_parameter BRANCH; then
+    current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" \
+        || die "cannot determine the current branch; pass --parameter BRANCH=name"
+    PARAMETERS+=("BRANCH=$current_branch")
+fi
+if ! has_parameter EXPECTED_COMMIT; then
+    PARAMETERS+=("EXPECTED_COMMIT=$EXPECTED_COMMIT")
+fi
+requested_action="$(parameter_value ACTION)"
+case "$requested_action" in
+    DEPLOY|VERIFY_ONLY) ;;
+    *) die "ACTION must be DEPLOY or VERIFY_ONLY" ;;
+esac
+if [ "$requested_action" = "VERIFY_ONLY" ]; then
+    VERIFY_SITE=false
+    log "VERIFY_ONLY requested: deployed-site verification is skipped because no cutover occurs"
+fi
 log "expected release commit: $EXPECTED_COMMIT"
 JOB_PATH=""
 IFS='/' read -r -a job_parts <<< "$JENKINS_JOB"

@@ -1,0 +1,548 @@
+pipeline {
+  agent any
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+    timeout(time: 90, unit: 'MINUTES')
+    skipDefaultCheckout(true)
+  }
+
+  parameters {
+    choice(
+      name: 'ACTION',
+      choices: ['VERIFY_ONLY', 'DEPLOY'],
+      description: 'VERIFY_ONLY 只构建并执行只读迁移预检；DEPLOY 才会切换测试环境。'
+    )
+    string(
+      name: 'BRANCH',
+      defaultValue: 'claude/intelligent-troubleshooting-design',
+      description: '从 GitHub 检出的分支。'
+    )
+    string(
+      name: 'EXPECTED_COMMIT',
+      defaultValue: '',
+      description: '期望发布的完整 40 位 Git SHA。DEPLOY 必填且不一致立即停止。'
+    )
+  }
+
+  environment {
+    REPOSITORY_URL = 'https://github.com/chedou/mateclaw.git'
+    RELEASES_DIR = '/opt/mateclaw/releases'
+    DATA_DIR = '/opt/mateclaw/data'
+    ENV_FILE = '/opt/mateclaw/mateclaw.env'
+    CONTAINER = 'mateclaw-server'
+    HEALTH_URL = 'http://127.0.0.1:18080/actuator/health'
+    INFO_URL = 'http://127.0.0.1:18080/actuator/info'
+    MYSQL_CLIENT_IMAGE = 'mysql:8.0'
+    APPROVED_MIGRATION_FROM = '204'
+    APPROVED_MIGRATION_TO = '217'
+    APPROVED_MIGRATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
+    CANDIDATE_IMAGE = "mateclaw-troubleshooting:jenkins-candidate-${BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('检出精确版本') {
+      steps {
+        script {
+          currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.ACTION}"
+          currentBuild.description = "${params.BRANCH} ${params.EXPECTED_COMMIT ?: 'branch-head'}"
+        }
+        sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+umask 077
+
+fail() {
+  echo "SOURCE_PRECHECK_FAILED: $*" >&2
+  exit 1
+}
+
+command -v git >/dev/null || fail "git 命令不存在"
+command -v docker >/dev/null || fail "docker 命令不存在"
+command -v curl >/dev/null || fail "curl 命令不存在"
+command -v gzip >/dev/null || fail "gzip 命令不存在"
+command -v sha256sum >/dev/null || fail "sha256sum 命令不存在"
+command -v find >/dev/null || fail "find 命令不存在"
+command -v sort >/dev/null || fail "sort 命令不存在"
+test -S /var/run/docker.sock || fail "Jenkins 无法访问 Docker socket"
+docker info >/dev/null 2>&1 || fail "Jenkins 无法访问 Docker daemon"
+
+[[ "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] \
+  || fail "BRANCH 格式不合法"
+case "$BRANCH" in
+  *..*|*//*|*@\{*|*/|*.lock) fail "BRANCH 包含不安全片段" ;;
+esac
+
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+  [[ "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] \
+    || fail "EXPECTED_COMMIT 必须是完整 40 位 Git SHA"
+elif [[ "$ACTION" == "DEPLOY" ]]; then
+  fail "DEPLOY 必须提供 EXPECTED_COMMIT，禁止按漂移的分支头发布"
+fi
+
+SOURCE_DIR="$WORKSPACE/source"
+case "$SOURCE_DIR" in
+  "$WORKSPACE"/source) ;;
+  *) fail "源码目录越出 Jenkins Workspace" ;;
+esac
+rm -rf -- "$SOURCE_DIR"
+
+git clone --no-tags --single-branch --depth 1 \
+  --branch "$BRANCH" "$REPOSITORY_URL" "$SOURCE_DIR"
+resolved_commit="$(git -C "$SOURCE_DIR" rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析检出提交"
+
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+  expected_commit="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
+  [[ "$resolved_commit" == "$expected_commit" ]] \
+    || fail "分支头 $resolved_commit 与期望提交 $expected_commit 不一致"
+fi
+
+printf '%s\n' "$resolved_commit" > resolved-commit.txt
+printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt
+
+current_state="ABSENT"
+current_image="NONE"
+current_health="NOT_CHECKED"
+if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  current_state="$(docker inspect --format '{{.State.Status}}' "$CONTAINER")"
+  current_image="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")"
+  if [[ "$current_state" == "running" ]]; then
+    curl -fsS --max-time 5 "$HEALTH_URL" > current-health.json \
+      || fail "当前 MateClaw 健康检查失败"
+    current_health="UP"
+  fi
+fi
+
+test -f "$ENV_FILE" || fail "缺少 $ENV_FILE"
+env_mode="$(stat -c '%a' "$ENV_FILE")"
+case "$env_mode" in
+  400|600) ;;
+  *) fail "mateclaw.env 权限必须为 0400 或 0600，当前为 $env_mode" ;;
+esac
+grep -Eq '^SPRING_PROFILES_ACTIVE=mysql$' "$ENV_FILE" \
+  || fail "测试环境未明确使用 MySQL profile"
+grep -Eq '^DB_HOST=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_HOST"
+grep -Eq '^DB_USERNAME=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_USERNAME"
+grep -Eq '^DB_PASSWORD=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_PASSWORD"
+grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
+
+{
+  echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "action=$ACTION"
+  echo "branch=$BRANCH"
+  echo "resolved_commit=$resolved_commit"
+  echo "target_image=$(cat target-image.txt)"
+  echo "docker_server=$(docker version --format '{{.Server.Version}}')"
+  echo "current_container_state=$current_state"
+  echo "current_image=$current_image"
+  echo "current_health=$current_health"
+  echo "source_build=GIT_EXACT_COMMIT"
+} > preflight-report.txt
+
+cat preflight-report.txt
+echo "SOURCE_PRECHECK_OK"
+'''
+      }
+    }
+
+    stage('构建不可变镜像') {
+      steps {
+        sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+
+resolved_commit="$(cat resolved-commit.txt)"
+SOURCE_DIR="$WORKSPACE/source"
+
+docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
+docker build \
+  --build-arg "MATECLAW_RELEASE_COMMIT=$resolved_commit" \
+  -t "$CANDIDATE_IMAGE" \
+  -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
+  "$SOURCE_DIR"
+
+docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CANDIDATE_IMAGE" \
+  > candidate-image-env.txt
+grep -Fxq "MATECLAW_RELEASE_COMMIT=$resolved_commit" candidate-image-env.txt \
+  || {
+    echo "IMAGE_BUILD_FAILED: 镜像未固化期望提交" >&2
+    exit 1
+  }
+
+docker inspect --format '{{.Id}}' "$CANDIDATE_IMAGE" > candidate-image-id.txt
+echo "IMAGE_BUILD_OK: $(cat candidate-image-id.txt)"
+'''
+      }
+    }
+
+    stage('镜像与迁移安全检查') {
+      steps {
+        sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+umask 077
+
+env_value() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | head -1
+}
+
+resolved_commit="$(cat resolved-commit.txt)"
+SOURCE_DIR="$WORKSPACE/source"
+DB_HOST_VALUE="$(env_value DB_HOST)"
+DB_PORT_VALUE="$(env_value DB_PORT)"
+DB_NAME_VALUE="$(env_value DB_NAME)"
+DB_USER_VALUE="$(env_value DB_USERNAME)"
+DB_PASSWORD_VALUE="$(env_value DB_PASSWORD)"
+DB_PORT_VALUE="${DB_PORT_VALUE:-3306}"
+
+[[ "$DB_NAME_VALUE" =~ ^[A-Za-z0-9_]+$ ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: DB_NAME 格式不安全" >&2; exit 1; }
+MYSQL_CNF="$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
+cleanup_mysql_cnf() { rm -f -- "$MYSQL_CNF"; }
+trap cleanup_mysql_cnf EXIT
+{
+  printf '[client]\n'
+  printf 'host=%s\n' "$DB_HOST_VALUE"
+  printf 'port=%s\n' "$DB_PORT_VALUE"
+  printf 'user=%s\n' "$DB_USER_VALUE"
+  printf 'password=%s\n' "$DB_PASSWORD_VALUE"
+  printf 'default-character-set=utf8mb4\n'
+} > "$MYSQL_CNF"
+chmod 600 "$MYSQL_CNF"
+
+docker pull "$MYSQL_CLIENT_IMAGE" >/dev/null
+docker inspect --format '{{.Id}}' "$MYSQL_CLIENT_IMAGE" > mysql-client-image-id.txt
+current_version="$(docker run --rm \
+  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
+  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
+  -e "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1" \
+  "$DB_NAME_VALUE")"
+[[ "$current_version" =~ ^[0-9]+$ ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 当前 Flyway 版本不是整数：$current_version" >&2; exit 1; }
+printf '%s\n' "$current_version" > current-flyway-version.txt
+
+migration_dir="$SOURCE_DIR/mateclaw-server/src/main/resources/db/migration/mysql"
+migration_files=()
+while IFS= read -r -d '' migration; do
+  migration_files+=("$migration")
+done < <(find "$migration_dir" -type f -name '*.sql' -print0 | sort -z)
+[[ "${#migration_files[@]}" -gt 0 ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 仓库中没有 MySQL 迁移" >&2; exit 1; }
+
+pending_count=0
+pending_versions=()
+repo_max_version=0
+for migration in "${migration_files[@]}"; do
+  filename="${migration##*/}"
+  [[ "${migration%/*}" == "$migration_dir" ]] || {
+    echo "MIGRATION_PRECHECK_FAILED: 迁移 SQL 位于未审核的子目录：${migration#"$migration_dir"/}" >&2
+    exit 1
+  }
+  case "$filename" in
+    V*__*.sql) ;;
+    *)
+      echo "MIGRATION_PRECHECK_FAILED: 未审核的 repeatable/callback SQL：$filename" >&2
+      exit 1
+      ;;
+  esac
+  version="${filename#V}"
+  version="${version%%__*}"
+  [[ "$version" =~ ^[0-9]+$ ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 非法迁移文件名 $filename" >&2; exit 1; }
+  (( 10#$version > repo_max_version )) && repo_max_version=$((10#$version))
+  (( 10#$version > 10#$current_version )) || continue
+  pending_count=$((pending_count + 1))
+  pending_versions+=("$version")
+done
+printf '%s\n' "$pending_count" > pending-migration-count.txt
+printf '%s\n' "$repo_max_version" > repository-max-migration-version.txt
+
+(( 10#$current_version <= repo_max_version )) \
+  || { echo "MIGRATION_PRECHECK_FAILED: 数据库 V$current_version 高于仓库 V$repo_max_version" >&2; exit 1; }
+
+migration_policy="NO_PENDING_MIGRATIONS"
+if [[ "$pending_count" -gt 0 ]]; then
+  [[ "$current_version" == "$APPROVED_MIGRATION_FROM" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2; exit 1; }
+  [[ "$pending_count" -eq 13 ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移应为 13 个，实际为 $pending_count" >&2; exit 1; }
+  [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217' ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V217" >&2; exit 1; }
+  actual_migration_sha="$(
+    cd "$migration_dir"
+    sha256sum V{205..217}__*.sql | sha256sum | awk '{print $1}'
+  )"
+  [[ "$actual_migration_sha" == "$APPROVED_MIGRATION_SHA256" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
+  migration_policy="APPROVED_V${APPROVED_MIGRATION_FROM}_TO_V${APPROVED_MIGRATION_TO}_${actual_migration_sha}"
+else
+  [[ "$current_version" == "$repo_max_version" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 无 pending 但数据库 V$current_version 与仓库 V$repo_max_version 不一致" >&2; exit 1; }
+fi
+printf '%s\n' "$migration_policy" > migration-policy.txt
+
+{
+  echo "resolved_commit=$resolved_commit"
+  echo "image_id=$(cat candidate-image-id.txt)"
+  echo "current_flyway_version=$current_version"
+  echo "repository_max_migration_version=$repo_max_version"
+  echo "pending_migration_count=$pending_count"
+  echo "migration_policy=$migration_policy"
+  echo "runtime_smoke=DEFERRED_TO_MAINTENANCE_CUTOVER"
+} > candidate-verification.txt
+cat candidate-verification.txt
+echo "IMAGE_AND_MIGRATION_PRECHECK_OK"
+'''
+      }
+    }
+
+    stage('切换与自动回滚') {
+      when {
+        expression { params.ACTION == 'DEPLOY' }
+      }
+      steps {
+        sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+umask 077
+
+resolved_commit="$(cat resolved-commit.txt)"
+TARGET_IMAGE="$(cat target-image.txt)"
+ROLLBACK_CONTAINER="${CONTAINER}-rollback-${BUILD_NUMBER}"
+BACKUP_DATA="${RELEASES_DIR}/data-backup-${BUILD_NUMBER}"
+FAILED_DATA="${RELEASES_DIR}/data-failed-${BUILD_NUMBER}"
+DB_BACKUP="${RELEASES_DIR}/mysql-before-${resolved_commit:0:12}-${BUILD_NUMBER}.sql.gz"
+MYSQL_CNF="$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
+OLD_STOPPED=0
+OLD_RENAMED=0
+NEW_STARTED=0
+BACKUP_CREATED=0
+OLD_IMAGE_ID="NONE"
+OLD_IMAGE_REF="NONE"
+
+env_value() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | head -1
+}
+
+DB_HOST_VALUE="$(env_value DB_HOST)"
+DB_PORT_VALUE="$(env_value DB_PORT)"
+DB_NAME_VALUE="$(env_value DB_NAME)"
+DB_USER_VALUE="$(env_value DB_USERNAME)"
+DB_PASSWORD_VALUE="$(env_value DB_PASSWORD)"
+DB_PORT_VALUE="${DB_PORT_VALUE:-3306}"
+PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE="$(env_value PLAYWRIGHT_ALLOW_PRIVATE_NETWORK)"
+PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE="$(env_value PLAYWRIGHT_IGNORE_HTTPS_ERRORS)"
+PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE="$(env_value PLAYWRIGHT_DEFAULT_TIMEOUT_SECONDS)"
+PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE="$(env_value PLAYWRIGHT_NAVIGATION_TIMEOUT_SECONDS)"
+PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE="$(env_value PLAYWRIGHT_SNAPSHOT_MAX_LENGTH)"
+PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE="${PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE:-false}"
+PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE="${PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE:-false}"
+PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE="${PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE:-30}"
+PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE="${PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE:-30}"
+PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE="${PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE:-20000}"
+[[ "$DB_NAME_VALUE" =~ ^[A-Za-z0-9_]+$ ]] \
+  || { echo "DEPLOY_FAILED: DB_NAME 格式不安全" >&2; exit 1; }
+{
+  printf '[client]\n'
+  printf 'host=%s\n' "$DB_HOST_VALUE"
+  printf 'port=%s\n' "$DB_PORT_VALUE"
+  printf 'user=%s\n' "$DB_USER_VALUE"
+  printf 'password=%s\n' "$DB_PASSWORD_VALUE"
+  printf 'default-character-set=utf8mb4\n'
+} > "$MYSQL_CNF"
+chmod 600 "$MYSQL_CNF"
+
+rollback() {
+  rc=$?
+  [[ "$rc" -ne 0 ]] || rc=1
+  trap - ERR INT TERM
+  set +e
+  rm -f -- "$MYSQL_CNF"
+  echo "DEPLOY_FAILED: 开始应用容器回滚；MySQL 逻辑备份保留在 $DB_BACKUP"
+
+  if [[ "$NEW_STARTED" -eq 1 ]]; then
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+
+  if [[ "$BACKUP_CREATED" -eq 1 && -d "$BACKUP_DATA" ]]; then
+    if [[ -d "$DATA_DIR" && ! -e "$FAILED_DATA" ]]; then
+      mv "$DATA_DIR" "$FAILED_DATA"
+    fi
+    if [[ ! -e "$DATA_DIR" ]]; then
+      mv "$BACKUP_DATA" "$DATA_DIR"
+    fi
+  fi
+
+  if [[ "$OLD_RENAMED" -eq 1 ]]; then
+    docker rename "$ROLLBACK_CONTAINER" "$CONTAINER" >/dev/null 2>&1 || true
+    docker start "$CONTAINER" >/dev/null 2>&1 || true
+  elif [[ "$OLD_STOPPED" -eq 1 ]]; then
+    docker start "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+
+  rollback_health="UNAVAILABLE"
+  for attempt in $(seq 1 60); do
+    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+      rollback_health="UP"
+      break
+    fi
+    sleep 2
+  done
+  echo "ROLLBACK_RESULT=$rollback_health"
+  exit "$rc"
+}
+trap rollback ERR INT TERM
+
+[[ ! -e "$DB_BACKUP" ]] || {
+  echo "DEPLOY_FAILED: MySQL 备份文件已存在：$DB_BACKUP" >&2
+  exit 1
+}
+[[ ! -e "$BACKUP_DATA" ]] || {
+  echo "DEPLOY_FAILED: 备份目录已存在：$BACKUP_DATA" >&2
+  exit 1
+}
+[[ ! -e "$FAILED_DATA" ]] || {
+  echo "DEPLOY_FAILED: 失败数据保留目录已存在：$FAILED_DATA" >&2
+  exit 1
+}
+
+if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  OLD_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
+  OLD_IMAGE_REF="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")"
+  docker stop -t 30 "$CONTAINER" >/dev/null
+  OLD_STOPPED=1
+fi
+
+# 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
+# mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
+# 本次只允许无 pending 或哈希冻结的 V204-V217 迁移包；失败时恢复旧容器，
+# 并保留该备份供人工恢复。
+docker run --rm \
+  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+  --entrypoint mysqldump "$MYSQL_CLIENT_IMAGE" \
+  --defaults-extra-file=/tmp/mateclaw-client.cnf \
+  --single-transaction --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF \
+  --quick --routines --triggers --events --hex-blob \
+  "$DB_NAME_VALUE" | gzip -1 > "$DB_BACKUP"
+test -s "$DB_BACKUP"
+gzip -t "$DB_BACKUP"
+
+if [[ -d "$DATA_DIR" ]]; then
+  cp -a "$DATA_DIR" "$BACKUP_DATA"
+  BACKUP_CREATED=1
+fi
+
+if [[ "$OLD_STOPPED" -eq 1 ]]; then
+  docker rename "$CONTAINER" "$ROLLBACK_CONTAINER"
+  OLD_RENAMED=1
+fi
+
+docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+docker run -d \
+  --name "$CONTAINER" \
+  --restart unless-stopped \
+  --env-file "$ENV_FILE" \
+  -e 'JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Shanghai -Dsun.jnu.encoding=UTF-8 -XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError' \
+  -e "MATECLAW_BROWSER_ALLOW_PRIVATE_NETWORK=$PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE" \
+  -e "MATECLAW_BROWSER_IGNORE_HTTPS_ERRORS=$PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE" \
+  -e "MATECLAW_BROWSER_DEFAULT_TIMEOUT_SECONDS=$PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE" \
+  -e "MATECLAW_BROWSER_DEFAULT_NAVIGATION_TIMEOUT_SECONDS=$PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE" \
+  -e "MATECLAW_BROWSER_SNAPSHOT_MAX_LENGTH=$PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE" \
+  --shm-size 2g \
+  --memory 6g \
+  --cpus 4 \
+  -p 127.0.0.1:18080:18088 \
+  -p 127.0.0.1:1455:1455 \
+  -v "$DATA_DIR:/app/data" \
+  "$TARGET_IMAGE" >/dev/null
+NEW_STARTED=1
+
+for attempt in $(seq 1 120); do
+  if curl -fsS --max-time 3 "$HEALTH_URL" > deployed-health.json; then
+    curl -fsS --max-time 3 "$INFO_URL" > deployed-info.json
+    grep -Fq "\"commit\":\"$resolved_commit\"" deployed-info.json || {
+      echo "DEPLOY_FAILED: 线上版本号与期望提交不一致" >&2
+      cat deployed-info.json >&2
+      false
+    }
+    break
+  fi
+  if ! docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -Fxq true; then
+    echo "DEPLOY_FAILED: 新容器提前退出" >&2
+    docker logs --tail 160 "$CONTAINER" >&2 || true
+    false
+  fi
+  sleep 3
+done
+
+curl -fsS --max-time 5 "$HEALTH_URL" > deployed-health.json
+curl -fsS --max-time 5 "$INFO_URL" > deployed-info.json
+grep -Fq "\"commit\":\"$resolved_commit\"" deployed-info.json
+
+new_image_id="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
+new_state="$(docker inspect --format '{{.State.Status}}' "$CONTAINER")"
+
+if [[ "$OLD_RENAMED" -eq 1 ]]; then
+  docker rm "$ROLLBACK_CONTAINER" >/dev/null
+fi
+
+trap - ERR INT TERM
+rm -f -- "$MYSQL_CNF"
+
+{
+  echo "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "build_url=$BUILD_URL"
+  echo "branch=$BRANCH"
+  echo "release_commit=$resolved_commit"
+  echo "previous_image_ref=$OLD_IMAGE_REF"
+  echo "previous_image_id=$OLD_IMAGE_ID"
+  echo "new_image_ref=$TARGET_IMAGE"
+  echo "new_image_id=$new_image_id"
+  echo "container_state=$new_state"
+  echo "health=UP"
+  echo "rollback_data=$BACKUP_DATA"
+  echo "mysql_backup=$DB_BACKUP"
+  echo "migration_policy=$(cat migration-policy.txt)"
+  echo "listen_address=127.0.0.1:18080"
+} > deployment-manifest.txt
+
+cat deployed-health.json
+echo
+cat deployed-info.json
+echo
+cat deployment-manifest.txt
+echo "DEPLOY_OK"
+'''
+      }
+    }
+  }
+
+  post {
+    always {
+      sh returnStatus: true, script: '''#!/usr/bin/env bash
+set +x
+set +e
+docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
+rm -f -- "$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
+SOURCE_DIR="$WORKSPACE/source"
+if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
+  rm -rf -- "$SOURCE_DIR"
+fi
+'''
+      archiveArtifacts(
+        artifacts: 'preflight-report.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployment-manifest.txt,resolved-commit.txt,target-image.txt',
+        allowEmptyArchive: true,
+        fingerprint: true
+      )
+    }
+    success {
+      echo 'MateClaw 测试环境流水线执行成功。'
+    }
+    failure {
+      echo 'MateClaw 流水线失败；若进入切换阶段，日志中会给出自动回滚结果。'
+    }
+  }
+}

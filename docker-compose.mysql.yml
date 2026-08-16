@@ -36,18 +36,18 @@
 #
 # application-mysql.yml does connect with createDatabaseIfNotExist=true, and
 # its comment there claims every CREATE TABLE pins utf8mb4 so the database
-# default cannot matter. That is not quite true: of the 121 CREATE TABLE
-# statements under db/migration/mysql, 101 pin a charset and 20 inherit
-# whatever the database was created with. On a server whose default is utf8mb4
-# (MySQL 8) auto-creation lands in the right place anyway; on MySQL 5.7, whose
-# default is latin1, those 20 tables would silently reject Chinese text. One
-# explicit CREATE DATABASE removes the question.
+# default cannot matter. That is not quite true: some migrations inherit the
+# database default. On a server whose default is utf8mb4 (MySQL 8) auto-creation
+# lands in the right place anyway; on MySQL 5.7, whose default is latin1, those
+# tables would silently reject Chinese text. One explicit CREATE DATABASE
+# removes the question without baking an easy-to-stale migration count into
+# this runbook.
 #
 # Requires MySQL 5.7 or newer either way — 12 migrations use JSON columns.
 # 8.0 is the safe choice.
 #
-# The account also needs DDL rights on that database: Flyway runs all 196
-# migrations at every startup.
+# The account also needs DDL rights on that database: Flyway validates the
+# complete migration line and applies every pending migration at startup.
 #
 # DB_ADMIN_PASSWORD goes unused here. It exists only to bootstrap the bundled
 # PostgreSQL container, and so does docker/postgres/init/10-app-role.sh — with

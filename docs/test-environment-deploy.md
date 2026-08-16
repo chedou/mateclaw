@@ -102,20 +102,40 @@ Site:    http://smartfix-sit.sangfor.com
 build arg 固化到镜像，并从 `/actuator/info` 反向验证。因此“未提交代码混入镜像”
 或“Jenkins 成功但仍运行旧版本”都会直接报错，不会被当成发布成功。
 
+Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按以下顺序执行：
+
+1. 从 GitHub 检出指定分支，并要求分支头与 `EXPECTED_COMMIT` 完全一致；
+2. 从该提交构建带不可变版本号的 Docker 镜像；
+3. 只读检查当前 Flyway 版本；无待执行迁移可直接继续，或只允许内容哈希完全一致的
+   一次性已审核 `V204 → V217` 迁移包；
+4. `DEPLOY` 才进入维护窗口：停止旧应用、生成 MySQL 逻辑备份，再启动新版本；
+5. 新版本必须同时通过健康检查和精确版本校验，否则恢复旧容器并保留 MySQL 备份。
+
+`scripts/release-test-env.sh` 默认发送 `ACTION=DEPLOY`、当前分支和当前完整 HEAD，
+发布完成后再从外部域名复核健康、版本号和排障页面。要只构建镜像并检查迁移，可显式传入
+`--parameter ACTION=VERIFY_ONLY`；脚本会自动跳过未切换站点的版本比对。
+
+流水线不会让候选容器提前连接正在服务的 MySQL，也不会自动执行破坏性的数据库恢复。
+本任务通常只允许数据库已无待执行迁移时发布应用。本次测试库从 V204 升到 V217 是唯一例外：
+流水线同时冻结了 13 个文件的连续版本范围和组合 SHA-256；这些迁移新增 Agent Team 表、索引、
+带默认值的字段及其初始化数据，不删除或重命名旧应用依赖的对象，V215 的 `MODIFY` 只作用于
+V214 新建的表。任一文件内容、数量、起点或终点变化都会 fail-closed。切换前的完整逻辑备份
+保留在 `/opt/mateclaw/releases`。其他 schema 升级必须先走独立数据库维护窗口。
+
 合并 `dev` 后，Agent Team 迁移从重叠的 V172–V184 重新编号为 V205–V217。健康检查会同时
 要求排障域和 Agent Team 两个根表存在；如果目标库曾单独跑过 `dev` 的另一条 V172 谱系，
 `/actuator/health` 会保持 `DOWN`，脚本不会把 Flyway 自动 repair 后的不完整 schema 当成发布成功。
 
-如果后续把 Job 改成参数化分支构建，显式传入参数，不让脚本猜测 Jenkins 的字段名：
+需要发布其他分支时，显式传入分支；版本 SHA 仍默认取本地 HEAD：
 
 ```bash
 ./scripts/release-test-env.sh \
+  --allow-insecure-http \
   --parameter BRANCH=claude/intelligent-troubleshooting-design
 ```
 
-脚本不负责在服务器上重新实现部署逻辑。Jenkins 流水线仍应在部署机检出代码后调用
-`./scripts/deploy-test-env.sh up`；数据库密码、`MATECLAW_SETTING_KEY` 和观测云密钥继续保存在
-Jenkins Credentials 或部署机的 mode-600 `.env` 中。
+数据库密码、`MATECLAW_SETTING_KEY` 和观测云密钥继续只保存在 Jenkins Credentials
+或部署机的 mode-600 `/opt/mateclaw/mateclaw.env` 中，不进入参数、构建日志或仓库。
 
 ### 2.1 取代码
 
