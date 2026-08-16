@@ -1,4 +1,4 @@
--- V174: Team task event timeline — an append-only audit trail of task lifecycle
+-- V207: Team task event timeline — an append-only audit trail of task lifecycle
 -- moments (created, dispatched, progress, comments, deliverables, settlement,
 -- approval actions), rendered as the task's collaboration timeline in the UI.
 -- Written as a side channel: failures to record never affect the task itself.

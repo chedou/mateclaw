@@ -1,5 +1,5 @@
--- V172: Agent team foundation — team registry, membership, and the shared task board.
--- (MySQL dialect). See h2/V172 for design notes.
+-- V205: Agent team foundation — team registry, membership, and the shared task board.
+-- (MySQL dialect). See h2/V205 for design notes.
 
 CREATE TABLE IF NOT EXISTS mate_agent_team (
     id             BIGINT        NOT NULL PRIMARY KEY,

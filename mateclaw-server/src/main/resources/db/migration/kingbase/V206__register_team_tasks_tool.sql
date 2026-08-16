@@ -1,4 +1,4 @@
--- V173: Register the team_tasks built-in tool (shared team task board).
+-- V206: Register the team_tasks built-in tool (shared team task board).
 -- (KingbaseES / PostgreSQL dialect)
 
 INSERT INTO mate_tool (id, name, display_name, description, tool_type, bean_name, icon, enabled, builtin, create_time, update_time, deleted)

@@ -1,4 +1,4 @@
--- V175: Register the channel message push bean as a built-in tool so it shows
+-- V208: Register the channel message push bean as a built-in tool so it shows
 -- up in the tool picker and can be bound per-agent. The agent runtime already
 -- discovers the @Tool bean live (auto-available even without a row), but the
 -- picker / per-agent binding validation reads mate_tool — without this row

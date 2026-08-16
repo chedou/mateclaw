@@ -95,6 +95,7 @@ services:
       dockerfile: mateclaw-server/Dockerfile
       args:
         MAVEN_FLAGS: ${MAVEN_FLAGS:-}
+        MATECLAW_RELEASE_COMMIT: ${MATECLAW_RELEASE_COMMIT:-unknown}
     container_name: mateclaw-server
     restart: unless-stopped
     depends_on:

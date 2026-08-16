@@ -8,7 +8,7 @@
 #
 #   export JENKINS_USER='your-user'
 #   export JENKINS_API_TOKEN='your-api-token'
-#   ./scripts/release-test-env.sh
+#   ./scripts/release-test-env.sh --allow-insecure-http
 #
 # Optional overrides:
 #
@@ -33,6 +33,8 @@ POLL_SECONDS="${JENKINS_POLL_SECONDS:-5}"
 TIMEOUT_SECONDS="${JENKINS_RELEASE_TIMEOUT_SECONDS:-1800}"
 WAIT_FOR_BUILD=true
 VERIFY_SITE=true
+ALLOW_INSECURE_HTTP=false
+EXPECTED_COMMIT=""
 PARAMETERS=()
 
 log()  { printf '\033[36m[release]\033[0m %s\n' "$*"; }
@@ -45,6 +47,8 @@ usage() {
 
 Options:
   --parameter NAME=VALUE  Pass an explicit Jenkins build parameter (repeatable)
+  --expected-commit SHA   Require this Git commit after deployment (default: HEAD)
+  --allow-insecure-http   Allow Basic auth over an explicitly trusted HTTP LAN
   --no-wait               Return after Jenkins accepts the queue item
   --no-verify             Skip the deployed-site health check
   --help                  Show this help
@@ -102,6 +106,12 @@ while [ $# -gt 0 ]; do
             ;;
         --no-wait) WAIT_FOR_BUILD=false; shift ;;
         --no-verify) VERIFY_SITE=false; shift ;;
+        --expected-commit)
+            [ $# -ge 2 ] || die "--expected-commit needs a Git SHA"
+            EXPECTED_COMMIT="$2"
+            shift 2
+            ;;
+        --allow-insecure-http) ALLOW_INSECURE_HTTP=true; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "unknown option '$1'; try --help" ;;
     esac
@@ -114,6 +124,25 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required to read Jenkins J
 
 JENKINS_URL="${JENKINS_URL%/}"
 MATECLAW_TEST_URL="${MATECLAW_TEST_URL%/}"
+jenkins_scheme="$(printf '%s' "${JENKINS_URL%%:*}" | tr '[:upper:]' '[:lower:]')"
+case "$jenkins_scheme" in
+    https) ;;
+    http)
+        [ "$ALLOW_INSECURE_HTTP" = true ] \
+            || die "refusing to send Jenkins credentials over HTTP; use HTTPS or explicitly pass --allow-insecure-http for a trusted LAN"
+        ;;
+    *) die "unsupported Jenkins URL scheme '$jenkins_scheme'; expected HTTPS or explicitly allowed HTTP" ;;
+esac
+if [ -z "$EXPECTED_COMMIT" ]; then
+    command -v git >/dev/null 2>&1 || die "git is required to determine the expected release commit"
+    EXPECTED_COMMIT="$(git rev-parse HEAD 2>/dev/null)" \
+        || die "cannot determine HEAD; pass --expected-commit explicitly"
+fi
+EXPECTED_COMMIT="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
+case "$EXPECTED_COMMIT" in
+    *[!0-9a-f]*|'') die "expected commit must be a hexadecimal Git SHA" ;;
+esac
+log "expected release commit: $EXPECTED_COMMIT"
 JOB_PATH=""
 IFS='/' read -r -a job_parts <<< "$JENKINS_JOB"
 for job_part in "${job_parts[@]}"; do
@@ -204,6 +233,12 @@ health_body="$(curl --fail --silent --show-error --max-time 15 \
 health_status="$(printf '%s' "$health_body" | json_value status)"
 [ "$health_status" = "UP" ] \
     || die "deployment succeeded but health status is '${health_status:-unknown}'"
+info_body="$(curl --fail --silent --show-error --max-time 15 \
+    "$MATECLAW_TEST_URL/actuator/info")" \
+    || die "health is UP but release identity is unavailable"
+deployed_commit="$(printf '%s' "$info_body" | json_value release.commit)"
+[ "$deployed_commit" = "$EXPECTED_COMMIT" ] \
+    || die "deployed commit '${deployed_commit:-unknown}' does not match expected '$EXPECTED_COMMIT'"
 curl --fail --silent --show-error --max-time 15 -o /dev/null \
     "$MATECLAW_TEST_URL/troubleshooting" \
     || die "health is UP but the troubleshooting page is unavailable"

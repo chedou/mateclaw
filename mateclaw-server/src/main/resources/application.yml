@@ -800,3 +800,8 @@ mate:
     # Always-on file ceilings — deterministic backstop so PROFILE.md / MEMORY.md (LLM-rewritten) cannot grow per-turn context without bound
     profile-max-chars: 4000                            # PROFILE.md hard cap; truncates at a section boundary if the rewrite overruns; 0 = unlimited
     memory-md-max-chars: 8000                          # MEMORY.md hard cap; 0 = unlimited
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

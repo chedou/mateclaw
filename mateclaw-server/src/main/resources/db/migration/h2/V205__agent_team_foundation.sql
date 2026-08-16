@@ -1,4 +1,4 @@
--- V172: Agent team foundation — team registry, membership, and the shared task board.
+-- V205: Agent team foundation — team registry, membership, and the shared task board.
 -- A team groups one lead agent with member agents. The lead orchestrates work by
 -- creating tasks on the shared board; tasks are dispatched to the assigned member,
 -- executed in an isolated conversation, and completed with a result summary.

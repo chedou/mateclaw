@@ -1,5 +1,5 @@
--- V174: Team task event timeline — an append-only audit trail of task lifecycle
--- moments. (MySQL dialect). See h2/V174 for design notes.
+-- V207: Team task event timeline — an append-only audit trail of task lifecycle
+-- moments. (MySQL dialect). See h2/V207 for design notes.
 
 CREATE TABLE IF NOT EXISTS mate_team_task_event (
     id           BIGINT        NOT NULL PRIMARY KEY,

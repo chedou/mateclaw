@@ -132,6 +132,43 @@ apply_base_url() {
     set_env_value MATECLAW_CORS_ALLOWED_ORIGINS               "$BASE_URL" "$ENV_FILE"
 }
 
+record_release_commit() {
+    local release_commit="${MATECLAW_RELEASE_COMMIT:-}"
+    if command -v git >/dev/null 2>&1 && git rev-parse --verify HEAD >/dev/null 2>&1; then
+        local build_status=""
+        build_status="$(git status --porcelain=v1 --untracked-files=all -- \
+            .dockerignore \
+            .env.example \
+            docker \
+            docker-compose.yml \
+            docker-compose.mysql.yml \
+            docker-compose.test.yml \
+            docker-compose.pg-test.yml \
+            pom.xml \
+            scripts/deploy-test-env.sh \
+            mateclaw-ui \
+            mateclaw-server \
+            mateclaw-plugin-api \
+            mateclaw-plugin-sample/pom.xml \
+            mateclaw-plugin-search-sample/pom.xml \
+            mateclaw-plugin-mem0/pom.xml)"
+        [ -z "$build_status" ] || die "release build inputs are not a clean Git checkout:
+$build_status
+Commit or remove these changes before deploying so the advertised SHA matches the image."
+        release_commit="$(git rev-parse HEAD)"
+    fi
+    [ -n "$release_commit" ] \
+        || die "cannot determine the release commit; run from a Git checkout or set MATECLAW_RELEASE_COMMIT"
+    case "$release_commit" in
+        *[!0-9a-fA-F]*|'') die "MATECLAW_RELEASE_COMMIT must be a hexadecimal Git commit" ;;
+    esac
+    # Docker Compose passes this as a build argument. The runtime identity is
+    # baked into the image instead of being a mutable container environment
+    # value, so the health endpoint cannot advertise a different checkout.
+    set_env_value MATECLAW_RELEASE_COMMIT "$release_commit" "$ENV_FILE"
+    log "release commit: $release_commit"
+}
+
 generate_env_file() {
     [ -f "$ENV_EXAMPLE" ] || die ".env.example is missing; cannot generate .env"
     log "creating .env from .env.example"
@@ -277,6 +314,7 @@ wait_for_health() {
 cmd_up() {
     preflight
     ensure_env_file
+    record_release_commit
     require_mysql_settings
     require_postgres_settings
     log "database engine: $DB_ENGINE"

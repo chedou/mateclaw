@@ -11,7 +11,7 @@
 >   PostgreSQL 健康门，合并结果只剩 `mateclaw-server` + `searxng`，环境变量注入正确；
 >   PostgreSQL 模式不受影响。
 > - 镜像构建与启动：已实测。服务端镜像可构建（约 1.23 GB），容器起来后
->   `/actuator/health` 返回 `UP`，198 个 Flyway 迁移（含 V204）全部应用成功。
+>   `/actuator/health` 返回 `UP`，211 个 Flyway 迁移（最高 V217）全部应用成功。
 > - 外部 MySQL：已在 MySQL 8.0.11 上实测建表、H2 全量复制和本地应用启动；110 张业务表、
 >   2,723 行数据逐表行数一致。测试服务器切换属于单独的环境验收，不能由本地结果代替。
 >
@@ -50,7 +50,7 @@ OOM killer 杀掉），所以构建机至少 8 GB 内存。如果部署机比这
 | 版本 | **5.7 最低，8.0 推荐**；当前迁移已在 8.0.11 验证 |
 | 字符集 | 库必须是 `utf8mb4` |
 | 连通性 | 部署机能连到 MySQL 的端口 |
-| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会检查 198 个迁移） |
+| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会检查 211 个迁移） |
 
 **必须先手工建库，且显式指定字符集：**
 
@@ -62,9 +62,8 @@ FLUSH PRIVILEGES;
 ```
 
 为什么不能省这一步：连接串带了 `createDatabaseIfNotExist=true`，看上去能自动建库。
-但 198 个迁移里 121 条 `CREATE TABLE` 只有 101 条显式写了 `utf8mb4`，**剩下 20 张表
-继承库的默认字符集**。不同 MySQL 8 安装的服务端默认值可能被运维配置覆盖；若自动创建出的库
-不是 utf8mb4，这 20 张表会继承错误字符集。手工建库一次，这个问题就不存在了。
+当前迁移中仍有部分 `CREATE TABLE` 没有显式声明 `utf8mb4`，会继承库的默认字符集。
+不同 MySQL 8 安装的服务端默认值可能被运维配置覆盖；手工建库并指定 utf8mb4，可以避免后续新表继承错误字符集。
 
 （`application-mysql.yml` 里有条注释说"所有建表语句都显式指定 utf8mb4，不依赖 DB
 默认字符集"——这条注释不准确，实测是 101/121。）
@@ -82,7 +81,7 @@ Jenkins 用户和 API Token 只从当前终端环境读取，不会写入仓库�
 ```bash
 export JENKINS_USER='你的 Jenkins 用户名'
 export JENKINS_API_TOKEN='你的 Jenkins API Token'
-./scripts/release-test-env.sh
+./scripts/release-test-env.sh --allow-insecure-http
 ```
 
 默认参数已对准当前测试环境：
@@ -92,6 +91,20 @@ Jenkins: http://200.200.4.33:8080
 Job:     mateclaw-troubleshooting-release
 Site:    http://smartfix-sit.sangfor.com
 ```
+
+当前 Jenkins 仍使用 HTTP。脚本默认拒绝在 HTTP 上发送 Basic 认证；只有确认处于可信内网时才显式放行：
+
+```bash
+./scripts/release-test-env.sh --allow-insecure-http
+```
+
+发布前会确认 Docker 构建输入是干净的 Git 检出，再将完整 Git SHA 作为
+build arg 固化到镜像，并从 `/actuator/info` 反向验证。因此“未提交代码混入镜像”
+或“Jenkins 成功但仍运行旧版本”都会直接报错，不会被当成发布成功。
+
+合并 `dev` 后，Agent Team 迁移从重叠的 V172–V184 重新编号为 V205–V217。健康检查会同时
+要求排障域和 Agent Team 两个根表存在；如果目标库曾单独跑过 `dev` 的另一条 V172 谱系，
+`/actuator/health` 会保持 `DOWN`，脚本不会把 Flyway 自动 repair 后的不完整 schema 当成发布成功。
 
 如果后续把 Job 改成参数化分支构建，显式传入参数，不让脚本猜测 Jenkins 的字段名：
 

@@ -1,4 +1,4 @@
--- V178: Record when curation first saw a skill, separately from when it was created.
+-- V211: Record when curation first saw a skill, separately from when it was created.
 --
 -- The idle clock anchored on create_time, which conflated two different
 -- moments: when a skill was written, and when it first fell under curation.

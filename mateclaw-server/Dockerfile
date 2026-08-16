@@ -83,6 +83,11 @@ RUN mvn -pl mateclaw-server -am package -Dmaven.test.skip=true -q ${MAVEN_FLAGS}
 FROM mcr.microsoft.com/playwright:v1.62.0-noble
 WORKDIR /app
 
+# Immutable deployment identity. docker-compose passes the clean checkout's
+# full Git SHA as a build argument; baking it into the image avoids a mutable
+# runtime variable claiming that dirty or older code is the requested release.
+ARG MATECLAW_RELEASE_COMMIT=unknown
+
 # JDK 21 is NOT part of the base image (it ships Node for the JS driver).
 # Install openjdk-21 explicitly and add CJK fonts so Chinese pages render
 # correctly in screenshots and snapshots.
@@ -128,6 +133,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     TZ=Asia/Shanghai \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
+    MATECLAW_RELEASE_COMMIT=${MATECLAW_RELEASE_COMMIT} \
     JAVA_TOOL_OPTIONS="-Duser.timezone=Asia/Shanghai -Dsun.jnu.encoding=UTF-8"
 
 # Default DB profile, overridable by the SPRING_PROFILES_ACTIVE env var

@@ -1,4 +1,4 @@
--- V177: Curation provenance + pre-sweep snapshots.
+-- V210: Curation provenance + pre-sweep snapshots.
 --
 -- 1. mate_skill.origin — authorship as a policy flag ('user' | 'agent' |
 --    'routine'). source_conversation_id alone cannot gate curation: a skill
