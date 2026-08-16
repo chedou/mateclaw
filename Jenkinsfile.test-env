@@ -88,7 +88,7 @@ case "$SOURCE_DIR" in
 esac
 rm -rf -- "$SOURCE_DIR"
 
-git clone --no-tags --single-branch --depth 1 \
+git clone --single-branch --depth 1 \
   --branch "$BRANCH" "$REPOSITORY_URL" "$SOURCE_DIR"
 resolved_commit="$(git -C "$SOURCE_DIR" rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析检出提交"
