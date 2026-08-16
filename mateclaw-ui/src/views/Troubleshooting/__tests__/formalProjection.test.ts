@@ -133,6 +133,8 @@ describe('formal troubleshooting projection formatting', () => {
       .toBe('错误码排障方案 · 显式命中')
     expect(investigationLabel('OPEN_DISCOVERY', 'MODEL_PROPOSED'))
       .toBe('开放调查 · 模型提议')
+    expect(investigationLabel('OPEN_DISCOVERY', 'POLICY_PROPOSED'))
+      .toBe('开放调查 · 受限调查提议')
   })
 
   it('keeps persisted route semantics distinct from legacy reconstruction', () => {

@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-15
+> 更新时间：2026-08-17
 >
 > 仓库：`chedou/mateclaw`
 >
@@ -10,9 +10,9 @@
 >
 > 架构评审：**APPROVED FOR P1 IMPLEMENTATION**
 >
-> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可，v4 现为 **v4.5 / 蓝图 v0.19**
+> 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可；现行为 **RFC v4.6 / 蓝图 v0.21**
 
-## 0. 当前总体进度（2026-08-13）
+## 0. 当前总体进度（2026-08-17）
 
 | 轴 | 当前事实 | 下一步 |
 |---|---|---|
@@ -182,7 +182,7 @@ Safety Challenger，P4 才为 SCENARIO / OPEN_DISCOVERY 引入 Loop Control。
   不含运行时凭据；变化后旧验收自动 `STALE`。记录只含结构计数、PS ID 哈希、应用侧耗时、actor/时间，
   不含搜索键、PS ID 原文、DQL、凭据或日志。Guance T8 采集和基线复跑都在任何 Router 调用前强制要求
   当前指纹已验收；默认环境仍无真实验收记录，因此 T7/T8 状态不变。
-- 后续扩展已锁定为域内 `ReadOnlyEvidenceToolRegistry → Tool SPI → EvidenceSourceAdapter SPI`；当前尚未实现 Registry，不能把目标设计写成已完成代码。
+- 域内 `ReadOnlyToolRegistry → ReadOnlyEvidenceTool SPI → EvidenceSourceAdapter SPI` 已落地；它只允许服务端白名单中的只读语义 Tool，不复用平台通用 Agent Tool Registry，也不向模型暴露平台、DQL、端点或凭据。
 - **与平台的融合已逐条核对（2026-07-28）**：领域包对平台只有 11 个 import
   （`AgentService`/`AgentBindingService`/`ChatOrigin`/`AgentEntity`、`AuthService`/`UserEntity`/
   `ExternalIdentityEntity`/`ExternalIdentityMapper`、`RequireWorkspaceRole`、`R`、`MateClawException`），
@@ -1831,6 +1831,31 @@ T57 MySQL 诊断投影与对话直达结果收口（2026-08-15）：
   直接得到真源 `9 / 9` 对 `0 / 25` 的候选定位，点击消息中的“打开排障详情”进入
   `diag-8efab8b2fac54f8caa4a104639d3b45e`；详情投影成功且控制台 `0 error`。最终后端排障域 `978 / 978`、排障前端
   `238 / 238`、聚焦前端 `28 / 28`、`vue-tsc --noEmit` 和 `git diff --check` 通过。
+
+T58 OPEN_DISCOVERY 确定性有界调查窄线（2026-08-16）：
+
+- 新增 `HypothesisGraph`、`RootCauseFinding`、`ReadOnlyToolRegistry` 与
+  `BoundedInvestigationPlanner`，并把它们接入原有 OPEN_DISCOVERY miss-path；不是第二套排障平台。
+- 当没有审核 SOP，且现有 hard-scoped Agent 未启用或无可用 Provider 时，试点环境可按服务端
+  冻结的两个问题调查：“应用 ERROR 是否集中出现”与“Kubernetes 工作负载是否异常”。
+  现有 Agent 配置可用时仍走原路，不多调一次真源。
+- Planner 每轮只取最高价值未回答问题，强制迭代、Tool 调用与总时长预算；剩余 deadline
+  会继续传到 Guance / Prometheus / Elasticsearch 网络请求，超时或非 canonical 输出一律转
+  `MISSING`。
+- `RootCauseFinding` 只在唯一假设有证据支持且其他假设都被排除时返回 `LOCATED`；有支持但
+  仍有空白时只是 `HYPOTHESIS`，多个方向同时成立时完整展示为并列候选，不任选一个；全部不可评估时
+  持久化 `INSUFFICIENT_EVIDENCE` 弃权与精确停止原因。这条路由使用
+  `BOUNDED_DISCOVERY + POLICY_PROPOSED`，置信封顶 `MEDIUM`，不冒充已审核 SOP。
+- CSDP Guance 试点显式启用 2 轮 / 2 次只读调用；应用错误查询按登记服务分别冻结
+  `csdp-session-service` 与 `csdp-wechat`，不会拿同 measurement 里其他服务的 ERROR 支持当前告警。
+  当前没有猜 namespace/deployment 来伪造 K8s 资产。因此当前能给出宽泛的应用错误
+  候选，不能凭这两问定位到具体代码、下游机制或 K8s 对象。
+- 计划指纹覆盖候选、优先级、问题、Tool 版本、信号、目标、窗口、必需性、判据与阈值以及三类预算；
+  修改窗口或 `error_count` 阈值都会得到不同指纹，旧审计不会被新规则冒充。
+- 本项未启用生产写、未新增模型自选 DQL/平台、未实现多 Agent 投票或对抗决策；
+  T7 Owner 正式录制仍为 **`0 / 20`**。
+- 最终回归：后端排障域与 Skill manifest `1015 / 1015` 通过；前端排障域 `238 / 238`、
+  前端全量 `553 / 553`、`vue-tsc --noEmit` 与生产构建通过。最终审查完成后以最新数字为准。
 
 后端定向测试命令：
 

@@ -5,6 +5,7 @@ import vip.mate.troubleshooting.model.ActionOutcomeRecord;
 import vip.mate.troubleshooting.model.ActionOutcomeStatus;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AgentTriageDraft;
+import vip.mate.troubleshooting.model.BoundedInvestigationDraft;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ClosureOutcome;
 import vip.mate.troubleshooting.model.ClosureRecord;
@@ -124,6 +125,34 @@ public final class DiagnosisStateMachine {
                         "orchestrator",
                         "current"));
         return Diagnosis.initialAgentFallback(draft, initialStatus, timeline);
+    }
+
+    /** Creates the initial human-review state for a server-owned bounded investigation. */
+    public Diagnosis initializeBoundedInvestigation(BoundedInvestigationDraft draft) {
+        Objects.requireNonNull(draft, "draft");
+        DiagnosisStatus initialStatus = draft.abstained()
+                ? DiagnosisStatus.NEEDS_INVESTIGATION
+                : DiagnosisStatus.READY_FOR_HUMAN;
+        List<TimelineEvent> timeline = List.of(
+                new TimelineEvent(
+                        clock.instant(),
+                        "故障上下文已接收",
+                        draft.incident().intakeSource(),
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        "标准排障方案未命中，按受限问题清单只读取证",
+                        "bounded-investigation-planner",
+                        "done"),
+                new TimelineEvent(
+                        clock.instant(),
+                        draft.abstained()
+                                ? "现有只读证据不足，已停止判断并转人工深查"
+                                : "形成候选原因，等待人工确认",
+                        "orchestrator",
+                        "current"));
+        return Diagnosis.initialBoundedInvestigation(
+                draft, initialStatus, timeline);
     }
 
     /** Starts an explicitly selected Scenario Playbook without inventing evidence or a root cause. */

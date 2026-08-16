@@ -94,8 +94,7 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             throw new IllegalArgumentException(
                     "runAudit must belong to the OPEN_DISCOVERY diagnosis");
         }
-        boolean verifiableHypothesis = runAudit.stopReason()
-                == OpenDiscoveryRunAudit.StopReason.VERIFIABLE_HYPOTHESIS;
+        boolean verifiableHypothesis = runAudit.hasVerifiableHypothesis();
         if (diagnosis.abstained() == verifiableHypothesis) {
             throw new IllegalArgumentException(
                     "runAudit stopReason must agree with the diagnosis outcome");

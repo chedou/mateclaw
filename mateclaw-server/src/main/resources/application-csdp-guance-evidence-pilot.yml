@@ -10,6 +10,14 @@ mateclaw:
   troubleshooting:
     # 稀疏真源下 SendMsg 竖线需要 ≥ 数小时窗；与 CTI 告警窗不同，这里用 -6h。
     agent:
+      # Unknown alerts first run a two-question, server-owned read-only loop.
+      # It may name only a broad candidate direction; exact mechanisms still
+      # require an approved scenario spine or human confirmation.
+      bounded-investigation-enabled: true
+      bounded-investigation-max-iterations: 2
+      bounded-investigation-max-tool-calls: 2
+      bounded-investigation-timeout: 10s
+      bounded-investigation-permitted-platforms: [guance]
       approved-scenario-plans:
         message_send_failed:
           window: -6h
@@ -48,7 +56,7 @@ mateclaw:
               log_search: csdp-message-send-log-search
               log_trace_bundle: csdp-message-send-trace-bundle
               contrast_sample: csdp-message-send-contrast
-              error_log_scan: csdp-application-error-scan
+              error_log_scan: csdp-session-application-error-scan
               monitor_event_scan: csdp-monitor-event-scan
               k8s_workload_health: csdp-k8s-workload-health
               k8s_pod_status: guance-service-pod-status
@@ -76,6 +84,11 @@ mateclaw:
               log_search: csdp-itgw-access-log-search
               log_trace_bundle: csdp-itgw-access-trace-bundle
               contrast_sample: csdp-itgw-access-contrast
+              # Generic bounded discovery may establish only the broad
+              # application-error direction. Runtime stays MISSING until an
+              # owner registers the exact deployment/namespace asset.
+              error_log_scan: csdp-wechat-application-error-scan
+              monitor_event_scan: csdp-monitor-event-scan
         bindings:
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
@@ -371,20 +384,45 @@ mateclaw:
               name: probe_name
           # Sanitized import of guanceyun-error-logs. It exposes only aggregate
           # canonical facts; raw message/content/host rows remain inside Guance.
-          csdp-application-error-scan:
+          csdp-session-application-error-scan:
             signal-kind: error_log_scan
             namespace: L
-            summary: CSDP 应用 ERROR 聚合巡检
+            summary: CSDP Session 服务 ERROR 聚合巡检
             scenario: 应用错误日志巡检
             question: 故障窗口内出现了多少应用 ERROR，涉及多少条调用链？
             fixed-conditions:
               - 日志源=csp-rpc-msg
+              - 日志服务=csdp-session-service
               - 业务日志级别=message JSON 中的 level:ERROR
               - 仅返回聚合计数与最新关联 ID，不返回原始日志
             max-rows: 1
             query-template: >-
               L::`csp-rpc-msg`:(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
-              { query_string(`message`, "level:ERROR") }
+              { `service` = 'csdp-session-service' AND query_string(`message`, "level:ERROR") }
+              [{{window_span}}::{{window_span}}]
+            query-options:
+              max-point-count: 720
+              interval: 10
+              align-time: true
+              series-limit: 20
+              disable-sampling: true
+              time-zone: Asia/Shanghai
+            field-aliases: {}
+          csdp-wechat-application-error-scan:
+            signal-kind: error_log_scan
+            namespace: L
+            summary: CSDP WeChat 服务 ERROR 聚合巡检
+            scenario: 应用错误日志巡检
+            question: 故障窗口内 csdp-wechat 出现了多少应用 ERROR，涉及多少条调用链？
+            fixed-conditions:
+              - 日志源=csp-rpc-msg
+              - 日志服务=csdp-wechat
+              - 业务日志级别=message JSON 中的 level:ERROR
+              - 仅返回聚合计数与最新关联 ID，不返回原始日志
+            max-rows: 1
+            query-template: >-
+              L::`csp-rpc-msg`:(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
+              { `service` = 'csdp-wechat' AND query_string(`message`, "level:ERROR") }
               [{{window_span}}::{{window_span}}]
             query-options:
               max-point-count: 720

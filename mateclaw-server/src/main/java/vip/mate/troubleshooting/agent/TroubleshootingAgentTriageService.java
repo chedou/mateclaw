@@ -11,7 +11,10 @@ import vip.mate.channel.web.ChatStreamTracker;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.EvidenceProvenance;
+import vip.mate.troubleshooting.investigation.BoundedOpenDiscoveryInvestigationService;
+import vip.mate.troubleshooting.investigation.RootCauseFinding;
 import vip.mate.troubleshooting.model.AgentTriageDraft;
+import vip.mate.troubleshooting.model.BoundedInvestigationDraft;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -29,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -80,6 +84,7 @@ public final class TroubleshootingAgentTriageService {
     private final AgentService agentService;
     private final AgentBindingService bindingService;
     private final TroubleshootingEvidenceSessionRegistry sessions;
+    private final BoundedOpenDiscoveryInvestigationService boundedInvestigation;
     private final DiagnosisStateMachine stateMachine;
     private final OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence;
     private final ObjectMapper objectMapper;
@@ -94,14 +99,39 @@ public final class TroubleshootingAgentTriageService {
             AgentService agentService,
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
+            BoundedOpenDiscoveryInvestigationService boundedInvestigation,
             DiagnosisStateMachine stateMachine,
             OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             ChatStreamTracker streamTracker) {
-        this(properties, agentGate, agentService, bindingService, sessions, stateMachine,
+        this(properties, agentGate, agentService, bindingService, sessions,
+                boundedInvestigation, stateMachine,
                 openDiscoveryPersistence, objectMapper, modelEvidenceProjector,
                 Clock.systemUTC(), streamTracker);
+    }
+
+    TroubleshootingAgentTriageService(
+            TroubleshootingAgentProperties properties,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingEvidenceSessionRegistry sessions,
+            BoundedOpenDiscoveryInvestigationService boundedInvestigation,
+            DiagnosisStateMachine stateMachine,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
+            ObjectMapper objectMapper,
+            Clock clock,
+            ChatStreamTracker streamTracker) {
+        this(properties,
+                new OpenDiscoveryAgentGate(properties, agentService, bindingService),
+                agentService, bindingService, sessions, boundedInvestigation,
+                stateMachine,
+                openDiscoveryPersistence,
+                objectMapper,
+                new TroubleshootingEvidenceModelProjector(
+                        new DeterministicLogTraceCompressor()),
+                clock,
+                streamTracker);
     }
 
     TroubleshootingAgentTriageService(
@@ -116,9 +146,7 @@ public final class TroubleshootingAgentTriageService {
             ChatStreamTracker streamTracker) {
         this(properties,
                 new OpenDiscoveryAgentGate(properties, agentService, bindingService),
-                agentService,
-                bindingService,
-                sessions,
+                agentService, bindingService, sessions, null,
                 stateMachine,
                 openDiscoveryPersistence,
                 objectMapper,
@@ -141,9 +169,7 @@ public final class TroubleshootingAgentTriageService {
             ChatStreamTracker streamTracker) {
         this(properties,
                 new OpenDiscoveryAgentGate(properties, agentService, bindingService),
-                agentService,
-                bindingService,
-                sessions,
+                agentService, bindingService, sessions, null,
                 stateMachine,
                 openDiscoveryPersistence,
                 objectMapper,
@@ -158,6 +184,7 @@ public final class TroubleshootingAgentTriageService {
             AgentService agentService,
             AgentBindingService bindingService,
             TroubleshootingEvidenceSessionRegistry sessions,
+            BoundedOpenDiscoveryInvestigationService boundedInvestigation,
             DiagnosisStateMachine stateMachine,
             OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
@@ -169,6 +196,7 @@ public final class TroubleshootingAgentTriageService {
         this.agentService = agentService;
         this.bindingService = bindingService;
         this.sessions = sessions;
+        this.boundedInvestigation = boundedInvestigation;
         this.stateMachine = stateMachine;
         this.openDiscoveryPersistence = openDiscoveryPersistence;
         this.objectMapper = objectMapper;
@@ -266,10 +294,35 @@ public final class TroubleshootingAgentTriageService {
             return reservation.completedDiagnosis();
         }
         try {
-            AgentEntity agent = requireSafeConfiguration(workspaceId);
+            Instant discoveryStartedAt = clock.instant();
+            Instant evidenceDeadline = Instant.now().plus(properties.getTriageTimeout());
             List<String> visibleScenarioKeys =
                     sessions.approvedScenarioKeys(workspaceId, sanitizedIncident);
             String correlationId = UUID.randomUUID().toString().replace("-", "");
+            AgentEntity agent;
+            try {
+                agent = requireSafeConfiguration(workspaceId);
+            } catch (MateClawException unavailable) {
+                Optional<BoundedOpenDiscoveryInvestigationService.Execution> execution =
+                        boundedInvestigation == null
+                                ? Optional.empty()
+                                : boundedInvestigation.investigate(
+                                        workspaceId, sanitizedIncident);
+                if (execution.isPresent()) {
+                    return persistBoundedFinding(
+                            workspaceId,
+                            sanitizedIncident,
+                            sanitizedSuppliedEvidence,
+                            rehearsal,
+                            reportedAt,
+                            readyAt,
+                            intakeSessionId,
+                            reservation,
+                            correlationId,
+                            execution.orElseThrow());
+                }
+                throw unavailable;
+            }
             String conversationId = "troubleshooting-triage-" + correlationId;
             ChatOrigin origin = ChatOrigin.web(
                     conversationId, "troubleshooting-agent", workspaceId, null);
@@ -277,8 +330,6 @@ public final class TroubleshootingAgentTriageService {
             String modelOutput = null;
             boolean agentFailed = false;
             boolean agentTimedOut = false;
-            Instant discoveryStartedAt = clock.instant();
-            Instant evidenceDeadline = Instant.now().plus(properties.getTriageTimeout());
             PromptEnvelope prompt;
             TroubleshootingEvidenceSessionRegistry.SessionSnapshot snapshot;
             try (TroubleshootingEvidenceSessionRegistry.SessionHandle session =
@@ -440,6 +491,125 @@ public final class TroubleshootingAgentTriageService {
             openDiscoveryPersistence.release(workspaceId, reservation.claim());
             throw failure;
         }
+    }
+
+    private StoredDiagnosis persistBoundedFinding(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            boolean rehearsal,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId,
+            OpenDiscoveryRunReservation reservation,
+            String correlationId,
+            BoundedOpenDiscoveryInvestigationService.Execution execution) {
+        List<EvidenceResult> evidence = mergePlannerEvidence(
+                suppliedEvidence, execution.evidence());
+        List<String> citations = boundedCitations(execution);
+        List<String> warnings = new ArrayList<>();
+        boolean abstained = execution.finding().type() == RootCauseFinding.Type.ABSTAINED;
+        warnings.add(abstained
+                ? "现有只读证据不足，系统已停止判断并转人工深查。"
+                : "这是受限只读调查得到的候选方向，不是已经确认的精确根因。");
+        warnings.add("系统没有执行任何生产写操作；请由负责人核对证据并继续深查。");
+        if (!execution.finding().missingHypothesisIds().isEmpty()) {
+            warnings.add("仍未排除的方向："
+                    + String.join("、", execution.finding().missingHypothesisIds()));
+        }
+        BoundedInvestigationDraft draft = new BoundedInvestigationDraft(
+                "diag-" + correlationId,
+                "case-" + correlationId,
+                "run-" + correlationId,
+                incident,
+                evidence,
+                citations,
+                execution.finding().summary(),
+                execution.finding().cause(),
+                abstained ? Confidence.LOW : Confidence.MEDIUM,
+                abstained,
+                NorthStarTimings.concluded(
+                        reportedAt, readyAt, execution.outcome().completedAt()),
+                rehearsal,
+                EvidenceProvenance.fixtureMode(evidence, suppliedEvidence),
+                warnings);
+        Diagnosis diagnosis = stateMachine.initializeBoundedInvestigation(draft);
+        OpenDiscoveryRunAudit runAudit = new OpenDiscoveryRunAudit(
+                diagnosis.runId(),
+                diagnosis.diagnosisId(),
+                List.of(execution.planKey()),
+                execution.planKey(),
+                execution.planFingerprint(),
+                execution.plannedSignalKinds(),
+                execution.maxIterations(),
+                execution.maxToolCalls(),
+                execution.sourceRequestCount(),
+                execution.timeBudget(),
+                boundedStopReason(
+                        execution.outcome().stopReason(), execution.finding().type()),
+                citations,
+                execution.outcome().startedAt(),
+                execution.outcome().completedAt(),
+                "planner:" + execution.planKey());
+        return openDiscoveryPersistence.persist(
+                workspaceId,
+                diagnosis,
+                reportedAt,
+                intakeSessionId,
+                reservation.claim(),
+                runAudit);
+    }
+
+    private OpenDiscoveryRunAudit.StopReason boundedStopReason(
+            vip.mate.troubleshooting.investigation.BoundedInvestigationPlanner.StopReason reason,
+            RootCauseFinding.Type findingType) {
+        boolean abstained = findingType == RootCauseFinding.Type.ABSTAINED;
+        return switch (reason) {
+            case ROOT_CAUSE_LOCATED ->
+                    OpenDiscoveryRunAudit.StopReason.BOUNDED_ROOT_CAUSE_LOCATED;
+            case EVIDENCE_EXHAUSTED -> abstained
+                    ? OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED_ABSTAINED
+                    : OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED;
+            case ITERATION_BUDGET_EXHAUSTED -> abstained
+                    ? OpenDiscoveryRunAudit.StopReason.BOUNDED_ITERATION_BUDGET_EXHAUSTED_ABSTAINED
+                    : OpenDiscoveryRunAudit.StopReason.BOUNDED_ITERATION_BUDGET_EXHAUSTED;
+            case TOOL_BUDGET_EXHAUSTED -> abstained
+                    ? OpenDiscoveryRunAudit.StopReason.BOUNDED_TOOL_BUDGET_EXHAUSTED_ABSTAINED
+                    : OpenDiscoveryRunAudit.StopReason.BOUNDED_TOOL_BUDGET_EXHAUSTED;
+            case TIME_BUDGET_EXHAUSTED -> abstained
+                    ? OpenDiscoveryRunAudit.StopReason.BOUNDED_TIME_BUDGET_EXHAUSTED_ABSTAINED
+                    : OpenDiscoveryRunAudit.StopReason.BOUNDED_TIME_BUDGET_EXHAUSTED;
+            case POLICY_BLOCKED -> abstained
+                    ? OpenDiscoveryRunAudit.StopReason.BOUNDED_POLICY_BLOCKED_ABSTAINED
+                    : OpenDiscoveryRunAudit.StopReason.BOUNDED_POLICY_BLOCKED;
+        };
+    }
+
+    private List<String> boundedCitations(
+            BoundedOpenDiscoveryInvestigationService.Execution execution) {
+        Set<String> supportedRefs = Set.copyOf(execution.finding().evidenceRefs());
+        return execution.evidence().stream()
+                .filter(result -> result.status() != EvidenceStatus.MISSING)
+                .map(EvidenceResult::queryId)
+                .filter(supportedRefs::contains)
+                .distinct()
+                .toList();
+    }
+
+    private List<EvidenceResult> mergePlannerEvidence(
+            List<EvidenceResult> supplied,
+            List<EvidenceResult> planned) {
+        Set<String> plannedIds = planned.stream()
+                .map(EvidenceResult::queryId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<EvidenceResult> merged = new ArrayList<>();
+        supplied.stream()
+                .filter(result -> !plannedIds.contains(result.queryId()))
+                .forEach(merged::add);
+        planned.stream()
+                .map(TroubleshootingSecretRedactor::redact)
+                .forEach(merged::add);
+        return List.copyOf(merged);
     }
 
     private OpenDiscoveryRunAudit.StopReason stopReason(

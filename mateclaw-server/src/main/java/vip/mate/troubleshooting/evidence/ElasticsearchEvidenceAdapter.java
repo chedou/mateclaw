@@ -97,8 +97,20 @@ public final class ElasticsearchEvidenceAdapter implements EvidenceSourceAdapter
     @Override
     public EvidenceResult collect(
             long workspaceId, EvidenceRequest request, IncidentContext incident) {
+        return collect(workspaceId, request, incident, TIMEOUT);
+    }
+
+    @Override
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Duration callerTimeout) {
         if (workspaceId <= 0 || request == null || incident == null) {
             throw new IllegalArgumentException("workspace, request and incident are required");
+        }
+        if (callerTimeout == null || callerTimeout.isZero() || callerTimeout.isNegative()) {
+            return missing(request, "caller evidence deadline is exhausted");
         }
         if (!supports(request.signalKind())) {
             return missing(request, "elasticsearch binding is not configured for this signal");
@@ -110,7 +122,7 @@ public final class ElasticsearchEvidenceAdapter implements EvidenceSourceAdapter
             return missing(request, "log_search requires a bounded search_term");
         }
 
-        JsonNode root = search(searchTerm);
+        JsonNode root = search(searchTerm, boundedTimeout(callerTimeout));
         if (root == null) {
             return missing(request, "elasticsearch returned no usable response");
         }
@@ -213,7 +225,7 @@ public final class ElasticsearchEvidenceAdapter implements EvidenceSourceAdapter
         }
     }
 
-    private JsonNode search(String searchTerm) {
+    private JsonNode search(String searchTerm, Duration timeout) {
         try {
             // 参数化：报障文本只作为 match_phrase 的值，永远不进入查询结构。
             Map<String, Object> query = Map.of(
@@ -228,7 +240,7 @@ public final class ElasticsearchEvidenceAdapter implements EvidenceSourceAdapter
                     : Map.of("Content-Type", "application/json", "Accept", "application/json",
                             "Authorization", "Bearer " + binding.bearerToken());
             EvidenceHttpTransport.Response response = transport.postJson(
-                    uri, headers, objectMapper.writeValueAsString(query), TIMEOUT);
+                    uri, headers, objectMapper.writeValueAsString(query), timeout);
             if (response.statusCode() != 200) {
                 return null;
             }
@@ -236,6 +248,10 @@ public final class ElasticsearchEvidenceAdapter implements EvidenceSourceAdapter
         } catch (Exception unreachable) {
             return null;
         }
+    }
+
+    private Duration boundedTimeout(Duration callerTimeout) {
+        return callerTimeout.compareTo(TIMEOUT) < 0 ? callerTimeout : TIMEOUT;
     }
 
     /** @return the hit total, or -1 when the response never stated one */

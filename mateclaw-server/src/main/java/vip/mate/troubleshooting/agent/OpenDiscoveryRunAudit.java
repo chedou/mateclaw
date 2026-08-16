@@ -110,12 +110,29 @@ public record OpenDiscoveryRunAudit(
 
     public enum StopReason {
         VERIFIABLE_HYPOTHESIS,
+        BOUNDED_ROOT_CAUSE_LOCATED,
+        BOUNDED_EVIDENCE_EXHAUSTED,
+        BOUNDED_ITERATION_BUDGET_EXHAUSTED,
+        BOUNDED_TOOL_BUDGET_EXHAUSTED,
+        BOUNDED_TIME_BUDGET_EXHAUSTED,
+        BOUNDED_POLICY_BLOCKED,
+        BOUNDED_EVIDENCE_EXHAUSTED_ABSTAINED,
+        BOUNDED_ITERATION_BUDGET_EXHAUSTED_ABSTAINED,
+        BOUNDED_TOOL_BUDGET_EXHAUSTED_ABSTAINED,
+        BOUNDED_TIME_BUDGET_EXHAUSTED_ABSTAINED,
+        BOUNDED_POLICY_BLOCKED_ABSTAINED,
         AGENT_ABSTAINED,
         NO_VERIFIABLE_CITATIONS,
         CORE_EVIDENCE_INCOMPLETE,
         INVALID_AGENT_OUTPUT,
         AGENT_INVOCATION_FAILED,
         TIME_BUDGET_EXHAUSTED
+    }
+
+    public boolean hasVerifiableHypothesis() {
+        return stopReason == StopReason.VERIFIABLE_HYPOTHESIS
+                || (stopReason.name().startsWith("BOUNDED_")
+                        && !stopReason.name().endsWith("_ABSTAINED"));
     }
 
     private static List<String> safeList(

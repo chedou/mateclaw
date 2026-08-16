@@ -33,6 +33,21 @@ public class TroubleshootingAgentProperties {
     /** Wall-clock budget for one synchronous miss-path investigation. */
     private Duration triageTimeout = Duration.ofSeconds(20);
 
+    /** Explicit switch for the deterministic, bounded pre-investigation loop. */
+    private boolean boundedInvestigationEnabled;
+
+    /** Maximum hypothesis questions evaluated before the optional Agent deepens the result. */
+    private int boundedInvestigationMaxIterations = 2;
+
+    /** Maximum semantic read-only tool calls made by the bounded pre-investigation. */
+    private int boundedInvestigationMaxToolCalls = 2;
+
+    /** Wall-clock budget reserved for the bounded pre-investigation. */
+    private Duration boundedInvestigationTimeout = Duration.ofSeconds(10);
+
+    /** Explicit source allowlist for bounded pre-investigation; empty keeps it off. */
+    private List<String> boundedInvestigationPermittedPlatforms = List.of();
+
     /**
      * Server-owned, approved scenario plans visible to the miss-path Agent.
      * The model may select only the map key; every executable field below is

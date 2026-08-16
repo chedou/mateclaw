@@ -112,15 +112,32 @@ public final class PrometheusEvidenceAdapter implements EvidenceSourceAdapter {
     @Override
     public EvidenceResult collect(
             long workspaceId, EvidenceRequest request, IncidentContext incident) {
+        return collect(workspaceId, request, incident, TIMEOUT);
+    }
+
+    @Override
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Duration callerTimeout) {
         if (workspaceId <= 0 || request == null || incident == null) {
             throw new IllegalArgumentException("workspace, request and incident are required");
+        }
+        if (callerTimeout == null || callerTimeout.isZero() || callerTimeout.isNegative()) {
+            return missing(request, "caller evidence deadline is exhausted");
         }
         if (!supports(request.signalKind())) {
             return missing(request, "prometheus binding is not configured for this signal");
         }
+        long deadlineNanos = System.nanoTime() + boundedTimeout(callerTimeout).toNanos();
         Map<String, Object> observed = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : binding.fieldQueries().entrySet()) {
-            Double value = scalar(entry.getValue());
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0) {
+                return missing(request, "caller evidence deadline is exhausted");
+            }
+            Double value = scalar(entry.getValue(), Duration.ofNanos(remainingNanos));
             if (value == null) {
                 // 部分字段取不到就整条判 MISSING：半份指标会让判据算出一个
                 // 看起来成立、实则没有依据的结论。
@@ -221,7 +238,7 @@ public final class PrometheusEvidenceAdapter implements EvidenceSourceAdapter {
     }
 
     /** @return the single finite scalar the query produced, or null — never a substitute */
-    private Double scalar(String promQl) {
+    private Double scalar(String promQl, Duration timeout) {
         JsonNode root;
         try {
             URI uri = URI.create(binding.endpoint().toString().replaceAll("/+$", "")
@@ -231,7 +248,7 @@ public final class PrometheusEvidenceAdapter implements EvidenceSourceAdapter {
                     ? Map.of("Accept", "application/json")
                     : Map.of("Accept", "application/json",
                             "Authorization", "Bearer " + binding.bearerToken());
-            EvidenceHttpTransport.Response response = transport.get(uri, headers, TIMEOUT);
+            EvidenceHttpTransport.Response response = transport.get(uri, headers, timeout);
             if (response.statusCode() != 200) {
                 return null;
             }
@@ -259,6 +276,10 @@ public final class PrometheusEvidenceAdapter implements EvidenceSourceAdapter {
         } catch (NumberFormatException notANumber) {
             return null;
         }
+    }
+
+    private Duration boundedTimeout(Duration callerTimeout) {
+        return callerTimeout.compareTo(TIMEOUT) < 0 ? callerTimeout : TIMEOUT;
     }
 
     private EvidenceResult missing(EvidenceRequest request, String summary) {

@@ -128,6 +128,7 @@ public record Diagnosis(
             throw new IllegalArgumentException("production write execution must remain disabled");
         }
         validateExperienceClassification(
+                routeMode,
                 incident,
                 investigationMode,
                 routeAuthority,
@@ -425,6 +426,58 @@ public record Diagnosis(
                 draft.warnings());
     }
 
+    /** Creates an OPEN_DISCOVERY hypothesis without claiming that a model participated. */
+    public static Diagnosis initialBoundedInvestigation(
+            BoundedInvestigationDraft draft,
+            DiagnosisStatus status,
+            List<TimelineEvent> timeline) {
+        if (draft == null) {
+            throw new IllegalArgumentException("bounded investigation draft is required");
+        }
+        if (status != DiagnosisStatus.READY_FOR_HUMAN
+                && status != DiagnosisStatus.NEEDS_INVESTIGATION) {
+            throw new IllegalArgumentException(
+                    "bounded investigation must await human confirmation or further evidence");
+        }
+        return new Diagnosis(
+                draft.diagnosisId(),
+                CURRENT_CONTRACT_VERSION,
+                draft.caseId(),
+                draft.runId(),
+                draft.incident(),
+                RouteMode.BOUNDED_DISCOVERY,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.POLICY_PROPOSED,
+                draft.abstained()
+                        ? ConclusionType.INSUFFICIENT_EVIDENCE
+                        : ConclusionType.HYPOTHESIS,
+                status,
+                draft.summary(),
+                draft.hypothesis(),
+                draft.confidence(),
+                draft.abstained(),
+                null,
+                null,
+                null,
+                null,
+                draft.evidence(),
+                draft.evidenceCitations(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                timeline,
+                draft.timings(),
+                draft.rehearsal(),
+                draft.fixtureMode(),
+                false,
+                draft.warnings());
+    }
+
     /**
      * Read-only evidence arrived for a scenario investigation; the conclusion is
      * revised from it.
@@ -630,6 +683,7 @@ public record Diagnosis(
     }
 
     private static void validateExperienceClassification(
+            RouteMode routeMode,
             IncidentContext incident,
             InvestigationMode investigationMode,
             RouteAuthority routeAuthority,
@@ -655,13 +709,17 @@ public record Diagnosis(
         if (conclusionType == ConclusionType.EXCLUDED && confidence == Confidence.HIGH) {
             throw new IllegalArgumentException("EXCLUDED confidence cannot be HIGH");
         }
-        if (routeAuthority == RouteAuthority.MODEL_PROPOSED && confidence == Confidence.HIGH) {
-            throw new IllegalArgumentException("MODEL_PROPOSED confidence cannot be HIGH");
+        if ((routeAuthority == RouteAuthority.MODEL_PROPOSED
+                || routeAuthority == RouteAuthority.POLICY_PROPOSED)
+                && confidence == Confidence.HIGH) {
+            throw new IllegalArgumentException("proposed confidence cannot be HIGH");
         }
         if (investigationMode == InvestigationMode.OPEN_DISCOVERY) {
-            if (routeAuthority != RouteAuthority.MODEL_PROPOSED) {
+            boolean validAuthority = routeAuthority == RouteAuthority.MODEL_PROPOSED
+                    || routeAuthority == RouteAuthority.POLICY_PROPOSED;
+            if (!validAuthority) {
                 throw new IllegalArgumentException(
-                        "OPEN_DISCOVERY requires MODEL_PROPOSED authority");
+                        "OPEN_DISCOVERY route and proposal authority must agree");
             }
             if (conclusionType != ConclusionType.HYPOTHESIS
                     && conclusionType != ConclusionType.INSUFFICIENT_EVIDENCE) {
@@ -675,7 +733,8 @@ public record Diagnosis(
                 throw new IllegalArgumentException(
                         "ERROR_CODE_PLAYBOOK requires an explicit errorCode");
             }
-            if (routeAuthority == RouteAuthority.MODEL_PROPOSED) {
+            if (routeAuthority == RouteAuthority.MODEL_PROPOSED
+                    || routeAuthority == RouteAuthority.POLICY_PROPOSED) {
                 throw new IllegalArgumentException(
                         "a model proposal cannot select ERROR_CODE_PLAYBOOK");
             }
@@ -687,8 +746,7 @@ public record Diagnosis(
             return null;
         }
         return routeMode == RouteMode.DETERMINISTIC
-                ? InvestigationMode.ERROR_CODE_PLAYBOOK
-                : InvestigationMode.OPEN_DISCOVERY;
+                ? InvestigationMode.ERROR_CODE_PLAYBOOK : InvestigationMode.OPEN_DISCOVERY;
     }
 
     private static boolean isLegacyContractVersion(String version) {
@@ -699,9 +757,11 @@ public record Diagnosis(
         if (routeMode == null) {
             return null;
         }
-        return routeMode == RouteMode.DETERMINISTIC
-                ? RouteAuthority.EXPLICIT
-                : RouteAuthority.MODEL_PROPOSED;
+        return switch (routeMode) {
+            case DETERMINISTIC -> RouteAuthority.EXPLICIT;
+            case LLM_FALLBACK -> RouteAuthority.MODEL_PROPOSED;
+            case BOUNDED_DISCOVERY -> RouteAuthority.POLICY_PROPOSED;
+        };
     }
 
     private static ConclusionType defaultConclusionType(RouteMode routeMode, boolean abstained) {
@@ -709,6 +769,7 @@ public record Diagnosis(
             return ConclusionType.INSUFFICIENT_EVIDENCE;
         }
         return routeMode == RouteMode.LLM_FALLBACK
+                || routeMode == RouteMode.BOUNDED_DISCOVERY
                 ? ConclusionType.HYPOTHESIS
                 : ConclusionType.LOCATED;
     }

@@ -253,6 +253,35 @@ class InvestigationTraceProjectorTest {
     }
 
     @Test
+    void explainsTheExactBoundedPlannerStopInsteadOfCallingItGenericAgentSuccess() {
+        OpenDiscoveryRunAudit run = new OpenDiscoveryRunAudit(
+                "run-2",
+                "diag-2",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1",
+                "a".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2,
+                2,
+                2,
+                Duration.ofSeconds(10),
+                OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                List.of("open-discovery-error-log-scan"),
+                READY_AT,
+                READY_AT.plusSeconds(2),
+                "planner:bounded-open-discovery-v1");
+
+        InvestigationTraceView view = projector.project(
+                abstainedDiagnosis(), null, null, null, run);
+
+        assertThat(view.stopReason().code())
+                .isEqualTo(InvestigationTraceView.StopReasonCode.CONCLUSION_RECORDED);
+        assertThat(view.stopReason().message())
+                .contains("问完服务端登记的只读问题")
+                .doesNotContain("Agent");
+    }
+
+    @Test
     void detectsAnEntirelyAbsentRequiredRequestWithoutGuessingFromFreeText() {
         InvestigationTraceView view = projector.project(
                 abstainedDiagnosis(), frozenPlaybook(), null);

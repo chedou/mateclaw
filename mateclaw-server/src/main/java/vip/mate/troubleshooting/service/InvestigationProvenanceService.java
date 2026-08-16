@@ -6,6 +6,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.InvestigationProvenance;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 
@@ -104,7 +105,7 @@ public class InvestigationProvenanceService {
     }
 
     private InvestigationProvenance.Reasoning reasoning(Diagnosis diagnosis) {
-        boolean modelInvoked = diagnosis.routeMode() == RouteMode.LLM_FALLBACK;
+        boolean modelInvoked = diagnosis.routeAuthority() == RouteAuthority.MODEL_PROPOSED;
         return new InvestigationProvenance.Reasoning(
                 diagnosis.routeMode(),
                 diagnosis.investigationMode(),
@@ -140,14 +141,16 @@ public class InvestigationProvenanceService {
             Diagnosis diagnosis,
             InvestigationProvenance.Knowledge knowledge) {
         List<InvestigationProvenance.Abstention> abstentions = new ArrayList<>();
-        if (diagnosis.routeMode() == RouteMode.DETERMINISTIC) {
+        if (diagnosis.routeAuthority() != RouteAuthority.MODEL_PROPOSED) {
             abstentions.add(new InvestigationProvenance.Abstention(
                     "大模型",
-                    "确定性路径全程零模型调用；结论来自 Playbook 写好的判据与规则。"));
+                    diagnosis.routeMode() == RouteMode.DETERMINISTIC
+                            ? "确定性路径全程零模型调用；结论来自 Playbook 写好的判据与规则。"
+                            : "受限调查只按服务端问题清单和确定性判据推进，本次没有调用大模型。"));
         }
         abstentions.add(new InvestigationProvenance.Abstention(
-                "Skills / Tools 注册表",
-                "排障链路不经过平台的 skills 与 tools 注册表；取证只走证据适配器。"));
+                "平台通用 Skills / Tools 注册表",
+                "排障链路不经过平台通用注册表；只允许域内 ReadOnlyToolRegistry 调用只读证据适配器。"));
         if (!diagnosis.writeExecutionEnabled()) {
             abstentions.add(new InvestigationProvenance.Abstention(
                     "生产写执行器",

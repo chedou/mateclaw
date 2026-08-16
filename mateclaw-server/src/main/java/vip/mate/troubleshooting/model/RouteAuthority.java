@@ -4,5 +4,6 @@ package vip.mate.troubleshooting.model;
 public enum RouteAuthority {
     EXPLICIT,
     RULE_MATCHED,
-    MODEL_PROPOSED
+    MODEL_PROPOSED,
+    POLICY_PROPOSED
 }

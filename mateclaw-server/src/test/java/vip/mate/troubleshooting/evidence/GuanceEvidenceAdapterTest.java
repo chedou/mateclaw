@@ -390,6 +390,25 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void aCallerDeadlineCapsTheConfiguredGuanceTimeoutAndAnExpiredBudgetCallsNothing() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport, CLOCK);
+
+        adapter.collect(
+                WORKSPACE_ID, request("-15m"), incident(), Duration.ofSeconds(1));
+
+        assertThat(transport.timeout).isEqualTo(Duration.ofSeconds(1));
+        int callsBeforeExpiry = transport.calls.get();
+
+        EvidenceResult expired = adapter.collect(
+                WORKSPACE_ID, request("-15m"), incident(), Duration.ZERO);
+
+        assertThat(expired.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls.get()).isEqualTo(callsBeforeExpiry);
+    }
+
+    @Test
     void keepsGuanceTimeRangeNumericWhenTheApplicationMapperSerializesLongsAsStrings()
             throws Exception {
         SimpleModule longAsString = new SimpleModule();

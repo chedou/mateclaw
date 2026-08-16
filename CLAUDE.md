@@ -19,8 +19,10 @@ API 主机或 DQL；通过 Diagnosis 场景入口执行后，只持久化安全�
 同一 Diagnosis，不调模型、不返回或落库原始响应/DQL/凭据，也不把未覆盖节点判为健康；关闭中的迟到结果
 同样拒绝写入。页面提供服务端校验过的可下载导入案例。当前样例为
 21 节点、27 链路、1 个可执行拨测；批量边界为 32 个拨测、8 路并发和 25 秒总预算，超时只降级相应节点。
-真实 HTTP 返回仍待操作员本地触发核实，不代表 T7/T8 通过。该专项入口不替代其他 SOP/证据能力；通用
-`ReadOnlyEvidenceToolRegistry` 仍须等真实 Tool 合同稳定后实现。
+真实 HTTP 返回仍待操作员本地触发核实，不代表 T7/T8 通过。该专项入口不替代其他 SOP/证据能力。
+域内 `ReadOnlyToolRegistry` 已为默认关闭的 OPEN_DISCOVERY 有界窄线落地：只注册
+`READ_EVIDENCE` Bean，按 `toolKey@version`、signal kind、平台白名单、canonical 输出与 deadline
+执行服务端冻结问题；它不向模型开放平台、DQL、端点或凭据，也不等于通用自主规划已经投产。
 正式工作台已增加管理员 T8 历史样本台账：服务端可分别重新执行 Guance-only 真源链和
 fixture-confined Recorded Replay，两个来源使用不同样本键；Replay 按钮还必须通过服务端的 Adapter、
 路由、fixture scope 与精确样本 capability 检查。页面只向 Replay 采集接口提交 `diagnosisId`，服务端再以

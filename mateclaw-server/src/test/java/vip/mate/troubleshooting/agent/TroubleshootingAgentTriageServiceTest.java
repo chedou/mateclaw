@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.agent.AgentService;
@@ -13,6 +14,11 @@ import vip.mate.agent.model.AgentEntity;
 import vip.mate.channel.web.ChatStreamTracker;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSourceRouter;
+import vip.mate.troubleshooting.investigation.BoundedInvestigationPlanner;
+import vip.mate.troubleshooting.investigation.BoundedOpenDiscoveryInvestigationService;
+import vip.mate.troubleshooting.investigation.DefaultOpenDiscoveryHypothesisGraphFactory;
+import vip.mate.troubleshooting.investigation.HypothesisGraph;
+import vip.mate.troubleshooting.investigation.RootCauseFinding;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
@@ -21,6 +27,8 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.CriterionOutcome;
+import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -61,6 +69,7 @@ class TroubleshootingAgentTriageServiceTest {
     @Mock private AgentBindingService bindingService;
     @Mock private EvidenceSourceRouter evidenceRouter;
     @Mock private OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence;
+    @Mock private BoundedOpenDiscoveryInvestigationService boundedInvestigation;
     @Mock private ChatStreamTracker streamTracker;
 
     private TroubleshootingAgentProperties properties;
@@ -799,6 +808,180 @@ class TroubleshootingAgentTriageServiceTest {
         verify(agentService, never()).chatWithToolAllowlist(anyLong(), any(), any(), any(), any());
         verify(openDiscoveryPersistence).release(WORKSPACE_ID, null);
         verifyNoDiscoveryPersisted();
+    }
+
+    @Test
+    void persistsABoundedReadOnlyHypothesisWhenTheAgentIsDisabled() {
+        properties.setEnabled(false);
+        EvidenceResult applicationEvidence = new EvidenceResult(
+                "open-discovery-error-log-scan",
+                "logs",
+                "",
+                EvidenceStatus.ANOMALY,
+                "three application errors",
+                Map.of("error_count", 3),
+                "guance",
+                NOW);
+        EvidenceResult missingRuntime = new EvidenceResult(
+                "open-discovery-k8s-workload-health",
+                "objects",
+                "",
+                EvidenceStatus.MISSING,
+                "runtime asset is not configured",
+                Map.of(),
+                "router:unconfigured",
+                NOW);
+        HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
+                .create(incident())
+                .recordOutcome(
+                        "open-discovery-error-log-scan",
+                        CriterionOutcome.SATISFIED,
+                        applicationEvidence.queryId())
+                .recordOutcome(
+                        "open-discovery-k8s-workload-health",
+                        CriterionOutcome.UNEVALUATED,
+                        missingRuntime.queryId());
+        BoundedInvestigationPlanner.Outcome outcome = new BoundedInvestigationPlanner.Outcome(
+                graph,
+                RootCauseFinding.from(
+                        graph, BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED),
+                List.of(applicationEvidence, missingRuntime),
+                2,
+                2,
+                NOW,
+                NOW.plusSeconds(2),
+                BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED);
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                new BoundedOpenDiscoveryInvestigationService.Execution(
+                        outcome,
+                        BoundedOpenDiscoveryInvestigationService.PLAN_KEY,
+                        "0".repeat(64),
+                        List.of("error_log_scan", "k8s_workload_health"),
+                        2,
+                        2,
+                        Duration.ofSeconds(10));
+        when(boundedInvestigation.investigate(eq(WORKSPACE_ID), any(IncidentContext.class)))
+                .thenReturn(java.util.Optional.of(execution));
+        TroubleshootingAgentTriageService boundedService =
+                new TroubleshootingAgentTriageService(
+                        properties,
+                        agentService,
+                        bindingService,
+                        sessions,
+                        boundedInvestigation,
+                        new DiagnosisStateMachine(
+                                Clock.fixed(NOW, ZoneOffset.UTC),
+                                prefix -> prefix + "-fixed"),
+                        openDiscoveryPersistence,
+                        objectMapper,
+                        Clock.fixed(NOW, ZoneOffset.UTC),
+                        streamTracker);
+
+        StoredDiagnosis stored = boundedService.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "unknown route");
+
+        assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.BOUNDED_DISCOVERY);
+        assertThat(stored.diagnosis().routeAuthority())
+                .isEqualTo(RouteAuthority.POLICY_PROPOSED);
+        assertThat(stored.diagnosis().rootCause())
+                .isEqualTo("应用服务自身出现集中错误");
+        assertThat(stored.diagnosis().evidenceCitations())
+                .containsExactly("open-discovery-error-log-scan");
+        ArgumentCaptor<OpenDiscoveryRunAudit> audit =
+                ArgumentCaptor.forClass(OpenDiscoveryRunAudit.class);
+        verify(openDiscoveryPersistence).persist(
+                eq(WORKSPACE_ID), any(Diagnosis.class), any(), any(), any(), audit.capture());
+        assertThat(audit.getValue().stopReason())
+                .isEqualTo(OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED);
+        verify(agentService, never()).chatWithToolAllowlist(
+                anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
+    void persistsABoundedAbstentionAndItsExactStopReasonWhenEvidenceIsMissing() {
+        properties.setEnabled(false);
+        EvidenceResult missingApplication = new EvidenceResult(
+                "open-discovery-error-log-scan",
+                "logs",
+                "",
+                EvidenceStatus.MISSING,
+                "application log binding is not configured",
+                Map.of(),
+                "router:unconfigured",
+                NOW);
+        EvidenceResult missingRuntime = new EvidenceResult(
+                "open-discovery-k8s-workload-health",
+                "objects",
+                "",
+                EvidenceStatus.MISSING,
+                "runtime asset is not configured",
+                Map.of(),
+                "router:unconfigured",
+                NOW);
+        HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
+                .create(incident())
+                .recordOutcome(
+                        "open-discovery-error-log-scan",
+                        CriterionOutcome.UNEVALUATED,
+                        missingApplication.queryId())
+                .recordOutcome(
+                        "open-discovery-k8s-workload-health",
+                        CriterionOutcome.UNEVALUATED,
+                        missingRuntime.queryId());
+        BoundedInvestigationPlanner.Outcome outcome = new BoundedInvestigationPlanner.Outcome(
+                graph,
+                RootCauseFinding.from(
+                        graph, BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED),
+                List.of(missingApplication, missingRuntime),
+                2,
+                2,
+                NOW,
+                NOW.plusSeconds(2),
+                BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED);
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                new BoundedOpenDiscoveryInvestigationService.Execution(
+                        outcome,
+                        BoundedOpenDiscoveryInvestigationService.PLAN_KEY,
+                        "1".repeat(64),
+                        List.of("error_log_scan", "k8s_workload_health"),
+                        2,
+                        2,
+                        Duration.ofSeconds(10));
+        when(boundedInvestigation.investigate(eq(WORKSPACE_ID), any(IncidentContext.class)))
+                .thenReturn(java.util.Optional.of(execution));
+        TroubleshootingAgentTriageService boundedService =
+                new TroubleshootingAgentTriageService(
+                        properties,
+                        agentService,
+                        bindingService,
+                        sessions,
+                        boundedInvestigation,
+                        new DiagnosisStateMachine(
+                                Clock.fixed(NOW, ZoneOffset.UTC),
+                                prefix -> prefix + "-fixed"),
+                        openDiscoveryPersistence,
+                        objectMapper,
+                        Clock.fixed(NOW, ZoneOffset.UTC),
+                        streamTracker);
+
+        StoredDiagnosis stored = boundedService.triage(
+                WORKSPACE_ID, incident(), List.of(), false, "unknown route");
+
+        assertThat(stored.diagnosis().status())
+                .isEqualTo(DiagnosisStatus.NEEDS_INVESTIGATION);
+        assertThat(stored.diagnosis().conclusionType())
+                .isEqualTo(ConclusionType.INSUFFICIENT_EVIDENCE);
+        assertThat(stored.diagnosis().abstained()).isTrue();
+        assertThat(stored.diagnosis().rootCause()).isEmpty();
+        ArgumentCaptor<OpenDiscoveryRunAudit> audit =
+                ArgumentCaptor.forClass(OpenDiscoveryRunAudit.class);
+        verify(openDiscoveryPersistence).persist(
+                eq(WORKSPACE_ID), any(Diagnosis.class), any(), any(), any(), audit.capture());
+        assertThat(audit.getValue().stopReason())
+                .isEqualTo(OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED_ABSTAINED);
+        assertThat(audit.getValue().sourceRequestCount()).isEqualTo(2);
+        verify(agentService, never()).chatWithToolAllowlist(
+                anyLong(), any(), any(), any(), any());
     }
 
     @Test

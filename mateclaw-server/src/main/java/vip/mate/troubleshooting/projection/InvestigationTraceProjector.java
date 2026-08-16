@@ -478,6 +478,56 @@ public final class InvestigationTraceProjector {
                 code = StopReasonCode.CONCLUSION_RECORDED;
                 message = "已形成带可验证证据引用的候选判断，等待人工确认";
             }
+            case BOUNDED_ROOT_CAUSE_LOCATED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "唯一候选方向得到支持，其他已登记方向都被排除，等待人工确认";
+            }
+            case BOUNDED_EVIDENCE_EXHAUSTED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "已问完服务端登记的只读问题，保留当前可验证候选方向";
+            }
+            case BOUNDED_ITERATION_BUDGET_EXHAUSTED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "达到最多 " + run.maxIterations()
+                        + " 轮调查上限，保留当前可验证候选方向";
+            }
+            case BOUNDED_TOOL_BUDGET_EXHAUSTED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "达到最多 " + run.maxEvidenceRequests()
+                        + " 次只读查询上限，保留当前可验证候选方向";
+            }
+            case BOUNDED_TIME_BUDGET_EXHAUSTED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "达到 " + run.timeBudget().toSeconds()
+                        + " 秒受限调查时长上限，保留当前可验证候选方向";
+            }
+            case BOUNDED_POLICY_BLOCKED -> {
+                code = StopReasonCode.CONCLUSION_RECORDED;
+                message = "后续只读问题未通过工具白名单校验，保留已有可验证候选方向";
+            }
+            case BOUNDED_EVIDENCE_EXHAUSTED_ABSTAINED -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "已问完服务端登记的只读问题，但没有足够证据支持任何候选方向";
+            }
+            case BOUNDED_ITERATION_BUDGET_EXHAUSTED_ABSTAINED -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "达到最多 " + run.maxIterations()
+                        + " 轮调查上限，仍没有足够证据支持候选方向";
+            }
+            case BOUNDED_TOOL_BUDGET_EXHAUSTED_ABSTAINED -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "达到最多 " + run.maxEvidenceRequests()
+                        + " 次只读查询上限，仍没有足够证据支持候选方向";
+            }
+            case BOUNDED_TIME_BUDGET_EXHAUSTED_ABSTAINED -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "达到 " + run.timeBudget().toSeconds()
+                        + " 秒受限调查时长上限，仍没有足够证据支持候选方向";
+            }
+            case BOUNDED_POLICY_BLOCKED_ABSTAINED -> {
+                code = StopReasonCode.EVIDENCE_MISSING;
+                message = "只读问题未通过工具白名单校验，系统没有证据继续判断";
+            }
             case CORE_EVIDENCE_INCOMPLETE -> {
                 code = StopReasonCode.EVIDENCE_MISSING;
                 message = "核心证据链不完整，系统已停止判断并转人工深查";

@@ -237,7 +237,7 @@ class EvidenceAutoConfigurationTest {
                                                 "csdp-message-send-contrast")
                                         .containsEntry(
                                                 "error_log_scan",
-                                                "csdp-application-error-scan")
+                                                "csdp-session-application-error-scan")
                                         .containsEntry(
                                                 "monitor_event_scan",
                                                 "csdp-monitor-event-scan")
@@ -282,7 +282,10 @@ class EvidenceAutoConfigurationTest {
                                         "csdp-itgw-access-trace-bundle")
                                 .containsEntry(
                                         "contrast_sample",
-                                        "csdp-itgw-access-contrast");
+                                        "csdp-itgw-access-contrast")
+                                .containsEntry(
+                                        "error_log_scan",
+                                        "csdp-wechat-application-error-scan");
                     });
 
                     assertThat(guance.getBindings())
@@ -290,7 +293,8 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-message-send-log-search",
                                     "csdp-message-send-trace-bundle",
                                     "csdp-message-send-contrast",
-                                    "csdp-application-error-scan",
+                                    "csdp-session-application-error-scan",
+                                    "csdp-wechat-application-error-scan",
                                     "csdp-monitor-event-scan",
                                     "csdp-k8s-workload-health",
                                     "csdp-cti-create-conversation-log-search",
@@ -428,17 +432,23 @@ class EvidenceAutoConfigurationTest {
                                     "discriminating_feature",
                                     "message_length_eq_2011");
                     EvidenceProperties.Binding errorScan = guance.getBindings()
-                            .get("csdp-application-error-scan");
+                            .get("csdp-session-application-error-scan");
                     assertThat(errorScan.getNamespace()).isEqualTo("L");
                     assertThat(errorScan.getQueryTemplate())
                             .contains(
                                     "error_count",
                                     "affected_trace_count",
                                     "latest_trace_id",
+                                    "`service` = 'csdp-session-service'",
                                     "level:ERROR",
                                     "{{window_span}}")
                             .doesNotContain("content", "host");
                     assertThat(errorScan.getQueryOptions().isDisableSampling()).isTrue();
+                    EvidenceProperties.Binding wechatErrorScan = guance.getBindings()
+                            .get("csdp-wechat-application-error-scan");
+                    assertThat(wechatErrorScan.getQueryTemplate())
+                            .contains("`service` = 'csdp-wechat'", "level:ERROR")
+                            .doesNotContain("csdp-session-service");
 
                     EvidenceProperties.Binding monitorScan = guance.getBindings()
                             .get("csdp-monitor-event-scan");

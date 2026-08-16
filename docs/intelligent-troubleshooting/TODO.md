@@ -2304,3 +2304,29 @@ domain 层可以全绿而仓库是坏的——那时要跑 `all`，或者交给 
       Guance 拨测任务名。本地 `df-openapi.prd.sangfor.com` 当前解析到 TUN 假地址段
       198.18.0.52 且 HTTPS 连接不通，真源不可达，未做任何真实拨测核实——**不构成 T7 证据**。
       上述通用合同的 DQL 渲染与注入拒绝只由单元测试覆盖。
+
+## 20. OPEN_DISCOVERY 确定性有界调查（2026-08-16）
+
+- [x] 用不可变 `HypothesisGraph` 记录候选原因、服务端问题、判据、状态和证据引用；
+      `MISSING / UNEVALUATED` 只能得到 `UNKNOWN`，不得当成 0 或排除。
+- [x] 用 `RootCauseFinding` 统一压缩为 `LOCATED / HYPOTHESIS / ABSTAINED`；只有“唯一支持、
+      其他全排除”才能 `LOCATED`，候选不冒充确诊。
+- [x] 实现域内 `ReadOnlyToolRegistry`：`toolKey@version` 唯一，调用时再校验白名单、signal kind、
+      deadline 和 canonical 输出；工具失败只产出 `MISSING`，不暴露原始日志、DQL、端点或凭据。
+- [x] 实现 `BoundedInvestigationPlanner`：每轮仅执行一个最高优先级问题，强制迭代、Tool 调用、
+      剩余时长预算和类型化 stop reason；网络 Adapter 的超时继续受本轮 deadline 限制。
+- [x] 接入 `TroubleshootingAgentTriageService` 的原 OPEN_DISCOVERY 路径：只在现有 Agent 不可用、
+      试点开关与平台白名单明确时运行；Agent 可用时不重复取证，全部缺证时仍持久化
+      `INSUFFICIENT_EVIDENCE` 与精确停止原因，不让一次真实只读运行落入审计黑洞。
+- [x] 冻结 `bounded-open-discovery-v1` 计划标识与 SHA-256 安全指纹，审计仅保存预算、信号类型、
+      stop reason 和受限证据引用，不持久化 query / observed / 日志正文；指纹覆盖窗口、目标、
+      Tool 版本、问题优先级、判据/阈值与预算。
+- [x] 同 measurement 的应用错误扫描按服务冻结独立合同；`csdp-session-service` 与
+      `csdp-wechat` 互不借用 ERROR 计数。多个假设同时成立时完整显示并列候选，不任选第一个。
+- [ ] 用一条“无审核 SOP，但 Guance 有应用 ERROR”的真实非演练告警验证第一张
+      `POLICY_PROPOSED / HYPOTHESIS` 正式单，并由开发确认它是有价值的候选方向，不是仅凭“有 ERROR”的废话。
+- [ ] 由 K8s owner 提供真实 cluster / namespace / workload 资产和只读查询合同，再让
+      `runtime-health` 从 `MISSING` 变成可评估；未登记前继续不猜。
+- [ ] 当且仅当真实样本证明两个假设不足时，再增加 Trace、下游依赖、拨测或 HCI 语义 Tool；
+      不先建通用自主规划平台。
+- [ ] 多 Agent Challenger 仍只是 P2 影子评测目标；不进入本次在线根因决策，不按共识或票数升级置信。

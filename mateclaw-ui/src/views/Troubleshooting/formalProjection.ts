@@ -39,6 +39,7 @@ const AUTHORITY_LABEL: Record<RouteAuthority, string> = {
   EXPLICIT: '显式命中',
   RULE_MATCHED: '规则命中',
   MODEL_PROPOSED: '模型提议',
+  POLICY_PROPOSED: '受限调查提议',
 }
 
 const KNOWLEDGE_EVIDENCE_GRADE_LABEL: Record<KnowledgeEvidenceGrade, string> = {

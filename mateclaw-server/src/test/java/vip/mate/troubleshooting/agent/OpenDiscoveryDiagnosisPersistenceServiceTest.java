@@ -6,9 +6,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vip.mate.troubleshooting.model.Confidence;
+import vip.mate.troubleshooting.model.BoundedInvestigationDraft;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.EvidenceResult;
+import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
@@ -169,6 +171,46 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
         verify(diagnoses, never()).get(eq(WORKSPACE_ID), any());
     }
 
+    @Test
+    void persistsABoundedAbstentionWithAnExplicitAbstainedStopReason() {
+        Diagnosis diagnosis = boundedDiagnosis(true);
+        OpenDiscoveryRunAudit audit = boundedAudit(true);
+        when(diagnoses.createOrGet(WORKSPACE_ID, diagnosis, NOW))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true));
+
+        StoredDiagnosis stored = service.persist(
+                WORKSPACE_ID, diagnosis, NOW, null, null, audit);
+
+        assertThat(stored.created()).isTrue();
+        verify(runAudits).insert(WORKSPACE_ID, audit);
+    }
+
+    @Test
+    void persistsABoundedHypothesisWithANonAbstainedStopReason() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        OpenDiscoveryRunAudit audit = boundedAudit(false);
+        when(diagnoses.createOrGet(WORKSPACE_ID, diagnosis, NOW))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true));
+
+        service.persist(WORKSPACE_ID, diagnosis, NOW, null, null, audit);
+
+        verify(runAudits).insert(WORKSPACE_ID, audit);
+    }
+
+    @Test
+    void rejectsCrossedBoundedFindingAndStopReasonCombinations() {
+        assertThatThrownBy(() -> service.persist(
+                WORKSPACE_ID, boundedDiagnosis(true), NOW, null, null,
+                boundedAudit(false)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stopReason must agree");
+        assertThatThrownBy(() -> service.persist(
+                WORKSPACE_ID, boundedDiagnosis(false), NOW, null, null,
+                boundedAudit(true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stopReason must agree");
+    }
+
     private Diagnosis diagnosis() {
         IncidentContext incident = new IncidentContext(
                 "incident-agent-1", "CSDP", "csdp-task", null,
@@ -193,5 +235,56 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 6, 6, 3, Duration.ofSeconds(20),
                 OpenDiscoveryRunAudit.StopReason.AGENT_ABSTAINED,
                 List.of(), NOW, NOW, "agent:88");
+    }
+
+    private Diagnosis boundedDiagnosis(boolean abstained) {
+        IncidentContext incident = new IncidentContext(
+                "incident-bounded-1", "CSDP", "csdp-wechat", null,
+                "未知服务异常", "P1", "影响待确认", null,
+                NOW, null, "web", IncidentCompleteness.SYMPTOM, null);
+        EvidenceResult evidence = new EvidenceResult(
+                "open-discovery-error-log-scan", "logs", "", EvidenceStatus.ANOMALY,
+                "service errors", java.util.Map.of("error_count", 3), "guance", NOW);
+        BoundedInvestigationDraft draft = new BoundedInvestigationDraft(
+                "diag-bounded-1",
+                "case-bounded-1",
+                "run-bounded-1",
+                incident,
+                abstained ? List.of() : List.of(evidence),
+                abstained ? List.of() : List.of(evidence.queryId()),
+                abstained ? "证据不足，系统已弃权" : "应用错误方向有证据支持",
+                abstained ? "" : "应用服务自身出现集中错误",
+                abstained ? Confidence.LOW : Confidence.MEDIUM,
+                abstained,
+                NorthStarTimings.concluded(NOW, NOW, NOW),
+                false,
+                false,
+                List.of());
+        return Diagnosis.initialBoundedInvestigation(
+                draft,
+                abstained ? DiagnosisStatus.NEEDS_INVESTIGATION
+                        : DiagnosisStatus.READY_FOR_HUMAN,
+                List.of());
+    }
+
+    private OpenDiscoveryRunAudit boundedAudit(boolean abstained) {
+        return new OpenDiscoveryRunAudit(
+                "run-bounded-1",
+                "diag-bounded-1",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1",
+                "0".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2,
+                2,
+                2,
+                Duration.ofSeconds(10),
+                abstained
+                        ? OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED_ABSTAINED
+                        : OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                abstained ? List.of() : List.of("open-discovery-error-log-scan"),
+                NOW,
+                NOW,
+                "planner:bounded-open-discovery-v1");
     }
 }

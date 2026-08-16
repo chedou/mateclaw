@@ -232,7 +232,8 @@ public class DiagnosisExperienceProjectionService {
         if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE) {
             return Confidence.LOW;
         }
-        if (authority == RouteAuthority.MODEL_PROPOSED
+        if ((authority == RouteAuthority.MODEL_PROPOSED
+                || authority == RouteAuthority.POLICY_PROPOSED)
                 && diagnosis.confidence() == Confidence.HIGH) {
             return Confidence.MEDIUM;
         }

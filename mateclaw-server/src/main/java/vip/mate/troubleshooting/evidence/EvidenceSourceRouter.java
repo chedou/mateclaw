@@ -8,6 +8,7 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,6 +66,16 @@ public final class EvidenceSourceRouter {
             EvidenceRequest request,
             IncidentContext incident,
             Set<String> permittedPlatforms) {
+        return collect(workspaceId, request, incident, permittedPlatforms, null);
+    }
+
+    /** Collects within a caller-owned absolute deadline. */
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Set<String> permittedPlatforms,
+            Instant deadline) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
@@ -86,6 +97,10 @@ public final class EvidenceSourceRouter {
 
         EvidenceResult canonicalMissing = null;
         for (String sourceName : route) {
+            if (deadline != null && !clock.instant().isBefore(deadline)) {
+                return missing(request, "router:deadline_exhausted",
+                        "read-only evidence deadline exhausted before source invocation");
+            }
             if (permitted != null && !permitted.contains(normalize(sourceName))) {
                 continue;
             }
@@ -94,7 +109,13 @@ public final class EvidenceSourceRouter {
                 continue;
             }
             try {
-                EvidenceResult result = adapter.collect(workspaceId, request, incident);
+                EvidenceResult result = deadline == null
+                        ? adapter.collect(workspaceId, request, incident)
+                        : adapter.collect(
+                                workspaceId,
+                                request,
+                                incident,
+                                Duration.between(clock.instant(), deadline));
                 if (usable(request, result)) {
                     return result;
                 }

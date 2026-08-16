@@ -7,7 +7,7 @@ export type DiagnosisStatus =
   | 'CONFIRMED'
   | 'TRANSFERRED'
   | 'CLOSED'
-export type RouteMode = 'DETERMINISTIC' | 'LLM_FALLBACK'
+export type RouteMode = 'DETERMINISTIC' | 'LLM_FALLBACK' | 'BOUNDED_DISCOVERY'
 /** Three levels, not a score: a deterministic rule engine cannot calibrate a probability. */
 export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type EvidenceStatus = 'NORMAL' | 'ANOMALY' | 'MISSING'
@@ -708,7 +708,7 @@ export interface DiagnosisDerivation {
 export type ConclusionType = 'LOCATED' | 'EXCLUDED' | 'HYPOTHESIS' | 'INSUFFICIENT_EVIDENCE'
 export type BlastRadius = 'SINGLE_CUSTOMER' | 'MULTI_CUSTOMER' | 'SYSTEM_WIDE' | 'UNKNOWN'
 export type InvestigationMode = 'ERROR_CODE_PLAYBOOK' | 'SCENARIO_PLAYBOOK' | 'OPEN_DISCOVERY'
-export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED'
+export type RouteAuthority = 'EXPLICIT' | 'RULE_MATCHED' | 'MODEL_PROPOSED' | 'POLICY_PROPOSED'
 export type RouteSemanticsProvenance = 'PERSISTED' | 'LEGACY_DERIVED'
 export type EvidenceStepTone = 'NORMAL' | 'ANOMALY' | 'EXCLUDED' | 'UNEVALUATED'
 export type EvidenceStepKind = 'EVIDENCE' | 'CRITERION'

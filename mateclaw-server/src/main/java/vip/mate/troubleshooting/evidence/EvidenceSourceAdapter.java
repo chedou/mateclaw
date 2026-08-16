@@ -4,6 +4,8 @@ import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentContext;
 
+import java.time.Duration;
+
 /** Read-only boundary between troubleshooting semantics and an observability platform. */
 public interface EvidenceSourceAdapter {
 
@@ -23,6 +25,21 @@ public interface EvidenceSourceAdapter {
      * credentials or contacting the source, and must fail closed.
      */
     EvidenceResult collect(long workspaceId, EvidenceRequest request, IncidentContext incident);
+
+    /**
+     * Deadline-aware collection used by bounded investigations.
+     *
+     * <p>Network-backed adapters must cap every source request to this remaining
+     * budget. The default preserves source compatibility for local, immediate
+     * adapters such as recorded replay.</p>
+     */
+    default EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Duration timeout) {
+        return collect(workspaceId, request, incident);
+    }
 
     /** Current source readiness for diagnostics and capability reporting. */
     EvidenceSourceHealth health();

@@ -8,6 +8,7 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -77,6 +79,76 @@ class EvidenceSourceRouterTest {
         assertThat(collected.source()).isEqualTo("recorded-replay");
         assertThat(guance.calls()).isZero();
         assertThat(replay.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void forwardsOnlyTheRemainingCallerBudgetToTheSelectedAdapter() {
+        AtomicReference<Duration> receivedBudget = new AtomicReference<>();
+        EvidenceSourceAdapter adapter = new EvidenceSourceAdapter() {
+            @Override
+            public String platform() {
+                return "guance";
+            }
+
+            @Override
+            public boolean supports(String signalKind) {
+                return true;
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    long workspaceId,
+                    EvidenceRequest request,
+                    IncidentContext incident) {
+                throw new AssertionError("deadline-aware collection must be used");
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    long workspaceId,
+                    EvidenceRequest request,
+                    IncidentContext incident,
+                    Duration timeout) {
+                receivedBudget.set(timeout);
+                return result(request.requestId(), "guance");
+            }
+
+            @Override
+            public EvidenceSourceHealth health() {
+                return new EvidenceSourceHealth(
+                        platform(), EvidenceSourceHealth.Status.READY, false, "ready");
+            }
+        };
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), adapter);
+
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID,
+                request("EV-1", "log_count"),
+                incident("CSDP"),
+                Set.of("guance"),
+                NOW.plusSeconds(4));
+
+        assertThat(collected.source()).isEqualTo("guance");
+        assertThat(receivedBudget.get()).isEqualTo(Duration.ofSeconds(4));
+    }
+
+    @Test
+    void anExpiredCallerDeadlineNeverInvokesTheAdapter() {
+        StubAdapter adapter = StubAdapter.returning("guance", result("EV-1", "guance"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), adapter);
+
+        EvidenceResult collected = router.collect(
+                WORKSPACE_ID,
+                request("EV-1", "log_count"),
+                incident("CSDP"),
+                Set.of("guance"),
+                NOW);
+
+        assertThat(collected.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(collected.source()).isEqualTo("router:deadline_exhausted");
+        assertThat(adapter.calls()).isZero();
     }
 
     @Test

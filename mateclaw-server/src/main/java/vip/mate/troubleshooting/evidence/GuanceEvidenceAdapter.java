@@ -159,11 +159,23 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             long workspaceId,
             EvidenceRequest request,
             IncidentContext incident) {
+        return collect(workspaceId, request, incident, timeout());
+    }
+
+    @Override
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Duration callerTimeout) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
         if (request == null || incident == null) {
             throw new IllegalArgumentException("request and incident are required");
+        }
+        if (callerTimeout == null || callerTimeout.isZero() || callerTimeout.isNegative()) {
+            return missing(request, "caller evidence deadline is exhausted");
         }
         AuthorizedBinding authorized;
         try {
@@ -211,7 +223,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                             "Content-Type", "application/json",
                             "DF-API-KEY", settings.guanceApiKey()),
                     body,
-                    timeout());
+                    boundedTimeout(callerTimeout));
             log.debug("Guance evidence signal {} returned HTTP {}",
                     normalizeKey(request.signalKind()), response.statusCode());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -1352,6 +1364,11 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         return configured == null || configured.isZero() || configured.isNegative()
                 ? Duration.ofSeconds(5)
                 : configured;
+    }
+
+    private Duration boundedTimeout(Duration callerTimeout) {
+        Duration configured = timeout();
+        return callerTimeout.compareTo(configured) < 0 ? callerTimeout : configured;
     }
 
     private EvidenceResult missing(EvidenceRequest request, String summary) {

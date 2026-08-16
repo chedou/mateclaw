@@ -61,7 +61,7 @@ class InvestigationProvenanceServiceTest {
 
         assertThat(provenance.abstentions())
                 .extracting(InvestigationProvenance.Abstention::capability)
-                .contains("大模型", "Skills / Tools 注册表", "生产写执行器", "写操作");
+                .contains("大模型", "平台通用 Skills / Tools 注册表", "生产写执行器", "写操作");
         assertThat(provenance.reasoning().modelInvoked()).isFalse();
         assertThat(provenance.reasoning().modelIdentity())
                 .as("没有模型参与时不得留下一个像是型号的字符串")
