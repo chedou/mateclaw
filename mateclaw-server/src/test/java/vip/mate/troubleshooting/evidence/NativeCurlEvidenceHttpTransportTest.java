@@ -112,6 +112,31 @@ class NativeCurlEvidenceHttpTransportTest {
         assertThat(starts).hasValue(2);
     }
 
+    @Test
+    void toleratesTwoConsecutiveEmptyRepliesWithinTheOriginalTimeoutBudget() throws Exception {
+        AtomicInteger starts = new AtomicInteger();
+        List<FakeProcess> attempts = List.of(
+                new FakeProcess("", "curl: (52) Empty reply from server", 52),
+                new FakeProcess("", "curl: (52) Empty reply from server", 52),
+                new FakeProcess(
+                        "{\"code\":200,\"success\":true}\n"
+                                + "__MATECLAW_HTTP_STATUS__:200",
+                        0));
+        NativeCurlEvidenceHttpTransport transport = new NativeCurlEvidenceHttpTransport(
+                "/usr/bin/curl",
+                ignored -> attempts.get(starts.getAndIncrement()));
+
+        EvidenceHttpTransport.Response response = transport.postJson(
+                URI.create("http://guance.example/api/v1/df/query_data_v1"),
+                Map.of("DF-API-KEY", "runtime-secret"),
+                "{\"queries\":[]}",
+                Duration.ofSeconds(5));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"success\":true");
+        assertThat(starts).hasValue(3);
+    }
+
     private static final class FakeProcess extends Process {
         private final ByteArrayOutputStream stdin = new ByteArrayOutputStream();
         private final InputStream stdout;

@@ -24,13 +24,22 @@ export interface Workspace {
   effectiveRole?: WorkspaceRole | null
 }
 
+function workspaceStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    // Storage can be unavailable in SSR, restricted browser contexts, or tests.
+    return null
+  }
+}
+
 export const useWorkspaceStore = defineStore('workspace', () => {
   const workspaces = ref<Workspace[]>([])
   // Stored as a string: the workspace id is a 19-digit Snowflake, so a Number()
   // coercion here would corrupt every non-default workspace id and the reloaded
   // value would match no workspace, silently snapping back to Default.
   const currentWorkspaceId = ref<string | null>(
-    localStorage.getItem('mc-workspace-id') || null
+    workspaceStorage()?.getItem('mc-workspace-id') || null
   )
   const loading = ref(false)
 
@@ -132,7 +141,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function switchWorkspace(id: string) {
     currentWorkspaceId.value = id
-    localStorage.setItem('mc-workspace-id', id)
+    workspaceStorage()?.setItem('mc-workspace-id', id)
     accessLoaded.value = false
     currentCapabilities.value = new Set()
     await refreshAccess()

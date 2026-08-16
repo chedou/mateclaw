@@ -36,7 +36,7 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
     private static final int MAX_STDERR_BYTES = 16 * 1024;
     private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
     private static final int EMPTY_REPLY_EXIT_CODE = 52;
-    private static final int MAX_EMPTY_REPLY_ATTEMPTS = 2;
+    private static final int MAX_EMPTY_REPLY_ATTEMPTS = 3;
 
     private final String executable;
     private final ProcessStarter processStarter;
@@ -78,10 +78,16 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
         URI safeUri = validateUri(uri);
         Map<String, String> safeHeaders = validateHeaders(headers);
         Duration safeTimeout = validateTimeout(timeout);
+        long deadlineNanos = System.nanoTime() + safeTimeout.toNanos();
 
         for (int attempt = 1; attempt <= MAX_EMPTY_REPLY_ATTEMPTS; attempt++) {
             try {
-                return executeOnce(method, safeUri, safeHeaders, safeBody, safeTimeout);
+                return executeOnce(
+                        method,
+                        safeUri,
+                        safeHeaders,
+                        safeBody,
+                        remainingTimeout(deadlineNanos));
             } catch (CurlExitException failure) {
                 if (failure.exitCode() != EMPTY_REPLY_EXIT_CODE
                         || attempt == MAX_EMPTY_REPLY_ATTEMPTS) {
@@ -90,6 +96,14 @@ final class NativeCurlEvidenceHttpTransport implements EvidenceHttpTransport {
             }
         }
         throw new IOException("native curl transport exhausted its retry budget");
+    }
+
+    private Duration remainingTimeout(long deadlineNanos) throws IOException {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0L) {
+            throw new IOException("native curl transport timed out");
+        }
+        return Duration.ofNanos(remainingNanos);
     }
 
     private Response executeOnce(

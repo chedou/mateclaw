@@ -53,3 +53,21 @@ export function shouldAutoStartTroubleshootingIntake(
   if (options.intakeActive) return true
   return classifyChatTroubleshootingIntent(text) === 'HIGH'
 }
+
+/**
+ * Keep the completed troubleshooting result inside Chat while giving the
+ * operator one obvious next action. The diagnosis id is server-owned; encode
+ * it before placing it in a same-origin route.
+ */
+export function troubleshootingDiagnosisResultMessage(
+  diagnosisId: string,
+  created: boolean | null,
+  rehearsal: boolean,
+): string {
+  const safeId = diagnosisId.trim()
+  if (!safeId) return ''
+  const state = created === false
+    ? '已找到同一故障的既有排障单，不会重复调查。'
+    : `已生成${rehearsal ? '演练' : '正式'}排障单，结论和证据都保存在详情里。`
+  return `${state}\n\n[打开排障详情](/troubleshooting?view=detail&diagnosisId=${encodeURIComponent(safeId)})`
+}

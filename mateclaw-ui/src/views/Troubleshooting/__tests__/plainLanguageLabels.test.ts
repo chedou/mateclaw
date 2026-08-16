@@ -48,7 +48,11 @@ describe('troubleshooting operator copy uses plain language', () => {
   })
 
   it('tells a human how to review, handle and close a diagnosis without implying production writes', () => {
-    expect(businessSummarySource).toContain('现在轮到人')
+    expect(businessSummarySource).toContain('现在由你决定')
+    expect(businessSummarySource).toContain('一句话结论')
+    expect(businessSummarySource).toContain('为什么这样判断')
+    expect(businessSummarySource).toContain('影响到什么')
+    expect(businessSummarySource).toContain('你现在需要做什么')
     expect(businessSummarySource).toContain('复核后确认定位')
     expect(businessSummarySource).toContain('转给其他人继续查')
     expect(businessSummarySource).toContain('联系有转派权限的负责人继续查')
@@ -90,7 +94,7 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(investigationTraceSource).toContain('查看本步技术记录')
     expect(investigationTraceSource).toContain('container-type:inline-size')
     expect(investigationTraceSource).toContain('@container (max-width:720px)')
-    expect(developerEvidenceSource).toContain('展开排障过程与证据')
+    expect(developerEvidenceSource).toContain('系统为什么得到这个结论')
     expect(developerEvidenceSource).not.toContain('展开开发证据台')
   })
 

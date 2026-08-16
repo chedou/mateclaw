@@ -3,6 +3,7 @@ import {
   classifyChatTroubleshootingIntent,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
+  troubleshootingDiagnosisResultMessage,
 } from '../chatTroubleshootingIntent'
 
 describe('chatTroubleshootingIntent', () => {
@@ -102,5 +103,14 @@ describe('chatTroubleshootingIntent', () => {
       suppressed: true,
       intakeActive: false,
     })).toBe(false)
+  })
+
+  it('returns a same-origin detail action after a real diagnosis is ready', () => {
+    expect(troubleshootingDiagnosisResultMessage('diag-a/b', true, false))
+      .toBe('已生成正式排障单，结论和证据都保存在详情里。\n\n'
+        + '[打开排障详情](/troubleshooting?view=detail&diagnosisId=diag-a%2Fb)')
+    expect(troubleshootingDiagnosisResultMessage('diag-existing', false, true))
+      .toContain('已找到同一故障的既有排障单')
+    expect(troubleshootingDiagnosisResultMessage('   ', true, true)).toBe('')
   })
 })

@@ -36,6 +36,8 @@ describe('the troubleshooting intake dialogs', () => {
       expect(source).not.toContain('<el-dialog')
     }
     expect(formalWorkbenchSource).toContain('FiveQuestionRail')
+    expect(formalWorkbenchSource).toContain('class="question-progress-fold"')
+    expect(formalWorkbenchSource).toContain('查看排障进度')
     expect(formalWorkbenchSource).toContain('FirstUseGuideDrawer')
     expect(formalWorkbenchSource).toContain('@guide="openFirstUseGuide"')
     expect(formalWorkbenchSource).toContain('@start="startFirstUseRehearsal"')

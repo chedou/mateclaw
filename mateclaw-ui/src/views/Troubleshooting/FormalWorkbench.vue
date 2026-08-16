@@ -122,8 +122,6 @@
           <span>{{ evidenceSourcePresentation.detail }}</span>
         </div>
 
-        <FiveQuestionRail :items="fiveQuestionItems" />
-
         <BusinessSummaryCard
           :business="business"
           :closure="closure"
@@ -139,6 +137,17 @@
           @close="closeOpen = true"
           @evaluate="openEvaluationLedger"
         />
+
+        <details class="question-progress-fold">
+          <summary>
+            <div>
+              <b>查看排障进度</b>
+              <small>按“发生了什么 → 查到了什么 → 结论 → 人工处理”复核</small>
+            </div>
+            <span>5 个检查点</span>
+          </summary>
+          <FiveQuestionRail :items="fiveQuestionItems" />
+        </details>
 
         <ScenarioEvidenceRunCard
           v-if="evidenceSpineScenarioPresentation"
@@ -1240,6 +1249,15 @@ onMounted(() => {
 .work-head h1 { margin:5px 0 0; font-size:var(--mc-text-xl); letter-spacing:-.025em; } .work-head-actions { display:flex; gap:8px; }
 .fixture-banner { display:flex; align-items:center; gap:8px; width:100%; margin:0 0 16px; padding:9px 13px; border:1px solid var(--mc-warning); border-radius:var(--mc-radius-sm); color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); font-size:var(--mc-text-xs); }
 .fixture-banner span:last-child { color:var(--mc-status-warning-text); } .fixture-dot { width:7px; height:7px; border-radius:50%; background:var(--mc-warning); box-shadow:0 0 0 4px rgba(245,158,11,0.13); }
+.question-progress-fold { width:100%; margin-top:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); overflow:hidden; }
+.question-progress-fold>summary { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; list-style:none; }
+.question-progress-fold>summary::-webkit-details-marker { display:none; }
+.question-progress-fold>summary>div b,.question-progress-fold>summary>div small { display:block; }
+.question-progress-fold>summary>div b { font-size:var(--mc-text-sm); }
+.question-progress-fold>summary>div small { margin-top:3px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
+.question-progress-fold>summary>span { margin-left:auto; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
+.question-progress-fold :deep(.five-question-rail) { margin:0; padding:0 18px 18px; border-top:1px solid var(--mc-border-light); }
+.question-progress-fold :deep(.fq-list) { margin-top:14px; }
 .business-card,.developer-fold { width:100%; max-width:none; margin-right:0; margin-left:0; border:1px solid var(--line); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:0 8px 28px var(--mc-shadow-soft); }
 .business-card { padding:clamp(20px,3vw,36px); } .verdict-head { padding-bottom:16px; }
 .badge-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; } .conclusion-badge,.status-badge,.confidence-badge { padding:4px 9px; border:1px solid var(--line); border-radius:var(--mc-radius-lg); font-size:var(--mc-text-xs); font-weight:700; }

@@ -64,6 +64,12 @@ class TroubleshootingPlaybookVersionMapperIntegrationTest {
             executeMigration(
                     connection,
                     "db/migration/h2/V190__troubleshooting_knowledge_evidence_grade.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        ALTER TABLE mate_troubleshooting_playbook_version
+                        RENAME COLUMN system TO system_name
+                        """);
+            }
         }
 
         MybatisConfiguration configuration = new MybatisConfiguration();

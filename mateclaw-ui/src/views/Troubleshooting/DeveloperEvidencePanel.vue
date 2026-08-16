@@ -2,8 +2,8 @@
   <details v-if="developer && business && current" class="developer-fold">
     <summary>
       <span class="fold-caret" />
-      <div><b>展开排障过程与证据</b><small>先看这次排障怎么推进，再按需查看证据、规则和技术记录</small></div>
-      <span>{{ developer.steps.length }} 个证据 / 判据步骤</span>
+      <div><b>系统为什么得到这个结论</b><small>查看它查了什么、怎样比较，以及为什么停止</small></div>
+      <span>{{ developer.steps.length }} 条取证 / 判断记录</span>
     </summary>
     <div class="developer-body" :class="{ 'developer-body--empty-timeline': !developer.steps.length }">
       <div class="route-card">

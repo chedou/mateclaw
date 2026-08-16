@@ -22,7 +22,7 @@ public interface TroubleshootingDeploymentTopologyMapper
     Long lockWorkspace(@Param("workspaceId") long workspaceId);
 
     @Select("""
-            SELECT id, workspace_id, topology_id, name, system, system_label,
+            SELECT id, workspace_id, topology_id, name, system_name, system_label,
                    schema_version, exported_at, snapshot_json, snapshot_fingerprint,
                    node_count, link_count, configured_probe_nodes, imported_by,
                    deleted, create_time, update_time
@@ -37,7 +37,7 @@ public interface TroubleshootingDeploymentTopologyMapper
             @Param("limit") int limit);
 
     @Select("""
-            SELECT id, workspace_id, topology_id, name, system, system_label,
+            SELECT id, workspace_id, topology_id, name, system_name, system_label,
                    schema_version, exported_at, snapshot_json, snapshot_fingerprint,
                    node_count, link_count, configured_probe_nodes, imported_by,
                    deleted, create_time, update_time
@@ -51,7 +51,7 @@ public interface TroubleshootingDeploymentTopologyMapper
             @Param("topologyId") String topologyId);
 
     @Select("""
-            SELECT id, workspace_id, topology_id, name, system, system_label,
+            SELECT id, workspace_id, topology_id, name, system_name, system_label,
                    schema_version, exported_at, snapshot_json, snapshot_fingerprint,
                    node_count, link_count, configured_probe_nodes, imported_by,
                    deleted, create_time, update_time
@@ -65,7 +65,7 @@ public interface TroubleshootingDeploymentTopologyMapper
             @Param("fingerprint") String fingerprint);
 
     @Select("""
-            SELECT id, workspace_id, topology_id, name, system, system_label,
+            SELECT id, workspace_id, topology_id, name, system_name, system_label,
                    schema_version, exported_at, snapshot_json, snapshot_fingerprint,
                    node_count, link_count, configured_probe_nodes, imported_by,
                    deleted, create_time, update_time

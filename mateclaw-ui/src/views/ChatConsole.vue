@@ -369,6 +369,7 @@ import ConversationIntakeDialog from '@/views/Troubleshooting/ConversationIntake
 import {
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
+  troubleshootingDiagnosisResultMessage,
 } from '@/views/Troubleshooting/chatTroubleshootingIntent'
 import { troubleshootingApi } from '@/api'
 
@@ -1510,7 +1511,18 @@ async function runTroubleshootingIntakeTurn(text: string) {
     })
     tsIntakeActive.value = true
     tsIntakeConversationId.value = data.conversationId
-    appendLocalChatMessage('assistant', data.prompt, { asEmployee: true })
+    const resultAction = data.status === 'READY' && data.diagnosisId
+      ? troubleshootingDiagnosisResultMessage(
+          data.diagnosisId,
+          data.created,
+          data.rehearsal,
+        )
+      : ''
+    appendLocalChatMessage(
+      'assistant',
+      resultAction ? `${data.prompt}\n\n${resultAction}` : data.prompt,
+      { asEmployee: true },
+    )
     if (data.status === 'READY' && data.diagnosisId) {
       exitTroubleshootingIntakeMode()
       const employee = currentAgent.value?.name

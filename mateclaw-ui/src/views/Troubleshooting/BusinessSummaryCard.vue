@@ -15,25 +15,26 @@
             {{ confidencePresentation.label }}
           </span>
         </div>
+        <span class="verdict-label">一句话结论</span>
         <h2>{{ business.rootCause || business.headline }}</h2>
         <p v-if="!business.rootCause">{{ business.narrative }}</p>
       </div>
     </div>
 
     <div class="summary-grid">
-      <article v-if="business.keyEvidence">
-        <span class="section-label">关键数字</span>
-        <strong>{{ business.keyEvidence }}</strong>
+      <article>
+        <span class="section-label">为什么这样判断</span>
+        <strong>{{ business.keyEvidence || '当前没有可展示的关键对照数字，请展开下方排障过程复核。' }}</strong>
       </article>
-      <article v-if="showImpact">
-        <span class="section-label">影响</span>
-        <strong>{{ business.impact.functionScope }}</strong>
-        <div v-if="impactMetricList.length" class="impact-metrics">
+      <article>
+        <span class="section-label">影响到什么</span>
+        <strong>{{ showImpact ? business.impact.functionScope : '影响范围尚未确认' }}</strong>
+        <div v-if="showImpact && impactMetricList.length" class="impact-metrics">
           <span v-for="metric in impactMetricList" :key="metric">{{ metric }}</span>
         </div>
       </article>
       <article>
-        <span class="section-label">{{ business.nextStep.label }}</span>
+        <span class="section-label">你现在需要做什么</span>
         <strong>{{ business.nextStep.text }}</strong>
       </article>
     </div>
@@ -81,7 +82,7 @@
 
     <section class="human-review-guide" :class="status?.toLowerCase()">
       <div>
-        <span class="section-label">现在轮到人</span>
+        <span class="section-label">现在由你决定</span>
         <strong>{{ reviewGuidance.title }}</strong>
       </div>
       <p>{{ reviewGuidance.detail }}</p>
@@ -210,15 +211,16 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 <style scoped>
 .business-card { width:100%; max-width:none; margin:0; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:var(--mc-shadow-soft); padding:clamp(18px,2.5vw,30px); }
 .verdict-head { padding-bottom:22px; }
+.verdict-label { display:block; margin-top:18px; color:var(--mc-text-tertiary); font-size:12px; font-weight:750; letter-spacing:.08em; }
 .badge-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; } .conclusion-badge,.status-badge,.confidence-badge { padding:4px 9px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-lg); font-size:12px; font-weight:700; }
 .conclusion-badge.located { color:var(--mc-status-info-text); border-color:var(--mc-border-light); background:var(--mc-status-info-bg); } .conclusion-badge.excluded { color:var(--mc-text-secondary); background:var(--mc-bg-muted); }
 .conclusion-badge.hypothesis { color:var(--mc-status-purple-text); border-color:var(--mc-border); background:var(--mc-status-purple-bg); } .conclusion-badge.insufficient_evidence { color:var(--mc-status-warning-text); border-color:var(--mc-warning); background:var(--mc-status-warning-bg); }
 .confidence-badge.high { color:var(--mc-success); background:var(--mc-status-success-bg); } .confidence-badge.medium { color:var(--mc-warning); background:var(--mc-status-warning-bg); } .confidence-badge.low { color:var(--mc-danger); background:var(--mc-status-error-bg); }
 .verdict-copy h2 { margin:14px 0 7px; font-size:clamp(21px,2vw,29px); line-height:1.25; letter-spacing:-.035em; } .verdict-copy>p { max-width:820px; margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-sm); line-height:1.75; }
 .section-label { display:block; color:var(--mc-text-tertiary); font-size:12px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
-.summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
+.summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
 .summary-grid article { padding:14px 16px; }
-.summary-grid article:nth-child(even) { border-left:1px solid var(--mc-border); }
+.summary-grid article+article { border-left:1px solid var(--mc-border); }
 .summary-grid strong { display:block; margin:8px 0 0; font-size:var(--mc-text-sm); line-height:1.55; white-space:pre-line; }
 .impact-metrics { display:flex; gap:7px; margin:8px 0 0; } .impact-metrics span { padding:2px 7px; border-radius:var(--mc-radius-xs); color:var(--mc-status-info-text); background:var(--mc-status-info-bg); font-size:12px; }
 .closure-result { display:grid; grid-template-columns:180px minmax(0,1fr) auto; align-items:center; gap:18px; margin-top:14px; padding:14px 16px; border:1px solid var(--mc-success); border-radius:var(--mc-radius-sm); background:var(--mc-status-success-bg); }
@@ -258,6 +260,6 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .human-review-guide small { grid-column:2; color:var(--mc-status-purple-text); font-size:11px; line-height:1.5; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--mc-border); } .lifecycle-bar>span { margin-left:5px; color:var(--mc-text-secondary); font-size:12px; }
 .active { color:var(--mc-primary)!important; } .success { color:var(--mc-success)!important; } .warning { color:var(--mc-warning)!important; } .muted { color:var(--mc-text-tertiary)!important; }
-@media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border)}.summary-grid article:nth-child(even){border-left:0}}
+@media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}}
 @media(max-width:760px){.ns-stages,.human-review-guide{grid-template-columns:1fr}.human-review-guide small{grid-column:1}.north-star>summary{flex-direction:column;gap:4px}.lifecycle-bar{align-items:flex-start;flex-direction:column}.lifecycle-bar>span{margin-left:0}}
 </style>
