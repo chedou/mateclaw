@@ -71,7 +71,7 @@ docker info >/dev/null 2>&1 || fail "Jenkins 无法访问 Docker daemon"
 [[ "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] \
   || fail "BRANCH 格式不合法"
 case "$BRANCH" in
-  *..*|*//*|*@\{*|*/|*.lock) fail "BRANCH 包含不安全片段" ;;
+  *..*|*//*|*@{*|*/|*.lock) fail "BRANCH 包含不安全片段" ;;
 esac
 
 if [[ -n "$EXPECTED_COMMIT" ]]; then
