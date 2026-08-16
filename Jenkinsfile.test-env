@@ -62,6 +62,7 @@ command -v git >/dev/null || fail "git 命令不存在"
 command -v docker >/dev/null || fail "docker 命令不存在"
 command -v curl >/dev/null || fail "curl 命令不存在"
 command -v gzip >/dev/null || fail "gzip 命令不存在"
+command -v tar >/dev/null || fail "tar 命令不存在"
 command -v sha256sum >/dev/null || fail "sha256sum 命令不存在"
 command -v find >/dev/null || fail "find 命令不存在"
 command -v sort >/dev/null || fail "sort 命令不存在"
@@ -88,16 +89,45 @@ case "$SOURCE_DIR" in
 esac
 rm -rf -- "$SOURCE_DIR"
 
-git clone --single-branch --depth 1 \
-  --branch "$BRANCH" "$REPOSITORY_URL" "$SOURCE_DIR"
-resolved_commit="$(cd "$SOURCE_DIR" && git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
-[[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析检出提交"
+remote_ref="$(git ls-remote --heads "$REPOSITORY_URL" "refs/heads/$BRANCH")"
+remote_count="$(printf '%s\n' "$remote_ref" | sed '/^[[:space:]]*$/d' | wc -l | tr -d '[:space:]')"
+[[ "$remote_count" == "1" ]] || fail "无法唯一解析远端分支 $BRANCH"
+resolved_commit="$(printf '%s\n' "$remote_ref" | awk '{print tolower($1)}')"
+[[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析远端分支提交"
 
 if [[ -n "$EXPECTED_COMMIT" ]]; then
   expected_commit="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
   [[ "$resolved_commit" == "$expected_commit" ]] \
     || fail "分支头 $resolved_commit 与期望提交 $expected_commit 不一致"
 fi
+
+archive_file="$WORKSPACE/source-$resolved_commit.tar.gz"
+archive_url="https://codeload.github.com/chedou/mateclaw/tar.gz/$resolved_commit"
+archive_ready=0
+if [[ -f "$archive_file" ]] && gzip -t "$archive_file"; then
+  echo "复用已校验的固定提交归档"
+  archive_ready=1
+else
+  for attempt in $(seq 1 8); do
+    echo "下载固定提交归档：第 $attempt/8 次"
+    if curl --fail --location --silent --show-error \
+        --connect-timeout 20 --max-time 1800 \
+        --retry 3 --retry-delay 5 --continue-at - \
+        --output "$archive_file" "$archive_url" \
+        && gzip -t "$archive_file"; then
+      archive_ready=1
+      break
+    fi
+    sleep 5
+  done
+fi
+[[ "$archive_ready" -eq 1 ]] || fail "固定提交归档下载或完整性校验失败"
+
+mkdir -p "$SOURCE_DIR"
+tar -xzf "$archive_file" --strip-components=1 -C "$SOURCE_DIR"
+test -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
+  || fail "固定提交归档缺少后端 Dockerfile"
+test -f "$SOURCE_DIR/pom.xml" || fail "固定提交归档缺少根 pom.xml"
 
 printf '%s\n' "$resolved_commit" > resolved-commit.txt
 printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt
@@ -138,7 +168,7 @@ grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
   echo "current_container_state=$current_state"
   echo "current_image=$current_image"
   echo "current_health=$current_health"
-  echo "source_build=GIT_EXACT_COMMIT"
+  echo "source_build=GITHUB_EXACT_COMMIT_ARCHIVE"
 } > preflight-report.txt
 
 cat preflight-report.txt
