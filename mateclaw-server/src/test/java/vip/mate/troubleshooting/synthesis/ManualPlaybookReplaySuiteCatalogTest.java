@@ -114,6 +114,13 @@ class ManualPlaybookReplaySuiteCatalogTest {
         SopEntry candidate = resolved.suite().exampleCandidate();
 
         assertThat(candidate.service()).isEqualTo("csdp-task");
+        assertThat(resolved.suite().suiteId())
+                .isEqualTo("csdp-cti-create-conversation-failed/v3");
+        assertThat(candidate.sopId())
+                .isEqualTo("manual-csdp-cti-create-conversation-failed-v3");
+        assertThat(candidate.symptomTriggers())
+                .as("原始告警不带内部场景码时，必须能由已审核的明确症状进入同一条取证流程")
+                .containsExactly("cti创建会话失败");
         assertThat(candidate.evidenceRequests())
                 .extracting(request -> request.signalKind())
                 .containsExactly(

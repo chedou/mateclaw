@@ -667,13 +667,13 @@
     },
     {
       "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
-      "suiteId": "csdp-cti-create-conversation-failed/v2",
-      "suiteVersion": 2,
+      "suiteId": "csdp-cti-create-conversation-failed/v3",
+      "suiteVersion": 3,
       "selectorKey": "csdp:scenario:cti_create_conversation_failed",
       "requiredEvidenceRequestId": "CTI-LOG-SEARCH",
       "sourceReference": "guance-aggregate-2026-08-17-cti-create-conversation-failed-v2",
       "exampleCandidate": {
-        "sopId": "manual-csdp-cti-create-conversation-failed-v2",
+        "sopId": "manual-csdp-cti-create-conversation-failed-v3",
         "contractVersion": "sop.v1",
         "system": "CSDP",
         "errorCode": "scenario:cti_create_conversation_failed",
@@ -771,6 +771,9 @@
             "approvalStatus": "NOT_REQUIRED",
             "executionStatus": "PENDING"
           }
+        ],
+        "symptomTriggers": [
+          "CTI创建会话失败"
         ]
       },
       "positiveCase": {
