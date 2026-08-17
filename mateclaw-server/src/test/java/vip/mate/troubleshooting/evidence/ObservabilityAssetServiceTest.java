@@ -87,6 +87,19 @@ class ObservabilityAssetServiceTest {
     }
 
     @Test
+    @DisplayName("系统资产不能把本地告警事实绑定成外部查询")
+    void assetCannotBindAnIncidentReportedSignal() {
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID,
+                declaration(null, true,
+                        Map.of("incident_reported_external_http_failure", "reported-alert"),
+                        Map.of()),
+                "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("incident_reported_external_http_failure");
+    }
+
+    @Test
     @DisplayName("更新追加不可变版本，并拒绝基于旧版本覆盖")
     void updateAppendsARevisionAndUsesOptimisticVersioning() {
         service.declare(

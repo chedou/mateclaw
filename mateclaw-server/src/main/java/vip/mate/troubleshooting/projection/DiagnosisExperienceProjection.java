@@ -50,6 +50,16 @@ public record DiagnosisExperienceProjection(
         CANDIDATE
     }
 
+    /** Provenance of the facts shown on the first screen. */
+    public enum EvidenceBasis {
+        /** Facts returned by a configured read-only telemetry source. */
+        OBSERVED,
+        /** Facts stated by the normalized incident report, not source telemetry. */
+        REPORTED,
+        /** Recorded or authored replay data used only for rehearsal. */
+        RECORDED_REPLAY
+    }
+
     public record BusinessSummary(
             String diagnosisId,
             ConclusionType conclusionType,
@@ -69,7 +79,8 @@ public record DiagnosisExperienceProjection(
             NextStep nextStep,
             DiagnosisStatus status,
             NorthStarTimings timings,
-            boolean fixtureMode) {
+            boolean fixtureMode,
+            EvidenceBasis evidenceBasis) {
 
         public BusinessSummary {
             diagnosisId = required(diagnosisId, "diagnosisId");
@@ -79,9 +90,10 @@ public record DiagnosisExperienceProjection(
             rootCause = normalizeNullable(rootCause);
             keyEvidence = normalizeNullable(keyEvidence);
             if (conclusionType == null || confidence == null || impact == null
-                    || nextStep == null || status == null || timings == null) {
+                    || nextStep == null || status == null || timings == null
+                    || evidenceBasis == null) {
                 throw new IllegalArgumentException(
-                        "conclusionType, confidence, impact, nextStep, status and timings are required");
+                        "conclusionType, confidence, impact, nextStep, status, timings and evidenceBasis are required");
             }
             // An abstention that still names a cause is the failure mode the
             // whole abstain path exists to prevent.

@@ -57,6 +57,22 @@ public final class IntakeSessionReducer {
     private static final Pattern INFRA_ALERT_WITHOUT_CUSTOMER = Pattern.compile(
             "拨测|虚机|主机|存活检测|监控项|集群|告警分组|告警级别|告警URL",
             Pattern.CASE_INSENSITIVE);
+    /**
+     * One reviewed alert producer encodes the owning service in a stable API
+     * gateway path. Only the exact host/path pair is accepted; arbitrary URLs
+     * must never be allowed to nominate a deterministic service route.
+     */
+    private static final Pattern CSDP_WECHAT_APPLET_URL = Pattern.compile(
+            "https://csdp-applet\\.sangfor\\.com/api/(csdp-wechat)"
+                    + "/scl/v1/external/get_icare_product_mapping(?:[?\\s,]|$)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern OUTBOUND_HTTP_STATUS = Pattern.compile(
+            "http\\s+code\\s+is\\s+not\\s+200\\s+code\\s*[:：]\\s*(\\d{3})",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern CSDP_WECHAT_OPERATION = Pattern.compile(
+            "https://csdp-applet\\.sangfor\\.com/api/csdp-wechat/scl/v1/external/"
+                    + "(get_icare_product_mapping)(?:[?\\s,]|$)",
+            Pattern.CASE_INSENSITIVE);
 
     public IntakeSession start(String intakeSessionId, IntakeMessageEnvelope envelope) {
         ParsedInput parsed = parse(envelope.text());
@@ -241,8 +257,11 @@ public final class IntakeSessionReducer {
         String symptom = first(
                 trimMonitorItem(fields.get("symptom")),
                 firstFreeSymptom(freeLines));
+        symptom = enrichOutboundHttpFailure(symptom, fields.get("errorDetail"));
         String system = fields.get("system");
-        String service = first(fields.get("service"), inferService(symptom));
+        String service = first(
+                fields.get("service"),
+                first(inferKnownService(fields.get("errorDetail")), inferService(symptom)));
         String customerRef = fields.get("customerRef");
         if (isMissing(customerRef) && looksLikeAlertWithoutCustomer(raw)) {
             customerRef = "未知";
@@ -294,6 +313,28 @@ public final class IntakeSessionReducer {
         return null;
     }
 
+    private String inferKnownService(String errorDetail) {
+        if (errorDetail == null || errorDetail.isBlank()) {
+            return null;
+        }
+        Matcher matcher = CSDP_WECHAT_APPLET_URL.matcher(errorDetail);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : null;
+    }
+
+    private String enrichOutboundHttpFailure(String symptom, String errorDetail) {
+        if (symptom == null || symptom.isBlank()
+                || errorDetail == null || errorDetail.isBlank()) {
+            return symptom;
+        }
+        Matcher status = OUTBOUND_HTTP_STATUS.matcher(errorDetail);
+        Matcher operation = CSDP_WECHAT_OPERATION.matcher(errorDetail);
+        if (!status.find() || !operation.find()) {
+            return symptom;
+        }
+        return safe(symptom + "（HTTP " + status.group(1)
+                + " · " + operation.group(1) + "）");
+    }
+
     private String trimMonitorItem(String value) {
         if (value == null) {
             return null;
@@ -320,8 +361,13 @@ public final class IntakeSessionReducer {
         // A structured service alarm often has no customer dimension. Keep the
         // truth explicit as “未知” only when service, anomaly and event time are
         // all present; an ordinary free-text report must still be followed up.
-        return Pattern.compile("(?m)^\\s*服务\\s*[:：]").matcher(raw).find()
-                && Pattern.compile("(?m)^\\s*(?:异常|现象)\\s*[:：]").matcher(raw).find()
+        boolean structuredServiceAlert =
+                Pattern.compile("(?m)^\\s*服务\\s*[:：]").matcher(raw).find()
+                        && Pattern.compile("(?m)^\\s*(?:异常|现象)\\s*[:：]")
+                                .matcher(raw).find();
+        boolean reviewedGatewayAlert = CSDP_WECHAT_APPLET_URL.matcher(raw).find()
+                && Pattern.compile("(?m)^\\s*告警标题\\s*[:：]").matcher(raw).find();
+        return (structuredServiceAlert || reviewedGatewayAlert)
                 && extractEmbeddedTime(raw) != null;
     }
 
@@ -477,14 +523,16 @@ public final class IntakeSessionReducer {
                 .replace("-", "")
                 .replace(" ", "");
         return switch (key) {
-            case "现象", "异常", "问题", "问题现象", "symptom", "title", "监控项" -> "symptom";
+            case "现象", "异常", "问题", "问题现象", "symptom", "title", "告警标题", "监控项" -> "symptom";
             case "系统", "system", "业务系统" -> "system";
             case "服务", "service", "运行服务", "服务名" -> "service";
             case "客户id", "客户", "租户id", "customerid", "customerref", "影响对象" -> "customerRef";
             case "发生时间", "时间", "occurredat", "告警时间" -> "occurredAt";
             case "错误码", "errorcode" -> "errorCode";
             case "traceid", "psid", "psid/traceid" -> "traceId";
-            case "集群", "数量", "说明", "告警分组", "告警级别", "告警url", "报警url" -> "ignore";
+            case "错误详情", "errordetail" -> "errorDetail";
+            case "集群", "数量", "说明", "告警分组", "告警级别", "告警应用", "函数", "文件", "代码行",
+                    "告警url", "报警url" -> "ignore";
             default -> null;
         };
     }

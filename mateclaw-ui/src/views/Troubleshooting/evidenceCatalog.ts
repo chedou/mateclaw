@@ -67,6 +67,8 @@ export function signalKindLabel(signalKind: string): string {
     log_search: '日志检索',
     log_trace_bundle: '链路还原',
     contrast_sample: '成功失败对照',
+    external_api_http_failure: '外部接口 HTTP 失败',
+    incident_reported_external_http_failure: '告警已报告的外部接口失败',
     error_log_scan: '错误日志巡检',
     monitor_event_scan: '监控告警巡检',
     k8s_workload_health: 'K8s 工作负载健康',

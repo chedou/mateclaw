@@ -756,6 +756,7 @@ export interface BusinessSummary {
   status: DiagnosisStatus
   timings: NorthStarTimings
   fixtureMode: boolean
+  evidenceBasis: 'OBSERVED' | 'REPORTED' | 'RECORDED_REPLAY'
 }
 
 export interface CallChainHop {

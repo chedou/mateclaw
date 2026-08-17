@@ -1877,6 +1877,30 @@ T59 同一告警窗口的失败请求分组（2026-08-17）：
 - 最终回归：后端排障域与 Skill manifest `1019 / 1019`、前端全量 `554 / 554` 通过，
   `vue-tsc --noEmit`、回放 JSON 解析和 `git diff --check` 通过。
 
+T60 排障详情角色视角与 iCare HTTP 502 直接失败点（2026-08-18）：
+
+- 排障详情新增「三线开发视角 / 二线保障视角」显式切换，默认三线。三线首屏按「根因判断、
+  证据说明了什么、还不能证明什么、下一步怎么核实」组织；二线只看「发生了什么、影响、是否升级、
+  怎么交接」，不在二线视角确认根因。视角只改变展示，不改变 Diagnosis 事实和 RBAC。
+- 原始告警解析仅对已复核的 `csdp-applet.sangfor.com / csdp-wechat / get_icare_product_mapping`
+  路径提取 `service=csdp-wechat`、`HTTP 502` 和操作名；HTTP 状态不冒充业务错误码，其他主机不猜服务。
+  原始 URL、请求体、令牌路径和栈不进入证据投影。
+- OPEN_DISCOVERY 对该精确告警先通过服务端 `incident-report@1` 读取规范化告警事实，只记录
+  `failure_count=1 / http_status=502 / operation / evidence_grade=REPORTED`。它能确认直接失败点，
+  不能证明上游为什么返回 502。该分支不再用无法与本请求关联的通用 ERROR 总数支持根因。
+- 首屏证据来源已结构化为 `OBSERVED / REPORTED / RECORDED_REPLAY`；通知不再从中文文案猜成色。
+  `incident_reported_external_http_failure` 只能由本地 `incident-report@1` 产生，不能被配置成
+  Guance、外部路由或系统观测资产。iCare 场景的 Graph、Tool 与投影共用同一精确审核策略。
+- 对 2026-08-17 19:20:40 窗口的真实 Guance 只读人工核对显示：跨 measurement 能找到
+  `get_icare_product_mapping` 记录和其他 HTTP 502 记录，但受控集合交集为 `0`；因此不将两批无关记录拼成根因。
+  下一步是由 iCare / 网关 owner 提供同一请求的关联 ID、上游日志与健康状态。
+- 本地 MySQL 真实入口已生成演练单 `diag-53eb11b64ad14a47a64dab9d602830cb`：
+  `HYPOTHESIS / MEDIUM`（受限调查的置信上限，不代表已确认根因），首屏显示「直接失败点：iCare 产品映射外部接口返回 HTTP 502
+  （上游为何返回 502 尚未定位）」。浏览器验收两个视角控制台 `0 error`，投影不包含原始 URL、
+  请求体和栈。本单 `rehearsal=true`，不替代 T7；T7 仍为 **`0 / 20`**。
+- 最终回归：后端排障域与 Skill manifest `1038 / 1038`、前端全量 `559 / 559` 通过；
+  `vue-tsc --noEmit`、前端生产构建、`git diff --check` 通过；Spec / Standards 双轴复审 PASS。
+
 后端定向测试命令：
 
 ```bash

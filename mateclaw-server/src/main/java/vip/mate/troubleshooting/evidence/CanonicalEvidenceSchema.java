@@ -56,6 +56,16 @@ public final class CanonicalEvidenceSchema {
                     "classified_failure_request_count", FieldType.NUMBER,
                     "missing_required_code_request_count", FieldType.NUMBER,
                     "downstream_record_not_found_request_count", FieldType.NUMBER))),
+            Map.entry("external_api_http_failure", scalar(Map.of(
+                    "failure_count", FieldType.NUMBER,
+                    "affected_trace_count", FieldType.NUMBER,
+                    "http_status", FieldType.STRING,
+                    "operation", FieldType.STRING))),
+            Map.entry("incident_reported_external_http_failure", scalar(Map.of(
+                    "failure_count", FieldType.NUMBER,
+                    "http_status", FieldType.STRING,
+                    "operation", FieldType.STRING,
+                    "evidence_grade", FieldType.STRING))),
             Map.entry("error_log_scan", scalar(
                     Map.of(
                             "error_count", FieldType.NUMBER,
@@ -151,6 +161,9 @@ public final class CanonicalEvidenceSchema {
             case "error_log_scan" -> validErrorLogScan(observed);
             case "monitor_event_scan" -> validMonitorEventScan(observed);
             case "cti_failure_pattern_scan" -> validCtiFailurePatternScan(observed);
+            case "external_api_http_failure" -> validExternalApiHttpFailure(observed);
+            case "incident_reported_external_http_failure" ->
+                    validIncidentReportedExternalHttpFailure(observed);
             case "k8s_workload_health" -> validK8sWorkloadHealth(observed);
             case "k8s_pod_status" -> validK8sPodStatus(observed);
             case "k8s_node_status" -> validK8sNodeStatus(observed);
@@ -167,6 +180,23 @@ public final class CanonicalEvidenceSchema {
      */
     public static List<String> signalKinds() {
         return SCHEMAS.keySet().stream().sorted().toList();
+    }
+
+    /**
+     * Canonical signals that may be bound to an external telemetry adapter.
+     * Incident-reported facts are canonical for projection, but only the local
+     * {@code incident-report} tool is allowed to produce them.
+     */
+    public static List<String> externallyRoutableSignalKinds() {
+        return SCHEMAS.keySet().stream()
+                .filter(signal -> !"incident_reported_external_http_failure".equals(signal))
+                .sorted()
+                .toList();
+    }
+
+    public static boolean isExternallyRoutable(String signalKind) {
+        return signalKind != null
+                && externallyRoutableSignalKinds().contains(normalize(signalKind));
     }
 
     /**
@@ -320,6 +350,33 @@ public final class CanonicalEvidenceSchema {
         } catch (ArithmeticException overflow) {
             return false;
         }
+    }
+
+    private static boolean validExternalApiHttpFailure(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(observed, "failure_count", "affected_trace_count")) {
+            return false;
+        }
+        Long failures = CanonicalNumberParser.parseExactLong(observed.get("failure_count"));
+        Long traces = CanonicalNumberParser.parseExactLong(observed.get("affected_trace_count"));
+        String status = String.valueOf(observed.get("http_status")).trim();
+        String operation = String.valueOf(observed.get("operation")).trim();
+        return failures != null
+                && traces != null
+                && traces <= failures
+                && (failures != 0 || traces == 0)
+                && "502".equals(status)
+                && "get_icare_product_mapping".equals(operation);
+    }
+
+    private static boolean validIncidentReportedExternalHttpFailure(
+            Map<String, Object> observed) {
+        Long failures = CanonicalNumberParser.parseExactLong(observed.get("failure_count"));
+        return failures != null
+                && failures == 1
+                && "502".equals(String.valueOf(observed.get("http_status")).trim())
+                && "get_icare_product_mapping".equals(
+                        String.valueOf(observed.get("operation")).trim())
+                && "REPORTED".equals(String.valueOf(observed.get("evidence_grade")).trim());
     }
 
     private static boolean validK8sWorkloadHealth(Map<String, Object> observed) {

@@ -15,16 +15,52 @@
             {{ confidencePresentation.label }}
           </span>
         </div>
-        <span class="verdict-label">一句话结论</span>
-        <h2>{{ business.rootCause || business.headline }}</h2>
-        <p v-if="!business.rootCause">{{ business.narrative }}</p>
+        <span class="verdict-label">{{ perspective === 'developer' ? '根因判断' : '当前处理判断' }}</span>
+        <h2>{{ hero.title }}</h2>
+        <p>{{ hero.summary }}</p>
       </div>
     </div>
 
-    <div class="summary-grid">
+    <section
+      v-if="perspective === 'developer' && failureBreakdown?.available"
+      class="root-cause-candidates"
+    >
+      <div class="candidate-intro">
+        <span class="section-label">当前候选原因</span>
+        <strong>{{ failureBreakdown.totalRequests }} 个失败请求，识别出 {{ failureBreakdown.groups.length }} 类线索</strong>
+        <small>这些是按独立请求归类的相关线索；多类同时出现时，平台不会任选一个冒充唯一根因。</small>
+      </div>
+      <div class="candidate-list">
+        <article v-for="(group, index) in failureBreakdown.groups" :key="group.code">
+          <span>{{ index + 1 }}</span>
+          <div><b>{{ group.label }}</b><small>{{ group.requestCount }} 个失败请求出现</small></div>
+        </article>
+        <article v-if="hasUnclassifiedRequests" class="candidate-pending">
+          <span>?</span>
+          <div><b>尚未归类</b><small>{{ failureBreakdown.unclassifiedRequests }} 个失败请求仍需继续调查</small></div>
+        </article>
+      </div>
+    </section>
+
+    <div v-if="perspective === 'developer'" class="summary-grid developer-summary-grid">
       <article>
-        <span class="section-label">为什么这样判断</span>
+        <span class="section-label">证据告诉了我们什么</span>
         <strong>{{ business.keyEvidence || '当前没有可展示的关键对照数字，请展开下方排障过程复核。' }}</strong>
+      </article>
+      <article>
+        <span class="section-label">还不能证明什么</span>
+        <strong>{{ unresolvedQuestion }}</strong>
+      </article>
+      <article>
+        <span class="section-label">三线下一步怎么核实</span>
+        <strong>{{ business.nextStep.text }}</strong>
+      </article>
+    </div>
+
+    <div v-else class="summary-grid support-summary-grid">
+      <article>
+        <span class="section-label">发生了什么</span>
+        <strong>{{ business.problem }}</strong>
       </article>
       <article>
         <span class="section-label">影响到什么</span>
@@ -34,8 +70,12 @@
         </div>
       </article>
       <article>
-        <span class="section-label">你现在需要做什么</span>
-        <strong>{{ business.nextStep.text }}</strong>
+        <span class="section-label">是否需要升级三线</span>
+        <strong>{{ supportHandoff }}</strong>
+      </article>
+      <article>
+        <span class="section-label">二线现在怎么处理</span>
+        <strong>{{ supportAction }}</strong>
       </article>
     </div>
 
@@ -51,7 +91,7 @@
       </small>
     </section>
 
-    <details class="north-star">
+    <details v-if="perspective === 'developer'" class="north-star">
       <summary>
         <span class="ns-title">耗时</span>
         <span class="ns-note">补问 / 调查 / 采纳分开计，不合成总时长</span>
@@ -91,7 +131,7 @@
 
     <div class="lifecycle-bar">
       <el-button
-        v-if="canOperate && status === 'READY_FOR_HUMAN'"
+        v-if="perspective === 'developer' && canOperate && status === 'READY_FOR_HUMAN'"
         type="primary"
         :loading="actionLoading"
         @click="$emit('confirm')"
@@ -104,7 +144,8 @@
         plain
         @click="$emit('evaluate')"
       >把这张单纳入试点评估</el-button>
-      <span v-if="status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
+      <span v-if="perspective === 'support'">二线视角不确认根因；请完成告警与影响确认后升级三线。</span>
+      <span v-else-if="status === 'NEEDS_INVESTIGATION'">当前已弃权：补齐证据后才能重新形成结论。</span>
       <span v-else-if="status === 'CLOSED' && !canEvaluate">请有管理权限的负责人把这张单纳入试点评估。</span>
       <span v-else>只记录人的判断和结果，不改生产。</span>
     </div>
@@ -117,6 +158,7 @@ import type {
   BusinessSummary,
   ClosureRecord,
   DiagnosisStatus,
+  FailureBreakdownView,
 } from '@/api'
 import {
   closureOutcomeLabel,
@@ -130,6 +172,11 @@ import {
   formatWorkbenchTime as shortTime,
 } from './workbenchView'
 import { diagnosisConfidencePresentation } from './evidencePlainLanguage'
+import {
+  diagnosisPerspectiveHero,
+  diagnosisSupportAction,
+  type DiagnosisPerspective,
+} from './diagnosisPerspective'
 
 interface Props {
   business: BusinessSummary | null
@@ -141,6 +188,8 @@ interface Props {
   rehearsal: boolean
   actionLoading: boolean
   status: DiagnosisStatus | null
+  perspective: DiagnosisPerspective
+  failureBreakdown: FailureBreakdownView | null
 }
 
 const props = defineProps<Props>()
@@ -149,7 +198,49 @@ const props = defineProps<Props>()
 const stages = computed(() => northStarStages(props.business?.timings))
 const stagesComplete = computed(() => stages.value.every((stage) => stage.share !== null))
 const confidencePresentation = computed(() => diagnosisConfidencePresentation(props.business?.confidence))
+const hasUnclassifiedRequests = computed(() => {
+  const value = props.failureBreakdown?.unclassifiedRequests
+  return typeof value === 'number' ? value > 0 : typeof value === 'string' && value !== '0'
+})
+const hero = computed(() => {
+  const business = props.business
+  if (!business) return { title: '等待诊断加载', summary: '正在读取本次排障事实。' }
+  return diagnosisPerspectiveHero({
+    perspective: props.perspective,
+    conclusionType: business.conclusionType,
+    rootCause: business.rootCause,
+    headline: business.headline,
+    narrative: business.narrative,
+    candidateCount: props.failureBreakdown?.available ? props.failureBreakdown.groups.length : 0,
+  })
+})
+const unresolvedQuestion = computed(() => {
+  if (props.business?.conclusionType === 'LOCATED') {
+    return '仍需人工核对最终处置结果，确认该原因与恢复结果一致。'
+  }
+  if (props.failureBreakdown?.available && props.failureBreakdown.groups.length > 1) {
+    return '尚未证明哪一类线索是主因，也未确认最终责任组件和代码位置。'
+  }
+  if (props.business?.conclusionType === 'INSUFFICIENT_EVIDENCE') {
+    return '当前缺少能够支持或排除候选方向的有效证据。'
+  }
+  return '当前方向仍是待人工确认的假设，不能当成最终根因。'
+})
+const supportHandoff = computed(() => {
+  if (props.business?.conclusionType === 'LOCATED') return '先由三线复核定位，再由授权人员在平台外处置。'
+  if (props.business?.conclusionType === 'INSUFFICIENT_EVIDENCE') return '需要升级三线或数据负责人补齐证据，二线不要自行定因。'
+  return '需要升级三线，已有线索会随排障单一起交接，不必从头排查。'
+})
+const supportAction = computed(() => props.business
+  ? diagnosisSupportAction(props.business.conclusionType)
+  : '等待排障事实加载。')
 const reviewGuidance = computed(() => {
+  if (props.perspective === 'support') {
+    return {
+      title: '先确认告警和影响，再完成升级交接',
+      detail: '二线不在这里确认根因。请核对服务、时间和影响范围，并把已有线索一起交给三线。',
+    }
+  }
   const guidance: Record<DiagnosisStatus, { title: string; detail: string }> = {
     READY_FOR_HUMAN: {
       title: '先判断：你是否认可这个定位？',
@@ -217,8 +308,22 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .conclusion-badge.hypothesis { color:var(--mc-status-purple-text); border-color:var(--mc-border); background:var(--mc-status-purple-bg); } .conclusion-badge.insufficient_evidence { color:var(--mc-status-warning-text); border-color:var(--mc-warning); background:var(--mc-status-warning-bg); }
 .confidence-badge.high { color:var(--mc-success); background:var(--mc-status-success-bg); } .confidence-badge.medium { color:var(--mc-warning); background:var(--mc-status-warning-bg); } .confidence-badge.low { color:var(--mc-danger); background:var(--mc-status-error-bg); }
 .verdict-copy h2 { margin:14px 0 7px; font-size:clamp(21px,2vw,29px); line-height:1.25; letter-spacing:-.035em; } .verdict-copy>p { max-width:820px; margin:0; color:var(--mc-text-secondary); font-size:var(--mc-text-sm); line-height:1.75; }
+.root-cause-candidates { display:grid; grid-template-columns:minmax(240px,.8fr) minmax(0,1.4fr); gap:20px; margin-bottom:14px; padding:16px; border:1px solid var(--mc-border); border-left:4px solid var(--mc-primary); border-radius:var(--mc-radius-sm); background:var(--mc-bg-muted); }
+.candidate-intro strong,.candidate-intro small { display:block; }
+.candidate-intro strong { margin-top:8px; font-size:var(--mc-text-sm); line-height:1.5; }
+.candidate-intro small { margin-top:6px; color:var(--mc-text-secondary); font-size:12px; line-height:1.55; }
+.candidate-list { display:grid; gap:8px; }
+.candidate-list article { display:flex; align-items:center; gap:10px; min-height:52px; padding:9px 12px; border:1px solid var(--mc-border-light); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
+.candidate-list article>span { display:grid; place-items:center; flex:0 0 24px; width:24px; height:24px; border-radius:50%; color:#fff; background:var(--mc-primary); font-size:12px; font-weight:700; }
+.candidate-list b,.candidate-list small { display:block; }
+.candidate-list b { font-size:13px; line-height:1.4; }
+.candidate-list small { margin-top:2px; color:var(--mc-text-tertiary); font-size:11px; }
+.candidate-list .candidate-pending>span { background:var(--mc-text-tertiary); }
 .section-label { display:block; color:var(--mc-text-tertiary); font-size:12px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
 .summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:hidden; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); }
+.support-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.support-summary-grid article:nth-child(3) { border-top:1px solid var(--mc-border); border-left:0; }
+.support-summary-grid article:nth-child(4) { border-top:1px solid var(--mc-border); }
 .summary-grid article { padding:14px 16px; }
 .summary-grid article+article { border-left:1px solid var(--mc-border); }
 .summary-grid strong { display:block; margin:8px 0 0; font-size:var(--mc-text-sm); line-height:1.55; white-space:pre-line; }
@@ -260,6 +365,6 @@ function timeRange(from: string | null, to: string | null, pending = false) {
 .human-review-guide small { grid-column:2; color:var(--mc-status-purple-text); font-size:11px; line-height:1.5; }
 .lifecycle-bar { display:flex; align-items:center; gap:9px; margin-top:19px; padding-top:17px; border-top:1px solid var(--mc-border); } .lifecycle-bar>span { margin-left:5px; color:var(--mc-text-secondary); font-size:12px; }
 .active { color:var(--mc-primary)!important; } .success { color:var(--mc-success)!important; } .warning { color:var(--mc-warning)!important; } .muted { color:var(--mc-text-tertiary)!important; }
-@media(max-width:1100px){.summary-grid{grid-template-columns:1fr}.summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}}
+@media(max-width:1100px){.summary-grid,.support-summary-grid{grid-template-columns:1fr}.summary-grid article+article,.support-summary-grid article+article{border-top:1px solid var(--mc-border);border-left:0}.root-cause-candidates{grid-template-columns:1fr}}
 @media(max-width:760px){.ns-stages,.human-review-guide{grid-template-columns:1fr}.human-review-guide small{grid-column:1}.north-star>summary{flex-direction:column;gap:4px}.lifecycle-bar{align-items:flex-start;flex-direction:column}.lifecycle-bar>span{margin-left:0}}
 </style>

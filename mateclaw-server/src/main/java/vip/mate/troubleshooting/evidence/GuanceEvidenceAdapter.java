@@ -451,7 +451,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (deployed) {
             return true;
         }
-        return CanonicalEvidenceSchema.signalKinds().stream()
+        return CanonicalEvidenceSchema.externallyRoutableSignalKinds().stream()
                 .anyMatch(this::hasWorkspaceBinding);
     }
 
@@ -660,7 +660,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
 
     private boolean validBinding(String signalKind, EvidenceProperties.Binding binding) {
         List<String> queryTemplates = configuredQueryTemplates(binding);
-        if (!CanonicalEvidenceSchema.supports(signalKind)
+        if (!CanonicalEvidenceSchema.isExternallyRoutable(signalKind)
                 || binding == null
                 || queryTemplates.isEmpty()
                 || queryTemplates.size() > MAX_COMPONENT_QUERIES

@@ -830,6 +830,59 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void normalizesTheReviewedExternalApi502AggregateWithoutExposingAlertPayload() {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [{"series": [{
+                    "columns": ["time", "failure_count", "affected_trace_count"],
+                    "values": [[1755436840000, 3, 2]]
+                  }]}]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L",
+                "iCare product mapping HTTP 502 aggregate",
+                "L::RE(`.*`):(count(*) as failure_count,"
+                        + "count_distinct(`@trace_id`) as affected_trace_count) "
+                        + "{ `service` = 'csdp-wechat' AND query_string(`message`, "
+                        + "\"get_icare_product_mapping AND http AND code AND 502\") }",
+                Map.of(),
+                1);
+        binding.setConstantFields(Map.of(
+                "http_status", "502",
+                "operation", "get_icare_product_mapping"));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("external_api_http_failure", binding),
+                objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-EXTERNAL-502",
+                "external_api_http_failure",
+                "confirm reviewed external API failure",
+                Map.of(),
+                "-15m",
+                true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.query()).isEmpty();
+        assertThat(result.source()).isEqualTo("guance:external_api_http_failure");
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "failure_count", 3,
+                "affected_trace_count", 2,
+                "http_status", "502",
+                "operation", "get_icare_product_mapping"));
+        assertThat(result.observed())
+                .doesNotContainKeys("url", "request", "message", "trace_id");
+        assertThat(transport.body)
+                .contains("csdp-wechat", "get_icare_product_mapping", "502")
+                .doesNotContain("req:&amp;{AF}", "/data/qianliu-agent");
+    }
+
+    @Test
     void preservesARealZeroMonitorEventAggregateWithoutInventingAlertDetails() {
         CapturingTransport transport = new CapturingTransport(200, """
                 {

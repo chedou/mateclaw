@@ -98,10 +98,10 @@ public class EvidenceRouteService implements WorkspaceEvidenceRoutes {
         requireWorkspace(workspaceId);
         String safeSystem = safeName(system, "system");
         String safeSignal = safeName(signalKind, "signalKind");
-        if (!CanonicalEvidenceSchema.supports(safeSignal)) {
+        if (!CanonicalEvidenceSchema.isExternallyRoutable(safeSignal)) {
             // 词表之外的 signal 永远取不到合法结果，声明它只可能是打错字。
             throw invalid("unknown signalKind '" + safeSignal + "'; this platform understands: "
-                    + String.join(", ", CanonicalEvidenceSchema.signalKinds()));
+                    + String.join(", ", CanonicalEvidenceSchema.externallyRoutableSignalKinds()));
         }
         List<String> safePlatforms = validPlatforms(platforms, safeSignal);
         String safeActor = safeName(actor, "actor");

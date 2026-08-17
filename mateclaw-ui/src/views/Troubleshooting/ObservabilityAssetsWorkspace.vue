@@ -886,6 +886,7 @@
               <el-option label="日志检索" value="log_search" />
               <el-option label="链路日志包" value="log_trace_bundle" />
               <el-option label="对比样本" value="contrast_sample" />
+              <el-option label="外部接口 HTTP 失败" value="external_api_http_failure" />
               <el-option label="错误日志巡检" value="error_log_scan" />
               <el-option label="监控告警" value="monitor_event_scan" />
               <el-option label="K8s 工作负载" value="k8s_workload_health" />

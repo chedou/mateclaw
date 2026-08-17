@@ -126,6 +126,16 @@ class EvidenceRouteServiceTest {
                 .hasMessageContaining("log_count");
     }
 
+    @Test
+    @DisplayName("告警上报事实不能绑定到外部证据平台")
+    void anIncidentReportedSignalCannotBeDeclaredAsAnExternalRoute() {
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID, "CSDP", "incident_reported_external_http_failure",
+                List.of("guance"), "admin", "错误地把告警事实当成观测数据"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("incident_reported_external_http_failure");
+    }
+
     /**
      * 声明成功仍然算成功，但要把话说全：路由指向一个此刻关着的源时，取证会安静地
      * 回 MISSING——安静正是最难查的那种坏。

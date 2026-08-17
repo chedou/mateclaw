@@ -390,7 +390,8 @@ class IntakeInvestigationPollerTest {
                 DiagnosisStatus.READY_FOR_HUMAN,
                 NorthStarTimings.concluded(
                         NOW.minusSeconds(60), NOW.minusSeconds(50), NOW),
-                true);
+                true,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.RECORDED_REPLAY);
         DeveloperEvidenceView developer = org.mockito.Mockito.mock(DeveloperEvidenceView.class);
         when(developer.diagnosisId()).thenReturn("diag-1");
         return new DiagnosisExperienceProjection(business, developer);

@@ -65,6 +65,57 @@ class TroubleshootingChannelSummaryRendererTest {
                 .doesNotContain("影响：");
     }
 
+    @Test
+    void labelsAReviewedAlertFactAsUnverifiedInsteadOfCallingItRecordedReplay() {
+        TroubleshootingChannelSummaryRenderer renderer =
+                new TroubleshootingChannelSummaryRenderer("http://127.0.0.1:5173");
+        BusinessSummary base = summary();
+        BusinessSummary reported = new BusinessSummary(
+                base.diagnosisId(), ConclusionType.HYPOTHESIS, base.headline(),
+                "直接失败点：iCare 接口返回 HTTP 502",
+                "上游原因尚未定位。",
+                "告警已经明确：iCare 产品映射接口调用返回 HTTP 502。",
+                Confidence.LOW, base.problem(), base.impact(), base.nextStep(),
+                base.status(), base.timings(), true,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
+
+        assertThat(renderer.render(reported))
+                .contains("告警事实 · 未经真实观测数据验证")
+                .contains("直接失败点：iCare 接口返回 HTTP 502")
+                .doesNotContain("根因：直接失败点")
+                .doesNotContain("Recorded Replay");
+    }
+
+    @Test
+    void labelsAnUnconfirmedHypothesisAsACandidateRatherThanARootCause() {
+        BusinessSummary base = summary();
+        BusinessSummary hypothesis = new BusinessSummary(
+                base.diagnosisId(), ConclusionType.HYPOTHESIS, base.headline(),
+                "网关连接异常", base.narrative(), base.keyEvidence(),
+                Confidence.LOW, base.problem(), base.impact(), base.nextStep(),
+                base.status(), base.timings(), false,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.OBSERVED);
+
+        assertThat(new TroubleshootingChannelSummaryRenderer("").render(hypothesis))
+                .contains("候选方向：网关连接异常")
+                .doesNotContain("根因：网关连接异常");
+    }
+
+    @Test
+    void observedHypothesisCannotChangeItsLabelWithAChinesePrefix() {
+        BusinessSummary base = summary();
+        BusinessSummary hypothesis = new BusinessSummary(
+                base.diagnosisId(), ConclusionType.HYPOTHESIS, base.headline(),
+                "直接失败点：网关连接异常", base.narrative(), base.keyEvidence(),
+                Confidence.LOW, base.problem(), base.impact(), base.nextStep(),
+                base.status(), base.timings(), false,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.OBSERVED);
+
+        assertThat(new TroubleshootingChannelSummaryRenderer("").render(hypothesis))
+                .contains("候选方向：直接失败点：网关连接异常")
+                .doesNotContain("\n直接失败点：网关连接异常");
+    }
+
     private BusinessSummary summary() {
         Instant reportedAt = Instant.parse("2026-07-29T02:00:00Z");
         return new BusinessSummary(
@@ -93,6 +144,7 @@ class TroubleshootingChannelSummaryRendererTest {
                         reportedAt,
                         reportedAt.plusSeconds(30),
                         reportedAt.plusSeconds(90)),
-                true);
+                true,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.RECORDED_REPLAY);
     }
 }

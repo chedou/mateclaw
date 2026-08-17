@@ -34,6 +34,7 @@ import vip.mate.troubleshooting.model.RouteSemanticsProvenance;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.model.TimelineEvent;
 import vip.mate.troubleshooting.deployment.DeploymentTopologyScenarioPolicy;
 import vip.mate.troubleshooting.service.DiagnosisDerivationService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
@@ -50,6 +51,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
@@ -452,6 +454,32 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void successfulZeroMatchQueriesAreNotMisreportedAsMissingSystemOnboarding() {
+        Diagnosis queriedButUnproven = abstainedDiagnosis().evidenceRecorded(
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                "",
+                "现有证据不足以支持候选方向",
+                Confidence.LOW,
+                List.of(new EvidenceResult(
+                        "EV-ZERO", "L", "", EvidenceStatus.NORMAL,
+                        "查询成功但没有匹配记录",
+                        Map.of("error_count", 0, "affected_trace_count", 0),
+                        "guance:error_log_scan", NOW)),
+                List.of(), List.of(), List.of(), List.of(new TimelineEvent(
+                        NOW, "只读取证完成但未形成根因", "system", "done")));
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(queriedButUnproven, 0, true));
+        DiagnosisExperienceProjection result = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(result.businessSummary().narrative())
+                .contains("查询成功")
+                .contains("没有找到支持当前候选的匹配记录")
+                .doesNotContain("没有接入到可取证的状态");
+        assertThat(result.businessSummary().nextStep().label()).isEqualTo("下一步");
+        verify(onboardingGaps, never()).inspect(anyLong(), any());
+    }
+
+    @Test
     void loadsTheImmutableOpenDiscoveryRunIntoTheDeveloperTrace() {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(abstainedDiagnosis(), 0, true));
@@ -601,6 +629,28 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void reportedHttpFailureNamesTheDirectFailurePointWithoutClaimingTheUpstreamCause() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(icareReportedHypothesisDiagnosis(), 0, true));
+
+        DiagnosisExperienceProjection projection = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+
+        assertThat(projection.businessSummary().conclusionType())
+                .isEqualTo(ConclusionType.HYPOTHESIS);
+        assertThat(projection.businessSummary().rootCause())
+                .contains("直接失败点")
+                .contains("上游为何返回 502 尚未定位");
+        assertThat(projection.businessSummary().keyEvidence())
+                .contains("接口调用返回 HTTP 502")
+                .contains("不能证明上游为什么返回 502");
+        assertThat(projection.businessSummary().nextStep().label())
+                .isEqualTo("继续核对 502 上游原因");
+        assertThat(projection.businessSummary().nextStep().text())
+                .contains("iCare 产品映射接口")
+                .contains("上游日志与健康状态");
+    }
+
+    @Test
     void projectsTheServerResolvedTopologyToolRequirement() {
         Diagnosis diagnosis = scenarioDiagnosis();
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
@@ -675,7 +725,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 null,
                 Confidence.LOW,
                 "订单超时", impact, next, DiagnosisStatus.READY_FOR_HUMAN,
-                NorthStarTimings.unrecorded(), false))
+                NorthStarTimings.unrecorded(), false,
+                DiagnosisExperienceProjection.EvidenceBasis.OBSERVED))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("must not name a root cause");
     }
@@ -705,7 +756,8 @@ class DiagnosisExperienceProjectionServiceTest {
                 ConclusionType.EXCLUDED,
                 "已排除当前假设", null, "证据不支持当前假设。", null, Confidence.HIGH,
                 "订单超时", impact, next, DiagnosisStatus.READY_FOR_HUMAN,
-                timings, false))
+                timings, false,
+                DiagnosisExperienceProjection.EvidenceBasis.OBSERVED))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EXCLUDED");
     }
@@ -916,6 +968,48 @@ class DiagnosisExperienceProjectionServiceTest {
                 List.of(failurePatterns), List.of("cti_create_conversation_failure_present"),
                 List.of(), "CSDP TASK 负责团队",
                 true, false, List.of(), List.of());
+    }
+
+    private Diagnosis icareReportedHypothesisDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-502", "CSDP", "csdp-wechat", null,
+                "调用接口异常（HTTP 502 · get_icare_product_mapping）",
+                "P1", "影响待确认", null, NOW, null, "channel:web:conversation",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceResult reported = new EvidenceResult(
+                "open-discovery-icare-product-mapping-reported",
+                "incident_reported_external_http_failure", "",
+                EvidenceStatus.ANOMALY,
+                "告警明确记录产品映射接口返回 HTTP 502",
+                Map.of(
+                        "failure_count", 1,
+                        "http_status", "502",
+                        "operation", "get_icare_product_mapping",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized", NOW);
+        Diagnosis pending = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-502", "run-502", incident,
+                RouteMode.LLM_FALLBACK,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.POLICY_PROPOSED,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, READY_AT),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "等待受限调查",
+                "",
+                Confidence.LOW, true,
+                null, null, null,
+                List.of(), List.of(), List.of(), "CSDP WECHAT 负责团队",
+                true, false, List.of(), List.of());
+        return pending.evidenceRecorded(
+                ConclusionType.HYPOTHESIS,
+                "直接失败点：iCare 产品映射外部接口返回 HTTP 502（上游为何返回 502 尚未定位）",
+                "告警支持直接失败点，但上游原因尚未定位",
+                Confidence.LOW,
+                List.of(reported),
+                List.of("icare-product-mapping-502-present"),
+                List.of(), List.of(), List.of(new TimelineEvent(
+                        NOW, "受限调查形成待确认假设", "system", "done")));
     }
 
     private Diagnosis structuredImpactDiagnosis(int evidenceCustomerCount) {

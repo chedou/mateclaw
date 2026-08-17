@@ -83,7 +83,8 @@ class TroubleshootingClosureNotificationRendererTest {
                 DiagnosisStatus.CLOSED,
                 NorthStarTimings.concluded(
                         reportedAt, reportedAt.plusSeconds(30), reportedAt.plusSeconds(90)),
-                true);
+                true,
+                vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.RECORDED_REPLAY);
     }
 
     private ClosureRecord closure() {

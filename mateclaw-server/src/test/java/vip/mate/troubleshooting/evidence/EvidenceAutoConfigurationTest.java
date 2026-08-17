@@ -201,6 +201,7 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry("log_search", List.of("guance"))
                             .containsEntry("log_trace_bundle", List.of("guance"))
                             .containsEntry("contrast_sample", List.of("guance"))
+                            .containsEntry("external_api_http_failure", List.of("guance"))
                             .containsEntry("error_log_scan", List.of("guance"))
                             .containsEntry("monitor_event_scan", List.of("guance"))
                             .containsEntry("k8s_workload_health", List.of("guance"))
@@ -287,8 +288,9 @@ class EvidenceAutoConfigurationTest {
                                         "contrast_sample",
                                         "csdp-itgw-access-contrast")
                                 .containsEntry(
-                                        "error_log_scan",
-                                        "csdp-wechat-application-error-scan");
+                                        "external_api_http_failure",
+                                        "csdp-wechat-icare-mapping-http-failure")
+                                .doesNotContainKey("error_log_scan");
                     });
 
                     assertThat(guance.getBindings())
@@ -297,7 +299,6 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-message-send-trace-bundle",
                                     "csdp-message-send-contrast",
                                     "csdp-session-application-error-scan",
-                                    "csdp-wechat-application-error-scan",
                                     "csdp-monitor-event-scan",
                                     "csdp-k8s-workload-health",
                                     "csdp-cti-create-conversation-log-search",
@@ -306,7 +307,24 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-cti-create-conversation-failure-patterns",
                                     "csdp-itgw-access-log-search",
                                     "csdp-itgw-access-trace-bundle",
-                                    "csdp-itgw-access-contrast");
+                                    "csdp-itgw-access-contrast",
+                                    "csdp-wechat-icare-mapping-http-failure");
+                    EvidenceProperties.Binding icare502 = guance.getBindings()
+                            .get("csdp-wechat-icare-mapping-http-failure");
+                    assertThat(icare502.getSignalKind())
+                            .isEqualTo("external_api_http_failure");
+                    assertThat(icare502.getQueryTemplate())
+                            .contains(
+                                    "L::RE(`.*`)",
+                                    "csdp-wechat",
+                                    "get_icare_product_mapping",
+                                    "502",
+                                    "failure_count",
+                                    "affected_trace_count")
+                            .doesNotContain("{{search_term}}", "{{service}}", "{{url}}");
+                    assertThat(icare502.getConstantFields())
+                            .containsEntry("http_status", "502")
+                            .containsEntry("operation", "get_icare_product_mapping");
                     EvidenceProperties.Binding ctiSearch = guance.getBindings()
                             .get("csdp-cti-create-conversation-log-search");
                     assertThat(ctiSearch.getQueryTemplate())
@@ -459,12 +477,6 @@ class EvidenceAutoConfigurationTest {
                                     "{{window_span}}")
                             .doesNotContain("content", "host");
                     assertThat(errorScan.getQueryOptions().isDisableSampling()).isTrue();
-                    EvidenceProperties.Binding wechatErrorScan = guance.getBindings()
-                            .get("csdp-wechat-application-error-scan");
-                    assertThat(wechatErrorScan.getQueryTemplate())
-                            .contains("`service` = 'csdp-wechat'", "level:ERROR")
-                            .doesNotContain("csdp-session-service");
-
                     EvidenceProperties.Binding monitorScan = guance.getBindings()
                             .get("csdp-monitor-event-scan");
                     assertThat(monitorScan.getNamespace()).isEqualTo("E");

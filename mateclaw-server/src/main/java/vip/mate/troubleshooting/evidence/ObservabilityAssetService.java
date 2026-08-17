@@ -203,7 +203,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         Map<String, EvidenceProperties.Binding> boundContracts = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : safeEntries(rawBindings)) {
             String signal = safeScope(entry.getKey(), "signalKind");
-            if (!CanonicalEvidenceSchema.supports(signal)) {
+            if (!CanonicalEvidenceSchema.isExternallyRoutable(signal)) {
                 throw invalid("unknown signalKind '" + signal + "'");
             }
             if (signalBindings.containsKey(signal)) {
@@ -453,7 +453,7 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         List<ObservabilityAssetCatalogView.ContractOption> options = new ArrayList<>();
         for (EvidenceContractCatalogView.EvidenceContractView contract
                 : evidenceContracts.catalog(workspaceId, false).contracts()) {
-            if (!CanonicalEvidenceSchema.supports(contract.signalKind())) {
+            if (!CanonicalEvidenceSchema.isExternallyRoutable(contract.signalKind())) {
                 continue;
             }
             options.add(new ObservabilityAssetCatalogView.ContractOption(

@@ -147,6 +147,73 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void pastedOutboundHttpAlertKeepsOnlyReviewedRoutingFacts() {
+        String alert = """
+                告警应用：main
+                告警等级：error
+                告警标题：调用接口异常
+                错误详情：send opr request http code is not 200 code: 502, req:&amp;{AF}, url:https://csdp-applet.sangfor.com/api/csdp-wechat/scl/v1/external/get_icare_product_mapping
+                函数：github.com/csp/csp-service/v3/pkg/alertor.Log
+                github.com/csp/csp-service/v3/pkg/css/util.(CssClient).SendGeneralRequestWithHeaders
+                github.com/csp/csp-service/v3/pkg/css/partner.(partnerClient).ResolveProductLineMapping
+                github.com/csp/csp-service/v3/pkg/css/staff.(*partnerClient).ResolveProductLineMapping
+                文件：/data/qianliu-agent/workspace/5/devops_token/1216/pkg/alertor/client.go
+                代码行：315
+                告警时间：2026-08-17 19:20:40
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-http-502",
+                envelope("msg-http-502", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.AWAITING_INPUT, session.status());
+        assertEquals("调用接口异常（HTTP 502 · get_icare_product_mapping）", session.symptom());
+        assertEquals("csdp-wechat", session.service());
+        assertEquals("未知", session.customerRef());
+        assertEquals(Instant.parse("2026-08-17T11:20:40Z"), session.occurredAt());
+        assertNull(session.errorCode(), "HTTP status is not a CSDP business error code");
+        assertEquals(List.of("system"), session.missingFields());
+        assertFalse(session.symptom().contains("req:"));
+        assertFalse(session.symptom().contains("/data/"));
+        assertFalse(session.symptom().contains("https://"));
+    }
+
+    @Test
+    void anUnreviewedUrlCannotNominateAService() {
+        IntakeSession session = reducer.start(
+                "intake-unreviewed-url",
+                envelope(
+                        "msg-unreviewed-url",
+                        "告警标题：调用接口异常\n"
+                                + "错误详情：http code is not 200 code: 502, "
+                                + "url:https://attacker.example/api/csdp-wechat/get_mapping\n"
+                                + "告警时间：2026-08-17 19:20:40",
+                        List.of(),
+                        FIRST_MESSAGE_AT));
+
+        assertNull(session.service(), "arbitrary alert URLs cannot obtain deterministic route authority");
+        assertEquals("调用接口异常", session.symptom());
+        assertNull(session.errorCode());
+    }
+
+    @Test
+    void anotherOperationOnTheReviewedHostCannotNominateAService() {
+        IntakeSession session = reducer.start(
+                "intake-unreviewed-operation",
+                envelope(
+                        "msg-unreviewed-operation",
+                        "告警标题：调用接口异常\n"
+                                + "错误详情：http code is not 200 code: 502, "
+                                + "url:https://csdp-applet.sangfor.com/api/csdp-wechat/scl/v1/external/another_operation\n"
+                                + "告警时间：2026-08-17 19:20:40",
+                        List.of(),
+                        FIRST_MESSAGE_AT));
+
+        assertNull(session.service(), "an approved host cannot authorize an unreviewed operation");
+        assertEquals("调用接口异常", session.symptom());
+    }
+
+    @Test
     void pastedCsdpAlertExtractsAFourDigitBracketedBusinessCode() {
         String alert = """
                 客服数字化(WECHAT)-【客户-搜索用户名超限制】-事件

@@ -241,7 +241,8 @@ class TroubleshootingControllerProjectionTest {
                                 Instant.parse("2026-07-29T01:00:00Z"),
                                 Instant.parse("2026-07-29T01:00:02Z"),
                                 Instant.parse("2026-07-29T01:00:05Z")),
-                        true);
+                        true,
+                        DiagnosisExperienceProjection.EvidenceBasis.RECORDED_REPLAY);
         DiagnosisExperienceProjection.DeveloperEvidenceView developer =
                 new DiagnosisExperienceProjection.DeveloperEvidenceView(
                         "diag-1",

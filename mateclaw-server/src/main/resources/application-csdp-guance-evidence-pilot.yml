@@ -31,6 +31,7 @@ mateclaw:
           log_trace_bundle: [guance]
           contrast_sample: [guance]
           cti_failure_pattern_scan: [guance]
+          external_api_http_failure: [guance]
           error_log_scan: [guance]
           monitor_event_scan: [guance]
           k8s_workload_health: [guance]
@@ -86,12 +87,45 @@ mateclaw:
               log_search: csdp-itgw-access-log-search
               log_trace_bundle: csdp-itgw-access-trace-bundle
               contrast_sample: csdp-itgw-access-contrast
+              # 告警解析只决定要查这个语义工具；DQL 和
+              # 稳定操作名仍固定在服务端审核合同中。
+              external_api_http_failure: csdp-wechat-icare-mapping-http-failure
               # Generic bounded discovery may establish only the broad
               # application-error direction. Runtime stays MISSING until an
               # owner registers the exact deployment/namespace asset.
-              error_log_scan: csdp-wechat-application-error-scan
               monitor_event_scan: csdp-monitor-event-scan
         bindings:
+          # No-SOP bounded investigation for the reviewed csdp-wechat alert.
+          # It proves only the immediate failure point: this external mapping
+          # operation returned HTTP 502. It does not claim why the gateway or
+          # upstream returned 502, and it exposes no URL, request body or log.
+          csdp-wechat-icare-mapping-http-failure:
+            signal-kind: external_api_http_failure
+            namespace: L
+            summary: CSDP WeChat iCare 产品映射接口 502 聚合
+            scenario: 调用接口异常·iCare 产品映射
+            question: 故障窗口内产品映射接口是否真实出现 HTTP 502？
+            fixed-conditions:
+              - 日志源=观测云日志全 measurement（RE(.*)）
+              - 日志服务=csdp-wechat
+              - 操作=get_icare_product_mapping
+              - 返回状态=502
+              - 只返回聚合计数，不返回 URL、请求体、原始日志或关联 ID
+            max-rows: 1
+            query-template: >-
+              L::RE(`.*`):(count(*) as failure_count,count_distinct(`@trace_id`) as affected_trace_count)
+              { `service` = 'csdp-wechat' AND query_string(`message`, "get_icare_product_mapping AND http AND code AND 502") }
+            query-options:
+              max-point-count: 1
+              interval: 900
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            constant-fields:
+              http_status: "502"
+              operation: get_icare_product_mapping
+            field-aliases: {}
           # Real contract verified against csp-rpc-msg on 2026-07-31.
           # `message_send_failed` remains a server-owned scenario key; it is
           # never interpolated into DQL. The source filter is fixed here.
@@ -427,30 +461,6 @@ mateclaw:
             query-template: >-
               L::`csp-rpc-msg`:(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
               { `service` = 'csdp-session-service' AND query_string(`message`, "level:ERROR") }
-              [{{window_span}}::{{window_span}}]
-            query-options:
-              max-point-count: 720
-              interval: 10
-              align-time: true
-              series-limit: 20
-              disable-sampling: true
-              time-zone: Asia/Shanghai
-            field-aliases: {}
-          csdp-wechat-application-error-scan:
-            signal-kind: error_log_scan
-            namespace: L
-            summary: CSDP WeChat 服务 ERROR 聚合巡检
-            scenario: 应用错误日志巡检
-            question: 故障窗口内 csdp-wechat 出现了多少应用 ERROR，涉及多少条调用链？
-            fixed-conditions:
-              - 日志源=csp-rpc-msg
-              - 日志服务=csdp-wechat
-              - 业务日志级别=message JSON 中的 level:ERROR
-              - 仅返回聚合计数与最新关联 ID，不返回原始日志
-            max-rows: 1
-            query-template: >-
-              L::`csp-rpc-msg`:(count(*) as error_count,count_distinct(`@trace_id`) as affected_trace_count,last(`@trace_id`) as latest_trace_id)
-              { `service` = 'csdp-wechat' AND query_string(`message`, "level:ERROR") }
               [{{window_span}}::{{window_span}}]
             query-options:
               max-point-count: 720

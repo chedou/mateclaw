@@ -11,7 +11,6 @@ import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.Busines
 @Component
 public class TroubleshootingClosureNotificationRenderer {
 
-    private static final String FIXTURE_NOTICE = "Recorded Replay · 非真实观测云";
     private static final int MAX_NOTIFICATION_CHARS = 1_800;
 
     private final TroubleshootingChannelSummaryRenderer linkRenderer;
@@ -51,8 +50,9 @@ public class TroubleshootingClosureNotificationRenderer {
             body.append("\n能力边界：")
                     .append(channelText(summary.nextStep().capabilityBoundary(), 280));
         }
-        if (summary.fixtureMode()) {
-            body.append('\n').append(FIXTURE_NOTICE);
+        if (summary.evidenceBasis()
+                != vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.OBSERVED) {
+            body.append('\n').append(linkRenderer.fixtureNotice(summary));
         }
         String suffix = "\n正式工作台："
                 + channelText(linkRenderer.workbenchLink(summary.diagnosisId()), 360);

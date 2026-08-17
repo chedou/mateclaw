@@ -121,7 +121,7 @@ public class EvidenceContractService implements WorkspaceEvidenceContracts {
         }
         String contractRef = safeRef(declaration.contractRef(), "contractRef");
         String signalKind = safeRef(declaration.signalKind(), "signalKind");
-        if (!CanonicalEvidenceSchema.supports(signalKind)) {
+        if (!CanonicalEvidenceSchema.isExternallyRoutable(signalKind)) {
             throw invalid("unknown signalKind '" + signalKind + "'");
         }
         // normalize() lowercases; accept case-insensitive input, store canonical uppercase.

@@ -20,7 +20,7 @@ public final class EvidenceRouterReadOnlyTool implements ReadOnlyEvidenceTool {
             TOOL_KEY,
             VERSION,
             Capability.READ_EVIDENCE,
-            Set.copyOf(CanonicalEvidenceSchema.signalKinds()));
+            Set.copyOf(CanonicalEvidenceSchema.externallyRoutableSignalKinds()));
 
     public EvidenceRouterReadOnlyTool(EvidenceSourceRouter router) {
         this.router = router;

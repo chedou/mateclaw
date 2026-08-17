@@ -57,6 +57,10 @@ public final class InvestigationTraceProjector {
                     "failure_request_count", "classified_failure_request_count",
                     "missing_required_code_request_count",
                     "downstream_record_not_found_request_count")),
+            Map.entry("external_api_http_failure", Set.of(
+                    "failure_count", "affected_trace_count", "http_status", "operation")),
+            Map.entry("incident_reported_external_http_failure", Set.of(
+                    "failure_count", "http_status", "operation", "evidence_grade")),
             Map.entry("error_log_scan", Set.of(
                     "error_count", "affected_trace_count", "latest_trace_id")),
             Map.entry("monitor_event_scan", Set.of(

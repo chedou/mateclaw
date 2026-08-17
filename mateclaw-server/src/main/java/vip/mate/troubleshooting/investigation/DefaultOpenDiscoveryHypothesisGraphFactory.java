@@ -23,8 +23,24 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
         if (incident == null) {
             throw new IllegalArgumentException("incident is required");
         }
-        return HypothesisGraph.of(List.of(
-                new HypothesisGraph.Hypothesis(
+        List<HypothesisGraph.Hypothesis> hypotheses = new java.util.ArrayList<>();
+        if (ReviewedIncidentPolicy.isIcareProductMapping502(incident)) {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
+                    "icare-product-mapping-http-502",
+                    "直接失败点：iCare 产品映射外部接口返回 HTTP 502（上游为何返回 502 尚未定位）",
+                    140,
+                    List.of(questionWithTool(
+                            "open-discovery-icare-product-mapping-reported",
+                            140,
+                            IncidentReportReadOnlyTool.TOOL_KEY,
+                            IncidentReportReadOnlyTool.VERSION,
+                            IncidentReportReadOnlyTool.SIGNAL_KIND,
+                            "读取规范化告警中已经明确的失败点",
+                            "icare-product-mapping-502-present",
+                            "告警明确记录产品映射接口 HTTP 502",
+                            new Criterion.NumericGte("failure_count", 1)))));
+        } else {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
                         "application-errors",
                         "应用服务自身出现集中错误",
                         100,
@@ -35,8 +51,9 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "检查故障窗口内应用 ERROR 是否集中出现",
                                 "application-error-present",
                                 "应用 ERROR 数量大于零",
-                                new Criterion.NumericGte("error_count", 1)))),
-                new HypothesisGraph.Hypothesis(
+                                new Criterion.NumericGte("error_count", 1)))));
+        }
+        hypotheses.add(new HypothesisGraph.Hypothesis(
                         "runtime-health",
                         "Kubernetes 工作负载出现异常",
                         80,
@@ -47,12 +64,30 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "检查服务工作负载是否存在非运行容器",
                                 "runtime-unhealthy-container-present",
                                 "异常容器数量大于零",
-                                new Criterion.NumericGte("unhealthy_container_count", 1))))));
+                                new Criterion.NumericGte("unhealthy_container_count", 1)))));
+        return HypothesisGraph.of(hypotheses);
     }
 
     private HypothesisGraph.Question question(
             String id,
             int priority,
+            String signalKind,
+            String purpose,
+            String signal,
+            String description,
+            Criterion criterion) {
+        return questionWithTool(
+                id, priority,
+                EvidenceRouterReadOnlyTool.TOOL_KEY,
+                EvidenceRouterReadOnlyTool.VERSION,
+                signalKind, purpose, signal, description, criterion);
+    }
+
+    private HypothesisGraph.Question questionWithTool(
+            String id,
+            int priority,
+            String toolKey,
+            String toolVersion,
             String signalKind,
             String purpose,
             String signal,
@@ -68,8 +103,8 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
         return new HypothesisGraph.Question(
                 id,
                 priority,
-                EvidenceRouterReadOnlyTool.TOOL_KEY,
-                EvidenceRouterReadOnlyTool.VERSION,
+                toolKey,
+                toolVersion,
                 request,
                 new AnomalyCriterion(signal, id, description, criterion));
     }

@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.RouteAuthority;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DeveloperEvidenceView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.DraftView;
@@ -108,6 +109,9 @@ public class DiagnosisExperienceProjectionService {
         // that reached a verdict already had the layers it needed.
         List<SystemOnboardingGap> gaps =
                 conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE
+                        && diagnosis.evidence().stream()
+                                .noneMatch(item -> item.status()
+                                        != vip.mate.troubleshooting.model.EvidenceStatus.MISSING)
                         ? onboardingGaps.inspect(workspaceId, diagnosis.incident())
                         : List.of();
 
@@ -117,14 +121,15 @@ public class DiagnosisExperienceProjectionService {
                 headline(conclusionType),
                 businessRootCause(diagnosis, conclusionType),
                 narrative(diagnosis, conclusionType, gaps),
-                keyEvidence(evidenceFacts.contrast()),
+                keyEvidence(diagnosis, evidenceFacts.contrast()),
                 confidence,
                 problem(diagnosis),
                 impact,
                 nextStep(diagnosis, conclusionType, gaps),
                 diagnosis.status(),
                 diagnosis.timings(),
-                diagnosis.fixtureMode());
+                diagnosis.fixtureMode(),
+                evidenceBasis(diagnosis));
 
         capabilityLimits.add(WRITE_BOUNDARY);
         if (!diagnosis.timings().recorded()) {
@@ -266,6 +271,11 @@ public class DiagnosisExperienceProjectionService {
             return "这个系统还没有接入到可取证的状态，所以本次一条证据都没有采集到，"
                     + "也没有给出根因。下面列出的是配置缺口，不是报障人要补的材料。";
         }
+        if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE
+                && hasSuccessfulZeroMatchEvidence(diagnosis)) {
+            return "系统只读查询成功，数据源也正常返回，但没有找到支持当前候选的匹配记录。"
+                    + "告警内容只作为报障事实，系统没有把它直接升级成最终根因。";
+        }
         return switch (conclusionType) {
             // The Playbook author already wrote the explanation for this exact
             // failure; a generic template that says the rule matched tells the
@@ -293,10 +303,21 @@ public class DiagnosisExperienceProjectionService {
      * second code-to-Chinese table would only drift from the one the developer
      * view uses.</p>
      */
-    private String keyEvidence(ContrastView contrast) {
+    private String keyEvidence(Diagnosis diagnosis, ContrastView contrast) {
         if (contrast == null || !contrast.available()
                 || contrast.failedRequests() == null || contrast.normalRequests() == null) {
-            return null;
+            boolean reportedExternalFailure = isIcareProductMapping502(diagnosis)
+                    && diagnosis.evidence().stream()
+                    .anyMatch(item -> "incident_reported_external_http_failure"
+                            .equalsIgnoreCase(
+                                    vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                                            .detectSignalKind(item.observed()))
+                            && item.status()
+                                    != vip.mate.troubleshooting.model.EvidenceStatus.MISSING);
+            return reportedExternalFailure
+                    ? "告警已经明确：iCare 产品映射接口调用返回 HTTP 502。"
+                            + "这能确认直接失败点，但不能证明上游为什么返回 502。"
+                    : null;
         }
         return "异常 "
                 + contrast.failedRequests().requestsWithFeature()
@@ -305,6 +326,22 @@ public class DiagnosisExperienceProjectionService {
                 + contrast.normalRequests().requestsWithFeature()
                 + "/" + contrast.normalRequests().totalRequests()
                 + "。";
+    }
+
+    private EvidenceBasis evidenceBasis(Diagnosis diagnosis) {
+        boolean reported = isIcareProductMapping502(diagnosis)
+                && diagnosis.evidence().stream()
+                .anyMatch(item -> "incident_reported_external_http_failure".equalsIgnoreCase(
+                        vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                                .detectSignalKind(item.observed()))
+                        && item.status()
+                                != vip.mate.troubleshooting.model.EvidenceStatus.MISSING);
+        if (reported) {
+            return EvidenceBasis.REPORTED;
+        }
+        return diagnosis.fixtureMode()
+                ? EvidenceBasis.RECORDED_REPLAY
+                : EvidenceBasis.OBSERVED;
     }
 
     private String problem(Diagnosis diagnosis) {
@@ -336,15 +373,48 @@ public class DiagnosisExperienceProjectionService {
                     "排除结论",
                     "换用其他假设继续调查，不要把本结论作为根因处置。",
                     "这是排除不是定位；" + WRITE_BOUNDARY);
-            case HYPOTHESIS -> new NextStep(
-                    "下一步",
-                    "请 " + team + " 沿当前证据方向确认或证伪根因假设。",
-                    "当前仍是假设，需要人工确认；" + WRITE_BOUNDARY);
+            case HYPOTHESIS -> isIcareProductMapping502(diagnosis)
+                    ? new NextStep(
+                            "继续核对 502 上游原因",
+                            "直接失败点已明确：iCare 产品映射接口返回 HTTP 502。"
+                                    + "请 iCare 或网关负责人核对同一时间窗的上游日志与健康状态，"
+                                    + "并用关联 ID 将告警请求与上游响应连起来。",
+                            "当前只确认了直接失败点，未确认上游根因；" + WRITE_BOUNDARY)
+                    : new NextStep(
+                            "下一步",
+                            "请 " + team + " 沿当前证据方向确认或证伪根因假设。",
+                            "当前仍是假设，需要人工确认；" + WRITE_BOUNDARY);
             case INSUFFICIENT_EVIDENCE -> new NextStep(
-                    "下一步",
-                    "补齐缺失的日志、调用链或指标证据后重新调查。",
+                    isIcareProductMapping502(diagnosis) ? "继续核对 502 上游原因" : "下一步",
+                    isIcareProductMapping502(diagnosis)
+                            ? "已知失败点是 iCare 产品映射接口返回 HTTP 502；"
+                                    + "请先核对 Guance measurement/字段映射，再由 iCare 或网关负责人"
+                                    + "检查同一时间窗的上游日志与健康状态。"
+                            : "补齐缺失的日志、调用链或指标证据后重新调查。",
                     "证据不足，系统已弃权且没有给出根因；" + WRITE_BOUNDARY);
         };
+    }
+
+    private boolean hasSuccessfulZeroMatchEvidence(Diagnosis diagnosis) {
+        List<vip.mate.troubleshooting.model.EvidenceResult> available = diagnosis.evidence().stream()
+                .filter(item -> item.status()
+                        != vip.mate.troubleshooting.model.EvidenceStatus.MISSING)
+                .toList();
+        if (available.isEmpty()) {
+            return false;
+        }
+        List<Number> numbers = available.stream()
+                .flatMap(item -> item.observed().values().stream())
+                .filter(Number.class::isInstance)
+                .map(Number.class::cast)
+                .toList();
+        return !numbers.isEmpty()
+                && numbers.stream().allMatch(value -> value.doubleValue() == 0D);
+    }
+
+    private boolean isIcareProductMapping502(Diagnosis diagnosis) {
+        return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                .isIcareProductMapping502(diagnosis.incident());
     }
 
     /**

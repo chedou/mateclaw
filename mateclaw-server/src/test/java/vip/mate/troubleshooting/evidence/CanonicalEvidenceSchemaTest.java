@@ -10,6 +10,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CanonicalEvidenceSchemaTest {
 
     @Test
+    void incidentReportedFactsAreCanonicalButCannotBeExternallyRouted() {
+        assertThat(CanonicalEvidenceSchema.signalKinds())
+                .contains("incident_reported_external_http_failure");
+        assertThat(CanonicalEvidenceSchema.externallyRoutableSignalKinds())
+                .doesNotContain("incident_reported_external_http_failure");
+        assertThat(CanonicalEvidenceSchema.isExternallyRoutable(
+                "incident_reported_external_http_failure")).isFalse();
+        assertThat(CanonicalEvidenceSchema.isExternallyRoutable("error_log_scan")).isTrue();
+    }
+
+    @Test
     void acceptsACloudDialSyntheticProbeWithoutTreatingMissingDataAsHealth() {
         assertThat(CanonicalEvidenceSchema.supports("synthetic_probe")).isTrue();
         assertThat(CanonicalEvidenceSchema.isValid("synthetic_probe", Map.of(
@@ -97,6 +108,61 @@ class CanonicalEvidenceSchemaTest {
                 "missing_required_code_request_count", 0,
                 "downstream_record_not_found_request_count", 0)))
                 .as("the union cannot contain requests absent from every pattern set")
+                .isFalse();
+    }
+
+    @Test
+    void acceptsOnlyTheReviewedExternalApi502AggregateShape() {
+        assertThat(CanonicalEvidenceSchema.supports("external_api_http_failure")).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("external_api_http_failure", Map.of(
+                "failure_count", 3,
+                "affected_trace_count", 2,
+                "http_status", "502",
+                "operation", "get_icare_product_mapping"))).isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("external_api_http_failure", Map.of(
+                "failure_count", 1,
+                "affected_trace_count", 2,
+                "http_status", "502",
+                "operation", "get_icare_product_mapping")))
+                .as("distinct traces cannot exceed matching failures")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("external_api_http_failure", Map.of(
+                "failure_count", 3,
+                "affected_trace_count", 2,
+                "http_status", "503",
+                "operation", "get_icare_product_mapping")))
+                .as("a different status must use another reviewed contract")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("external_api_http_failure", Map.of(
+                "failure_count", 3,
+                "affected_trace_count", 2,
+                "http_status", "502",
+                "operation", "arbitrary_operation")))
+                .as("the caller cannot turn this narrow contract into a generic query")
+                .isFalse();
+    }
+
+    @Test
+    void keepsReportedAlertEvidenceDistinctFromSourceObservedHttpEvidence() {
+        Map<String, Object> reported = Map.of(
+                "failure_count", 1,
+                "http_status", "502",
+                "operation", "get_icare_product_mapping",
+                "evidence_grade", "REPORTED");
+
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_external_http_failure", reported)).isTrue();
+        assertThat(CanonicalEvidenceSchema.detectSignalKind(reported))
+                .isEqualTo("incident_reported_external_http_failure");
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_external_http_failure",
+                Map.of(
+                        "failure_count", 1,
+                        "http_status", "502",
+                        "operation", "get_icare_product_mapping",
+                        "evidence_grade", "OBSERVED")))
+                .as("incident input must not be upgraded to source-observed evidence")
                 .isFalse();
     }
 

@@ -91,6 +91,75 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
     }
 
     @Test
+    void preservesTheReviewedIcare502AlertAsReportedEvidenceBeforeCheckingObservability() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        ReadOnlyEvidenceTool observability = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        "canonical-evidence", "1", Capability.READ_EVIDENCE,
+                        Set.of("external_api_http_failure", "error_log_scan",
+                                "k8s_workload_health"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                return new EvidenceResult(
+                        request.requestId(), "unavailable", "", EvidenceStatus.MISSING,
+                        "asset not configured", Map.of(), "router:unconfigured", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service = new BoundedOpenDiscoveryInvestigationService(
+                properties,
+                new BoundedInvestigationPlanner(
+                        new ReadOnlyToolRegistry(
+                                List.of(new IncidentReportReadOnlyTool(), observability), CLOCK),
+                        new CriterionEvaluator(), CLOCK),
+                new DefaultOpenDiscoveryHypothesisGraphFactory(),
+                CLOCK);
+        IncidentContext alert = new IncidentContext(
+                "incident-502", "CSDP", "csdp-wechat", null,
+                "调用接口异常（HTTP 502 · get_icare_product_mapping）",
+                "P1", "客户受影响", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigate(1L, alert).orElseThrow();
+
+        assertThat(execution.finding().type()).isEqualTo(RootCauseFinding.Type.HYPOTHESIS);
+        assertThat(execution.finding().cause())
+                .isEqualTo("直接失败点：iCare 产品映射外部接口返回 HTTP 502（上游为何返回 502 尚未定位）");
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly(
+                        "incident_reported_external_http_failure",
+                        "k8s_workload_health");
+        assertThat(execution.evidence().getFirst().queryId())
+                .isEqualTo("open-discovery-icare-product-mapping-reported");
+        assertThat(execution.evidence().getFirst().source())
+                .isEqualTo("incident-report:normalized");
+    }
+
+    @Test
+    void doesNotAddTheNarrowIcareQuestionForOtherServicesOrIncompleteTitles() {
+        DefaultOpenDiscoveryHypothesisGraphFactory factory =
+                new DefaultOpenDiscoveryHypothesisGraphFactory();
+        IncidentContext other = new IncidentContext(
+                "incident-other", "CSDP", "csdp-task", null,
+                "调用接口异常（HTTP 502 · get_icare_product_mapping）",
+                "P1", "客户受影响", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+
+        assertThat(factory.create(other).nodes())
+                .extracting(HypothesisGraph.Node::hypothesisId)
+                .doesNotContain("icare-product-mapping-http-502");
+        assertThat(factory.create(incident()).nodes())
+                .extracting(HypothesisGraph.Node::hypothesisId)
+                .doesNotContain("icare-product-mapping-http-502");
+    }
+
+    @Test
     void planFingerprintChangesWhenWindowOrCriterionThresholdChanges() {
         HypothesisGraph first = graph("-15m", 1);
         HypothesisGraph changedWindow = graph("-30m", 1);

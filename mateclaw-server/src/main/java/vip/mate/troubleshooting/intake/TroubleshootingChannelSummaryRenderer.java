@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 public class TroubleshootingChannelSummaryRenderer {
 
     private static final String FIXTURE_NOTICE = "Recorded Replay · 非真实观测云";
+    private static final String REPORTED_NOTICE = "告警事实 · 未经真实观测数据验证";
 
     private final String workbenchBaseUrl;
 
@@ -34,7 +35,7 @@ public class TroubleshootingChannelSummaryRenderer {
                 .append(" · ")
                 .append(confidenceLabel(summary.confidence()));
         if (summary.rootCause() != null) {
-            text.append("\n根因：").append(summary.rootCause());
+            text.append('\n').append(causeLine(summary));
         } else {
             text.append('\n').append(summary.headline());
             if (!summary.narrative().isBlank()) {
@@ -48,12 +49,25 @@ public class TroubleshootingChannelSummaryRenderer {
         if (summary.nextStep().capabilityBoundary() != null) {
             text.append('\n').append(summary.nextStep().capabilityBoundary());
         }
-        if (summary.fixtureMode()) {
-            text.append('\n').append(FIXTURE_NOTICE);
+        if (summary.evidenceBasis()
+                != vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.OBSERVED) {
+            text.append('\n').append(fixtureNotice(summary));
         }
         text.append("\n详情：")
                 .append(workbenchLink(summary.diagnosisId()));
         return text.toString();
+    }
+
+    private String causeLine(BusinessSummary summary) {
+        return switch (summary.conclusionType()) {
+            case LOCATED -> "根因：" + summary.rootCause();
+            case HYPOTHESIS -> summary.evidenceBasis()
+                    == vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.REPORTED
+                    ? summary.rootCause()
+                    : "候选方向：" + summary.rootCause();
+            case EXCLUDED -> "已排除方向：" + summary.rootCause();
+            case INSUFFICIENT_EVIDENCE -> "尚未形成根因：" + summary.rootCause();
+        };
     }
 
     String conclusionLabel(ConclusionType conclusionType) {
@@ -70,6 +84,14 @@ public class TroubleshootingChannelSummaryRenderer {
             case HIGH -> "结论依据充分";
             case MEDIUM -> "结论依据有限";
             case LOW -> "仅供人工核查";
+        };
+    }
+
+    String fixtureNotice(BusinessSummary summary) {
+        return switch (summary.evidenceBasis()) {
+            case REPORTED -> REPORTED_NOTICE;
+            case RECORDED_REPLAY -> FIXTURE_NOTICE;
+            case OBSERVED -> "";
         };
     }
 

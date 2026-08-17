@@ -30,26 +30,30 @@ public final class TroubleshootingEvidenceModelProjector {
     private static final int MAX_SOURCE_CHARS = 256;
     private static final int MAX_FACT_STRING_CHARS = 256;
     private static final String TRUNCATION_MARKER = "...[TRUNCATED]";
-    private static final Map<String, Set<String>> MODEL_FACT_FIELDS = Map.of(
-            "log_count", Set.of("count", "trace_id"),
-            "metric", Set.of(
+    private static final Map<String, Set<String>> MODEL_FACT_FIELDS = Map.ofEntries(
+            Map.entry("log_count", Set.of("count", "trace_id")),
+            Map.entry("metric", Set.of(
                     "reachable", "connections_current", "connections_available",
-                    "slow_query_count", "baseline_slow"),
-            "trace", Set.of("failed_hop", "status", "duration_ms"),
-            "log_search", Set.of("match_count", "ps_id"),
-            "error_log_scan", Set.of(
-                    "error_count", "affected_trace_count", "latest_trace_id"),
-            "monitor_event_scan", Set.of(
-                    "event_count", "latest_status", "latest_checker"),
-            "k8s_workload_health", Set.of(
+                    "slow_query_count", "baseline_slow")),
+            Map.entry("trace", Set.of("failed_hop", "status", "duration_ms")),
+            Map.entry("log_search", Set.of("match_count", "ps_id")),
+            Map.entry("error_log_scan", Set.of(
+                    "error_count", "affected_trace_count", "latest_trace_id")),
+            Map.entry("external_api_http_failure", Set.of(
+                    "failure_count", "affected_trace_count", "http_status", "operation")),
+            Map.entry("incident_reported_external_http_failure", Set.of(
+                    "failure_count", "http_status", "operation", "evidence_grade")),
+            Map.entry("monitor_event_scan", Set.of(
+                    "event_count", "latest_status", "latest_checker")),
+            Map.entry("k8s_workload_health", Set.of(
                     "pod_count", "container_count", "running_container_count",
-                    "unhealthy_container_count", "max_cpu_percent", "max_memory_percent"),
-            "contrast_sample", Set.of(
+                    "unhealthy_container_count", "max_cpu_percent", "max_memory_percent")),
+            Map.entry("contrast_sample", Set.of(
                     "discriminating_feature", "failure_sample_count",
-                    "failure_match_count", "success_sample_count", "success_match_count"),
-            "incident_impact", Set.of(
+                    "failure_match_count", "success_sample_count", "success_match_count")),
+            Map.entry("incident_impact", Set.of(
                     "function_scope", "affected_customers", "affected_users",
-                    "blast_radius", "observed_at"));
+                    "blast_radius", "observed_at")));
 
     private final DeterministicLogTraceCompressor traceCompressor;
 

@@ -33,6 +33,8 @@ public class EvidenceQueryCatalogService {
                     "成功/失败样本对照", "失败样本与成功样本的稳定差异是什么？")),
             Map.entry("cti_failure_pattern_scan", new Presentation(
                     "CTI 失败请求分类", "同一批 CTI 告警里的独立失败请求命中了哪些已审核特征？")),
+            Map.entry("external_api_http_failure", new Presentation(
+                    "外部接口 HTTP 失败", "故障窗口内该外部接口出现了多少次 502，涉及多少条调用链？")),
             Map.entry("error_log_scan", new Presentation(
                     "错误日志巡检", "故障窗口内出现了多少应用 ERROR，涉及多少条链路？")),
             Map.entry("monitor_event_scan", new Presentation(
@@ -139,7 +141,7 @@ public class EvidenceQueryCatalogService {
     }
 
     private List<String> supportedSignals(EvidenceSourceAdapter adapter) {
-        return CanonicalEvidenceSchema.signalKinds().stream()
+        return CanonicalEvidenceSchema.externallyRoutableSignalKinds().stream()
                 .filter(signalKind -> safelySupports(adapter, signalKind))
                 .sorted()
                 .toList();

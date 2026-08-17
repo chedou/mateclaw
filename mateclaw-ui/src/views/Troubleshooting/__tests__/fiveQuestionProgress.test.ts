@@ -37,6 +37,7 @@ function business(overrides: Partial<BusinessSummary> = {}): BusinessSummary {
       adoptCost: null,
     },
     fixtureMode: false,
+    evidenceBasis: 'OBSERVED',
     ...overrides,
   }
 }

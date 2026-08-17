@@ -81,8 +81,11 @@ public final class BoundedOpenDiscoveryInvestigationService {
                         maxIterations,
                         maxToolCalls,
                         timeout,
-                        Set.of(EvidenceRouterReadOnlyTool.TOOL_KEY
-                                + "@" + EvidenceRouterReadOnlyTool.VERSION)),
+                        Set.of(
+                                EvidenceRouterReadOnlyTool.TOOL_KEY
+                                        + "@" + EvidenceRouterReadOnlyTool.VERSION,
+                                IncidentReportReadOnlyTool.TOOL_KEY
+                                        + "@" + IncidentReportReadOnlyTool.VERSION)),
                 platforms);
         return Optional.of(new Execution(
                 outcome,
