@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.evidence;
 import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -11,6 +12,7 @@ public record EvidenceSpinePlan(
         String searchRequestId,
         String traceRequestId,
         String contrastRequestId,
+        String ctiFailurePatternRequestId,
         String searchTerm,
         String window) {
 
@@ -24,13 +26,28 @@ public record EvidenceSpinePlan(
         searchRequestId = safeEvidenceId(searchRequestId, "searchRequestId");
         traceRequestId = safeEvidenceId(traceRequestId, "traceRequestId");
         contrastRequestId = safeEvidenceId(contrastRequestId, "contrastRequestId");
+        ctiFailurePatternRequestId = ctiFailurePatternRequestId == null
+                ? null : safeEvidenceId(
+                        ctiFailurePatternRequestId, "ctiFailurePatternRequestId");
         if (searchRequestId.equals(traceRequestId)
                 || searchRequestId.equals(contrastRequestId)
-                || traceRequestId.equals(contrastRequestId)) {
+                || traceRequestId.equals(contrastRequestId)
+                || ctiFailurePatternRequestId != null && Set.of(
+                        searchRequestId, traceRequestId, contrastRequestId)
+                        .contains(ctiFailurePatternRequestId)) {
             throw new IllegalArgumentException("evidence spine request ids must be unique");
         }
         searchTerm = safeTarget(searchTerm);
         window = safeWindow(window);
+    }
+
+    public EvidenceSpinePlan(
+            String searchRequestId,
+            String traceRequestId,
+            String contrastRequestId,
+            String searchTerm,
+            String window) {
+        this(searchRequestId, traceRequestId, contrastRequestId, null, searchTerm, window);
     }
 
     private static String safeEvidenceId(String value, String name) {

@@ -667,13 +667,13 @@
     },
     {
       "contractVersion": "manual-playbook-recorded-evidence-seed.v1",
-      "suiteId": "csdp-cti-create-conversation-failed/v1",
-      "suiteVersion": 1,
+      "suiteId": "csdp-cti-create-conversation-failed/v2",
+      "suiteVersion": 2,
       "selectorKey": "csdp:scenario:cti_create_conversation_failed",
       "requiredEvidenceRequestId": "CTI-LOG-SEARCH",
-      "sourceReference": "guance-aggregate-2026-08-07-cti-create-conversation-failed",
+      "sourceReference": "guance-aggregate-2026-08-17-cti-create-conversation-failed-v2",
       "exampleCandidate": {
-        "sopId": "manual-csdp-cti-create-conversation-failed-v1",
+        "sopId": "manual-csdp-cti-create-conversation-failed-v2",
         "contractVersion": "sop.v1",
         "system": "CSDP",
         "errorCode": "scenario:cti_create_conversation_failed",
@@ -712,6 +712,16 @@
             "target": {
               "scenario_key": "cti_create_conversation_failed",
               "exclude_ps_id": "synthetic-cti-trace-001"
+            },
+            "window": "-15m",
+            "required": false
+          },
+          {
+            "requestId": "CTI-FAILURE-PATTERNS",
+            "signalKind": "cti_failure_pattern_scan",
+            "purpose": "按独立请求统计同一告警窗口中的已知失败类型",
+            "target": {
+              "scenario_key": "cti_create_conversation_failed"
             },
             "window": "-15m",
             "required": false
@@ -792,6 +802,16 @@
               "failure_match_count": 1,
               "success_sample_count": 4,
               "success_match_count": 0
+            }
+          },
+          {
+            "requestId": "CTI-FAILURE-PATTERNS",
+            "status": "ANOMALY",
+            "observed": {
+              "failure_request_count": 2,
+              "classified_failure_request_count": 2,
+              "missing_required_code_request_count": 1,
+              "downstream_record_not_found_request_count": 1
             }
           }
         ]

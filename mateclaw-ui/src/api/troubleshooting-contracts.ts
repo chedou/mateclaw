@@ -896,6 +896,22 @@ export interface ComparisonGroupView {
   requestsWithFeature: number | string
 }
 
+export interface FailureGroupView {
+  code: string
+  label: string
+  requestCount: number | string
+}
+
+export interface FailureBreakdownView {
+  available: boolean
+  totalRequests: number | string
+  classifiedRequests: number | string
+  unclassifiedRequests: number | string
+  groups: FailureGroupView[]
+  note: string
+  evidenceRefs: string[]
+}
+
 export interface DraftView {
   draftId: string | null
   title: string
@@ -927,6 +943,8 @@ export interface DeveloperEvidenceView {
   draft: DraftView
   capabilityLimits: string[]
   fixtureMode: boolean
+  /** Absent on projections created by servers predating request-level grouping. */
+  failureBreakdown?: FailureBreakdownView
 }
 
 export interface DiagnosisExperienceProjection {
@@ -1489,6 +1507,7 @@ export interface EvidenceSpineTimings {
   logTraceDurationMs: number | null
   contrastDurationMs: number | null
   compressionDurationMs: number | null
+  supplementalDurationMs?: number | null
 }
 
 /** Guance-only, model-free and secret-free projection of the shared Evidence Spine. */

@@ -17,6 +17,7 @@ public record EvidenceSpineResult(
         EvidenceResult searchEvidence,
         EvidenceResult traceEvidence,
         EvidenceResult contrastEvidence,
+        EvidenceResult ctiFailurePatternEvidence,
         LogTraceSkeleton skeleton,
         int sourceRequestCount,
         EvidenceSpineTimings timings,
@@ -31,11 +32,31 @@ public record EvidenceSpineResult(
             EvidenceResult contrastEvidence,
             LogTraceSkeleton skeleton,
             int sourceRequestCount,
+            EvidenceSpineTimings timings,
             String coreFailure) {
         this(
                 searchEvidence,
                 traceEvidence,
                 contrastEvidence,
+                null,
+                skeleton,
+                sourceRequestCount,
+                timings,
+                coreFailure);
+    }
+
+    public EvidenceSpineResult(
+            EvidenceResult searchEvidence,
+            EvidenceResult traceEvidence,
+            EvidenceResult contrastEvidence,
+            LogTraceSkeleton skeleton,
+            int sourceRequestCount,
+            String coreFailure) {
+        this(
+                searchEvidence,
+                traceEvidence,
+                contrastEvidence,
+                null,
                 skeleton,
                 sourceRequestCount,
                 EvidenceSpineTimings.unmeasured(),
@@ -46,8 +67,8 @@ public record EvidenceSpineResult(
         if (searchEvidence == null) {
             throw new IllegalArgumentException("searchEvidence is required");
         }
-        if (sourceRequestCount < 1 || sourceRequestCount > 3) {
-            throw new IllegalArgumentException("sourceRequestCount must be between 1 and 3");
+        if (sourceRequestCount < 1 || sourceRequestCount > 4) {
+            throw new IllegalArgumentException("sourceRequestCount must be between 1 and 4");
         }
         timings = timings == null ? EvidenceSpineTimings.unmeasured() : timings;
         coreFailure = coreFailure == null || coreFailure.isBlank()
@@ -67,13 +88,16 @@ public record EvidenceSpineResult(
     }
 
     public List<EvidenceResult> evidence() {
-        List<EvidenceResult> result = new ArrayList<>(3);
+        List<EvidenceResult> result = new ArrayList<>(4);
         result.add(persistenceSafeSearch());
         if (traceEvidence != null) {
             result.add(persistenceSafeTrace());
         }
         if (contrastEvidence != null) {
             result.add(persistenceSafeContrast());
+        }
+        if (ctiFailurePatternEvidence != null) {
+            result.add(persistenceSafeFailurePatterns());
         }
         return List.copyOf(result);
     }
@@ -140,6 +164,21 @@ public record EvidenceSpineResult(
                 "bounded comparison aggregates; source queries and rows withheld",
                 observed,
                 contrastEvidence.status());
+    }
+
+    private EvidenceResult persistenceSafeFailurePatterns() {
+        Map<String, Object> observed = copyAllowListed(
+                ctiFailurePatternEvidence.observed(),
+                List.of(
+                        "failure_request_count",
+                        "classified_failure_request_count",
+                        "missing_required_code_request_count",
+                        "downstream_record_not_found_request_count"));
+        return safeCopy(
+                ctiFailurePatternEvidence,
+                "bounded request-level failure pattern counts; source queries and rows withheld",
+                observed,
+                ctiFailurePatternEvidence.status());
     }
 
     private Map<String, Object> copyAllowListed(

@@ -194,8 +194,32 @@ public final class EvidenceSpineOrchestrator {
                 traceDurationMs,
                 contrastDurationMs,
                 compressionDurationMs);
+        EvidenceResult failurePatterns = null;
+        int sourceRequestCount = 3;
+        if (plan.ctiFailurePatternRequestId() != null) {
+            EvidenceRequest failurePatternRequest = new EvidenceRequest(
+                    plan.ctiFailurePatternRequestId(),
+                    "cti_failure_pattern_scan",
+                    "count distinct failed requests by reviewed failure pattern",
+                    Map.of("scenario_key", plan.searchTerm()),
+                    plan.window(),
+                    false);
+            runControl.beforeSourceRequest(failurePatternRequest.requestId());
+            long failurePatternStarted = ticker.getAsLong();
+            failurePatterns = collectCanonical(
+                    workspaceId, failurePatternRequest, incident, permittedPlatforms);
+            long failurePatternDurationMs = elapsedMillis(failurePatternStarted);
+            timings = new EvidenceSpineTimings(
+                    searchDurationMs,
+                    traceDurationMs,
+                    contrastDurationMs,
+                    compressionDurationMs,
+                    failurePatternDurationMs);
+            sourceRequestCount = 4;
+        }
         return new EvidenceSpineResult(
-                search, trace, contrast, skeleton, 3, timings, null);
+                search, trace, contrast, failurePatterns, skeleton,
+                sourceRequestCount, timings, null);
     }
 
     private EvidenceSpineRunControl requireControl(EvidenceSpineRunControl runControl) {
@@ -212,7 +236,7 @@ public final class EvidenceSpineOrchestrator {
             EvidenceSpineTimings timings,
             String reason) {
         return new EvidenceSpineResult(
-                search, trace, null, null, requestCount, timings, reason);
+                search, trace, null, null, null, requestCount, timings, reason);
     }
 
     private EvidenceResult collectCanonical(

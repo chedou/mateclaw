@@ -267,7 +267,10 @@ class EvidenceAutoConfigurationTest {
                                         "csdp-cti-create-conversation-trace-bundle")
                                 .containsEntry(
                                         "contrast_sample",
-                                        "csdp-cti-create-conversation-contrast");
+                                        "csdp-cti-create-conversation-contrast")
+                                .containsEntry(
+                                        "cti_failure_pattern_scan",
+                                        "csdp-cti-create-conversation-failure-patterns");
                     });
                     assertThat(guance.getAssetBindings().get(2)).satisfies(asset -> {
                         assertThat(asset.getWorkspaceId()).isEqualTo(1L);
@@ -300,6 +303,7 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-cti-create-conversation-log-search",
                                     "csdp-cti-create-conversation-trace-bundle",
                                     "csdp-cti-create-conversation-contrast",
+                                    "csdp-cti-create-conversation-failure-patterns",
                                     "csdp-itgw-access-log-search",
                                     "csdp-itgw-access-trace-bundle",
                                     "csdp-itgw-access-contrast");
@@ -347,6 +351,17 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry(
                                     "discriminating_feature",
                                     "inner_701022_on_failed_trace");
+                    EvidenceProperties.Binding ctiPatterns = guance.getBindings()
+                            .get("csdp-cti-create-conversation-failure-patterns");
+                    assertThat(ctiPatterns.getMaxRows()).isEqualTo(200);
+                    assertThat(ctiPatterns.getQueryTemplates()).hasSize(3);
+                    assertThat(ctiPatterns.getQueryTemplates())
+                            .allMatch(query -> query.contains("csdp-task")
+                                    && query.contains("@trace_id"))
+                            .anyMatch(query -> query.contains("@code")
+                                    && query.contains("701018"))
+                            .anyMatch(query -> query.contains("code cannot be empty"))
+                            .anyMatch(query -> query.contains("RecordNotFoundError"));
                     EvidenceProperties.Binding itgwSearch = guance.getBindings()
                             .get("csdp-itgw-access-log-search");
                     assertThat(itgwSearch.getQueryTemplate())

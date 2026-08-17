@@ -8,16 +8,21 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlanResolver;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.ApprovalStatus;
 import vip.mate.troubleshooting.model.ExecutionStatus;
+import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.KnowledgeEvidenceGrade;
 import vip.mate.troubleshooting.model.RecommendedAction;
 import vip.mate.troubleshooting.model.SopEntry;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ManualPlaybookReplaySuiteCatalogTest {
 
@@ -92,7 +97,7 @@ class ManualPlaybookReplaySuiteCatalogTest {
     }
 
     @Test
-    void theCtiCreateConversationScenarioIsARecordedThreeStepPlaybook() {
+    void theCtiCreateConversationScenarioIncludesRequestLevelFailureGrouping() {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         ManualPlaybookReplaySuiteCatalog catalog =
                 new ManualPlaybookReplaySuiteCatalog(
@@ -111,7 +116,12 @@ class ManualPlaybookReplaySuiteCatalogTest {
         assertThat(candidate.service()).isEqualTo("csdp-task");
         assertThat(candidate.evidenceRequests())
                 .extracting(request -> request.signalKind())
-                .containsExactly("log_search", "log_trace_bundle", "contrast_sample");
+                .containsExactly(
+                        "log_search", "log_trace_bundle", "contrast_sample",
+                        "cti_failure_pattern_scan");
+        EvidenceSpinePlan plan = EvidenceSpinePlanResolver.resolve(candidate);
+        assertThat(plan).isNotNull();
+        assertThat(plan.ctiFailurePatternRequestId()).isEqualTo("CTI-FAILURE-PATTERNS");
         assertThat(candidate.diagnosisRules()).singleElement()
                 .satisfies(rule -> {
                     assertThat(rule.confidence().name()).isEqualTo("LOW");
@@ -128,6 +138,44 @@ class ManualPlaybookReplaySuiteCatalogTest {
                         ManualPlaybookReplaySuite.Disposition.MATCHED,
                         ManualPlaybookReplaySuite.Disposition.EXCLUDED,
                         ManualPlaybookReplaySuite.Disposition.ABSTAINED);
+
+        EvidenceRequest patternRequest = candidate.evidenceRequests().get(3);
+        SopEntry requiredPattern = copyWithLastEvidenceRequest(
+                candidate,
+                new EvidenceRequest(
+                        patternRequest.requestId(), patternRequest.signalKind(),
+                        patternRequest.purpose(), patternRequest.target(),
+                        patternRequest.window(), true));
+        assertThatThrownBy(() -> EvidenceSpinePlanResolver.resolve(requiredPattern))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must remain optional");
+
+        SopEntry inventedTarget = copyWithLastEvidenceRequest(
+                candidate,
+                new EvidenceRequest(
+                        patternRequest.requestId(), patternRequest.signalKind(),
+                        patternRequest.purpose(),
+                        Map.of(
+                                "scenario_key", "cti_create_conversation_failed",
+                                "invented", "value"),
+                        patternRequest.window(), false));
+        assertThatThrownBy(() -> EvidenceSpinePlanResolver.resolve(inventedTarget))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must match");
+    }
+
+    private SopEntry copyWithLastEvidenceRequest(
+            SopEntry candidate,
+            EvidenceRequest replacement) {
+        List<EvidenceRequest> requests = new java.util.ArrayList<>(candidate.evidenceRequests());
+        requests.set(requests.size() - 1, replacement);
+        return new SopEntry(
+                candidate.sopId(), candidate.contractVersion(), candidate.system(),
+                candidate.errorCode(), candidate.service(), candidate.title(),
+                candidate.cause(), candidate.category(), candidate.ownerTeam(),
+                candidate.status(), candidate.verified(), requests,
+                candidate.anomalyCriteria(), candidate.diagnosisRules(),
+                candidate.actions(), candidate.symptomTriggers());
     }
 
     @Test

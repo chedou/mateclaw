@@ -151,7 +151,8 @@ public class DiagnosisExperienceProjectionService {
                 evidenceFacts.contrast(),
                 draft(diagnosis),
                 plainCapabilityLimits(capabilityLimits),
-                diagnosis.fixtureMode());
+                diagnosis.fixtureMode(),
+                evidenceFacts.failureBreakdown());
 
         return new DiagnosisExperienceProjection(business, developer);
     }

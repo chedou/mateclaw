@@ -156,7 +156,8 @@ public record DiagnosisExperienceProjection(
             ContrastView contrast,
             DraftView draft,
             List<String> capabilityLimits,
-            boolean fixtureMode) {
+            boolean fixtureMode,
+            FailureBreakdownView failureBreakdown) {
 
         public DeveloperEvidenceView {
             diagnosisId = required(diagnosisId, "diagnosisId");
@@ -187,10 +188,36 @@ public record DiagnosisExperienceProjection(
                     scenarioAffordances == null ? List.of() : scenarioAffordances);
             capabilityLimits = List.copyOf(
                     capabilityLimits == null ? List.of() : capabilityLimits);
+            failureBreakdown = failureBreakdown == null
+                    ? FailureBreakdownView.unavailable()
+                    : failureBreakdown;
             if (scenarioAffordances.stream().map(ScenarioAffordance::scenarioKey).distinct()
                     .count() != scenarioAffordances.size()) {
                 throw new IllegalArgumentException("scenarioAffordances must have unique scenarioKey");
             }
+        }
+
+        /** Compatibility shape for projections created before failure grouping. */
+        public DeveloperEvidenceView(
+                String diagnosisId,
+                InvestigationMode investigationMode,
+                RouteAuthority routeAuthority,
+                RouteSemanticsProvenance routeSemanticsProvenance,
+                String playbookRef,
+                KnowledgeEvidenceGrade knowledgeEvidenceGrade,
+                List<ScenarioAffordance> scenarioAffordances,
+                CallChainView callChain,
+                List<EvidenceStep> steps,
+                InvestigationTraceView investigationTrace,
+                ContrastView contrast,
+                DraftView draft,
+                List<String> capabilityLimits,
+                boolean fixtureMode) {
+            this(
+                    diagnosisId, investigationMode, routeAuthority,
+                    routeSemanticsProvenance, playbookRef, knowledgeEvidenceGrade,
+                    scenarioAffordances, callChain, steps, investigationTrace,
+                    contrast, draft, capabilityLimits, fixtureMode, null);
         }
 
         /** Compatibility shape for projections created before the seven-stage trace. */
@@ -222,7 +249,8 @@ public record DiagnosisExperienceProjection(
                     contrast,
                     draft,
                     capabilityLimits,
-                    fixtureMode);
+                    fixtureMode,
+                    null);
         }
 
         /** Compatibility shape for projections created before T0.9. */
@@ -253,13 +281,75 @@ public record DiagnosisExperienceProjection(
                     contrast,
                     draft,
                     capabilityLimits,
-                    fixtureMode);
+                    fixtureMode,
+                    null);
         }
 
         /** True when the named scenario is offered on this diagnosis and still required. */
         public boolean requiresScenario(String scenarioKey) {
             return scenarioAffordances.stream()
                     .anyMatch(item -> item.scenarioKey().equals(scenarioKey) && item.required());
+        }
+    }
+
+    public record FailureBreakdownView(
+            boolean available,
+            long totalRequests,
+            long classifiedRequests,
+            long unclassifiedRequests,
+            List<FailureGroupView> groups,
+            String note,
+            List<String> evidenceRefs) {
+
+        public FailureBreakdownView {
+            groups = List.copyOf(groups == null ? List.of() : groups);
+            note = required(note, "note");
+            evidenceRefs = List.copyOf(evidenceRefs == null ? List.of() : evidenceRefs);
+            long projectedTotal;
+            long groupedTotal;
+            try {
+                projectedTotal = Math.addExact(classifiedRequests, unclassifiedRequests);
+                groupedTotal = groups.stream()
+                        .mapToLong(FailureGroupView::requestCount)
+                        .reduce(0L, Math::addExact);
+            } catch (ArithmeticException overflow) {
+                throw new IllegalArgumentException(
+                        "failure breakdown counts are inconsistent", overflow);
+            }
+            long largestGroup = groups.stream()
+                    .mapToLong(FailureGroupView::requestCount)
+                    .max()
+                    .orElse(0L);
+            if (totalRequests < 0 || classifiedRequests < 0 || unclassifiedRequests < 0
+                    || projectedTotal != totalRequests || largestGroup > classifiedRequests
+                    || classifiedRequests > groupedTotal) {
+                throw new IllegalArgumentException("failure breakdown counts are inconsistent");
+            }
+            if (available && (totalRequests == 0 || evidenceRefs.isEmpty())) {
+                throw new IllegalArgumentException(
+                        "an available failure breakdown requires requests and evidence refs");
+            }
+            if (!available && (totalRequests != 0 || !groups.isEmpty()
+                    || !evidenceRefs.isEmpty())) {
+                throw new IllegalArgumentException(
+                        "an unavailable failure breakdown must not invent measurements");
+            }
+        }
+
+        public static FailureBreakdownView unavailable() {
+            return new FailureBreakdownView(
+                    false, 0, 0, 0, List.of(),
+                    "本次排障没有记录请求级失败分类。", List.of());
+        }
+    }
+
+    public record FailureGroupView(String code, String label, long requestCount) {
+        public FailureGroupView {
+            code = required(code, "code");
+            label = required(label, "label");
+            if (requestCount <= 0) {
+                throw new IllegalArgumentException("requestCount must be positive");
+            }
         }
     }
 

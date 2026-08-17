@@ -30,6 +30,7 @@ mateclaw:
           log_search: [guance]
           log_trace_bundle: [guance]
           contrast_sample: [guance]
+          cti_failure_pattern_scan: [guance]
           error_log_scan: [guance]
           monitor_event_scan: [guance]
           k8s_workload_health: [guance]
@@ -74,6 +75,7 @@ mateclaw:
               log_search: csdp-cti-create-conversation-log-search
               log_trace_bundle: csdp-cti-create-conversation-trace-bundle
               contrast_sample: csdp-cti-create-conversation-contrast
+              cti_failure_pattern_scan: csdp-cti-create-conversation-failure-patterns
           # ITGW 904003 已在 2026-08-07 17:12 的 csdp-wechat 告警窗口
           # 验证。告警给出的集群仅作为事件元数据保留；Guance 合同只使用
           # 已验证的 service 和错误码字段，不猜测 cluster 字段映射。
@@ -268,6 +270,32 @@ mateclaw:
               time-zone: Asia/Shanghai
             constant-fields:
               discriminating_feature: inner_701022_on_failed_trace
+          csdp-cti-create-conversation-failure-patterns:
+            signal-kind: cti_failure_pattern_scan
+            namespace: L
+            summary: CSDP CTI 创建会话失败请求分类
+            scenario: CTI 创建会话失败
+            question: 同一告警窗口内的失败请求是否属于不同的已知失败模式？
+            fixed-conditions:
+              - 只统计日志服务=csdp-task 的独立关联 ID
+              - 总失败请求=外层 @code 701018 的 distinct trace
+              - 失败请求集=外层 @code 701018 的有界关联 ID 集合
+              - 缺少业务编码候选集=同一窗口中命中 code cannot be empty 的关联 ID
+              - 下游记录未找到候选集=同一窗口中命中 RecordNotFoundError 或 cache is not found 的关联 ID
+              - MateClaw 只在内存中用失败请求集与两个候选集求交，随后丢弃所有关联 ID
+              - 同一请求可同时命中多条线索；已识别请求使用并集计数，各类计数不相加
+              - 只返回请求级计数，不返回关联 ID、查询文本或日志正文
+            max-rows: 200
+            query-templates:
+              - >-
+                L::RE(`.*`):(`@trace_id`)
+                { `service` = 'csdp-task' AND `@code` = 701018 }
+              - >-
+                L::RE(`.*`):(`@trace_id`)
+                { `service` = 'csdp-task' AND `@msg` =~ '.*code cannot be empty.*' }
+              - >-
+                L::RE(`.*`):(`@trace_id`)
+                { `service` = 'csdp-task' AND (`@msg` =~ '.*RecordNotFoundError.*' OR `@msg` =~ '.*cache is not found.*') }
             field-aliases: {}
           # 904003 contracts are bounded to the alert's own absolute timeRange.
           # Only aggregate counts and the latest correlation ID leave Guance;

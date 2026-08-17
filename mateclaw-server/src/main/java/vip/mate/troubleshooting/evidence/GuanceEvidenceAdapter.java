@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import vip.mate.troubleshooting.TroubleshootingEvidenceSanitizer;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -928,6 +929,9 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (!data.isArray()) {
             throw new GuanceResponseException("data array missing");
         }
+        if ("cti_failure_pattern_scan".equals(normalizeKey(signalKind))) {
+            return normalizeCtiFailurePatternSets(data, binding, signalKind);
+        }
         for (JsonNode dataset : data) {
             List<JsonNode> populatedSeries = new ArrayList<>();
             JsonNode series = dataset.path("series");
@@ -958,6 +962,101 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             return normalizeScalar(populatedDatasets.getFirst(), binding, signalKind);
         }
         return normalizeCompoundScalar(populatedDatasets, binding, signalKind);
+    }
+
+    /**
+     * Intersects bounded correlation-id sets in memory and returns counts only.
+     * The identifiers never leave this method, enter an EvidenceResult, or reach
+     * logs/audit/UI. This is deliberately CTI-specific until another scenario
+     * proves a reusable pattern vocabulary.
+     */
+    private Map<String, Object> normalizeCtiFailurePatternSets(
+            JsonNode data,
+            EvidenceProperties.Binding binding,
+            String signalKind) {
+        if (data.size() != 3) {
+            return withhold(signalKind, "cti_pattern_dataset_count_invalid");
+        }
+        List<Set<String>> correlationSets = new ArrayList<>(3);
+        for (JsonNode dataset : data) {
+            Set<String> ids = boundedCorrelationIds(dataset, binding.getMaxRows());
+            if (ids == null) {
+                return withhold(signalKind, "cti_pattern_correlation_set_invalid");
+            }
+            correlationSets.add(ids);
+        }
+
+        Set<String> failed = correlationSets.get(0);
+        Set<String> missingRequiredCode = intersection(failed, correlationSets.get(1));
+        Set<String> downstreamRecordNotFound = intersection(failed, correlationSets.get(2));
+        Set<String> classified = new LinkedHashSet<>(missingRequiredCode);
+        classified.addAll(downstreamRecordNotFound);
+
+        Map<String, Object> observed = Map.of(
+                "failure_request_count", failed.size(),
+                "classified_failure_request_count", classified.size(),
+                "missing_required_code_request_count", missingRequiredCode.size(),
+                "downstream_record_not_found_request_count",
+                downstreamRecordNotFound.size());
+        return CanonicalEvidenceSchema.isValid(signalKind, observed)
+                ? observed
+                : withhold(signalKind, "cti_pattern_count_contract_invalid");
+    }
+
+    private Set<String> boundedCorrelationIds(JsonNode dataset, int maxRows) {
+        JsonNode series = dataset.path("series");
+        if (!series.isArray()) {
+            return null;
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        int rowCount = 0;
+        for (JsonNode item : series) {
+            JsonNode columns = item.path("columns");
+            JsonNode values = item.path("values");
+            if (!columns.isArray() || !values.isArray()) {
+                return null;
+            }
+            int traceIndex = correlationIdColumn(columns);
+            if (traceIndex < 0) {
+                return null;
+            }
+            for (JsonNode row : values) {
+                rowCount++;
+                if (rowCount > maxRows || !row.isArray() || row.size() <= traceIndex) {
+                    return null;
+                }
+                JsonNode value = row.get(traceIndex);
+                String id = value == null || value.isNull() ? "" : value.asText("").trim();
+                if (!TroubleshootingEvidenceSanitizer.isSafeEvidenceId(id)) {
+                    return null;
+                }
+                ids.add(id);
+            }
+        }
+        return Set.copyOf(ids);
+    }
+
+    private int correlationIdColumn(JsonNode columns) {
+        int index = -1;
+        for (int candidate = 0; candidate < columns.size(); candidate++) {
+            String normalized = columns.get(candidate).asText("")
+                    .toLowerCase(Locale.ROOT)
+                    .replaceAll("[^a-z0-9]", "");
+            if (!normalized.endsWith("traceid")) {
+                continue;
+            }
+            if (index >= 0) {
+                return -1;
+            }
+            index = candidate;
+        }
+        return index;
+    }
+
+    private Set<String> intersection(Set<String> left, Set<String> right) {
+        Set<String> result = new LinkedHashSet<>(left);
+        result.retainAll(right);
+        return Set.copyOf(result);
     }
 
     private Map<String, Object> normalizeScalar(

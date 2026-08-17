@@ -28,6 +28,29 @@
       <section v-else class="investigation-trace-panel empty-evidence">本次排障过程 · 未记录</section>
 
       <div class="evidence-main">
+        <section
+          v-if="failureBreakdown.available"
+          class="failure-breakdown"
+        >
+          <div class="section-head">
+            <div>
+              <span class="section-label">同一批告警里有几类问题</span>
+              <h3>{{ failureBreakdown.totalRequests }} 个失败请求，识别出 {{ failureBreakdown.groups.length }} 类线索</h3>
+              <p>系统先按请求分开，再按已审核特征归类；不是把多种问题压成一个根因。</p>
+            </div>
+          </div>
+          <div class="failure-group-list">
+            <article v-for="group in failureBreakdown.groups" :key="group.code">
+              <b>{{ group.label }}</b>
+              <strong>{{ group.requestCount }} 个请求</strong>
+            </article>
+          </div>
+          <p v-if="failureBreakdown.unclassifiedRequests">
+            还有 {{ failureBreakdown.unclassifiedRequests }} 个请求尚未归类，平台不会强行判断原因。
+          </p>
+          <small>{{ failureBreakdown.note }}</small>
+        </section>
+
         <section class="trace-summary">
           <div class="section-head chain-head">
             <div>
@@ -288,6 +311,18 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const failureBreakdown = computed(() => (
+  props.developer?.failureBreakdown ?? {
+    available: false,
+    totalRequests: 0,
+    classifiedRequests: 0,
+    unclassifiedRequests: 0,
+    groups: [],
+    note: '本次排障没有记录请求级失败分类。',
+    evidenceRefs: [],
+  }
+))
+
 defineEmits<{
   openDataSourceValidation: []
   openEvaluation: []
@@ -417,6 +452,13 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 
 /* ── Fact-first log summary ── */
 .trace-summary { padding:18px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg); }
+.failure-breakdown { padding:18px; border:1px solid color-mix(in srgb,var(--mc-primary) 30%,var(--mc-border)); border-radius:var(--mc-radius-sm); background:color-mix(in srgb,var(--mc-primary) 5%,var(--mc-bg)); }
+.failure-breakdown .section-head p { margin:6px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
+.failure-group-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; margin-top:14px; }
+.failure-group-list article { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-xs); background:var(--mc-bg-elevated); }
+.failure-group-list b { font-size:var(--mc-text-sm); line-height:1.45; }
+.failure-group-list strong { flex:none; color:var(--mc-primary); font-size:var(--mc-text-xs); }
+.failure-breakdown>p,.failure-breakdown>small { display:block; margin:10px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.55; }
 .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .section-head h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 .section-head>code { color:var(--mc-primary); font-size:var(--mc-text-xs); }

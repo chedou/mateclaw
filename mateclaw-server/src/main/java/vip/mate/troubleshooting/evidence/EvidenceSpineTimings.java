@@ -12,13 +12,15 @@ public record EvidenceSpineTimings(
         Long logSearchDurationMs,
         Long logTraceDurationMs,
         Long contrastDurationMs,
-        Long compressionDurationMs) {
+        Long compressionDurationMs,
+        Long supplementalDurationMs) {
 
     public EvidenceSpineTimings {
         nonNegative(logSearchDurationMs, "logSearchDurationMs");
         nonNegative(logTraceDurationMs, "logTraceDurationMs");
         nonNegative(contrastDurationMs, "contrastDurationMs");
         nonNegative(compressionDurationMs, "compressionDurationMs");
+        nonNegative(supplementalDurationMs, "supplementalDurationMs");
         if (logTraceDurationMs != null && logSearchDurationMs == null) {
             throw new IllegalArgumentException(
                     "log trace timing requires a preceding log search timing");
@@ -34,8 +36,22 @@ public record EvidenceSpineTimings(
         }
     }
 
+    /** Compatibility constructor for core three-stage Evidence Spine callers. */
+    public EvidenceSpineTimings(
+            Long logSearchDurationMs,
+            Long logTraceDurationMs,
+            Long contrastDurationMs,
+            Long compressionDurationMs) {
+        this(
+                logSearchDurationMs,
+                logTraceDurationMs,
+                contrastDurationMs,
+                compressionDurationMs,
+                null);
+    }
+
     public static EvidenceSpineTimings unmeasured() {
-        return new EvidenceSpineTimings(null, null, null, null);
+        return new EvidenceSpineTimings(null, null, null, null, null);
     }
 
     /** True only when all three source round trips and deterministic compression were measured. */
@@ -46,16 +62,22 @@ public record EvidenceSpineTimings(
                 && compressionDurationMs != null;
     }
 
-    /** Sum of the three source round trips, or null when the full source chain was not measured. */
+    /**
+     * Sum of the three core source round trips plus an optional reviewed
+     * supplemental lookup, or null when the full core chain was not measured.
+     */
     public Long evidenceAcquisitionDurationMs() {
         if (logSearchDurationMs == null
                 || logTraceDurationMs == null
                 || contrastDurationMs == null) {
             return null;
         }
-        return Math.addExact(
+        long core = Math.addExact(
                 Math.addExact(logSearchDurationMs, logTraceDurationMs),
                 contrastDurationMs);
+        return supplementalDurationMs == null
+                ? core
+                : Math.addExact(core, supplementalDurationMs);
     }
 
     /** Measured source round trips plus deterministic compression, excluding outer overhead. */
@@ -74,7 +96,8 @@ public record EvidenceSpineTimings(
                 logSearchDurationMs,
                 logTraceDurationMs,
                 contrastDurationMs,
-                compressionDurationMs}) {
+                compressionDurationMs,
+                supplementalDurationMs}) {
             if (value != null) {
                 total = Math.addExact(total, value);
             }

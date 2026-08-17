@@ -51,6 +51,11 @@ public final class CanonicalEvidenceSchema {
                     "failure_match_count", FieldType.NUMBER,
                     "success_sample_count", FieldType.NUMBER,
                     "success_match_count", FieldType.NUMBER))),
+            Map.entry("cti_failure_pattern_scan", scalar(Map.of(
+                    "failure_request_count", FieldType.NUMBER,
+                    "classified_failure_request_count", FieldType.NUMBER,
+                    "missing_required_code_request_count", FieldType.NUMBER,
+                    "downstream_record_not_found_request_count", FieldType.NUMBER))),
             Map.entry("error_log_scan", scalar(
                     Map.of(
                             "error_count", FieldType.NUMBER,
@@ -145,6 +150,7 @@ public final class CanonicalEvidenceSchema {
             case "incident_impact" -> validIncidentImpact(observed);
             case "error_log_scan" -> validErrorLogScan(observed);
             case "monitor_event_scan" -> validMonitorEventScan(observed);
+            case "cti_failure_pattern_scan" -> validCtiFailurePatternScan(observed);
             case "k8s_workload_health" -> validK8sWorkloadHealth(observed);
             case "k8s_pod_status" -> validK8sPodStatus(observed);
             case "k8s_node_status" -> validK8sNodeStatus(observed);
@@ -285,6 +291,35 @@ public final class CanonicalEvidenceSchema {
         String status = String.valueOf(observed.get("latest_status"))
                 .trim().toLowerCase(Locale.ROOT);
         return Set.of("critical", "error", "warning").contains(status);
+    }
+
+    private static boolean validCtiFailurePatternScan(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(
+                observed,
+                "failure_request_count",
+                "classified_failure_request_count",
+                "missing_required_code_request_count",
+                "downstream_record_not_found_request_count")) {
+            return false;
+        }
+        Long total = CanonicalNumberParser.parseExactLong(observed.get("failure_request_count"));
+        Long classified = CanonicalNumberParser.parseExactLong(
+                observed.get("classified_failure_request_count"));
+        Long missingCode = CanonicalNumberParser.parseExactLong(
+                observed.get("missing_required_code_request_count"));
+        Long recordNotFound = CanonicalNumberParser.parseExactLong(
+                observed.get("downstream_record_not_found_request_count"));
+        if (total == null || classified == null || missingCode == null
+                || recordNotFound == null || classified > total
+                || missingCode > total || recordNotFound > total
+                || Math.max(missingCode, recordNotFound) > classified) {
+            return false;
+        }
+        try {
+            return classified <= Math.addExact(missingCode, recordNotFound);
+        } catch (ArithmeticException overflow) {
+            return false;
+        }
     }
 
     private static boolean validK8sWorkloadHealth(Map<String, Object> observed) {

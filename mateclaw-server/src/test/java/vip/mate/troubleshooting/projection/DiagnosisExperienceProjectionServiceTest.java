@@ -251,6 +251,7 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo("失败请求与正常请求的结构化对照已记录。");
         assertThat(developer.contrast().evidenceRefs())
                 .containsExactly("SYNTH-CONTRAST-SAMPLE");
+        assertThat(developer.failureBreakdown().available()).isFalse();
         assertThat(result.businessSummary().rootCause())
                 .isEqualTo("session-state 并发状态写入冲突");
         assertThat(result.businessSummary().narrative())
@@ -259,6 +260,25 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo("异常 92/100 命中同一特征，正常 3/100。");
         assertThat(developer.capabilityLimits())
                 .noneMatch(item -> item.contains("尚未保存完整调用链 hop 和成功样本对照"));
+    }
+
+    @Test
+    void projectsCtiRequestGroupsAsParallelCluesRatherThanOneRootCause() {
+        CanonicalEvidenceViewProjector projector = new CanonicalEvidenceViewProjector(
+                new DeterministicLogTraceCompressor());
+
+        DiagnosisExperienceProjection.FailureBreakdownView breakdown =
+                projector.project(ctiFailurePatternDiagnosis()).failureBreakdown();
+
+        assertThat(breakdown.available()).isTrue();
+        assertThat(breakdown.totalRequests()).isEqualTo(2);
+        assertThat(breakdown.groups())
+                .extracting(DiagnosisExperienceProjection.FailureGroupView::label)
+                .containsExactly(
+                        "创建会话时缺少必填业务编码",
+                        "下游创建会话时未找到所需记录或缓存");
+        assertThat(breakdown.unclassifiedRequests()).isZero();
+        assertThat(breakdown.note()).contains("相关线索", "人工确认");
     }
 
     @Test
@@ -864,6 +884,38 @@ class DiagnosisExperienceProjectionServiceTest {
                 List.of(trace, contrast), List.of("session_state_conflict"),
                 List.of(), "会话研发组",
                 true, true, List.of("Recorded replay fixture"), List.of());
+    }
+
+    private Diagnosis ctiFailurePatternDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-cti", "CSDP", "csdp-task", "701018",
+                "CTI创建会话失败", "P1", "会话创建受影响",
+                null, NOW, "15m", "monitoring",
+                IncidentCompleteness.LOG, "cti create conversation failed");
+        EvidenceResult failurePatterns = new EvidenceResult(
+                "CTI-FAILURE-PATTERNS", "L", "withheld",
+                EvidenceStatus.ANOMALY, "request-level failure pattern counts",
+                Map.of(
+                        "failure_request_count", 2,
+                        "classified_failure_request_count", 2,
+                        "missing_required_code_request_count", 1,
+                        "downstream_record_not_found_request_count", 1),
+                "recorded-replay:cti-create-conversation", NOW);
+        return Diagnosis.initial(
+                "diag-cti", "case-cti", "run-cti", incident,
+                RouteMode.DETERMINISTIC,
+                InvestigationMode.SCENARIO_PLAYBOOK,
+                RouteAuthority.RULE_MATCHED,
+                ConclusionType.HYPOTHESIS,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, NOW),
+                DiagnosisStatus.READY_FOR_HUMAN,
+                "CTI 会话创建失败", "已观测到外层失败",
+                Confidence.LOW, false,
+                "scenario:cti-create-conversation", "CTI 创建会话失败",
+                new PlaybookVersionRef("playbook-cti", 2),
+                List.of(failurePatterns), List.of("cti_create_conversation_failure_present"),
+                List.of(), "CSDP TASK 负责团队",
+                true, false, List.of(), List.of());
     }
 
     private Diagnosis structuredImpactDiagnosis(int evidenceCustomerCount) {

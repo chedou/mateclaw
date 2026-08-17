@@ -167,6 +167,46 @@ class EvidenceSpineOrchestratorTest {
         assertThat(result.timings().evidenceAcquisitionDurationMs()).isEqualTo(23L);
     }
 
+    @Test
+    void collectsAnOptionalRequestLevelFailureBreakdownWithoutPersistingQueries() {
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        when(router.collect(
+                eq(WORKSPACE_ID), any(EvidenceRequest.class), eq(INCIDENT), eq((Set<String>) null)))
+                .thenAnswer(invocation -> evidence(invocation.getArgument(1)));
+        EvidenceSpineOrchestrator orchestrator = new EvidenceSpineOrchestrator(
+                router,
+                new DeterministicLogTraceCompressor(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        EvidenceSpineResult result = orchestrator.collect(
+                WORKSPACE_ID,
+                INCIDENT,
+                new EvidenceSpinePlan(
+                        "ONLINE-LOG-SEARCH",
+                        "ONLINE-TRACE-BUNDLE",
+                        "ONLINE-CONTRAST-SAMPLE",
+                        "ONLINE-FAILURE-PATTERNS",
+                        "message_send_failed",
+                        "-15m"),
+                null);
+
+        assertThat(result.sourceRequestCount()).isEqualTo(4);
+        assertThat(result.evidence())
+                .extracting(EvidenceResult::queryId)
+                .containsExactly(
+                        "ONLINE-LOG-SEARCH",
+                        "ONLINE-TRACE-BUNDLE",
+                        "ONLINE-CONTRAST-SAMPLE",
+                        "ONLINE-FAILURE-PATTERNS");
+        assertThat(result.evidence().get(3).observed()).containsExactlyEntriesOf(Map.of(
+                "failure_request_count", 2,
+                "classified_failure_request_count", 2,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 1));
+        assertThat(result.evidence().get(3).query()).isEqualTo("withheld");
+        assertThat(result.timings().supplementalDurationMs()).isNotNull();
+    }
+
     private EvidenceSpinePlan plan() {
         return new EvidenceSpinePlan(
                 "ONLINE-LOG-SEARCH",
@@ -194,6 +234,11 @@ class EvidenceSpineOrchestratorTest {
                     "failure_match_count", 92,
                     "success_sample_count", 100,
                     "success_match_count", 3);
+            case "cti_failure_pattern_scan" -> Map.of(
+                    "failure_request_count", 2,
+                    "classified_failure_request_count", 2,
+                    "missing_required_code_request_count", 1,
+                    "downstream_record_not_found_request_count", 1);
             default -> throw new IllegalArgumentException(request.signalKind());
         };
         return new EvidenceResult(

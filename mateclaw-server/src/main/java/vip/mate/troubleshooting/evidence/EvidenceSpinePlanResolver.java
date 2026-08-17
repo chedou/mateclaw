@@ -12,6 +12,8 @@ public final class EvidenceSpinePlanResolver {
 
     private static final Set<String> KINDS = Set.of(
             "log_search", "log_trace_bundle", "contrast_sample");
+    private static final String OPTIONAL_CTI_FAILURE_PATTERN_KIND =
+            "cti_failure_pattern_scan";
 
     private EvidenceSpinePlanResolver() {
     }
@@ -24,23 +26,28 @@ public final class EvidenceSpinePlanResolver {
      *                                  internally inconsistent
      */
     public static EvidenceSpinePlan resolve(SopEntry playbook) {
-        if (playbook == null || playbook.evidenceRequests().size() != KINDS.size()) {
+        if (playbook == null || (playbook.evidenceRequests().size() != KINDS.size()
+                && playbook.evidenceRequests().size() != KINDS.size() + 1)) {
             return null;
         }
         Map<String, EvidenceRequest> byKind = new HashMap<>();
         for (EvidenceRequest request : playbook.evidenceRequests()) {
-            if (!KINDS.contains(request.signalKind())
+            if (!(KINDS.contains(request.signalKind())
+                    || OPTIONAL_CTI_FAILURE_PATTERN_KIND.equals(request.signalKind()))
                     || byKind.putIfAbsent(request.signalKind(), request) != null) {
                 return null;
             }
         }
-        if (!byKind.keySet().equals(KINDS)) {
+        if (!byKind.keySet().containsAll(KINDS)
+                || byKind.keySet().stream().anyMatch(kind -> !KINDS.contains(kind)
+                        && !OPTIONAL_CTI_FAILURE_PATTERN_KIND.equals(kind))) {
             return null;
         }
 
         EvidenceRequest search = byKind.get("log_search");
         EvidenceRequest trace = byKind.get("log_trace_bundle");
         EvidenceRequest contrast = byKind.get("contrast_sample");
+        EvidenceRequest failurePatterns = byKind.get(OPTIONAL_CTI_FAILURE_PATTERN_KIND);
         String searchTerm = targetString(search, "search_term");
         Object contrastScenario = contrast.target().get("scenario_key");
         if (contrastScenario != null
@@ -49,10 +56,24 @@ public final class EvidenceSpinePlanResolver {
             throw new IllegalArgumentException(
                     "Evidence Spine search and contrast targets must match");
         }
+        if (failurePatterns != null) {
+            String failureScenario = targetString(failurePatterns, "scenario_key");
+            if (!searchTerm.equals(failureScenario)
+                    || !failurePatterns.target().keySet().equals(Set.of("scenario_key"))) {
+                throw new IllegalArgumentException(
+                        "CTI failure pattern target must match the Evidence Spine scenario");
+            }
+            if (failurePatterns.required()) {
+                throw new IllegalArgumentException(
+                        "CTI failure pattern evidence must remain optional");
+            }
+        }
 
         String window = normalizedWindow(search.window());
         if (!window.equals(normalizedWindow(trace.window()))
-                || !window.equals(normalizedWindow(contrast.window()))) {
+                || !window.equals(normalizedWindow(contrast.window()))
+                || failurePatterns != null
+                        && !window.equals(normalizedWindow(failurePatterns.window()))) {
             throw new IllegalArgumentException(
                     "Evidence Spine requests must use one bounded time window");
         }
@@ -60,6 +81,7 @@ public final class EvidenceSpinePlanResolver {
                 search.requestId(),
                 trace.requestId(),
                 contrast.requestId(),
+                failurePatterns == null ? null : failurePatterns.requestId(),
                 searchTerm,
                 window);
     }

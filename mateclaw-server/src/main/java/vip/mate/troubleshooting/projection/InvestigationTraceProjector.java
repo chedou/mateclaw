@@ -53,6 +53,10 @@ public final class InvestigationTraceProjector {
             Map.entry("contrast_sample", Set.of(
                     "discriminating_feature", "failure_sample_count",
                     "failure_match_count", "success_sample_count", "success_match_count")),
+            Map.entry("cti_failure_pattern_scan", Set.of(
+                    "failure_request_count", "classified_failure_request_count",
+                    "missing_required_code_request_count",
+                    "downstream_record_not_found_request_count")),
             Map.entry("error_log_scan", Set.of(
                     "error_count", "affected_trace_count", "latest_trace_id")),
             Map.entry("monitor_event_scan", Set.of(

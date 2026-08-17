@@ -141,6 +141,13 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(businessSummarySource).not.toContain('可信等级 {{ business.confidence }}')
   })
 
+  it('explains when one alert window contains more than one failure pattern', () => {
+    expect(developerEvidenceSource).toContain('同一批告警里有几类问题')
+    expect(developerEvidenceSource).toContain('不是把多种问题压成一个根因')
+    expect(developerEvidenceSource).toContain('failureBreakdown.groups')
+    expect(developerEvidenceSource).toContain('还有 {{ failureBreakdown.unclassifiedRequests }} 个请求尚未归类')
+  })
+
   it('presents Guance verification as a data-connection check instead of a standalone capability', () => {
     expect(observabilityAssetsSource).toContain('检查数据连接')
     expect(observabilityAssetsSource).not.toContain('开始数据源联调')

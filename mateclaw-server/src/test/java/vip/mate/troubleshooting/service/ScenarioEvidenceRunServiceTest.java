@@ -180,8 +180,8 @@ class ScenarioEvidenceRunServiceTest {
     }
 
     @Test
-    @DisplayName("CTI 场景用告警时间跑完三段取证，结论不越过外层 701018")
-    void ctiScenarioRunsTheFrozenThreeStagePlanWithoutOverclaimingTheCause() {
+    @DisplayName("CTI 场景用告警时间跑完证据脊柱并按独立请求分类")
+    void ctiScenarioGroupsIndependentFailedRequestsWithoutOverclaimingTheCause() {
         SopEntry cti = ctiPlaybook();
         Diagnosis waiting = stateMachine.initializeScenarioAwaitingEvidence(
                 new ScenarioDiagnosisDraft(
@@ -222,7 +222,8 @@ class ScenarioEvidenceRunServiceTest {
                 .containsExactly(
                         "guance:log_search",
                         "guance:log_trace_bundle",
-                        "guance:contrast_sample");
+                        "guance:contrast_sample",
+                        "guance:cti_failure_pattern_scan");
         assertThat(advanced.evidence().get(1).observed().toString())
                 .contains("error_codes=701018", "error_codes=701022")
                 .doesNotContain("CreateConversation failed", "code 701018", "code 701022");
@@ -231,7 +232,7 @@ class ScenarioEvidenceRunServiceTest {
                 ArgumentCaptor.forClass(EvidenceRequest.class);
         ArgumentCaptor<IncidentContext> incidents =
                 ArgumentCaptor.forClass(IncidentContext.class);
-        verify(router, times(3)).collect(
+        verify(router, times(4)).collect(
                 eq(7L), requests.capture(), incidents.capture(),
                 eq((Set<String>) null));
         assertThat(requests.getAllValues().get(0).target())
@@ -242,6 +243,8 @@ class ScenarioEvidenceRunServiceTest {
                 .containsExactlyEntriesOf(Map.of(
                         "scenario_key", CTI_SCENARIO_KEY,
                         "exclude_ps_id", "cti-trace-real"));
+        assertThat(requests.getAllValues().get(3).target())
+                .containsExactlyEntriesOf(Map.of("scenario_key", CTI_SCENARIO_KEY));
         assertThat(incidents.getAllValues())
                 .allMatch(incident -> CTI_OCCURRED_AT.equals(incident.occurredAt()));
     }
@@ -490,6 +493,11 @@ class ScenarioEvidenceRunServiceTest {
                                 Map.of(
                                         "scenario_key", CTI_SCENARIO_KEY,
                                         "exclude_ps_id", "must-not-be-used"),
+                                "-15m", false),
+                        new EvidenceRequest(
+                                "CTI-FAILURE-PATTERNS", "cti_failure_pattern_scan",
+                                "按独立请求统计失败类型",
+                                Map.of("scenario_key", CTI_SCENARIO_KEY),
                                 "-15m", false)),
                 List.of(new AnomalyCriterion(
                         "cti_create_conversation_failure_present",
@@ -577,6 +585,11 @@ class ScenarioEvidenceRunServiceTest {
                     "failure_match_count", 1,
                     "success_sample_count", 4,
                     "success_match_count", 0);
+            case "cti_failure_pattern_scan" -> Map.of(
+                    "failure_request_count", 2,
+                    "classified_failure_request_count", 2,
+                    "missing_required_code_request_count", 1,
+                    "downstream_record_not_found_request_count", 1);
             default -> throw new IllegalArgumentException(request.signalKind());
         };
         return new EvidenceResult(

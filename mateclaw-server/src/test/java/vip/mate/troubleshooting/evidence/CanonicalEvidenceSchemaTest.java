@@ -59,6 +59,48 @@ class CanonicalEvidenceSchemaTest {
     }
 
     @Test
+    void acceptsARequestLevelFailurePatternBreakdownButRejectsImpossibleCounts() {
+        assertThat(CanonicalEvidenceSchema.supports("cti_failure_pattern_scan")).isTrue();
+        assertThat(CanonicalEvidenceSchema.isValid("cti_failure_pattern_scan", Map.of(
+                "failure_request_count", 2,
+                "classified_failure_request_count", 2,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 1)))
+                .isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("cti_failure_pattern_scan", Map.of(
+                "failure_request_count", 1,
+                "classified_failure_request_count", 1,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 1)))
+                .as("one failed request may preserve two parallel clues")
+                .isTrue();
+
+        assertThat(CanonicalEvidenceSchema.isValid("cti_failure_pattern_scan", Map.of(
+                "failure_request_count", 1,
+                "classified_failure_request_count", 2,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 0)))
+                .as("the classified union cannot exceed the failed request cohort")
+                .isFalse();
+
+        assertThat(CanonicalEvidenceSchema.isValid("cti_failure_pattern_scan", Map.of(
+                "failure_request_count", 2,
+                "classified_failure_request_count", 0,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 1)))
+                .as("the union must contain every individual pattern set")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isValid("cti_failure_pattern_scan", Map.of(
+                "failure_request_count", 2,
+                "classified_failure_request_count", 2,
+                "missing_required_code_request_count", 0,
+                "downstream_record_not_found_request_count", 0)))
+                .as("the union cannot contain requests absent from every pattern set")
+                .isFalse();
+    }
+
+    @Test
     void rejectsIncompleteOrUnboundedLogContracts() {
         assertThat(CanonicalEvidenceSchema.isValid("log_search", Map.of(
                 "match_count", 4,

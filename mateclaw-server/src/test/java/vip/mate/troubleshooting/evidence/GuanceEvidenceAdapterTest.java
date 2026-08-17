@@ -1153,6 +1153,59 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void intersectsBoundedCtiCorrelationSetsAndEmitsCountsOnly()
+            throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [
+                    {"series": [{"columns": ["time", "@trace_id"],
+                                  "values": [[1786952700000, "trace-a"],
+                                             [1786952701000, "trace-b"]]}]},
+                    {"series": [{"columns": ["time", "@trace_id"],
+                                  "values": [[1786952700000, "trace-a"],
+                                             [1786952701000, "unrelated-trace"]]}]},
+                    {"series": [{"columns": ["time", "@trace_id"],
+                                  "values": [[1786952700000, "trace-a"],
+                                             [1786952701000, "trace-b"],
+                                             [1786952702000, "another-unrelated-trace"]]}]}
+                  ]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L", "CTI failure patterns", "unused", Map.of(), 200);
+        binding.setQueryTemplate(null);
+        binding.setQueryTemplates(List.of(
+                "L::logs:(`@trace_id`) { `@code` = 701018 }",
+                "L::logs:(`@trace_id`) { message = missing-code }",
+                "L::logs:(`@trace_id`) { message = record-not-found }"));
+        EvidenceProperties.Guance config = guanceConfig("cti_failure_pattern_scan", binding);
+        config.setAssetBindings(List.of(assetBinding(
+                WORKSPACE_ID, "CSDP", "csdp-task",
+                Map.of("cti_failure_pattern_scan", "cti_failure_pattern_scan"))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, objectMapper, transport, CLOCK);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID,
+                new EvidenceRequest(
+                        "CTI-FAILURE-PATTERNS", "cti_failure_pattern_scan",
+                        "classify failed requests", Map.of(), "-15m", false),
+                incident("CSDP", "csdp-task"));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "failure_request_count", 2,
+                "classified_failure_request_count", 2,
+                "missing_required_code_request_count", 1,
+                "downstream_record_not_found_request_count", 2));
+        assertThat(result.observed().toString())
+                .doesNotContain("trace-a", "trace-b", "unrelated-trace");
+        assertThat(objectMapper.readTree(transport.body).path("queries")).hasSize(3);
+    }
+
+    @Test
     void normalizesAndChronologicallyOrdersABoundedLogTraceBundle() throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """
                 {

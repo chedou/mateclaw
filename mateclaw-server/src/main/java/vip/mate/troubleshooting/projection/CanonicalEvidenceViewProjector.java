@@ -15,6 +15,8 @@ import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.Compari
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ContrastView;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.Hop;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.ImpactView;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.FailureBreakdownView;
+import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.FailureGroupView;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 
@@ -54,7 +56,57 @@ final class CanonicalEvidenceViewProjector {
                 impact,
                 chain.callChain(),
                 chain.contrast(),
+                failureBreakdown(diagnosis),
                 List.copyOf(capabilityLimits));
+    }
+
+    private FailureBreakdownView failureBreakdown(Diagnosis diagnosis) {
+        EvidenceResult evidence = firstEvidenceWithFields(
+                diagnosis.evidence(),
+                "failure_request_count",
+                "classified_failure_request_count",
+                "missing_required_code_request_count",
+                "downstream_record_not_found_request_count");
+        if (evidence == null
+                || !CanonicalEvidenceSchema.isValid(
+                        "cti_failure_pattern_scan", evidence.observed())) {
+            return FailureBreakdownView.unavailable();
+        }
+        Long total = nonNegativeLong(evidence.observed().get("failure_request_count"));
+        Long classified = nonNegativeLong(
+                evidence.observed().get("classified_failure_request_count"));
+        Long missingCode = nonNegativeLong(
+                evidence.observed().get("missing_required_code_request_count"));
+        Long recordNotFound = nonNegativeLong(
+                evidence.observed().get("downstream_record_not_found_request_count"));
+        if (total == null || classified == null || missingCode == null
+                || recordNotFound == null || total == 0) {
+            return FailureBreakdownView.unavailable();
+        }
+        List<FailureGroupView> groups = new ArrayList<>();
+        if (missingCode > 0) {
+            groups.add(new FailureGroupView(
+                    "missing_required_code",
+                    "创建会话时缺少必填业务编码",
+                    missingCode));
+        }
+        if (recordNotFound > 0) {
+            groups.add(new FailureGroupView(
+                    "downstream_record_not_found",
+                    "下游创建会话时未找到所需记录或缓存",
+                    recordNotFound));
+        }
+        long unclassified = Math.subtractExact(total, classified);
+        return new FailureBreakdownView(
+                true,
+                total,
+                classified,
+                unclassified,
+                groups,
+                unclassified == 0
+                        ? "本次窗口内的失败请求已命中已审核特征；同一请求可同时命中多条线索，各类计数不做相加。这些是相关线索，仍需人工确认最终责任点。"
+                        : "已识别部分失败请求；同一请求可同时命中多条线索，各类计数不做相加。剩余请求没有命中已审核特征，不能强行归因。",
+                List.of(evidence.queryId()));
     }
 
     private ImpactView impact(Diagnosis diagnosis) {
@@ -442,6 +494,7 @@ final class CanonicalEvidenceViewProjector {
             ImpactView impact,
             CallChainView callChain,
             ContrastView contrast,
+            FailureBreakdownView failureBreakdown,
             List<String> capabilityLimits) {
     }
 
