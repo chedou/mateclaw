@@ -299,6 +299,31 @@ public final class TroubleshootingAgentTriageService {
             List<String> visibleScenarioKeys =
                     sessions.approvedScenarioKeys(workspaceId, sanitizedIncident);
             String correlationId = UUID.randomUUID().toString().replace("-", "");
+            // Exact reviewed incident patterns already have a server-owned,
+            // auditable question graph. Prefer it over a model whenever its
+            // bounded runtime is enabled; a model must not reinterpret a
+            // deterministic business rejection that the source already stated.
+            if (vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                    .hasDeterministicIncidentPlan(sanitizedIncident)) {
+                Optional<BoundedOpenDiscoveryInvestigationService.Execution> reviewed =
+                        boundedInvestigation == null
+                                ? Optional.empty()
+                                : boundedInvestigation.investigate(
+                                        workspaceId, sanitizedIncident);
+                if (reviewed.isPresent()) {
+                    return persistBoundedFinding(
+                            workspaceId,
+                            sanitizedIncident,
+                            sanitizedSuppliedEvidence,
+                            rehearsal,
+                            reportedAt,
+                            readyAt,
+                            intakeSessionId,
+                            reservation,
+                            correlationId,
+                            reviewed.orElseThrow());
+                }
+            }
             AgentEntity agent;
             try {
                 agent = requireSafeConfiguration(workspaceId);

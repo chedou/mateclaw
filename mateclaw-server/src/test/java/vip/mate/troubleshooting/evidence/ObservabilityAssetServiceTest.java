@@ -97,6 +97,14 @@ class ObservabilityAssetServiceTest {
                 "admin"))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("incident_reported_external_http_failure");
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID,
+                declaration(null, true,
+                        Map.of("incident_reported_business_policy_rejection", "reported-policy"),
+                        Map.of()),
+                "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("incident_reported_business_policy_rejection");
     }
 
     @Test

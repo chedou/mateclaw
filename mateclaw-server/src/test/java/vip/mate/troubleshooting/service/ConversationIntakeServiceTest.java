@@ -197,4 +197,61 @@ class ConversationIntakeServiceTest {
                         IntakeSession::errorCode)
                 .containsExactly("CSDP", "csdp-wechat", "904003");
     }
+
+    @Test
+    @DisplayName("粘贴 iCare 移动端完结拒绝报文后一轮返回脱敏原因")
+    void fullIcareMobileFinishRejectionReturnsTheBusinessReasonInOneTurn() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787020784&token=not-persisted",
+                 "header":{"Authorization":"Bearer not-persisted"},
+                 "content":{"loginPrmUserName":"某某","workOrderId":"T0000000001"},
+                 "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作（如PC端无法完成操作，请联系icare技术支持）"}
+                """;
+        AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
+        when(sessions.accept(any())).thenAnswer(call -> {
+            IntakeMessageEnvelope envelope = call.getArgument(0);
+            IntakeSession ready = new IntakeSessionReducer().start(
+                    "intake-icare-mobile-finish", envelope);
+            storedSession.set(ready);
+            return IntakeDecision.from(ready, false, false);
+        });
+        when(sessions.getReady(1L, "intake-icare-mobile-finish"))
+                .thenAnswer(call -> storedSession.get());
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.diagnosisId()).thenReturn("diag-icare-mobile-finish");
+        when(intakeService.report(any(IntakeSession.class), eq(true)))
+                .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
+        BusinessSummary summary = mock(BusinessSummary.class);
+        DiagnosisExperienceProjection projection = mock(DiagnosisExperienceProjection.class);
+        when(projection.businessSummary()).thenReturn(summary);
+        when(projectionService.project(1L, "diag-icare-mobile-finish"))
+                .thenReturn(projection);
+        when(summaryRenderer.render(summary)).thenReturn(
+                "原因：工单关联变更单，iCare 禁止在移动端完结\n"
+                        + "下一步：改用 PC 端完结");
+
+        ConversationIntakeService.ConversationTurnResult result = service.turn(
+                1L, "admin", null, alert, true);
+
+        assertThat(result.status()).isEqualTo("READY");
+        assertThat(result.diagnosisId()).isEqualTo("diag-icare-mobile-finish");
+        assertThat(result.prompt())
+                .contains("工单关联变更单")
+                .contains("改用 PC 端");
+        ArgumentCaptor<IntakeSession> reported = ArgumentCaptor.forClass(IntakeSession.class);
+        verify(intakeService).report(reported.capture(), eq(true));
+        assertThat(reported.getValue())
+                .extracting(
+                        IntakeSession::system,
+                        IntakeSession::service,
+                        IntakeSession::symptom,
+                        IntakeSession::customerRef)
+                .containsExactly(
+                        "CSDP",
+                        "sf-icare-openapi",
+                        "工单涉及变更单，iCare 禁止在移动端完结",
+                        "未知");
+        assertThat(reported.getValue().symptom())
+                .doesNotContain("token", "Authorization", "T0000000001", "某某");
+    }
 }

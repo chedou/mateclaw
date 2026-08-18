@@ -12,11 +12,19 @@ class CanonicalEvidenceSchemaTest {
     @Test
     void incidentReportedFactsAreCanonicalButCannotBeExternallyRouted() {
         assertThat(CanonicalEvidenceSchema.signalKinds())
-                .contains("incident_reported_external_http_failure");
+                .contains(
+                        "incident_reported_external_http_failure",
+                        "incident_reported_business_policy_rejection");
         assertThat(CanonicalEvidenceSchema.externallyRoutableSignalKinds())
-                .doesNotContain("incident_reported_external_http_failure");
+                .doesNotContain(
+                        "incident_reported_external_http_failure",
+                        "incident_reported_business_policy_rejection");
         assertThat(CanonicalEvidenceSchema.isExternallyRoutable(
                 "incident_reported_external_http_failure")).isFalse();
+        assertThat(CanonicalEvidenceSchema.isExternallyRoutable(
+                "incident_reported_business_policy_rejection")).isFalse();
+        assertThat(CanonicalEvidenceSchema.isIncidentReported(
+                "incident_reported_business_policy_rejection")).isTrue();
         assertThat(CanonicalEvidenceSchema.isExternallyRoutable("error_log_scan")).isTrue();
     }
 
@@ -163,6 +171,35 @@ class CanonicalEvidenceSchemaTest {
                         "operation", "get_icare_product_mapping",
                         "evidence_grade", "OBSERVED")))
                 .as("incident input must not be upgraded to source-observed evidence")
+                .isFalse();
+    }
+
+    @Test
+    void acceptsOnlyTheClosedMobileFinishPolicyVocabulary() {
+        Map<String, Object> reported = Map.of(
+                "failure_count", 1,
+                "operation", "updateFinish",
+                "policy_code", "mobile_change_order_finish_forbidden",
+                "client_surface", "MOBILE",
+                "change_order_linked", true,
+                "recommended_channel", "PC",
+                "evidence_grade", "REPORTED");
+
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_business_policy_rejection", reported)).isTrue();
+        assertThat(CanonicalEvidenceSchema.detectSignalKind(reported))
+                .isEqualTo("incident_reported_business_policy_rejection");
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_business_policy_rejection",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "mobile_change_order_finish_forbidden",
+                        "client_surface", "MOBILE",
+                        "change_order_linked", true,
+                        "recommended_channel", "MOBILE",
+                        "evidence_grade", "REPORTED")))
+                .as("the report cannot invent a different recovery channel")
                 .isFalse();
     }
 

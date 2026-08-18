@@ -12,6 +12,10 @@ import java.util.Set;
 /** Canonical evidence vocabulary shared by every source adapter. */
 public final class CanonicalEvidenceSchema {
 
+    private static final Set<String> INCIDENT_REPORTED_SIGNAL_KINDS = Set.of(
+            "incident_reported_external_http_failure",
+            "incident_reported_business_policy_rejection");
+
     private static final int MAX_LOG_TRACE_ENTRIES = 500;
     private static final Set<String> OPTIONAL_LOG_ENTRY_FIELDS = Set.of("duration_ms");
     private static final Map<String, FieldType> LOG_ENTRY_FIELDS = Map.of(
@@ -65,6 +69,14 @@ public final class CanonicalEvidenceSchema {
                     "failure_count", FieldType.NUMBER,
                     "http_status", FieldType.STRING,
                     "operation", FieldType.STRING,
+                    "evidence_grade", FieldType.STRING))),
+            Map.entry("incident_reported_business_policy_rejection", scalar(Map.of(
+                    "failure_count", FieldType.NUMBER,
+                    "operation", FieldType.STRING,
+                    "policy_code", FieldType.STRING,
+                    "client_surface", FieldType.STRING,
+                    "change_order_linked", FieldType.BOOLEAN,
+                    "recommended_channel", FieldType.STRING,
                     "evidence_grade", FieldType.STRING))),
             Map.entry("error_log_scan", scalar(
                     Map.of(
@@ -164,6 +176,8 @@ public final class CanonicalEvidenceSchema {
             case "external_api_http_failure" -> validExternalApiHttpFailure(observed);
             case "incident_reported_external_http_failure" ->
                     validIncidentReportedExternalHttpFailure(observed);
+            case "incident_reported_business_policy_rejection" ->
+                    validIncidentReportedBusinessPolicyRejection(observed);
             case "k8s_workload_health" -> validK8sWorkloadHealth(observed);
             case "k8s_pod_status" -> validK8sPodStatus(observed);
             case "k8s_node_status" -> validK8sNodeStatus(observed);
@@ -189,9 +203,15 @@ public final class CanonicalEvidenceSchema {
      */
     public static List<String> externallyRoutableSignalKinds() {
         return SCHEMAS.keySet().stream()
-                .filter(signal -> !"incident_reported_external_http_failure".equals(signal))
+                .filter(signal -> !INCIDENT_REPORTED_SIGNAL_KINDS.contains(signal))
                 .sorted()
                 .toList();
+    }
+
+    /** Whether the fact came from a reviewed, normalized incident report. */
+    public static boolean isIncidentReported(String signalKind) {
+        return signalKind != null
+                && INCIDENT_REPORTED_SIGNAL_KINDS.contains(normalize(signalKind));
     }
 
     public static boolean isExternallyRoutable(String signalKind) {
@@ -376,6 +396,20 @@ public final class CanonicalEvidenceSchema {
                 && "502".equals(String.valueOf(observed.get("http_status")).trim())
                 && "get_icare_product_mapping".equals(
                         String.valueOf(observed.get("operation")).trim())
+                && "REPORTED".equals(String.valueOf(observed.get("evidence_grade")).trim());
+    }
+
+    private static boolean validIncidentReportedBusinessPolicyRejection(
+            Map<String, Object> observed) {
+        Long failures = CanonicalNumberParser.parseExactLong(observed.get("failure_count"));
+        return failures != null
+                && failures == 1
+                && "updateFinish".equals(String.valueOf(observed.get("operation")).trim())
+                && "mobile_change_order_finish_forbidden".equals(
+                        String.valueOf(observed.get("policy_code")).trim())
+                && "MOBILE".equals(String.valueOf(observed.get("client_surface")).trim())
+                && Boolean.TRUE.equals(observed.get("change_order_linked"))
+                && "PC".equals(String.valueOf(observed.get("recommended_channel")).trim())
                 && "REPORTED".equals(String.valueOf(observed.get("evidence_grade")).trim());
     }
 

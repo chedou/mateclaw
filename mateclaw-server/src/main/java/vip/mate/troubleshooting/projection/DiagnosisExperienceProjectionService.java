@@ -306,18 +306,19 @@ public class DiagnosisExperienceProjectionService {
     private String keyEvidence(Diagnosis diagnosis, ContrastView contrast) {
         if (contrast == null || !contrast.available()
                 || contrast.failedRequests() == null || contrast.normalRequests() == null) {
-            boolean reportedExternalFailure = isIcareProductMapping502(diagnosis)
-                    && diagnosis.evidence().stream()
-                    .anyMatch(item -> "incident_reported_external_http_failure"
-                            .equalsIgnoreCase(
-                                    vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
-                                            .detectSignalKind(item.observed()))
-                            && item.status()
-                                    != vip.mate.troubleshooting.model.EvidenceStatus.MISSING);
-            return reportedExternalFailure
-                    ? "告警已经明确：iCare 产品映射接口调用返回 HTTP 502。"
-                            + "这能确认直接失败点，但不能证明上游为什么返回 502。"
-                    : null;
+            if (isIcareMobileChangeOrderFinishRejected(diagnosis)
+                    && hasReportedEvidence(
+                            diagnosis, "incident_reported_business_policy_rejection")) {
+                return "iCare 返回的业务提示已经明确：工单关联变更单，"
+                        + "因此不允许在移动端完结。";
+            }
+            if (isIcareProductMapping502(diagnosis)
+                    && hasReportedEvidence(
+                            diagnosis, "incident_reported_external_http_failure")) {
+                return "告警已经明确：iCare 产品映射接口调用返回 HTTP 502。"
+                        + "这能确认直接失败点，但不能证明上游为什么返回 502。";
+            }
+            return null;
         }
         return "异常 "
                 + contrast.failedRequests().requestsWithFeature()
@@ -329,13 +330,12 @@ public class DiagnosisExperienceProjectionService {
     }
 
     private EvidenceBasis evidenceBasis(Diagnosis diagnosis) {
-        boolean reported = isIcareProductMapping502(diagnosis)
-                && diagnosis.evidence().stream()
-                .anyMatch(item -> "incident_reported_external_http_failure".equalsIgnoreCase(
-                        vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
-                                .detectSignalKind(item.observed()))
-                        && item.status()
-                                != vip.mate.troubleshooting.model.EvidenceStatus.MISSING);
+        boolean reported = (isIcareProductMapping502(diagnosis)
+                        && hasReportedEvidence(
+                                diagnosis, "incident_reported_external_http_failure"))
+                || (isIcareMobileChangeOrderFinishRejected(diagnosis)
+                        && hasReportedEvidence(
+                                diagnosis, "incident_reported_business_policy_rejection"));
         if (reported) {
             return EvidenceBasis.REPORTED;
         }
@@ -354,6 +354,17 @@ public class DiagnosisExperienceProjectionService {
             List<SystemOnboardingGap> gaps) {
         if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE && !gaps.isEmpty()) {
             return onboardingNextStep(diagnosis, gaps);
+        }
+        if (isIcareMobileChangeOrderFinishRejected(diagnosis)
+                && hasReportedEvidence(
+                        diagnosis, "incident_reported_business_policy_rejection")
+                && (conclusionType == ConclusionType.HYPOTHESIS
+                        || conclusionType == ConclusionType.LOCATED)) {
+            return new NextStep(
+                    "改用 PC 端完结",
+                    "不要在移动端重试。请由操作人在 PC 端打开同一工单完成完结；"
+                            + "如 PC 端仍无法完成，携带脱敏工单号和发生时间联系 iCare 技术支持。",
+                    "平台不会代替你提交完结操作；尚未验证 PC 端结果，也未判断变更单状态是否正确。");
         }
         String team = fallback(diagnosis.routeToTeam(), "责任开发");
         return switch (conclusionType) {
@@ -415,6 +426,20 @@ public class DiagnosisExperienceProjectionService {
     private boolean isIcareProductMapping502(Diagnosis diagnosis) {
         return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
                 .isIcareProductMapping502(diagnosis.incident());
+    }
+
+    private boolean isIcareMobileChangeOrderFinishRejected(Diagnosis diagnosis) {
+        return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                .isIcareMobileChangeOrderFinishRejected(diagnosis.incident());
+    }
+
+    private boolean hasReportedEvidence(Diagnosis diagnosis, String expectedSignalKind) {
+        return diagnosis.evidence().stream()
+                .filter(item -> item.status()
+                        != vip.mate.troubleshooting.model.EvidenceStatus.MISSING)
+                .map(item -> vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                        .detectSignalKind(item.observed()))
+                .anyMatch(expectedSignalKind::equalsIgnoreCase);
     }
 
     /**

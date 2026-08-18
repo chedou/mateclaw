@@ -43,6 +43,9 @@ public final class TroubleshootingEvidenceModelProjector {
                     "failure_count", "affected_trace_count", "http_status", "operation")),
             Map.entry("incident_reported_external_http_failure", Set.of(
                     "failure_count", "http_status", "operation", "evidence_grade")),
+            Map.entry("incident_reported_business_policy_rejection", Set.of(
+                    "failure_count", "operation", "policy_code", "client_surface",
+                    "change_order_linked", "recommended_channel", "evidence_grade")),
             Map.entry("monitor_event_scan", Set.of(
                     "event_count", "latest_status", "latest_checker")),
             Map.entry("k8s_workload_health", Set.of(

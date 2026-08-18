@@ -179,6 +179,68 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void pastedIcareMobileFinishRejectionBecomesASanitizedReadyIncident() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787020784&token=must-not-survive",
+                 "header":{"Authorization":"Bearer must-not-survive"},
+                 "content":{"loginPrmUserId":"10000000","loginPrmUserName":"某某","workOrderId":"T0000000001"},
+                 "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作（如PC端无法完成操作，请联系icare技术支持）"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-mobile-finish",
+                envelope("msg-icare-mobile-finish", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.READY, session.status());
+        assertEquals("工单涉及变更单，iCare 禁止在移动端完结", session.symptom());
+        assertEquals("CSDP", session.system());
+        assertEquals("sf-icare-openapi", session.service());
+        assertEquals("未知", session.customerRef());
+        assertEquals(Instant.ofEpochSecond(1787020784L), session.occurredAt());
+        assertNull(session.errorCode());
+        assertTrue(session.missingFields().isEmpty());
+        assertFalse(session.symptom().contains("token"));
+        assertFalse(session.symptom().contains("T0000000001"));
+        assertFalse(session.symptom().contains("某某"));
+    }
+
+    @Test
+    void pastedIcareMobileFinishRejectionAcceptsSerializedUnicodeAmpersands() {
+        String serializedAmpersand = "\\" + "u0026";
+        String alert = "{\"url\":\"https://it-gw.sangfor.com/icare/api/"
+                + "sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish"
+                + "?app=CSDP" + serializedAmpersand + "time=1787020784"
+                + serializedAmpersand + "token=must-not-survive\","
+                + "\"error\":\"移动端不支持该操作【工单涉及变更单】；"
+                + "请到PC端操作（如PC端无法完成操作，请联系icare技术支持）\"}";
+
+        IntakeSession session = reducer.start(
+                "intake-icare-escaped-ampersand",
+                envelope("msg-icare-escaped-ampersand", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.READY, session.status());
+        assertEquals("工单涉及变更单，iCare 禁止在移动端完结", session.symptom());
+        assertEquals(Instant.ofEpochSecond(1787020784L), session.occurredAt());
+    }
+
+    @Test
+    void similarIcarePayloadWithoutTheReviewedPolicyMessageDoesNotBorrowTheRoute() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787020784&token=secret",
+                 "error":"请录入工时后才能完结工单"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-other-finish-rule",
+                envelope("msg-other-finish-rule", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.system());
+        assertNull(session.service());
+        assertFalse("工单涉及变更单，iCare 禁止在移动端完结"
+                .equals(session.symptom()));
+    }
+
+    @Test
     void anUnreviewedUrlCannotNominateAService() {
         IntakeSession session = reducer.start(
                 "intake-unreviewed-url",

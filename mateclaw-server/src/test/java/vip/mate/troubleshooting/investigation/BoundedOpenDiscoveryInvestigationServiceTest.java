@@ -160,6 +160,34 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
     }
 
     @Test
+    void explainsTheReviewedMobileFinishPolicyWithoutCallingObservability() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        BoundedOpenDiscoveryInvestigationService service = new BoundedOpenDiscoveryInvestigationService(
+                properties,
+                new BoundedInvestigationPlanner(
+                        new ReadOnlyToolRegistry(
+                                List.of(new IncidentReportReadOnlyTool(), new NeverCalledTool()), CLOCK),
+                        new CriterionEvaluator(), CLOCK),
+                new DefaultOpenDiscoveryHypothesisGraphFactory(),
+                CLOCK);
+        IncidentContext alert = new IncidentContext(
+                "incident-mobile-finish", "CSDP", "sf-icare-openapi", null,
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "P2", "待确认", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigate(1L, alert).orElseThrow();
+
+        assertThat(execution.finding().type()).isEqualTo(RootCauseFinding.Type.LOCATED);
+        assertThat(execution.finding().cause())
+                .isEqualTo("直接失败原因：工单关联变更单，iCare 禁止在移动端完结");
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly("incident_reported_business_policy_rejection");
+        assertThat(execution.sourceRequestCount()).isEqualTo(1);
+    }
+
+    @Test
     void planFingerprintChangesWhenWindowOrCriterionThresholdChanges() {
         HypothesisGraph first = graph("-15m", 1);
         HypothesisGraph changedWindow = graph("-30m", 1);

@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.intake;
 
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
+import vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -73,6 +74,19 @@ public final class IntakeSessionReducer {
             "https://csdp-applet\\.sangfor\\.com/api/csdp-wechat/scl/v1/external/"
                     + "(get_icare_product_mapping)(?:[?\\s,]|$)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern ICARE_MOBILE_FINISH_ENDPOINT = Pattern.compile(
+            "https://it-gw\\.sangfor\\.com/icare/api/(sf-icare-openapi)"
+                    + "/openapi/case/workOrderPhase/channel/(updateFinish)\\?"
+                    + "[^\\\"\\r\\n]*\\bapp=CSDP(?:&|$)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern ICARE_MOBILE_FINISH_POLICY_REJECTION = Pattern.compile(
+            "\\\"error\\\"\\s*:\\s*\\\""
+                    + "移动端不支持该操作【工单涉及变更单】；"
+                    + "请到PC端操作（如PC端无法完成操作，"
+                    + "请联系icare技术支持）\\\"",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL_EPOCH_SECONDS = Pattern.compile(
+            "(?:[?&])time=(\\d{10})(?:&|\\\"|$)");
 
     public IntakeSession start(String intakeSessionId, IntakeMessageEnvelope envelope) {
         ParsedInput parsed = parse(envelope.text());
@@ -229,6 +243,10 @@ public final class IntakeSessionReducer {
         if (raw == null || raw.isBlank()) {
             return ParsedInput.empty();
         }
+        ParsedInput reviewed = parseReviewedIcareMobileFinishRejection(raw);
+        if (reviewed != null) {
+            return reviewed;
+        }
         Map<String, String> fields = new LinkedHashMap<>();
         List<String> freeLines = new ArrayList<>();
         for (String rawLine : raw.lines().toList()) {
@@ -278,6 +296,41 @@ public final class IntakeSessionReducer {
                 resolveErrorCode(fields.get("errorCode"), raw),
                 fields.get("traceId"),
                 occurredAt);
+    }
+
+    private ParsedInput parseReviewedIcareMobileFinishRejection(String raw) {
+        // JSON serializers commonly preserve ampersands as a unicode escape.
+        // Normalize transport spelling only in local memory; the raw payload is
+        // never copied into the returned intake fields.
+        String normalized = raw.replace("\\u0026", "&").replace("&amp;", "&");
+        Matcher endpoint = ICARE_MOBILE_FINISH_ENDPOINT.matcher(normalized);
+        if (!endpoint.find()
+                || !ICARE_MOBILE_FINISH_POLICY_REJECTION.matcher(normalized).find()) {
+            return null;
+        }
+        return new ParsedInput(
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "CSDP",
+                endpoint.group(1).toLowerCase(Locale.ROOT),
+                "未知",
+                null,
+                null,
+                extractUrlEpochSeconds(normalized));
+    }
+
+    private Instant extractUrlEpochSeconds(String text) {
+        Matcher matcher = URL_EPOCH_SECONDS.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            long epochSeconds = Long.parseLong(matcher.group(1));
+            Instant instant = Instant.ofEpochSecond(epochSeconds);
+            int year = instant.atZone(BUSINESS_ZONE).getYear();
+            return year >= 2020 && year <= 2100 ? instant : null;
+        } catch (NumberFormatException | java.time.DateTimeException invalid) {
+            return null;
+        }
     }
 
     private String firstFreeSymptom(List<String> freeLines) {

@@ -35,6 +35,27 @@ class ReviewedIncidentPolicyTest {
                 IncidentCompleteness.SYMPTOM))).isFalse();
     }
 
+    @Test
+    void acceptsOnlyTheExactReviewedMobileChangeOrderFinishRejection() {
+        assertThat(ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident(
+                "CSDP", "sf-icare-openapi",
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                IncidentCompleteness.STRUCTURED))).isTrue();
+
+        assertThat(ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident(
+                "CSDP", "csdp-wechat",
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                IncidentCompleteness.STRUCTURED))).isFalse();
+        assertThat(ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident(
+                "CSDP", "sf-icare-openapi",
+                "移动端不支持完结",
+                IncidentCompleteness.STRUCTURED))).isFalse();
+        assertThat(ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident(
+                "CSDP", "sf-icare-openapi",
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                IncidentCompleteness.SYMPTOM))).isFalse();
+    }
+
     private IncidentContext incident(
             String system, String service, String title, IncidentCompleteness completeness) {
         return new IncidentContext(

@@ -51,6 +51,35 @@ class IncidentReportReadOnlyToolTest {
         assertThat(result.observed()).isEmpty();
     }
 
+    @Test
+    void turnsTheReviewedMobileChangeOrderRejectionIntoPolicyEvidenceOnly() {
+        IncidentReportReadOnlyTool tool = new IncidentReportReadOnlyTool();
+        IncidentContext incident = new IncidentContext(
+                "incident-mobile-finish", "CSDP", "sf-icare-openapi", null,
+                ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "P2", "待确认", null, OCCURRED_AT, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceRequest request = new EvidenceRequest(
+                "open-discovery-icare-mobile-finish-reported",
+                IncidentReportReadOnlyTool.BUSINESS_POLICY_SIGNAL_KIND,
+                "读取规范化告警中已经明确的业务拒绝原因",
+                Map.of(), "-15m", true);
+
+        EvidenceResult result = tool.collect(context(incident), request);
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "failure_count", 1,
+                "operation", "updateFinish",
+                "policy_code", "mobile_change_order_finish_forbidden",
+                "client_surface", "MOBILE",
+                "change_order_linked", true,
+                "recommended_channel", "PC",
+                "evidence_grade", "REPORTED"));
+        assertThat(result.observed().toString())
+                .doesNotContain("token", "Authorization", "workOrder", "loginPrm");
+    }
+
     private static ReadOnlyToolRegistry.Context context(IncidentContext incident) {
         return new ReadOnlyToolRegistry.Context(
                 1L, incident, Set.of("guance"), Instant.MAX);

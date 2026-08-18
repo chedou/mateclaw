@@ -651,6 +651,31 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void reportedMobileFinishPolicyShowsTheReasonAndSafeManualNextStep() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(icareMobileFinishPolicyDiagnosis(), 0, true));
+
+        DiagnosisExperienceProjection.BusinessSummary summary =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).businessSummary();
+
+        assertThat(summary.evidenceBasis())
+                .isEqualTo(DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
+        assertThat(summary.rootCause())
+                .contains("工单关联变更单")
+                .contains("移动端完结");
+        assertThat(summary.keyEvidence())
+                .contains("iCare 返回的业务提示")
+                .contains("不允许在移动端完结");
+        assertThat(summary.nextStep().label()).isEqualTo("改用 PC 端完结");
+        assertThat(summary.nextStep().text())
+                .contains("不要在移动端重试")
+                .contains("iCare 技术支持");
+        assertThat(summary.nextStep().capabilityBoundary())
+                .contains("不会代替你提交完结操作")
+                .contains("尚未验证 PC 端结果");
+    }
+
+    @Test
     void projectsTheServerResolvedTopologyToolRequirement() {
         Diagnosis diagnosis = scenarioDiagnosis();
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
@@ -1008,6 +1033,49 @@ class DiagnosisExperienceProjectionServiceTest {
                 Confidence.LOW,
                 List.of(reported),
                 List.of("icare-product-mapping-502-present"),
+                List.of(), List.of(), List.of(new TimelineEvent(
+                        NOW, "受限调查形成待确认假设", "system", "done")));
+    }
+
+    private Diagnosis icareMobileFinishPolicyDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-mobile-finish", "CSDP", "sf-icare-openapi", null,
+                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "P2", "影响待确认", null, NOW, null, "channel:web:conversation",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceResult reported = new EvidenceResult(
+                "open-discovery-icare-mobile-finish-reported",
+                "incident_reported_business_policy_rejection", "",
+                EvidenceStatus.ANOMALY,
+                "iCare 已明确拒绝移动端完结",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "mobile_change_order_finish_forbidden",
+                        "client_surface", "MOBILE",
+                        "change_order_linked", true,
+                        "recommended_channel", "PC",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized", NOW);
+        Diagnosis pending = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-mobile-finish", "run-mobile-finish", incident,
+                RouteMode.BOUNDED_DISCOVERY,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.POLICY_PROPOSED,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, READY_AT),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "等待受限调查", "", Confidence.LOW, true,
+                null, null, null, List.of(), List.of(), List.of(), "iCare 负责团队",
+                true, false, List.of(), List.of());
+        return pending.evidenceRecorded(
+                ConclusionType.HYPOTHESIS,
+                "直接失败原因：工单关联变更单，iCare 禁止在移动端完结",
+                "告警中的 iCare 业务提示已明确说明本次拒绝条件。",
+                Confidence.MEDIUM,
+                List.of(reported),
+                List.of("icare-mobile-change-order-finish-policy-present"),
                 List.of(), List.of(), List.of(new TimelineEvent(
                         NOW, "受限调查形成待确认假设", "system", "done")));
     }

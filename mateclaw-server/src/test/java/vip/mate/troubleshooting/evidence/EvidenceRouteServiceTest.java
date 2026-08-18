@@ -134,6 +134,11 @@ class EvidenceRouteServiceTest {
                 List.of("guance"), "admin", "错误地把告警事实当成观测数据"))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("incident_reported_external_http_failure");
+        assertThatThrownBy(() -> service.declare(
+                WORKSPACE_ID, "CSDP", "incident_reported_business_policy_rejection",
+                List.of("guance"), "admin", "错误地把业务回应当成观测数据"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("incident_reported_business_policy_rejection");
     }
 
     /**

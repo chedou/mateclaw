@@ -12,6 +12,8 @@ class EvidenceRouterReadOnlyToolTest {
 
         assertThat(tool.descriptor().signalKinds())
                 .contains("error_log_scan")
-                .doesNotContain("incident_reported_external_http_failure");
+                .doesNotContain(
+                        "incident_reported_external_http_failure",
+                        "incident_reported_business_policy_rejection");
     }
 }

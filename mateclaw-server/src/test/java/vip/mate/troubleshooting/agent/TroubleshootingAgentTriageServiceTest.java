@@ -898,6 +898,72 @@ class TroubleshootingAgentTriageServiceTest {
     }
 
     @Test
+    void reviewedIncidentUsesTheDeterministicPlanEvenWhenAnAgentIsAvailable() {
+        IncidentContext reviewed = new IncidentContext(
+                "incident-mobile-finish", "CSDP", "sf-icare-openapi", null,
+                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "P2", "待确认", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceResult reported = new EvidenceResult(
+                "open-discovery-icare-mobile-finish-reported",
+                "incident_reported_business_policy_rejection", "",
+                EvidenceStatus.ANOMALY, "reviewed policy rejection",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "mobile_change_order_finish_forbidden",
+                        "client_surface", "MOBILE",
+                        "change_order_linked", true,
+                        "recommended_channel", "PC",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized", NOW);
+        HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
+                .create(reviewed)
+                .recordOutcome(
+                        "open-discovery-icare-mobile-finish-reported",
+                        CriterionOutcome.SATISFIED,
+                        reported.queryId());
+        BoundedInvestigationPlanner.Outcome outcome = new BoundedInvestigationPlanner.Outcome(
+                graph,
+                RootCauseFinding.from(
+                        graph, BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED),
+                List.of(reported), 1, 1, NOW, NOW.plusSeconds(1),
+                BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED);
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                new BoundedOpenDiscoveryInvestigationService.Execution(
+                        outcome,
+                        BoundedOpenDiscoveryInvestigationService.PLAN_KEY,
+                        "1".repeat(64),
+                        List.of("incident_reported_business_policy_rejection"),
+                        2, 2, Duration.ofSeconds(10));
+        when(boundedInvestigation.investigate(WORKSPACE_ID, reviewed))
+                .thenReturn(java.util.Optional.of(execution));
+        TroubleshootingAgentTriageService boundedService =
+                new TroubleshootingAgentTriageService(
+                        properties,
+                        agentService,
+                        bindingService,
+                        sessions,
+                        boundedInvestigation,
+                        new DiagnosisStateMachine(
+                                Clock.fixed(NOW, ZoneOffset.UTC),
+                                prefix -> prefix + "-fixed"),
+                        openDiscoveryPersistence,
+                        objectMapper,
+                        Clock.fixed(NOW, ZoneOffset.UTC),
+                        streamTracker);
+
+        StoredDiagnosis stored = boundedService.triage(
+                WORKSPACE_ID, reviewed, List.of(), false, "unknown route");
+
+        assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.BOUNDED_DISCOVERY);
+        assertThat(stored.diagnosis().rootCause()).contains("工单关联变更单");
+        verify(agentService, never()).chatWithToolAllowlist(
+                anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
     void persistsABoundedAbstentionAndItsExactStopReasonWhenEvidenceIsMissing() {
         properties.setEnabled(false);
         EvidenceResult missingApplication = new EvidenceResult(

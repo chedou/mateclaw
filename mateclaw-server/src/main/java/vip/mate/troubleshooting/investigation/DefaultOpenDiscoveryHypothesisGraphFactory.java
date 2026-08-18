@@ -24,7 +24,22 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
             throw new IllegalArgumentException("incident is required");
         }
         List<HypothesisGraph.Hypothesis> hypotheses = new java.util.ArrayList<>();
-        if (ReviewedIncidentPolicy.isIcareProductMapping502(incident)) {
+        if (ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
+                    "icare-mobile-change-order-finish-rejected",
+                    "直接失败原因：工单关联变更单，iCare 禁止在移动端完结",
+                    160,
+                    List.of(questionWithTool(
+                            "open-discovery-icare-mobile-finish-reported",
+                            160,
+                            IncidentReportReadOnlyTool.TOOL_KEY,
+                            IncidentReportReadOnlyTool.VERSION,
+                            IncidentReportReadOnlyTool.BUSINESS_POLICY_SIGNAL_KIND,
+                            "读取规范化告警中已经明确的业务拒绝原因",
+                            "icare-mobile-change-order-finish-policy-present",
+                            "告警明确记录移动端完结被变更单规则拒绝",
+                            new Criterion.NumericGte("failure_count", 1)))));
+        } else if (ReviewedIncidentPolicy.isIcareProductMapping502(incident)) {
             hypotheses.add(new HypothesisGraph.Hypothesis(
                     "icare-product-mapping-http-502",
                     "直接失败点：iCare 产品映射外部接口返回 HTTP 502（上游为何返回 502 尚未定位）",
@@ -53,7 +68,8 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "应用 ERROR 数量大于零",
                                 new Criterion.NumericGte("error_count", 1)))));
         }
-        hypotheses.add(new HypothesisGraph.Hypothesis(
+        if (!ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
                         "runtime-health",
                         "Kubernetes 工作负载出现异常",
                         80,
@@ -65,6 +81,7 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "runtime-unhealthy-container-present",
                                 "异常容器数量大于零",
                                 new Criterion.NumericGte("unhealthy_container_count", 1)))));
+        }
         return HypothesisGraph.of(hypotheses);
     }
 
