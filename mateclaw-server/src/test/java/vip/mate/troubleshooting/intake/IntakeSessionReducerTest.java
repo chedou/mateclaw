@@ -230,6 +230,20 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void appTextInsideAnotherQueryValueCannotNominateTheReviewedIcareFact() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?source=app=CSDP&time=1787020784",
+                 "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-query-boundary",
+                envelope("msg-icare-query-boundary", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+    }
+
+    @Test
     void similarIcarePayloadWithoutTheReviewedPolicyMessageDoesNotBorrowTheRoute() {
         String alert = """
                 {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787020784&token=secret",

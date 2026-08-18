@@ -77,7 +77,7 @@ public final class IntakeSessionReducer {
     private static final Pattern ICARE_MOBILE_FINISH_ENDPOINT = Pattern.compile(
             "https://it-gw\\.sangfor\\.com/icare/api/(sf-icare-openapi)"
                     + "/openapi/case/workOrderPhase/channel/(updateFinish)\\?"
-                    + "[^\\\"\\r\\n]*\\bapp=CSDP(?=&|\\\"|\\s|$)",
+                    + "(?:app=CSDP|[^\\\"\\r\\n]*&app=CSDP)(?=&|\\\"|\\s|$)",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ICARE_MOBILE_FINISH_POLICY_REJECTION = Pattern.compile(
             "\\\"error\\\"\\s*:\\s*\\\""
