@@ -306,6 +306,12 @@ public class DiagnosisExperienceProjectionService {
     private String keyEvidence(Diagnosis diagnosis, ContrastView contrast) {
         if (contrast == null || !contrast.available()
                 || contrast.failedRequests() == null || contrast.normalRequests() == null) {
+            if (isIcareRequiredRevisitResultMissing(diagnosis)
+                    && hasReportedEvidence(
+                            diagnosis, "incident_reported_business_policy_rejection")) {
+                return "iCare 的错误提示与本次请求结构一致：结构化回访结果为空；"
+                        + "普通回访文字不能替代完结校验要求的回访结果字段。";
+            }
             if (isIcareMobileChangeOrderFinishRejected(diagnosis)
                     && hasReportedEvidence(
                             diagnosis, "incident_reported_business_policy_rejection")) {
@@ -335,6 +341,9 @@ public class DiagnosisExperienceProjectionService {
                                 diagnosis, "incident_reported_external_http_failure"))
                 || (isIcareMobileChangeOrderFinishRejected(diagnosis)
                         && hasReportedEvidence(
+                                diagnosis, "incident_reported_business_policy_rejection"))
+                || (isIcareRequiredRevisitResultMissing(diagnosis)
+                        && hasReportedEvidence(
                                 diagnosis, "incident_reported_business_policy_rejection"));
         if (reported) {
             return EvidenceBasis.REPORTED;
@@ -354,6 +363,17 @@ public class DiagnosisExperienceProjectionService {
             List<SystemOnboardingGap> gaps) {
         if (conclusionType == ConclusionType.INSUFFICIENT_EVIDENCE && !gaps.isEmpty()) {
             return onboardingNextStep(diagnosis, gaps);
+        }
+        if (isIcareRequiredRevisitResultMissing(diagnosis)
+                && hasReportedEvidence(
+                        diagnosis, "incident_reported_business_policy_rejection")
+                && (conclusionType == ConclusionType.HYPOTHESIS
+                        || conclusionType == ConclusionType.LOCATED)) {
+            return new NextStep(
+                    "补全回访信息后重新完结",
+                    "在 iCare 工单的回访区域填写结构化“回访结果”及页面提示的其他必填项，"
+                            + "保存后再执行完结。普通备注或回访话术不能代替该字段。",
+                    "平台不会代替你填写或提交工单；重新提交前无法确认是否还存在其他必填项。");
         }
         if (isIcareMobileChangeOrderFinishRejected(diagnosis)
                 && hasReportedEvidence(
@@ -431,6 +451,11 @@ public class DiagnosisExperienceProjectionService {
     private boolean isIcareMobileChangeOrderFinishRejected(Diagnosis diagnosis) {
         return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
                 .isIcareMobileChangeOrderFinishRejected(diagnosis.incident());
+    }
+
+    private boolean isIcareRequiredRevisitResultMissing(Diagnosis diagnosis) {
+        return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                .isIcareRequiredRevisitResultMissing(diagnosis.incident());
     }
 
     private boolean hasReportedEvidence(Diagnosis diagnosis, String expectedSignalKind) {

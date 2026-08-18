@@ -80,6 +80,35 @@ class IncidentReportReadOnlyToolTest {
                 .doesNotContain("token", "Authorization", "workOrder", "loginPrm");
     }
 
+    @Test
+    void turnsTheReviewedMissingRevisitResultIntoPolicyEvidenceOnly() {
+        IncidentReportReadOnlyTool tool = new IncidentReportReadOnlyTool();
+        IncidentContext incident = new IncidentContext(
+                "incident-revisit-required", "CSDP", "sf-icare-openapi", null,
+                ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                "P2", "待确认", null, OCCURRED_AT, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceRequest request = new EvidenceRequest(
+                "open-discovery-icare-revisit-result-reported",
+                IncidentReportReadOnlyTool.BUSINESS_POLICY_SIGNAL_KIND,
+                "读取规范化告警中已经明确的必填信息拒绝原因",
+                Map.of(), "-15m", true);
+
+        EvidenceResult result = tool.collect(context(incident), request);
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
+        assertThat(result.observed()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "failure_count", 1,
+                "operation", "updateFinish",
+                "policy_code", "required_revisit_result_missing",
+                "required_information", "REVISIT_RESULT",
+                "required_information_missing", true,
+                "recommended_action", "COMPLETE_REVISIT_FORM",
+                "evidence_grade", "REPORTED"));
+        assertThat(result.observed().toString())
+                .doesNotContain("token", "Authorization", "workOrder", "loginPrm", "customer");
+    }
+
     private static ReadOnlyToolRegistry.Context context(IncidentContext incident) {
         return new ReadOnlyToolRegistry.Context(
                 1L, incident, Set.of("guance"), Instant.MAX);

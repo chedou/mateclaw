@@ -85,6 +85,12 @@ public final class IntakeSessionReducer {
                     + "请到PC端操作(?:（如PC端无法完成操作，"
                     + "请联系icare技术支持）)?\\\"",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION = Pattern.compile(
+            "\\\"error\\\"\\s*:\\s*\\\"当前工单需要填写回访信息，不能完结\\\"",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern ICARE_BLANK_REVISIT_RESULT = Pattern.compile(
+            "\\\"revisitResult\\\"\\s*:\\s*\\\"\\s*\\\"",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern URL_EPOCH_SECONDS = Pattern.compile(
             "(?:[?&])time=(\\d{10})(?:&|\\\"|$)");
 
@@ -250,7 +256,7 @@ public final class IntakeSessionReducer {
         if (raw == null || raw.isBlank()) {
             return ParsedInput.empty();
         }
-        ParsedInput reviewed = parseReviewedIcareMobileFinishRejection(raw);
+        ParsedInput reviewed = parseReviewedIcareFinishRejection(raw);
         if (reviewed != null) {
             return reviewed;
         }
@@ -306,14 +312,28 @@ public final class IntakeSessionReducer {
                 null);
     }
 
-    private ParsedInput parseReviewedIcareMobileFinishRejection(String raw) {
+    private ParsedInput parseReviewedIcareFinishRejection(String raw) {
         // JSON serializers commonly preserve ampersands as a unicode escape.
         // Normalize transport spelling only in local memory; the raw payload is
         // never copied into the returned intake fields.
         String normalized = raw.replace("\\u0026", "&").replace("&amp;", "&");
         Matcher endpoint = ICARE_MOBILE_FINISH_ENDPOINT.matcher(normalized);
-        if (!endpoint.find()
-                || !ICARE_MOBILE_FINISH_POLICY_REJECTION.matcher(normalized).find()) {
+        if (!endpoint.find()) {
+            return null;
+        }
+        if (ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION.matcher(normalized).find()
+                && ICARE_BLANK_REVISIT_RESULT.matcher(normalized).find()) {
+            return new ParsedInput(
+                    ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                    "CSDP",
+                    endpoint.group(1).toLowerCase(Locale.ROOT),
+                    "未知",
+                    null,
+                    null,
+                    extractUrlEpochSeconds(normalized),
+                    NormalizedIncidentFactKind.ICARE_REQUIRED_REVISIT_RESULT_MISSING);
+        }
+        if (!ICARE_MOBILE_FINISH_POLICY_REJECTION.matcher(normalized).find()) {
             return null;
         }
         return new ParsedInput(

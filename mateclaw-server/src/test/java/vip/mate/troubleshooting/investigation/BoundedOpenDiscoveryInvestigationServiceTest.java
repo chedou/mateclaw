@@ -192,6 +192,36 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
     }
 
     @Test
+    void explainsTheReviewedMissingRevisitResultWithoutCallingObservability() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        properties.setBoundedInvestigationEnabled(false);
+        properties.setBoundedInvestigationPermittedPlatforms(List.of());
+        BoundedOpenDiscoveryInvestigationService service = new BoundedOpenDiscoveryInvestigationService(
+                properties,
+                new BoundedInvestigationPlanner(
+                        new ReadOnlyToolRegistry(
+                                List.of(new IncidentReportReadOnlyTool(), new NeverCalledTool()), CLOCK),
+                        new CriterionEvaluator(), CLOCK),
+                new DefaultOpenDiscoveryHypothesisGraphFactory(),
+                CLOCK);
+        IncidentContext alert = new IncidentContext(
+                "incident-revisit-required", "CSDP", "sf-icare-openapi", null,
+                ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                "P2", "待确认", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigateReviewedIncidentReport(1L, alert).orElseThrow();
+
+        assertThat(execution.finding().type()).isEqualTo(RootCauseFinding.Type.LOCATED);
+        assertThat(execution.finding().cause())
+                .isEqualTo("明确排障原因：回访结果未填写，iCare 完结校验拒绝提交");
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly("incident_reported_business_policy_rejection");
+        assertThat(execution.sourceRequestCount()).isEqualTo(1);
+    }
+
+    @Test
     void planFingerprintChangesWhenWindowOrCriterionThresholdChanges() {
         HypothesisGraph first = graph("-15m", 1);
         HypothesisGraph changedWindow = graph("-30m", 1);

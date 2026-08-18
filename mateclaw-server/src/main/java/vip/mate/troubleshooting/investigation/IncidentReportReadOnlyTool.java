@@ -49,6 +49,10 @@ public final class IncidentReportReadOnlyTool implements ReadOnlyEvidenceTool {
                 && ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
             return mobileFinishPolicyRejection(request, incident);
         }
+        if (BUSINESS_POLICY_SIGNAL_KIND.equals(request.signalKind())
+                && ReviewedIncidentPolicy.isIcareRequiredRevisitResultMissing(incident)) {
+            return requiredRevisitResultRejection(request, incident);
+        }
         String signalKind = descriptor.signalKinds().contains(request.signalKind())
                 ? request.signalKind() : SIGNAL_KIND;
         return new EvidenceResult(
@@ -85,6 +89,24 @@ public final class IncidentReportReadOnlyTool implements ReadOnlyEvidenceTool {
                         "client_surface", "MOBILE",
                         "change_order_linked", true,
                         "recommended_channel", "PC",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized",
+                evidenceTime(incident));
+    }
+
+    private EvidenceResult requiredRevisitResultRejection(
+            EvidenceRequest request,
+            IncidentContext incident) {
+        return new EvidenceResult(
+                request.requestId(), BUSINESS_POLICY_SIGNAL_KIND, "", EvidenceStatus.ANOMALY,
+                "iCare 已明确拒绝完结：结构化回访结果未填写，需先补全回访表单",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "required_revisit_result_missing",
+                        "required_information", "REVISIT_RESULT",
+                        "required_information_missing", true,
+                        "recommended_action", "COMPLETE_REVISIT_FORM",
                         "evidence_grade", "REPORTED"),
                 "incident-report:normalized",
                 evidenceTime(incident));

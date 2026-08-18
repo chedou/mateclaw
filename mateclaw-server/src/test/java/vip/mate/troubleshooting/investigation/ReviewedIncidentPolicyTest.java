@@ -56,6 +56,23 @@ class ReviewedIncidentPolicyTest {
                 IncidentCompleteness.SYMPTOM))).isFalse();
     }
 
+    @Test
+    void acceptsOnlyTheExactReviewedMissingRevisitResultRejection() {
+        assertThat(ReviewedIncidentPolicy.isIcareRequiredRevisitResultMissing(incident(
+                "CSDP", "sf-icare-openapi",
+                ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                IncidentCompleteness.STRUCTURED))).isTrue();
+
+        assertThat(ReviewedIncidentPolicy.isIcareRequiredRevisitResultMissing(incident(
+                "CSDP", "sf-icare-openapi",
+                "当前工单需要填写回访信息",
+                IncidentCompleteness.STRUCTURED))).isFalse();
+        assertThat(ReviewedIncidentPolicy.isIcareRequiredRevisitResultMissing(incident(
+                "CSDP", "csdp-task",
+                ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                IncidentCompleteness.STRUCTURED))).isFalse();
+    }
+
     private IncidentContext incident(
             String system, String service, String title, IncidentCompleteness completeness) {
         return new IncidentContext(

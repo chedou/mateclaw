@@ -107,7 +107,7 @@ public final class BoundedOpenDiscoveryInvestigationService {
     public Optional<Execution> investigateReviewedIncidentReport(
             long workspaceId,
             IncidentContext incident) {
-        if (!ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
+        if (!ReviewedIncidentPolicy.isReviewedIcareFinishRejection(incident)) {
             return Optional.empty();
         }
         HypothesisGraph graph = graphFactory.createReviewedIncidentReport(incident);

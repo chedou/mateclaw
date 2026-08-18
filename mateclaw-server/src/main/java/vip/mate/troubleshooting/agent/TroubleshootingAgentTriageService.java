@@ -308,11 +308,10 @@ public final class TroubleshootingAgentTriageService {
             // caller-supplied system/service/title tuple has no authority to
             // manufacture REPORTED evidence, and this branch never falls back
             // to a model when its local plan is unavailable.
-            if (normalizedFactKind
-                    == NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED) {
+            if (normalizedFactKind != null) {
                 if (intakeSessionId == null
                         || !vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
-                        .isIcareMobileChangeOrderFinishRejected(sanitizedIncident)
+                        .matchesTrustedFact(normalizedFactKind, sanitizedIncident)
                         || boundedInvestigation == null) {
                     throw new MateClawException(
                             "err.troubleshooting.reviewed_incident_plan_unavailable",

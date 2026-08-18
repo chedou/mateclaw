@@ -77,7 +77,14 @@ public final class CanonicalEvidenceSchema {
                     "client_surface", FieldType.STRING,
                     "change_order_linked", FieldType.BOOLEAN,
                     "recommended_channel", FieldType.STRING,
-                    "evidence_grade", FieldType.STRING))),
+                    "required_information", FieldType.STRING,
+                    "required_information_missing", FieldType.BOOLEAN,
+                    "recommended_action", FieldType.STRING,
+                    "evidence_grade", FieldType.STRING),
+                    Set.of(
+                            "client_surface", "change_order_linked", "recommended_channel",
+                            "required_information", "required_information_missing",
+                            "recommended_action"))),
             Map.entry("error_log_scan", scalar(
                     Map.of(
                             "error_count", FieldType.NUMBER,
@@ -402,15 +409,31 @@ public final class CanonicalEvidenceSchema {
     private static boolean validIncidentReportedBusinessPolicyRejection(
             Map<String, Object> observed) {
         Long failures = CanonicalNumberParser.parseExactLong(observed.get("failure_count"));
-        return failures != null
-                && failures == 1
-                && "updateFinish".equals(String.valueOf(observed.get("operation")).trim())
-                && "mobile_change_order_finish_forbidden".equals(
-                        String.valueOf(observed.get("policy_code")).trim())
-                && "MOBILE".equals(String.valueOf(observed.get("client_surface")).trim())
-                && Boolean.TRUE.equals(observed.get("change_order_linked"))
-                && "PC".equals(String.valueOf(observed.get("recommended_channel")).trim())
-                && "REPORTED".equals(String.valueOf(observed.get("evidence_grade")).trim());
+        if (failures == null || failures != 1
+                || !"updateFinish".equals(String.valueOf(observed.get("operation")).trim())
+                || !"REPORTED".equals(String.valueOf(observed.get("evidence_grade")).trim())) {
+            return false;
+        }
+        String policyCode = String.valueOf(observed.get("policy_code")).trim();
+        if ("mobile_change_order_finish_forbidden".equals(policyCode)) {
+            return observed.keySet().equals(Set.of(
+                            "failure_count", "operation", "policy_code", "client_surface",
+                            "change_order_linked", "recommended_channel", "evidence_grade"))
+                    && "MOBILE".equals(String.valueOf(observed.get("client_surface")).trim())
+                    && Boolean.TRUE.equals(observed.get("change_order_linked"))
+                    && "PC".equals(String.valueOf(observed.get("recommended_channel")).trim());
+        }
+        if ("required_revisit_result_missing".equals(policyCode)) {
+            return observed.keySet().equals(Set.of(
+                            "failure_count", "operation", "policy_code", "required_information",
+                            "required_information_missing", "recommended_action", "evidence_grade"))
+                    && "REVISIT_RESULT".equals(
+                            String.valueOf(observed.get("required_information")).trim())
+                    && Boolean.TRUE.equals(observed.get("required_information_missing"))
+                    && "COMPLETE_REVISIT_FORM".equals(
+                            String.valueOf(observed.get("recommended_action")).trim());
+        }
+        return false;
     }
 
     private static boolean validK8sWorkloadHealth(Map<String, Object> observed) {

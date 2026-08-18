@@ -70,8 +70,24 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
 
     /** Builds a local-only graph after IntakeSession provenance has been verified. */
     public HypothesisGraph createReviewedIncidentReport(IncidentContext incident) {
-        if (!ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
+        if (!ReviewedIncidentPolicy.isReviewedIcareFinishRejection(incident)) {
             throw new IllegalArgumentException("incident has no reviewed local report plan");
+        }
+        if (ReviewedIncidentPolicy.isIcareRequiredRevisitResultMissing(incident)) {
+            return HypothesisGraph.of(List.of(new HypothesisGraph.Hypothesis(
+                    "icare-required-revisit-result-missing",
+                    "明确排障原因：回访结果未填写，iCare 完结校验拒绝提交",
+                    160,
+                    List.of(questionWithTool(
+                            "open-discovery-icare-revisit-result-reported",
+                            160,
+                            IncidentReportReadOnlyTool.TOOL_KEY,
+                            IncidentReportReadOnlyTool.VERSION,
+                            IncidentReportReadOnlyTool.BUSINESS_POLICY_SIGNAL_KIND,
+                            "读取规范化告警中已经明确的必填信息拒绝原因",
+                            "icare-required-revisit-result-missing-present",
+                            "告警与请求结构共同表明回访结果字段为空",
+                            new Criterion.NumericGte("failure_count", 1))))));
         }
         return HypothesisGraph.of(List.of(new HypothesisGraph.Hypothesis(
                 "icare-mobile-change-order-finish-rejected",

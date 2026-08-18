@@ -2,6 +2,7 @@ package vip.mate.troubleshooting.investigation;
 
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.intake.NormalizedIncidentFactKind;
 
 /** Exact, reviewed predicates that may activate incident-specific investigation behavior. */
 public final class ReviewedIncidentPolicy {
@@ -10,6 +11,8 @@ public final class ReviewedIncidentPolicy {
             "调用接口异常（HTTP 502 · get_icare_product_mapping）";
     public static final String ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE =
             "工单涉及变更单，iCare 禁止在移动端完结";
+    public static final String ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE =
+            "回访结果未填写，iCare 拒绝完结";
 
     private ReviewedIncidentPolicy() {
     }
@@ -37,6 +40,34 @@ public final class ReviewedIncidentPolicy {
                 && "CSDP".equalsIgnoreCase(incident.system())
                 && "sf-icare-openapi".equalsIgnoreCase(incident.service())
                 && ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE.equals(incident.title());
+    }
+
+    /** Exact normalized form of iCare's required revisit-result rejection. */
+    public static boolean isIcareRequiredRevisitResultMissing(IncidentContext incident) {
+        return incident != null
+                && incident.completeness() == IncidentCompleteness.STRUCTURED
+                && "CSDP".equalsIgnoreCase(incident.system())
+                && "sf-icare-openapi".equalsIgnoreCase(incident.service())
+                && ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE.equals(incident.title());
+    }
+
+    public static boolean isReviewedIcareFinishRejection(IncidentContext incident) {
+        return isIcareMobileChangeOrderFinishRejected(incident)
+                || isIcareRequiredRevisitResultMissing(incident);
+    }
+
+    public static boolean matchesTrustedFact(
+            NormalizedIncidentFactKind factKind,
+            IncidentContext incident) {
+        if (factKind == null) {
+            return false;
+        }
+        return switch (factKind) {
+            case ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED ->
+                    isIcareMobileChangeOrderFinishRejected(incident);
+            case ICARE_REQUIRED_REVISIT_RESULT_MISSING ->
+                    isIcareRequiredRevisitResultMissing(incident);
+        };
     }
 
 }

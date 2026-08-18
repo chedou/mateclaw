@@ -230,6 +230,50 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void pastedIcareMissingRevisitResultBecomesASanitizedReadyIncident() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?time=1787042438&app=CSDP&token=must-not-survive",
+                 "header":{"Authorization":"Bearer must-not-survive"},
+                 "content":{"loginPrmUserName":"某某","workOrderId":"T0000000002","syncCustomerDetail":"long customer text","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-required",
+                envelope("msg-icare-revisit-required", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(IntakeSessionStatus.READY, session.status());
+        assertEquals("回访结果未填写，iCare 拒绝完结", session.symptom());
+        assertEquals("CSDP", session.system());
+        assertEquals("sf-icare-openapi", session.service());
+        assertEquals("未知", session.customerRef());
+        assertEquals(Instant.ofEpochSecond(1787042438L), session.occurredAt());
+        assertEquals(
+                NormalizedIncidentFactKind.ICARE_REQUIRED_REVISIT_RESULT_MISSING,
+                session.normalizedFactKind());
+        assertNull(session.errorCode());
+        assertTrue(session.missingFields().isEmpty());
+        assertFalse(session.symptom().contains("token"));
+        assertFalse(session.symptom().contains("T0000000002"));
+        assertFalse(session.symptom().contains("customer text"));
+    }
+
+    @Test
+    void similarRevisitMessageWithoutAnEmptyStructuredResultCannotBorrowTheReviewedFact() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "content":{"revisitResult":"completed"},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-not-empty",
+                envelope("msg-icare-revisit-not-empty", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+    }
+
+    @Test
     void appTextInsideAnotherQueryValueCannotNominateTheReviewedIcareFact() {
         String alert = """
                 {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?source=app=CSDP&time=1787020784",

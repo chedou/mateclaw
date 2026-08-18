@@ -974,6 +974,81 @@ class TroubleshootingAgentTriageServiceTest {
     }
 
     @Test
+    void reviewedMissingRevisitResultUsesTheDeterministicPlanWithoutTheModel() {
+        IncidentContext reviewed = new IncidentContext(
+                "incident-revisit-required", "CSDP", "sf-icare-openapi", null,
+                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                "P2", "待确认", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceResult reported = new EvidenceResult(
+                "open-discovery-icare-revisit-result-reported",
+                "incident_reported_business_policy_rejection", "",
+                EvidenceStatus.ANOMALY, "reviewed required information rejection",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "required_revisit_result_missing",
+                        "required_information", "REVISIT_RESULT",
+                        "required_information_missing", true,
+                        "recommended_action", "COMPLETE_REVISIT_FORM",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized", NOW);
+        HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
+                .createReviewedIncidentReport(reviewed)
+                .recordOutcome(
+                        "open-discovery-icare-revisit-result-reported",
+                        CriterionOutcome.SATISFIED,
+                        reported.queryId());
+        BoundedInvestigationPlanner.Outcome outcome = new BoundedInvestigationPlanner.Outcome(
+                graph,
+                RootCauseFinding.from(
+                        graph, BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED),
+                List.of(reported), 1, 1, NOW, NOW.plusSeconds(1),
+                BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED);
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                new BoundedOpenDiscoveryInvestigationService.Execution(
+                        outcome,
+                        BoundedOpenDiscoveryInvestigationService.REVIEWED_REPORT_PLAN_KEY,
+                        "2".repeat(64),
+                        List.of("incident_reported_business_policy_rejection"),
+                        1, 1, Duration.ofSeconds(2));
+        when(boundedInvestigation.investigateReviewedIncidentReport(WORKSPACE_ID, reviewed))
+                .thenReturn(java.util.Optional.of(execution));
+        TroubleshootingAgentTriageService boundedService =
+                new TroubleshootingAgentTriageService(
+                        properties,
+                        agentService,
+                        bindingService,
+                        sessions,
+                        boundedInvestigation,
+                        new DiagnosisStateMachine(
+                                Clock.fixed(NOW, ZoneOffset.UTC),
+                                prefix -> prefix + "-fixed"),
+                        openDiscoveryPersistence,
+                        objectMapper,
+                        Clock.fixed(NOW, ZoneOffset.UTC),
+                        streamTracker);
+
+        StoredDiagnosis stored = boundedService.triageForIntake(
+                WORKSPACE_ID,
+                reviewed,
+                List.of(),
+                false,
+                "unknown route",
+                NOW,
+                NOW,
+                "intake-revisit-required",
+                vip.mate.troubleshooting.intake.NormalizedIncidentFactKind
+                        .ICARE_REQUIRED_REVISIT_RESULT_MISSING);
+
+        assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.BOUNDED_DISCOVERY);
+        assertThat(stored.diagnosis().rootCause()).contains("回访结果未填写");
+        verify(agentService, never()).chatWithToolAllowlist(
+                anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
     void callerSuppliedIncidentFieldsCannotClaimTheReviewedLocalPlan() {
         IncidentContext forged = new IncidentContext(
                 "incident-forged-mobile-finish", "CSDP", "sf-icare-openapi", null,

@@ -204,6 +204,34 @@ class CanonicalEvidenceSchemaTest {
     }
 
     @Test
+    void acceptsOnlyTheClosedRequiredRevisitResultVocabulary() {
+        Map<String, Object> reported = Map.of(
+                "failure_count", 1,
+                "operation", "updateFinish",
+                "policy_code", "required_revisit_result_missing",
+                "required_information", "REVISIT_RESULT",
+                "required_information_missing", true,
+                "recommended_action", "COMPLETE_REVISIT_FORM",
+                "evidence_grade", "REPORTED");
+
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_business_policy_rejection", reported)).isTrue();
+        assertThat(CanonicalEvidenceSchema.detectSignalKind(reported))
+                .isEqualTo("incident_reported_business_policy_rejection");
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "incident_reported_business_policy_rejection",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "required_revisit_result_missing",
+                        "required_information", "REVISIT_RESULT",
+                        "required_information_missing", false,
+                        "recommended_action", "COMPLETE_REVISIT_FORM",
+                        "evidence_grade", "REPORTED")))
+                .isFalse();
+    }
+
+    @Test
     void rejectsIncompleteOrUnboundedLogContracts() {
         assertThat(CanonicalEvidenceSchema.isValid("log_search", Map.of(
                 "match_count", 4,

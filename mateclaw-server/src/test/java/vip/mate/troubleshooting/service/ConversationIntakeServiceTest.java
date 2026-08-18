@@ -257,4 +257,51 @@ class ConversationIntakeServiceTest {
         assertThat(reported.getValue().symptom())
                 .doesNotContain("token", "Authorization", "T0000000001", "某某");
     }
+
+    @Test
+    @DisplayName("粘贴 iCare 回访结果缺失报文后一轮返回明确原因")
+    void fullIcareMissingRevisitResultReturnsTheReasonInOneTurn() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "header":{"Authorization":"Bearer not-persisted"},
+                 "content":{"loginPrmUserName":"某某","workOrderId":"T0000000002","syncCustomerDetail":"long customer text","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+        AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
+        when(sessions.accept(any())).thenAnswer(call -> {
+            IntakeMessageEnvelope envelope = call.getArgument(0);
+            IntakeSession ready = new IntakeSessionReducer().start(
+                    "intake-icare-revisit-required", envelope);
+            storedSession.set(ready);
+            return IntakeDecision.from(ready, false, false);
+        });
+        when(sessions.getReady(1L, "intake-icare-revisit-required"))
+                .thenAnswer(call -> storedSession.get());
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.diagnosisId()).thenReturn("diag-icare-revisit-required");
+        when(intakeService.report(any(IntakeSession.class), eq(true)))
+                .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
+        BusinessSummary summary = mock(BusinessSummary.class);
+        DiagnosisExperienceProjection projection = mock(DiagnosisExperienceProjection.class);
+        when(projection.businessSummary()).thenReturn(summary);
+        when(projectionService.project(1L, "diag-icare-revisit-required"))
+                .thenReturn(projection);
+        when(summaryRenderer.render(summary)).thenReturn(
+                "明确原因：回访结果未填写，iCare 拒绝完结\n"
+                        + "下一步：补全回访表单后重试");
+
+        ConversationIntakeService.ConversationTurnResult result = service.turn(
+                1L, "admin", null, alert, true);
+
+        assertThat(result.status()).isEqualTo("READY");
+        assertThat(result.diagnosisId()).isEqualTo("diag-icare-revisit-required");
+        assertThat(result.prompt()).contains("回访结果未填写").contains("补全回访表单");
+        ArgumentCaptor<IntakeSession> reported = ArgumentCaptor.forClass(IntakeSession.class);
+        verify(intakeService).report(reported.capture(), eq(true));
+        assertThat(reported.getValue().normalizedFactKind())
+                .isEqualTo(vip.mate.troubleshooting.intake.NormalizedIncidentFactKind
+                        .ICARE_REQUIRED_REVISIT_RESULT_MISSING);
+        assertThat(reported.getValue().symptom())
+                .doesNotContain("token", "Authorization", "T0000000002", "某某", "customer text");
+    }
 }

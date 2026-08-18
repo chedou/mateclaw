@@ -676,6 +676,30 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void reportedMissingRevisitResultShowsTheExplicitReasonAndAction() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(icareMissingRevisitResultDiagnosis(), 0, true));
+
+        DiagnosisExperienceProjection.BusinessSummary summary =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).businessSummary();
+
+        assertThat(summary.evidenceBasis())
+                .isEqualTo(DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
+        assertThat(summary.rootCause())
+                .isEqualTo("明确排障原因：回访结果未填写，iCare 完结校验拒绝提交");
+        assertThat(summary.keyEvidence())
+                .contains("结构化回访结果为空")
+                .contains("普通回访文字不能替代");
+        assertThat(summary.nextStep().label()).isEqualTo("补全回访信息后重新完结");
+        assertThat(summary.nextStep().text())
+                .contains("回访结果")
+                .contains("必填项");
+        assertThat(summary.nextStep().capabilityBoundary())
+                .contains("不会代替你填写或提交")
+                .contains("其他必填项");
+    }
+
+    @Test
     void projectsTheServerResolvedTopologyToolRequirement() {
         Diagnosis diagnosis = scenarioDiagnosis();
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
@@ -1076,6 +1100,49 @@ class DiagnosisExperienceProjectionServiceTest {
                 Confidence.MEDIUM,
                 List.of(reported),
                 List.of("icare-mobile-change-order-finish-policy-present"),
+                List.of(), List.of(), List.of(new TimelineEvent(
+                        NOW, "受限调查形成待确认假设", "system", "done")));
+    }
+
+    private Diagnosis icareMissingRevisitResultDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-revisit-required", "CSDP", "sf-icare-openapi", null,
+                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
+                "P2", "影响待确认", null, NOW, null, "channel:web:conversation",
+                IncidentCompleteness.STRUCTURED, null);
+        EvidenceResult reported = new EvidenceResult(
+                "open-discovery-icare-revisit-result-reported",
+                "incident_reported_business_policy_rejection", "",
+                EvidenceStatus.ANOMALY,
+                "iCare 已明确拒绝完结：结构化回访结果未填写",
+                Map.of(
+                        "failure_count", 1,
+                        "operation", "updateFinish",
+                        "policy_code", "required_revisit_result_missing",
+                        "required_information", "REVISIT_RESULT",
+                        "required_information_missing", true,
+                        "recommended_action", "COMPLETE_REVISIT_FORM",
+                        "evidence_grade", "REPORTED"),
+                "incident-report:normalized", NOW);
+        Diagnosis pending = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-revisit-required", "run-revisit-required", incident,
+                RouteMode.BOUNDED_DISCOVERY,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.POLICY_PROPOSED,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, READY_AT),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "等待受限调查", "", Confidence.LOW, true,
+                null, null, null, List.of(), List.of(), List.of(), "iCare 负责团队",
+                true, false, List.of(), List.of());
+        return pending.evidenceRecorded(
+                ConclusionType.HYPOTHESIS,
+                "明确排障原因：回访结果未填写，iCare 完结校验拒绝提交",
+                "告警错误与请求结构共同确认结构化回访结果为空。",
+                Confidence.MEDIUM,
+                List.of(reported),
+                List.of("icare-required-revisit-result-missing-present"),
                 List.of(), List.of(), List.of(new TimelineEvent(
                         NOW, "受限调查形成待确认假设", "system", "done")));
     }
