@@ -84,6 +84,21 @@ class GuanceRecordingTargetCatalogTest {
     }
 
     @Test
+    void freezesTheServerOwnedScenarioSelectorForPerTargetBatchIsolation()
+            throws Exception {
+        Map<String, Object> scenario = document(targets(1));
+        candidateMap(target(scenario, 0)).put(
+                "errorCode", "scenario:cti_create_session_failed");
+
+        GuanceRecordingTargetCatalog.FrozenBatch batch = catalog(
+                scenario, selector -> true, selector -> false).frozenBatch();
+
+        assertThat(batch.targets()).singleElement().satisfies(target ->
+                assertThat(target.selectorKey())
+                        .isEqualTo("csdp:scenario:cti_create_session_failed"));
+    }
+
+    @Test
     void rejectsAReadyVerdictWhenTheRunningBindingMoved() throws Exception {
         GuanceRecordingTargetCatalog catalog = catalog(targets(20),
                 selector -> true, selector -> false);

@@ -226,7 +226,10 @@ public class IntakeInvestigationPoller {
             IntakeSession session = routable.get().session();
             String diagnosisId = claimed.getDiagnosisId();
             if (diagnosisId == null || diagnosisId.isBlank()) {
-                StoredDiagnosis stored = intakeService.report(session);
+                // Channel/poller traffic is not an explicit production request.
+                // Keep it in rehearsal until a caller deliberately supplies
+                // rehearsal=false and passes the formal admission gate.
+                StoredDiagnosis stored = intakeService.report(session, true);
                 diagnosisId = stored.diagnosis().diagnosisId();
                 if (mapper.attachDiagnosis(
                         claimed.getId(), workerId, diagnosisId, now()) != 1) {

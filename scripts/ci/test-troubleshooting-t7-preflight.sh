@@ -21,7 +21,7 @@ TOCTOU_TMPDIR="$(mktemp -d -t t7-preflight-tmp.XXXXXX)"
 NO_HASH_PATH="$(mktemp -d -t t7-no-hash-path.XXXXXX)"
 STATE_UPDATE="$(mktemp -t t7-stub-state-update.XXXXXX)"
 STUB_PID=""
-RECORDING_CATALOG='{}'
+RECORDING_BATCH='{}'
 AS_OF_EPOCH="$(jq -nr '"2026-08-02T00:00:00Z" | fromdateiso8601')"
 
 cleanup() {
@@ -81,10 +81,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(state["readiness"])
         elif path.endswith("/evidence/guance/acceptance"):
             self._send(state["acceptance"])
-        elif path.endswith("/evidence/guance/recording-targets"):
+        elif path.endswith("/evidence/guance/recording-batches/current"):
             raw = state.get("recordingResponseRaw")
             if raw is None:
-                self._send(state["recordingTargets"])
+                self._send(state["recordingBatch"])
             else:
                 self._send_body(raw.encode())
         else:
@@ -96,7 +96,7 @@ PY
 PORT="${PORT}" python3 "${STUB_LOG}.py" "${STATE_FILE}" &
 STUB_PID=$!
 
-printf '{"readiness":{},"acceptance":{},"recordingTargets":{}}' > "${STATE_FILE}"
+printf '{"readiness":{},"acceptance":{},"recordingBatch":{}}' > "${STATE_FILE}"
 for _ in $(seq 1 50); do
   curl -sS -o /dev/null --max-time 1 \
     -X POST "http://127.0.0.1:${PORT}/api/v1/auth/login" 2>/dev/null && break
@@ -129,8 +129,8 @@ signals() { # routed-core-signals...
   echo "${out}"
 }
 
-recording_catalog() { # count [mutation]
-  local count="$1" mutation="${2:-}" selectors targets
+recording_batch() { # count [mutation]
+  local count="$1" mutation="${2:-}" selectors targets executable_count
   selectors="$(jq -c --argjson count "${count}" '.selectors[:$count]' "${INVENTORY}")"
   targets="$(jq -n \
     --argjson selectors "${selectors}" \
@@ -138,50 +138,55 @@ recording_catalog() { # count [mutation]
     $selectors | to_entries | map({
       targetId: ("target-" + ((.key + 1) | tostring)),
       system: "CSDP",
-      service: "csdp-session-service",
+      service: (if .key < 10 then "service-a" else "service-b" end),
+      scenarioKey: null,
       selectorKey: .value,
-      candidateReference: ("candidate-ref-" + ((.key + 1) | tostring)),
-      candidateFingerprint: (("a" * 64 + ((.key + 1) | tostring))[-64:]),
-      requiredEvidenceRequestId: ("EV-" + ((.key + 1) | tostring)),
-      requestFingerprint: (("b" * 64 + ((.key + 1) | tostring))[-64:]),
-      searchTerm: (.value | split(":")[1]),
-      window: "-15m",
-      bindingRefs: {
-        log_search: "search-binding",
-        log_trace_bundle: "trace-binding",
-        contrast_sample: "contrast-binding"
-      }
+      bindingFingerprint: (if .key < 10 then ("a" * 64) else ("b" * 64) end),
+      targetBindingFingerprint: (("c" * 64 + ((.key + 1) | tostring))[-64:]),
+      executable: true,
+      blockers: []
     }
-    | if $mutation == "binding-mismatch" and .targetId == "target-1"
-      then .bindingRefs.log_search = "another-binding"
-      elif $mutation == "invalid-window" and .targetId == "target-1"
-      then .window = "-25h"
+    | if $mutation == "one-inexecutable" and .targetId == "target-20"
+      then .executable = false
+      | .blockers = ["frozen target bindings do not match the running bindings"]
+      elif $mutation == "missing-fingerprint" and .targetId == "target-1"
+      then .bindingFingerprint = null
+      | .targetBindingFingerprint = null
+      | .executable = false
+      | .blockers = ["exact target binding cannot be uniquely fingerprinted"]
       elif $mutation == "duplicate-selector" and .targetId == "target-2"
       then .selectorKey = $selectors[0]
-      elif $mutation == "duplicate-candidate" and .targetId == "target-2"
-      then .candidateFingerprint = (("a" * 64 + "1")[-64:])
       elif $mutation == "extra-field" and .targetId == "target-1"
       then . + {apiKey: "must-never-enter-catalog"}
       else . end)
   ')"
-  RECORDING_CATALOG="$(jq -n \
+  executable_count="$(jq -r '[.[] | select(.executable == true)] | length' <<<"${targets}")"
+  RECORDING_BATCH="$(jq -n \
     --argjson targets "${targets}" \
+    --argjson executableCount "${executable_count}" \
     --arg asOf "${AS_OF_EPOCH}" \
     --arg mutation "${mutation}" '
     {
       contractVersion: (if $mutation == "wrong-contract"
-                        then "t7-guance-recording-target-catalog.v0"
-                        else "t7-guance-recording-target-catalog.v1" end),
-      system: "CSDP",
-      service: "csdp-session-service",
+                        then "t7-guance-recording-batch-readiness.v1"
+                        else "t7-guance-recording-batch-readiness.v2" end),
+      batchId: ("t7-first-" + ("c" * 24)),
+      workspaceId: (if $mutation == "wrong-workspace" then "2" else "1" end),
+      catalogContractVersion: "t7-guance-recording-target-catalog.v1",
       catalogFingerprint: ("c" * 64),
       frozenTargetCount: ($targets | length),
-      executableTargetCount: ($targets | length),
+      executableTargetCount: $executableCount,
+      readyForOwnerAcceptance: (($targets | length) >= 20
+                                and ($targets | length) <= 30
+                                and $executableCount >= 20),
       targets: $targets,
       asOfEpochSeconds: (if $mutation == "numeric-as-of"
                          then ($asOf | tonumber) else $asOf end),
-      blockers: (if ($targets | length) < 20
-                 then ["fewer than 20 frozen targets"] else [] end)
+      blockers: (if $executableCount < 20
+                 then ["fewer than 20 executable workspace targets"]
+                 elif ($targets | length) > 30
+                 then ["workspace first batch exceeds 30"]
+                 else [] end)
     }
   ')"
 }
@@ -198,13 +203,13 @@ state() { # signals-json fingerprint acceptStatus acceptedFingerprint
   jq -n \
     --argjson sig "${sig}" \
     --argjson acc "${acceptance}" \
-    --argjson targets "${RECORDING_CATALOG}" '
+    --argjson batch "${RECORDING_BATCH}" '
     {readiness:{system:"CSDP", service:"csdp-session-service",
                  status:"READY_FOR_VALIDATION", adapterEnabled:true,
                  endpointConfigured:true, credentialState:"CONFIGURED",
                  uniqueAssetAuthorized:true, signals:$sig, blockers:[]},
       acceptance:$acc,
-      recordingTargets:$targets,
+      recordingBatch:$batch,
       recordingResponseRaw:null}' > "${STATE_FILE}"
 }
 
@@ -219,15 +224,15 @@ seed_plan() { # count [mutation]
   local count="$1" mutation="${2:-}"
   jq -n \
     --argjson count "${count}" \
-    --argjson catalog "${RECORDING_CATALOG}" \
+    --argjson batch "${RECORDING_BATCH}" \
     --arg mutation "${mutation}" '
     {
       contractVersion: (if $mutation == "wrong-contract"
                         then "t7-recording-window-plan.v0"
                         else "t7-recording-window-plan.v1" end),
       seeds: ([range(0; $count)] | map({
-        targetId: (if . < ($catalog.targets | length)
-                   then $catalog.targets[.].targetId
+        targetId: (if . < ($batch.targets | length)
+                   then $batch.targets[.].targetId
                    else "target-outside-catalog-\(.)" end),
         occurredAt: "2026-07-31T09:55:10Z",
         sourceReference: ("t7-window-seed-" + ((. + 1) | tostring))
@@ -283,7 +288,7 @@ hash_file() {
 }
 
 # ── 1–4 格：服务、adapter、核心 signal、binding 指纹 ───────────────
-recording_catalog 30
+recording_batch 20
 seed_plan 20
 
 set +e
@@ -297,13 +302,13 @@ grep -Fq "未能取得 token" "${OUT_FILE}" \
   || fail "an unreachable service must produce the stage-1 recovery instruction"
 printf 'ok  服务不可达 → 停在第 1 格\n'
 
-jq -n --argjson targets "${RECORDING_CATALOG}" '
+jq -n --argjson batch "${RECORDING_BATCH}" '
   {readiness:{status:"DISABLED", adapterEnabled:false,
               endpointConfigured:false, credentialState:"NOT_INSPECTED",
               signals:[], blockers:["Guance adapter is disabled"]},
    acceptance:{status:"BLOCKED", currentBindingFingerprint:null,
                acceptance:null, blockers:[]},
-   recordingTargets:$targets}' > "${STATE_FILE}"
+   recordingBatch:$batch}' > "${STATE_FILE}"
 run
 expect_blocked_at "Guance adapter 已启用"
 grep -Fq "Guance adapter is disabled" "${OUT_FILE}" \
@@ -322,32 +327,38 @@ expect_blocked_at "binding 指纹可唯一计算"
 printf 'ok  指纹为 null → 停在第 4 格\n'
 
 # ── 第 5 格先信运行服务，不信操作者自报映射 ────────────────────────
-recording_catalog 0
+recording_batch 0
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
 seed_plan 20
 run
 expect_blocked_at "20–30 条服务端冻结录制目标"
-grep -Fq "仅有 0 个可执行新目标" "${OUT_FILE}" \
-  || fail "an empty server catalog must state the real denominator"
-printf 'ok  服务端没有 20 个新目标 → 不把任意 D1 selector 冒充可执行合同\n'
+grep -Fq "全 workspace 仅有 0 个可执行目标" "${OUT_FILE}" \
+  || fail "an empty workspace batch must state the real denominator"
+printf 'ok  workspace 批次没有 20 个目标 → 不把任一 scope 冒充全局分母\n'
 
-for catalog_mutation in \
-  binding-mismatch invalid-window duplicate-selector duplicate-candidate extra-field wrong-contract numeric-as-of; do
-  recording_catalog 30 "${catalog_mutation}"
+for batch_mutation in \
+  one-inexecutable missing-fingerprint duplicate-selector extra-field \
+  wrong-contract wrong-workspace numeric-as-of; do
+  recording_batch 20 "${batch_mutation}"
   state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
   seed_plan 20
   run
   expect_blocked_at "20–30 条服务端冻结录制目标"
 done
-printf 'ok  binding 漂移、坏窗口、重复 selector/candidate、扩展字段与旧合同均阻断\n'
+recording_batch 31
+state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
+seed_plan 20
+run
+expect_blocked_at "20–30 条服务端冻结录制目标"
+printf 'ok  10+10 中任一目标失效会降到 19；错误 workspace、31 条超界及坏合同均阻断\n'
 
-recording_catalog 30
+recording_batch 20
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
 
 valid_recording_response="$(jq -nc \
-  --argjson data "${RECORDING_CATALOG}" \
+  --argjson data "${RECORDING_BATCH}" \
   '{code:200,msg:"ok",data:$data}')"
-duplicate_recording_response="${valid_recording_response/\"contractVersion\":\"t7-guance-recording-target-catalog.v1\"/\"contractVersion\":\"evil\",\"contractVersion\":\"t7-guance-recording-target-catalog.v1\"}"
+duplicate_recording_response="${valid_recording_response/\"contractVersion\":\"t7-guance-recording-batch-readiness.v2\"/\"contractVersion\":\"evil\",\"contractVersion\":\"t7-guance-recording-batch-readiness.v2\"}"
 set_raw_recording_response "${duplicate_recording_response}"
 seed_plan 20
 run
@@ -357,7 +368,7 @@ state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEP
 set_raw_recording_response "${valid_recording_response}{\"ignored\":true}"
 run
 expect_blocked_at "20–30 条服务端冻结录制目标"
-printf 'ok  目录响应的重复键与尾随根值均在 jq 读取前阻断\n'
+printf 'ok  workspace 批次响应的重复键与尾随根值均在 jq 读取前阻断\n'
 
 state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
 
@@ -367,7 +378,7 @@ MATECLAW_BASE_URL="http://127.0.0.1:${PORT}" MATECLAW_TOKEN=stub-token \
 RC=$?
 set -e
 expect_blocked_at "20–30 条窗口执行计划"
-printf 'ok  缺本次计划 → 不把目录容量冒充历史样本已准备\n'
+printf 'ok  缺本次计划 → 不把 workspace 批次容量冒充历史样本已准备\n'
 
 run_with_plan "${SEED_PLAN}.does-not-exist"
 expect_blocked_at "20–30 条窗口执行计划"
@@ -408,18 +419,18 @@ run
 expect_blocked_at "20–30 条窗口执行计划"
 grep -Fq "超过 128 KiB" "${OUT_FILE}" \
   || fail "oversized plan must fail before JSON interpretation"
-printf 'ok  数量、唯一性、目录成员、历史时间、白名单、JSON 与 128 KiB 均 fail closed\n'
+printf 'ok  数量、唯一性、批次成员、历史时间、白名单、JSON 与 128 KiB 均 fail closed\n'
 
 # ── ready path：只引用 server-owned targetId ───────────────────────
 seed_plan 20
 run
 expect_ready "可以约窗口"
-grep -Fq "服务端返回 30 个" "${OUT_FILE}" \
-  || fail "passing output must name the server-owned catalog capacity"
+grep -Fq "全 workspace 返回 20 个可执行目标，分布在 2 个 system/service scope" "${OUT_FILE}" \
+  || fail "10+10 across two services must satisfy one workspace denominator"
 grep -Fq "20 条窗口执行项已冻结" "${OUT_FILE}" \
   || fail "passing output must report the selected batch size"
-grep -Fq "目标目录 SHA-256" "${OUT_FILE}" \
-  || fail "passing output must freeze the server catalog"
+grep -Fq "workspace 批次 SHA-256" "${OUT_FILE}" \
+  || fail "passing output must freeze the workspace batch"
 grep -Fq "计划 SHA-256" "${OUT_FILE}" \
   || fail "passing output must freeze the exact plan snapshot"
 grep -Fq "尚未验收" "${OUT_FILE}" || fail "NOT_ACCEPTED must be the window's job"
@@ -430,8 +441,10 @@ grep -Fq '"measurementAndFieldsVerified": false' "${OUT_FILE}" \
 if sed -n '/checklist/,/}/p' "${OUT_FILE}" | grep -Fq 'true'; then
   fail "no checklist item may be pre-filled true"
 fi
-printf 'ok  30 个服务端目标 + 20 条历史计划 → ready，双指纹、清单全 false\n'
+printf 'ok  service-a 10 + service-b 10 → workspace 20，ready 且清单全 false\n'
 
+recording_batch 30
+state "$(signals log_search log_trace_bundle contrast_sample)" "fp-1" "NOT_ACCEPTED"
 seed_plan 30
 run
 expect_ready "30 条窗口执行项已冻结"

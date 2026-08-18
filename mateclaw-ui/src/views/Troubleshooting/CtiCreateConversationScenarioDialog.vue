@@ -9,6 +9,9 @@
       这是 CSDP 已登记场景：按标准方法查失败记录、关联调用，并对照成功样本。
       会生成或复用同一张排障单；全程只读。
     </el-alert>
+    <el-alert type="warning" :closable="false" class="dialog-alert">
+      当前仅支持演练：CTI 场景的 D20 场景级数据绑定与负责人验收尚未完成，平台不会把服务级验收冒充本场景的正式授权。
+    </el-alert>
     <el-form label-position="top" @submit.prevent="$emit('submit')">
       <div class="incident-form-grid">
         <el-form-item label="故障系统"><el-input :model-value="CTI_CREATE_CONVERSATION_SCENARIO.system" disabled /></el-form-item>
@@ -56,13 +59,15 @@
         <b>{{ CTI_CREATE_CONVERSATION_SCENARIO.selector }}</b>
         <p>失败记录 → 关联调用链 → 成功/失败对照；页面不能修改查询、证据源或判据。</p>
       </div>
-      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">演练记录</el-checkbox>
+      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal" disabled>
+        演练记录（完成 D20 后才可开放正式建单）
+      </el-checkbox>
       <p class="form-hint">建单后进入详情，按五问推进：发生了什么 → 怎么查 → 查到什么 → 说明什么 → 下一步怎么办。</p>
     </el-form>
     <template #footer>
       <el-button text @click="$emit('open-playbooks')">查看排查指南</el-button>
       <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">生成排障单</el-button>
+      <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">生成演练排障单</el-button>
     </template>
   </el-drawer>
 </template>

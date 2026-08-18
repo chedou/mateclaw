@@ -9,6 +9,9 @@
       管理员专项：先建排障单并锁定拨测方法，再建单后选拓扑做只读拨测。
       此时不调用模型、不执行拨测。
     </el-alert>
+    <el-alert type="warning" :closable="false" class="dialog-alert">
+      当前仅支持演练：D20 场景级数据绑定与负责人验收尚未完成，服务端会拒绝正式场景请求。
+    </el-alert>
     <el-form label-position="top" @submit.prevent="$emit('submit')">
       <div class="incident-form-grid">
         <el-form-item label="故障系统" required>
@@ -46,19 +49,18 @@
         <b>{{ selector }}</b>
         <p>页面不能指定方案版本或查询参数；服务端找不到精确权威版本时会明确拒绝。</p>
       </div>
-      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">
-        演练记录（推荐；每次生成独立排障单）
+      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal" disabled>
+        演练记录（完成 D20 后才可开放正式建单）
       </el-checkbox>
       <p class="form-hint">
-        关闭演练后，相同系统、服务与现象在五分钟内会复用既有排障单。
-        创建成功后再选择拓扑并执行只读拨测。
+        创建演练单后再选择拓扑并执行只读拨测；页面不会把未验收的场景标为正式排障。
       </p>
     </el-form>
     <template #footer>
       <el-button text @click="$emit('open-playbooks')">查看排障规则库</el-button>
       <el-button @click="open = false">取消</el-button>
       <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">
-        生成排障单并选拓扑
+        生成演练单并选拓扑
       </el-button>
     </template>
   </el-drawer>

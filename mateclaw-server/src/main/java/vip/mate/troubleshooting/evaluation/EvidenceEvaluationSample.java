@@ -4,6 +4,7 @@ import vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy;
 import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.ClosureOutcome;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
@@ -32,6 +33,9 @@ public record EvidenceEvaluationSample(
         String modelInputHash,
         Instant evidenceOccurredAt,
         boolean diagnosisFixtureMode,
+        Boolean diagnosisRehearsal,
+        Integer pilotPlanVersion,
+        PlaybookVersionRef sourcePlaybookVersionRef,
         ReferenceStatus referenceStatus,
         ReferenceSolution referenceSolution,
         ExpectedDisposition expectedDisposition,
@@ -92,6 +96,26 @@ public record EvidenceEvaluationSample(
         if (sourcePlatform == SourcePlatform.RECORDED_REPLAY && !evidence.fixtureMode()) {
             throw new IllegalArgumentException(
                     "Recorded Replay evidence must remain fixture evidence");
+        }
+        diagnosisRehearsal = diagnosisRehearsal == null || diagnosisRehearsal;
+        if (pilotPlanVersion != null && pilotPlanVersion < 1) {
+            throw new IllegalArgumentException("pilotPlanVersion must be positive");
+        }
+        if (diagnosisRehearsal
+                && (pilotPlanVersion != null || sourcePlaybookVersionRef != null)) {
+            throw new IllegalArgumentException(
+                    "rehearsal samples cannot claim formal pilot or Playbook identity");
+        }
+        if (!diagnosisRehearsal
+                && (pilotPlanVersion == null || sourcePlaybookVersionRef == null)) {
+            throw new IllegalArgumentException(
+                    "formal samples require pilot and frozen Playbook identity");
+        }
+        if (!diagnosisRehearsal
+                && evidence.stage()
+                        != GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED) {
+            throw new IllegalArgumentException(
+                    "formal samples require the full Guance Evidence Spine");
         }
         modelInputHash = optionalHash(modelInputHash, "modelInputHash");
         if (version < 0) {
@@ -154,6 +178,9 @@ public record EvidenceEvaluationSample(
                 modelInputHash,
                 evidenceOccurredAt,
                 diagnosisFixtureMode,
+                true,
+                null,
+                null,
                 referenceStatus,
                 referenceSolution,
                 expectedDisposition,
@@ -199,6 +226,9 @@ public record EvidenceEvaluationSample(
                 null,
                 null,
                 diagnosisFixtureMode,
+                true,
+                null,
+                null,
                 referenceStatus,
                 referenceSolution,
                 null,
@@ -245,6 +275,9 @@ public record EvidenceEvaluationSample(
                 requiredHash(modelInputHash, "modelInputHash"),
                 requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
                 diagnosisFixtureMode,
+                true,
+                null,
+                null,
                 ReferenceStatus.EVIDENCE_CAPTURED,
                 null,
                 null,
@@ -255,6 +288,70 @@ public record EvidenceEvaluationSample(
                 null,
                 capturedAt,
                 null);
+    }
+
+    /** Creates one production-pilot Guance sample with its exact Diagnosis authority. */
+    public static EvidenceEvaluationSample capturedFormal(
+            String sampleId,
+            String sampleKey,
+            String captureIdentityKey,
+            int captureRevision,
+            String diagnosisId,
+            String system,
+            String service,
+            String scenarioKey,
+            GuanceEvidenceSpinePreview preview,
+            String modelInputHash,
+            Instant evidenceOccurredAt,
+            boolean diagnosisFixtureMode,
+            int pilotPlanVersion,
+            PlaybookVersionRef sourcePlaybookVersionRef,
+            String actor,
+            Instant capturedAt) {
+        if (preview == null
+                || preview.stage() != GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED) {
+            throw new IllegalArgumentException(
+                    "a formal evaluation sample requires the full Guance Evidence Spine");
+        }
+        return new EvidenceEvaluationSample(
+                sampleId,
+                sampleKey,
+                captureIdentityKey,
+                captureRevision,
+                diagnosisId,
+                system,
+                service,
+                scenarioKey,
+                SourcePlatform.GUANCE,
+                EvidenceSnapshot.from(preview),
+                requiredHash(modelInputHash, "modelInputHash"),
+                requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
+                diagnosisFixtureMode,
+                false,
+                pilotPlanVersion,
+                sourcePlaybookVersionRef,
+                ReferenceStatus.EVIDENCE_CAPTURED,
+                null,
+                null,
+                null,
+                null,
+                0,
+                actor,
+                null,
+                capturedAt,
+                null);
+    }
+
+    /** Whether this row can honestly enter the production-pilot effectiveness cohort. */
+    public boolean formalPilotSample() {
+        return sourcePlatform == SourcePlatform.GUANCE
+                && !evidence.fixtureMode()
+                && !diagnosisFixtureMode
+                && !diagnosisRehearsal
+                && pilotPlanVersion != null
+                && sourcePlaybookVersionRef != null
+                && evidence.stage()
+                        == GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED;
     }
 
     /** Backward-compatible revision-one Guance factory. */
@@ -324,6 +421,9 @@ public record EvidenceEvaluationSample(
                 requiredHash(modelInputHash, "modelInputHash"),
                 requiredInstant(evidenceOccurredAt, "evidenceOccurredAt"),
                 diagnosisFixtureMode,
+                true,
+                null,
+                null,
                 ReferenceStatus.EVIDENCE_CAPTURED,
                 null,
                 null,
@@ -397,6 +497,9 @@ public record EvidenceEvaluationSample(
                 null,
                 null,
                 diagnosisFixtureMode,
+                true,
+                null,
+                null,
                 ReferenceStatus.EVIDENCE_CAPTURED,
                 null,
                 null,
@@ -442,6 +545,9 @@ public record EvidenceEvaluationSample(
                 modelInputHash,
                 evidenceOccurredAt,
                 diagnosisFixtureMode,
+                diagnosisRehearsal,
+                pilotPlanVersion,
+                sourcePlaybookVersionRef,
                 ReferenceStatus.READY_FOR_EVALUATION,
                 reference,
                 expectedDisposition,

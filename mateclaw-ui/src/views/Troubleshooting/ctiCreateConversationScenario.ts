@@ -27,7 +27,7 @@ export const EMPTY_CTI_CREATE_CONVERSATION_SCENARIO: CtiCreateConversationScenar
   traceId: '',
   customerRef: '',
   occurredAt: null,
-  rehearsal: false,
+  rehearsal: true,
 }
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
@@ -60,7 +60,9 @@ export function buildCtiCreateConversationScenarioRequest(
     ...(traceId ? { traceId } : {}),
     ...(customerRef ? { customerRef } : {}),
     ...(form.occurredAt ? { occurredAt: form.occurredAt } : {}),
-    rehearsal: form.rehearsal,
+    // D20 scenario-scoped binding and owner acceptance are not available yet.
+    // Keep this browser entry rehearsal-only even if stale form state says false.
+    rehearsal: true,
   }
 }
 

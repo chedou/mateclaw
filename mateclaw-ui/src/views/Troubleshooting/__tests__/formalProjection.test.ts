@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   GuanceEvidenceAcceptanceStatus,
   GuanceEvidenceAcceptanceView,
-  GuanceRecordingTargetCatalogView,
+  GuanceRecordingBatchReadiness,
   GuanceReadinessStatus,
   GuanceSignalStatus,
 } from '@/api'
@@ -18,6 +18,8 @@ import {
   guanceDetailSourceState,
   guanceOwnerBlockerLabel,
   guanceReadinessLabel,
+  guanceRecordingBatchLabel,
+  guanceRecordingBatchReady,
   guanceSignalLabel,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
@@ -84,16 +86,38 @@ function acceptance(
   }
 }
 
-function recordingTargets(executableTargetCount: number): GuanceRecordingTargetCatalogView {
+function recordingBatch(executableTargetCount: number): GuanceRecordingBatchReadiness {
+  const targets = Array.from({ length: executableTargetCount }, (_, index) => {
+    const service = index < 10 ? 'csdp-task' : 'csdp-wechat'
+    return {
+      targetId: `${service}-${index}`,
+      system: 'CSDP',
+      service,
+      scenarioKey: index === 0
+        ? null
+        : service === 'csdp-task' ? 'cti-create-conversation' : 'itgw-access-failed',
+      selectorKey: service === 'csdp-task'
+        ? 'csdp:scenario:cti_create_conversation_failed'
+        : 'csdp:904003',
+      bindingFingerprint: index === 0 ? null : 'b'.repeat(64),
+      targetBindingFingerprint: index === 0
+        ? null
+        : `${service}-${index}`.padEnd(64, 'c'),
+      executable: true,
+      blockers: [],
+    }
+  })
   return {
-    contractVersion: 't7-guance-recording-target-catalog.v1',
-    system: 'CSDP',
-    service: 'session-svc',
+    contractVersion: 't7-guance-recording-batch-readiness.v2',
+    batchId: `t7-first-${'a'.repeat(24)}`,
+    workspaceId: '1',
+    catalogContractVersion: 't7-guance-recording-target-catalog.v1',
     catalogFingerprint: 'e'.repeat(64),
     frozenTargetCount: executableTargetCount,
     executableTargetCount,
-    targets: [],
-    asOfEpochSeconds: 1785657600,
+    readyForOwnerAcceptance: executableTargetCount >= 20,
+    targets,
+    asOfEpochSeconds: '1785657600',
     blockers: executableTargetCount < 20 ? ['at least 20 targets are required'] : [],
   }
 }
@@ -170,7 +194,7 @@ describe('formal troubleshooting projection formatting', () => {
     const blockedProgress = guanceAcceptanceProgress(
       readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
       acceptance('NOT_ACCEPTED'),
-      recordingTargets(0),
+      recordingBatch(0),
     )
     expect(guanceDetailSourceState(
       'READY_FOR_VALIDATION',
@@ -236,7 +260,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const ready = guanceAcceptanceProgress(readiness(
       'READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true,
-    ), null, recordingTargets(20))
+    ), null, recordingBatch(20))
     expect(ready.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'READY' }),
@@ -246,7 +270,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const observed = guanceAcceptanceProgress(readiness(
       'CANONICAL_SIGNALS_OBSERVED', 'CANONICAL_RESULT_OBSERVED', true,
-    ), null, recordingTargets(20))
+    ), null, recordingBatch(20))
     expect(observed.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'OWNER_EVIDENCE_REQUIRED' }),
@@ -258,7 +282,7 @@ describe('formal troubleshooting projection formatting', () => {
 
     const missingRuntime = guanceAcceptanceProgress(readiness(
       'CONFIGURATION_INCOMPLETE', 'READY_FOR_VALIDATION', true,
-    ), null, recordingTargets(20))
+    ), null, recordingBatch(20))
     expect(missingRuntime.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({ code: 'T7', state: 'BLOCKED' }),
@@ -267,11 +291,49 @@ describe('formal troubleshooting projection formatting', () => {
     expect(missingRuntime.stages[1].title).toBe('真实数据源运行条件未就绪')
   })
 
+  it('treats two ready 10-target scopes as one ready 20-target workspace batch', () => {
+    const batch = recordingBatch(20)
+    const selectedModuleCount = batch.targets
+      .filter(target => target.service === 'csdp-task').length
+    const progress = guanceAcceptanceProgress(
+      readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
+      acceptance('NOT_ACCEPTED'),
+      batch,
+    )
+    const presentation = JSON.stringify(progress)
+
+    expect(selectedModuleCount).toBe(10)
+    expect(guanceRecordingBatchLabel(batch)).toBe('Workspace 首批录制目标 · 20 / 20')
+    expect(guanceRecordingBatchReady(batch)).toBe(true)
+    expect(progress.stages[1]).toEqual(expect.objectContaining({
+      code: 'T7',
+      state: 'READY',
+    }))
+    expect(presentation).not.toContain(`${selectedModuleCount} / 20`)
+    expect(presentation).not.toContain('0 / 20')
+  })
+
+  it('keeps an unavailable workspace batch unknown instead of falling back to a module count', () => {
+    const progress = guanceAcceptanceProgress(
+      readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
+      acceptance('NOT_ACCEPTED'),
+      null,
+    )
+    const presentation = JSON.stringify(progress)
+
+    expect(progress.stages[1].detail).toContain('Workspace 首批录制目标尚未加载')
+    expect(guanceRecordingBatchLabel(null)).toBe('Workspace 首批录制目标未加载')
+    expect(guanceRecordingBatchReady(null)).toBe(false)
+    expect(progress.nextAction).not.toContain('当前可执行 0')
+    expect(presentation).not.toContain('0 / 20')
+    expect(presentation).not.toContain('10 / 20')
+  })
+
   it('blocks T7 before the window when the server owns fewer than 20 executable targets', () => {
     const progress = guanceAcceptanceProgress(
       readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
       acceptance('NOT_ACCEPTED'),
-      recordingTargets(0),
+      recordingBatch(0),
     )
 
     expect(progress.stages[0]).toEqual(expect.objectContaining({ code: 'T6', state: 'READY' }))
@@ -289,24 +351,33 @@ describe('formal troubleshooting projection formatting', () => {
     const accepted = guanceAcceptanceProgress(
       readiness('READY_FOR_VALIDATION', 'READY_FOR_VALIDATION', true),
       acceptance('ACCEPTED'),
-      recordingTargets(0),
+      recordingBatch(0),
     )
 
     expect(accepted.stages).toEqual([
       expect.objectContaining({ code: 'T6', state: 'READY' }),
       expect.objectContaining({
         code: 'T7',
-        state: 'READY',
-        title: '负责人已确认当前数据源配置',
+        state: 'BLOCKED',
+        title: '生产验收批次未准备好',
       }),
       expect.objectContaining({
         code: 'T8',
-        state: 'READY',
-        title: '可以开始积累真实样本',
+        state: 'BLOCKED',
+        title: '真实样本尚未开始',
       }),
     ])
-    expect(accepted.stages[2].detail).toContain('不代表效果已经达标')
-    expect(accepted.nextAction).toContain('20–30')
+    expect(accepted.stages[1].detail).toContain('0 / 20')
+    expect(accepted.nextAction).toContain('准备至少 20 个')
+
+    expect(guanceDetailSourceState(
+      'READY_FOR_VALIDATION',
+      'ACCEPTED',
+      accepted,
+    )).toEqual({
+      label: '生产验收批次未准备好',
+      tone: 'warning',
+    })
 
     const stale = guanceAcceptanceProgress(
       readiness(
@@ -315,7 +386,7 @@ describe('formal troubleshooting projection formatting', () => {
         true,
       ),
       acceptance('STALE'),
-      recordingTargets(20),
+      recordingBatch(20),
     )
     expect(stale.stages[1]).toEqual(expect.objectContaining({
       state: 'OWNER_EVIDENCE_REQUIRED',
@@ -323,6 +394,25 @@ describe('formal troubleshooting projection formatting', () => {
     }))
     expect(stale.stages[2].state).toBe('BLOCKED')
     expect(stale.nextAction).toContain('配置已经变化')
+  })
+
+  it('does not let historical owner acceptance override an incomplete batch while Guance is disabled', () => {
+    const progress = guanceAcceptanceProgress(
+      readiness('DISABLED', 'NOT_ROUTED', false),
+      acceptance('ACCEPTED'),
+      recordingBatch(0),
+    )
+
+    expect(progress.stages[1]).toEqual(expect.objectContaining({
+      code: 'T7',
+      state: 'BLOCKED',
+      title: '生产验收批次未准备好',
+    }))
+    expect(progress.stages[2]).toEqual(expect.objectContaining({
+      code: 'T8',
+      state: 'BLOCKED',
+    }))
+    expect(progress.nextAction).toContain('准备至少 20 个')
   })
 
   it('localizes known Guance owner blockers without hiding unknown diagnostics', () => {

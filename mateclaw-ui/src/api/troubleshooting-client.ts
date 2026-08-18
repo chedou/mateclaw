@@ -37,6 +37,7 @@ import type {
   OpenDiscoveryAgentBinding,
   GuanceEvidenceSpinePreview,
   GuanceEvidenceValidationReport,
+  GuanceRecordingBatchReadiness,
   GuanceRecordingTargetCatalogView,
   HistoricalCaseKnowledgeImportRequest,
   HistoricalCaseKnowledgeImportResult,
@@ -245,6 +246,13 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
       '/troubleshooting/evidence/guance/recording-targets', { params },
     ),
 
+  /** Workspace-wide first T7 batch; never derives the 20-target gate from one module scope. */
+  currentGuanceRecordingBatch: () =>
+    http.get<GuanceRecordingBatchReadiness>(
+      '/troubleshooting/evidence/guance/recording-batches/current',
+      { baseURL: '/api/v2' },
+    ),
+
   /** Re-runs the canonical chain before recording the owner checklist. */
   acceptGuanceEvidence: (data: AcceptGuanceEvidenceRequest) =>
     http.post<GuanceEvidenceAcceptanceView>(
@@ -303,7 +311,7 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
       { params: { limit } },
     ),
 
-  /** Re-runs Guance server-side and stores only a bounded, secret-free T8 sample. */
+  /** Re-runs the Diagnosis' frozen Guance plan; query targets never come from the browser. */
   captureGuanceEvaluationSample: (data: CaptureEvaluationSampleRequest) =>
     http.post<StoredEvidenceEvaluationSample>(
       '/troubleshooting/evaluation-samples/guance', data,

@@ -60,12 +60,48 @@ public class TroubleshootingPersistenceService {
             Diagnosis diagnosis,
             Instant receivedAt) {
         validateCreate(workspaceId, diagnosis);
+        validateLegacyRehearsal(diagnosis);
         return persistCreateOrGet(
                 workspaceId,
                 diagnosis,
                 IncidentDeduplicationKey.create(
                         diagnosis.incident(), diagnosis.rehearsal(), receivedAt),
+                null,
                 null);
+    }
+
+    /** Persists the exact pilot identity frozen by formal admission. */
+    @Transactional
+    public StoredDiagnosis createOrGet(
+            long workspaceId,
+            Diagnosis diagnosis,
+            Instant receivedAt,
+            int admittedPilotPlanVersion,
+            FormalDiagnosisClaim formalClaim) {
+        validateCreate(workspaceId, diagnosis);
+        validateFormalPilot(diagnosis, admittedPilotPlanVersion);
+        if (formalClaim == null) {
+            throw new IllegalArgumentException(
+                    "direct formal diagnosis persistence requires its claim");
+        }
+        String expectedDedupKey = IncidentDeduplicationKey.create(
+                        diagnosis.incident(), false, receivedAt)
+                .orElseThrow(() -> new MateClawException(
+                        "err.troubleshooting.formal_diagnosis_claim_conflict",
+                        409,
+                        "formal diagnosis has no stable claim identity"));
+        if (!expectedDedupKey.equals(formalClaim.dedupKey())) {
+            throw new MateClawException(
+                    "err.troubleshooting.formal_diagnosis_claim_conflict",
+                    409,
+                    "formal diagnosis claim identity does not match its incident");
+        }
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                Optional.of(formalClaim.dedupKey()),
+                null,
+                admittedPilotPlanVersion);
     }
 
     /**
@@ -82,11 +118,76 @@ public class TroubleshootingPersistenceService {
             Diagnosis diagnosis,
             String intakeSessionId) {
         validateCreate(workspaceId, diagnosis);
+        validateLegacyRehearsal(diagnosis);
         if (intakeSessionId == null || intakeSessionId.isBlank()) {
             throw new IllegalArgumentException("intakeSessionId must not be blank");
         }
         return persistCreateOrGet(
-                workspaceId, diagnosis, Optional.empty(), intakeSessionId.trim());
+                workspaceId, diagnosis, Optional.empty(), intakeSessionId.trim(), null);
+    }
+
+    /** Persists one rehearsal Intake while holding the shared session claim. */
+    @Transactional
+    public StoredDiagnosis createOrGetForIntake(
+            long workspaceId,
+            Diagnosis diagnosis,
+            String intakeSessionId,
+            FormalDiagnosisClaim claim) {
+        validateCreate(workspaceId, diagnosis);
+        validateLegacyRehearsal(diagnosis);
+        String normalizedIntakeSessionId = requireIntakeSessionId(intakeSessionId);
+        validateIntakeClaim(workspaceId, normalizedIntakeSessionId, claim);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                Optional.empty(),
+                normalizedIntakeSessionId,
+                null);
+    }
+
+    /** Persists one formally admitted Intake owner without re-reading the pilot plan. */
+    @Transactional
+    public StoredDiagnosis createOrGetForIntake(
+            long workspaceId,
+            Diagnosis diagnosis,
+            String intakeSessionId,
+            int admittedPilotPlanVersion,
+            FormalDiagnosisClaim formalClaim) {
+        validateCreate(workspaceId, diagnosis);
+        validateFormalPilot(diagnosis, admittedPilotPlanVersion);
+        String normalizedIntakeSessionId = requireIntakeSessionId(intakeSessionId);
+        validateIntakeClaim(workspaceId, normalizedIntakeSessionId, formalClaim);
+        return persistCreateOrGet(
+                workspaceId,
+                diagnosis,
+                Optional.empty(),
+                normalizedIntakeSessionId,
+                admittedPilotPlanVersion);
+    }
+
+    private String requireIntakeSessionId(String intakeSessionId) {
+        if (intakeSessionId == null || intakeSessionId.isBlank()) {
+            throw new IllegalArgumentException("intakeSessionId must not be blank");
+        }
+        return intakeSessionId.trim();
+    }
+
+    private void validateIntakeClaim(
+            long workspaceId,
+            String intakeSessionId,
+            FormalDiagnosisClaim claim) {
+        if (claim == null) {
+            throw new IllegalArgumentException(
+                    "IntakeSession diagnosis persistence requires its claim");
+        }
+        String expectedClaimKey = FormalDiagnosisClaimKey.forIntake(
+                workspaceId, intakeSessionId);
+        if (!expectedClaimKey.equals(claim.dedupKey())) {
+            throw new MateClawException(
+                    "err.troubleshooting.formal_diagnosis_claim_conflict",
+                    409,
+                    "diagnosis claim identity does not match its intake session");
+        }
     }
 
     /**
@@ -101,12 +202,14 @@ public class TroubleshootingPersistenceService {
             String scenarioKey,
             Instant receivedAt) {
         validateCreate(workspaceId, diagnosis);
+        validateLegacyRehearsal(diagnosis);
         validateScenarioIdentity(diagnosis, scenarioKey);
         return persistCreateOrGet(
                 workspaceId,
                 diagnosis,
                 IncidentDeduplicationKey.createForScenario(
                         diagnosis.incident(), scenarioKey, diagnosis.rehearsal(), receivedAt),
+                null,
                 null);
     }
 
@@ -114,7 +217,8 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             Optional<String> dedupKey,
-            String intakeSessionId) {
+            String intakeSessionId,
+            Integer admittedPilotPlanVersion) {
         if (intakeSessionId != null) {
             TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
                     workspaceId, intakeSessionId);
@@ -130,10 +234,14 @@ public class TroubleshootingPersistenceService {
         }
 
         TroubleshootingDiagnosisEntity entity = entity(
-                workspaceId, diagnosis, dedupKey.orElse(null), intakeSessionId);
+                workspaceId,
+                diagnosis,
+                dedupKey.orElse(null),
+                intakeSessionId,
+                admittedPilotPlanVersion);
         try {
             diagnosisMapper.insert(entity);
-            return new StoredDiagnosis(diagnosis, 0, true);
+            return stored(entity, true);
         } catch (DuplicateKeyException collision) {
             if (intakeSessionId != null) {
                 TroubleshootingDiagnosisEntity existing = findEntityByIntakeSessionId(
@@ -158,6 +266,28 @@ public class TroubleshootingPersistenceService {
         validateWorkspace(workspaceId);
         if (diagnosis == null) {
             throw new IllegalArgumentException("diagnosis must not be null");
+        }
+    }
+
+    private void validateFormalPilot(
+            Diagnosis diagnosis, int admittedPilotPlanVersion) {
+        if (diagnosis == null || diagnosis.rehearsal()) {
+            throw new IllegalArgumentException(
+                    "formal pilot identity requires a non-rehearsal Diagnosis");
+        }
+        if (admittedPilotPlanVersion < 1) {
+            throw new IllegalArgumentException(
+                    "admittedPilotPlanVersion must be positive");
+        }
+    }
+
+    private void validateLegacyRehearsal(Diagnosis diagnosis) {
+        if (!diagnosis.rehearsal()) {
+            throw new MateClawException(
+                    "err.troubleshooting.formal_admission_required",
+                    409,
+                    "non-rehearsal diagnosis persistence requires a formal admission; "
+                            + "submit it through the incident Intake gate");
         }
     }
 
@@ -443,7 +573,8 @@ public class TroubleshootingPersistenceService {
             long workspaceId,
             Diagnosis diagnosis,
             String dedupKey,
-            String intakeSessionId) {
+            String intakeSessionId,
+            Integer admittedPilotPlanVersion) {
         LocalDateTime now = utcNow();
         TroubleshootingDiagnosisEntity entity = new TroubleshootingDiagnosisEntity();
         entity.setWorkspaceId(workspaceId);
@@ -461,11 +592,18 @@ public class TroubleshootingPersistenceService {
         entity.setAggregateJson(json(diagnosis));
         entity.setInvestigationMode(persistedInvestigationMode(diagnosis));
         entity.setRouteAuthority(persistedRouteAuthority(diagnosis));
-        entity.setPilotPlanVersion(pilotPlans.enrollmentVersion(
-                workspaceId,
-                diagnosis.incident().system(),
-                diagnosis.incident().service(),
-                diagnosis.rehearsal()));
+        // The formal Intake overload always supplies the already-frozen value,
+        // so its insert performs no second plan read. Legacy rehearsal/scenario
+        // seams retain their old enrollment snapshot until they are moved behind
+        // the same formal admission boundary.
+        Integer pilotPlanVersion = admittedPilotPlanVersion != null
+                ? admittedPilotPlanVersion
+                : pilotPlans.enrollmentVersion(
+                        workspaceId,
+                        diagnosis.incident().system(),
+                        diagnosis.incident().service(),
+                        diagnosis.rehearsal());
+        entity.setPilotPlanVersion(pilotPlanVersion);
         entity.setVersion(0);
         entity.setDeleted(0);
         entity.setCreateTime(now);
@@ -476,7 +614,11 @@ public class TroubleshootingPersistenceService {
     private StoredDiagnosis stored(TroubleshootingDiagnosisEntity entity, boolean created) {
         try {
             Diagnosis diagnosis = objectMapper.readValue(entity.getAggregateJson(), Diagnosis.class);
-            return new StoredDiagnosis(diagnosis, entity.getVersion(), created);
+            return new StoredDiagnosis(
+                    diagnosis,
+                    entity.getVersion(),
+                    created,
+                    entity.getPilotPlanVersion());
         } catch (JsonProcessingException error) {
             throw serializationError("deserialize diagnosis", error);
         }

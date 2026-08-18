@@ -34,11 +34,13 @@ import vip.mate.troubleshooting.intake.IntakeSessionReducer;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -77,6 +79,12 @@ class TroubleshootingIntakeServiceTest {
     @Mock
     private TroubleshootingAgentTriageService agentTriageService;
 
+    @Mock
+    private TroubleshootingPersistenceService persistence;
+
+    @Mock
+    private FormalDiagnosisClaimService formalClaims;
+
     private TroubleshootingIntakeService intake;
 
     @BeforeEach
@@ -95,12 +103,12 @@ class TroubleshootingIntakeServiceTest {
                 .thenReturn(stored);
 
         StoredDiagnosis result = intake.report(
-                WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(evidence()), false);
+                WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(evidence()), true);
 
         assertThat(result).isSameAs(stored);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), any(), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
     }
 
     @Test
@@ -113,10 +121,10 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident, List.of(evidence()), false, reportedAt);
+        intake.report(WORKSPACE_ID, incident, List.of(evidence()), true, reportedAt);
 
         verify(diagnosisService).diagnoseAndPersist(
-                WORKSPACE_ID, incident, sop, List.of(evidence()), false, true,
+                WORKSPACE_ID, incident, sop, List.of(evidence()), true, true,
                 reportedAt, NOW);
     }
 
@@ -138,12 +146,27 @@ class TroubleshootingIntakeServiceTest {
                         reportedAt));
         SopEntry sop = sop();
         StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 0, true);
+        FormalDiagnosisClaim claim = new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(WORKSPACE_ID, "intake-7"),
+                "claim-intake-7", NOW, NOW.plusSeconds(300));
+        TroubleshootingIntakeService claimedIntake = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, null,
+                agentTriageService, null, persistence, formalClaims,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        when(formalClaims.claim(
+                WORKSPACE_ID, claim.dedupKey(), NOW, Duration.ofMinutes(5)))
+                .thenReturn(FormalDiagnosisClaimService.ClaimResult.acquired(claim));
+        when(persistence.findByIntakeSessionId(WORKSPACE_ID, "intake-7"))
+                .thenReturn(Optional.empty());
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "903001")).thenReturn(sop);
+        when(evidenceRouter.collect(eq(WORKSPACE_ID), any(), any()))
+                .thenReturn(evidence());
         when(diagnosisService.diagnoseAndPersistForIntake(
-                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any(), any()))
+                anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any(),
+                any(), any(), any()))
                 .thenReturn(stored);
 
-        StoredDiagnosis result = intake.report(session);
+        StoredDiagnosis result = claimedIntake.report(session);
 
         assertThat(result).isSameAs(stored);
         ArgumentCaptor<IncidentContext> incident = ArgumentCaptor.forClass(IncidentContext.class);
@@ -151,12 +174,14 @@ class TroubleshootingIntakeServiceTest {
                 eq(WORKSPACE_ID),
                 incident.capture(),
                 eq(sop),
-                eq(List.of()),
-                eq(false),
+                eq(List.of(evidence())),
                 eq(true),
+                eq(false),
                 eq(reportedAt),
                 eq(reportedAt),
-                eq("intake-7"));
+                eq("intake-7"),
+                eq(claim),
+                eq(NOW));
         assertThat(incident.getValue().incidentId()).isEqualTo("incident-intake-7");
         assertThat(incident.getValue().title()).isEqualTo("会话消息发送失败");
         assertThat(incident.getValue().intakeSource()).isEqualTo("channel:wecom");
@@ -177,7 +202,7 @@ class TroubleshootingIntakeServiceTest {
                 agentTriageService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
-        wired.report(WORKSPACE_ID, incident, List.of(evidence()), false);
+        wired.report(WORKSPACE_ID, incident, List.of(evidence()), true);
 
         verifyNoInteractions(agentTriageService);
     }
@@ -207,7 +232,7 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, slowRequestAlert(), List.of(evidence()), false);
+        intake.report(WORKSPACE_ID, slowRequestAlert(), List.of(evidence()), true);
 
         ArgumentCaptor<IncidentContext> routed = ArgumentCaptor.forClass(IncidentContext.class);
         verify(diagnosisService).diagnoseAndPersist(
@@ -253,7 +278,7 @@ class TroubleshootingIntakeServiceTest {
                 WORKSPACE_ID,
                 incident,
                 List.of(),
-                false,
+                true,
                 // The miss path is told that symptom routing was tried and why it
                 // failed, so "no route" can be distinguished from "never looked".
                 "incident carries no errorCode; deterministic routing needs one;"
@@ -269,7 +294,7 @@ class TroubleshootingIntakeServiceTest {
                 agentTriageService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
-        StoredDiagnosis result = wired.report(WORKSPACE_ID, incident, List.of(), false);
+        StoredDiagnosis result = wired.report(WORKSPACE_ID, incident, List.of(), true);
 
         assertThat(result).isSameAs(stored);
         verifyNoInteractions(diagnosisService, evidenceRouter);
@@ -309,7 +334,7 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(), false);
+        intake.report(WORKSPACE_ID, incident("903001", IncidentCompleteness.STRUCTURED), List.of(), true);
 
         ArgumentCaptor<Boolean> fixtureMode = ArgumentCaptor.forClass(Boolean.class);
         verify(diagnosisService).diagnoseAndPersist(
@@ -333,7 +358,7 @@ class TroubleshootingIntakeServiceTest {
         TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
                 sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
 
-        collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(), true);
 
         verify(evidenceRouter).collect(
                 WORKSPACE_ID, sop.evidenceRequests().getFirst(), incident);
@@ -341,7 +366,7 @@ class TroubleshootingIntakeServiceTest {
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
         // fixtureMode 现在由证据自己决定：这一条是 router 从真源取回来的，
         // 所以不是夹具。调用方自带的证据仍一律按夹具（它不能自证成色）。
-                eq(false), eq(false), eq(NOW), eq(NOW));
+                eq(true), eq(false), eq(NOW), eq(NOW));
     }
 
     @Test
@@ -370,7 +395,7 @@ class TroubleshootingIntakeServiceTest {
                 agentTriageService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
-        collectingIntake.report(WORKSPACE_ID, incident, List.of(), false);
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(), true);
 
         ArgumentCaptor<EvidenceRequest> requests = ArgumentCaptor.forClass(EvidenceRequest.class);
         verify(evidenceRouter, times(3)).collect(
@@ -387,7 +412,7 @@ class TroubleshootingIntakeServiceTest {
         ArgumentCaptor<List<EvidenceResult>> persisted = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), persisted.capture(),
-                eq(false), eq(false), eq(NOW), eq(NOW));
+                eq(true), eq(false), eq(NOW), eq(NOW));
         assertThat(persisted.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("ITGW-LOG-SEARCH", "ITGW-TRACE-BUNDLE", "ITGW-CONTRAST");
@@ -422,7 +447,7 @@ class TroubleshootingIntakeServiceTest {
                 evidenceWithQueryId("SAFE-OTHER-3"));
 
         assertThatThrownBy(() -> collectingIntake.report(
-                WORKSPACE_ID, incident, wrongIds, false))
+                WORKSPACE_ID, incident, wrongIds, true))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("partial caller-supplied Evidence Spine")
                 .extracting(error -> ((MateClawException) error).getCode())
@@ -442,12 +467,12 @@ class TroubleshootingIntakeServiceTest {
         TroubleshootingIntakeService collectingIntake = new TroubleshootingIntakeService(
                 sopPersistence, diagnosisService, evidenceRouter, Clock.fixed(NOW, ZoneOffset.UTC));
 
-        collectingIntake.report(WORKSPACE_ID, incident, List.of(evidence()), false);
+        collectingIntake.report(WORKSPACE_ID, incident, List.of(evidence()), true);
 
         verifyNoInteractions(evidenceRouter);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
     }
 
     @Test
@@ -464,12 +489,12 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
+        intake.report(WORKSPACE_ID, incident, List.of(unsafe), true);
 
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue().getFirst().observed().toString())
                 .contains(TroubleshootingSecretRedactor.REDACTED)
                 .doesNotContain("production-token");
@@ -496,13 +521,13 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, unsafeIncident, List.of(evidence()), false);
+        intake.report(WORKSPACE_ID, unsafeIncident, List.of(evidence()), true);
 
         ArgumentCaptor<IncidentContext> incidentCaptor =
                 ArgumentCaptor.forClass(IncidentContext.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), incidentCaptor.capture(), eq(sop), eq(List.of(evidence())),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
         IncidentImpact persistedImpact = incidentCaptor.getValue().impact();
         assertThat(persistedImpact.functionScope())
                 .contains(TroubleshootingSecretRedactor.REDACTED)
@@ -603,7 +628,7 @@ class TroubleshootingIntakeServiceTest {
                 pythonTraceback, goPanic, nodeStack, browserStack, safariStack, accessLog,
                 unsafeSource, unsafeImpactRef)) {
             assertThatThrownBy(() -> intake.report(
-                    WORKSPACE_ID, unsafe, List.of(), false))
+                    WORKSPACE_ID, unsafe, List.of(), true))
                     .isInstanceOf(MateClawException.class)
                     .extracting(error -> ((MateClawException) error).getCode())
                     .isEqualTo(400);
@@ -628,12 +653,12 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident, List.of(first, second), false);
+        intake.report(WORKSPACE_ID, incident, List.of(first, second), true);
 
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("supplied-redacted-1", "supplied-redacted-2");
@@ -649,12 +674,12 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident, List.of(unsafe), false);
+        intake.report(WORKSPACE_ID, incident, List.of(unsafe), true);
 
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("supplied-redacted-1");
@@ -672,12 +697,12 @@ class TroubleshootingIntakeServiceTest {
                 anyLong(), any(), any(), any(), anyBoolean(), anyBoolean(), any(), any()))
                 .thenReturn(new StoredDiagnosis(diagnosis(), 1, true));
 
-        intake.report(WORKSPACE_ID, incident, List.of(callerClaim), false);
+        intake.report(WORKSPACE_ID, incident, List.of(callerClaim), true);
 
         ArgumentCaptor<List<EvidenceResult>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), eq(incident), eq(sop), evidenceCaptor.capture(),
-                eq(false), eq(true), eq(NOW), eq(NOW));
+                eq(true), eq(true), eq(NOW), eq(NOW));
         assertThat(evidenceCaptor.getValue())
                 .extracting(EvidenceResult::queryId)
                 .containsExactly("supplied-reserved-1");
@@ -701,7 +726,7 @@ class TroubleshootingIntakeServiceTest {
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "999999")).thenReturn(null);
 
         assertThatThrownBy(() -> intake.report(
-                WORKSPACE_ID, incident("999999", IncidentCompleteness.STRUCTURED), List.of(), false))
+                WORKSPACE_ID, incident("999999", IncidentCompleteness.STRUCTURED), List.of(), true))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("no SOP registered")
                 .extracting(e -> ((MateClawException) e).getCode())
@@ -714,7 +739,7 @@ class TroubleshootingIntakeServiceTest {
     @Test
     void rejectsAnIncidentWithNoErrorCodeBecauseTheMissPathIsNotWired() {
         assertThatThrownBy(() -> intake.report(
-                WORKSPACE_ID, incident(null, IncidentCompleteness.LOG), List.of(), false))
+                WORKSPACE_ID, incident(null, IncidentCompleteness.LOG), List.of(), true))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("no errorCode");
 
@@ -726,7 +751,7 @@ class TroubleshootingIntakeServiceTest {
     @Test
     void rejectsASymptomOnlyReportBecauseDeterministicRoutingCannotKeyOnIt() {
         assertThatThrownBy(() -> intake.report(
-                WORKSPACE_ID, incident("903001", IncidentCompleteness.SYMPTOM), List.of(), false))
+                WORKSPACE_ID, incident("903001", IncidentCompleteness.SYMPTOM), List.of(), true))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("SYMPTOM");
 
@@ -735,7 +760,7 @@ class TroubleshootingIntakeServiceTest {
 
     @Test
     void rejectsAMissingIncident() {
-        assertThatThrownBy(() -> intake.report(WORKSPACE_ID, null, List.of(), false))
+        assertThatThrownBy(() -> intake.report(WORKSPACE_ID, null, List.of(), true))
                 .isInstanceOf(MateClawException.class)
                 .extracting(e -> ((MateClawException) e).getCode())
                 .isEqualTo(400);
@@ -765,7 +790,7 @@ class TroubleshootingIntakeServiceTest {
                 WORKSPACE_ID,
                 incident(null, IncidentCompleteness.STRUCTURED),
                 List.of(evidence()),
-                false);
+                true);
 
         verify(diagnosisService).diagnoseAndPersist(
                 eq(WORKSPACE_ID), any(), eq(probe), any(),
@@ -792,7 +817,7 @@ class TroubleshootingIntakeServiceTest {
                 WORKSPACE_ID,
                 incident(null, IncidentCompleteness.SYMPTOM),
                 List.of(),
-                false);
+                true);
 
         verify(sopPersistence, never()).list(anyLong(), any(), any(), anyInt());
         verify(agentTriageService).triage(

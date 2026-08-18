@@ -62,6 +62,12 @@ export type ModuleOnboardingReadiness = {
   nextStep: ModuleOnboardingStep | null
 }
 
+// 首批正式试点模块只有各自这一条规则可证明目标竖线已就绪；同服务的其他规则不能替代它。
+const REQUIRED_PILOT_PLAYBOOK_ROUTE_BY_MODULE: Readonly<Record<string, string>> = {
+  'csdp::csdp-task': 'csdp:scenario:cti_create_conversation_failed',
+  'csdp::csdp-wechat': 'csdp:904003',
+}
+
 export function signalKindLabel(signalKind: string): string {
   return {
     log_search: '日志检索',
@@ -288,11 +294,13 @@ export function buildModuleOnboardingReadiness(input: {
   playbooks: ReadonlyArray<SopSummary> | null
 }): ModuleOnboardingReadiness {
   const { entry } = input
+  const requiredPlaybookRoute = requiredPlaybookRouteForModule(entry.system, entry.service)
   const operationalPlaybooks = input.playbooks === null
     ? []
     : input.playbooks.filter(playbook => playbook.operational
       && sameIdentity(playbook.system, entry.system)
-      && sameIdentity(playbook.service, entry.service))
+      && sameIdentity(playbook.service, entry.service)
+      && (!requiredPlaybookRoute || sameIdentity(playbook.routeKey, requiredPlaybookRoute)))
   const enabledTools = input.tools.filter(tool => tool.enabled)
   const readyRealPlatforms = new Set(input.sources
     .filter(source => source.status === 'READY' && !isRecordedReplaySource(source.platform))
@@ -392,6 +400,12 @@ export function buildModuleOnboardingReadiness(input: {
 
 function isRecordedReplaySource(platform: string) {
   return normalizedIdentity(platform).startsWith('recorded-replay')
+}
+
+function requiredPlaybookRouteForModule(system: string, service: string) {
+  return REQUIRED_PILOT_PLAYBOOK_ROUTE_BY_MODULE[
+    `${normalizedIdentity(system)}::${normalizedIdentity(service)}`
+  ] || null
 }
 
 function normalizedIdentity(value: string | null | undefined) {

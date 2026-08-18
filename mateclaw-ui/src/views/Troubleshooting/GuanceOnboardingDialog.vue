@@ -80,10 +80,10 @@
           <strong :class="acceptanceTone(stage.state)">{{ guanceAcceptanceStateLabel(stage.state) }}</strong>
         </li>
       </ol>
-      <p v-if="currentRecordingTargets" class="recording-targets">
-        <b>窗口批次目标</b>
-        {{ currentRecordingTargets.executableTargetCount }} / 20 个可执行新目标
-        · 目录 <code>{{ currentRecordingTargets.catalogFingerprint.slice(0, 12) }}…</code>
+      <p v-if="currentRecordingBatch" class="recording-targets">
+        <b>{{ guanceRecordingBatchLabel(currentRecordingBatch) }}</b>
+        · 整个 Workspace 统一计数
+        · 批次 <code>{{ currentRecordingBatch.batchId }}</code>
       </p>
       <ul class="onboarding-signals">
         <li v-for="signal in currentReadiness.signals" :key="signal.signalKind">
@@ -119,7 +119,7 @@ import {
   type GuanceCredentialState,
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceReadiness,
-  type GuanceRecordingTargetCatalogView,
+  type GuanceRecordingBatchReadiness,
   type GuanceReadinessStatus,
 } from '@/api'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -129,6 +129,7 @@ import {
   guanceAcceptanceProgress,
   guanceAcceptanceStateLabel,
   guanceReadinessLabel,
+  guanceRecordingBatchLabel,
   guanceSignalLabel,
 } from './formalProjection'
 import { EVIDENCE_WINDOW_OPTIONS } from './synthesisPreview'
@@ -165,7 +166,7 @@ const form = reactive<EvidenceChainPreviewRequest>({
 })
 const readiness = ref<GuanceEvidenceReadiness | null>(null)
 const ownerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
-const recordingTargets = ref<GuanceRecordingTargetCatalogView | null>(null)
+const recordingBatch = ref<GuanceRecordingBatchReadiness | null>(null)
 const inspectedScopeKey = ref('')
 const loading = ref(false)
 const loadError = ref('')
@@ -197,14 +198,14 @@ const currentReadiness = computed(() => inspectedScopeKey.value === scopeKey.val
 const currentOwnerAcceptance = computed(() => inspectedScopeKey.value === scopeKey.value
   ? ownerAcceptance.value
   : null)
-const currentRecordingTargets = computed(() => inspectedScopeKey.value === scopeKey.value
-  ? recordingTargets.value
+const currentRecordingBatch = computed(() => inspectedScopeKey.value === scopeKey.value
+  ? recordingBatch.value
   : null)
 const acceptanceProgress = computed(() => currentReadiness.value
   ? guanceAcceptanceProgress(
       currentReadiness.value,
       currentOwnerAcceptance.value,
-      currentRecordingTargets.value,
+      currentRecordingBatch.value,
     )
   : null)
 const safeSearchTerm = computed(() => isSafeGuanceSearchTerm(form.searchTerm))
@@ -217,7 +218,7 @@ watch(visible, (open) => {
   requestVersion += 1
   readiness.value = null
   ownerAcceptance.value = null
-  recordingTargets.value = null
+  recordingBatch.value = null
   inspectedScopeKey.value = ''
   loadError.value = ''
   loading.value = false
@@ -234,21 +235,21 @@ async function inspect() {
   loadError.value = ''
   try {
     const scope = { system: form.system.trim(), service: form.service.trim() }
-    const [readinessResponse, acceptanceResponse, recordingTargetsResponse] = await Promise.all([
+    const [readinessResponse, acceptanceResponse, recordingBatchResponse] = await Promise.all([
       troubleshootingApi.evidenceReadiness(scope),
       troubleshootingApi.guanceEvidenceAcceptance(scope),
-      troubleshootingApi.guanceRecordingTargets(scope),
+      troubleshootingApi.currentGuanceRecordingBatch(),
     ])
     if (version !== requestVersion || !visible.value) return
     readiness.value = readinessResponse.data
     ownerAcceptance.value = acceptanceResponse.data
-    recordingTargets.value = recordingTargetsResponse.data
+    recordingBatch.value = recordingBatchResponse.data
     inspectedScopeKey.value = requestedKey
   } catch (error) {
     if (version !== requestVersion || !visible.value) return
     readiness.value = null
     ownerAcceptance.value = null
-    recordingTargets.value = null
+    recordingBatch.value = null
     inspectedScopeKey.value = requestedKey
     loadError.value = `接入条件检查失败：${error instanceof Error ? error.message : String(error)}`
   } finally {

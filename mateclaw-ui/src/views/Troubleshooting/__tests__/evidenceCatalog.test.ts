@@ -146,6 +146,26 @@ const operationalPlaybook: SopSummary = {
   knowledgeEvidenceGrade: 'RECORDED_AGGREGATE',
 }
 
+function pilotModuleEntry(service: string) {
+  return {
+    system: 'CSDP',
+    service,
+    displayName: service,
+    asset: {
+      ...deploymentAsset,
+      origin: 'WORKSPACE' as const,
+      system: 'CSDP',
+      service,
+      environment: 'prd',
+      version: 1,
+    },
+    module: {
+      ...catalog.systems[0].modules[0],
+      service,
+    },
+  }
+}
+
 describe('evidence query catalog presentation', () => {
   it('summarizes systems, modules, contracts and runnable contracts', () => {
     expect(catalogSummary(catalog)).toEqual({
@@ -281,6 +301,70 @@ describe('evidence query catalog presentation', () => {
       detail: '还没有该模块可命中的已审核排障方案',
     })
     expect(readiness.nextStep?.code).toBe('PLAYBOOK')
+  })
+
+  it.each([
+    { scenario: 'CTI', service: 'csdp-task', routeKey: 'csdp:701018', errorCode: '701018' },
+    { scenario: 'ITGW', service: 'csdp-wechat', routeKey: 'csdp:903001', errorCode: '903001' },
+  ])('does not call the $scenario module playbook-ready for another selector', ({
+    service,
+    routeKey,
+    errorCode,
+  }) => {
+    const readiness = buildModuleOnboardingReadiness({
+      entry: pilotModuleEntry(service),
+      tools: [],
+      sources: catalog.sources,
+      playbooks: [{
+        ...operationalPlaybook,
+        service,
+        routeKey,
+        errorCode,
+      }],
+    })
+
+    expect(readiness.operationalPlaybooks).toEqual([])
+    expect(readiness.steps.find(step => step.code === 'PLAYBOOK')).toMatchObject({
+      state: 'TODO',
+    })
+  })
+
+  it.each([
+    {
+      scenario: 'CTI',
+      service: 'csdp-task',
+      routeKey: 'csdp:scenario:cti_create_conversation_failed',
+      errorCode: 'scenario:cti_create_conversation_failed',
+    },
+    {
+      scenario: 'ITGW',
+      service: 'csdp-wechat',
+      routeKey: 'csdp:904003',
+      errorCode: '904003',
+    },
+  ])('counts the exact $scenario pilot selector as playbook-ready', ({
+    service,
+    routeKey,
+    errorCode,
+  }) => {
+    const exactPlaybook = {
+      ...operationalPlaybook,
+      service,
+      routeKey,
+      errorCode,
+    }
+
+    const readiness = buildModuleOnboardingReadiness({
+      entry: pilotModuleEntry(service),
+      tools: [],
+      sources: catalog.sources,
+      playbooks: [exactPlaybook],
+    })
+
+    expect(readiness.operationalPlaybooks).toEqual([exactPlaybook])
+    expect(readiness.steps.find(step => step.code === 'PLAYBOOK')).toMatchObject({
+      state: 'DONE',
+    })
   })
 
   it('keeps an unreadable playbook registry distinct from no approved playbook', () => {

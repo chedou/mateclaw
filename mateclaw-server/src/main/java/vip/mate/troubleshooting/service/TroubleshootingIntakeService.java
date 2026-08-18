@@ -23,8 +23,10 @@ import vip.mate.troubleshooting.intake.IntakeSessionStatus;
 import vip.mate.troubleshooting.intake.NormalizedIncidentFactKind;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -42,11 +44,12 @@ import java.util.Set;
  * The miss path remains fail-closed: its rollout switch is off by default and
  * unsafe or missing Agent configuration yields 409 before any model call.
  *
- * <p>Caller-provided evidence wins. Any SOP request that is absent or explicitly
- * missing is offered to the read-only evidence router. Source failures become
- * canonical {@code MISSING} evidence, preserving the existing abstention
- * boundary. Until the 903001 bindings are live-verified, every diagnosis remains
- * marked {@code fixtureMode}.</p>
+ * <p>Rehearsals may use complete caller-supplied evidence or the configured
+ * read-only router. Formal intake is stricter: it first freezes the pilot plan,
+ * active-approved Playbook and exact Guance owner acceptance, accepts only
+ * server-collected Guance evidence, then revalidates mutable authority before
+ * persistence. A genuine Guance {@code MISSING} result remains an honest
+ * abstention; replay, fallback and caller evidence cannot masquerade as formal.</p>
  */
 @Service
 public class TroubleshootingIntakeService {
@@ -54,13 +57,16 @@ public class TroubleshootingIntakeService {
     /** The Agent's own key for "I am switched off / misconfigured", not "I failed". */
     private static final String AGENT_MISCONFIGURED =
             "err.troubleshooting.agent_misconfigured";
+    private static final Duration FORMAL_WEB_CLAIM_LEASE = Duration.ofMinutes(5);
 
-    /** Remains true until the read-only bindings and thresholds are live-verified. */
     private final TroubleshootingSopPersistenceService sopPersistence;
     private final DeterministicDiagnosisService diagnosisService;
     private final EvidenceSourceRouter evidenceRouter;
     private final EvidenceSpineOrchestrator evidenceSpineOrchestrator;
     private final TroubleshootingAgentTriageService agentTriageService;
+    private final FormalDiagnosisAdmissionService formalAdmissions;
+    private final TroubleshootingPersistenceService existingDiagnoses;
+    private final FormalDiagnosisClaimService formalClaims;
     private final ScenarioSymptomRouter scenarioRouter;
     private final Clock clock;
 
@@ -92,9 +98,12 @@ public class TroubleshootingIntakeService {
             DeterministicDiagnosisService diagnosisService,
             EvidenceSourceRouter evidenceRouter,
             EvidenceSpineOrchestrator evidenceSpineOrchestrator,
-            TroubleshootingAgentTriageService agentTriageService) {
+            TroubleshootingAgentTriageService agentTriageService,
+            FormalDiagnosisAdmissionService formalAdmissions,
+            TroubleshootingPersistenceService existingDiagnoses,
+            FormalDiagnosisClaimService formalClaims) {
         this(sopPersistence, diagnosisService, evidenceRouter, evidenceSpineOrchestrator,
-                agentTriageService,
+                agentTriageService, formalAdmissions, existingDiagnoses, formalClaims,
                 Clock.systemUTC());
     }
 
@@ -130,11 +139,75 @@ public class TroubleshootingIntakeService {
             EvidenceSpineOrchestrator evidenceSpineOrchestrator,
             TroubleshootingAgentTriageService agentTriageService,
             Clock clock) {
+        this(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                evidenceSpineOrchestrator,
+                agentTriageService,
+                null,
+                clock);
+    }
+
+    TroubleshootingIntakeService(
+            TroubleshootingSopPersistenceService sopPersistence,
+            DeterministicDiagnosisService diagnosisService,
+            EvidenceSourceRouter evidenceRouter,
+            EvidenceSpineOrchestrator evidenceSpineOrchestrator,
+            TroubleshootingAgentTriageService agentTriageService,
+            FormalDiagnosisAdmissionService formalAdmissions,
+            Clock clock) {
+        this(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                evidenceSpineOrchestrator,
+                agentTriageService,
+                formalAdmissions,
+                null,
+                null,
+                clock);
+    }
+
+    TroubleshootingIntakeService(
+            TroubleshootingSopPersistenceService sopPersistence,
+            DeterministicDiagnosisService diagnosisService,
+            EvidenceSourceRouter evidenceRouter,
+            EvidenceSpineOrchestrator evidenceSpineOrchestrator,
+            TroubleshootingAgentTriageService agentTriageService,
+            FormalDiagnosisAdmissionService formalAdmissions,
+            TroubleshootingPersistenceService existingDiagnoses,
+            Clock clock) {
+        this(
+                sopPersistence,
+                diagnosisService,
+                evidenceRouter,
+                evidenceSpineOrchestrator,
+                agentTriageService,
+                formalAdmissions,
+                existingDiagnoses,
+                null,
+                clock);
+    }
+
+    TroubleshootingIntakeService(
+            TroubleshootingSopPersistenceService sopPersistence,
+            DeterministicDiagnosisService diagnosisService,
+            EvidenceSourceRouter evidenceRouter,
+            EvidenceSpineOrchestrator evidenceSpineOrchestrator,
+            TroubleshootingAgentTriageService agentTriageService,
+            FormalDiagnosisAdmissionService formalAdmissions,
+            TroubleshootingPersistenceService existingDiagnoses,
+            FormalDiagnosisClaimService formalClaims,
+            Clock clock) {
         this.sopPersistence = sopPersistence;
         this.diagnosisService = diagnosisService;
         this.evidenceRouter = evidenceRouter;
         this.evidenceSpineOrchestrator = evidenceSpineOrchestrator;
         this.agentTriageService = agentTriageService;
+        this.formalAdmissions = formalAdmissions;
+        this.existingDiagnoses = existingDiagnoses;
+        this.formalClaims = formalClaims;
         // Derived rather than injected: it reads the same registry and holds no
         // state of its own, so every existing constructor keeps its arity.
         this.scenarioRouter = sopPersistence == null
@@ -178,7 +251,7 @@ public class TroubleshootingIntakeService {
 
     /** Starts investigation from a complete, durably persisted channel intake. */
     public StoredDiagnosis report(IntakeSession session) {
-        return report(session, false);
+        return report(session, true);
     }
 
     /** Starts a Web conversation intake with an explicit rehearsal boundary. */
@@ -231,67 +304,233 @@ public class TroubleshootingIntakeService {
         requireSafeIncidentText(sanitizedIncident);
         List<EvidenceResult> sanitizedSuppliedEvidence =
                 TroubleshootingEvidenceSanitizer.sanitizeSupplied(evidence);
-        SopEntry sop = null;
-        String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
-        if (routeMissReason != null) {
-            // An alert raised by symptom rather than by error code can still be
-            // owned by a reviewed Playbook. Only a unique declared match counts;
-            // anything else keeps the miss reason it already had.
-            ScenarioSymptomRouter.ScenarioRoute scenarioRoute =
-                    scenarioRouter == null || !symptomRoutable(sanitizedIncident)
-                            ? null
-                            : scenarioRouter.route(workspaceId, sanitizedIncident);
-            if (scenarioRoute != null && scenarioRoute.matched()) {
-                sop = scenarioRoute.playbook();
-                // The alert named no code; the matched Playbook names the route.
-                // Stamping it here is what lets the scenario lane reuse the one
-                // deterministic engine instead of growing a parallel one.
-                sanitizedIncident = sanitizedIncident.withResolvedRoute(sop.errorCode());
-            } else {
-                return triageRouteMiss(
+        if (intakeSessionId != null
+                && (existingDiagnoses == null || formalClaims == null)) {
+            throw conflict("the IntakeSession claim runtime is not available");
+        }
+        if (!rehearsal
+                && (formalAdmissions == null
+                        || existingDiagnoses == null
+                        || formalClaims == null)) {
+            throw conflict("the formal admission runtime is not available");
+        }
+        if (!rehearsal && !sanitizedSuppliedEvidence.isEmpty()) {
+            throw conflict(
+                    "formal diagnosis accepts only server-collected Guance evidence");
+        }
+        FormalDiagnosisClaim formalClaim = null;
+        if (intakeSessionId != null) {
+            FormalDiagnosisClaimService.ClaimResult claimed = formalClaims.claim(
+                    workspaceId,
+                    FormalDiagnosisClaimKey.forIntake(workspaceId, intakeSessionId),
+                    clock.instant(),
+                    FORMAL_WEB_CLAIM_LEASE);
+            switch (claimed.state()) {
+                case COMPLETED -> {
+                    return requireIntakeMode(
+                            existingDiagnoses.get(workspaceId, claimed.diagnosisId()),
+                            rehearsal);
+                }
+                case IN_PROGRESS -> throw conflict(
+                        "the same intake session is already in progress");
+                case ACQUIRED -> formalClaim = claimed.claim();
+            }
+            Optional<StoredDiagnosis> existing;
+            try {
+                existing = existingDiagnoses
+                        .findByIntakeSessionId(workspaceId, intakeSessionId);
+            } catch (RuntimeException failure) {
+                formalClaims.release(workspaceId, formalClaim);
+                throw failure;
+            }
+            if (existing.isPresent()) {
+                try {
+                    StoredDiagnosis stored = existing.orElseThrow();
+                    if (!rehearsal) {
+                        throw conflict(
+                                "an existing Diagnosis without a completed claim cannot satisfy a formal intake");
+                    }
+                    StoredDiagnosis reusable = requireIntakeMode(stored, true);
+                    formalClaims.complete(
+                            workspaceId,
+                            formalClaim,
+                            reusable.diagnosis().diagnosisId(),
+                            clock.instant());
+                    return reusable;
+                } catch (RuntimeException failure) {
+                    formalClaims.release(workspaceId, formalClaim);
+                    throw failure;
+                }
+            }
+        }
+        try {
+            SopEntry sop = null;
+            String routeMissReason = deterministicRouteMissReason(sanitizedIncident);
+            if (routeMissReason != null) {
+                // An alert raised by symptom rather than by error code can still be
+                // owned by a reviewed Playbook. Only a unique declared match counts;
+                // anything else keeps the miss reason it already had.
+                ScenarioSymptomRouter.ScenarioRoute scenarioRoute =
+                        scenarioRouter == null || !symptomRoutable(sanitizedIncident)
+                                ? null
+                                : scenarioRouter.route(workspaceId, sanitizedIncident);
+                if (scenarioRoute != null && scenarioRoute.matched()) {
+                    sop = scenarioRoute.playbook();
+                    // The alert named no code; the matched Playbook names the route.
+                    // Stamping it here is what lets the scenario lane reuse the one
+                    // deterministic engine instead of growing a parallel one.
+                    sanitizedIncident = sanitizedIncident.withResolvedRoute(sop.errorCode());
+                } else {
+                    if (!rehearsal) {
+                        throw routeMiss(
+                                routeMissReason
+                                        + "; formal diagnosis requires a current active-approved Playbook");
+                    }
+                    StoredDiagnosis triaged = triageRouteMiss(
+                            workspaceId,
+                            sanitizedIncident,
+                            sanitizedSuppliedEvidence,
+                            true,
+                            scenarioRoute == null
+                                    ? routeMissReason
+                                    : routeMissReason + "; " + scenarioRoute.missReason(),
+                            reportedAt,
+                            intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                            intakeSessionId,
+                            normalizedFactKind);
+                    return completeClaimedMissPath(
+                            workspaceId, triaged, formalClaim, intakeSessionId);
+                }
+            }
+
+            if (sop == null) {
+                sop = sopPersistence.find(
+                        workspaceId, sanitizedIncident.system(), sanitizedIncident.errorCode());
+            }
+            if (sop == null) {
+                if (!rehearsal) {
+                    throw routeMiss(
+                            "no SOP registered for " + sanitizedIncident.system()
+                                    + ":" + sanitizedIncident.errorCode()
+                                    + "; formal diagnosis requires a current active-approved Playbook");
+                }
+                StoredDiagnosis triaged = triageRouteMiss(
                         workspaceId,
                         sanitizedIncident,
                         sanitizedSuppliedEvidence,
-                        rehearsal,
-                        scenarioRoute == null
-                                ? routeMissReason
-                                : routeMissReason + "; " + scenarioRoute.missReason(),
+                        true,
+                        "no SOP registered for " + sanitizedIncident.system()
+                                + ":" + sanitizedIncident.errorCode(),
                         reportedAt,
                         intakeReadyAt == null ? clock.instant() : intakeReadyAt,
                         intakeSessionId,
                         normalizedFactKind);
+                return completeClaimedMissPath(
+                        workspaceId, triaged, formalClaim, intakeSessionId);
             }
-        }
 
-        if (sop == null) {
-            sop = sopPersistence.find(
-                    workspaceId, sanitizedIncident.system(), sanitizedIncident.errorCode());
-        }
-        if (sop == null) {
-            return triageRouteMiss(
+            if (!rehearsal && intakeSessionId == null) {
+                String ownerKey = IncidentDeduplicationKey.create(
+                                sanitizedIncident, false, reportedAt)
+                        .orElseThrow(() -> conflict(
+                                "formal diagnosis requires a stable five-minute incident identity"));
+                FormalDiagnosisClaimService.ClaimResult claimed = formalClaims.claim(
+                        workspaceId,
+                        ownerKey,
+                        clock.instant(),
+                        FORMAL_WEB_CLAIM_LEASE);
+                switch (claimed.state()) {
+                    case COMPLETED -> {
+                        return requireFormalExisting(existingDiagnoses.get(
+                                workspaceId, claimed.diagnosisId()));
+                    }
+                    case IN_PROGRESS -> throw conflict(
+                            "the same formal diagnosis is already in progress");
+                    case ACQUIRED -> formalClaim = claimed.claim();
+                }
+            }
+
+            return diagnoseWithPlaybook(
                     workspaceId,
                     sanitizedIncident,
                     sanitizedSuppliedEvidence,
                     rehearsal,
-                    "no SOP registered for " + sanitizedIncident.system()
-                            + ":" + sanitizedIncident.errorCode(),
                     reportedAt,
-                    intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                    intakeReadyAt,
                     intakeSessionId,
-                    normalizedFactKind);
+                    sop,
+                    formalClaim);
+        } catch (RuntimeException failure) {
+            if (formalClaim != null) {
+                try {
+                    formalClaims.release(workspaceId, formalClaim);
+                } catch (RuntimeException releaseFailure) {
+                    failure.addSuppressed(releaseFailure);
+                }
+            }
+            throw failure;
         }
+    }
 
+    private StoredDiagnosis diagnoseWithPlaybook(
+            long workspaceId,
+            IncidentContext sanitizedIncident,
+            List<EvidenceResult> sanitizedSuppliedEvidence,
+            boolean rehearsal,
+            Instant reportedAt,
+            Instant intakeReadyAt,
+            String intakeSessionId,
+            SopEntry sop,
+            FormalDiagnosisClaim formalClaim) {
         Instant readyAt = intakeReadyAt == null ? clock.instant() : intakeReadyAt;
+        FormalDiagnosisAdmission formalAdmission = !rehearsal
+                ? formalAdmissions.admit(workspaceId, sanitizedIncident, sop)
+                : null;
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
                         workspaceId,
                         sop,
                         sanitizedIncident,
-                        sanitizedSuppliedEvidence));
+                        sanitizedSuppliedEvidence,
+                        formalAdmission));
         // 证据成色从**这批证据自己**身上读，不再问一个全局开关：翻那个开关会让
         // 每一条诊断同时改口，包括同一时刻仍走录制回放的那些。
-        boolean fixtureMode = EvidenceProvenance.fixtureMode(
-                collectedEvidence, sanitizedSuppliedEvidence);
+        boolean fixtureMode = formalAdmission == null
+                ? EvidenceProvenance.fixtureMode(
+                        collectedEvidence, sanitizedSuppliedEvidence)
+                : EvidenceProvenance.fixtureModeForAcceptedGuanceRun(
+                        collectedEvidence);
+        if (formalAdmission != null) {
+            if (fixtureMode) {
+                throw conflict(
+                        "formal diagnosis rejected fixture or unavailable-source evidence");
+            }
+            formalAdmissions.revalidate(
+                    workspaceId, sanitizedIncident, formalAdmission);
+            if (intakeSessionId == null) {
+                return diagnosisService.diagnoseAndPersist(
+                        workspaceId,
+                        sanitizedIncident,
+                        formalAdmission,
+                        collectedEvidence,
+                        fixtureMode,
+                        reportedAt,
+                        readyAt,
+                        formalClaim,
+                        clock.instant());
+            }
+            return diagnosisService.diagnoseAndPersistForIntake(
+                    workspaceId,
+                    sanitizedIncident,
+                    formalAdmission,
+                    collectedEvidence,
+                    fixtureMode,
+                    reportedAt,
+                    readyAt,
+                    intakeSessionId,
+                    formalClaim,
+                    clock.instant());
+        }
         if (intakeSessionId == null) {
             return diagnosisService.diagnoseAndPersist(
                     workspaceId,
@@ -312,14 +551,87 @@ public class TroubleshootingIntakeService {
                 fixtureMode,
                 reportedAt,
                 readyAt,
-                intakeSessionId);
+                intakeSessionId,
+                formalClaim,
+                clock.instant());
+    }
+
+    private StoredDiagnosis requireFormalExisting(StoredDiagnosis stored) {
+        if (stored == null
+                || stored.diagnosis() == null
+                || stored.diagnosis().rehearsal()) {
+            throw conflict(
+                    "a rehearsal Diagnosis cannot satisfy a formal intake session");
+        }
+        if (stored.pilotPlanVersion() == null
+                || stored.diagnosis().sourcePlaybookVersionRef() == null) {
+            throw conflict(
+                    "the existing intake Diagnosis has no admitted pilot identity");
+        }
+        return stored;
+    }
+
+    private StoredDiagnosis requireIntakeMode(
+            StoredDiagnosis stored,
+            boolean rehearsal) {
+        if (stored == null
+                || stored.diagnosis() == null
+                || stored.diagnosis().rehearsal() != rehearsal) {
+            throw conflict(rehearsal
+                    ? "a formal Diagnosis cannot satisfy a rehearsal intake session"
+                    : "a rehearsal Diagnosis cannot satisfy a formal intake session");
+        }
+        return rehearsal ? stored : requireFormalExisting(stored);
+    }
+
+    private StoredDiagnosis completeClaimedMissPath(
+            long workspaceId,
+            StoredDiagnosis stored,
+            FormalDiagnosisClaim claim,
+            String intakeSessionId) {
+        if (intakeSessionId == null) {
+            return stored;
+        }
+        if (claim == null || formalClaims == null) {
+            throw conflict("the IntakeSession claim runtime is not available");
+        }
+        StoredDiagnosis rehearsal = requireIntakeMode(stored, true);
+        if (!rehearsal.created()) {
+            throw conflict(
+                    "an IntakeSession Diagnosis was created outside its active claim");
+        }
+        formalClaims.complete(
+                workspaceId,
+                claim,
+                rehearsal.diagnosis().diagnosisId(),
+                clock.instant());
+        return rehearsal;
     }
 
     private List<EvidenceResult> collectMissingEvidence(
             long workspaceId,
             SopEntry sop,
             IncidentContext incident,
-            List<EvidenceResult> supplied) {
+            List<EvidenceResult> supplied,
+            FormalDiagnosisAdmission formalAdmission) {
+        if (formalAdmission != null) {
+            if (!supplied.isEmpty()) {
+                throw conflict(
+                        "formal diagnosis accepts only server-collected Guance evidence");
+            }
+            if (!sop.equals(formalAdmission.playbook())) {
+                throw conflict("formal admission does not match the routed Playbook");
+            }
+            if (evidenceSpineOrchestrator == null) {
+                throw conflict("the Evidence Spine runtime is not available");
+            }
+            return evidenceSpineOrchestrator.collect(
+                    workspaceId,
+                    incident,
+                    formalAdmission.evidenceSpinePlan(),
+                    Set.of("guance"))
+                    .evidence();
+        }
         EvidenceSpinePlan spinePlan;
         try {
             spinePlan = EvidenceSpinePlanResolver.resolve(sop);

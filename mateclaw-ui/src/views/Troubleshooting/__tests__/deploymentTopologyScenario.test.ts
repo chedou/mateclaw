@@ -19,7 +19,10 @@ const form: DeploymentTopologyScenarioForm = {
 
 describe('deployment topology scenario intake', () => {
   it('submits only business context while the server owns scenario and tool routing', () => {
-    const request = buildDeploymentTopologyScenarioRequest(form)
+    const request = buildDeploymentTopologyScenarioRequest({
+      ...form,
+      rehearsal: false,
+    })
 
     expect(request).toEqual({
       system: 'CSDP',

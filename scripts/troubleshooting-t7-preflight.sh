@@ -20,9 +20,9 @@
 #      一个什么都没配还能通过的检查，就是一个空转的闸门。
 #   3. **验收清单模板一律输出 false。** 那七项是 owner 的书面确认，
 #      预填 true 等于机器替人签字。
-#   4. **没有 20–30 条服务端冻结目标就不报窗口就绪。** 操作员计划只能引用服务端
-#      已绑定到精确 selector / candidate / request / query contract 的 targetId，再补历史时间；
-#      不能自己填写 searchTerm 来宣称某个 selector 可执行。
+#   4. **没有 workspace 全局 20–30 条服务端冻结目标就不报窗口就绪。** 目标可以
+#      分布在多个 system/service；每条仍由服务端按自己的 scope、scenarioKey 与 binding
+#      指纹 fail closed。操作员计划只引用全局批次里的 targetId，再补历史时间。
 #
 #   ./scripts/troubleshooting-t7-preflight.sh --gates
 #   T7_SEED_PLAN_FILE=/secure/local/t7-window-plan.json \
@@ -45,6 +45,7 @@ PREFLIGHT_TEMP_DIR=""
 SEED_PLAN_SNAPSHOT=""
 HASH_TOOL=""
 API="${BASE_URL}/api/v1/troubleshooting"
+API_V2="${BASE_URL}/api/v2/troubleshooting"
 
 # The three the Evidence Spine actually needs. incident_impact is real but not on
 # this critical path, so a block there must not read as a block on the window.
@@ -117,8 +118,8 @@ print_gates() {
                             routedToGuance；incident_impact 不在关键路上，不算阻塞
   4. binding 指纹可唯一计算    currentBindingFingerprint 不为 null。
                             算不出指纹就没有东西可供 owner 验收，窗口里再补最贵
-  5. 20–30 条录制目标        运行服务必须先返回 20–30 个 server-owned target；每个
-                            target 已冻结 selector / candidate / request / binding。
+  5. workspace 首批 20–30    V2 接口必须返回一个 workspace 全局批次；目标可以来自
+                            多个 system/service，但每条仍绑定自己的 scenario 与指纹。
                             操作员计划只补精确历史时间和来源引用，不能自造查询映射
   6. owner 验收状态          NOT_ACCEPTED = 窗口要做的事；STALE = 配置变过，要重做；
                             ACCEPTED = 已完成，窗口只需做剩下的项
@@ -169,6 +170,7 @@ fi
 
 auth=(-H "Authorization: Bearer ${TOKEN}" -H "X-Workspace-Id: ${WORKSPACE_ID}")
 get() { curl -sS "${auth[@]}" "${API}$1" 2>/dev/null || echo '{}'; }
+get_v2() { curl -sS "${auth[@]}" "${API_V2}$1" 2>/dev/null || echo '{}'; }
 blockers_of() { echo "$1" | jq -r '[.data.blockers[]?] | join("；") // ""'; }
 
 ok "服务可达，身份可用"
@@ -234,39 +236,32 @@ accept_status="$(echo "${acceptance}" | jq -r '.data.status // empty')"
              先让资产、核心路由和 binding 配置唯一确定下来"
 ok "binding 指纹可计算：${fingerprint:0:16}…"
 
-# ── 格 5：20–30 条服务端冻结录制目标 ──────────────────────────────
-# The running service, not the operator file and not this checkout, owns the
-# selector → candidate → request → Guance binding identity. The local plan may
-# only select a targetId and add a historical timestamp/reference.
-target_catalog="$(get "/evidence/guance/recording-targets?system=${SYSTEM}&service=${SERVICE}")"
-if ! printf '%s' "${target_catalog}" | strict_json; then
+# ── 格 5：workspace 全局首批 20–30 条服务端冻结录制目标 ────────────
+# Count once per workspace, never once per system/service. The server evaluates
+# every row against that row's own system/service/scenario/binding fingerprint;
+# the local plan may only select executable targetIds and add time/reference.
+recording_batch="$(get_v2 "/evidence/guance/recording-batches/current")"
+if ! printf '%s' "${recording_batch}" | strict_json; then
   blocked "20–30 条服务端冻结录制目标" \
-    "GET /evidence/guance/recording-targets 未返回严格的单根 JSON" \
-    "修复服务端响应；重复键或尾随根值不能被 jq 覆盖后冒充冻结目录"
+    "GET /api/v2/troubleshooting/evidence/guance/recording-batches/current 未返回严格的单根 JSON" \
+    "修复服务端响应；重复键或尾随根值不能被 jq 覆盖后冒充 workspace 批次"
 fi
-search_binding="$(echo "${readiness}" | jq -r '
-  [.data.signals[]? | select(.signalKind == "log_search") | .bindingRef] | first // ""')"
-trace_binding="$(echo "${readiness}" | jq -r '
-  [.data.signals[]? | select(.signalKind == "log_trace_bundle") | .bindingRef] | first // ""')"
-contrast_binding="$(echo "${readiness}" | jq -r '
-  [.data.signals[]? | select(.signalKind == "contrast_sample") | .bindingRef] | first // ""')"
 
 if ! jq -e \
-  --arg system "${SYSTEM}" \
-  --arg service "${SERVICE}" \
-  --arg search "${search_binding}" \
-  --arg trace "${trace_binding}" \
-  --arg contrast "${contrast_binding}" '
+  --arg workspace "${WORKSPACE_ID}" '
   .data as $data
   | ($data | type == "object")
   and (($data | keys) == [
-    "asOfEpochSeconds", "blockers", "catalogFingerprint", "contractVersion",
-    "executableTargetCount", "frozenTargetCount", "service", "system", "targets"
+    "asOfEpochSeconds", "batchId", "blockers", "catalogContractVersion",
+    "catalogFingerprint", "contractVersion", "executableTargetCount",
+    "frozenTargetCount", "readyForOwnerAcceptance", "targets", "workspaceId"
   ])
-  and $data.contractVersion == "t7-guance-recording-target-catalog.v1"
-  and $data.system == $system
-  and $data.service == $service
+  and $data.contractVersion == "t7-guance-recording-batch-readiness.v2"
+  and ($data.batchId | type == "string" and test("^t7-first-[a-f0-9]{24}$"))
+  and $data.workspaceId == $workspace
+  and $data.catalogContractVersion == "t7-guance-recording-target-catalog.v1"
   and ($data.catalogFingerprint | type == "string" and test("^[a-f0-9]{64}$"))
+  and $data.batchId == ("t7-first-" + $data.catalogFingerprint[0:24])
   # The global Long serializer intentionally emits decimal strings for
   # browser precision. Epoch seconds stay within ten digits for this contract;
   # accepting a JSON number here would make the CI stub differ from production.
@@ -275,78 +270,72 @@ if ! jq -e \
   and ($data.frozenTargetCount | type == "number" and . >= 0 and floor == .)
   and ($data.executableTargetCount | type == "number" and . >= 0 and floor == .)
   and $data.frozenTargetCount >= $data.executableTargetCount
+  and ($data.readyForOwnerAcceptance | type == "boolean")
   and ($data.targets | type == "array")
   and ($data.blockers | type == "array" and all(.[]; type == "string"))
-  and $data.executableTargetCount == ($data.targets | length)
+  and $data.frozenTargetCount == ($data.targets | length)
+  and $data.executableTargetCount
+      == ([$data.targets[] | select(.executable == true)] | length)
+  and $data.readyForOwnerAcceptance
+      == ($data.frozenTargetCount >= 20
+          and $data.frozenTargetCount <= 30
+          and $data.executableTargetCount >= 20
+          and ($data.blockers | length) == 0)
   and all($data.targets[];
     type == "object"
     and (keys == [
-      "bindingRefs", "candidateFingerprint", "candidateReference",
-      "requestFingerprint", "requiredEvidenceRequestId", "searchTerm", "selectorKey",
-      "service", "system", "targetId", "window"
+      "bindingFingerprint", "blockers", "executable", "scenarioKey", "selectorKey",
+      "service", "system", "targetBindingFingerprint", "targetId"
     ])
-    and ([.targetId, .system, .service, .selectorKey, .candidateReference,
-          .candidateFingerprint, .requiredEvidenceRequestId, .requestFingerprint,
-          .searchTerm, .window] | all(type == "string" and length > 0))
-    and .system == $system
-    and .service == $service
+    and ([.targetId, .system, .service, .selectorKey]
+         | all(type == "string" and length > 0))
     and (.targetId | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
-    and (.selectorKey | test("^csdp:[A-Za-z0-9_]+$"))
-    and (.candidateReference | test("^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,255}$"))
-    and (.candidateFingerprint | test("^[a-f0-9]{64}$"))
-    and (.requiredEvidenceRequestId | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
-    and (.requestFingerprint | test("^[a-f0-9]{64}$"))
-    and (.searchTerm | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
-    and (.window | test("^-[1-9][0-9]{0,5}(s|m|h|d)$"))
-    and (.bindingRefs | keys == ["contrast_sample", "log_search", "log_trace_bundle"])
-    and .bindingRefs.log_search == $search
-    and .bindingRefs.log_trace_bundle == $trace
-    and .bindingRefs.contrast_sample == $contrast
+    and (.system | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.service | test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"))
+    and (.selectorKey
+         | test("^csdp:([A-Za-z0-9_]+|scenario:[A-Za-z0-9][A-Za-z0-9._/-]{0,127})$"))
+    and (.scenarioKey == null
+         or (.scenarioKey | type == "string"
+             and test("^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")))
+    and (if (.selectorKey | contains(":scenario:"))
+         then .scenarioKey == (.selectorKey | split(":scenario:")[1])
+         else .scenarioKey == null end)
+    and (.executable | type == "boolean")
+    and (.blockers | type == "array" and all(.[]; type == "string"))
+    and (.bindingFingerprint == null
+         or (.bindingFingerprint | type == "string" and test("^[a-f0-9]{64}$")))
+    and (.targetBindingFingerprint == null
+         or (.targetBindingFingerprint | type == "string" and test("^[a-f0-9]{64}$")))
+    and (if .executable
+         then (.blockers | length) == 0
+              and (.bindingFingerprint | type == "string")
+              and (.targetBindingFingerprint | type == "string")
+         else (.blockers | length) > 0 end)
   )
   and ([$data.targets[].targetId] | unique | length) == ($data.targets | length)
   and ([$data.targets[].selectorKey] | unique | length) == ($data.targets | length)
-  and ([$data.targets[].candidateFingerprint] | unique | length) == ($data.targets | length)
-  and ([$data.targets[].requestFingerprint] | unique | length) == ($data.targets | length)
-' <<<"${target_catalog}" >/dev/null; then
+  and ([$data.targets[].targetBindingFingerprint | select(. != null)]
+       | unique | length)
+      == ([$data.targets[].targetBindingFingerprint | select(. != null)] | length)
+' <<<"${recording_batch}" >/dev/null; then
   blocked "20–30 条服务端冻结录制目标" \
-    "GET /evidence/guance/recording-targets 未返回与当前运行 binding 严格匹配的 v1 目录" \
-    "先修复服务端冻结目录或部署版本；操作者自带 selector/searchTerm 不能替代服务端查询合同"
+    "V2 workspace 批次没有返回严格、可验证的 target readiness 投影" \
+    "先修复服务端批次聚合或部署版本；不能回退到按单个 system/service 各算 20 条"
 fi
 
-invalid_window=""
-while IFS= read -r planned_window; do
-  if [[ ! "${planned_window}" =~ ^-([1-9][0-9]{0,5})(s|m|h|d)$ ]]; then
-    invalid_window="${planned_window}"
-    break
-  fi
-  window_value=$((10#${BASH_REMATCH[1]}))
-  case "${BASH_REMATCH[2]}" in
-    s) window_seconds=${window_value} ;;
-    m) window_seconds=$((window_value * 60)) ;;
-    h) window_seconds=$((window_value * 3600)) ;;
-    d) window_seconds=$((window_value * 86400)) ;;
-  esac
-  if (( window_seconds > 86400 )); then
-    invalid_window="${planned_window}"
-    break
-  fi
-done < <(jq -r '.data.targets[].window' <<<"${target_catalog}")
-[[ -z "${invalid_window}" ]] || blocked "20–30 条服务端冻结录制目标" \
-  "服务端 target window=${invalid_window} 不是 1 秒到 24 小时的有界相对时间" \
-  "修复服务端 target catalog；窗口计划不能覆盖 server-owned 查询预算"
-
-catalog_target_count="$(jq -r '.data.targets | length' <<<"${target_catalog}")"
-catalog_frozen_count="$(jq -r '.data.frozenTargetCount' <<<"${target_catalog}")"
-catalog_fingerprint="$(jq -r '.data.catalogFingerprint' <<<"${target_catalog}")"
-catalog_as_of="$(jq -r '.data.asOfEpochSeconds' <<<"${target_catalog}")"
-if (( catalog_target_count < 20 )); then
+batch_target_count="$(jq -r '[.data.targets[] | select(.executable == true)] | length' <<<"${recording_batch}")"
+batch_frozen_count="$(jq -r '.data.frozenTargetCount' <<<"${recording_batch}")"
+batch_fingerprint="$(jq -r '.data.catalogFingerprint' <<<"${recording_batch}")"
+batch_as_of="$(jq -r '.data.asOfEpochSeconds' <<<"${recording_batch}")"
+batch_ready="$(jq -r '.data.readyForOwnerAcceptance' <<<"${recording_batch}")"
+batch_scope_count="$(jq -r '[.data.targets[] | [.system, .service]] | unique | length' <<<"${recording_batch}")"
+if (( batch_target_count < 20 )) || (( batch_frozen_count > 30 )) || [[ "${batch_ready}" != "true" ]]; then
   blocked "20–30 条服务端冻结录制目标" \
-    "当前 scope 仅有 ${catalog_target_count} 个可执行新目标（冻结 ${catalog_frozen_count} 个）。$(blockers_of "${target_catalog}")" \
-    "先在服务端目录为至少 20 个新 D1 selector 冻结精确 candidate/request 指纹、查询键和当前 binding；
-             现有 SendMsg 合同已录制，不能重复凑数，也不能用任意 D1 selector 复用同一查询"
+    "全 workspace 仅有 ${batch_target_count} 个可执行目标（冻结 ${batch_frozen_count} 个）。$(blockers_of "${recording_batch}")" \
+    "先补齐同一 workspace 首批 20–30 个目标；每条仍需通过自己的 system/service/scenario/binding 校验"
 fi
-ok "服务端返回 ${catalog_target_count} 个与当前 binding 匹配的未录制目标"
-dim "目标目录 SHA-256：${catalog_fingerprint}"
+ok "全 workspace 返回 ${batch_target_count} 个可执行目标，分布在 ${batch_scope_count} 个 system/service scope"
+dim "workspace 批次 SHA-256：${batch_fingerprint}"
 
 [[ -n "${SEED_PLAN_FILE}" ]] || blocked "20–30 条窗口执行计划" \
   "未设置 T7_SEED_PLAN_FILE；服务端目标存在，但没有冻结本次历史故障批次" \
@@ -417,7 +406,7 @@ if ! jq -e '
     "每条只保留三个白名单字段；时间必须是有效的 UTC RFC3339 整秒"
 fi
 
-future_times="$(jq -r --argjson asOf "${catalog_as_of}" '
+future_times="$(jq -r --argjson asOf "${batch_as_of}" '
   [.seeds[].occurredAt
    | select((fromdateiso8601) > $asOf)]
   | join(", ")
@@ -436,14 +425,14 @@ fi
 
 unknown_targets="$(jq -nr \
   --slurpfile plan "${SEED_PLAN_SNAPSHOT}" \
-  --argjson catalog "${target_catalog}" '
+  --argjson batch "${recording_batch}" '
     [$plan[0].seeds[].targetId]
-    - [$catalog.data.targets[].targetId]
+    - [$batch.data.targets[] | select(.executable == true) | .targetId]
     | join(", ")
   ')"
 [[ -z "${unknown_targets}" ]] || blocked "20–30 条窗口执行计划" \
-  "计划引用了当前服务端目录之外的 targetId：${unknown_targets}" \
-  "只从 GET /evidence/guance/recording-targets 返回的 targetId 选取；不要手写 selector/searchTerm"
+  "计划引用了 workspace 可执行批次之外的 targetId：${unknown_targets}" \
+  "只从 V2 workspace batch 的 executable targetId 选取；不要手写 selector/searchTerm"
 
 plan_fingerprint=""
 if [[ "${HASH_TOOL}" == "shasum" ]]; then
@@ -452,7 +441,7 @@ else
   read -r plan_fingerprint _ < <(sha256sum "${SEED_PLAN_SNAPSHOT}")
 fi
 ok "${SEED_PLAN_COUNT} 条窗口执行项已冻结：均引用服务端目标，历史时间与来源引用唯一"
-dim "计划 SHA-256：${plan_fingerprint}（窗口记录应同时引用目标目录与计划指纹）"
+dim "计划 SHA-256：${plan_fingerprint}（窗口记录应同时引用 workspace 批次与计划指纹）"
 
 # ── 格 6：owner 验收状态 ────────────────────────────────────────────
 case "${accept_status}" in

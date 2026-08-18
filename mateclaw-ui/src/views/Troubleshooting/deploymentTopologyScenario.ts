@@ -47,7 +47,8 @@ export function buildDeploymentTopologyScenarioRequest(
     title: form.title.trim(),
     severity: form.severity,
     ...(traceId ? { traceId } : {}),
-    rehearsal: form.rehearsal,
+    // Scenario-level D20 binding and acceptance are not available yet.
+    rehearsal: true,
   }
 }
 

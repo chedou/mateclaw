@@ -83,7 +83,7 @@ class IntakeInvestigationPollerTest {
         StoredDiagnosis stored = new StoredDiagnosis(
                 org.mockito.Mockito.mock(Diagnosis.class), 0, true);
         when(stored.diagnosis().diagnosisId()).thenReturn("diag-1");
-        when(intakeService.report(readySession())).thenReturn(stored);
+        when(intakeService.report(readySession(), true)).thenReturn(stored);
         when(mapper.attachDiagnosis(eq(1L), eq("test-worker"), eq("diag-1"), any()))
                 .thenReturn(1);
         DiagnosisExperienceProjection projection = projection();
@@ -92,6 +92,7 @@ class IntakeInvestigationPollerTest {
 
         poller.dispatchReady();
 
+        verify(intakeService).report(readySession(), true);
         InOrder order = inOrder(mapper, channelManager);
         order.verify(mapper).attachDiagnosis(eq(1L), eq("test-worker"), eq("diag-1"), any());
         order.verify(channelManager).sendToWorkspaceConversation(
@@ -176,7 +177,7 @@ class IntakeInvestigationPollerTest {
         routeAvailable();
         when(mapper.claim(eq(1L), eq("test-worker"), any(), any(), eq(5))).thenReturn(1);
         when(mapper.selectById(1L)).thenReturn(claimed);
-        when(intakeService.report(any(IntakeSession.class)))
+        when(intakeService.report(any(IntakeSession.class), eq(true)))
                 .thenThrow(new IllegalStateException("agent unavailable"));
         when(mapper.markTerminalPending(any(), any(), any(), any(), any())).thenReturn(1);
 

@@ -204,10 +204,10 @@ describe('observability asset create flow', () => {
     listSops.mockResolvedValue({
       data: [{
         sopId: 'cti-v1',
-        routeKey: 'csdp:701018',
+        routeKey: 'csdp:scenario:cti_create_conversation_failed',
         system: 'CSDP',
         service: 'csdp-task',
-        errorCode: '701018',
+        errorCode: 'scenario:cti_create_conversation_failed',
         status: 'approved',
         verified: true,
         operational: true,

@@ -36,6 +36,9 @@ import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.repository.TroubleshootingDiagnosisMapper;
 import vip.mate.troubleshooting.repository.TroubleshootingKnowledgeOutboxMapper;
 import vip.mate.troubleshooting.service.DiagnosisSummary;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimKey;
+import vip.mate.troubleshooting.service.IncidentDeduplicationKey;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
@@ -107,14 +110,16 @@ class TroubleshootingPersistenceServiceTest {
         StoredDiagnosis stored = service.createOrGet(
                 7L,
                 diagnosis(false),
-                Instant.parse("2026-07-25T01:04:59Z"));
+                Instant.parse("2026-07-25T01:04:59Z"),
+                1,
+                formalClaim());
 
         ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
                 ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
         verify(diagnosisMapper).insert(entity.capture());
         assertEquals(7L, entity.getValue().getWorkspaceId());
         assertEquals("diag-1", entity.getValue().getDiagnosisId());
-        assertEquals(64, entity.getValue().getDedupKey().length());
+        assertEquals(formalClaim().dedupKey(), entity.getValue().getDedupKey());
         assertTrue(entity.getValue().getAggregateJson().contains("diag-1"));
         assertEquals(InvestigationMode.ERROR_CODE_PLAYBOOK.name(),
                 entity.getValue().getInvestigationMode());
@@ -125,26 +130,67 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
-    void freezesTheCurrentPilotVersionOnlyWhenTheDiagnosisIsFirstCreated() {
+    void formalPersistenceRejectsAClaimOwnedByAnotherIncidentIdentity() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+        Diagnosis diagnosis = diagnosis(false);
+        Instant claimedAt = Instant.parse("2026-07-25T01:05:00Z");
+        FormalDiagnosisClaim wrongClaim = new FormalDiagnosisClaim(
+                "f".repeat(64),
+                "claim-for-another-incident",
+                claimedAt,
+                claimedAt.plusSeconds(300));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.createOrGet(7L, diagnosis, receivedAt, 1, wrongClaim));
+
+        assertEquals(409, error.getCode());
+        assertTrue(error.getMessage().contains("claim identity"));
+        verifyNoInteractions(diagnosisMapper, outboxMapper, pilotPlans);
+    }
+
+    @Test
+    void storesThePilotVersionFrozenByFormalAdmissionWithoutRecomputingIt() {
         when(diagnosisMapper.selectOne(any())).thenReturn(null);
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
-        when(pilotPlans.enrollmentVersion(
-                7L, "CSDP", "csdp-wechat", false)).thenReturn(7);
 
-        service.createOrGet(
+        StoredDiagnosis stored = service.createOrGet(
                 7L,
                 diagnosis(false),
-                Instant.parse("2026-07-25T01:04:59Z"));
+                Instant.parse("2026-07-25T01:04:59Z"),
+                7,
+                formalClaim());
 
         ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
                 ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
         verify(diagnosisMapper).insert(entity.capture());
         assertEquals(7, entity.getValue().getPilotPlanVersion());
+        assertEquals(7, stored.pilotPlanVersion());
+        verifyNoInteractions(pilotPlans);
+    }
+
+    @Test
+    void legacyPersistencePathsRejectNonRehearsalWithoutFormalAdmission() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+
+        for (org.junit.jupiter.api.function.Executable bypass
+                : List.<org.junit.jupiter.api.function.Executable>of(
+                () -> service.createOrGet(7L, diagnosis(false), receivedAt),
+                () -> service.createOrGetForIntake(
+                        7L, diagnosis(false), "intake-bypass"),
+                () -> service.createOrGetForScenario(
+                        7L, scenarioDiagnosis(false),
+                        "deployment_topology_probe", receivedAt))) {
+            MateClawException error = assertThrows(MateClawException.class, bypass);
+            assertEquals(409, error.getCode());
+            assertTrue(error.getMessage().contains("formal admission"));
+        }
+
+        verifyNoInteractions(diagnosisMapper, outboxMapper, pilotPlans);
     }
 
     @Test
     void legacyCreateKeepsRouteSemanticsIndexesNullEvenThoughDomainDerivesThem() throws Exception {
-        when(diagnosisMapper.selectOne(any())).thenReturn(null);
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
 
         Diagnosis legacy = legacyDiagnosis();
@@ -165,20 +211,24 @@ class TroubleshootingPersistenceServiceTest {
     }
 
     @Test
-    void symptomOnlyProductionDiagnosisAlsoStoresAFiveMinuteDeduplicationKey() {
+    void symptomOnlyProductionDiagnosisStoresItsExactClaimKey() {
         when(diagnosisMapper.selectOne(any())).thenReturn(null);
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+        Diagnosis diagnosis = symptomDiagnosis(false);
+        FormalDiagnosisClaim claim = formalClaimFor(diagnosis, receivedAt);
 
         service.createOrGet(
                 7L,
-                symptomDiagnosis(false),
-                Instant.parse("2026-07-25T01:04:59Z"));
+                diagnosis,
+                receivedAt,
+                1,
+                claim);
 
         ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
                 ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
         verify(diagnosisMapper).insert(entity.capture());
-        assertNotNull(entity.getValue().getDedupKey());
-        assertEquals(64, entity.getValue().getDedupKey().length());
+        assertEquals(claim.dedupKey(), entity.getValue().getDedupKey());
     }
 
     @Test
@@ -187,10 +237,13 @@ class TroubleshootingPersistenceServiceTest {
         when(diagnosisMapper.insert(any(TroubleshootingDiagnosisEntity.class))).thenReturn(1);
         Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
 
-        service.createOrGet(7L, symptomDiagnosis(false), receivedAt);
+        Diagnosis formalSymptom = symptomDiagnosis(false);
+        service.createOrGet(
+                7L, formalSymptom, receivedAt, 1,
+                formalClaimFor(formalSymptom, receivedAt));
         service.createOrGetForScenario(
                 7L,
-                scenarioDiagnosis(false),
+                scenarioDiagnosis(true),
                 "deployment_topology_probe",
                 receivedAt);
 
@@ -210,14 +263,14 @@ class TroubleshootingPersistenceServiceTest {
                 IllegalArgumentException.class,
                 () -> service.createOrGetForScenario(
                         7L,
-                        symptomDiagnosis(false),
+                        symptomDiagnosis(true),
                         "deployment_topology_probe",
                         receivedAt));
         IllegalArgumentException wrongSelector = assertThrows(
                 IllegalArgumentException.class,
                 () -> service.createOrGetForScenario(
                         7L,
-                        scenarioDiagnosis(false),
+                        scenarioDiagnosis(true),
                         "slow_api",
                         receivedAt));
 
@@ -247,7 +300,9 @@ class TroubleshootingPersistenceServiceTest {
         StoredDiagnosis stored = service.createOrGetForIntake(
                 7L,
                 diagnosis(false),
-                "intake-7");
+                "intake-7",
+                1,
+                formalIntakeClaim("intake-7"));
 
         ArgumentCaptor<TroubleshootingDiagnosisEntity> entity =
                 ArgumentCaptor.forClass(TroubleshootingDiagnosisEntity.class);
@@ -261,18 +316,36 @@ class TroubleshootingPersistenceServiceTest {
     void retryingTheSameIntakeReturnsItsExistingDiagnosis() throws Exception {
         TroubleshootingDiagnosisEntity existing = persisted(diagnosis(false), 4);
         existing.setSourceIntakeSessionId("intake-7");
+        existing.setPilotPlanVersion(5);
         when(diagnosisMapper.selectOne(any())).thenReturn(existing);
 
         StoredDiagnosis stored = service.createOrGetForIntake(
                 7L,
                 diagnosis(false),
-                "intake-7");
+                "intake-7",
+                9,
+                formalIntakeClaim("intake-7"));
 
         assertEquals("diag-1", stored.diagnosis().diagnosisId());
         assertEquals(4, stored.version());
         assertFalse(stored.created());
+        assertEquals(5, stored.pilotPlanVersion());
         verify(diagnosisMapper, never()).insert(any(TroubleshootingDiagnosisEntity.class));
         verifyNoInteractions(pilotPlans);
+    }
+
+    @Test
+    void formalIntakeRejectsAClaimOwnedByAnotherSession() {
+        FormalDiagnosisClaim wrong = formalIntakeClaim("another-intake");
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.createOrGetForIntake(
+                        7L, diagnosis(false), "intake-7", 1, wrong));
+
+        assertEquals(409, error.getCode());
+        assertTrue(error.getMessage().contains("intake session"));
+        verifyNoInteractions(diagnosisMapper, outboxMapper, pilotPlans);
     }
 
     @Test
@@ -304,7 +377,9 @@ class TroubleshootingPersistenceServiceTest {
         StoredDiagnosis stored = service.createOrGet(
                 7L,
                 diagnosis(false),
-                Instant.parse("2026-07-25T01:04:59Z"));
+                Instant.parse("2026-07-25T01:04:59Z"),
+                1,
+                formalClaim());
 
         assertEquals("已有诊断", stored.diagnosis().rootCause());
         assertEquals(3, stored.version());
@@ -619,6 +694,31 @@ class TroubleshootingPersistenceServiceTest {
         return entity;
     }
 
+    private FormalDiagnosisClaim formalClaim() {
+        Instant receivedAt = Instant.parse("2026-07-25T01:04:59Z");
+        return formalClaimFor(diagnosis(false), receivedAt);
+    }
+
+    private FormalDiagnosisClaim formalClaimFor(
+            Diagnosis diagnosis, Instant receivedAt) {
+        Instant claimedAt = receivedAt;
+        return new FormalDiagnosisClaim(
+                IncidentDeduplicationKey.create(diagnosis.incident(), false, receivedAt)
+                        .orElseThrow(),
+                "claim-persistence-1",
+                claimedAt,
+                claimedAt.plusSeconds(300));
+    }
+
+    private FormalDiagnosisClaim formalIntakeClaim(String intakeSessionId) {
+        Instant claimedAt = Instant.parse("2026-07-25T01:04:59Z");
+        return new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(7L, intakeSessionId),
+                "claim-intake-1",
+                claimedAt,
+                claimedAt.plusSeconds(300));
+    }
+
     private Diagnosis diagnosis(boolean rehearsal) {
         return diagnosis(
                 rehearsal,
@@ -676,7 +776,7 @@ class TroubleshootingPersistenceServiceTest {
     private Diagnosis legacyDiagnosis() throws Exception {
         com.fasterxml.jackson.databind.node.ObjectNode json =
                 (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(
-                        objectMapper.writeValueAsString(diagnosis(false)));
+                        objectMapper.writeValueAsString(diagnosis(true)));
         json.put("contractVersion", "1.4");
         json.remove("investigationMode");
         json.remove("routeAuthority");

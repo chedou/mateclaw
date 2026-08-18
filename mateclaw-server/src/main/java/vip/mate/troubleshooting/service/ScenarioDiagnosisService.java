@@ -109,6 +109,10 @@ public class ScenarioDiagnosisService {
         if (workspaceId <= 0 || incident == null || reportedAt == null) {
             throw invalid("workspaceId, incident and reportedAt are required");
         }
+        if (!rehearsal) {
+            throw conflict(
+                    "formal scenario diagnosis must be submitted through the incident Intake gate");
+        }
         String safeActor = required(actor, "actor");
         String safeScenarioKey = required(scenarioKey, "scenarioKey");
         IncidentContext safeIncident = TroubleshootingSecretRedactor.redact(incident);

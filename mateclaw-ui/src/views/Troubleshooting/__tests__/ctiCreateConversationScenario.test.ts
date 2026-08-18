@@ -7,7 +7,7 @@ import {
 } from '../ctiCreateConversationScenario'
 
 describe('CTI create-conversation real scenario vertical', () => {
-  it('owns the exact CSDP csdp-task scenario without accepting a browser query', () => {
+  it('owns the exact CSDP csdp-task scenario without accepting a browser query or formal mode', () => {
     expect(CTI_CREATE_CONVERSATION_SCENARIO).toMatchObject({
       scenarioKey: 'cti_create_conversation_failed',
       selector: 'csdp:scenario:cti_create_conversation_failed',
@@ -28,7 +28,7 @@ describe('CTI create-conversation real scenario vertical', () => {
       severity: 'P1',
       customerRef: '集群 sz4-s-zaibei、告警数 3',
       occurredAt: '2026-08-07T17:24:00+08:00',
-      rehearsal: false,
+      rehearsal: true,
     })
   })
 

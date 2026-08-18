@@ -29,6 +29,10 @@ public class TroubleshootingEvidenceEvaluationSampleEntity {
     private String referenceStatus;
     private Boolean fixtureMode;
     private Boolean diagnosisFixtureMode;
+    private Boolean diagnosisRehearsal;
+    private Integer pilotPlanVersion;
+    private String sourcePlaybookId;
+    private Integer sourcePlaybookVersion;
     private String aggregateJson;
     private Integer version;
 

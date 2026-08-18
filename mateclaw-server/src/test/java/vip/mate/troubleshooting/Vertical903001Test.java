@@ -144,7 +144,7 @@ class Vertical903001Test {
 
         // --- report ------------------------------------------------------
         StoredDiagnosis reported = intake.report(
-                WORKSPACE_ID, incident(), evidence(), false);
+                WORKSPACE_ID, incident(), evidence(), true);
         Diagnosis diagnosis = reported.diagnosis();
 
         assertThat(reported.created()).isTrue();
@@ -174,11 +174,12 @@ class Vertical903001Test {
 
         String diagnosisId = diagnosis.diagnosisId();
 
-        // --- a retrying alert source must not open a second case ---------
-        StoredDiagnosis replay = intake.report(WORKSPACE_ID, incident(), evidence(), false);
-        assertThat(replay.created()).isFalse();
-        assertThat(replay.diagnosis().diagnosisId()).isEqualTo(diagnosisId);
-        assertThat(diagnosisRows).hasSize(1);
+        // --- rehearsals are independent runs; formal dedup is covered by the
+        // admission-gated persistence tests --------------------------------
+        StoredDiagnosis replay = intake.report(WORKSPACE_ID, incident(), evidence(), true);
+        assertThat(replay.created()).isTrue();
+        assertThat(replay.diagnosis().diagnosisId()).isNotEqualTo(diagnosisId);
+        assertThat(diagnosisRows).hasSize(2);
 
         // --- confirm, transfer -------------------------------------------
         StoredDiagnosis confirmed = lifecycle.confirm(WORKSPACE_ID, diagnosisId, ACTOR);
@@ -256,7 +257,7 @@ class Vertical903001Test {
                         "取证失败", Map.of(), "guance:unavailable", OCCURRED_AT),
                 logEvidence());
 
-        Diagnosis diagnosis = intake.report(WORKSPACE_ID, incident(), degraded, false).diagnosis();
+        Diagnosis diagnosis = intake.report(WORKSPACE_ID, incident(), degraded, true).diagnosis();
 
         assertThat(diagnosis.abstained()).isTrue();
         assertThat(diagnosis.status()).isEqualTo(DiagnosisStatus.NEEDS_INVESTIGATION);
@@ -275,7 +276,7 @@ class Vertical903001Test {
     @Test
     @DisplayName("an unregistered error code is reported as a knowledge gap")
     void refusesAnUnknownRoute() {
-        assertThatThrownBy(() -> intake.report(WORKSPACE_ID, incident(), evidence(), false))
+        assertThatThrownBy(() -> intake.report(WORKSPACE_ID, incident(), evidence(), true))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("no SOP registered");
     }

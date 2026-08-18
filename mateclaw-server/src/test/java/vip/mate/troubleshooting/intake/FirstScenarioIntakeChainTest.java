@@ -16,13 +16,18 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.RouteMode;
 import vip.mate.troubleshooting.service.DeterministicDiagnosisService;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimKey;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingIntakeService;
+import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import vip.mate.troubleshooting.service.TroubleshootingSopPersistenceService;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +77,10 @@ class FirstScenarioIntakeChainTest {
     private EvidenceSourceRouter evidenceRouter;
     @Mock
     private TroubleshootingAgentTriageService agentTriageService;
+    @Mock
+    private TroubleshootingPersistenceService persistence;
+    @Mock
+    private FormalDiagnosisClaimService formalClaims;
 
     private final IntakeSessionReducer reducer = new IntakeSessionReducer();
 
@@ -121,6 +130,7 @@ class FirstScenarioIntakeChainTest {
         assertThat(ready.errorCode()).isNull();
 
         StoredDiagnosis stored = new StoredDiagnosis(placeholderDiagnosis(), 0, true);
+        stubClaim("intake-first-scenario");
         when(agentTriageService.triageForIntake(
                 anyLong(), any(), any(), anyBoolean(), any(), any(), any(), any(), any()))
                 .thenReturn(stored);
@@ -133,7 +143,7 @@ class FirstScenarioIntakeChainTest {
                 eq(WORKSPACE_ID),
                 incident.capture(),
                 eq(List.of()),
-                eq(false),
+                eq(true),
                 any(),
                 eq(REPORTED_AT),
                 eq(READY_AT),
@@ -178,7 +188,9 @@ class FirstScenarioIntakeChainTest {
                         """, READY_AT));
 
         TroubleshootingIntakeService withoutAgent = new TroubleshootingIntakeService(
-                sopPersistence, diagnosisService, evidenceRouter, null);
+                sopPersistence, diagnosisService, evidenceRouter, null,
+                null, null, persistence, formalClaims);
+        stubClaim("intake-first-scenario");
 
         assertThatThrownBy(() -> withoutAgent.report(ready))
                 .isInstanceOf(MateClawException.class)
@@ -198,7 +210,19 @@ class FirstScenarioIntakeChainTest {
      */
     private TroubleshootingIntakeService intakeService() {
         return new TroubleshootingIntakeService(
-                sopPersistence, diagnosisService, evidenceRouter, agentTriageService);
+                sopPersistence, diagnosisService, evidenceRouter, null,
+                agentTriageService, null, persistence, formalClaims);
+    }
+
+    private void stubClaim(String intakeSessionId) {
+        String key = FormalDiagnosisClaimKey.forIntake(WORKSPACE_ID, intakeSessionId);
+        FormalDiagnosisClaim claim = new FormalDiagnosisClaim(
+                key, "claim-first-scenario", REPORTED_AT, REPORTED_AT.plusSeconds(300));
+        when(formalClaims.claim(
+                eq(WORKSPACE_ID), eq(key), any(Instant.class), eq(Duration.ofMinutes(5))))
+                .thenReturn(FormalDiagnosisClaimService.ClaimResult.acquired(claim));
+        when(persistence.findByIntakeSessionId(WORKSPACE_ID, intakeSessionId))
+                .thenReturn(Optional.empty());
     }
 
     /** Only the return channel matters here; the chain under test ends at dispatch. */
@@ -214,7 +238,7 @@ class FirstScenarioIntakeChainTest {
                 "证据不足", "待确认", Confidence.LOW, true,
                 null, null, null,
                 List.of(), List.of(), List.of(),
-                null, false, true, List.of());
+                null, true, true, List.of());
     }
 
     private static IntakeMessageEnvelope message(String id, String body, Instant at) {

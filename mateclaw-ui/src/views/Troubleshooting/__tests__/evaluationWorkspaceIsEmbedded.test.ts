@@ -62,9 +62,20 @@ describe('troubleshooting capability workspaces', () => {
     expect(evaluationWorkspaceSource).toContain('evaluationNorthStar')
     expect(evaluationWorkspaceSource).toContain('试点是否真的省时间')
     expect(evaluationWorkspaceSource).toContain('不直接相减，也不省略人的复核成本')
-    expect(evaluationWorkspaceSource).toContain("sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode")
+    expect(evaluationWorkspaceSource).toContain("sample.sourcePlatform === 'GUANCE'")
+    expect(evaluationWorkspaceSource).toContain('!sample.diagnosisRehearsal')
+    expect(evaluationWorkspaceSource).toContain('sample.pilotPlanVersion !== null')
+    expect(evaluationWorkspaceSource).toContain('sample.sourcePlaybookVersionRef !== null')
     expect(evaluationWorkspaceSource).toContain('历史回放和演练样本不登记人工耗时')
     expect(evaluationWorkspaceSource).toContain('只统计真实 Guance、非演练样本')
+  })
+
+  it('submits only the diagnosis id and leaves Guance targets to the frozen Playbook', () => {
+    expect(evaluationWorkspaceSource).toContain('由冻结的排障规则决定')
+    expect(evaluationWorkspaceSource).toMatch(
+      /captureGuanceEvaluationSample\(\{\s*diagnosisId: context\.diagnosisId,?\s*\}\)/,
+    )
+    expect(evaluationWorkspaceSource).not.toContain('scenarioKey: captureForm.scenarioKey')
   })
 
   it('shows one operational hand-off queue for the next formal pilot record', () => {

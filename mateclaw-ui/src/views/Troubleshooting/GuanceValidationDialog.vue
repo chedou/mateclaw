@@ -75,15 +75,15 @@
     <div
       v-if="recordingTargets"
       class="dialog-validation-result"
-      :class="recordingBatchReady ? 'passed' : 'blocked'"
+      :class="workspaceRecordingBatchReady ? 'passed' : 'blocked'"
     >
-      <b>真实案例准备进度 · {{ recordingTargets.executableTargetCount }} / 20</b>
-      <p>服务端已固定 {{ recordingTargets.frozenTargetCount }} 个待采集案例；只有与当前三项查询绑定完全匹配的案例才计入。</p>
+      <b>{{ guanceRecordingBatchLabel(recordingTargets) }}</b>
+      <p>服务端已在整个 Workspace 固定 {{ recordingTargets.frozenTargetCount }} 个待采集案例；单个 system/service 的连接检查数量不作为 20 条分母。</p>
       <small v-for="blocker in recordingTargets.blockers" :key="blocker">{{ blocker }}</small>
     </div>
 
     <div
-      v-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && canAcceptOwner && recordingBatchReady"
+      v-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && canAcceptOwner && workspaceRecordingBatchReady"
       class="t7-owner-checklist"
     >
       <b>负责人核实清单</b>
@@ -97,7 +97,7 @@
       <p class="form-hint">提交时服务端会再次验证日志与调用链，并将确认记录绑定到当前查询模板、字段映射、端点和路由；不保存搜索键、PS ID 原文、查询语句、凭据或日志。</p>
     </div>
     <p
-      v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && !recordingBatchReady"
+      v-else-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && !workspaceRecordingBatchReady"
       class="source-blocker"
     >真实案例尚未准备到 20 条，目前只能验证单条查询规则，不能完成负责人确认。</p>
     <p
@@ -136,7 +136,7 @@
         v-if="report?.stage === 'CANONICAL_CHAIN_OBSERVED' && ownerAcceptance?.status !== 'ACCEPTED' && canAcceptOwner"
         type="success"
         :loading="acceptanceLoading"
-        :disabled="!canAccept"
+        :disabled="!canAcceptWorkspaceBatch"
         @click="$emit('accept')"
       >确认当前数据源配置</el-button>
       <el-button
@@ -157,11 +157,13 @@ import type {
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceSpinePreview,
   GuanceEvidenceValidationReport,
-  GuanceRecordingTargetCatalogView,
+  GuanceRecordingBatchReadiness,
   GuanceSpinePreviewStepStatus,
 } from '@/api'
 import {
   guanceOwnerBlockerLabel,
+  guanceRecordingBatchLabel,
+  guanceRecordingBatchReady,
   guanceSpinePreviewLabel,
   guanceValidationLabel,
 } from './formalProjection'
@@ -173,8 +175,8 @@ const props = defineProps<{
   report: GuanceEvidenceValidationReport | null
   spinePreview: GuanceEvidenceSpinePreview | null
   ownerAcceptance: GuanceEvidenceAcceptanceView | null
-  recordingTargets: GuanceRecordingTargetCatalogView | null
-  recordingBatchReady: boolean
+  /** Compatibility prop name; the value is the workspace-wide v2 batch. */
+  recordingTargets: GuanceRecordingBatchReadiness | null
   canAcceptOwner: boolean
   canAccept: boolean
   canOpenEvaluation: boolean
@@ -194,6 +196,10 @@ const spineContrastNarrative = computed(() => {
     normalWithFeatureCount: contrast.successMatchCount,
   })
 })
+const workspaceRecordingBatchReady = computed(() =>
+  guanceRecordingBatchReady(props.recordingTargets))
+const canAcceptWorkspaceBatch = computed(() =>
+  props.canAccept && workspaceRecordingBatchReady.value)
 
 const open = defineModel<boolean>({ required: true })
 const form = defineModel<EvidenceChainPreviewRequest>('form', { required: true })

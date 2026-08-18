@@ -9,6 +9,9 @@
       这是已登记的标准场景：系统和服务已锁定。建单后进详情，再显式开始只读取证。
       不会改生产。
     </el-alert>
+    <el-alert type="warning" :closable="false" class="dialog-alert">
+      当前仅支持演练：D20 场景级数据绑定与负责人验收尚未完成，不会借用服务级验收生成正式单。
+    </el-alert>
     <el-form label-position="top" @submit.prevent="$emit('submit')">
       <div class="incident-form-grid">
         <el-form-item label="故障系统"><el-input v-model="form.system" disabled /></el-form-item>
@@ -56,8 +59,8 @@
         <b>{{ MESSAGE_SEND_SCENARIO_SELECTOR }}</b>
         <p>三个步骤固定为：失败请求 → PS ID 调用链 → 成功/失败样本对比。页面不能指定查询或判据。</p>
       </div>
-      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal">
-        演练记录（仅影响事件去重，不决定证据来源）
+      <el-checkbox v-model="form.rehearsal" class="incident-rehearsal" disabled>
+        演练记录（完成 D20 后才可开放正式建单）
       </el-checkbox>
       <p class="form-hint">
         建单后进入详情，按五问推进。证据来源由工作区绑定决定，页面不能强制选择数据源。
@@ -67,7 +70,7 @@
       <el-button text @click="$emit('open-playbooks')">查看排查指南</el-button>
       <el-button @click="open = false">取消</el-button>
       <el-button type="primary" :loading="loading" :disabled="!canSubmit" @click="$emit('submit')">
-        生成排障单
+        生成演练排障单
       </el-button>
     </template>
   </el-drawer>

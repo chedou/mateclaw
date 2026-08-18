@@ -29,6 +29,22 @@ class ScenarioDiagnosisRequestTest {
                 .isEqualTo(occurredAt);
     }
 
+    @Test
+    @DisplayName("场景未显式选择正式模式时安全默认为演练")
+    void omittedRehearsalDefaultsToSafeRehearsalMode() {
+        ScenarioDiagnosisRequest request = new ScenarioDiagnosisRequest(
+                "CSDP",
+                "csdp-task",
+                "CTI 创建会话失败",
+                "P1",
+                null,
+                null,
+                null,
+                null);
+
+        assertThat(request.isRehearsal()).isTrue();
+    }
+
     private ScenarioDiagnosisRequest request(Instant occurredAt) {
         return new ScenarioDiagnosisRequest(
                 "CSDP",

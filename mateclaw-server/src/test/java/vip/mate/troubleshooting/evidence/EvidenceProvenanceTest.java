@@ -105,6 +105,22 @@ class EvidenceProvenanceTest {
                 .isFalse();
     }
 
+    @Test
+    @DisplayName("正式 Guance 运行可以诚实记录无数据，但不接受回放或本地降级")
+    void formalGuanceRunDistinguishesARealMissingAnswerFromAFallback() {
+        assertThat(EvidenceProvenance.fixtureModeForAcceptedGuanceRun(List.of(
+                result("guance:dql", EvidenceStatus.MISSING))))
+                .as("owner-accepted Guance 返回无记录仍是一次真实观测")
+                .isFalse();
+
+        assertThat(EvidenceProvenance.fixtureModeForAcceptedGuanceRun(List.of(
+                result("evidence-spine:unavailable", EvidenceStatus.MISSING),
+                result("recorded-replay", EvidenceStatus.ANOMALY))))
+                .isTrue();
+        assertThat(EvidenceProvenance.fixtureModeForAcceptedGuanceRun(List.of()))
+                .isTrue();
+    }
+
     /**
      * 整个代码库里杠杆最高的一份清单，现在在这里。
      *

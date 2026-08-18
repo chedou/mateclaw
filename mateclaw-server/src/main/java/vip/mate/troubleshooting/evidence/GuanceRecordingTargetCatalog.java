@@ -50,6 +50,7 @@ import java.util.regex.Pattern;
 public final class GuanceRecordingTargetCatalog {
 
     public static final int MIN_WINDOW_TARGETS = 20;
+    public static final int MAX_WINDOW_TARGETS = 30;
 
     static final String CONTRACT_VERSION =
             "t7-guance-recording-target-catalog.v1";
@@ -65,12 +66,14 @@ public final class GuanceRecordingTargetCatalog {
     private static final Pattern SAFE_REFERENCE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,255}");
     private static final Pattern SELECTOR =
-            Pattern.compile("csdp:[A-Za-z0-9_]+");
+            Pattern.compile(
+                    "csdp:(?:[A-Za-z0-9_]+|scenario:[A-Za-z0-9][A-Za-z0-9._/-]{0,127})");
     private static final Pattern WINDOW =
             Pattern.compile("-([1-9][0-9]{0,5})(s|m|h|d)");
 
     private final List<Target> targets;
     private final String catalogFingerprint;
+    private final long loadedAtEpochSeconds;
     private final Clock clock;
     private final ObjectMapper strictMapper;
     private final ManualPlaybookReplayFingerprint fingerprints;
@@ -126,6 +129,7 @@ public final class GuanceRecordingTargetCatalog {
                     "objectMapper, resource, selector predicates and fingerprints are required");
         }
         this.clock = clock == null ? Clock.systemUTC() : clock;
+        this.loadedAtEpochSeconds = this.clock.instant().getEpochSecond();
         this.strictMapper = objectMapper.copy()
                 .configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION, true)
                 .configure(DeserializationFeature.FAIL_ON_TRAILING_TOKENS, true)
@@ -193,6 +197,20 @@ public final class GuanceRecordingTargetCatalog {
                 executable,
                 clock.instant().getEpochSecond(),
                 blockers);
+    }
+
+    /**
+     * Returns the immutable workspace batch definition before any runtime
+     * binding is evaluated. A caller must validate each target against its own
+     * system/service binding; this snapshot never turns a catalog row into an
+     * accepted or recorded sample.
+     */
+    public FrozenBatch frozenBatch() {
+        return new FrozenBatch(
+                CONTRACT_VERSION,
+                catalogFingerprint,
+                targets,
+                loadedAtEpochSeconds);
     }
 
     private List<Target> validate(
@@ -469,6 +487,24 @@ public final class GuanceRecordingTargetCatalog {
 
         public boolean readyForOwnerAcceptance() {
             return executableTargetCount >= MIN_WINDOW_TARGETS;
+        }
+    }
+
+    public record FrozenBatch(
+            String contractVersion,
+            String catalogFingerprint,
+            List<Target> targets,
+            long frozenAtEpochSeconds) {
+
+        public FrozenBatch {
+            if (!CONTRACT_VERSION.equals(contractVersion)
+                    || catalogFingerprint == null
+                    || !catalogFingerprint.matches("[a-f0-9]{64}")
+                    || frozenAtEpochSeconds < 0) {
+                throw new IllegalArgumentException(
+                        "frozen recording batch identity is invalid");
+            }
+            targets = List.copyOf(targets == null ? List.of() : targets);
         }
     }
 }

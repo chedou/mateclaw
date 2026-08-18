@@ -63,10 +63,10 @@ class MigrationSmokeTest {
 
     @Test
     @DisplayName("all database dialects contain the complete team run contract")
-    void allDialectsContainVersion181() throws Exception {
+    void allDialectsContainTeamRunFoundationMigration() throws Exception {
         for (String dialect : List.of("h2", "mysql", "kingbase")) {
-            Path migration = MIGRATIONS.resolve(dialect).resolve("V181__team_run_foundation.sql");
-            assertTrue(Files.exists(migration), dialect + " migration must contain version 181");
+            Path migration = MIGRATIONS.resolve(dialect).resolve("V214__team_run_foundation.sql");
+            assertTrue(Files.exists(migration), dialect + " migration must contain version 214");
             String sql = Files.readString(migration).toLowerCase(Locale.ROOT);
             assertTrue(sql.contains("mate_team_run"), dialect + " migration must create the run table");
             assertTrue(sql.matches("(?s).*workspace_id\\s+bigint.*"),
@@ -90,8 +90,8 @@ class MigrationSmokeTest {
     @DisplayName("all database dialects index stable run history and backfill create time")
     void allDialectsContainStableHistoryIndexMigration() throws Exception {
         for (String dialect : List.of("h2", "mysql", "kingbase")) {
-            Path migration = MIGRATIONS.resolve(dialect).resolve("V182__team_run_stable_history_indexes.sql");
-            assertTrue(Files.exists(migration), dialect + " migration must contain version 182");
+            Path migration = MIGRATIONS.resolve(dialect).resolve("V215__team_run_stable_history_indexes.sql");
+            assertTrue(Files.exists(migration), dialect + " migration must contain version 215");
             String sql = Files.readString(migration).toLowerCase(Locale.ROOT);
             assertTrue(sql.contains("idx_team_run_team_history_stable"));
             assertTrue(sql.contains("team_id, create_time, id"));
@@ -108,8 +108,8 @@ class MigrationSmokeTest {
     @DisplayName("all database dialects persist conversation kind with a primary default")
     void allDialectsContainConversationKindMigration() throws Exception {
         for (String dialect : List.of("h2", "mysql", "kingbase")) {
-            Path migration = MIGRATIONS.resolve(dialect).resolve("V183__conversation_kind.sql");
-            assertTrue(Files.exists(migration), dialect + " migration must contain version 183");
+            Path migration = MIGRATIONS.resolve(dialect).resolve("V216__conversation_kind.sql");
+            assertTrue(Files.exists(migration), dialect + " migration must contain version 216");
             String sql = Files.readString(migration).toLowerCase(Locale.ROOT);
             String normalizedSql = sql.replace("''", "'");
             assertTrue(sql.contains("conversation_kind"));
@@ -123,8 +123,8 @@ class MigrationSmokeTest {
     @DisplayName("all database dialects index nullable team task conversation linkage")
     void allDialectsContainTeamTaskConversationIndex() throws Exception {
         for (String dialect : List.of("h2", "mysql", "kingbase")) {
-            Path migration = MIGRATIONS.resolve(dialect).resolve("V184__team_task_conversation_index.sql");
-            assertTrue(Files.exists(migration), dialect + " migration must contain version 184");
+            Path migration = MIGRATIONS.resolve(dialect).resolve("V217__team_task_conversation_index.sql");
+            assertTrue(Files.exists(migration), dialect + " migration must contain version 217");
             String sql = Files.readString(migration).toLowerCase(Locale.ROOT);
             assertTrue(sql.contains("idx_team_task_conversation"));
             assertTrue(sql.matches("(?s).*idx_team_task_conversation.*conversation_id.*"));

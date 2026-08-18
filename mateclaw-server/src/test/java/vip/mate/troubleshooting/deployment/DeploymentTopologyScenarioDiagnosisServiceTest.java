@@ -119,6 +119,23 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 DeploymentTopologyScenarioPolicy.SCENARIO_KEY, REPORTED_AT);
     }
 
+    @Test
+    void rejectsNonRehearsalScenarioBeforeResolvingAuthorityOrPersisting() {
+        assertThatThrownBy(() -> service.create(
+                WORKSPACE_ID, incident(), false, "alice", REPORTED_AT))
+                .isInstanceOf(MateClawException.class)
+                .satisfies(error -> assertThat(((MateClawException) error).getCode())
+                        .isEqualTo(409))
+                .hasMessageContaining("incident Intake gate");
+
+        verify(versions, never()).activeRef(eq(WORKSPACE_ID), any());
+        verify(versions, never()).lockActiveApprovedByPlaybookId(
+                eq(WORKSPACE_ID), any());
+        verify(persistence, never()).createOrGetForScenario(
+                eq(WORKSPACE_ID), any(), eq(
+                        DeploymentTopologyScenarioPolicy.SCENARIO_KEY), eq(REPORTED_AT));
+    }
+
     /**
      * The transaction boundary moved with the generic half of this capability.
      * Topology now delegates to {@link ScenarioDiagnosisService}, which is a
@@ -151,7 +168,7 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(
-                WORKSPACE_ID, incident(), false, "alice", REPORTED_AT))
+                WORKSPACE_ID, incident(), true, "alice", REPORTED_AT))
                 .isInstanceOf(MateClawException.class)
                 .satisfies(error -> assertThat(((MateClawException) error).getCode())
                         .isEqualTo(409))
@@ -173,7 +190,7 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 IncidentCompleteness.STRUCTURED, null);
 
         assertThatThrownBy(() -> service.create(
-                WORKSPACE_ID, unsafe, false, "alice", REPORTED_AT))
+                WORKSPACE_ID, unsafe, true, "alice", REPORTED_AT))
                 .isInstanceOf(MateClawException.class)
                 .satisfies(error -> assertThat(((MateClawException) error).getCode())
                         .isEqualTo(400))
@@ -195,7 +212,7 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                 .thenReturn(Optional.of(version(topologyPlaybook(false))));
 
         assertThatThrownBy(() -> service.create(
-                WORKSPACE_ID, incident(), false, "alice", REPORTED_AT))
+                WORKSPACE_ID, incident(), true, "alice", REPORTED_AT))
                 .isInstanceOf(MateClawException.class)
                 .satisfies(error -> assertThat(((MateClawException) error).getCode())
                         .isEqualTo(409))
@@ -215,7 +232,7 @@ class DeploymentTopologyScenarioDiagnosisServiceTest {
                         topologyPlaybook(true), NOW, NOW)));
 
         assertThatThrownBy(() -> service.create(
-                WORKSPACE_ID, incident(), false, "alice", REPORTED_AT))
+                WORKSPACE_ID, incident(), true, "alice", REPORTED_AT))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("changed concurrently");
     }

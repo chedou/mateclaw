@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpineTimings;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptance;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
@@ -15,8 +16,14 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.EvidenceStatus;
+import vip.mate.troubleshooting.model.EvidenceRequest;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.LogTraceSkeleton;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisRequest;
@@ -39,6 +46,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 class EvidenceEvaluationSampleServiceTest {
@@ -51,7 +59,7 @@ class EvidenceEvaluationSampleServiceTest {
         Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
         when(fixture.store.findBySampleKey(anyLong(), any())).thenReturn(Optional.empty());
         when(fixture.preview.observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW))
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
                 .thenReturn(observation(fullPreview()));
         when(fixture.store.saveOrGet(eq(7L), any())).thenAnswer(invocation ->
                 new EvidenceEvaluationSampleStore.StoredSample(
@@ -60,9 +68,6 @@ class EvidenceEvaluationSampleServiceTest {
         EvidenceEvaluationSampleStore.StoredSample result = fixture.service.capture(
                 7L,
                 "diag-1",
-                "message_send_failed",
-                "source_lookup_key",
-                "-15m",
                 "admin@example.com");
 
         assertThat(result.created()).isTrue();
@@ -71,12 +76,16 @@ class EvidenceEvaluationSampleServiceTest {
         assertThat(result.sample().sourcePlatform())
                 .isEqualTo(EvidenceEvaluationSample.SourcePlatform.GUANCE);
         assertThat(result.sample().evidence().fixtureMode()).isFalse();
+        assertThat(result.sample().diagnosisRehearsal()).isFalse();
+        assertThat(result.sample().pilotPlanVersion()).isEqualTo(2);
+        assertThat(result.sample().sourcePlaybookVersionRef())
+                .isEqualTo(new PlaybookVersionRef("playbook-message-send", 3));
         assertThat(result.sample().modelInputHash()).matches("[a-f0-9]{64}");
         assertThat(result.sample().toString())
                 .doesNotContain("source_lookup_key", "runtime-secret", "L::logs");
         verify(fixture.preview).observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW);
-        verify(fixture.acceptance).requireAccepted(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW);
+        verify(fixture.acceptance, times(2)).requireAccepted(
                 7L, "CSDP", "session-svc");
     }
 
@@ -93,9 +102,6 @@ class EvidenceEvaluationSampleServiceTest {
         assertThatThrownBy(() -> fixture.service.capture(
                 7L,
                 "diag-1",
-                "message_send_failed",
-                "source_lookup_key",
-                "-15m",
                 "admin"))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("T7 owner acceptance is required");
@@ -106,6 +112,173 @@ class EvidenceEvaluationSampleServiceTest {
     }
 
     @Test
+    void rejectsRehearsalBeforeAcceptanceOrAnyGuanceCall() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.diagnosis.rehearsal()).thenReturn(true);
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("rehearsal Diagnosis");
+
+        verify(fixture.acceptance, never()).requireAccepted(anyLong(), any(), any());
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void rejectsDiagnosisOutsideTheProductionPilotBeforeAnyGuanceCall() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.persistence.get(7L, "diag-1"))
+                .thenReturn(new StoredDiagnosis(fixture.diagnosis, 3, false, null));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("not enrolled in the production pilot");
+
+        verify(fixture.acceptance, never()).requireAccepted(anyLong(), any(), any());
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rejectsScenarioScopedFormalSampleBeforeAcceptanceOrGuance() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        PlaybookVersionRef ref = new PlaybookVersionRef("playbook-message-send", 3);
+        when(fixture.diagnosis.sopKey())
+                .thenReturn("csdp:scenario:message_send_failed");
+        ApprovedPlaybookVersion approved = mock(ApprovedPlaybookVersion.class);
+        when(approved.selectorKey())
+                .thenReturn("csdp:scenario:message_send_failed");
+        when(approved.playbook()).thenReturn(
+                formalPlaybook("scenario:message_send_failed", "source_lookup_key"));
+        when(fixture.playbookVersions.findByRef(7L, ref))
+                .thenReturn(Optional.of(approved));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("D20 scenario-scoped binding");
+
+        verify(fixture.acceptance, never()).requireAccepted(anyLong(), any(), any());
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void rejectsAFrozenPlaybookThatIsNoLongerTheActiveAuthority() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.playbookVersions.activeRef(
+                7L, "csdp:701018"))
+                .thenReturn(Optional.of(new PlaybookVersionRef(
+                        "playbook-message-send", 4)));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("no longer the active authority");
+
+        verify(fixture.acceptance, never()).requireAccepted(anyLong(), any(), any());
+        verify(fixture.preview, never()).observe(
+                anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void pilotRevisionChangedAfterGuanceObservationCannotBePersisted() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.pilotPlans.enrollmentVersion(
+                7L, "CSDP", "session-svc", false)).thenReturn(2, 3);
+        when(fixture.preview.observe(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
+                .thenReturn(observation(fullPreview()));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("pilot plan changed");
+
+        verify(fixture.preview).observe(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW);
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void activePlaybookChangedAfterGuanceObservationCannotBePersisted() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        PlaybookVersionRef frozen = new PlaybookVersionRef("playbook-message-send", 3);
+        when(fixture.playbookVersions.activeRef(
+                7L, "csdp:701018"))
+                .thenReturn(
+                        Optional.of(frozen),
+                        Optional.of(new PlaybookVersionRef("playbook-message-send", 4)));
+        when(fixture.preview.observe(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
+                .thenReturn(observation(fullPreview()));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("Playbook changed");
+
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void ownerAcceptanceChangedAfterGuanceObservationCannotBePersisted() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.acceptance.requireAccepted(7L, "CSDP", "session-svc"))
+                .thenReturn(
+                        accepted("t7-012345678901234567890123", "a".repeat(64)),
+                        accepted("t7-abcdefghijklmnopqrstuvwx", "b".repeat(64)));
+        when(fixture.preview.observe(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
+                .thenReturn(observation(fullPreview()));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("acceptance changed");
+
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void refusesToPersistCoreOnlyGuanceEvidenceAsAFormalSample() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        when(fixture.preview.observe(
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
+                .thenReturn(observation(corePreview()));
+
+        assertThatThrownBy(() -> fixture.service.capture(7L, "diag-1", "admin"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("full Guance Evidence Spine");
+
+        verify(fixture.store, never()).saveOrGet(anyLong(), any());
+    }
+
+    @Test
+    void derivesAnErrorCodePlaybookScenarioFromItsFrozenEvidenceTarget() {
+        Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
+        PlaybookVersionRef ref = new PlaybookVersionRef("playbook-message-send", 3);
+        when(fixture.diagnosis.sopKey()).thenReturn("csdp:904003");
+        ApprovedPlaybookVersion approved = mock(ApprovedPlaybookVersion.class);
+        when(approved.selectorKey()).thenReturn("csdp:904003");
+        when(approved.playbook()).thenReturn(formalPlaybook("904003", "itgw_access_failed"));
+        when(fixture.playbookVersions.findByRef(7L, ref)).thenReturn(Optional.of(approved));
+        when(fixture.playbookVersions.activeRef(7L, "csdp:904003"))
+                .thenReturn(Optional.of(ref));
+        when(fixture.preview.observe(
+                7L, "CSDP", "session-svc", "itgw_access_failed", "-15m", NOW))
+                .thenReturn(observation(fullPreview()));
+        when(fixture.store.saveOrGet(eq(7L), any())).thenAnswer(invocation ->
+                new EvidenceEvaluationSampleStore.StoredSample(
+                        invocation.getArgument(1), true));
+
+        EvidenceEvaluationSample sample = fixture.service.capture(
+                7L, "diag-1", "admin").sample();
+
+        assertThat(sample.scenarioKey()).isEqualTo("itgw_access_failed");
+        verify(fixture.preview).observe(
+                7L, "CSDP", "session-svc", "itgw_access_failed", "-15m", NOW);
+    }
+
+    @Test
     void rerunsGuanceAndReusesTheLatestRevisionWhenTheFrozenInputIsUnchanged() {
         Fixture fixture = fixture(false, DiagnosisStatus.READY_FOR_HUMAN, null);
         GuanceEvidenceSpineObservation observation = observation(fullPreview());
@@ -113,7 +286,7 @@ class EvidenceEvaluationSampleServiceTest {
                 new ObjectMapper().findAndRegisterModules())
                 .create("CSDP", "session-svc", "message_send_failed", observation)
                 .fingerprint();
-        EvidenceEvaluationSample existing = EvidenceEvaluationSample.captured(
+        EvidenceEvaluationSample existing = EvidenceEvaluationSample.capturedFormal(
                 "eval-012345678901234567890123",
                 "a".repeat(64),
                 "a".repeat(64),
@@ -126,21 +299,23 @@ class EvidenceEvaluationSampleServiceTest {
                 fingerprint,
                 NOW,
                 false,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
                 "admin",
                 NOW);
         when(fixture.store.findLatestByCaptureIdentity(anyLong(), any()))
                 .thenReturn(Optional.of(existing));
         when(fixture.preview.observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW))
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
                 .thenReturn(observation);
 
         EvidenceEvaluationSampleStore.StoredSample result = fixture.service.capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m", "admin");
+                7L, "diag-1", "admin");
 
         assertThat(result.created()).isFalse();
         assertThat(result.sample()).isEqualTo(existing);
         verify(fixture.preview).observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW);
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW);
         verify(fixture.store, never()).saveOrGet(anyLong(), any());
     }
 
@@ -152,7 +327,7 @@ class EvidenceEvaluationSampleServiceTest {
                 "diag-1",
                 "message_send_failed",
                 EvidenceEvaluationSample.SourcePlatform.GUANCE,
-                "source_lookup_key",
+                "message_send_failed",
                 "-15m",
                 NOW);
         EvidenceEvaluationSample old = EvidenceEvaluationSample.captured(
@@ -173,14 +348,14 @@ class EvidenceEvaluationSampleServiceTest {
         when(fixture.store.findLatestByCaptureIdentity(anyLong(), any()))
                 .thenReturn(Optional.of(old));
         when(fixture.preview.observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW))
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
                 .thenReturn(observation(fullPreview()));
         when(fixture.store.saveOrGet(eq(7L), any())).thenAnswer(invocation ->
                 new EvidenceEvaluationSampleStore.StoredSample(
                         invocation.getArgument(1), true));
 
         EvidenceEvaluationSample recaptured = fixture.service.capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m", "admin")
+                7L, "diag-1", "admin")
                 .sample();
 
         assertThat(recaptured.captureRevision()).isEqualTo(2);
@@ -197,7 +372,7 @@ class EvidenceEvaluationSampleServiceTest {
                 "diag-1",
                 "message_send_failed",
                 EvidenceEvaluationSample.SourcePlatform.GUANCE,
-                "source_lookup_key",
+                "message_send_failed",
                 "-15m",
                 NOW);
         EvidenceEvaluationSample old = EvidenceEvaluationSample.captured(
@@ -220,7 +395,7 @@ class EvidenceEvaluationSampleServiceTest {
                 "diag-1",
                 "message_send_failed",
                 EvidenceEvaluationSample.SourcePlatform.GUANCE,
-                "source_lookup_key",
+                "message_send_failed",
                 "-15m",
                 NOW,
                 2);
@@ -242,7 +417,7 @@ class EvidenceEvaluationSampleServiceTest {
         when(fixture.store.findLatestByCaptureIdentity(7L, captureIdentity))
                 .thenReturn(Optional.of(old), Optional.of(concurrentWinner));
         when(fixture.preview.observe(
-                7L, "CSDP", "session-svc", "source_lookup_key", "-15m", NOW))
+                7L, "CSDP", "session-svc", "message_send_failed", "-15m", NOW))
                 .thenReturn(observation(fullPreview()));
         when(fixture.store.saveOrGet(eq(7L), any()))
                 .thenReturn(new EvidenceEvaluationSampleStore.StoredSample(
@@ -251,7 +426,7 @@ class EvidenceEvaluationSampleServiceTest {
                         invocation.getArgument(1), true));
 
         EvidenceEvaluationSampleStore.StoredSample stored = fixture.service.capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m", "admin");
+                7L, "diag-1", "admin");
 
         assertThat(stored.created()).isTrue();
         assertThat(stored.sample().captureRevision()).isEqualTo(3);
@@ -315,7 +490,7 @@ class EvidenceEvaluationSampleServiceTest {
                 .thenReturn(new GuanceEvidenceSpineObservation(blockedPreview(), null));
 
         assertThatThrownBy(() -> fixture.service.capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m", "admin"))
+                7L, "diag-1", "admin"))
                 .isInstanceOf(MateClawException.class)
                 .hasMessageContaining("not observed");
         verify(fixture.store, never()).saveOrGet(anyLong(), any());
@@ -647,6 +822,10 @@ class EvidenceEvaluationSampleServiceTest {
                 mock(RecordedReplayEvaluationCapabilityService.class);
         GuanceEvidenceAcceptanceService acceptance =
                 mock(GuanceEvidenceAcceptanceService.class);
+        TroubleshootingPilotPlanService pilotPlans =
+                mock(TroubleshootingPilotPlanService.class);
+        TroubleshootingPlaybookVersionService playbookVersions =
+                mock(TroubleshootingPlaybookVersionService.class);
         Diagnosis diagnosis = mock(Diagnosis.class);
         IncidentContext incident = mock(IncidentContext.class);
         when(incident.system()).thenReturn("CSDP");
@@ -655,10 +834,26 @@ class EvidenceEvaluationSampleServiceTest {
         when(diagnosis.diagnosisId()).thenReturn("diag-1");
         when(diagnosis.incident()).thenReturn(incident);
         when(diagnosis.fixtureMode()).thenReturn(diagnosisFixtureMode);
+        when(diagnosis.rehearsal()).thenReturn(false);
         when(diagnosis.status()).thenReturn(status);
         when(diagnosis.closure()).thenReturn(closure);
+        PlaybookVersionRef playbookRef =
+                new PlaybookVersionRef("playbook-message-send", 3);
+        when(diagnosis.sopKey()).thenReturn("csdp:701018");
+        when(diagnosis.sourcePlaybookVersionRef()).thenReturn(playbookRef);
         when(persistence.get(7L, "diag-1"))
-                .thenReturn(new StoredDiagnosis(diagnosis, 3, false));
+                .thenReturn(new StoredDiagnosis(diagnosis, 3, false, 2));
+        ApprovedPlaybookVersion approved = mock(ApprovedPlaybookVersion.class);
+        when(approved.selectorKey()).thenReturn("csdp:701018");
+        when(approved.playbook()).thenReturn(formalPlaybook());
+        when(playbookVersions.findByRef(7L, playbookRef)).thenReturn(Optional.of(approved));
+        when(playbookVersions.activeRef(7L, "csdp:701018"))
+                .thenReturn(Optional.of(playbookRef));
+        when(pilotPlans.enrollmentVersion(7L, "CSDP", "session-svc", false))
+                .thenReturn(2);
+        when(acceptance.requireAccepted(7L, "CSDP", "session-svc"))
+                .thenReturn(accepted(
+                        "t7-012345678901234567890123", "a".repeat(64)));
         when(replayCapability.inspect(7L, "diag-1"))
                 .thenReturn(new RecordedReplayEvaluationCapability(
                         true,
@@ -677,25 +872,97 @@ class EvidenceEvaluationSampleServiceTest {
                         replay,
                         replayCapability,
                         acceptance,
+                        playbookVersions,
+                        pilotPlans,
                         CLOCK),
                 preview,
                 replay,
                 persistence,
                 store,
                 replayCapability,
-                acceptance);
+                acceptance,
+                playbookVersions,
+                pilotPlans,
+                diagnosis);
+    }
+
+    private GuanceEvidenceAcceptance accepted(
+            String acceptanceId, String fingerprint) {
+        return new GuanceEvidenceAcceptance(
+                acceptanceId,
+                "CSDP",
+                "session-svc",
+                fingerprint,
+                new GuanceEvidenceAcceptance.Checklist(
+                        true, true, true, true, true, true, true),
+                new GuanceEvidenceAcceptance.ValidationFacts(
+                        3, 2, "c".repeat(64), 10, 20, 35, NOW),
+                "owner",
+                NOW);
+    }
+
+    private SopEntry formalPlaybook() {
+        return formalPlaybook("701018", "message_send_failed");
+    }
+
+    private SopEntry formalPlaybook(String errorCode, String searchTerm) {
+        return new SopEntry(
+                "playbook-message-send",
+                SopEntry.CURRENT_CONTRACT_VERSION,
+                "CSDP",
+                errorCode,
+                "session-svc",
+                "会话消息发送失败",
+                "",
+                "message",
+                "CSDP",
+                "approved",
+                true,
+                List.of(
+                        new EvidenceRequest(
+                                "SEARCH",
+                                "log_search",
+                                "查找失败请求",
+                                Map.of("search_term", searchTerm),
+                                "-15m",
+                                true),
+                        new EvidenceRequest(
+                                "TRACE",
+                                "log_trace_bundle",
+                                "关联调用链",
+                                Map.of("ps_id", "server-owned"),
+                                "-15m",
+                                true),
+                        new EvidenceRequest(
+                                "CONTRAST",
+                                "contrast_sample",
+                                "对照正常样本",
+                                Map.of(
+                                        "scenario_key", searchTerm,
+                                        "exclude_ps_id", "server-owned"),
+                                "-15m",
+                                true)),
+                List.of(),
+                List.of(),
+                List.of());
     }
 
     private EvidenceEvaluationSample capturedSample(boolean diagnosisFixtureMode) {
-        return EvidenceEvaluationSample.captured(
+        return EvidenceEvaluationSample.capturedFormal(
                 "eval-012345678901234567890123",
                 "a".repeat(64),
+                "a".repeat(64),
+                1,
                 "diag-1",
                 "CSDP",
                 "session-svc",
                 "message_send_failed",
                 fullPreview(),
+                "b".repeat(64),
+                NOW,
                 diagnosisFixtureMode,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
                 "admin",
                 NOW);
     }
@@ -704,15 +971,21 @@ class EvidenceEvaluationSampleServiceTest {
             String sampleId,
             String sampleKey,
             boolean diagnosisFixtureMode) {
-        return EvidenceEvaluationSample.captured(
+        return EvidenceEvaluationSample.capturedFormal(
                 sampleId,
                 sampleKey,
+                sampleKey,
+                1,
                 "diag-1",
                 "CSDP",
                 "session-svc",
                 "message_send_failed",
                 fullPreview(),
+                "b".repeat(64),
+                NOW,
                 diagnosisFixtureMode,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
                 "admin",
                 NOW);
     }
@@ -922,6 +1195,9 @@ class EvidenceEvaluationSampleServiceTest {
             TroubleshootingPersistenceService persistence,
             EvidenceEvaluationSampleStore store,
             RecordedReplayEvaluationCapabilityService replayCapability,
-            GuanceEvidenceAcceptanceService acceptance) {
+            GuanceEvidenceAcceptanceService acceptance,
+            TroubleshootingPlaybookVersionService playbookVersions,
+            TroubleshootingPilotPlanService pilotPlans,
+            Diagnosis diagnosis) {
     }
 }

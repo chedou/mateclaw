@@ -35,9 +35,12 @@ pipeline {
     HEALTH_URL = 'http://127.0.0.1:18080/actuator/health'
     INFO_URL = 'http://127.0.0.1:18080/actuator/info'
     MYSQL_CLIENT_IMAGE = 'mysql:8.0'
-    APPROVED_MIGRATION_FROM = '204'
-    APPROVED_MIGRATION_TO = '217'
-    APPROVED_MIGRATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
+    APPROVED_FOUNDATION_FROM = '204'
+    APPROVED_FOUNDATION_TO = '217'
+    APPROVED_FOUNDATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
+    APPROVED_FORMAL_DIAGNOSIS_FROM = '217'
+    APPROVED_FORMAL_DIAGNOSIS_TO = '219'
+    APPROVED_FORMAL_DIAGNOSIS_SHA256 = 'f4f7bd80cf4ed835e559a06713643a2bd85eb3247e4e1f09732b2c103c71d7ea'
     CANDIDATE_IMAGE = "mateclaw-troubleshooting:jenkins-candidate-${BUILD_NUMBER}"
   }
 
@@ -295,19 +298,46 @@ printf '%s\n' "$repo_max_version" > repository-max-migration-version.txt
 
 migration_policy="NO_PENDING_MIGRATIONS"
 if [[ "$pending_count" -gt 0 ]]; then
-  [[ "$current_version" == "$APPROVED_MIGRATION_FROM" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2; exit 1; }
-  [[ "$pending_count" -eq 13 ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移应为 13 个，实际为 $pending_count" >&2; exit 1; }
-  [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217' ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V217" >&2; exit 1; }
-  actual_migration_sha="$(
+  [[ "$APPROVED_FOUNDATION_TO" == "$APPROVED_FORMAL_DIAGNOSIS_FROM" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移包不连续" >&2; exit 1; }
+  [[ "$repo_max_version" == "$APPROVED_FORMAL_DIAGNOSIS_TO" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 待执行迁移的仓库终点必须为 V$APPROVED_FORMAL_DIAGNOSIS_TO" >&2; exit 1; }
+  foundation_migration_sha="$(
     cd "$migration_dir"
     sha256sum V{205..217}__*.sql | sha256sum | awk '{print $1}'
   )"
-  [[ "$actual_migration_sha" == "$APPROVED_MIGRATION_SHA256" ]] \
+  [[ "$foundation_migration_sha" == "$APPROVED_FOUNDATION_SHA256" ]] \
     || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
-  migration_policy="APPROVED_V${APPROVED_MIGRATION_FROM}_TO_V${APPROVED_MIGRATION_TO}_${actual_migration_sha}"
+  formal_diagnosis_migration_sha="$(
+    cd "$migration_dir"
+    sha256sum V{218..219}__*.sql | sha256sum | awk '{print $1}'
+  )"
+  [[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: V218-V219 内容已变化，必须重新审核" >&2; exit 1; }
+
+  case "$current_version" in
+    "$APPROVED_FOUNDATION_FROM")
+      [[ "$pending_count" -eq 15 ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 15 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
+      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V219" >&2; exit 1; }
+      migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}"
+      ;;
+    "$APPROVED_FORMAL_DIAGNOSIS_FROM")
+      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '218 219' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V219" >&2; exit 1; }
+      migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      ;;
+    218)
+      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '219' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219" >&2; exit 1; }
+      migration_policy="APPROVED_V218_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      ;;
+    *)
+      echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2
+      exit 1
+      ;;
+  esac
 else
   [[ "$current_version" == "$repo_max_version" ]] \
     || { echo "MIGRATION_PRECHECK_FAILED: 无 pending 但数据库 V$current_version 与仓库 V$repo_max_version 不一致" >&2; exit 1; }
@@ -448,7 +478,8 @@ fi
 
 # 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
 # mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
-# 本次只允许无 pending 或哈希冻结的 V204-V217 迁移包；失败时恢复旧容器，
+# 本次只允许无 pending，或哈希冻结的 V204-V217 基础包与
+# V218-V219 正式排障包；失败时恢复旧容器，
 # 并保留该备份供人工恢复。
 docker run --rm \
   -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \

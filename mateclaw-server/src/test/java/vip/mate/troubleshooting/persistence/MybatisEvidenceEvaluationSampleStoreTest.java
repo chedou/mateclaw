@@ -16,6 +16,7 @@ import vip.mate.troubleshooting.evaluation.MybatisEvidenceEvaluationSampleStore;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.TroubleshootingEvidenceEvaluationSampleEntity;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.repository.TroubleshootingEvidenceEvaluationSampleMapper;
 
 import java.time.Instant;
@@ -67,6 +68,10 @@ class MybatisEvidenceEvaluationSampleStoreTest {
         assertThat(row.get().getReferenceStatus()).isEqualTo("EVIDENCE_CAPTURED");
         assertThat(row.get().getFixtureMode()).isFalse();
         assertThat(row.get().getDiagnosisFixtureMode()).isTrue();
+        assertThat(row.get().getDiagnosisRehearsal()).isFalse();
+        assertThat(row.get().getPilotPlanVersion()).isEqualTo(2);
+        assertThat(row.get().getSourcePlaybookId()).isEqualTo("playbook-message-send");
+        assertThat(row.get().getSourcePlaybookVersion()).isEqualTo(3);
         assertThat(row.get().getCaptureIdentityKey()).isEqualTo("a".repeat(64));
         assertThat(row.get().getCaptureRevision()).isEqualTo(1);
         assertThat(row.get().getAggregateJson())
@@ -192,9 +197,11 @@ class MybatisEvidenceEvaluationSampleStoreTest {
     }
 
     private EvidenceEvaluationSample sample() {
-        return EvidenceEvaluationSample.captured(
+        return EvidenceEvaluationSample.capturedFormal(
                 "eval-012345678901234567890123",
                 "a".repeat(64),
+                "a".repeat(64),
+                1,
                 "diag-1",
                 "CSDP",
                 "session-svc",
@@ -224,7 +231,11 @@ class MybatisEvidenceEvaluationSampleStoreTest {
                                 observed("contrast_sample", "T8-GUANCE-CONTRAST-SAMPLE")),
                         NOW,
                         List.of()),
+                "b".repeat(64),
+                NOW,
                 true,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
                 "admin",
                 NOW);
     }

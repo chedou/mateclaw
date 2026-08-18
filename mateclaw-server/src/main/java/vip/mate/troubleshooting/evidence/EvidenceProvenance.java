@@ -81,6 +81,33 @@ public final class EvidenceProvenance {
         return !sawRealAnswer;
     }
 
+    /**
+     * Provenance rule for one formally admitted Guance run.
+     *
+     * <p>The admission proves that the server selected an owner-accepted Guance
+     * binding and the router allow-list prevents any other adapter from being
+     * invoked. A canonical {@code MISSING} answer from that Guance adapter is
+     * therefore still a real observation ("the accepted source returned no
+     * rows") and may produce an honest abstention. By contrast, an orchestrator
+     * fallback such as {@code evidence-spine:unavailable}, Recorded Replay, or
+     * any caller-labelled source remains fixture-backed and must be rejected by
+     * the formal Intake gate.</p>
+     */
+    public static boolean fixtureModeForAcceptedGuanceRun(
+            Collection<EvidenceResult> evidence) {
+        if (evidence == null || evidence.isEmpty()) {
+            return true;
+        }
+        for (EvidenceResult result : evidence) {
+            if (result == null || result.source() == null
+                    || !result.source().trim().toLowerCase(Locale.ROOT)
+                            .startsWith("guance")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isRealSource(String source) {
         if (source == null || source.isBlank()) {
             // 连问了谁都没记下来，就没有资格声称真源。

@@ -198,6 +198,13 @@ public class MybatisEvidenceEvaluationSampleStore
         entity.setReferenceStatus(sample.referenceStatus().name());
         entity.setFixtureMode(sample.evidence().fixtureMode());
         entity.setDiagnosisFixtureMode(sample.diagnosisFixtureMode());
+        entity.setDiagnosisRehearsal(sample.diagnosisRehearsal());
+        entity.setPilotPlanVersion(sample.pilotPlanVersion());
+        if (sample.sourcePlaybookVersionRef() != null) {
+            entity.setSourcePlaybookId(sample.sourcePlaybookVersionRef().playbookId());
+            entity.setSourcePlaybookVersion(
+                    sample.sourcePlaybookVersionRef().playbookVersion());
+        }
         entity.setAggregateJson(write(sample));
         entity.setVersion(sample.version());
         entity.setDeleted(0);

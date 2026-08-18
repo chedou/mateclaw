@@ -599,6 +599,8 @@ export interface StoredDiagnosis {
   version: number
   /** False when a retry hit the five-minute deduplication bucket. */
   created: boolean
+  /** Pilot revision frozen when this Diagnosis was first created; null means not enrolled. */
+  pilotPlanVersion: number | null
 }
 
 export interface DiagnosisSummary {
@@ -1442,6 +1444,33 @@ export interface GuanceRecordingTargetCatalogView {
   blockers: string[]
 }
 
+export interface GuanceRecordingBatchTargetReadiness {
+  targetId: string
+  system: string
+  service: string
+  scenarioKey: string | null
+  selectorKey: string
+  bindingFingerprint: string | null
+  targetBindingFingerprint: string | null
+  executable: boolean
+  blockers: string[]
+}
+
+/** Workspace-wide, secret-free readiness projection for the immutable first T7 batch. */
+export interface GuanceRecordingBatchReadiness {
+  contractVersion: 't7-guance-recording-batch-readiness.v2'
+  batchId: string
+  workspaceId: string | number
+  catalogContractVersion: string
+  catalogFingerprint: string
+  frozenTargetCount: number
+  executableTargetCount: number
+  readyForOwnerAcceptance: boolean
+  targets: GuanceRecordingBatchTargetReadiness[]
+  asOfEpochSeconds: string | number
+  blockers: string[]
+}
+
 export interface AcceptGuanceEvidenceRequest extends EvidenceChainPreviewRequest {
   checklist: GuanceEvidenceAcceptanceChecklist
 }
@@ -1686,6 +1715,12 @@ export interface EvidenceEvaluationSample {
   /** Frozen evidence anchor used for a reproducible source rerun. */
   evidenceOccurredAt: string | null
   diagnosisFixtureMode: boolean
+  /** True for rehearsals and fail-closed legacy samples. */
+  diagnosisRehearsal: boolean
+  /** Production-pilot revision frozen on the source Diagnosis. */
+  pilotPlanVersion: number | null
+  /** Exact immutable Playbook authority used for this sample. */
+  sourcePlaybookVersionRef: PlaybookVersionRef | null
   referenceStatus: EvaluationSampleReferenceStatus
   referenceSolution: EvaluationReferenceSolution | null
   expectedDisposition: EvaluationExpectedDisposition | null
@@ -1738,9 +1773,6 @@ export interface EvidenceEvaluationSampleLedger {
 
 export interface CaptureEvaluationSampleRequest {
   diagnosisId: string
-  scenarioKey: string
-  searchTerm: string
-  window: string
 }
 
 export interface CaptureRecordedReplayEvaluationSampleRequest {

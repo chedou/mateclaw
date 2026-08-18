@@ -231,8 +231,8 @@
             <h3>观测云样本</h3>
             <div class="capture-form">
               <label>
-                <span>场景键</span>
-                <el-input v-model="captureForm.scenarioKey" placeholder="message_send_failed" />
+                <span>场景键（由冻结的排障规则决定）</span>
+                <el-input :model-value="captureContext.scenarioKey" disabled />
               </label>
               <label>
                 <span>搜索键</span>
@@ -247,11 +247,10 @@
               type="primary"
               plain
               :loading="captureLoading"
-              :disabled="!captureEnabled || !captureFormValid"
+              :disabled="!captureEnabled"
               @click="captureSample('GUANCE')"
             >采集观测云样本</el-button>
             <small v-if="!captureEnabled" class="disabled-reason">{{ captureDisabledReason }}</small>
-            <small v-else-if="!captureFormValid" class="disabled-reason">场景键须为 2–64 位小写结构化 key。</small>
           </section>
 
           <section v-if="replayCaptureContext" class="capture-block">
@@ -538,7 +537,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import CapabilityWorkspaceShell from './CapabilityWorkspaceShell.vue'
@@ -631,7 +630,6 @@ const onlyCurrent = ref(false)
 const selectedSampleId = ref<string | null>(null)
 const drawerPanel = ref<DrawerPanel>('detail')
 const referenceSample = ref<EvidenceEvaluationSample | null>(null)
-const captureForm = reactive({ scenarioKey: '' })
 const referenceForm = reactive<{
   required: string
   forbidden: string
@@ -770,12 +768,6 @@ const currentPilotAction = computed(() => {
       : '可以运行影子基线核对准确性，但这条记录不参与真实耗时效果统计。',
   }
 })
-const captureFormValid = computed(() => {
-  const parsed = parseEvaluationIntentKeys(captureForm.scenarioKey)
-  return parsed.invalid.length === 0
-    && parsed.values.length === 1
-    && parsed.values[0] === captureForm.scenarioKey.trim()
-})
 const replayCaptureFormValid = computed(() => {
   const scenarioKey = props.replayCaptureContext?.scenarioKey || ''
   const parsed = parseEvaluationIntentKeys(scenarioKey)
@@ -835,16 +827,10 @@ const drawerTitle = computed(() => {
 })
 
 onMounted(() => {
-  syncCaptureForm()
   referenceSample.value = null
   onlyCurrent.value = Boolean(props.currentDiagnosisId)
   void loadLedger()
 })
-watch(() => props.captureContext, syncCaptureForm, { deep: true })
-
-function syncCaptureForm() {
-  captureForm.scenarioKey = props.captureContext?.scenarioKey || ''
-}
 
 async function loadLedger() {
   loading.value = true
@@ -942,7 +928,7 @@ async function captureSample(source: 'GUANCE' | 'RECORDED_REPLAY') {
     ? props.captureContext
     : props.replayCaptureContext
   const enabled = source === 'GUANCE' ? props.captureEnabled : props.replayCaptureEnabled
-  const formValid = source === 'GUANCE' ? captureFormValid.value : replayCaptureFormValid.value
+  const formValid = source === 'GUANCE' ? true : replayCaptureFormValid.value
   if (!context || !enabled || !formValid) return
   if (source === 'GUANCE') captureLoading.value = true
   else replayCaptureLoading.value = true
@@ -950,9 +936,6 @@ async function captureSample(source: 'GUANCE' | 'RECORDED_REPLAY') {
     const response = source === 'GUANCE'
       ? await troubleshootingApi.captureGuanceEvaluationSample({
           diagnosisId: context.diagnosisId,
-          scenarioKey: captureForm.scenarioKey.trim(),
-          searchTerm: context.searchTerm,
-          window: context.window,
         })
       : await troubleshootingApi.captureRecordedReplayEvaluationSample({
           diagnosisId: context.diagnosisId,
@@ -1033,7 +1016,12 @@ function baselineCaptureContext(sample: EvidenceEvaluationSample) {
 }
 
 function sampleCountsTowardEffect(sample: EvidenceEvaluationSample) {
-  return sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode
+  return sample.sourcePlatform === 'GUANCE'
+    && !sample.evidence.fixtureMode
+    && !sample.diagnosisFixtureMode
+    && !sample.diagnosisRehearsal
+    && sample.pilotPlanVersion !== null
+    && sample.sourcePlaybookVersionRef !== null
 }
 
 function baselineUnavailableReason(sample: EvidenceEvaluationSample) {

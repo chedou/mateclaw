@@ -51,9 +51,6 @@ public class EvidenceEvaluationSampleController {
         return R.ok(service.capture(
                 resolveWorkspace(workspaceId),
                 request.diagnosisId(),
-                request.scenarioKey(),
-                request.searchTerm(),
-                request.window(),
                 currentActor()));
     }
 

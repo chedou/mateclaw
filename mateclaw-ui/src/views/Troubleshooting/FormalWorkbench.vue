@@ -602,7 +602,7 @@ const deploymentTopologySelector = computed(() =>
 const canSubmitDeploymentTopologyScenario = computed(() =>
   canManageTroubleshooting.value && deploymentTopologyScenarioErrors.value.length === 0)
 const recordingBatchReady = computed(() =>
-  (guanceRecordingTargets.value?.executableTargetCount ?? 0) >= 20)
+  guanceRecordingTargets.value?.readyForOwnerAcceptance === true)
 const canAcceptGuance = computed(() => canManageTroubleshooting.value
   && canAcceptGuanceOwner.value
   && recordingBatchReady.value

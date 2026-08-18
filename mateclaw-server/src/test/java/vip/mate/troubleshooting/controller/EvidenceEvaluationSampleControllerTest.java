@@ -54,9 +54,7 @@ class EvidenceEvaluationSampleControllerTest {
             throws Exception {
         EvidenceEvaluationSampleService service = mock(EvidenceEvaluationSampleService.class);
         EvidenceEvaluationSample captured = captured();
-        when(service.capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m",
-                "admin@example.com"))
+        when(service.capture(7L, "diag-1", "admin@example.com"))
                 .thenReturn(new EvidenceEvaluationSampleStore.StoredSample(captured, true));
         authenticate("admin@example.com");
 
@@ -65,10 +63,7 @@ class EvidenceEvaluationSampleControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "diagnosisId":"diag-1",
-                                  "scenarioKey":"message_send_failed",
-                                  "searchTerm":"source_lookup_key",
-                                  "window":"-15m"
+                                  "diagnosisId":"diag-1"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -81,9 +76,28 @@ class EvidenceEvaluationSampleControllerTest {
                 .andExpect(jsonPath("$.data.sample.searchTerm").doesNotExist())
                 .andExpect(jsonPath("$.data.sample.rawLog").doesNotExist());
 
-        verify(service).capture(
-                7L, "diag-1", "message_send_failed", "source_lookup_key", "-15m",
-                "admin@example.com");
+        verify(service).capture(7L, "diag-1", "admin@example.com");
+    }
+
+    @Test
+    void rejectsBrowserSuppliedGuanceScenarioOrQueryTargets() throws Exception {
+        EvidenceEvaluationSampleService service = mock(EvidenceEvaluationSampleService.class);
+        authenticate("admin@example.com");
+
+        mvc(service).perform(post("/api/v1/troubleshooting/evaluation-samples/guance")
+                        .header("X-Workspace-Id", "7")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "diagnosisId":"diag-1",
+                                  "scenarioKey":"forged_scenario",
+                                  "searchTerm":"forged_query",
+                                  "window":"-2h"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(service, never()).capture(anyLong(), any(), any());
     }
 
     @Test

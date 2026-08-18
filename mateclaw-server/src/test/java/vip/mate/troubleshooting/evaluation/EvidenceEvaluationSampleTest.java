@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceReadiness;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.model.ClosureOutcome;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
 
 import java.time.Instant;
@@ -205,6 +206,9 @@ class EvidenceEvaluationSampleTest {
         ((ObjectNode) legacy.get("evidence")).remove("timings");
         ((ObjectNode) legacy.get("evidence").get("contrast"))
                 .remove("discriminatingFeature");
+        legacy.remove("diagnosisRehearsal");
+        legacy.remove("pilotPlanVersion");
+        legacy.remove("sourcePlaybookVersionRef");
 
         EvidenceEvaluationSample restored = objectMapper.treeToValue(
                 legacy, EvidenceEvaluationSample.class);
@@ -214,6 +218,80 @@ class EvidenceEvaluationSampleTest {
         assertThat(restored.evidence().contrast().discriminatingFeature()).isNull();
         assertThat(restored.modelInputHash()).isNull();
         assertThat(restored.expectedDisposition()).isNull();
+        assertThat(restored.diagnosisRehearsal()).isTrue();
+        assertThat(restored.pilotPlanVersion()).isNull();
+        assertThat(restored.sourcePlaybookVersionRef()).isNull();
+        assertThat(restored.formalPilotSample()).isFalse();
+    }
+
+    @Test
+    void preservesFormalPilotIdentityWhenTheHumanReferenceIsFinalized() {
+        EvidenceEvaluationSample captured = EvidenceEvaluationSample.capturedFormal(
+                "eval-012345678901234567890123",
+                "a".repeat(64),
+                "a".repeat(64),
+                1,
+                "diag-1",
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                fullPreview(),
+                "b".repeat(64),
+                NOW,
+                false,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
+                "admin@example.com",
+                NOW);
+
+        EvidenceEvaluationSample finalized = captured.finalizeReference(
+                reference(captured.sampleId()),
+                EvidenceEvaluationSample.ExpectedDisposition.DRAFT,
+                null,
+                new EvidenceEvaluationSample.OutcomeSnapshot(
+                        ClosureOutcome.UNRESOLVED, "仍需人工跟进", false, NOW),
+                "reviewer@example.com",
+                NOW.plusSeconds(1));
+
+        assertThat(finalized.formalPilotSample()).isTrue();
+        assertThat(finalized.pilotPlanVersion()).isEqualTo(2);
+        assertThat(finalized.sourcePlaybookVersionRef())
+                .isEqualTo(new PlaybookVersionRef("playbook-message-send", 3));
+    }
+
+    @Test
+    void rejectsAFormalIdentityAttachedToOnlyTheCoreGuanceChain() {
+        EvidenceEvaluationSample rehearsal = captured(false);
+
+        assertThatThrownBy(() -> new EvidenceEvaluationSample(
+                rehearsal.sampleId(),
+                rehearsal.sampleKey(),
+                rehearsal.captureIdentityKey(),
+                rehearsal.captureRevision(),
+                rehearsal.diagnosisId(),
+                rehearsal.system(),
+                rehearsal.service(),
+                rehearsal.scenarioKey(),
+                EvidenceEvaluationSample.SourcePlatform.GUANCE,
+                EvidenceEvaluationSample.EvidenceSnapshot.from(corePreview()),
+                rehearsal.modelInputHash(),
+                rehearsal.evidenceOccurredAt(),
+                false,
+                false,
+                2,
+                new PlaybookVersionRef("playbook-message-send", 3),
+                rehearsal.referenceStatus(),
+                rehearsal.referenceSolution(),
+                rehearsal.expectedDisposition(),
+                rehearsal.humanBaseline(),
+                rehearsal.outcome(),
+                rehearsal.version(),
+                rehearsal.capturedBy(),
+                rehearsal.finalizedBy(),
+                rehearsal.capturedAt(),
+                rehearsal.finalizedAt()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("full Guance Evidence Spine");
     }
 
     @Test
@@ -300,6 +378,27 @@ class EvidenceEvaluationSampleTest {
                 List.of("待 T7/T8 验收"));
     }
 
+    private GuanceEvidenceSpinePreview corePreview() {
+        return new GuanceEvidenceSpinePreview(
+                GuanceEvidenceSpinePreview.Stage.CORE_CHAIN_OBSERVED,
+                readiness(),
+                4L,
+                "ps-message-001",
+                3,
+                List.of("gateway", "session-svc", "openim"),
+                2,
+                42L,
+                GuanceEvidenceSpinePreview.Contrast.unavailable(),
+                3,
+                50L,
+                List.of(
+                        observed("log_search", "T8-GUANCE-LOG-SEARCH"),
+                        observed("log_trace_bundle", "T8-GUANCE-TRACE-BUNDLE"),
+                        missing("contrast_sample", "T8-GUANCE-CONTRAST-SAMPLE")),
+                NOW,
+                List.of("成功样本对照尚未取得"));
+    }
+
     private GuanceEvidenceReadiness readiness() {
         return new GuanceEvidenceReadiness(
                 "CSDP", "session-svc",
@@ -323,5 +422,13 @@ class EvidenceEvaluationSampleTest {
                 GuanceEvidenceSpinePreview.StepStatus.NOT_RUN,
                 evidenceRef,
                 null);
+    }
+
+    private GuanceEvidenceSpinePreview.Step missing(String signalKind, String evidenceRef) {
+        return new GuanceEvidenceSpinePreview.Step(
+                signalKind,
+                GuanceEvidenceSpinePreview.StepStatus.MISSING,
+                evidenceRef,
+                NOW);
     }
 }

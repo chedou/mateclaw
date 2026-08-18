@@ -63,7 +63,8 @@ export function buildMessageSendScenarioRequest(
     ...(traceId ? { traceId } : {}),
     ...(customerRef ? { customerRef } : {}),
     ...(form.occurredAt ? { occurredAt: form.occurredAt } : {}),
-    rehearsal: form.rehearsal,
+    // Scenario-level D20 binding and acceptance are not available yet.
+    rehearsal: true,
   }
 }
 

@@ -4,7 +4,7 @@ import type {
   EvidenceResult,
   GuanceEvidenceAcceptanceView,
   GuanceEvidenceReadiness,
-  GuanceRecordingTargetCatalogView,
+  GuanceRecordingBatchReadiness,
   GuanceReadinessStatus,
   GuanceSignalStatus,
   GuanceSpinePreviewStage,
@@ -84,6 +84,20 @@ export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIR
 
 export function canStartGuanceValidation(value: GuanceReadinessStatus) {
   return value === 'READY_FOR_VALIDATION' || value === 'CANONICAL_SIGNALS_OBSERVED'
+}
+
+export function guanceRecordingBatchReady(
+  batch: GuanceRecordingBatchReadiness | null,
+) {
+  return batch?.readyForOwnerAcceptance === true
+}
+
+export function guanceRecordingBatchLabel(
+  batch: GuanceRecordingBatchReadiness | null,
+) {
+  return batch
+    ? `Workspace 首批录制目标 · ${batch.executableTargetCount} / 20`
+    : 'Workspace 首批录制目标未加载'
 }
 
 export function guanceAcceptanceStateLabel(value: GuanceAcceptanceState) {
@@ -193,21 +207,24 @@ export function guanceOwnerBlockerLabel(value: string) {
 
 /**
  * Details only need the current environment gate, not the full governance
- * ladder. Owner acceptance wins because it is bound to the current binding
- * fingerprint; otherwise keep the T7 blocker visible in one compact label.
+ * ladder. A current workspace batch blocker wins over an older owner
+ * acceptance; otherwise keep the T7 blocker visible in one compact label.
  */
 export function guanceDetailSourceState(
   readinessStatus: GuanceReadinessStatus | null,
   ownerAcceptanceStatus: GuanceEvidenceAcceptanceView['status'] | null,
   progress: GuanceAcceptanceProgress | null,
 ): GuanceDetailSourceState {
+  const confirmation = progress?.stages.find(stage => stage.code === 'T7')
+  if (confirmation?.state === 'BLOCKED') {
+    return { label: confirmation.title, tone: 'warning' }
+  }
   if (ownerAcceptanceStatus === 'ACCEPTED') {
     return { label: '当前绑定已验收', tone: 'success' }
   }
   if (ownerAcceptanceStatus === 'STALE') {
     return { label: '配置变化，验收已过期', tone: 'warning' }
   }
-  const confirmation = progress?.stages.find(stage => stage.code === 'T7')
   if (confirmation) {
     return {
       label: confirmation.title,
@@ -308,7 +325,7 @@ export function diagnosisGuanceUsageLabel(
 export function guanceAcceptanceProgress(
   readiness: GuanceAcceptanceInput,
   ownerAcceptance: GuanceEvidenceAcceptanceView | null = null,
-  recordingTargets: GuanceRecordingTargetCatalogView | null = null,
+  recordingBatch: GuanceRecordingBatchReadiness | null = null,
 ): GuanceAcceptanceProgress {
   const { status } = readiness
   const coreSignalsAuthorized = ['log_search', 'log_trace_bundle'].every(signalKind =>
@@ -321,12 +338,17 @@ export function guanceAcceptanceProgress(
   const coreSignalsObserved = status === 'CANONICAL_SIGNALS_OBSERVED'
   const ownerAccepted = ownerAcceptance?.status === 'ACCEPTED'
   const ownerAcceptanceStale = ownerAcceptance?.status === 'STALE'
-  const executableTargetCount = recordingTargets?.executableTargetCount ?? 0
-  const recordingBatchReady = executableTargetCount >= 20
-  const recordingBatchBlocked = sourceReady && !recordingBatchReady
-  const recordingTargetDetail = recordingTargets
-    ? `当前 ${executableTargetCount} / 20 个可执行生产验收目标（已固定 ${recordingTargets.frozenTargetCount} 个）。目标必须由服务端固定排障规则、取证要求和三项当前查询绑定；已采集目标不能重复计数。这是生产验收批次门，不代表当前 Diagnosis 没有真源证据。`
-    : '录制目标目录未加载，不能证明已准备 20 个可执行新目标。'
+  const executableTargetCount = recordingBatch?.executableTargetCount ?? 0
+  const recordingBatchReady = guanceRecordingBatchReady(recordingBatch)
+  const recordingBatchUnknown = recordingBatch === null
+  // A loaded but incomplete Workspace batch is an unconditional production
+  // blocker. Historical owner acceptance must not override the current T7
+  // batch, even while the Guance runtime itself is disabled or incomplete.
+  const recordingBatchBlocked = recordingBatch !== null && !recordingBatchReady
+  const recordingBatchUnavailable = recordingBatchUnknown || recordingBatchBlocked
+  const recordingTargetDetail = recordingBatch
+    ? `Workspace 首批录制目标当前 ${executableTargetCount} / 20 个可执行（已固定 ${recordingBatch.frozenTargetCount} 个）。这是整个 Workspace 的生产验收批次门，不是当前 system/service 的模块计数；已采集目标不能重复计数，也不代表当前 Diagnosis 没有真源证据。`
+    : 'Workspace 首批录制目标尚未加载，不能用当前 system/service 的模块计数替代。'
 
   const stages: GuanceAcceptanceStage[] = [
     {
@@ -339,17 +361,19 @@ export function guanceAcceptanceProgress(
     },
     {
       code: 'T7',
-      state: ownerAccepted
-        ? 'READY'
-        : recordingBatchBlocked
-          ? 'BLOCKED'
+      state: recordingBatchUnavailable
+        ? 'BLOCKED'
+        : ownerAccepted
+          ? 'READY'
           : ownerAcceptanceStale || coreSignalsObserved
             ? 'OWNER_EVIDENCE_REQUIRED'
             : sourceReady ? 'READY' : 'BLOCKED',
-      title: ownerAccepted
-        ? '负责人已确认当前数据源配置'
-        : recordingBatchBlocked
-          ? '生产验收批次未准备好'
+      title: recordingBatchUnavailable
+        ? recordingBatchUnknown
+          ? '生产验收批次状态未知'
+          : '生产验收批次未准备好'
+        : ownerAccepted
+          ? '负责人已确认当前数据源配置'
           : ownerAcceptanceStale
             ? '数据源配置已变化，原确认失效'
             : coreSignalsObserved
@@ -357,10 +381,10 @@ export function guanceAcceptanceProgress(
               : sourceReady
                 ? '等待验证日志与调用链'
                 : sourceAuthorized ? '真实数据源运行条件未就绪' : '数据源接入未完成',
-      detail: ownerAccepted
-        ? `当前配置已由 ${ownerAcceptance?.acceptance?.acceptedBy || '负责人'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；这不会把演示样本当成真实数据。`
-        : recordingBatchBlocked
-          ? recordingTargetDetail
+      detail: recordingBatchUnavailable
+        ? recordingTargetDetail
+        : ownerAccepted
+          ? `当前配置已由 ${ownerAcceptance?.acceptance?.acceptedBy || '负责人'} 于 ${ownerAcceptance?.acceptance?.acceptedAt || '已记录时间'} 核对；这不会把演示样本当成真实数据。`
           : ownerAcceptanceStale
             ? '查询模板、字段映射、路由或端点发生变化，必须重新验证同一 PS ID 的日志与调用链，并由负责人确认。'
             : coreSignalsObserved
@@ -373,24 +397,28 @@ export function guanceAcceptanceProgress(
     },
     {
       code: 'T8',
-      state: ownerAccepted && sourceReady ? 'READY' : 'BLOCKED',
-      title: ownerAccepted && sourceReady
+      state: recordingBatchReady && ownerAccepted && sourceReady ? 'READY' : 'BLOCKED',
+      title: recordingBatchReady && ownerAccepted && sourceReady
         ? '可以开始积累真实样本'
         : '真实样本尚未开始',
-      detail: ownerAccepted && sourceReady
+      detail: recordingBatchReady && ownerAccepted && sourceReady
         ? '可开始积累 20–30 条真实样本；当前只是具备采集条件，不代表效果已经达标。'
-        : ownerAccepted
-          ? '负责人确认仍然有效，但当前真实数据源运行条件未就绪，不能采集样本。'
-          : '等待当前数据源配置通过负责人确认，再建立 20–30 条真实样本。',
+        : recordingBatchUnavailable
+          ? recordingTargetDetail
+          : ownerAccepted
+            ? '负责人确认仍然有效，但当前真实数据源运行条件未就绪，不能采集样本。'
+            : '等待当前数据源配置通过负责人确认，再建立 20–30 条真实样本。',
     },
   ]
 
   const nextAction = (() => {
+    if (recordingBatchBlocked || (recordingBatchUnknown && sourceReady)) {
+      return recordingBatch
+        ? `先在 Workspace 首批录制批次中准备至少 20 个尚未采集的真实案例；当前可执行 ${executableTargetCount} 个。案例达标并补齐历史故障时间后，再安排负责人进行内网验证。`
+        : 'Workspace 首批录制批次未加载；请重新获取批次状态，不要用单个模块的目标数量代替。'
+    }
     if (ownerAccepted && sourceReady) {
       return '当前数据源配置已由负责人确认；从已关闭排障单积累 20–30 条真实样本、固定参考答案并运行单模型基线。'
-    }
-    if (recordingBatchBlocked) {
-      return `先准备至少 20 个尚未采集的真实案例；当前可执行 ${executableTargetCount} 个。案例达标并补齐历史故障时间后，再安排负责人进行内网验证。`
     }
     if (ownerAcceptanceStale) {
       return 'Guance 配置已经变化；重新验证同一 PS ID 的日志与调用链，并完成负责人确认清单。'

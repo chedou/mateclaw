@@ -120,7 +120,7 @@ class TroubleshootingControllerProjectionTest {
                 eq(7L),
                 argThat(incident -> arrivedAt.equals(incident.occurredAt())),
                 eq(List.of()),
-                eq(false),
+                eq(true),
                 eq(arrivedAt));
     }
 
@@ -176,7 +176,7 @@ class TroubleshootingControllerProjectionTest {
                                 && incident.impact().evidenceRefs().equals(List.of("EV-IMPACT"))
                                 && arrivedAt.equals(incident.impact().observedAt())),
                 eq(List.of()),
-                eq(false),
+                eq(true),
                 eq(arrivedAt));
     }
 

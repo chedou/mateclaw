@@ -10,6 +10,7 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
 import vip.mate.troubleshooting.engine.DiagnosisRuleEvaluator;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
 import vip.mate.troubleshooting.model.ActionType;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.ApprovalStatus;
@@ -46,7 +47,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -62,6 +65,7 @@ class DeterministicDiagnosisServiceTest {
 
     @Mock private TroubleshootingPersistenceService persistence;
     @Mock private TroubleshootingPlaybookVersionService playbookVersions;
+    @Mock private FormalDiagnosisClaimService formalClaims;
 
     private DeterministicDiagnosisService service;
 
@@ -75,6 +79,7 @@ class DeterministicDiagnosisServiceTest {
                         prefix -> prefix + "-1"),
                 persistence,
                 playbookVersions,
+                formalClaims,
                 Clock.fixed(CONCLUSION_AT, ZoneOffset.UTC));
     }
 
@@ -128,18 +133,215 @@ class DeterministicDiagnosisServiceTest {
     }
 
     @Test
-    void persistedHitPathsHoldThePlaybookLockUntilDiagnosisInsertCommits() {
-        for (String methodName : List.of(
-                "diagnoseAndPersist", "diagnoseAndPersistForIntake")) {
-            var method = Arrays.stream(
-                            DeterministicDiagnosisService.class.getDeclaredMethods())
-                    .filter(candidate -> candidate.getName().equals(methodName))
-                    .findFirst()
-                    .orElseThrow();
-            assertNotNull(
-                    method.getAnnotation(Transactional.class),
-                    methodName + " must keep the authority lock and insert in one transaction");
-        }
+    void formalHitPersistsTheAdmissionPilotAndExactPlaybookIdentity() {
+        FormalDiagnosisAdmission admission = formalAdmission();
+        FormalDiagnosisClaim claim = formalClaim();
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGet(
+                eq(7L), any(Diagnosis.class), eq(RECEIVED_AT), eq(9), eq(claim)))
+                .thenAnswer(invocation -> new StoredDiagnosis(
+                        invocation.getArgument(1), 0, true, 9));
+
+        StoredDiagnosis stored = service.diagnoseAndPersist(
+                7L,
+                incident(),
+                admission,
+                List.of(evidence(EvidenceStatus.ANOMALY, Map.of("reachable", false))),
+                false,
+                RECEIVED_AT,
+                READY_AT,
+                claim,
+                CONCLUSION_AT);
+
+        assertEquals(SOURCE_PLAYBOOK, stored.diagnosis().sourcePlaybookVersionRef());
+        assertEquals(9, stored.pilotPlanVersion());
+        var order = inOrder(persistence, formalClaims);
+        order.verify(persistence).createOrGet(
+                7L, stored.diagnosis(), RECEIVED_AT, 9, claim);
+        order.verify(formalClaims).complete(
+                7L, claim, stored.diagnosis().diagnosisId(), CONCLUSION_AT);
+    }
+
+    @Test
+    void acquiredDirectFormalClaimCannotCompleteAgainstAnExistingDiagnosis() {
+        FormalDiagnosisAdmission admission = formalAdmission();
+        FormalDiagnosisClaim claim = formalClaim();
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGet(
+                eq(7L), any(Diagnosis.class), eq(RECEIVED_AT), eq(9), eq(claim)))
+                .thenAnswer(invocation -> new StoredDiagnosis(
+                        invocation.getArgument(1), 1, false, 9));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.diagnoseAndPersist(
+                        7L, incident(), admission, List.of(), false,
+                        RECEIVED_AT, READY_AT, claim, CONCLUSION_AT));
+
+        assertEquals(409, error.getCode());
+        verify(formalClaims, never()).complete(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void formalHitRechecksTheActivePlaybookInsideTheInsertTransaction() {
+        FormalDiagnosisAdmission admission = formalAdmission();
+        ApprovedPlaybookVersion replacement = new ApprovedPlaybookVersion(
+                "sop-903001", 4, "csdp:903001", "APPROVED",
+                "MANUAL", "manual-903001", "review-903001", 3,
+                "reviewer", "replacement", null,
+                sop(true, "approved"), RECEIVED_AT, RECEIVED_AT);
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(replacement));
+
+        assertThrows(
+                MateClawException.class,
+                () -> service.diagnoseAndPersist(
+                        7L, incident(), admission, List.of(), true,
+                        RECEIVED_AT, READY_AT, formalClaim(), CONCLUSION_AT));
+
+        verify(persistence, never()).createOrGet(
+                eq(7L), any(Diagnosis.class), eq(RECEIVED_AT), eq(9), any());
+    }
+
+    @Test
+    void formalHitHoldsThePlaybookLockDiagnosisInsertAndClaimCompletionInOneTransaction()
+            throws NoSuchMethodException {
+        var method = DeterministicDiagnosisService.class.getDeclaredMethod(
+                "diagnoseAndPersist",
+                long.class,
+                IncidentContext.class,
+                FormalDiagnosisAdmission.class,
+                List.class,
+                boolean.class,
+                Instant.class,
+                Instant.class,
+                FormalDiagnosisClaim.class,
+                Instant.class);
+
+        assertNotNull(
+                method.getAnnotation(Transactional.class),
+                "the formal Playbook lock, Diagnosis insert and claim completion "
+                        + "must share one transaction");
+    }
+
+    @Test
+    void formalIntakePersistsAndCompletesItsClaimInOrder() {
+        FormalDiagnosisAdmission admission = formalAdmission();
+        FormalDiagnosisClaim claim = formalIntakeClaim("intake-7");
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGetForIntake(
+                eq(7L), any(Diagnosis.class), eq("intake-7"), eq(9), eq(claim)))
+                .thenAnswer(invocation -> new StoredDiagnosis(
+                        invocation.getArgument(1), 0, true, 9));
+
+        StoredDiagnosis stored = service.diagnoseAndPersistForIntake(
+                7L,
+                incident(),
+                admission,
+                List.of(evidence(EvidenceStatus.ANOMALY, Map.of("reachable", false))),
+                false,
+                RECEIVED_AT,
+                READY_AT,
+                "intake-7",
+                claim,
+                CONCLUSION_AT);
+
+        var order = inOrder(persistence, formalClaims);
+        order.verify(persistence).createOrGetForIntake(
+                7L, stored.diagnosis(), "intake-7", 9, claim);
+        order.verify(formalClaims).complete(
+                7L, claim, stored.diagnosis().diagnosisId(), CONCLUSION_AT);
+    }
+
+    @Test
+    void rehearsalIntakePersistsAndCompletesTheSharedSessionClaimInOneTransaction()
+            throws NoSuchMethodException {
+        FormalDiagnosisClaim claim = formalIntakeClaim("intake-7");
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGetForIntake(
+                eq(7L), any(Diagnosis.class), eq("intake-7"), eq(claim)))
+                .thenAnswer(invocation -> new StoredDiagnosis(
+                        invocation.getArgument(1), 0, true, null));
+
+        StoredDiagnosis stored = service.diagnoseAndPersistForIntake(
+                7L, incident(), sop(true, "approved"), List.of(), true, true,
+                RECEIVED_AT, READY_AT, "intake-7", claim, CONCLUSION_AT);
+
+        var order = inOrder(persistence, formalClaims);
+        order.verify(persistence).createOrGetForIntake(
+                7L, stored.diagnosis(), "intake-7", claim);
+        order.verify(formalClaims).complete(
+                7L, claim, stored.diagnosis().diagnosisId(), CONCLUSION_AT);
+        var method = DeterministicDiagnosisService.class.getDeclaredMethod(
+                "diagnoseAndPersistForIntake",
+                long.class, IncidentContext.class, SopEntry.class, List.class,
+                boolean.class, boolean.class, Instant.class, Instant.class,
+                String.class, FormalDiagnosisClaim.class, Instant.class);
+        assertNotNull(method.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    void acquiredRehearsalIntakeClaimCannotCompleteAgainstAnExistingDiagnosis() {
+        FormalDiagnosisClaim claim = formalIntakeClaim("intake-7");
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGetForIntake(
+                eq(7L), any(Diagnosis.class), eq("intake-7"), eq(claim)))
+                .thenAnswer(invocation -> new StoredDiagnosis(
+                        invocation.getArgument(1), 1, false, null));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.diagnoseAndPersistForIntake(
+                        7L, incident(), sop(true, "approved"), List.of(), true, true,
+                        RECEIVED_AT, READY_AT, "intake-7", claim, CONCLUSION_AT));
+
+        assertEquals(409, error.getCode());
+        verify(formalClaims, never()).complete(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void formalIntakeInsertAndClaimCompletionShareOneTransaction()
+            throws NoSuchMethodException {
+        var method = DeterministicDiagnosisService.class.getDeclaredMethod(
+                "diagnoseAndPersistForIntake",
+                long.class,
+                IncidentContext.class,
+                FormalDiagnosisAdmission.class,
+                List.class,
+                boolean.class,
+                Instant.class,
+                Instant.class,
+                String.class,
+                FormalDiagnosisClaim.class,
+                Instant.class);
+
+        assertNotNull(method.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    void rehearsalRowWinningTheIntakeUniqueKeyCannotCompleteAFormalClaim() {
+        FormalDiagnosisAdmission admission = formalAdmission();
+        FormalDiagnosisClaim claim = formalIntakeClaim("intake-7");
+        Diagnosis rehearsal = org.mockito.Mockito.mock(Diagnosis.class);
+        when(playbookVersions.lockActiveApprovedByPlaybookId(7L, "sop-903001"))
+                .thenReturn(Optional.of(approvedVersion()));
+        when(persistence.createOrGetForIntake(
+                eq(7L), any(Diagnosis.class), eq("intake-7"), eq(9), eq(claim)))
+                .thenReturn(new StoredDiagnosis(rehearsal, 1, false, null));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.diagnoseAndPersistForIntake(
+                        7L, incident(), admission, List.of(), false,
+                        RECEIVED_AT, READY_AT, "intake-7", claim, CONCLUSION_AT));
+
+        assertEquals(409, error.getCode());
+        verify(formalClaims, never()).complete(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -322,5 +524,34 @@ class DeterministicDiagnosisServiceTest {
                 sop(true, "approved"),
                 RECEIVED_AT,
                 RECEIVED_AT);
+    }
+
+    private FormalDiagnosisAdmission formalAdmission() {
+        return new FormalDiagnosisAdmission(
+                9,
+                SOURCE_PLAYBOOK,
+                sop(true, "approved"),
+                approvedVersion().knowledgeEvidenceGrade(),
+                new EvidenceSpinePlan(
+                        "FORMAL-SEARCH", "FORMAL-TRACE", "FORMAL-CONTRAST",
+                        "message_send_failed", "-15m"),
+                "t7-012345678901234567890123",
+                "a".repeat(64));
+    }
+
+    private FormalDiagnosisClaim formalClaim() {
+        return new FormalDiagnosisClaim(
+                "a".repeat(64),
+                "claim-formal-1",
+                RECEIVED_AT,
+                RECEIVED_AT.plusSeconds(300));
+    }
+
+    private FormalDiagnosisClaim formalIntakeClaim(String intakeSessionId) {
+        return new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(7L, intakeSessionId),
+                "claim-formal-intake-1",
+                RECEIVED_AT,
+                RECEIVED_AT.plusSeconds(300));
     }
 }

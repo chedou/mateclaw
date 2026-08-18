@@ -265,6 +265,30 @@ describe('evaluation pilot hand-off queue', () => {
       .toBe('NEEDS_REAL_SAMPLE')
   })
 
+  it('keeps every incomplete formal-sample identity out of pilot progress', () => {
+    const formal = diagnosis('diag-formal', 'CLOSED', false, '2026-08-13T04:00:00Z')
+    const valid = sample('sample-formal', 'diag-formal', 'READY_FOR_EVALUATION', true)
+    const invalidSamples: Array<[string, EvidenceEvaluationSample]> = [
+      ['replay source', { ...valid, sourcePlatform: 'RECORDED_REPLAY' }],
+      ['fixture evidence', {
+        ...valid,
+        evidence: { ...valid.evidence, fixtureMode: true },
+      }],
+      ['fixture diagnosis', { ...valid, diagnosisFixtureMode: true }],
+      ['rehearsal diagnosis', { ...valid, diagnosisRehearsal: true }],
+      ['missing pilot revision', { ...valid, pilotPlanVersion: null }],
+      ['different pilot revision', { ...valid, pilotPlanVersion: 2 }],
+      ['missing Playbook authority', { ...valid, sourcePlaybookVersionRef: null }],
+    ]
+
+    invalidSamples.forEach(([boundary, invalid]) => {
+      expect(
+        buildEvaluationPilotQueue([formal], [invalid], [], pilotPlan()).at(0)?.stage,
+        boundary,
+      ).toBe('NEEDS_REAL_SAMPLE')
+    })
+  })
+
   it('does not turn a frozen answer without human time into a savings sample', () => {
     const formal = diagnosis('diag-formal', 'CLOSED', false, '2026-08-13T04:00:00Z')
     const accuracyOnly = sample('sample-accuracy', 'diag-formal', 'READY_FOR_EVALUATION', false)
@@ -431,10 +455,19 @@ function sample(
     service: 'csdp-wechat',
     scenarioKey: 'error_904003',
     sourcePlatform: 'GUANCE',
-    evidence: {} as EvidenceEvaluationSample['evidence'],
+    evidence: {
+      stage: 'FULL_SPINE_OBSERVED',
+      fixtureMode: false,
+    } as EvidenceEvaluationSample['evidence'],
     modelInputHash: 'hash',
     evidenceOccurredAt: '2026-08-07T09:12:00Z',
     diagnosisFixtureMode: false,
+    diagnosisRehearsal: false,
+    pilotPlanVersion: 1,
+    sourcePlaybookVersionRef: {
+      playbookId: 'playbook-csdp-wechat-904003',
+      playbookVersion: 1,
+    },
     referenceStatus,
     referenceSolution: referenceStatus === 'READY_FOR_EVALUATION'
       ? {} as EvidenceEvaluationSample['referenceSolution']

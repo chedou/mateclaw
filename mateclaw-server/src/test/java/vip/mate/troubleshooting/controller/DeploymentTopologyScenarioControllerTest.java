@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -80,6 +81,48 @@ class DeploymentTopologyScenarioControllerTest {
                         "web:deployment-topology-scenario".equals(incident.intakeSource())
                                 && "trace-safe-1".equals(incident.traceId())),
                 eq(true), eq("alice"), eq(reportedAt));
+    }
+
+    @Test
+    void omissionDefaultsToRehearsalInsteadOfRequestingFormalAdmission() throws Exception {
+        DeploymentTopologyScenarioDiagnosisService service =
+                mock(DeploymentTopologyScenarioDiagnosisService.class);
+        DeploymentTopologyScenarioController controller =
+                new DeploymentTopologyScenarioController(service);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(
+                        new ObjectMapper().findAndRegisterModules()))
+                .build();
+        Instant reportedAt = Instant.parse("2026-07-31T01:02:03Z");
+        StoredDiagnosis stored = new StoredDiagnosis(mock(Diagnosis.class), 0, true);
+        when(service.create(
+                eq(7L), any(), eq(true), eq("alice"), eq(reportedAt)))
+                .thenReturn(stored);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of()));
+        try {
+            mvc.perform(post("/api/v1/troubleshooting/scenarios/deployment-topology/diagnoses")
+                            .requestAttr(
+                                    TroubleshootingRequestTimingFilter.REPORTED_AT_ATTRIBUTE,
+                                    reportedAt)
+                            .header("X-Workspace-Id", "7")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "system":"CSDP",
+                                      "service":"csp-prm-miniapp",
+                                      "title":"海外客户访问超时",
+                                      "severity":"P1"
+                                    }
+                                    """))
+                    .andExpect(status().isOk());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        verify(service).create(
+                eq(7L), any(), eq(true), eq("alice"), eq(reportedAt));
     }
 
     @Test

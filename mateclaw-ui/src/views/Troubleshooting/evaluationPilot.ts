@@ -240,7 +240,7 @@ export function buildEvaluationPilotQueue(
 
   const latestSampleByDiagnosis = new Map<string, EvidenceEvaluationSample>()
   samples
-    .filter(sample => sample.sourcePlatform === 'GUANCE' && !sample.diagnosisFixtureMode)
+    .filter(sample => formalPilotSampleForPlan(sample, plan))
     .forEach((sample) => {
       const existing = latestSampleByDiagnosis.get(sample.diagnosisId)
       if (!existing || compareSamples(sample, existing) > 0) {
@@ -262,7 +262,10 @@ export function buildEvaluationPilotQueue(
     .filter(diagnosis => !diagnosis.rehearsal)
     .filter(diagnosis => matchesPilotEnrollment(diagnosis, plan))
     .map((diagnosis) => {
-      const sample = latestSampleByDiagnosis.get(diagnosis.diagnosisId) || null
+      const candidate = latestSampleByDiagnosis.get(diagnosis.diagnosisId) || null
+      const sample = candidate?.pilotPlanVersion === diagnosis.pilotPlanVersion
+        ? candidate
+        : null
       const stage = pilotStage(diagnosis, sample, sample ? runsBySample.get(sample.sampleId) || [] : [])
       return {
         diagnosisId: diagnosis.diagnosisId,
@@ -281,6 +284,18 @@ export function buildEvaluationPilotQueue(
       if (stageOrder !== 0) return stageOrder
       return sortableTime(right.updatedAt) - sortableTime(left.updatedAt)
     })
+}
+
+function formalPilotSampleForPlan(
+  sample: EvidenceEvaluationSample,
+  plan: TroubleshootingPilotPlan,
+) {
+  return sample.sourcePlatform === 'GUANCE'
+    && sample.evidence?.fixtureMode === false
+    && !sample.diagnosisFixtureMode
+    && sample.diagnosisRehearsal === false
+    && sample.pilotPlanVersion === plan.version
+    && sample.sourcePlaybookVersionRef !== null
 }
 
 /**

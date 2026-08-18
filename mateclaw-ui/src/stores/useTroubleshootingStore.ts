@@ -10,7 +10,7 @@ import {
   type EvidenceChainPreviewRequest,
   type GuanceEvidenceAcceptanceView,
   type GuanceEvidenceReadiness,
-  type GuanceRecordingTargetCatalogView,
+  type GuanceRecordingBatchReadiness,
   type GuanceEvidenceSpinePreview,
   type InvestigationMode,
   type RecordedReplayEvaluationCapability,
@@ -80,7 +80,8 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
   const guanceReadiness = ref<GuanceEvidenceReadiness | null>(null)
   const guanceSpinePreview = ref<GuanceEvidenceSpinePreview | null>(null)
   const guanceOwnerAcceptance = ref<GuanceEvidenceAcceptanceView | null>(null)
-  const guanceRecordingTargets = ref<GuanceRecordingTargetCatalogView | null>(null)
+  // Compatibility name retained for the dirty workbench binding; the value is workspace-wide.
+  const guanceRecordingTargets = ref<GuanceRecordingBatchReadiness | null>(null)
   const guanceDiagnosisLookup = ref<EvidenceChainPreviewRequest | null>(null)
   const replayCapability = ref<RecordedReplayEvaluationCapability | null>(null)
   const readinessError = ref('')
@@ -316,7 +317,7 @@ export const useTroubleshootingStore = defineStore('troubleshooting', () => {
       const [readinessResponse, acceptanceResponse, recordingTargetsResponse] = await Promise.all([
         troubleshootingApi.evidenceReadiness({ system, service }),
         troubleshootingApi.guanceEvidenceAcceptance({ system, service }),
-        troubleshootingApi.guanceRecordingTargets({ system, service }),
+        troubleshootingApi.currentGuanceRecordingBatch(),
       ])
       if (version !== selectionVersion) return
       guanceReadiness.value = readinessResponse.data

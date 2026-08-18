@@ -40,7 +40,7 @@ public record IncidentReportRequest(
         Boolean rehearsal) {
 
     public boolean isRehearsal() {
-        return Boolean.TRUE.equals(rehearsal);
+        return rehearsal == null || rehearsal;
     }
 
     public List<EvidenceResult> evidenceOrEmpty() {

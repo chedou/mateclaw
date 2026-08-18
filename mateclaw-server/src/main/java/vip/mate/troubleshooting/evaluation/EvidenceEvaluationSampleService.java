@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.EvidenceSpinePlan;
+import vip.mate.troubleshooting.evidence.EvidenceSpinePlanResolver;
+import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptance;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpinePreview;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceSpineObservation;
@@ -13,8 +15,13 @@ import vip.mate.troubleshooting.model.ClosureRecord;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.DiagnosisStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
+import vip.mate.troubleshooting.model.SopEntry;
+import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
+import vip.mate.troubleshooting.service.TroubleshootingPlaybookVersionService;
+import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import vip.mate.troubleshooting.synthesis.ReferenceSolution;
 import vip.mate.troubleshooting.synthesis.SopSynthesisPreview;
 import vip.mate.troubleshooting.synthesis.SopSynthesisRequest;
@@ -44,6 +51,8 @@ public class EvidenceEvaluationSampleService {
     private final SopSynthesisService replayService;
     private final RecordedReplayEvaluationCapabilityService replayCapabilityService;
     private final GuanceEvidenceAcceptanceService acceptanceService;
+    private final TroubleshootingPlaybookVersionService playbookVersions;
+    private final TroubleshootingPilotPlanService pilotPlans;
     private final Clock clock;
 
     @Autowired
@@ -54,7 +63,9 @@ public class EvidenceEvaluationSampleService {
             EvaluationModelInputFactory modelInputFactory,
             SopSynthesisService replayService,
             RecordedReplayEvaluationCapabilityService replayCapabilityService,
-            GuanceEvidenceAcceptanceService acceptanceService) {
+            GuanceEvidenceAcceptanceService acceptanceService,
+            TroubleshootingPlaybookVersionService playbookVersions,
+            TroubleshootingPilotPlanService pilotPlans) {
         this(
                 previewService,
                 persistenceService,
@@ -63,6 +74,8 @@ public class EvidenceEvaluationSampleService {
                 replayService,
                 replayCapabilityService,
                 acceptanceService,
+                playbookVersions,
+                pilotPlans,
                 Clock.systemUTC());
     }
 
@@ -80,6 +93,8 @@ public class EvidenceEvaluationSampleService {
                 null,
                 null,
                 null,
+                null,
+                null,
                 clock);
     }
 
@@ -94,6 +109,8 @@ public class EvidenceEvaluationSampleService {
                 persistenceService,
                 store,
                 modelInputFactory,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -115,6 +132,8 @@ public class EvidenceEvaluationSampleService {
                 replayService,
                 null,
                 null,
+                null,
+                null,
                 clock);
     }
 
@@ -126,6 +145,8 @@ public class EvidenceEvaluationSampleService {
             SopSynthesisService replayService,
             RecordedReplayEvaluationCapabilityService replayCapabilityService,
             GuanceEvidenceAcceptanceService acceptanceService,
+            TroubleshootingPlaybookVersionService playbookVersions,
+            TroubleshootingPilotPlanService pilotPlans,
             Clock clock) {
         this.previewService = previewService;
         this.persistenceService = persistenceService;
@@ -134,6 +155,8 @@ public class EvidenceEvaluationSampleService {
         this.replayService = replayService;
         this.replayCapabilityService = replayCapabilityService;
         this.acceptanceService = acceptanceService;
+        this.playbookVersions = playbookVersions;
+        this.pilotPlans = pilotPlans;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -144,24 +167,23 @@ public class EvidenceEvaluationSampleService {
     public EvidenceEvaluationSampleStore.StoredSample capture(
             long workspaceId,
             String diagnosisId,
-            String scenarioKey,
-            String searchTerm,
-            String window,
             String actor) {
         validateWorkspace(workspaceId);
         String normalizedDiagnosisId = required(diagnosisId, "diagnosisId");
-        String normalizedScenario = structuredKey(scenarioKey, "scenarioKey");
         String normalizedActor = required(actor, "actor");
-        EvidenceSpinePlan plan = safePlan(searchTerm, window);
 
         StoredDiagnosis storedDiagnosis =
                 persistenceService.get(workspaceId, normalizedDiagnosisId);
         Diagnosis diagnosis = storedDiagnosis.diagnosis();
         IncidentContext incident = diagnosis.incident();
+        FrozenCaptureTarget target = frozenCaptureTarget(workspaceId, storedDiagnosis);
+        String normalizedScenario = target.scenarioKey();
+        EvidenceSpinePlan plan = target.plan();
         if (acceptanceService == null) {
             throw conflict("T7 owner acceptance is not configured");
         }
-        acceptanceService.requireAccepted(
+        requireCurrentPilot(workspaceId, target, incident);
+        GuanceEvidenceAcceptance acceptedBefore = acceptanceService.requireAccepted(
                 workspaceId, incident.system(), incident.service());
         Instant occurredAt = incident.occurredAt() == null
                 ? Instant.now(clock)
@@ -181,9 +203,13 @@ public class EvidenceEvaluationSampleService {
                 plan.searchTerm(),
                 plan.window(),
                 occurredAt);
+        revalidateFormalAuthority(
+                workspaceId, incident, target, acceptedBefore);
         GuanceEvidenceSpinePreview preview = observation.preview();
-        if (preview.stage() == GuanceEvidenceSpinePreview.Stage.BLOCKED) {
-            throw conflict("Guance Evidence Spine was not observed; no sample was persisted");
+        if (preview.stage() != GuanceEvidenceSpinePreview.Stage.FULL_SPINE_OBSERVED) {
+            throw conflict(
+                    "the full Guance Evidence Spine was not observed; "
+                            + "no formal sample was persisted");
         }
         EvaluationModelInputFactory.FingerprintedInput modelInput = modelInputFactory.create(
                 incident.system(),
@@ -195,6 +221,8 @@ public class EvidenceEvaluationSampleService {
                     workspaceId,
                     captureIdentityKey,
                     modelInput.fingerprint(),
+                    new FormalSampleIdentity(
+                            target.pilotPlanVersion(), target.playbookVersionRef()),
                     captureRevision -> {
                         String sampleKey = EvaluationKeys.sampleKey(
                                 workspaceId,
@@ -205,7 +233,7 @@ public class EvidenceEvaluationSampleService {
                                 plan.window(),
                                 occurredAt,
                                 captureRevision);
-                        return EvidenceEvaluationSample.captured(
+                        return EvidenceEvaluationSample.capturedFormal(
                                 "eval-" + sampleKey.substring(0, 24),
                                 sampleKey,
                                 captureIdentityKey,
@@ -218,6 +246,8 @@ public class EvidenceEvaluationSampleService {
                                 modelInput.fingerprint(),
                                 occurredAt,
                                 diagnosis.fixtureMode(),
+                                target.pilotPlanVersion(),
+                                target.playbookVersionRef(),
                                 normalizedActor,
                                 Instant.now(clock));
                     });
@@ -278,6 +308,7 @@ public class EvidenceEvaluationSampleService {
                     workspaceId,
                     captureIdentityKey,
                     modelInput.fingerprint(),
+                    null,
                     captureRevision -> {
                         String sampleKey = EvaluationKeys.sampleKey(
                                 workspaceId,
@@ -337,10 +368,7 @@ public class EvidenceEvaluationSampleService {
                 .orElseThrow(() -> notFound(
                         "evaluation sample not found: " + normalizedSampleId));
 
-        if (humanBaseline != null
-                && (sample.sourcePlatform()
-                        != EvidenceEvaluationSample.SourcePlatform.GUANCE
-                || sample.diagnosisFixtureMode())) {
+        if (humanBaseline != null && !sample.formalPilotSample()) {
             throw invalid(
                     "a human time baseline is only valid for a real Guance Diagnosis; "
                             + "Recorded Replay and fixture samples only measure correctness");
@@ -456,9 +484,7 @@ public class EvidenceEvaluationSampleService {
             List<BaselineEvaluationRun> runs) {
         List<EvidenceEvaluationSample> realSamples =
                 list(workspaceId, diagnosisId, limit).samples().stream()
-                        .filter(sample -> sample.sourcePlatform()
-                                == EvidenceEvaluationSample.SourcePlatform.GUANCE)
-                        .filter(sample -> !sample.diagnosisFixtureMode())
+                        .filter(EvidenceEvaluationSample::formalPilotSample)
                         .toList();
         LinkedHashSet<String> realSampleIds = new LinkedHashSet<>();
         realSamples.forEach(sample -> realSampleIds.add(sample.sampleId()));
@@ -491,6 +517,115 @@ public class EvidenceEvaluationSampleService {
                 comparison.machineP95Ms(),
                 comparison.machineRunCount(),
                 caveats);
+    }
+
+    private FrozenCaptureTarget frozenCaptureTarget(
+            long workspaceId,
+            StoredDiagnosis storedDiagnosis) {
+        Diagnosis diagnosis = storedDiagnosis.diagnosis();
+        if (diagnosis.fixtureMode()) {
+            throw conflict("fixture Diagnosis cannot produce a formal Guance sample");
+        }
+        if (diagnosis.rehearsal()) {
+            throw conflict("rehearsal Diagnosis cannot produce a formal Guance sample");
+        }
+        Integer pilotPlanVersion = storedDiagnosis.pilotPlanVersion();
+        if (pilotPlanVersion == null) {
+            throw conflict("Diagnosis is not enrolled in the production pilot");
+        }
+        PlaybookVersionRef ref = diagnosis.sourcePlaybookVersionRef();
+        if (ref == null) {
+            throw conflict("Diagnosis carries no frozen Playbook version");
+        }
+        if (playbookVersions == null) {
+            throw conflict("frozen Playbook version resolution is not configured");
+        }
+        ApprovedPlaybookVersion frozen = playbookVersions.findByRef(workspaceId, ref)
+                .orElseThrow(() -> conflict(
+                        "the frozen Playbook version is no longer readable"));
+        String diagnosisSelector = diagnosis.sopKey();
+        SopEntry playbook = frozen.playbook();
+        if (diagnosisSelector == null
+                || !diagnosisSelector.equals(frozen.selectorKey())
+                || !diagnosisSelector.equals(playbook.routingKey())) {
+            throw conflict("the frozen Playbook version does not match the Diagnosis selector");
+        }
+        if (playbook.scenarioScoped()) {
+            throw conflict(
+                    "formal Guance sample capture requires D20 scenario-scoped binding and acceptance");
+        }
+        PlaybookVersionRef active = playbookVersions.activeRef(
+                        workspaceId, diagnosisSelector)
+                .orElseThrow(() -> conflict(
+                        "the Diagnosis Playbook is no longer the active authority"));
+        if (!ref.equals(active)) {
+            throw conflict("the Diagnosis Playbook is no longer the active authority");
+        }
+        EvidenceSpinePlan plan;
+        try {
+            plan = EvidenceSpinePlanResolver.resolve(playbook);
+        } catch (IllegalArgumentException invalidPlan) {
+            throw conflict("the frozen Evidence Spine is invalid: " + invalidPlan.getMessage());
+        }
+        if (plan == null) {
+            throw conflict("the frozen Playbook does not declare the full Evidence Spine");
+        }
+        String scenario = playbook.scenarioKey() == null
+                ? plan.searchTerm()
+                : playbook.scenarioKey();
+        return new FrozenCaptureTarget(
+                structuredKey(scenario, "frozen scenarioKey"),
+                plan,
+                pilotPlanVersion,
+                ref,
+                diagnosisSelector);
+    }
+
+    private void requireCurrentPilot(
+            long workspaceId,
+            FrozenCaptureTarget target,
+            IncidentContext incident) {
+        if (pilotPlans == null) {
+            throw conflict("production pilot revalidation is not configured");
+        }
+        Integer current = pilotPlans.enrollmentVersion(
+                workspaceId, incident.system(), incident.service(), false);
+        if (current == null || current != target.pilotPlanVersion()) {
+            throw conflict("pilot plan changed during formal Guance sample capture");
+        }
+    }
+
+    private void revalidateFormalAuthority(
+            long workspaceId,
+            IncidentContext incident,
+            FrozenCaptureTarget target,
+            GuanceEvidenceAcceptance acceptedBefore) {
+        requireCurrentPilot(workspaceId, target, incident);
+        PlaybookVersionRef active = playbookVersions.activeRef(
+                        workspaceId, target.selectorKey())
+                .orElseThrow(() -> conflict(
+                        "the Diagnosis Playbook changed during Guance observation"));
+        if (!target.playbookVersionRef().equals(active)) {
+            throw conflict("the Diagnosis Playbook changed during Guance observation");
+        }
+        GuanceEvidenceAcceptance acceptedAfter = acceptanceService.requireAccepted(
+                workspaceId, incident.system(), incident.service());
+        if (acceptedBefore == null
+                || acceptedAfter == null
+                || !sameScope(incident.system(), acceptedBefore.system())
+                || !sameScope(incident.service(), acceptedBefore.service())
+                || !sameScope(incident.system(), acceptedAfter.system())
+                || !sameScope(incident.service(), acceptedAfter.service())
+                || !acceptedBefore.acceptanceId().equals(acceptedAfter.acceptanceId())
+                || !acceptedBefore.bindingFingerprint()
+                        .equals(acceptedAfter.bindingFingerprint())) {
+            throw conflict("Guance owner acceptance changed during observation");
+        }
+    }
+
+    private boolean sameScope(String left, String right) {
+        return left != null && right != null
+                && left.trim().equalsIgnoreCase(right.trim());
     }
 
     private EvidenceSpinePlan safePlan(String searchTerm, String window) {
@@ -556,22 +691,32 @@ public class EvidenceEvaluationSampleService {
     }
 
     private boolean sameFrozenInput(
-            Optional<EvidenceEvaluationSample> latest,
-            String modelInputHash) {
-        return latest.isPresent()
-                && modelInputHash != null
-                && modelInputHash.equals(latest.get().modelInputHash());
+            EvidenceEvaluationSample sample,
+            String modelInputHash,
+            FormalSampleIdentity formalIdentity) {
+        if (sample == null
+                || modelInputHash == null
+                || !modelInputHash.equals(sample.modelInputHash())) {
+            return false;
+        }
+        return formalIdentity == null
+                || sample.formalPilotSample()
+                && formalIdentity.pilotPlanVersion() == sample.pilotPlanVersion()
+                && formalIdentity.playbookVersionRef()
+                        .equals(sample.sourcePlaybookVersionRef());
     }
 
     private EvidenceEvaluationSampleStore.StoredSample persistRevision(
             long workspaceId,
             String captureIdentityKey,
             String modelInputHash,
+            FormalSampleIdentity formalIdentity,
             RevisionFactory revisionFactory) {
         Optional<EvidenceEvaluationSample> latest =
                 store.findLatestByCaptureIdentity(workspaceId, captureIdentityKey);
         for (int attempt = 0; attempt < MAX_REVISION_ATTEMPTS; attempt++) {
-            if (sameFrozenInput(latest, modelInputHash)) {
+            if (latest.isPresent()
+                    && sameFrozenInput(latest.get(), modelInputHash, formalIdentity)) {
                 return new EvidenceEvaluationSampleStore.StoredSample(
                         latest.orElseThrow(), false);
             }
@@ -582,7 +727,7 @@ public class EvidenceEvaluationSampleService {
             if (!captureIdentityKey.equals(winner.captureIdentityKey())) {
                 throw conflict("evaluation sample revision identity conflict");
             }
-            if (modelInputHash.equals(winner.modelInputHash())) {
+            if (sameFrozenInput(winner, modelInputHash, formalIdentity)) {
                 return stored;
             }
             Optional<EvidenceEvaluationSample> refreshed =
@@ -598,6 +743,19 @@ public class EvidenceEvaluationSampleService {
     private int nextRevision(Optional<EvidenceEvaluationSample> latest) {
         return latest.map(sample -> Math.addExact(sample.captureRevision(), 1))
                 .orElse(1);
+    }
+
+    private record FrozenCaptureTarget(
+            String scenarioKey,
+            EvidenceSpinePlan plan,
+            int pilotPlanVersion,
+            PlaybookVersionRef playbookVersionRef,
+            String selectorKey) {
+    }
+
+    private record FormalSampleIdentity(
+            int pilotPlanVersion,
+            PlaybookVersionRef playbookVersionRef) {
     }
 
     @FunctionalInterface

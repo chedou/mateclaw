@@ -16,6 +16,7 @@ describe('message-send-failed scenario vertical', () => {
       ...EMPTY_MESSAGE_SEND_SCENARIO,
       traceId: ' ps-safe-1 ',
       customerRef: ' customer-a ',
+      rehearsal: false,
     })).toEqual({
       system: 'CSDP',
       service: 'csdp-session-service',
