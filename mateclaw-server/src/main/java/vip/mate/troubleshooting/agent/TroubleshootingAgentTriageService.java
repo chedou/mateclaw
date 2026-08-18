@@ -11,6 +11,7 @@ import vip.mate.channel.web.ChatStreamTracker;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.evidence.EvidenceProvenance;
+import vip.mate.troubleshooting.intake.NormalizedIncidentFactKind;
 import vip.mate.troubleshooting.investigation.BoundedOpenDiscoveryInvestigationService;
 import vip.mate.troubleshooting.investigation.RootCauseFinding;
 import vip.mate.troubleshooting.model.AgentTriageDraft;
@@ -31,8 +32,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -238,6 +239,7 @@ public final class TroubleshootingAgentTriageService {
                 routeMissReason,
                 reportedAt,
                 readyAt,
+                null,
                 null);
     }
 
@@ -250,7 +252,8 @@ public final class TroubleshootingAgentTriageService {
             String routeMissReason,
             Instant reportedAt,
             Instant readyAt,
-            String intakeSessionId) {
+            String intakeSessionId,
+            NormalizedIncidentFactKind normalizedFactKind) {
         if (intakeSessionId == null || intakeSessionId.isBlank()) {
             throw new IllegalArgumentException("intakeSessionId must not be blank");
         }
@@ -262,7 +265,8 @@ public final class TroubleshootingAgentTriageService {
                 routeMissReason,
                 reportedAt,
                 readyAt,
-                intakeSessionId.trim());
+                intakeSessionId.trim(),
+                normalizedFactKind);
     }
 
     private StoredDiagnosis triageInternal(
@@ -273,7 +277,8 @@ public final class TroubleshootingAgentTriageService {
             String routeMissReason,
             Instant reportedAt,
             Instant readyAt,
-            String intakeSessionId) {
+            String intakeSessionId,
+            NormalizedIncidentFactKind normalizedFactKind) {
         if (workspaceId <= 0 || incident == null) {
             throw new IllegalArgumentException("workspaceId and incident are required");
         }
@@ -299,30 +304,39 @@ public final class TroubleshootingAgentTriageService {
             List<String> visibleScenarioKeys =
                     sessions.approvedScenarioKeys(workspaceId, sanitizedIncident);
             String correlationId = UUID.randomUUID().toString().replace("-", "");
-            // Exact reviewed incident patterns already have a server-owned,
-            // auditable question graph. Prefer it over a model whenever its
-            // bounded runtime is enabled; a model must not reinterpret a
-            // deterministic business rejection that the source already stated.
-            if (vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
-                    .hasDeterministicIncidentPlan(sanitizedIncident)) {
-                Optional<BoundedOpenDiscoveryInvestigationService.Execution> reviewed =
-                        boundedInvestigation == null
-                                ? Optional.empty()
-                                : boundedInvestigation.investigate(
-                                        workspaceId, sanitizedIncident);
-                if (reviewed.isPresent()) {
-                    return persistBoundedFinding(
-                            workspaceId,
-                            sanitizedIncident,
-                            sanitizedSuppliedEvidence,
-                            rehearsal,
-                            reportedAt,
-                            readyAt,
-                            intakeSessionId,
-                            reservation,
-                            correlationId,
-                            reviewed.orElseThrow());
+            // Only IntakeSessionReducer can issue this provenance enum. A
+            // caller-supplied system/service/title tuple has no authority to
+            // manufacture REPORTED evidence, and this branch never falls back
+            // to a model when its local plan is unavailable.
+            if (normalizedFactKind
+                    == NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED) {
+                if (intakeSessionId == null
+                        || !vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .isIcareMobileChangeOrderFinishRejected(sanitizedIncident)
+                        || boundedInvestigation == null) {
+                    throw new MateClawException(
+                            "err.troubleshooting.reviewed_incident_plan_unavailable",
+                            409,
+                            "reviewed incident provenance does not match a local read-only plan");
                 }
+                BoundedOpenDiscoveryInvestigationService.Execution reviewed =
+                        boundedInvestigation.investigateReviewedIncidentReport(
+                                        workspaceId, sanitizedIncident)
+                                .orElseThrow(() -> new MateClawException(
+                                        "err.troubleshooting.reviewed_incident_plan_unavailable",
+                                        409,
+                                        "reviewed incident local read-only plan is unavailable"));
+                return persistBoundedFinding(
+                        workspaceId,
+                        sanitizedIncident,
+                        sanitizedSuppliedEvidence,
+                        rehearsal,
+                        reportedAt,
+                        readyAt,
+                        intakeSessionId,
+                        reservation,
+                        correlationId,
+                        reviewed);
             }
             AgentEntity agent;
             try {

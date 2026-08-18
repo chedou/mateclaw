@@ -24,6 +24,8 @@ import java.util.TreeMap;
 public final class BoundedOpenDiscoveryInvestigationService {
 
     public static final String PLAN_KEY = "bounded-open-discovery-v1";
+    public static final String REVIEWED_REPORT_PLAN_KEY = "reviewed-incident-report-v1";
+    private static final Duration REVIEWED_REPORT_TIMEOUT = Duration.ofSeconds(2);
 
     private final TroubleshootingAgentProperties properties;
     private final BoundedInvestigationPlanner planner;
@@ -95,6 +97,49 @@ public final class BoundedOpenDiscoveryInvestigationService {
                 maxIterations,
                 maxToolCalls,
                 timeout));
+    }
+
+    /**
+     * Runs one local-only fact check after the caller verifies IntakeSession provenance.
+     * It deliberately ignores Agent/platform feature flags: this plan calls only
+     * {@code incident-report@1}, never an external source or a model.
+     */
+    public Optional<Execution> investigateReviewedIncidentReport(
+            long workspaceId,
+            IncidentContext incident) {
+        if (!ReviewedIncidentPolicy.isIcareMobileChangeOrderFinishRejected(incident)) {
+            return Optional.empty();
+        }
+        HypothesisGraph graph = graphFactory.createReviewedIncidentReport(incident);
+        Set<String> localPlatform = Set.of("incident-report");
+        int maxIterations = 1;
+        int maxToolCalls = 1;
+        BoundedInvestigationPlanner.Outcome outcome = planner.investigate(
+                workspaceId,
+                incident,
+                graph,
+                new BoundedInvestigationPlanner.Budget(
+                        maxIterations,
+                        maxToolCalls,
+                        REVIEWED_REPORT_TIMEOUT,
+                        Set.of(IncidentReportReadOnlyTool.TOOL_KEY
+                                + "@" + IncidentReportReadOnlyTool.VERSION)),
+                localPlatform);
+        List<String> signalKinds = graph.nodes().stream()
+                .flatMap(node -> node.questions().stream())
+                .map(question -> question.request().signalKind())
+                .distinct()
+                .toList();
+        return Optional.of(new Execution(
+                outcome,
+                REVIEWED_REPORT_PLAN_KEY,
+                fingerprint(
+                        graph, localPlatform, maxIterations, maxToolCalls,
+                        REVIEWED_REPORT_TIMEOUT),
+                signalKinds,
+                maxIterations,
+                maxToolCalls,
+                REVIEWED_REPORT_TIMEOUT));
     }
 
     private Set<String> permittedPlatforms() {

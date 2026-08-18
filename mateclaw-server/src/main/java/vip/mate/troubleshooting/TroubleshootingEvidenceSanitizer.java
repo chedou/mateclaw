@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting;
 
 import vip.mate.troubleshooting.evidence.EvidenceSpineStage;
+import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
 import vip.mate.troubleshooting.model.EvidenceResult;
 
 import java.util.ArrayList;
@@ -51,6 +52,11 @@ public final class TroubleshootingEvidenceSanitizer {
                 ? List.<EvidenceResult>of() : evidence) {
             if (result == null) {
                 throw new IllegalArgumentException("supplied evidence must not contain null");
+            }
+            if (remapReservedStageIds && CanonicalEvidenceSchema.isIncidentReported(
+                    CanonicalEvidenceSchema.detectSignalKind(result.observed()))) {
+                throw new IllegalArgumentException(
+                        "caller-supplied evidence cannot claim server-normalized incident facts");
             }
             sanitized.add(TroubleshootingSecretRedactor.redact(result));
         }

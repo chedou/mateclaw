@@ -20,6 +20,7 @@ import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.intake.IntakeSession;
 import vip.mate.troubleshooting.intake.IntakeSessionStatus;
+import vip.mate.troubleshooting.intake.NormalizedIncidentFactKind;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -171,6 +172,7 @@ public class TroubleshootingIntakeService {
                 rehearsal,
                 reportedAt,
                 null,
+                null,
                 null);
     }
 
@@ -206,7 +208,8 @@ public class TroubleshootingIntakeService {
                 rehearsal,
                 session.reportedAt(),
                 session.readyAt(),
-                session.intakeSessionId());
+                session.intakeSessionId(),
+                session.normalizedFactKind());
     }
 
     private StoredDiagnosis reportInternal(
@@ -216,7 +219,8 @@ public class TroubleshootingIntakeService {
             boolean rehearsal,
             Instant reportedAt,
             Instant intakeReadyAt,
-            String intakeSessionId) {
+            String intakeSessionId,
+            NormalizedIncidentFactKind normalizedFactKind) {
         if (incident == null) {
             throw badRequest("incident is required");
         }
@@ -254,7 +258,8 @@ public class TroubleshootingIntakeService {
                                 : routeMissReason + "; " + scenarioRoute.missReason(),
                         reportedAt,
                         intakeReadyAt == null ? clock.instant() : intakeReadyAt,
-                        intakeSessionId);
+                        intakeSessionId,
+                        normalizedFactKind);
             }
         }
 
@@ -272,7 +277,8 @@ public class TroubleshootingIntakeService {
                             + ":" + sanitizedIncident.errorCode(),
                     reportedAt,
                     intakeReadyAt == null ? clock.instant() : intakeReadyAt,
-                    intakeSessionId);
+                    intakeSessionId,
+                    normalizedFactKind);
         }
 
         Instant readyAt = intakeReadyAt == null ? clock.instant() : intakeReadyAt;
@@ -387,7 +393,8 @@ public class TroubleshootingIntakeService {
             String reason,
             Instant reportedAt,
             Instant readyAt,
-            String intakeSessionId) {
+            String intakeSessionId,
+            NormalizedIncidentFactKind normalizedFactKind) {
         if (agentTriageService == null) {
             throw routeMiss(reason + "; read-only Agent miss path is disabled or unavailable");
         }
@@ -410,7 +417,8 @@ public class TroubleshootingIntakeService {
                     reason,
                     reportedAt,
                     readyAt,
-                    intakeSessionId);
+                    intakeSessionId,
+                    normalizedFactKind);
         } catch (MateClawException refused) {
             throw agentUnavailable(reason, refused);
         }

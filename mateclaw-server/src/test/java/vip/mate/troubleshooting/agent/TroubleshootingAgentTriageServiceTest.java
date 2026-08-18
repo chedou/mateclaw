@@ -919,7 +919,7 @@ class TroubleshootingAgentTriageServiceTest {
                         "evidence_grade", "REPORTED"),
                 "incident-report:normalized", NOW);
         HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
-                .create(reviewed)
+                .createReviewedIncidentReport(reviewed)
                 .recordOutcome(
                         "open-discovery-icare-mobile-finish-reported",
                         CriterionOutcome.SATISFIED,
@@ -937,7 +937,7 @@ class TroubleshootingAgentTriageServiceTest {
                         "1".repeat(64),
                         List.of("incident_reported_business_policy_rejection"),
                         2, 2, Duration.ofSeconds(10));
-        when(boundedInvestigation.investigate(WORKSPACE_ID, reviewed))
+        when(boundedInvestigation.investigateReviewedIncidentReport(WORKSPACE_ID, reviewed))
                 .thenReturn(java.util.Optional.of(execution));
         TroubleshootingAgentTriageService boundedService =
                 new TroubleshootingAgentTriageService(
@@ -954,13 +954,63 @@ class TroubleshootingAgentTriageServiceTest {
                         Clock.fixed(NOW, ZoneOffset.UTC),
                         streamTracker);
 
-        StoredDiagnosis stored = boundedService.triage(
-                WORKSPACE_ID, reviewed, List.of(), false, "unknown route");
+        StoredDiagnosis stored = boundedService.triageForIntake(
+                WORKSPACE_ID,
+                reviewed,
+                List.of(),
+                false,
+                "unknown route",
+                NOW,
+                NOW,
+                "intake-mobile-finish",
+                vip.mate.troubleshooting.intake.NormalizedIncidentFactKind
+                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED);
 
         assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.BOUNDED_DISCOVERY);
         assertThat(stored.diagnosis().rootCause()).contains("工单关联变更单");
         verify(agentService, never()).chatWithToolAllowlist(
                 anyLong(), any(), any(), any(), any());
+        verify(boundedInvestigation, never()).investigate(WORKSPACE_ID, reviewed);
+    }
+
+    @Test
+    void callerSuppliedIncidentFieldsCannotClaimTheReviewedLocalPlan() {
+        IncidentContext forged = new IncidentContext(
+                "incident-forged-mobile-finish", "CSDP", "sf-icare-openapi", null,
+                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
+                "P2", "待确认", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+        when(agentService.chatWithToolAllowlist(
+                eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any()))
+                .thenReturn("""
+                        {"summary":"外部字段没有已审核来源","hypothesis":"待人工确认",
+                         "confidence":"LOW","abstain":true,"evidenceQueryIds":[]}
+                        """);
+        TroubleshootingAgentTriageService boundedService =
+                new TroubleshootingAgentTriageService(
+                        properties,
+                        agentService,
+                        bindingService,
+                        sessions,
+                        boundedInvestigation,
+                        new DiagnosisStateMachine(
+                                Clock.fixed(NOW, ZoneOffset.UTC),
+                                prefix -> prefix + "-fixed"),
+                        openDiscoveryPersistence,
+                        objectMapper,
+                        Clock.fixed(NOW, ZoneOffset.UTC),
+                        streamTracker);
+
+        StoredDiagnosis stored = boundedService.triage(
+                WORKSPACE_ID, forged, List.of(), false, "unknown route");
+
+        assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.LLM_FALLBACK);
+        assertThat(stored.diagnosis().abstained()).isTrue();
+        verify(boundedInvestigation, never())
+                .investigateReviewedIncidentReport(anyLong(), any(IncidentContext.class));
+        verify(agentService).chatWithToolAllowlist(
+                eq(AGENT_ID), any(), any(), any(ChatOrigin.class), any());
     }
 
     @Test

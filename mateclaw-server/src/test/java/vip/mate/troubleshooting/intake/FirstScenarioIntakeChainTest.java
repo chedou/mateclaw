@@ -122,7 +122,7 @@ class FirstScenarioIntakeChainTest {
 
         StoredDiagnosis stored = new StoredDiagnosis(placeholderDiagnosis(), 0, true);
         when(agentTriageService.triageForIntake(
-                anyLong(), any(), any(), anyBoolean(), any(), any(), any(), any()))
+                anyLong(), any(), any(), anyBoolean(), any(), any(), any(), any(), any()))
                 .thenReturn(stored);
 
         StoredDiagnosis result = intakeService().report(ready);
@@ -137,7 +137,8 @@ class FirstScenarioIntakeChainTest {
                 any(),
                 eq(REPORTED_AT),
                 eq(READY_AT),
-                eq("intake-first-scenario"));
+                eq("intake-first-scenario"),
+                eq(null));
         assertThat(incident.getValue().errorCode())
                 .as("无错误码的报障不得被补上一个猜来的码")
                 .isNull();

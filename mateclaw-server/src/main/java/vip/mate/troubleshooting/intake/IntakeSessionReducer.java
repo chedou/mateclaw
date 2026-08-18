@@ -77,13 +77,13 @@ public final class IntakeSessionReducer {
     private static final Pattern ICARE_MOBILE_FINISH_ENDPOINT = Pattern.compile(
             "https://it-gw\\.sangfor\\.com/icare/api/(sf-icare-openapi)"
                     + "/openapi/case/workOrderPhase/channel/(updateFinish)\\?"
-                    + "[^\\\"\\r\\n]*\\bapp=CSDP(?:&|$)",
+                    + "[^\\\"\\r\\n]*\\bapp=CSDP(?=&|\\\"|\\s|$)",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ICARE_MOBILE_FINISH_POLICY_REJECTION = Pattern.compile(
             "\\\"error\\\"\\s*:\\s*\\\""
                     + "移动端不支持该操作【工单涉及变更单】；"
-                    + "请到PC端操作（如PC端无法完成操作，"
-                    + "请联系icare技术支持）\\\"",
+                    + "请到PC端操作(?:（如PC端无法完成操作，"
+                    + "请联系icare技术支持）)?\\\"",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern URL_EPOCH_SECONDS = Pattern.compile(
             "(?:[?&])time=(\\d{10})(?:&|\\\"|$)");
@@ -104,6 +104,7 @@ public final class IntakeSessionReducer {
                 parsed.errorCode(),
                 parsed.traceId(),
                 parsed.occurredAt(),
+                parsed.normalizedFactKind(),
                 envelope.attachments(),
                 envelope.receivedAt(),
                 null,
@@ -140,6 +141,9 @@ public final class IntakeSessionReducer {
                 first(parsed.errorCode(), current.errorCode()),
                 first(parsed.traceId(), current.traceId()),
                 parsed.occurredAt() == null ? current.occurredAt() : parsed.occurredAt(),
+                parsed.normalizedFactKind() == null
+                        ? current.normalizedFactKind()
+                        : parsed.normalizedFactKind(),
                 mergeAttachments(current.attachments(), envelope.attachments()),
                 current.reportedAt(),
                 current.readyAt(),
@@ -181,6 +185,7 @@ public final class IntakeSessionReducer {
                 current.errorCode(),
                 current.traceId(),
                 current.occurredAt(),
+                current.normalizedFactKind(),
                 current.attachments(),
                 current.reportedAt(),
                 current.readyAt(),
@@ -197,6 +202,7 @@ public final class IntakeSessionReducer {
             String errorCode,
             String traceId,
             Instant occurredAt,
+            NormalizedIncidentFactKind normalizedFactKind,
             List<IntakeAttachmentRef> attachments,
             Instant reportedAt,
             Instant existingReadyAt,
@@ -236,7 +242,8 @@ public final class IntakeSessionReducer {
                 reportedAt,
                 readyAt,
                 envelope.receivedAt(),
-                nextTimeline);
+                nextTimeline,
+                normalizedFactKind);
     }
 
     private ParsedInput parse(String raw) {
@@ -295,7 +302,8 @@ public final class IntakeSessionReducer {
                 customerRef,
                 resolveErrorCode(fields.get("errorCode"), raw),
                 fields.get("traceId"),
-                occurredAt);
+                occurredAt,
+                null);
     }
 
     private ParsedInput parseReviewedIcareMobileFinishRejection(String raw) {
@@ -315,7 +323,8 @@ public final class IntakeSessionReducer {
                 "未知",
                 null,
                 null,
-                extractUrlEpochSeconds(normalized));
+                extractUrlEpochSeconds(normalized),
+                NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED);
     }
 
     private Instant extractUrlEpochSeconds(String text) {
@@ -622,10 +631,11 @@ public final class IntakeSessionReducer {
             String customerRef,
             String errorCode,
             String traceId,
-            Instant occurredAt) {
+            Instant occurredAt,
+            NormalizedIncidentFactKind normalizedFactKind) {
 
         static ParsedInput empty() {
-            return new ParsedInput(null, null, null, null, null, null, null);
+            return new ParsedInput(null, null, null, null, null, null, null, null);
         }
     }
 }

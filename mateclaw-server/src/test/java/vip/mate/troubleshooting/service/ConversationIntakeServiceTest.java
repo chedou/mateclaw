@@ -202,10 +202,10 @@ class ConversationIntakeServiceTest {
     @DisplayName("粘贴 iCare 移动端完结拒绝报文后一轮返回脱敏原因")
     void fullIcareMobileFinishRejectionReturnsTheBusinessReasonInOneTurn() {
         String alert = """
-                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787020784&token=not-persisted",
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?time=1787020784&app=CSDP",
                  "header":{"Authorization":"Bearer not-persisted"},
                  "content":{"loginPrmUserName":"某某","workOrderId":"T0000000001"},
-                 "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作（如PC端无法完成操作，请联系icare技术支持）"}
+                 "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作"}
                 """;
         AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
         when(sessions.accept(any())).thenAnswer(call -> {
@@ -251,6 +251,9 @@ class ConversationIntakeServiceTest {
                         "sf-icare-openapi",
                         "工单涉及变更单，iCare 禁止在移动端完结",
                         "未知");
+        assertThat(reported.getValue().normalizedFactKind())
+                .isEqualTo(vip.mate.troubleshooting.intake.NormalizedIncidentFactKind
+                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED);
         assertThat(reported.getValue().symptom())
                 .doesNotContain("token", "Authorization", "T0000000001", "某某");
     }

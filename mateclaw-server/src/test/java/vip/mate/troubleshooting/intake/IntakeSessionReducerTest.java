@@ -197,6 +197,9 @@ class IntakeSessionReducerTest {
         assertEquals("sf-icare-openapi", session.service());
         assertEquals("未知", session.customerRef());
         assertEquals(Instant.ofEpochSecond(1787020784L), session.occurredAt());
+        assertEquals(
+                NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED,
+                session.normalizedFactKind());
         assertNull(session.errorCode());
         assertTrue(session.missingFields().isEmpty());
         assertFalse(session.symptom().contains("token"));
@@ -221,6 +224,9 @@ class IntakeSessionReducerTest {
         assertEquals(IntakeSessionStatus.READY, session.status());
         assertEquals("工单涉及变更单，iCare 禁止在移动端完结", session.symptom());
         assertEquals(Instant.ofEpochSecond(1787020784L), session.occurredAt());
+        assertEquals(
+                NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED,
+                session.normalizedFactKind());
     }
 
     @Test
@@ -236,6 +242,7 @@ class IntakeSessionReducerTest {
 
         assertNull(session.system());
         assertNull(session.service());
+        assertNull(session.normalizedFactKind());
         assertFalse("工单涉及变更单，iCare 禁止在移动端完结"
                 .equals(session.symptom()));
     }

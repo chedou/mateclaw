@@ -162,6 +162,8 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
     @Test
     void explainsTheReviewedMobileFinishPolicyWithoutCallingObservability() {
         TroubleshootingAgentProperties properties = enabledProperties();
+        properties.setBoundedInvestigationEnabled(false);
+        properties.setBoundedInvestigationPermittedPlatforms(List.of());
         BoundedOpenDiscoveryInvestigationService service = new BoundedOpenDiscoveryInvestigationService(
                 properties,
                 new BoundedInvestigationPlanner(
@@ -177,7 +179,7 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
                 IncidentCompleteness.STRUCTURED, null);
 
         BoundedOpenDiscoveryInvestigationService.Execution execution =
-                service.investigate(1L, alert).orElseThrow();
+                service.investigateReviewedIncidentReport(1L, alert).orElseThrow();
 
         assertThat(execution.finding().type()).isEqualTo(RootCauseFinding.Type.LOCATED);
         assertThat(execution.finding().cause())
@@ -185,6 +187,8 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
         assertThat(execution.plannedSignalKinds())
                 .containsExactly("incident_reported_business_policy_rejection");
         assertThat(execution.sourceRequestCount()).isEqualTo(1);
+        assertThat(execution.planKey())
+                .isEqualTo(BoundedOpenDiscoveryInvestigationService.REVIEWED_REPORT_PLAN_KEY);
     }
 
     @Test

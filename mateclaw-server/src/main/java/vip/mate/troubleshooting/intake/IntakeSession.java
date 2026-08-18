@@ -30,7 +30,8 @@ public record IntakeSession(
         Instant reportedAt,
         Instant readyAt,
         Instant lastMessageAt,
-        List<IntakeSessionEvent> timeline) {
+        List<IntakeSessionEvent> timeline,
+        NormalizedIncidentFactKind normalizedFactKind) {
 
     public static final String CURRENT_CONTRACT_VERSION = "intake-session.v1";
 
@@ -67,5 +68,34 @@ public record IntakeSession(
         if (status == IntakeSessionStatus.AWAITING_INPUT && readyAt != null) {
             throw new IllegalArgumentException("AWAITING_INPUT cannot have readyAt");
         }
+    }
+
+    /** Source compatibility for sessions predating structured normalized provenance. */
+    public IntakeSession(
+            String intakeSessionId,
+            String contractVersion,
+            long workspaceId,
+            String source,
+            String conversationRef,
+            String reporterRef,
+            IntakeSessionStatus status,
+            String symptom,
+            String system,
+            String service,
+            String customerRef,
+            String errorCode,
+            String traceId,
+            Instant occurredAt,
+            List<IntakeAttachmentRef> attachments,
+            List<String> missingFields,
+            Instant reportedAt,
+            Instant readyAt,
+            Instant lastMessageAt,
+            List<IntakeSessionEvent> timeline) {
+        this(
+                intakeSessionId, contractVersion, workspaceId, source, conversationRef,
+                reporterRef, status, symptom, system, service, customerRef, errorCode,
+                traceId, occurredAt, attachments, missingFields, reportedAt, readyAt,
+                lastMessageAt, timeline, null);
     }
 }

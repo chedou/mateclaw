@@ -39,9 +39,4 @@ public final class ReviewedIncidentPolicy {
                 && ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE.equals(incident.title());
     }
 
-    /** Server-owned reviewed patterns may bypass a model in favour of bounded rules. */
-    public static boolean hasDeterministicIncidentPlan(IncidentContext incident) {
-        return isIcareProductMapping502(incident)
-                || isIcareMobileChangeOrderFinishRejected(incident);
-    }
 }
