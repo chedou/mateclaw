@@ -54,7 +54,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -697,6 +699,40 @@ class DiagnosisExperienceProjectionServiceTest {
         assertThat(summary.nextStep().capabilityBoundary())
                 .contains("不会代替你填写或提交")
                 .contains("其他必填项");
+    }
+
+    @Test
+    void missingRevisitIncidentCannotBorrowChangeOrderPolicyEvidence() {
+        Diagnosis mismatched = spy(icareMissingRevisitResultDiagnosis());
+        doReturn(icareMobileFinishPolicyDiagnosis().evidence())
+                .when(mismatched).evidence();
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(mismatched, 0, true));
+
+        DiagnosisExperienceProjection.BusinessSummary summary =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).businessSummary();
+
+        assertThat(summary.evidenceBasis()).isNotEqualTo(
+                DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
+        assertThat(summary.keyEvidence()).isNull();
+        assertThat(summary.nextStep().label()).isNotEqualTo("补全回访信息后重新完结");
+    }
+
+    @Test
+    void changeOrderIncidentCannotBorrowMissingRevisitPolicyEvidence() {
+        Diagnosis mismatched = spy(icareMobileFinishPolicyDiagnosis());
+        doReturn(icareMissingRevisitResultDiagnosis().evidence())
+                .when(mismatched).evidence();
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(mismatched, 0, true));
+
+        DiagnosisExperienceProjection.BusinessSummary summary =
+                service.project(WORKSPACE_ID, DIAGNOSIS_ID).businessSummary();
+
+        assertThat(summary.evidenceBasis()).isNotEqualTo(
+                DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
+        assertThat(summary.keyEvidence()).isNull();
+        assertThat(summary.nextStep().label()).isNotEqualTo("改用 PC 端完结");
     }
 
     @Test

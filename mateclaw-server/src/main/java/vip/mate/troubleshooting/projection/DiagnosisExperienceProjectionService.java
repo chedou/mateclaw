@@ -307,14 +307,18 @@ public class DiagnosisExperienceProjectionService {
         if (contrast == null || !contrast.available()
                 || contrast.failedRequests() == null || contrast.normalRequests() == null) {
             if (isIcareRequiredRevisitResultMissing(diagnosis)
-                    && hasReportedEvidence(
-                            diagnosis, "incident_reported_business_policy_rejection")) {
+                    && hasReportedPolicyEvidence(
+                            diagnosis,
+                            vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                    .ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE)) {
                 return "iCare 的错误提示与本次请求结构一致：结构化回访结果为空；"
                         + "普通回访文字不能替代完结校验要求的回访结果字段。";
             }
             if (isIcareMobileChangeOrderFinishRejected(diagnosis)
-                    && hasReportedEvidence(
-                            diagnosis, "incident_reported_business_policy_rejection")) {
+                    && hasReportedPolicyEvidence(
+                            diagnosis,
+                            vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                    .ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE)) {
                 return "iCare 返回的业务提示已经明确：工单关联变更单，"
                         + "因此不允许在移动端完结。";
             }
@@ -340,11 +344,15 @@ public class DiagnosisExperienceProjectionService {
                         && hasReportedEvidence(
                                 diagnosis, "incident_reported_external_http_failure"))
                 || (isIcareMobileChangeOrderFinishRejected(diagnosis)
-                        && hasReportedEvidence(
-                                diagnosis, "incident_reported_business_policy_rejection"))
+                        && hasReportedPolicyEvidence(
+                                diagnosis,
+                                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                        .ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE))
                 || (isIcareRequiredRevisitResultMissing(diagnosis)
-                        && hasReportedEvidence(
-                                diagnosis, "incident_reported_business_policy_rejection"));
+                        && hasReportedPolicyEvidence(
+                                diagnosis,
+                                vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                        .ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE));
         if (reported) {
             return EvidenceBasis.REPORTED;
         }
@@ -365,8 +373,10 @@ public class DiagnosisExperienceProjectionService {
             return onboardingNextStep(diagnosis, gaps);
         }
         if (isIcareRequiredRevisitResultMissing(diagnosis)
-                && hasReportedEvidence(
-                        diagnosis, "incident_reported_business_policy_rejection")
+                && hasReportedPolicyEvidence(
+                        diagnosis,
+                        vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                .ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE)
                 && (conclusionType == ConclusionType.HYPOTHESIS
                         || conclusionType == ConclusionType.LOCATED)) {
             return new NextStep(
@@ -376,8 +386,10 @@ public class DiagnosisExperienceProjectionService {
                     "平台不会代替你填写或提交工单；重新提交前无法确认是否还存在其他必填项。");
         }
         if (isIcareMobileChangeOrderFinishRejected(diagnosis)
-                && hasReportedEvidence(
-                        diagnosis, "incident_reported_business_policy_rejection")
+                && hasReportedPolicyEvidence(
+                        diagnosis,
+                        vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                                .ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE)
                 && (conclusionType == ConclusionType.HYPOTHESIS
                         || conclusionType == ConclusionType.LOCATED)) {
             return new NextStep(
@@ -465,6 +477,24 @@ public class DiagnosisExperienceProjectionService {
                 .map(item -> vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
                         .detectSignalKind(item.observed()))
                 .anyMatch(expectedSignalKind::equalsIgnoreCase);
+    }
+
+    private boolean hasReportedPolicyEvidence(
+            Diagnosis diagnosis,
+            String expectedPolicyCode) {
+        String signalKind = "incident_reported_business_policy_rejection";
+        return diagnosis.evidence().stream()
+                .filter(item -> item.status()
+                        == vip.mate.troubleshooting.model.EvidenceStatus.ANOMALY)
+                .filter(item -> vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                        .isValid(signalKind, item.observed()))
+                .filter(item -> signalKind.equalsIgnoreCase(
+                        vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                                .detectSignalKind(item.observed())))
+                .anyMatch(item -> expectedPolicyCode.equals(
+                                String.valueOf(item.observed().get("policy_code")).trim())
+                        && "REPORTED".equals(
+                                String.valueOf(item.observed().get("evidence_grade")).trim()));
     }
 
     /**

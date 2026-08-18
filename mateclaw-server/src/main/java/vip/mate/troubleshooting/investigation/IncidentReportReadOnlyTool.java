@@ -85,7 +85,8 @@ public final class IncidentReportReadOnlyTool implements ReadOnlyEvidenceTool {
                 Map.of(
                         "failure_count", 1,
                         "operation", "updateFinish",
-                        "policy_code", "mobile_change_order_finish_forbidden",
+                        "policy_code",
+                        ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE,
                         "client_surface", "MOBILE",
                         "change_order_linked", true,
                         "recommended_channel", "PC",
@@ -103,7 +104,8 @@ public final class IncidentReportReadOnlyTool implements ReadOnlyEvidenceTool {
                 Map.of(
                         "failure_count", 1,
                         "operation", "updateFinish",
-                        "policy_code", "required_revisit_result_missing",
+                        "policy_code",
+                        ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE,
                         "required_information", "REVISIT_RESULT",
                         "required_information_missing", true,
                         "recommended_action", "COMPLETE_REVISIT_FORM",

@@ -1,5 +1,6 @@
 package vip.mate.troubleshooting.intake;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -259,6 +260,25 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void escapedJsonSlashesStillUseTheReviewedSafePath() {
+        String alert = """
+                {"url":"https:\\/\\/it-gw.sangfor.com\\/icare\\/api\\/sf-icare-openapi\\/openapi\\/case\\/workOrderPhase\\/channel\\/updateFinish?app=CSDP&time=1787042438",
+                 "header":{"Authorization":"Bearer secret-auth"},
+                 "content":{"loginPrmUserName":"Secret Person","workOrderId":"SECRET-WORK-ORDER","syncCustomerDetail":"SECRET-REVISIT-BODY","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-escaped-slash",
+                envelope("msg-icare-revisit-escaped-slash", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertEquals(
+                NormalizedIncidentFactKind.ICARE_REQUIRED_REVISIT_RESULT_MISSING,
+                session.normalizedFactKind());
+        assertSensitivePayloadWasNotRetained(session);
+    }
+
+    @Test
     void similarRevisitMessageWithoutAnEmptyStructuredResultCannotBorrowTheReviewedFact() {
         String alert = """
                 {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
@@ -274,6 +294,72 @@ class IntakeSessionReducerTest {
     }
 
     @Test
+    void emptyRevisitResultOutsideContentCannotBorrowTheReviewedFact() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "content":{"revisitResult":"completed"},
+                 "metadata":{"revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-wrong-object",
+                envelope("msg-icare-revisit-wrong-object", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+    }
+
+    @Test
+    void duplicateStructuredRevisitResultFailsClosed() {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "header":{"Authorization":"Bearer secret-auth"},
+                 "content":{"loginPrmUserName":"Secret Person","loginPrmUserId":"SECRET-USER","loginPrmUserComId":"SECRET-COMPANY","workOrderId":"SECRET-WORK-ORDER","syncCustomerDetail":"SECRET-REVISIT-BODY","revisitResult":"completed","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-duplicate-key",
+                envelope("msg-icare-revisit-duplicate-key", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+        assertSensitivePayloadWasNotRetained(session);
+    }
+
+    @Test
+    void malformedSensitiveIcarePayloadDoesNotFallBackToFreeText() throws Exception {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "content":{"loginPrmUserName":"Secret Person","workOrderId":"SECRET-WORK-ORDER","syncCustomerDetail":"SECRET-REVISIT-BODY","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-malformed",
+                envelope("msg-icare-revisit-malformed", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+        assertSensitivePayloadWasNotRetained(session);
+    }
+
+    @Test
+    void trailingSensitiveIcarePayloadDoesNotFallBackToFreeText() throws Exception {
+        String alert = """
+                {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?app=CSDP&time=1787042438",
+                 "content":{"loginPrmUserName":"Secret Person","workOrderId":"SECRET-WORK-ORDER","syncCustomerDetail":"SECRET-REVISIT-BODY","revisitResult":""},
+                 "error":"当前工单需要填写回访信息，不能完结"}
+                {"trailing":"SECRET-TRAILING"}
+                """;
+
+        IntakeSession session = reducer.start(
+                "intake-icare-revisit-trailing",
+                envelope("msg-icare-revisit-trailing", alert, List.of(), FIRST_MESSAGE_AT));
+
+        assertNull(session.normalizedFactKind());
+        assertSensitivePayloadWasNotRetained(session);
+    }
+
+    @Test
     void appTextInsideAnotherQueryValueCannotNominateTheReviewedIcareFact() {
         String alert = """
                 {"url":"https://it-gw.sangfor.com/icare/api/sf-icare-openapi/openapi/case/workOrderPhase/channel/updateFinish?source=app=CSDP&time=1787020784",
@@ -285,6 +371,22 @@ class IntakeSessionReducerTest {
                 envelope("msg-icare-query-boundary", alert, List.of(), FIRST_MESSAGE_AT));
 
         assertNull(session.normalizedFactKind());
+    }
+
+    private void assertSensitivePayloadWasNotRetained(IntakeSession session) {
+        try {
+            String stored = new ObjectMapper().findAndRegisterModules()
+                    .writeValueAsString(session);
+            assertFalse(stored.contains("Secret Person"));
+            assertFalse(stored.contains("SECRET-USER"));
+            assertFalse(stored.contains("SECRET-COMPANY"));
+            assertFalse(stored.contains("SECRET-WORK-ORDER"));
+            assertFalse(stored.contains("SECRET-REVISIT-BODY"));
+            assertFalse(stored.contains("secret-auth"));
+            assertFalse(stored.contains("SECRET-TRAILING"));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     @Test

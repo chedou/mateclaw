@@ -31,7 +31,7 @@ public class TroubleshootingChannelSummaryRenderer {
         // Scan-first: verdict, the cause, the counts, the next human move.
         // The workbench still has the Playbook explanation and impact notes.
         StringBuilder text = new StringBuilder()
-                .append(conclusionLabel(summary.conclusionType()))
+                .append(conclusionLabel(summary))
                 .append(" · ")
                 .append(confidenceLabel(summary.confidence()));
         if (summary.rootCause() != null) {
@@ -77,6 +77,15 @@ public class TroubleshootingChannelSummaryRenderer {
             case HYPOTHESIS -> "待确认假设";
             case INSUFFICIENT_EVIDENCE -> "证据不足";
         };
+    }
+
+    private String conclusionLabel(BusinessSummary summary) {
+        if (summary.conclusionType() == ConclusionType.HYPOTHESIS
+                && summary.evidenceBasis()
+                == vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.REPORTED) {
+            return "直接失败点已明确";
+        }
+        return conclusionLabel(summary.conclusionType());
     }
 
     String confidenceLabel(Confidence confidence) {

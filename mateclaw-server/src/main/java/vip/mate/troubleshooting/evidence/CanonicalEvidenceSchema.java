@@ -415,7 +415,8 @@ public final class CanonicalEvidenceSchema {
             return false;
         }
         String policyCode = String.valueOf(observed.get("policy_code")).trim();
-        if ("mobile_change_order_finish_forbidden".equals(policyCode)) {
+        if (vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                .ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE.equals(policyCode)) {
             return observed.keySet().equals(Set.of(
                             "failure_count", "operation", "policy_code", "client_surface",
                             "change_order_linked", "recommended_channel", "evidence_grade"))
@@ -423,7 +424,8 @@ public final class CanonicalEvidenceSchema {
                     && Boolean.TRUE.equals(observed.get("change_order_linked"))
                     && "PC".equals(String.valueOf(observed.get("recommended_channel")).trim());
         }
-        if ("required_revisit_result_missing".equals(policyCode)) {
+        if (vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
+                .ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE.equals(policyCode)) {
             return observed.keySet().equals(Set.of(
                             "failure_count", "operation", "policy_code", "required_information",
                             "required_information_missing", "recommended_action", "evidence_grade"))

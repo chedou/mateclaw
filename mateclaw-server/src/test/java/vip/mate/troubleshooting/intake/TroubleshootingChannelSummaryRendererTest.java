@@ -80,6 +80,7 @@ class TroubleshootingChannelSummaryRendererTest {
                 vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.REPORTED);
 
         assertThat(renderer.render(reported))
+                .startsWith("直接失败点已明确 ·")
                 .contains("告警事实 · 未经真实观测数据验证")
                 .contains("直接失败点：iCare 接口返回 HTTP 502")
                 .doesNotContain("根因：直接失败点")

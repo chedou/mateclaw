@@ -1,5 +1,9 @@
 package vip.mate.troubleshooting.intake;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import vip.mate.troubleshooting.TroubleshootingSecretRedactor;
 import vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy;
 
@@ -22,6 +26,10 @@ import java.util.regex.Pattern;
 /** Pure reducer for RECEIVED -> AWAITING_INPUT -> READY. */
 public final class IntakeSessionReducer {
 
+    private static final ObjectMapper STRICT_JSON = new ObjectMapper()
+            .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final List<DateTimeFormatter> LOCAL_TIME_FORMATS = List.of(
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
@@ -79,18 +87,18 @@ public final class IntakeSessionReducer {
                     + "/openapi/case/workOrderPhase/channel/(updateFinish)\\?"
                     + "(?:app=CSDP|[^\\\"\\r\\n]*&app=CSDP)(?=&|\\\"|\\s|$)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern ICARE_MOBILE_FINISH_PAYLOAD_MARKER = Pattern.compile(
+            "https://it-gw\\.sangfor\\.com/icare/api/sf-icare-openapi"
+                    + "/openapi/case/workOrderPhase/channel/updateFinish(?:[?\\\"\\s]|$)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern ICARE_MOBILE_FINISH_POLICY_REJECTION = Pattern.compile(
             "\\\"error\\\"\\s*:\\s*\\\""
                     + "移动端不支持该操作【工单涉及变更单】；"
                     + "请到PC端操作(?:（如PC端无法完成操作，"
                     + "请联系icare技术支持）)?\\\"",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION = Pattern.compile(
-            "\\\"error\\\"\\s*:\\s*\\\"当前工单需要填写回访信息，不能完结\\\"",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern ICARE_BLANK_REVISIT_RESULT = Pattern.compile(
-            "\\\"revisitResult\\\"\\s*:\\s*\\\"\\s*\\\"",
-            Pattern.CASE_INSENSITIVE);
+    private static final String ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION =
+            "当前工单需要填写回访信息，不能完结";
     private static final Pattern URL_EPOCH_SECONDS = Pattern.compile(
             "(?:[?&])time=(\\d{10})(?:&|\\\"|$)");
 
@@ -256,9 +264,9 @@ public final class IntakeSessionReducer {
         if (raw == null || raw.isBlank()) {
             return ParsedInput.empty();
         }
-        ParsedInput reviewed = parseReviewedIcareFinishRejection(raw);
-        if (reviewed != null) {
-            return reviewed;
+        ReviewedParse reviewed = parseReviewedIcareFinishRejection(raw);
+        if (reviewed.handled()) {
+            return reviewed.parsed();
         }
         Map<String, String> fields = new LinkedHashMap<>();
         List<String> freeLines = new ArrayList<>();
@@ -312,39 +320,144 @@ public final class IntakeSessionReducer {
                 null);
     }
 
-    private ParsedInput parseReviewedIcareFinishRejection(String raw) {
-        // JSON serializers commonly preserve ampersands as a unicode escape.
-        // Normalize transport spelling only in local memory; the raw payload is
-        // never copied into the returned intake fields.
-        String normalized = raw.replace("\\u0026", "&").replace("&amp;", "&");
-        Matcher endpoint = ICARE_MOBILE_FINISH_ENDPOINT.matcher(normalized);
-        if (!endpoint.find()) {
-            return null;
+    private ReviewedParse parseReviewedIcareFinishRejection(String raw) {
+        StrictJson strictJson = readStrictJson(raw);
+        if (!strictJson.valid()) {
+            return looksLikeSensitiveJson(raw)
+                    ? ReviewedParse.rejected()
+                    : ReviewedParse.notReviewed();
         }
-        if (ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION.matcher(normalized).find()
-                && ICARE_BLANK_REVISIT_RESULT.matcher(normalized).find()) {
-            return new ParsedInput(
+        JsonNode root = strictJson.root();
+        if (root == null || !root.isObject()) {
+            return ReviewedParse.notReviewed();
+        }
+        JsonNode urlNode = root.get("url");
+        if (urlNode == null || !urlNode.isTextual()
+                || !ICARE_MOBILE_FINISH_PAYLOAD_MARKER.matcher(
+                        urlNode.textValue().replace("&amp;", "&")).find()) {
+            return ReviewedParse.notReviewed();
+        }
+        ReviewedIcarePayload payload = readReviewedIcarePayload(root);
+        if (payload == null) {
+            return ReviewedParse.rejected();
+        }
+        String normalizedUrl = payload.url().replace("&amp;", "&");
+        Matcher endpoint = ICARE_MOBILE_FINISH_ENDPOINT.matcher(normalizedUrl);
+        if (!endpoint.find()) {
+            return ReviewedParse.rejected();
+        }
+        if (ICARE_REQUIRED_REVISIT_INFORMATION_REJECTION.equals(payload.error())
+                && payload.hasStructuredRevisitResult()
+                && payload.revisitResult().isBlank()) {
+            return ReviewedParse.matched(new ParsedInput(
                     ReviewedIncidentPolicy.ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE,
                     "CSDP",
                     endpoint.group(1).toLowerCase(Locale.ROOT),
                     "未知",
                     null,
                     null,
-                    extractUrlEpochSeconds(normalized),
-                    NormalizedIncidentFactKind.ICARE_REQUIRED_REVISIT_RESULT_MISSING);
+                    extractUrlEpochSeconds(normalizedUrl),
+                    NormalizedIncidentFactKind.ICARE_REQUIRED_REVISIT_RESULT_MISSING));
         }
-        if (!ICARE_MOBILE_FINISH_POLICY_REJECTION.matcher(normalized).find()) {
-            return null;
+        if (!ICARE_MOBILE_FINISH_POLICY_REJECTION.matcher(
+                "\"error\":\"" + payload.error() + "\"").find()) {
+            return ReviewedParse.rejected();
         }
-        return new ParsedInput(
+        return ReviewedParse.matched(new ParsedInput(
                 ReviewedIncidentPolicy.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE,
                 "CSDP",
                 endpoint.group(1).toLowerCase(Locale.ROOT),
                 "未知",
                 null,
                 null,
-                extractUrlEpochSeconds(normalized),
-                NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED);
+                extractUrlEpochSeconds(normalizedUrl),
+                NormalizedIncidentFactKind.ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED));
+    }
+
+    /**
+     * Parses only the three fields that are allowed to nominate this reviewed
+     * incident. Strict duplicate detection prevents a later duplicate key from
+     * silently replacing the value a human sees first. No parsed payload field
+     * is retained outside this method.
+     */
+    private StrictJson readStrictJson(String raw) {
+        try {
+            JsonNode root = STRICT_JSON.readTree(raw);
+            return new StrictJson(true, root);
+        } catch (java.io.IOException invalidJson) {
+            return new StrictJson(false, null);
+        }
+    }
+
+    private ReviewedIcarePayload readReviewedIcarePayload(JsonNode root) {
+        try {
+            JsonNode url = root.get("url");
+            JsonNode error = root.get("error");
+            if (url == null || !url.isTextual() || error == null || !error.isTextual()) {
+                return null;
+            }
+            JsonNode content = root.get("content");
+            if (content != null && !content.isObject()) {
+                return null;
+            }
+            JsonNode revisit = content == null ? null : content.get("revisitResult");
+            if (revisit != null && !revisit.isTextual()) {
+                return null;
+            }
+            return new ReviewedIcarePayload(
+                    url.textValue(),
+                    error.textValue(),
+                    revisit != null,
+                    revisit == null ? "" : revisit.textValue());
+        } catch (RuntimeException invalidShape) {
+            return null;
+        }
+    }
+
+    private boolean looksLikeSensitiveJson(String raw) {
+        String candidate = raw == null ? "" : raw.stripLeading();
+        if (!candidate.startsWith("{")) {
+            return false;
+        }
+        return candidate.contains("updateFinish")
+                || candidate.contains("workOrderId")
+                || candidate.contains("workOrderCode")
+                || candidate.contains("loginPrmUser")
+                || candidate.contains("syncCustomerDetail")
+                || candidate.contains("revisitResult");
+    }
+
+    private record StrictJson(boolean valid, JsonNode root) {
+    }
+
+    private record ReviewedIcarePayload(
+            String url,
+            String error,
+            boolean hasStructuredRevisitResult,
+            String revisitResult) {
+    }
+
+    /**
+     * Keeps a sensitive but rejected iCare payload out of generic free-text
+     * parsing. The safe placeholder intentionally remains incomplete so it
+     * cannot start the generic Agent path without a human resubmitting a
+     * sanitized incident.
+     */
+    private record ReviewedParse(boolean handled, ParsedInput parsed) {
+
+        private static ReviewedParse notReviewed() {
+            return new ReviewedParse(false, null);
+        }
+
+        private static ReviewedParse rejected() {
+            return new ReviewedParse(true, new ParsedInput(
+                    "iCare 完结请求未通过安全的结构校验",
+                    null, null, null, null, null, null, null));
+        }
+
+        private static ReviewedParse matched(ParsedInput parsed) {
+            return new ReviewedParse(true, parsed);
+        }
     }
 
     private Instant extractUrlEpochSeconds(String text) {

@@ -13,6 +13,10 @@ public final class ReviewedIncidentPolicy {
             "工单涉及变更单，iCare 禁止在移动端完结";
     public static final String ICARE_REQUIRED_REVISIT_RESULT_MISSING_TITLE =
             "回访结果未填写，iCare 拒绝完结";
+    public static final String ICARE_MOBILE_CHANGE_ORDER_FINISH_POLICY_CODE =
+            "mobile_change_order_finish_forbidden";
+    public static final String ICARE_REQUIRED_REVISIT_RESULT_POLICY_CODE =
+            "required_revisit_result_missing";
 
     private ReviewedIncidentPolicy() {
     }
