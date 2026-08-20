@@ -116,6 +116,9 @@ services:
       # Keys are stored in mate_model_provider and hot-reloaded.
       SERPER_API_KEY: ${SERPER_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      # Explicit production intent. Keep false for local/test rehearsals. A
+      # production deployment must set true and satisfy every startup gate.
+      MATECLAW_PRODUCTION_ENABLED: ${MATECLAW_PRODUCTION_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET:-}
       # Decrypts secrets stored in the database (Official Account app_secret,
       # Guance API key, ...). Unset falls back to a passphrase compiled into the

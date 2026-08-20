@@ -129,6 +129,11 @@ springdoc:
 
 # MateClaw 自定义配置
 mateclaw:
+  production:
+    # Explicit operator intent. When enabled, insecure defaults become startup
+    # errors instead of warnings. This does not bypass troubleshooting T7/T8;
+    # it only proves the process itself is safe enough to receive production traffic.
+    enabled: ${MATECLAW_PRODUCTION_ENABLED:false}
   troubleshooting:
     # Absolute browser origin used in IM deep links. In a reverse-proxy
     # deployment this normally equals MATECLAW_PUBLIC_BASE_URL; local channel

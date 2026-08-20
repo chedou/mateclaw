@@ -15,6 +15,12 @@
 CTI 创建会话失败和 ITGW 904003 拥有历史真源运行记录，证明查询合同可运行；它们不构成
 当前正式通道的许可。ITGW 仍等待 T7 批次与 owner 验收；CTI 还必须先补齐 D20 场景级绑定与验收。
 
+运行环境另有一道独立硬门：正式环境必须显式设置
+`MATECLAW_PRODUCTION_ENABLED=true`。启用后，默认/过短 JWT、缺少
+`MATECLAW_SETTING_KEY`、通配或非 HTTPS CORS、H2 数据库、非完整 Git SHA
+都会让应用拒绝启动。这只证明运行容器符合生产安全底线，不会绕过
+T7/T8、Playbook 审批或 D20 场景授权。
+
 ```
 录制目标   0 / 20        ← 阻塞，离线可做，不用等窗口
 正式默认   Guance DISABLED ← 阻塞，需要内网窗口显式配置
