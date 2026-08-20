@@ -13,10 +13,11 @@
         type="error"
         :closable="false"
         show-icon
-        :title="error"
+        :title="`当前配置状态未知：${error}`"
         class="page-alert"
       />
 
+      <template v-else>
       <!-- 三个子菜单共用同一套「搜索 + 列表 + 行操作」管理方式。 -->
       <div v-if="showListToolbar" class="toolbar">
         <el-input
@@ -179,6 +180,7 @@
               <button
                 type="button"
                 class="onboarding-progress-trigger"
+                :disabled="loading"
                 @click="openModuleOnboarding(scope.row)"
               >
                 <b>{{ moduleOnboarding(scope.row).completedSteps }}/{{ moduleOnboarding(scope.row).totalSteps }}</b>
@@ -281,6 +283,7 @@
         </div>
       </section>
       <el-empty v-else description="没有匹配当前搜索的系统模块" />
+      </template>
     </div>
 
     <el-drawer
@@ -1112,6 +1115,7 @@ function resetContractForm() {
 }
 const loading = ref(false)
 const error = ref('')
+let catalogLoadGeneration = 0
 const selectedModuleKey = ref('')
 const selectedToolRef = ref('')
 const selectedKey = ref('')
@@ -1612,12 +1616,14 @@ function openModuleWorkspace(entry: SetupModuleEntry, focus: 'scope' | 'tools' |
 }
 
 function openModuleOnboarding(entry: SetupModuleEntry) {
+  if (loading.value || error.value) return
   selectSetupModule(entry)
   onboardingTarget.value = entry
   onboardingDialogOpen.value = true
 }
 
 function continueModuleOnboarding() {
+  if (loading.value || error.value) return
   const target = onboardingTarget.value || moduleWorkspaceTarget.value
   const next = (onboardingTarget.value
     ? onboardingReadiness.value
@@ -1879,65 +1885,92 @@ async function loadTrialHistory() {
 }
 
 async function loadCatalog() {
+  const generation = ++catalogLoadGeneration
   loading.value = true
   error.value = ''
   try {
-    // Assets/contracts first so「接入系统」列表可尽快渲染；catalog 含就绪态，单独补齐。
-    const [assetResponse, contractResponse] = await Promise.all([
+    // 进度和下一步同时依赖资产、取证目录和已审核规则。
+    // 只有三类事实都读完才替换当前快照，避免把“未加载”短暂显示成“未完成”。
+    const playbookRequest = troubleshootingApi.listSops?.({
+      status: 'approved',
+      limit: 500,
+    })
+    const [assetResponse, contractResponse, catalogResponse, playbookResponse] = await Promise.all([
       troubleshootingApi.observabilityAssets(),
-      troubleshootingApi.evidenceContracts().catch(() => ({ data: null })),
+      troubleshootingApi.evidenceContracts(),
+      troubleshootingApi.evidenceCatalog(),
+      playbookRequest && typeof playbookRequest.then === 'function'
+        ? playbookRequest.catch(() => null)
+        : Promise.resolve(null),
     ])
+    if (generation !== catalogLoadGeneration) return
     assetCatalog.value = assetResponse.data
     evidenceContractCatalog.value = contractResponse.data
+    catalog.value = catalogResponse.data
+    playbooks.value = playbookResponse?.data || null
     const preferredSystem = typeof route.query.system === 'string' ? route.query.system : ''
     const preferredService = typeof route.query.service === 'string' ? route.query.service : ''
-    const preferFromAssets = () => {
-      const preferred = setupModules.value.find(entry =>
-        (!preferredSystem || entry.system === preferredSystem)
-          && (!preferredService || entry.service === preferredService))
-        || setupModules.value.find(entry =>
-          moduleKey(entry.system, entry.service) === selectedModuleKey.value)
-        || setupModules.value[0]
-      if (preferred) selectSetupModule(preferred)
-      else {
-        selectedModuleKey.value = ''
-        selectedToolRef.value = ''
-        selectedKey.value = ''
-      }
+    const preferred = setupModules.value.find(entry =>
+      (!preferredSystem || entry.system === preferredSystem)
+        && (!preferredService || entry.service === preferredService))
+      || setupModules.value.find(entry =>
+        moduleKey(entry.system, entry.service) === selectedModuleKey.value)
+      || setupModules.value[0]
+    if (preferred) selectSetupModule(preferred)
+    else {
+      selectedModuleKey.value = ''
+      selectedToolRef.value = ''
+      selectedKey.value = ''
     }
-    preferFromAssets()
-    loading.value = false
-
-    try {
-      const playbookRequest = troubleshootingApi.listSops?.({
-        status: 'approved',
-        limit: 500,
-      })
-      const [catalogResponse, playbookResponse] = await Promise.all([
-        troubleshootingApi.evidenceCatalog(),
-        playbookRequest && typeof playbookRequest.then === 'function'
-          ? playbookRequest.catch(() => null)
-          : Promise.resolve(null),
-      ])
-      catalog.value = catalogResponse.data
-      playbooks.value = playbookResponse?.data || null
-      preferFromAssets()
-      if (moduleWorkspaceOpen.value && moduleWorkspaceTarget.value) {
-        const current = moduleWorkspaceTarget.value
-        moduleWorkspaceTarget.value = setupModules.value.find(entry =>
-          moduleKey(entry.system, entry.service) === moduleKey(current.system, current.service))
-          || null
-        if (!moduleWorkspaceTarget.value) moduleWorkspaceOpen.value = false
-      }
-    } catch (catalogFailure) {
-      error.value = catalogFailure instanceof Error
-        ? catalogFailure.message
-        : '系统接入就绪状态加载失败'
-    }
+    rebindActiveCatalogTargets()
   } catch (failure) {
+    if (generation !== catalogLoadGeneration) return
+    // 快照任一必需事实不可读时，不保留上一次的“可验收”结论。
+    // 页面回到明确的未知状态，由用户重试，而不是把失败当成空目录。
+    assetCatalog.value = null
+    evidenceContractCatalog.value = null
+    catalog.value = null
+    playbooks.value = null
+    selectedModuleKey.value = ''
+    selectedToolRef.value = ''
+    selectedKey.value = ''
+    onboardingTarget.value = null
+    onboardingDialogOpen.value = false
+    moduleWorkspaceTarget.value = null
+    moduleWorkspaceOpen.value = false
     error.value = failure instanceof Error ? failure.message : '系统接入配置加载失败'
-    loading.value = false
+  } finally {
+    if (generation === catalogLoadGeneration) loading.value = false
   }
+}
+
+function rebindActiveCatalogTargets() {
+  const currentModule = (target: SetupModuleEntry | null) => target
+    ? setupModules.value.find(entry =>
+      moduleKey(entry.system, entry.service) === moduleKey(target.system, target.service)) || null
+    : null
+
+  if (onboardingTarget.value) {
+    onboardingTarget.value = currentModule(onboardingTarget.value)
+    if (!onboardingTarget.value) onboardingDialogOpen.value = false
+  }
+
+  if (moduleWorkspaceTarget.value) {
+    moduleWorkspaceTarget.value = currentModule(moduleWorkspaceTarget.value)
+    if (!moduleWorkspaceTarget.value) moduleWorkspaceOpen.value = false
+  }
+
+  // 工具、试跑和路由面板不保留用户开始编辑时的旧规则引用。
+  // 刷新后回到已重绑的模块总览，避免新模块标题和旧规则内容混用。
+  toolDetailTarget.value = null
+  trialTarget.value = null
+  routeTarget.value = null
+  trialResult.value = null
+  trialError.value = ''
+  trialHistory.value = []
+  routePlatforms.value = []
+  routeReason.value = ''
+  if (moduleWorkspaceOpen.value) moduleWorkspacePanel.value = 'overview'
 }
 
 function openNewSystem() {

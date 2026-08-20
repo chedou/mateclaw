@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, inject, nextTick, provide } from 'vue'
 import { createPinia } from 'pinia'
 import type { EvidenceQueryCatalog, ObservabilityAssetCatalog } from '@/api'
 
 const evidenceCatalog = vi.fn()
 const observabilityAssets = vi.fn()
+const evidenceContracts = vi.fn()
 const listSops = vi.fn()
 const routerPush = vi.fn()
 const routeState = {
@@ -17,7 +18,7 @@ vi.mock('@/api', () => ({
   troubleshootingApi: {
     evidenceCatalog: () => evidenceCatalog(),
     observabilityAssets: () => observabilityAssets(),
-    evidenceContracts: () => Promise.resolve({ data: { workspaceId: '1', contracts: [] } }),
+    evidenceContracts: () => evidenceContracts(),
     listSops: () => listSops(),
   },
 }))
@@ -37,6 +38,15 @@ vi.mock('vue-router', () => ({
 }))
 
 describe('observability asset create flow', () => {
+  beforeEach(() => {
+    evidenceCatalog.mockReset()
+    observabilityAssets.mockReset()
+    evidenceContracts.mockReset()
+    evidenceContracts.mockResolvedValue({ data: { workspaceId: '1', contracts: [] } })
+    listSops.mockReset()
+    listSops.mockResolvedValue({ data: [] })
+  })
+
   it('starts a new system with an empty editable system identifier even when a module is selected', async () => {
     routeState.query.section = 'modules'
     evidenceCatalog.mockResolvedValue({ data: catalogWithSelectedModule() })
@@ -256,13 +266,192 @@ describe('observability asset create flow', () => {
     app.unmount()
     host.remove()
   })
+
+  it('does not turn a failed contract catalog read into an empty ready snapshot', async () => {
+    routeState.query.section = 'modules'
+    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
+    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
+    evidenceContracts.mockRejectedValue(new Error('取证方法状态读取失败'))
+
+    const { app, host } = await mountPage()
+
+    expect(host.textContent).toContain('取证方法状态读取失败')
+    expect(host.querySelector('.onboarding-progress-trigger')).toBeNull()
+    expect(host.textContent).not.toContain('下一步：排障方案已生效')
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('removes stale onboarding actions when a refresh can no longer read the full snapshot', async () => {
+    routeState.query.section = 'modules'
+    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
+    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
+
+    const { app, host } = await mountPage()
+    expect(host.querySelector('.onboarding-progress-trigger')).toBeTruthy()
+
+    evidenceContracts.mockRejectedValueOnce(new Error('配置快照已失效'))
+    refreshButton(host).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+
+    expect(host.textContent).toContain('配置快照已失效')
+    expect(host.querySelector('.onboarding-progress-trigger')).toBeNull()
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('keeps the newest atomic snapshot when an older refresh completes last', async () => {
+    routeState.query.section = 'modules'
+    const oldAssets = deferred<{ data: ObservabilityAssetCatalog }>()
+    const oldContracts = deferred<{ data: { workspaceId: string; contracts: never[] } }>()
+    const oldCatalog = deferred<{ data: EvidenceQueryCatalog }>()
+    const oldPlaybooks = deferred<{ data: never[] }>()
+    observabilityAssets.mockReturnValueOnce(oldAssets.promise)
+    evidenceContracts.mockReturnValueOnce(oldContracts.promise)
+    evidenceCatalog.mockReturnValueOnce(oldCatalog.promise)
+    listSops.mockReturnValueOnce(oldPlaybooks.promise)
+
+    const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = mountPageComponent(Page, host)
+    await nextTick()
+
+    const newestCatalog = catalogWithToolAndSource()
+    newestCatalog.systems[0]!.modules[0]!.service = 'csdp-newest'
+    const newestAssets = workspaceAssetsWithTool()
+    newestAssets.assets[0]!.service = 'csdp-newest'
+    observabilityAssets.mockResolvedValueOnce({ data: newestAssets })
+    evidenceContracts.mockResolvedValueOnce({ data: { workspaceId: '1', contracts: [] } })
+    evidenceCatalog.mockResolvedValueOnce({ data: newestCatalog })
+    listSops.mockResolvedValueOnce({ data: [] })
+
+    refreshButton(host).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+    expect(host.textContent).toContain('csdp-newest')
+
+    oldAssets.resolve({ data: workspaceAssetsWithTool() })
+    oldContracts.resolve({ data: { workspaceId: '1', contracts: [] } })
+    oldCatalog.resolve({ data: catalogWithToolAndSource() })
+    oldPlaybooks.resolve({ data: [] })
+    await settle()
+
+    expect(host.textContent).toContain('csdp-newest')
+    expect(host.textContent).not.toContain('csdp-task')
+
+    app.unmount()
+    host.remove()
+  })
+
+  it('rebinds an open onboarding dialog to the refreshed module facts', async () => {
+    routeState.query.section = 'modules'
+    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
+    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
+    listSops.mockResolvedValue({ data: approvedCtiSops() })
+
+    const { app, host } = await mountPage()
+    host.querySelector<HTMLButtonElement>('.onboarding-progress-trigger')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    expect(host.textContent).toContain('去负责人验收')
+
+    const refreshedCatalog = catalogWithToolAndSource()
+    refreshedCatalog.systems[0]!.modules[0]!.acceptance = {
+      status: 'ACCEPTED',
+      currentBindingFingerprint: 'binding-v2',
+      acceptedBy: 'owner',
+      acceptedAt: '2026-08-20T00:00:00Z',
+      blockers: [],
+    }
+    evidenceCatalog.mockResolvedValueOnce({ data: refreshedCatalog })
+    observabilityAssets.mockResolvedValueOnce({ data: workspaceAssetsWithTool() })
+    evidenceContracts.mockResolvedValueOnce({ data: { workspaceId: '1', contracts: [] } })
+    listSops.mockResolvedValueOnce({ data: approvedCtiSops() })
+
+    refreshButton(host).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+
+    expect(host.textContent).toContain('该模块已具备生产试点的配置条件')
+    expect(host.textContent).not.toContain('去负责人验收')
+
+    app.unmount()
+    host.remove()
+  })
 })
+
+async function mountPage() {
+  const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const app = mountPageComponent(Page, host)
+  await settle()
+  return { app, host }
+}
+
+function mountPageComponent(Page: ReturnType<typeof defineComponent>, host: HTMLElement) {
+  const app = createApp(Page)
+  app.component('ElButton', buttonStub)
+  app.component('ElAlert', alertStub)
+  app.component('ElInput', inputStub)
+  app.component('ElDialog', dialogStub)
+  app.component('ElDrawer', drawerStub)
+  app.component('ElTable', tableStub)
+  app.component('ElTableColumn', tableColumnStub)
+  app.use(createPinia())
+  app.mount(host)
+  return app
+}
+
+function refreshButton(host: HTMLElement) {
+  const button = [...host.querySelectorAll('button')]
+    .find(candidate => candidate.textContent?.trim() === '刷新')
+  if (!button) throw new Error('未找到刷新按钮')
+  return button
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function approvedCtiSops() {
+  return [{
+    sopId: 'cti-v1',
+    routeKey: 'csdp:scenario:cti_create_conversation_failed',
+    system: 'CSDP',
+    service: 'csdp-task',
+    errorCode: 'scenario:cti_create_conversation_failed',
+    status: 'approved',
+    verified: true,
+    operational: true,
+    createTime: '2026-08-10T00:00:00Z',
+    updateTime: '2026-08-10T00:00:00Z',
+    knowledgeEvidenceGrade: 'RECORDED_AGGREGATE',
+  }]
+}
 
 const buttonStub = defineComponent({
   name: 'ElButton',
   emits: ['click'],
   setup(_, { emit, slots }) {
     return () => h('button', { type: 'button', onClick: () => emit('click') }, slots.default?.())
+  },
+})
+
+const alertStub = defineComponent({
+  name: 'ElAlert',
+  props: {
+    title: { type: String, default: '' },
+  },
+  setup(props) {
+    return () => h('div', { class: 'alert-stub' }, props.title)
   },
 })
 
