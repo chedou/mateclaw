@@ -53,6 +53,10 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
     private final EvidenceProperties properties;
     private final EvidenceContractService evidenceContracts;
     private final ObjectMapper objectMapper;
+    private final ThreadLocal<Map<ScopeKey, WorkspaceObservabilityAsset>> inspectionAssetWarm =
+            new ThreadLocal<>();
+    private final ThreadLocal<Map<String, Set<String>>> inspectionBindingIndexWarm =
+            new ThreadLocal<>();
 
     public ObservabilityAssetService(
             TroubleshootingObservabilityAssetMapper mapper,
@@ -71,6 +75,11 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
         if (workspaceId <= 0 || blank(system) || blank(service)) {
             return Optional.empty();
         }
+        Map<ScopeKey, WorkspaceObservabilityAsset> warmed = inspectionAssetWarm.get();
+        if (warmed != null) {
+            return Optional.ofNullable(warmed.get(
+                    new ScopeKey(normalize(system), normalize(service))));
+        }
         TroubleshootingObservabilityAssetEntity entity = latest(
                 workspaceId, normalize(system), normalize(service));
         return entity == null ? Optional.empty() : Optional.of(runtime(entity));
@@ -82,17 +91,63 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
             return Set.of();
         }
         String wanted = normalize(signalKind);
-        Set<String> references = new LinkedHashSet<>();
-        for (TroubleshootingObservabilityAssetEntity entity : latestAcrossWorkspaces()) {
+        Map<String, Set<String>> warmed = inspectionBindingIndexWarm.get();
+        if (warmed != null) {
+            return warmed.getOrDefault(wanted, Set.of());
+        }
+        return activeBindingReferencesBySignal().getOrDefault(wanted, Set.of());
+    }
+
+    @Override
+    public Map<String, Set<String>> activeBindingReferencesBySignal() {
+        Map<String, Set<String>> warmed = inspectionBindingIndexWarm.get();
+        if (warmed != null) {
+            return warmed;
+        }
+        return buildActiveBindingIndex(latestAcrossWorkspaces());
+    }
+
+    /**
+     * Prefetch asset rows once for catalog-style inspections. Must be paired with
+     * {@link #endInspectionWarm()} on the same thread.
+     */
+    public void beginInspectionWarm(long workspaceId) {
+        requireWorkspace(workspaceId);
+        Map<ScopeKey, WorkspaceObservabilityAsset> assets = new LinkedHashMap<>();
+        for (TroubleshootingObservabilityAssetEntity entity : latestForWorkspace(workspaceId)) {
+            WorkspaceObservabilityAsset runtime = runtime(entity);
+            assets.put(
+                    new ScopeKey(normalize(runtime.system()), normalize(runtime.service())),
+                    runtime);
+        }
+        inspectionAssetWarm.set(Map.copyOf(assets));
+        inspectionBindingIndexWarm.set(buildActiveBindingIndex(latestAcrossWorkspaces()));
+    }
+
+    public void endInspectionWarm() {
+        inspectionAssetWarm.remove();
+        inspectionBindingIndexWarm.remove();
+    }
+
+    private Map<String, Set<String>> buildActiveBindingIndex(
+            List<TroubleshootingObservabilityAssetEntity> rows) {
+        Map<String, Set<String>> index = new LinkedHashMap<>();
+        for (TroubleshootingObservabilityAssetEntity entity : rows == null
+                ? List.<TroubleshootingObservabilityAssetEntity>of() : rows) {
             if (!Boolean.TRUE.equals(entity.getEnabled())) {
                 continue;
             }
-            String reference = readMap(entity.getSignalBindings()).get(wanted);
-            if (!blank(reference)) {
-                references.add(reference.trim());
+            for (Map.Entry<String, String> entry : readMap(entity.getSignalBindings()).entrySet()) {
+                if (blank(entry.getKey()) || blank(entry.getValue())) {
+                    continue;
+                }
+                index.computeIfAbsent(normalize(entry.getKey()), ignored -> new LinkedHashSet<>())
+                        .add(entry.getValue().trim());
             }
         }
-        return Set.copyOf(references);
+        Map<String, Set<String>> frozen = new LinkedHashMap<>();
+        index.forEach((signal, references) -> frozen.put(signal, Set.copyOf(references)));
+        return Map.copyOf(frozen);
     }
 
     /** Effective workspace catalog: latest declarations shadow deployment YAML by exact scope. */

@@ -8,6 +8,7 @@ import investigationTraceSource from '../InvestigationTracePanel.vue?raw'
 import capabilityMenuSource from '../workbenchCapabilityMenu.ts?raw'
 import developerEvidenceSource from '../DeveloperEvidencePanel.vue?raw'
 import businessSummarySource from '../BusinessSummaryCard.vue?raw'
+import diagnosisDetailPresentationSource from '../diagnosisDetailPresentation.ts?raw'
 import diagnosisPerspectiveSource from '../diagnosisPerspective.ts?raw'
 import synthesisPreviewSource from '../SynthesisPreviewDialog.vue?raw'
 import synthesisPreviewBodySource from '../SynthesisPreviewBody.vue?raw'
@@ -49,18 +50,20 @@ describe('troubleshooting operator copy uses plain language', () => {
   })
 
   it('tells a human how to review, handle and close a diagnosis without implying production writes', () => {
-    expect(businessSummarySource).toContain('现在由你决定')
-    expect(businessSummarySource).toContain('根因判断')
-    expect(businessSummarySource).toContain('证据告诉了我们什么')
-    expect(businessSummarySource).toContain('还不能证明什么')
+    expect(businessSummarySource).toContain('接下来做什么')
+    expect(businessSummarySource).toContain('问题原因')
+    expect(businessSummarySource).toContain('故障背景')
+    expect(businessSummarySource).toContain('系统 / 服务')
+    expect(businessSummarySource).toContain('发生时间')
+    expect(businessSummarySource).toContain('当前能确认')
+    expect(businessSummarySource).toContain('距离根因还缺')
     expect(businessSummarySource).toContain('影响到什么')
     expect(businessSummarySource).toContain('二线现在怎么处理')
     expect(businessSummarySource).toContain('复核后确认定位')
-    expect(businessSummarySource).toContain('转给其他人继续查')
-    expect(businessSummarySource).toContain('联系有转派权限的负责人继续查')
-    expect(businessSummarySource).toContain('登记结果并关闭')
+    expect(businessSummarySource).toContain('转给负责人继续查')
+    expect(diagnosisDetailPresentationSource).toContain('联系有转派权限的负责人继续查')
+    expect(businessSummarySource).toContain('登记实际结果')
     expect(businessSummarySource).toContain('把这张单纳入试点评估')
-    expect(businessSummarySource).toContain('结果已登记，下一步验证这套方法是否真的有效')
     expect(businessSummarySource).toContain('可以体验确认和关闭流程，但不会计入正式系统负责人验收目标')
     expect(businessSummarySource).not.toContain('关闭并沉淀知识')
   })
@@ -70,11 +73,13 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(formalWorkbenchSource).toContain('二线保障视角')
     expect(formalWorkbenchSource).toContain("normalizeDiagnosisPerspective(route.query.perspective)")
     expect(formalWorkbenchSource).toContain("v-if=\"detailPerspective === 'developer'\"")
-    expect(diagnosisPerspectiveSource).toContain('尚未定位唯一根因')
+    expect(diagnosisPerspectiveSource).toContain('尚未找到根因')
     expect(businessSummarySource).toContain('diagnosisPerspectiveHero')
-    expect(businessSummarySource).toContain('当前候选原因')
+    expect(businessSummarySource).toContain('候选线索')
     expect(businessSummarySource).toContain('是否需要升级三线')
-    expect(businessSummarySource).toContain('二线视角不确认根因')
+    expect(businessSummarySource).toContain('provenance-strip')
+    expect(businessSummarySource).toContain('nextStepPanel')
+    expect(businessSummarySource).toContain('impact-conservative')
     expect(businessSummarySource).toContain("perspective === 'developer'")
   })
 
@@ -109,8 +114,20 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(investigationTraceSource).toContain('查看本步技术记录')
     expect(investigationTraceSource).toContain('container-type:inline-size')
     expect(investigationTraceSource).toContain('@container (max-width:720px)')
-    expect(developerEvidenceSource).toContain('系统为什么得到这个结论')
+    expect(developerEvidenceSource).toContain('查看完整证据与技术记录')
     expect(developerEvidenceSource).not.toContain('展开开发证据台')
+    expect(developerEvidenceSource).not.toContain('调查参与者')
+    expect(developerEvidenceSource).not.toContain('使用说明')
+  })
+
+  it('keeps the first screen to conclusion, reasoning boundary and one next action', () => {
+    expect(businessSummarySource).toContain('第一个事实来自告警原文')
+    expect(businessSummarySource).toContain('第一个事实来自只读数据源')
+    expect(businessSummarySource).toContain('第一个事实来自录制样本')
+    expect(businessSummarySource).toContain('查看判断依据')
+    expect(businessSummarySource).not.toContain('reasoning-sheet')
+    expect(formalWorkbenchSource).not.toContain('class="question-progress-fold"')
+    expect(formalWorkbenchSource).not.toContain('<FiveQuestionRail')
   })
 
   it('presents PS-linked log records without pretending they are a full distributed trace', () => {

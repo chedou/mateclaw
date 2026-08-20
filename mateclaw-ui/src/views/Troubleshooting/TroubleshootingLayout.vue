@@ -3,7 +3,10 @@
     <div class="mc-page-frame troubleshooting-frame">
       <div
         class="mc-page-inner troubleshooting-layout"
-        :class="{ 'without-capability-nav': !canViewTroubleshooting }"
+        :class="{
+          'without-capability-nav': !canViewTroubleshooting,
+          'detail-focus-mode': detailFocusMode,
+        }"
       >
       <aside
         v-if="canViewTroubleshooting"
@@ -109,7 +112,7 @@
         </nav>
 
         <button
-          v-if="!forcedRailViewport"
+          v-if="!forcedRailViewport && !detailFocusMode"
           type="button"
           class="nav-collapse"
           :title="navCollapsed ? '展开二级菜单' : '折叠二级菜单'"
@@ -169,7 +172,13 @@ const canManageTroubleshooting = computed(() => workspaceStore.can('manage:troub
 const navCollapsed = ref(localStorage.getItem('mc-troubleshooting-nav-collapsed') === 'true')
 const manuallyExpandedGroups = ref(new Set<WorkbenchCapabilityNavGroup['key']>())
 const forcedRailViewport = useMediaQuery('(max-width: 1040px)')
-const navCompact = computed(() => navCollapsed.value || forcedRailViewport.value)
+const detailFocusMode = computed(() =>
+  route.path === '/troubleshooting'
+  && route.query.view === 'detail'
+  && typeof route.query.diagnosisId === 'string'
+  && route.query.diagnosisId.trim().length > 0,
+)
+const navCompact = computed(() => detailFocusMode.value || navCollapsed.value || forcedRailViewport.value)
 
 function navItemVisible(item: WorkbenchCapabilityNavItem) {
   const required = item.requiredCapability || 'manage:troubleshooting'

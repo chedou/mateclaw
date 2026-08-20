@@ -98,11 +98,24 @@ public class EvidenceQueryCatalogService {
                     "err.troubleshooting.invalid_request", 400,
                     "workspaceId must be positive");
         }
-        Map<RouteKey, EvidenceRouteView> declarations = workspaceDeclarations(workspaceId);
-        List<EvidenceQueryCatalogView.SystemView> systems = systems(
-                workspaceId, declarations);
-        return new EvidenceQueryCatalogView(
-                CONTRACT_VERSION, workspaceId, sources(workspaceId), systems);
+        boolean warmedAssets = false;
+        try {
+            if (assetService != null) {
+                assetService.beginInspectionWarm(workspaceId);
+                warmedAssets = true;
+            }
+            guanceAdapter.beginInspectionWarm(workspaceId);
+            Map<RouteKey, EvidenceRouteView> declarations = workspaceDeclarations(workspaceId);
+            List<EvidenceQueryCatalogView.SystemView> systems = systems(
+                    workspaceId, declarations);
+            return new EvidenceQueryCatalogView(
+                    CONTRACT_VERSION, workspaceId, sources(workspaceId), systems);
+        } finally {
+            guanceAdapter.endInspectionWarm();
+            if (warmedAssets) {
+                assetService.endInspectionWarm();
+            }
+        }
     }
 
     private List<EvidenceQueryCatalogView.SourceView> sources(long workspaceId) {

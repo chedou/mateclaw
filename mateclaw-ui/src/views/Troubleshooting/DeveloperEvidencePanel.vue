@@ -2,10 +2,16 @@
   <details v-if="developer && business && current" class="developer-fold">
     <summary>
       <span class="fold-caret" />
-      <div><b>系统为什么得到这个结论</b><small>查看它查了什么、怎样比较，以及为什么停止</small></div>
+      <div><b>查看完整证据与技术记录</b><small>质疑结论、交接复核或定位代码时再展开</small></div>
       <span>{{ developer.steps.length }} 条取证 / 判断记录</span>
     </summary>
-    <div class="developer-body" :class="{ 'developer-body--empty-timeline': !developer.steps.length }">
+    <div
+      class="developer-body"
+      :class="{
+        'developer-body--empty-timeline': !developer.steps.length,
+        'developer-body--with-derivation': supportsDeterministicDerivation(current.diagnosis.investigationMode),
+      }"
+    >
       <div class="route-card">
         <span>调查路径</span>
         <b>{{ investigationRouteLabel(developer) }}</b>
@@ -197,6 +203,14 @@
         </details>
       </div>
 
+      <section
+        v-if="supportsDeterministicDerivation(current.diagnosis.investigationMode)"
+        class="derivation-column"
+      >
+        <span class="section-label">判定链</span><h3>结论怎么算出来的</h3>
+        <DerivationChain :diagnosis="current.diagnosis" />
+      </section>
+
       <aside class="developer-side">
         <section class="source-status" v-loading="readinessLoading">
           <div class="source-status-copy">
@@ -221,26 +235,6 @@
             >检查数据连接</el-button>
           </div>
         </section>
-        <section class="side-card side-card--capability">
-          <span class="section-label">使用说明</span>
-          <h3>这单要注意什么</h3>
-          <p class="capability-lead">下面是边界提醒，不是故障原因。</p>
-          <ul class="capability-list"><li v-for="item in developer.capabilityLimits" :key="item">{{ item }}</li></ul>
-        </section>
-        <section class="side-card side-card--provenance">
-          <span class="section-label">调查参与者</span><h3>谁参与了，谁没参与</h3>
-          <InvestigationProvenancePanel
-            :diagnosis-id="current.diagnosis.diagnosisId"
-            :diagnosis-version="current.version"
-          />
-        </section>
-        <section
-          v-if="supportsDeterministicDerivation(current.diagnosis.investigationMode)"
-          class="side-card side-card--derivation"
-        >
-          <span class="section-label">判定链</span><h3>结论怎么算出来的</h3>
-          <DerivationChain :diagnosis="current.diagnosis" />
-        </section>
         <section v-if="current.diagnosis.recommendedActions.length" class="side-card side-card--actions">
           <span class="section-label">人工处置动作</span><h3>平台不执行</h3>
           <article
@@ -264,7 +258,6 @@
 import { ref, computed } from 'vue'
 import { vLoading } from 'element-plus/es/components/loading/index'
 import DerivationChain from './DerivationChain.vue'
-import InvestigationProvenancePanel from './InvestigationProvenancePanel.vue'
 import { supportsDeterministicDerivation } from './derivationPresentation'
 import type {
   BusinessSummary,
@@ -424,12 +417,32 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .fold-caret { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:6px solid var(--mc-text-tertiary); transition:transform .18s; }
 .developer-fold[open] .fold-caret { transform:rotate(90deg); }
 
-/* ── Body grid ── */
-.developer-body { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr); gap:20px; padding:22px; border-top:1px solid var(--mc-border); background:var(--mc-bg-elevated); }
+/* ── Body grid：默认两列；有判定链时左证据 / 中判定链 / 右治理与动作 ── */
+.developer-body {
+  display:grid;
+  grid-template-columns:minmax(0,1.65fr) minmax(280px,.75fr);
+  gap:20px;
+  padding:22px;
+  border-top:1px solid var(--mc-border);
+  background:var(--mc-bg-elevated);
+}
+.developer-body--with-derivation {
+  grid-template-columns:minmax(0,1.35fr) minmax(280px,.95fr) minmax(260px,.7fr);
+}
 .developer-body>.route-card,.developer-body>.investigation-trace-panel { grid-column:1/-1; }
 .developer-body>.route-card { margin-top:0; }
 .developer-body>.evidence-main { display:flex; min-width:0; flex-direction:column; gap:14px; }
-.developer-body--empty-timeline>.developer-side { align-self:start; }
+.developer-body>.derivation-column {
+  align-self:start;
+  min-width:0;
+  padding:16px;
+  border:1px solid var(--mc-border);
+  border-radius:var(--mc-radius-sm);
+  background:var(--mc-bg);
+}
+.developer-body>.derivation-column>h3 { margin:5px 0 12px; font-size:var(--mc-text-base); }
+.developer-body--empty-timeline>.developer-side,
+.developer-body--empty-timeline>.derivation-column { align-self:start; }
 
 /* ── Section label — enhanced visual weight ── */
 .section-label { display:block; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
@@ -591,11 +604,6 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .side-card { padding:16px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
 .developer-side h3 { margin:5px 0 0; font-size:var(--mc-text-base); }
 
-/* ── Capability list — neutral color (not error) ── */
-.capability-lead { margin:8px 0 0; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.5; }
-.capability-list { margin:13px 0 0; padding-left:17px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); line-height:1.6; }
-.capability-list li+li { margin-top:7px; }
-
 /* ── Compact Guance environment status ── */
 .source-status { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:4px 2px 16px; border-bottom:1px solid var(--mc-border-light); }
 .source-status-copy { min-width:0; }
@@ -637,9 +645,15 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 .timeline-phase-divider::before,.timeline-phase-divider::after { content:''; flex:1; height:1px; background:var(--mc-border-light); }
 
 /* ── Responsive ── */
+@container (max-width:1100px){
+  .developer-body--with-derivation{grid-template-columns:minmax(0,1.2fr) minmax(240px,.85fr)}
+  .developer-body--with-derivation>.developer-side{grid-column:1/-1}
+}
 @container (max-width:900px){
   .developer-body{grid-template-columns:1fr}
-  .developer-body>.evidence-main,.developer-body>.developer-side{grid-column:1/-1}
+  .developer-body>.evidence-main,
+  .developer-body>.derivation-column,
+  .developer-body>.developer-side{grid-column:1/-1}
   .source-status{flex-direction:column}
   .source-status-governance{max-width:none; align-items:flex-start}
   .source-status-governance small{text-align:left}
@@ -648,10 +662,14 @@ function evidenceTime(kind: EvidenceStepKind, value: string | null) {
 @container (max-width:480px){
   .chain-head{flex-direction:column}
   .chain-identity{max-width:none; text-align:left}
+  .evidence-step{grid-template-columns:52px 16px minmax(0,1fr)}
+  .tone-label{grid-column:3; justify-self:start}
 }
 @media(max-width:900px){
   .developer-body{grid-template-columns:1fr}
-  .developer-body>.evidence-main,.developer-body>.developer-side{grid-column:1/-1}
+  .developer-body>.evidence-main,
+  .developer-body>.derivation-column,
+  .developer-body>.developer-side{grid-column:1/-1}
   .source-status{flex-direction:column}
   .source-status-governance{max-width:none; align-items:flex-start}
   .source-status-governance small{text-align:left}

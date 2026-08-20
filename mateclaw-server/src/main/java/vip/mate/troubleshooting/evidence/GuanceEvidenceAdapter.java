@@ -61,6 +61,41 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private final Clock clock;
     private final ConcurrentMap<ObservationKey, Instant> observations =
             new ConcurrentHashMap<>();
+    private final ThreadLocal<InspectionWarmCache> inspectionWarm = new ThreadLocal<>();
+
+    private static final class InspectionWarmCache {
+        private final long workspaceId;
+        private EffectiveEvidenceSettings settings;
+        private Map<String, EvidenceProperties.Binding> bindings;
+        private Map<String, Set<String>> workspaceBindingIndex;
+
+        private InspectionWarmCache(long workspaceId) {
+            this.workspaceId = workspaceId;
+        }
+    }
+
+    /**
+     * Prefetch settings/bindings/workspace binding index for one catalog-style pass.
+     * Must be paired with {@link #endInspectionWarm()} on the same thread.
+     */
+    void beginInspectionWarm(long workspaceId) {
+        if (workspaceId <= 0) {
+            return;
+        }
+        InspectionWarmCache cache = new InspectionWarmCache(workspaceId);
+        cache.settings = loadSettings(workspaceId);
+        cache.bindings = loadResolvedBindings(workspaceId);
+        try {
+            cache.workspaceBindingIndex = workspaceAssets.activeBindingReferencesBySignal();
+        } catch (RuntimeException unavailableRegistry) {
+            cache.workspaceBindingIndex = Map.of();
+        }
+        inspectionWarm.set(cache);
+    }
+
+    void endInspectionWarm() {
+        inspectionWarm.remove();
+    }
 
     GuanceEvidenceAdapter(
             EvidenceProperties.Guance config,
@@ -113,10 +148,19 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     /**
      * The enablement, endpoint and credential in force for one workspace.
      *
-     * <p>Resolved on every call. Caching it would put back the restart that
-     * moving these values into the database was meant to remove.
+     * <p>Resolved on every call unless an {@link #beginInspectionWarm(long)} cache is
+     * active. Caching across requests would put back the restart that moving these
+     * values into the database was meant to remove.
      */
     EffectiveEvidenceSettings settingsFor(long workspaceId) {
+        InspectionWarmCache warm = inspectionWarm.get();
+        if (warm != null && warm.workspaceId == workspaceId && warm.settings != null) {
+            return warm.settings;
+        }
+        return loadSettings(workspaceId);
+    }
+
+    private EffectiveEvidenceSettings loadSettings(long workspaceId) {
         if (workspaceSettings == null || workspaceId <= 0) {
             return deploymentSettings();
         }
@@ -451,8 +495,10 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (deployed) {
             return true;
         }
+        Map<String, Set<String>> index = workspaceBindingIndex();
         return CanonicalEvidenceSchema.externallyRoutableSignalKinds().stream()
-                .anyMatch(this::hasWorkspaceBinding);
+                .anyMatch(signal -> index.getOrDefault(normalizeKey(signal), Set.of()).stream()
+                        .anyMatch(reference -> bindingFor(reference, signal) != null));
     }
 
     private boolean hasAuthorizedBinding(String signalKind) {
@@ -478,11 +524,21 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
 
     private boolean hasWorkspaceBinding(String signalKind) {
         try {
-            return workspaceAssets.activeBindingReferences(normalizeKey(signalKind)).stream()
+            return workspaceBindingIndex()
+                    .getOrDefault(normalizeKey(signalKind), Set.of())
+                    .stream()
                     .anyMatch(reference -> bindingFor(reference, signalKind) != null);
         } catch (RuntimeException unavailableRegistry) {
             return false;
         }
+    }
+
+    private Map<String, Set<String>> workspaceBindingIndex() {
+        InspectionWarmCache warm = inspectionWarm.get();
+        if (warm != null && warm.workspaceBindingIndex != null) {
+            return warm.workspaceBindingIndex;
+        }
+        return workspaceAssets.activeBindingReferencesBySignal();
     }
 
     private AuthorizedBinding authorizedBinding(
@@ -582,6 +638,14 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     }
 
     private Map<String, EvidenceProperties.Binding> resolvedBindings(long workspaceId) {
+        InspectionWarmCache warm = inspectionWarm.get();
+        if (warm != null && warm.workspaceId == workspaceId && warm.bindings != null) {
+            return warm.bindings;
+        }
+        return loadResolvedBindings(workspaceId);
+    }
+
+    private Map<String, EvidenceProperties.Binding> loadResolvedBindings(long workspaceId) {
         Map<String, EvidenceProperties.Binding> merged = new LinkedHashMap<>();
         Set<String> ambiguous = new LinkedHashSet<>();
         if (config.getBindings() != null) {

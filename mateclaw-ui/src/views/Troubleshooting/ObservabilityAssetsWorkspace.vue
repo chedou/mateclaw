@@ -1882,46 +1882,60 @@ async function loadCatalog() {
   loading.value = true
   error.value = ''
   try {
-    const playbookRequest = troubleshootingApi.listSops?.({
-      status: 'approved',
-      limit: 500,
-    })
-    const [catalogResponse, assetResponse, contractResponse, playbookResponse] = await Promise.all([
-      troubleshootingApi.evidenceCatalog(),
+    // Assets/contracts first so「接入系统」列表可尽快渲染；catalog 含就绪态，单独补齐。
+    const [assetResponse, contractResponse] = await Promise.all([
       troubleshootingApi.observabilityAssets(),
       troubleshootingApi.evidenceContracts().catch(() => ({ data: null })),
-      playbookRequest && typeof playbookRequest.then === 'function'
-        ? playbookRequest.catch(() => null)
-        : Promise.resolve(null),
     ])
-    catalog.value = catalogResponse.data
     assetCatalog.value = assetResponse.data
     evidenceContractCatalog.value = contractResponse.data
-    playbooks.value = playbookResponse?.data || null
     const preferredSystem = typeof route.query.system === 'string' ? route.query.system : ''
     const preferredService = typeof route.query.service === 'string' ? route.query.service : ''
-    const preferred = setupModules.value.find(entry =>
-      (!preferredSystem || entry.system === preferredSystem)
-        && (!preferredService || entry.service === preferredService))
-      || setupModules.value.find(entry =>
-        moduleKey(entry.system, entry.service) === selectedModuleKey.value)
-      || setupModules.value[0]
-    if (preferred) selectSetupModule(preferred)
-    else {
-      selectedModuleKey.value = ''
-      selectedToolRef.value = ''
-      selectedKey.value = ''
+    const preferFromAssets = () => {
+      const preferred = setupModules.value.find(entry =>
+        (!preferredSystem || entry.system === preferredSystem)
+          && (!preferredService || entry.service === preferredService))
+        || setupModules.value.find(entry =>
+          moduleKey(entry.system, entry.service) === selectedModuleKey.value)
+        || setupModules.value[0]
+      if (preferred) selectSetupModule(preferred)
+      else {
+        selectedModuleKey.value = ''
+        selectedToolRef.value = ''
+        selectedKey.value = ''
+      }
     }
-    if (moduleWorkspaceOpen.value && moduleWorkspaceTarget.value) {
-      const current = moduleWorkspaceTarget.value
-      moduleWorkspaceTarget.value = setupModules.value.find(entry =>
-        moduleKey(entry.system, entry.service) === moduleKey(current.system, current.service))
-        || null
-      if (!moduleWorkspaceTarget.value) moduleWorkspaceOpen.value = false
+    preferFromAssets()
+    loading.value = false
+
+    try {
+      const playbookRequest = troubleshootingApi.listSops?.({
+        status: 'approved',
+        limit: 500,
+      })
+      const [catalogResponse, playbookResponse] = await Promise.all([
+        troubleshootingApi.evidenceCatalog(),
+        playbookRequest && typeof playbookRequest.then === 'function'
+          ? playbookRequest.catch(() => null)
+          : Promise.resolve(null),
+      ])
+      catalog.value = catalogResponse.data
+      playbooks.value = playbookResponse?.data || null
+      preferFromAssets()
+      if (moduleWorkspaceOpen.value && moduleWorkspaceTarget.value) {
+        const current = moduleWorkspaceTarget.value
+        moduleWorkspaceTarget.value = setupModules.value.find(entry =>
+          moduleKey(entry.system, entry.service) === moduleKey(current.system, current.service))
+          || null
+        if (!moduleWorkspaceTarget.value) moduleWorkspaceOpen.value = false
+      }
+    } catch (catalogFailure) {
+      error.value = catalogFailure instanceof Error
+        ? catalogFailure.message
+        : '系统接入就绪状态加载失败'
     }
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : '系统接入配置加载失败'
-  } finally {
     loading.value = false
   }
 }

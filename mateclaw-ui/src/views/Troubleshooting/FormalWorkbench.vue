@@ -113,12 +113,7 @@
         </header>
 
         <nav class="perspective-switch" aria-label="排障详情阅读视角">
-          <div class="perspective-switch__copy">
-            <b>当前阅读视角</b>
-            <span>{{ detailPerspective === 'developer'
-              ? '优先看根因、证据和下一步核实方向'
-              : '优先看影响、当前判断和是否需要升级三线' }}</span>
-          </div>
+          <b>查看方式</b>
           <div class="perspective-switch__tabs" role="group" aria-label="切换详情视角">
             <button
               type="button"
@@ -147,6 +142,7 @@
 
         <BusinessSummaryCard
           :business="business"
+          :incident="current.diagnosis.incident"
           :failure-breakdown="developer.failureBreakdown || null"
           :perspective="detailPerspective"
           :closure="closure"
@@ -163,19 +159,8 @@
           @evaluate="openEvaluationLedger"
         />
 
-        <details v-if="detailPerspective === 'developer'" class="question-progress-fold">
-          <summary>
-            <div>
-              <b>查看排障进度</b>
-              <small>按“发生了什么 → 查到了什么 → 结论 → 人工处理”复核</small>
-            </div>
-            <span>5 个检查点</span>
-          </summary>
-          <FiveQuestionRail :items="fiveQuestionItems" />
-        </details>
-
         <ScenarioEvidenceRunCard
-          v-if="evidenceSpineScenarioPresentation"
+          v-if="evidenceSpineScenarioPresentation && current.diagnosis.status === 'NEEDS_INVESTIGATION'"
           :diagnosis="current.diagnosis"
           :can-operate="canOperateTroubleshooting"
           :loading="scenarioEvidenceLoading"
@@ -405,8 +390,6 @@ import ApproveActionDialog from './ApproveActionDialog.vue'
 import RecordOutcomeDialog from './RecordOutcomeDialog.vue'
 import CloseDiagnosisDialog from './CloseDiagnosisDialog.vue'
 import BusinessSummaryCard from './BusinessSummaryCard.vue'
-import FiveQuestionRail from './FiveQuestionRail.vue'
-import { buildFiveQuestionRail } from './fiveQuestionProgress'
 import ScenarioEvidenceRunCard from './ScenarioEvidenceRunCard.vue'
 import TopologyEvidenceCard from './TopologyEvidenceCard.vue'
 import DeveloperEvidencePanel from './DeveloperEvidencePanel.vue'
@@ -552,10 +535,6 @@ const guanceOnboardingInitialRequest = computed<EvidenceChainPreviewRequest>(() 
 const evidenceSourcePresentation = computed(() => diagnosisEvidenceSourcePresentation(
   current.value?.diagnosis.evidence ?? [],
 ))
-const fiveQuestionItems = computed(() => {
-  if (!business.value || !developer.value) return []
-  return buildFiveQuestionRail(business.value, developer.value)
-})
 const detailPerspective = computed(() => normalizeDiagnosisPerspective(route.query.perspective))
 const validationCanOpenCurrentEvaluationLedger = computed(() =>
   isCurrentDiagnosisValidationRequest(guanceValidationForm))
@@ -1277,35 +1256,29 @@ onMounted(() => {
 .formal-workbench { --ink:var(--mc-text-primary); --muted:var(--mc-text-secondary); --line:var(--mc-border); --soft:var(--mc-bg-muted); --blue:var(--mc-primary); --green:var(--mc-success); --amber:var(--mc-warning); --red:var(--mc-danger); display:grid; grid-template-columns:var(--mc-ts-side-rail-width) minmax(0,1fr); width:100%; min-width:0; height:100%; overflow:hidden; color:var(--ink); background:var(--mc-bg); }
 .formal-workbench.traditional-list-mode { display:block; width:100%; overflow-y:auto; }
 .formal-workbench.full-detail-mode { grid-template-columns:minmax(0,1fr); width:100%; }
+.formal-workbench.full-detail-mode .work-area { padding-top:14px; }
 .formal-workbench.capability-workspace-mode { display:block; width:100%; overflow:hidden; }
 .eyebrow { display:block; color:var(--blue); font-size:var(--mc-text-xs); font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
 .work-area { width:100%; min-width:0; overflow-y:auto; padding:20px clamp(20px,3vw,40px) 40px; }
 .detail-empty { display:grid; place-items:center; align-content:center; min-height:70vh; color:var(--muted); text-align:center; }
 .empty-mark { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-md); color:var(--blue); background:var(--mc-bg-elevated); font-weight:800; box-shadow:0 10px 30px var(--mc-shadow-soft); }
 .detail-empty h1 { margin:16px 0 4px; color:var(--ink); font-size:var(--mc-text-lg); } .detail-empty p { margin:0; font-size:var(--mc-text-sm); } .detail-empty .el-button { margin-top:16px; }
-.work-head { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; width:100%; margin:0 0 20px; }
-.work-head h1 { margin:5px 0 0; font-size:var(--mc-text-xl); letter-spacing:-.025em; } .work-head-actions { display:flex; gap:8px; }
-.perspective-switch { display:flex; align-items:center; justify-content:space-between; gap:18px; width:100%; margin:-4px 0 14px; padding:10px 12px 10px 16px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); }
-.perspective-switch__copy b,.perspective-switch__copy span { display:block; }
-.perspective-switch__copy b { color:var(--mc-text-primary); font-size:var(--mc-text-xs); }
-.perspective-switch__copy span { margin-top:3px; color:var(--mc-text-tertiary); font-size:11px; }
+.work-head { display:flex; align-items:center; justify-content:space-between; gap:14px; width:100%; margin:0 0 12px; }
+.work-head h1 { max-width:760px; margin:4px 0 0; font-size:clamp(17px,1.7vw,22px); line-height:1.3; letter-spacing:-.02em; } .work-head-actions { display:flex; gap:8px; }
+.perspective-switch { display:flex; align-items:center; justify-content:flex-end; gap:10px; width:100%; margin:-4px 0 14px; }
+.perspective-switch>b { color:var(--mc-text-tertiary); font-size:11px; font-weight:650; }
 .perspective-switch__tabs { display:flex; gap:4px; padding:3px; border:1px solid var(--mc-border-light); border-radius:var(--mc-radius-sm); background:var(--mc-bg-muted); }
 .perspective-switch__tabs button { appearance:none; border:0; border-radius:calc(var(--mc-radius-sm) - 2px); padding:8px 12px; color:var(--mc-text-secondary); background:transparent; font:inherit; font-size:var(--mc-text-xs); font-weight:650; cursor:pointer; }
 .perspective-switch__tabs button small { margin-left:3px; color:var(--mc-text-tertiary); font-size:10px; font-weight:500; }
 .perspective-switch__tabs button.active { color:var(--mc-primary); background:var(--mc-bg-elevated); box-shadow:0 1px 3px var(--mc-shadow-soft); }
 .perspective-switch__tabs button.active small { color:var(--mc-primary); }
+.full-detail-mode .work-head { margin-bottom:6px; }
+.full-detail-mode .work-head h1 { margin-top:2px; font-size:clamp(16px,1.5vw,20px); }
+.full-detail-mode .perspective-switch { margin:0 0 8px; }
+.full-detail-mode .perspective-switch__tabs button { padding:6px 10px; }
 .fixture-banner { display:flex; align-items:center; gap:8px; width:100%; margin:0 0 16px; padding:9px 13px; border:1px solid var(--mc-warning); border-radius:var(--mc-radius-sm); color:var(--mc-status-warning-text); background:var(--mc-status-warning-bg); font-size:var(--mc-text-xs); }
 .fixture-banner span:last-child { color:var(--mc-status-warning-text); } .fixture-dot { width:7px; height:7px; border-radius:50%; background:var(--mc-warning); box-shadow:0 0 0 4px rgba(245,158,11,0.13); }
-.question-progress-fold { width:100%; margin-top:12px; border:1px solid var(--mc-border); border-radius:var(--mc-radius-sm); background:var(--mc-bg-elevated); overflow:hidden; }
-.question-progress-fold>summary { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; list-style:none; }
-.question-progress-fold>summary::-webkit-details-marker { display:none; }
-.question-progress-fold>summary>div b,.question-progress-fold>summary>div small { display:block; }
-.question-progress-fold>summary>div b { font-size:var(--mc-text-sm); }
-.question-progress-fold>summary>div small { margin-top:3px; color:var(--mc-text-secondary); font-size:var(--mc-text-xs); }
-.question-progress-fold>summary>span { margin-left:auto; color:var(--mc-text-tertiary); font-size:var(--mc-text-xs); }
-.question-progress-fold :deep(.five-question-rail) { margin:0; padding:0 18px 18px; border-top:1px solid var(--mc-border-light); }
-.question-progress-fold :deep(.fq-list) { margin-top:14px; }
-@media(max-width:760px){.perspective-switch{align-items:stretch;flex-direction:column}.perspective-switch__tabs{display:grid;grid-template-columns:1fr 1fr}.perspective-switch__tabs button{padding:9px 7px}}
+@media(max-width:760px){.perspective-switch{align-items:center}.perspective-switch__tabs{display:grid;grid-template-columns:1fr 1fr}.perspective-switch__tabs button{padding:9px 7px}}
 .business-card,.developer-fold { width:100%; max-width:none; margin-right:0; margin-left:0; border:1px solid var(--line); border-radius:var(--mc-radius-md); background:var(--mc-bg-elevated); box-shadow:0 8px 28px var(--mc-shadow-soft); }
 .business-card { padding:clamp(20px,3vw,36px); } .verdict-head { padding-bottom:16px; }
 .badge-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; } .conclusion-badge,.status-badge,.confidence-badge { padding:4px 9px; border:1px solid var(--line); border-radius:var(--mc-radius-lg); font-size:var(--mc-text-xs); font-weight:700; }

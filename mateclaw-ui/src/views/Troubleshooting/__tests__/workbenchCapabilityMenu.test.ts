@@ -16,6 +16,12 @@ import {
 } from '../workbenchCapabilityMenu'
 
 describe('troubleshooting secondary navigation information architecture', () => {
+  it('keeps diagnosis detail focused by compacting the secondary navigation automatically', () => {
+    expect(troubleshootingLayoutSource).toContain("route.query.view === 'detail'")
+    expect(troubleshootingLayoutSource).toContain('detailFocusMode.value || navCollapsed.value')
+    expect(troubleshootingLayoutSource).toContain('!forcedRailViewport && !detailFocusMode')
+  })
+
   it('keeps daily navigation small and moves specialist controls under more configuration', () => {
     const groupedItems = WORKBENCH_CAPABILITY_GROUPS.flatMap(group => group.items)
     const items = [...WORKBENCH_PRIMARY_CAPABILITIES, ...groupedItems]
