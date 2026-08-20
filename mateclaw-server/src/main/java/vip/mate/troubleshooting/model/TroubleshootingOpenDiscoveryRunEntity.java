@@ -30,6 +30,9 @@ public class TroubleshootingOpenDiscoveryRunEntity {
     /** JSON array of evidence request IDs only; no values or query text. */
     private String evidenceRefs;
     private String actorRef;
+    private Integer formalPilotPlanVersion;
+    private String sourceAcceptanceId;
+    private String sourceBindingFingerprint;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
 

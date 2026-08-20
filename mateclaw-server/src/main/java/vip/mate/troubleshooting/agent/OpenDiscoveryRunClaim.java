@@ -8,7 +8,8 @@ public record OpenDiscoveryRunClaim(
         String dedupKey,
         String claimToken,
         Instant claimedAt,
-        Instant expiresAt) {
+        Instant expiresAt)
+        implements vip.mate.troubleshooting.service.FormalPersistenceClaim {
 
     private static final Pattern SHA_256 = Pattern.compile("[a-f0-9]{64}");
     private static final Pattern SAFE_TOKEN = Pattern.compile("[A-Za-z0-9._-]{1,128}");

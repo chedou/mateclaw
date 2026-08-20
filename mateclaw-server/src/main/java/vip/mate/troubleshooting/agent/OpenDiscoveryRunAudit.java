@@ -24,7 +24,10 @@ public record OpenDiscoveryRunAudit(
         List<String> evidenceRefs,
         Instant startedAt,
         Instant completedAt,
-        String actorRef) {
+        String actorRef,
+        Integer formalPilotPlanVersion,
+        String sourceAcceptanceId,
+        String sourceBindingFingerprint) {
 
     public OpenDiscoveryRunAudit {
         runId = safe(runId, "runId", 128);
@@ -68,6 +71,56 @@ public record OpenDiscoveryRunAudit(
             throw new IllegalArgumentException("completedAt cannot precede startedAt");
         }
         actorRef = safe(actorRef, "actorRef", 192);
+        sourceAcceptanceId = nullableSafe(
+                sourceAcceptanceId, "sourceAcceptanceId", 128);
+        sourceBindingFingerprint = nullableFingerprint(sourceBindingFingerprint);
+        boolean hasFormalPilot = formalPilotPlanVersion != null;
+        boolean hasAcceptance = sourceAcceptanceId != null;
+        boolean hasBinding = sourceBindingFingerprint != null;
+        if (hasFormalPilot != hasAcceptance
+                || hasFormalPilot != hasBinding
+                || (hasFormalPilot && formalPilotPlanVersion < 1)) {
+            throw new IllegalArgumentException(
+                    "formal open-discovery authority must be complete or absent");
+        }
+    }
+
+    /** Compatibility constructor for rehearsal and pre-V220 run writers. */
+    public OpenDiscoveryRunAudit(
+            String runId,
+            String diagnosisId,
+            List<String> visibleScenarioKeys,
+            String selectedScenarioKey,
+            String selectedPlanFingerprint,
+            List<String> plannedSignalKinds,
+            int maxIterations,
+            int maxEvidenceRequests,
+            int sourceRequestCount,
+            Duration timeBudget,
+            StopReason stopReason,
+            List<String> evidenceRefs,
+            Instant startedAt,
+            Instant completedAt,
+            String actorRef) {
+        this(
+                runId,
+                diagnosisId,
+                visibleScenarioKeys,
+                selectedScenarioKey,
+                selectedPlanFingerprint,
+                plannedSignalKinds,
+                maxIterations,
+                maxEvidenceRequests,
+                sourceRequestCount,
+                timeBudget,
+                stopReason,
+                evidenceRefs,
+                startedAt,
+                completedAt,
+                actorRef,
+                null,
+                null,
+                null);
     }
 
     /** Compatibility reader for V197 rows created before plan fingerprints existed. */
@@ -101,7 +154,10 @@ public record OpenDiscoveryRunAudit(
                 evidenceRefs,
                 startedAt,
                 completedAt,
-                actorRef);
+                actorRef,
+                null,
+                null,
+                null);
     }
 
     public Duration duration() {

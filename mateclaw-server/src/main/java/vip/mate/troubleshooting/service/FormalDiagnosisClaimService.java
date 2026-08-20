@@ -58,6 +58,18 @@ public class FormalDiagnosisClaimService {
 
     /** Joins the Diagnosis insert transaction; failure rolls both writes back. */
     @Transactional
+    public void lockForCommit(long workspaceId, FormalDiagnosisClaim claim) {
+        if (claim == null) {
+            throw new IllegalArgumentException("claim is required");
+        }
+        if (mapper.lockForCommit(
+                workspaceId, claim.dedupKey(), claim.claimToken()) != 1) {
+            throw conflict("formal diagnosis claim ownership was lost");
+        }
+    }
+
+    /** Joins the Diagnosis insert transaction; failure rolls both writes back. */
+    @Transactional
     public void complete(
             long workspaceId,
             FormalDiagnosisClaim claim,

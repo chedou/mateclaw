@@ -23,6 +23,8 @@ import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmissionService;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 import vip.mate.troubleshooting.synthesis.DeterministicLogTraceCompressor;
 
@@ -92,6 +94,7 @@ public final class TroubleshootingAgentTriageService {
     private final TroubleshootingEvidenceModelProjector modelEvidenceProjector;
     private final Clock clock;
     private final ChatStreamTracker streamTracker;
+    private final FormalOpenDiscoveryAdmissionService formalOpenDiscoveryAdmissions;
 
     @Autowired
     public TroubleshootingAgentTriageService(
@@ -105,11 +108,12 @@ public final class TroubleshootingAgentTriageService {
             OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
             ObjectMapper objectMapper,
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
-            ChatStreamTracker streamTracker) {
+            ChatStreamTracker streamTracker,
+            FormalOpenDiscoveryAdmissionService formalOpenDiscoveryAdmissions) {
         this(properties, agentGate, agentService, bindingService, sessions,
                 boundedInvestigation, stateMachine,
                 openDiscoveryPersistence, objectMapper, modelEvidenceProjector,
-                Clock.systemUTC(), streamTracker);
+                Clock.systemUTC(), streamTracker, formalOpenDiscoveryAdmissions);
     }
 
     TroubleshootingAgentTriageService(
@@ -132,7 +136,8 @@ public final class TroubleshootingAgentTriageService {
                 new TroubleshootingEvidenceModelProjector(
                         new DeterministicLogTraceCompressor()),
                 clock,
-                streamTracker);
+                streamTracker,
+                null);
     }
 
     TroubleshootingAgentTriageService(
@@ -154,7 +159,8 @@ public final class TroubleshootingAgentTriageService {
                 new TroubleshootingEvidenceModelProjector(
                         new DeterministicLogTraceCompressor()),
                 clock,
-                streamTracker);
+                streamTracker,
+                null);
     }
 
     TroubleshootingAgentTriageService(
@@ -176,7 +182,8 @@ public final class TroubleshootingAgentTriageService {
                 objectMapper,
                 modelEvidenceProjector,
                 clock,
-                streamTracker);
+                streamTracker,
+                null);
     }
 
     TroubleshootingAgentTriageService(
@@ -192,6 +199,36 @@ public final class TroubleshootingAgentTriageService {
             TroubleshootingEvidenceModelProjector modelEvidenceProjector,
             Clock clock,
             ChatStreamTracker streamTracker) {
+        this(
+                properties,
+                agentGate,
+                agentService,
+                bindingService,
+                sessions,
+                boundedInvestigation,
+                stateMachine,
+                openDiscoveryPersistence,
+                objectMapper,
+                modelEvidenceProjector,
+                clock,
+                streamTracker,
+                null);
+    }
+
+    TroubleshootingAgentTriageService(
+            TroubleshootingAgentProperties properties,
+            OpenDiscoveryAgentGate agentGate,
+            AgentService agentService,
+            AgentBindingService bindingService,
+            TroubleshootingEvidenceSessionRegistry sessions,
+            BoundedOpenDiscoveryInvestigationService boundedInvestigation,
+            DiagnosisStateMachine stateMachine,
+            OpenDiscoveryDiagnosisPersistenceService openDiscoveryPersistence,
+            ObjectMapper objectMapper,
+            TroubleshootingEvidenceModelProjector modelEvidenceProjector,
+            Clock clock,
+            ChatStreamTracker streamTracker,
+            FormalOpenDiscoveryAdmissionService formalOpenDiscoveryAdmissions) {
         this.properties = properties;
         this.agentGate = agentGate;
         this.agentService = agentService;
@@ -204,6 +241,7 @@ public final class TroubleshootingAgentTriageService {
         this.modelEvidenceProjector = modelEvidenceProjector;
         this.clock = clock;
         this.streamTracker = streamTracker;
+        this.formalOpenDiscoveryAdmissions = formalOpenDiscoveryAdmissions;
     }
 
     public StoredDiagnosis triage(
@@ -241,6 +279,77 @@ public final class TroubleshootingAgentTriageService {
                 readyAt,
                 null,
                 null);
+    }
+
+    /**
+     * Entry point reserved for a formal generic investigation. The execution
+     * body is hardened separately from the rehearsal/Agent miss path; callers
+     * must never silently downgrade this request to a model-led run.
+     */
+    public StoredDiagnosis triageFormal(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt) {
+        if (workspaceId <= 0 || incident == null || reportedAt == null || readyAt == null) {
+            throw new IllegalArgumentException(
+                    "workspaceId, incident and formal timestamps are required");
+        }
+        if (suppliedEvidence != null && !suppliedEvidence.isEmpty()) {
+            throw formalConflict(
+                    "formal open discovery accepts only server-collected evidence");
+        }
+        if (formalOpenDiscoveryAdmissions == null
+                || boundedInvestigation == null) {
+            throw formalConflict(
+                    "formal bounded read-only planner is unavailable");
+        }
+        IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        FormalOpenDiscoveryAdmission admission =
+                formalOpenDiscoveryAdmissions.admit(workspaceId, sanitizedIncident);
+        OpenDiscoveryRunReservation reservation = openDiscoveryPersistence.reserve(
+                workspaceId,
+                sanitizedIncident,
+                false,
+                reportedAt,
+                null,
+                formalOpenDiscoveryClaimLease());
+        if (reservation.alreadyCompleted()) {
+            return openDiscoveryPersistence.requireCompletedFormal(
+                    workspaceId, reservation.completedDiagnosis(), admission);
+        }
+        try {
+            BoundedOpenDiscoveryInvestigationService.Execution execution =
+                    boundedInvestigation.investigateFormal(
+                                    workspaceId, sanitizedIncident)
+                            .orElseThrow(() -> formalConflict(
+                                    "formal bounded read-only planner is unavailable"));
+            if (EvidenceProvenance.fixtureModeForAcceptedGuanceRun(
+                    execution.evidence())) {
+                throw formalConflict(
+                        "formal open discovery requires accepted Guance evidence only");
+            }
+            formalOpenDiscoveryAdmissions.revalidate(
+                    workspaceId, sanitizedIncident, admission);
+            String correlationId = UUID.randomUUID().toString().replace("-", "");
+            return persistBoundedFinding(
+                    workspaceId,
+                    sanitizedIncident,
+                    List.of(),
+                    false,
+                    reportedAt,
+                    readyAt,
+                    null,
+                    reservation,
+                    correlationId,
+                    execution,
+                    admission);
+        } catch (RuntimeException | Error failure) {
+            openDiscoveryPersistence.release(workspaceId, reservation.claim());
+            throw failure;
+        }
     }
 
     /** Runs the same caged miss path with IntakeSession as the idempotent owner. */
@@ -335,7 +444,8 @@ public final class TroubleshootingAgentTriageService {
                         intakeSessionId,
                         reservation,
                         correlationId,
-                        reviewed);
+                        reviewed,
+                        null);
             }
             AgentEntity agent;
             try {
@@ -357,7 +467,8 @@ public final class TroubleshootingAgentTriageService {
                             intakeSessionId,
                             reservation,
                             correlationId,
-                            execution.orElseThrow());
+                            execution.orElseThrow(),
+                            null);
                 }
                 throw unavailable;
             }
@@ -541,7 +652,8 @@ public final class TroubleshootingAgentTriageService {
             String intakeSessionId,
             OpenDiscoveryRunReservation reservation,
             String correlationId,
-            BoundedOpenDiscoveryInvestigationService.Execution execution) {
+            BoundedOpenDiscoveryInvestigationService.Execution execution,
+            FormalOpenDiscoveryAdmission formalAdmission) {
         List<EvidenceResult> evidence = mergePlannerEvidence(
                 suppliedEvidence, execution.evidence());
         List<String> citations = boundedCitations(execution);
@@ -569,7 +681,9 @@ public final class TroubleshootingAgentTriageService {
                 NorthStarTimings.concluded(
                         reportedAt, readyAt, execution.outcome().completedAt()),
                 rehearsal,
-                EvidenceProvenance.fixtureMode(evidence, suppliedEvidence),
+                formalAdmission == null
+                        ? EvidenceProvenance.fixtureMode(evidence, suppliedEvidence)
+                        : false,
                 warnings);
         Diagnosis diagnosis = stateMachine.initializeBoundedInvestigation(draft);
         OpenDiscoveryRunAudit runAudit = new OpenDiscoveryRunAudit(
@@ -588,7 +702,24 @@ public final class TroubleshootingAgentTriageService {
                 citations,
                 execution.outcome().startedAt(),
                 execution.outcome().completedAt(),
-                "planner:" + execution.planKey());
+                "planner:" + execution.planKey(),
+                formalAdmission == null
+                        ? null : formalAdmission.pilotPlanVersion(),
+                formalAdmission == null
+                        ? null : formalAdmission.guanceAcceptanceId(),
+                formalAdmission == null
+                        ? null : formalAdmission.guanceBindingFingerprint());
+        if (formalAdmission != null) {
+            return openDiscoveryPersistence.persistFormal(
+                    workspaceId,
+                    diagnosis,
+                    reportedAt,
+                    intakeSessionId,
+                    reservation.claim(),
+                    runAudit,
+                    formalAdmission,
+                    clock.instant());
+        }
         return openDiscoveryPersistence.persist(
                 workspaceId,
                 diagnosis,
@@ -859,6 +990,23 @@ public final class TroubleshootingAgentTriageService {
     private MateClawException configurationConflict(String message) {
         return new MateClawException(
                 "err.troubleshooting.agent_misconfigured", 409, message);
+    }
+
+    private MateClawException formalConflict(String message) {
+        return new MateClawException(
+                "err.troubleshooting.formal_open_discovery_conflict", 409, message);
+    }
+
+    private Duration formalOpenDiscoveryClaimLease() {
+        Duration configuredBudget = properties.getBoundedInvestigationTimeout();
+        if (configuredBudget == null
+                || configuredBudget.isZero()
+                || configuredBudget.isNegative()) {
+            return OPEN_DISCOVERY_CLAIM_LEASE;
+        }
+        Duration budgetLease = configuredBudget.plusSeconds(60);
+        return budgetLease.compareTo(OPEN_DISCOVERY_CLAIM_LEASE) > 0
+                ? budgetLease : OPEN_DISCOVERY_CLAIM_LEASE;
     }
 
     private record AgentResponse(

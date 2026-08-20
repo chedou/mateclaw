@@ -11,8 +11,8 @@
 >   PostgreSQL 健康门，合并结果只剩 `mateclaw-server` + `searxng`，环境变量注入正确；
 >   PostgreSQL 模式不受影响。
 > - 镜像构建与启动：已实测至 V217。服务端镜像可构建（约 1.23 GB），
->   容器起来后 `/actuator/health` 返回 `UP`。当前源码共 213 个 Flyway 迁移
->   （最高 V219）；V218–V219 已通过三方言形状与 H2 执行验证，
+>   容器起来后 `/actuator/health` 返回 `UP`。当前源码共 214 个 Flyway 迁移
+>   （最高 V220）；V218–V220 已通过三方言形状与 H2 执行验证，
 >   测试环境切换仍需按本文维护窗流程执行。
 > - 外部 MySQL：已在 MySQL 8.0.11 上实测建表、H2 全量复制和本地应用启动；110 张业务表、
 >   2,723 行数据逐表行数一致。测试服务器切换属于单独的环境验收，不能由本地结果代替。
@@ -52,7 +52,7 @@ OOM killer 杀掉），所以构建机至少 8 GB 内存。如果部署机比这
 | 版本 | **5.7 最低，8.0 推荐**；当前迁移已在 8.0.11 验证 |
 | 字符集 | 库必须是 `utf8mb4` |
 | 连通性 | 部署机能连到 MySQL 的端口 |
-| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会检查当前 213 个迁移） |
+| 账号权限 | 目标库上的完整 DDL + DML（Flyway 每次启动都会检查当前 214 个迁移） |
 
 **必须先手工建库，且显式指定字符集：**
 
@@ -109,7 +109,7 @@ Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按�
 1. 从 GitHub 检出指定分支，并要求分支头与 `EXPECTED_COMMIT` 完全一致；
 2. 从该提交构建带不可变版本号的 Docker 镜像；
 3. 只读检查当前 Flyway 版本；无待执行迁移可直接继续，或只允许内容哈希完全一致的
-   `V204 → V217` 基础包与 `V217 → V219` 正式排障包；
+   `V204 → V217` 基础包与 `V217 → V220` 正式排障包；
 4. `DEPLOY` 才进入维护窗口：停止旧应用、生成 MySQL 逻辑备份，再启动新版本；
 5. 新版本必须同时通过健康检查和精确版本校验，否则恢复旧容器并保留 MySQL 备份。
 
@@ -121,10 +121,10 @@ Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按�
 本任务通常只允许数据库已无待执行迁移时发布应用。已审核两个连续例外：
 
 - `V204 → V217`：13 个 Agent Team 基础迁移；
-- `V217 → V219`：2 个正式排障迁移，仅增加评估样本来源字段与正式诊断 claim 表。
+- `V217 → V220`：3 个正式排障迁移，增加评估样本来源字段、正式诊断 claim 表和通用正式调查的来源验收审计字段。
 
 两个包的文件范围和组合 SHA-256 均在 `Jenkinsfile.test-env` 冻结。可从 V204
-一次升至 V219，也可从 V217 只执行 V218–V219；V218 中断后仅允许恢复执行 V219。
+一次升至 V220，也可从 V217 只执行 V218–V220；V218/V219 中断后只允许继续完成同一审核包。
 任一文件内容、数量、起点或终点变化都会 fail-closed。切换前的完整逻辑备份
 保留在 `/opt/mateclaw/releases`。其他 schema 升级必须先走独立数据库维护窗口。
 
@@ -282,11 +282,14 @@ DB_PASSWORD=你在 2.1 里设的密码
    工具会在一个事务里清空并重写所有业务表（包括源端为 0 行的表），不复制
    `flyway_schema_history`，结束时逐表反查行数；任何不一致都会返回失败。
 
-7. 清掉终端变量 `unset MATECLAW_MIGRATION_DB_PASSWORD`，再以 MySQL profile 启动 MateClaw。
+7. 清掉终端变量 `unset MATECLAW_MIGRATION_DB_PASSWORD`，再以
+   `SPRING_PROFILES_ACTIVE=mysql,csdp-guance-evidence-pilot` 启动 MateClaw。第二个
+   profile 只是显式打开通用 Guance 只读调查所需的服务端路由和预算；
+   场景级正式通道仍会在 D20 完成前 fail-closed。
    除健康检查外，至少核对登录、Workspace、模型配置、排障单和观测云连接配置。
 
 回滚时先停应用，恢复迁移前的 MySQL dump；若决定回到 H2，则恢复 H2 快照并撤掉
-`SPRING_PROFILES_ACTIVE=mysql`。在两种数据库之间反复来回启动会产生双写分叉，不属于受支持流程。
+`SPRING_PROFILES_ACTIVE=mysql,csdp-guance-evidence-pilot`。在两种数据库之间反复来回启动会产生双写分叉，不属于受支持流程。
 
 ### 2.6 关于多机部署
 

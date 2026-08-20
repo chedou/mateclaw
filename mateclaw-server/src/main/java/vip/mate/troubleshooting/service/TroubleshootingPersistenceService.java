@@ -77,7 +77,7 @@ public class TroubleshootingPersistenceService {
             Diagnosis diagnosis,
             Instant receivedAt,
             int admittedPilotPlanVersion,
-            FormalDiagnosisClaim formalClaim) {
+            FormalPersistenceClaim formalClaim) {
         validateCreate(workspaceId, diagnosis);
         validateFormalPilot(diagnosis, admittedPilotPlanVersion);
         if (formalClaim == null) {

@@ -157,6 +157,7 @@ class DeterministicDiagnosisServiceTest {
         assertEquals(SOURCE_PLAYBOOK, stored.diagnosis().sourcePlaybookVersionRef());
         assertEquals(9, stored.pilotPlanVersion());
         var order = inOrder(persistence, formalClaims);
+        order.verify(formalClaims).lockForCommit(7L, claim);
         order.verify(persistence).createOrGet(
                 7L, stored.diagnosis(), RECEIVED_AT, 9, claim);
         order.verify(formalClaims).complete(
@@ -250,6 +251,7 @@ class DeterministicDiagnosisServiceTest {
                 CONCLUSION_AT);
 
         var order = inOrder(persistence, formalClaims);
+        order.verify(formalClaims).lockForCommit(7L, claim);
         order.verify(persistence).createOrGetForIntake(
                 7L, stored.diagnosis(), "intake-7", 9, claim);
         order.verify(formalClaims).complete(
@@ -272,6 +274,7 @@ class DeterministicDiagnosisServiceTest {
                 RECEIVED_AT, READY_AT, "intake-7", claim, CONCLUSION_AT);
 
         var order = inOrder(persistence, formalClaims);
+        order.verify(formalClaims).lockForCommit(7L, claim);
         order.verify(persistence).createOrGetForIntake(
                 7L, stored.diagnosis(), "intake-7", claim);
         order.verify(formalClaims).complete(

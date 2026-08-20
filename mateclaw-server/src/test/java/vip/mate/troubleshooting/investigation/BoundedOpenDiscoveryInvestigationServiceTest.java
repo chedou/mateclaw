@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -88,6 +89,92 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
                 CLOCK);
 
         assertThat(service.investigate(1L, incident())).isEmpty();
+    }
+
+    @Test
+    void formalInvestigationNarrowsAMixedConfigurationToGuanceBeforeToolIo() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        properties.setBoundedInvestigationPermittedPlatforms(
+                List.of("recorded-replay", "prometheus", "guance"));
+        AtomicReference<Set<String>> observedPlatforms = new AtomicReference<>();
+        ReadOnlyEvidenceTool tool = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        "canonical-evidence", "1", Capability.READ_EVIDENCE,
+                        Set.of("error_log_scan", "k8s_workload_health"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                observedPlatforms.set(context.permittedPlatforms());
+                return new EvidenceResult(
+                        request.requestId(), request.signalKind(), "",
+                        EvidenceStatus.MISSING, "no rows", Map.of(),
+                        "guance:missing", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service =
+                new BoundedOpenDiscoveryInvestigationService(
+                        properties,
+                        new BoundedInvestigationPlanner(
+                                new ReadOnlyToolRegistry(List.of(tool), CLOCK),
+                                new CriterionEvaluator(), CLOCK),
+                        new DefaultOpenDiscoveryHypothesisGraphFactory(),
+                        CLOCK);
+
+        assertThat(service.investigateFormal(1L, incident())).isPresent();
+        assertThat(observedPlatforms.get()).containsExactly("guance");
+    }
+
+    @Test
+    void formalInvestigationNeverTurnsCallerTextIntoReportedEvidence() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        ReadOnlyEvidenceTool observability = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        EvidenceRouterReadOnlyTool.TOOL_KEY,
+                        EvidenceRouterReadOnlyTool.VERSION,
+                        Capability.READ_EVIDENCE,
+                        Set.of("error_log_scan", "k8s_workload_health"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                return new EvidenceResult(
+                        request.requestId(), request.signalKind(), "",
+                        EvidenceStatus.MISSING, "no rows", Map.of(),
+                        "guance:missing", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service =
+                new BoundedOpenDiscoveryInvestigationService(
+                        properties,
+                        new BoundedInvestigationPlanner(
+                                new ReadOnlyToolRegistry(
+                                        List.of(new IncidentReportReadOnlyTool(), observability),
+                                        CLOCK),
+                                new CriterionEvaluator(), CLOCK),
+                        new DefaultOpenDiscoveryHypothesisGraphFactory(), CLOCK);
+        IncidentContext callerShapedLikeReviewedReport = new IncidentContext(
+                "incident-formal-reported", "CSDP", "csdp-wechat", null,
+                "调用接口异常（HTTP 502 · get_icare_product_mapping）",
+                "P1", "客户受影响", null, NOW, null, "web",
+                IncidentCompleteness.STRUCTURED, null);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigateFormal(
+                        1L, callerShapedLikeReviewedReport).orElseThrow();
+
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly("error_log_scan", "k8s_workload_health");
+        assertThat(execution.evidence())
+                .allMatch(result -> result.source().startsWith("guance"));
     }
 
     @Test

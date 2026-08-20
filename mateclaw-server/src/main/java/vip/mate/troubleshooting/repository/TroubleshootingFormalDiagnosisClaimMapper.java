@@ -48,6 +48,20 @@ public interface TroubleshootingFormalDiagnosisClaimMapper
 
     @Update("""
             UPDATE mate_troubleshooting_formal_diagnosis_claim
+               SET update_time = CURRENT_TIMESTAMP
+             WHERE workspace_id = #{workspaceId}
+               AND dedup_key = #{dedupKey}
+               AND status = 'PROCESSING'
+               AND claim_token = #{claimToken}
+               AND lease_expires_at > CURRENT_TIMESTAMP
+            """)
+    int lockForCommit(
+            @Param("workspaceId") long workspaceId,
+            @Param("dedupKey") String dedupKey,
+            @Param("claimToken") String claimToken);
+
+    @Update("""
+            UPDATE mate_troubleshooting_formal_diagnosis_claim
                SET status = 'COMPLETED',
                    diagnosis_id = #{diagnosisId},
                    lease_expires_at = NULL,
@@ -57,7 +71,7 @@ public interface TroubleshootingFormalDiagnosisClaimMapper
                AND dedup_key = #{dedupKey}
                AND status = 'PROCESSING'
                AND claim_token = #{claimToken}
-               AND lease_expires_at > #{completedAt}
+               AND lease_expires_at > CURRENT_TIMESTAMP
             """)
     int complete(
             @Param("workspaceId") long workspaceId,

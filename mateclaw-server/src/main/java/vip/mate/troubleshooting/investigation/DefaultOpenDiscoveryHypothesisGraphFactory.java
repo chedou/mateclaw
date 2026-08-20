@@ -68,6 +68,43 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
         return HypothesisGraph.of(hypotheses);
     }
 
+    /**
+     * Builds the formal generic graph from external observability questions
+     * only. Caller text can never promote itself into local reported evidence.
+     */
+    public HypothesisGraph createFormal(IncidentContext incident) {
+        if (incident == null) {
+            throw new IllegalArgumentException("incident is required");
+        }
+        List<HypothesisGraph.Hypothesis> hypotheses = new java.util.ArrayList<>();
+        hypotheses.add(new HypothesisGraph.Hypothesis(
+                        "application-errors",
+                        "应用服务自身出现集中错误",
+                        100,
+                        List.of(question(
+                                "open-discovery-error-log-scan",
+                                100,
+                                "error_log_scan",
+                                "检查故障窗口内应用 ERROR 是否集中出现",
+                                "application-error-present",
+                                "应用 ERROR 数量大于零",
+                                new Criterion.NumericGte("error_count", 1)))));
+        hypotheses.add(new HypothesisGraph.Hypothesis(
+                        "runtime-health",
+                        "Kubernetes 工作负载出现异常",
+                        80,
+                        List.of(question(
+                                "open-discovery-k8s-workload-health",
+                                80,
+                                "k8s_workload_health",
+                                "检查服务工作负载是否存在非运行容器",
+                                "runtime-unhealthy-container-present",
+                                "异常容器数量大于零",
+                                new Criterion.NumericGte(
+                                        "unhealthy_container_count", 1)))));
+        return HypothesisGraph.of(hypotheses);
+    }
+
     /** Builds a local-only graph after IntakeSession provenance has been verified. */
     public HypothesisGraph createReviewedIncidentReport(IncidentContext incident) {
         if (!ReviewedIncidentPolicy.isReviewedIcareFinishRejection(incident)) {

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.ibatis.annotations.Update;
 import org.springframework.dao.DuplicateKeyException;
 import vip.mate.troubleshooting.model.TroubleshootingFormalDiagnosisClaimEntity;
 import vip.mate.troubleshooting.repository.TroubleshootingFormalDiagnosisClaimMapper;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -130,6 +132,39 @@ class FormalDiagnosisClaimServiceTest {
         verify(mapper).complete(
                 WORKSPACE_ID, DEDUP_KEY, "claim-1", "diag-1", completedAt);
         verify(mapper).release(WORKSPACE_ID, DEDUP_KEY, "claim-1");
+    }
+
+    @Test
+    void commitLockAtomicallyRequiresALiveLeaseAndCurrentToken() {
+        FormalDiagnosisClaim claim = new FormalDiagnosisClaim(
+                DEDUP_KEY, "claim-1", NOW, NOW.plusSeconds(300));
+        when(mapper.lockForCommit(WORKSPACE_ID, DEDUP_KEY, "claim-1"))
+                .thenReturn(1);
+
+        service.lockForCommit(WORKSPACE_ID, claim);
+
+        verify(mapper).lockForCommit(WORKSPACE_ID, DEDUP_KEY, "claim-1");
+    }
+
+    @Test
+    void completionChecksTheLeaseAgainstDatabaseTimeAtomically() throws Exception {
+        Method complete = TroubleshootingFormalDiagnosisClaimMapper.class.getMethod(
+                "complete", long.class, String.class, String.class,
+                String.class, LocalDateTime.class);
+        String sql = String.join(" ", complete.getAnnotation(Update.class).value());
+
+        assertThat(sql)
+                .contains("lease_expires_at > CURRENT_TIMESTAMP")
+                .doesNotContain("lease_expires_at > #{completedAt}");
+    }
+
+    @Test
+    void commitLockUsesDatabaseTimeAtTheTransactionsFirstStatement() throws Exception {
+        Method lock = TroubleshootingFormalDiagnosisClaimMapper.class.getMethod(
+                "lockForCommit", long.class, String.class, String.class);
+        String sql = String.join(" ", lock.getAnnotation(Update.class).value());
+
+        assertThat(sql).contains("lease_expires_at > CURRENT_TIMESTAMP");
     }
 
     @Test

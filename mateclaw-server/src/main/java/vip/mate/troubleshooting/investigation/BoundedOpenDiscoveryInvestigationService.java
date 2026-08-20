@@ -56,6 +56,45 @@ public final class BoundedOpenDiscoveryInvestigationService {
 
     public Optional<Execution> investigate(long workspaceId, IncidentContext incident) {
         Set<String> platforms = permittedPlatforms();
+        return investigate(
+                workspaceId,
+                incident,
+                platforms,
+                graphFactory.create(incident),
+                Set.of(
+                        EvidenceRouterReadOnlyTool.TOOL_KEY
+                                + "@" + EvidenceRouterReadOnlyTool.VERSION,
+                        IncidentReportReadOnlyTool.TOOL_KEY
+                                + "@" + IncidentReportReadOnlyTool.VERSION));
+    }
+
+    /**
+     * Formal generic investigations are Guance-only even when rehearsal
+     * configuration permits additional adapters. The restriction is passed to
+     * the registry before the first source call rather than checked after I/O.
+     */
+    public Optional<Execution> investigateFormal(
+            long workspaceId,
+            IncidentContext incident) {
+        Set<String> configured = permittedPlatforms();
+        if (!configured.contains("guance")) {
+            return Optional.empty();
+        }
+        return investigate(
+                workspaceId,
+                incident,
+                Set.of("guance"),
+                graphFactory.createFormal(incident),
+                Set.of(EvidenceRouterReadOnlyTool.TOOL_KEY
+                        + "@" + EvidenceRouterReadOnlyTool.VERSION));
+    }
+
+    private Optional<Execution> investigate(
+            long workspaceId,
+            IncidentContext incident,
+            Set<String> platforms,
+            HypothesisGraph graph,
+            Set<String> allowedToolIdentities) {
         if (!properties.isBoundedInvestigationEnabled() || platforms.isEmpty()) {
             return Optional.empty();
         }
@@ -69,7 +108,6 @@ public final class BoundedOpenDiscoveryInvestigationService {
             return Optional.empty();
         }
 
-        HypothesisGraph graph = graphFactory.create(incident);
         List<String> signalKinds = graph.nodes().stream()
                 .flatMap(node -> node.questions().stream())
                 .map(question -> question.request().signalKind())
@@ -83,11 +121,7 @@ public final class BoundedOpenDiscoveryInvestigationService {
                         maxIterations,
                         maxToolCalls,
                         timeout,
-                        Set.of(
-                                EvidenceRouterReadOnlyTool.TOOL_KEY
-                                        + "@" + EvidenceRouterReadOnlyTool.VERSION,
-                                IncidentReportReadOnlyTool.TOOL_KEY
-                                        + "@" + IncidentReportReadOnlyTool.VERSION)),
+                        allowedToolIdentities),
                 platforms);
         return Optional.of(new Execution(
                 outcome,

@@ -57,7 +57,7 @@ public interface TroubleshootingOpenDiscoveryClaimMapper
                AND dedup_key = #{dedupKey}
                AND status = 'PROCESSING'
                AND claim_token = #{claimToken}
-               AND lease_expires_at > #{completedAt}
+               AND lease_expires_at > CURRENT_TIMESTAMP
             """)
     int complete(
             @Param("workspaceId") long workspaceId,

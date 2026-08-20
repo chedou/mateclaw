@@ -1,6 +1,6 @@
 # HANDOFF · IT 智能排障 on MateClaw
 
-> 更新时间：2026-08-17
+> 更新时间：2026-08-21
 >
 > 仓库：`chedou/mateclaw`
 >
@@ -12,7 +12,23 @@
 >
 > 第一性原理评价与修订：`architecture-critique-v4.md` —— 用户已认可；现行为 **RFC v4.6 / 蓝图 v0.21**
 
-## 0. 当前总体进度（2026-08-17）
+## 0. 当前总体进度（2026-08-21）
+
+### 2026-08-21 · 通用平台正式路径与场景能力解耦
+
+- 正式 `OPEN_DISCOVERY` 不再要求先存在 Playbook，也不依赖 D20。结构化告警必须命中
+  当前试点 `system / service`，且通过当前 Guance owner acceptance；T7 的 Workspace
+  20–30 条批次门仍会在每次验收读取时重新校验。
+- 正式未知告警只运行服务端 `BoundedInvestigationPlanner` 与只读 Tool Registry；规划器
+  未启用、返回非 Guance 证据或权限在取证期间变化时均 409，不回退开放式 Agent。
+- V220 在 OPEN_DISCOVERY 不可变审计中冻结 `pilotPlanVersion`、`acceptanceId` 与
+  `bindingFingerprint`，不保存 DQL、查询正文、原始日志或关联 ID。
+- D20 仍只阻断 `SCENARIO_PLAYBOOK` 的正式运行。CTI 等场景级能力继续演练并逐项补齐
+  scenario-scoped binding/acceptance，不再阻塞通用平台的正式上线。
+- 首版正式通用入口只是 Web 工作台 / Incident API；Conversation Intake 在独立的
+  正式 claim 接缝完成前仍明确 409，不会静默回落演练或 Agent。
+- **运行态边界不变**：当前真实录制批次仍为 `0 / 20`，测试/生产环境未执行 V220，
+  因此这是代码就绪，不是已投产证明。
 
 | 轴 | 当前事实 | 下一步 |
 |---|---|---|

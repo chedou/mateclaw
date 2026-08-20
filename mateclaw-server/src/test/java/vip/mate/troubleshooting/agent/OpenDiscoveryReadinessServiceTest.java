@@ -115,6 +115,25 @@ class OpenDiscoveryReadinessServiceTest {
                 .containsExactly("itgw_access_failed");
     }
 
+    @Test
+    void marksGenericFormalRuntimeReadyWithoutAnAgentOrScenarioPlan() {
+        properties.setBoundedInvestigationEnabled(true);
+        properties.setBoundedInvestigationPermittedPlatforms(List.of("guance"));
+        properties.setApprovedScenarioPlans(Map.of());
+
+        OpenDiscoveryReadiness view = readiness.inspect(1L, "CSDP");
+
+        assertThat(view.status()).isEqualTo(
+                OpenDiscoveryReadiness.Status.READY_FOR_BOUNDED_FALLBACK);
+        assertThat(view.agentReady()).isFalse();
+        assertThat(view.trueSourcePermitted()).isTrue();
+        assertThat(view.blockers()).isEmpty();
+        assertThat(view.nextAction())
+                .contains("试点范围")
+                .contains("owner 验收")
+                .doesNotContain("Agent");
+    }
+
     private AgentEntity safeAgent(long workspaceId) {
         AgentEntity agent = new AgentEntity();
         agent.setId(42L);

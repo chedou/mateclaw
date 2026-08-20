@@ -69,7 +69,9 @@ services:
         condition: service_healthy
 
     environment:
-      SPRING_PROFILES_ACTIVE: mysql
+      # Production-like troubleshooting needs the explicit Guance profile;
+      # callers may still use the MySQL-only default for data migration work.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-mysql}
       # The base file hardcodes the compose-internal PostgreSQL; these have to
       # point at the real server instead.
       DB_HOST: ${DB_HOST:?DB_HOST is required — set your MySQL server address in .env}

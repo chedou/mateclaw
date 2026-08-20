@@ -382,9 +382,17 @@ public class TroubleshootingIntakeService {
                     sanitizedIncident = sanitizedIncident.withResolvedRoute(sop.errorCode());
                 } else {
                     if (!rehearsal) {
-                        throw routeMiss(
-                                routeMissReason
-                                        + "; formal diagnosis requires a current active-approved Playbook");
+                        if (intakeSessionId != null) {
+                            throw routeMiss(
+                                    routeMissReason
+                                            + "; formal generic investigation for IntakeSession is not available yet");
+                        }
+                        return triageFormalRouteMiss(
+                                workspaceId,
+                                sanitizedIncident,
+                                routeMissReason,
+                                reportedAt,
+                                intakeReadyAt == null ? clock.instant() : intakeReadyAt);
                     }
                     StoredDiagnosis triaged = triageRouteMiss(
                             workspaceId,
@@ -409,10 +417,20 @@ public class TroubleshootingIntakeService {
             }
             if (sop == null) {
                 if (!rehearsal) {
-                    throw routeMiss(
-                            "no SOP registered for " + sanitizedIncident.system()
-                                    + ":" + sanitizedIncident.errorCode()
-                                    + "; formal diagnosis requires a current active-approved Playbook");
+                    String reason = "no SOP registered for "
+                            + sanitizedIncident.system() + ":"
+                            + sanitizedIncident.errorCode();
+                    if (intakeSessionId != null) {
+                        throw routeMiss(
+                                reason
+                                        + "; formal generic investigation for IntakeSession is not available yet");
+                    }
+                    return triageFormalRouteMiss(
+                            workspaceId,
+                            sanitizedIncident,
+                            reason,
+                            reportedAt,
+                            intakeReadyAt == null ? clock.instant() : intakeReadyAt);
                 }
                 StoredDiagnosis triaged = triageRouteMiss(
                         workspaceId,
@@ -734,6 +752,25 @@ public class TroubleshootingIntakeService {
         } catch (MateClawException refused) {
             throw agentUnavailable(reason, refused);
         }
+    }
+
+    private StoredDiagnosis triageFormalRouteMiss(
+            long workspaceId,
+            IncidentContext incident,
+            String reason,
+            Instant reportedAt,
+            Instant readyAt) {
+        if (agentTriageService == null) {
+            throw routeMiss(
+                    reason + "; bounded read-only investigation is disabled or unavailable");
+        }
+        return agentTriageService.triageFormal(
+                workspaceId,
+                incident,
+                List.of(),
+                reason,
+                reportedAt,
+                readyAt);
     }
 
     /**

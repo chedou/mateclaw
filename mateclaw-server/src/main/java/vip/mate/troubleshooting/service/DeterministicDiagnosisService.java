@@ -180,6 +180,7 @@ public class DeterministicDiagnosisService {
                     409,
                     "direct formal diagnosis requires a live claim and completion time");
         }
+        formalClaims.lockForCommit(workspaceId, formalClaim);
         ApprovedPlaybookVersion locked = lockFormalAdmission(
                 workspaceId, admission);
         Diagnosis diagnosis = diagnose(
@@ -252,6 +253,7 @@ public class DeterministicDiagnosisService {
                     409,
                     "rehearsal IntakeSession diagnosis requires its live session claim");
         }
+        formalClaims.lockForCommit(workspaceId, claim);
         Diagnosis diagnosis = diagnoseAgainstLockedPlaybook(
                 workspaceId,
                 incident,
@@ -299,6 +301,7 @@ public class DeterministicDiagnosisService {
                     409,
                     "formal intake diagnosis requires a live claim and completion time");
         }
+        formalClaims.lockForCommit(workspaceId, formalClaim);
         ApprovedPlaybookVersion locked = lockFormalAdmission(
                 workspaceId, admission);
         Diagnosis diagnosis = diagnose(

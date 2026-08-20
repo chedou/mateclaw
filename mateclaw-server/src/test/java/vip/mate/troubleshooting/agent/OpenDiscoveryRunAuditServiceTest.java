@@ -1,6 +1,7 @@
 package vip.mate.troubleshooting.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.ibatis.annotations.Select;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,6 +84,9 @@ class OpenDiscoveryRunAuditServiceTest {
         row.setStopReason("VERIFIABLE_HYPOTHESIS");
         row.setEvidenceRefs("[\"ONLINE-LOG-SEARCH\"]");
         row.setActorRef("agent:88");
+        row.setFormalPilotPlanVersion(4);
+        row.setSourceAcceptanceId("t7-accepted-generic-000001");
+        row.setSourceBindingFingerprint("c".repeat(64));
         row.setStartedAt(LocalDateTime.ofInstant(STARTED_AT, ZoneOffset.UTC));
         row.setCompletedAt(LocalDateTime.ofInstant(COMPLETED_AT, ZoneOffset.UTC));
         when(mapper.latestByDiagnosis(7L, "diag-agent-1")).thenReturn(row);
@@ -93,6 +98,49 @@ class OpenDiscoveryRunAuditServiceTest {
         assertThat(latest.stopReason())
                 .isEqualTo(OpenDiscoveryRunAudit.StopReason.VERIFIABLE_HYPOTHESIS);
         assertThat(latest.evidenceRefs()).containsExactly("ONLINE-LOG-SEARCH");
+        assertThat(latest.formalPilotPlanVersion()).isEqualTo(4);
+        assertThat(latest.sourceAcceptanceId())
+                .isEqualTo("t7-accepted-generic-000001");
+        assertThat(latest.sourceBindingFingerprint()).isEqualTo("c".repeat(64));
+    }
+
+    @Test
+    void roundTripsFormalPilotAndAcceptedSourceIdentityWithoutQueryMaterial() {
+        OpenDiscoveryRunAudit formal = new OpenDiscoveryRunAudit(
+                "run-formal-1", "diag-formal-1",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1", "b".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2, 2, 2, Duration.ofSeconds(10),
+                OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                List.of("open-discovery-error-log-scan"),
+                STARTED_AT, COMPLETED_AT,
+                "planner:bounded-open-discovery-v1",
+                4, "t7-accepted-generic-000001", "c".repeat(64));
+        when(mapper.insert(any(TroubleshootingOpenDiscoveryRunEntity.class))).thenReturn(1);
+
+        service.insert(7L, formal);
+
+        ArgumentCaptor<TroubleshootingOpenDiscoveryRunEntity> row =
+                ArgumentCaptor.forClass(TroubleshootingOpenDiscoveryRunEntity.class);
+        verify(mapper).insert(row.capture());
+        assertThat(row.getValue().getFormalPilotPlanVersion()).isEqualTo(4);
+        assertThat(row.getValue().getSourceAcceptanceId())
+                .isEqualTo("t7-accepted-generic-000001");
+        assertThat(row.getValue().getSourceBindingFingerprint())
+                .isEqualTo("c".repeat(64));
+    }
+
+    @Test
+    void latestAuditQuerySelectsTheFrozenFormalAuthorityColumns() throws Exception {
+        Method latest = TroubleshootingOpenDiscoveryRunMapper.class.getMethod(
+                "latestByDiagnosis", long.class, String.class);
+        String sql = String.join(" ", latest.getAnnotation(Select.class).value());
+
+        assertThat(sql).contains(
+                "formal_pilot_plan_version",
+                "source_acceptance_id",
+                "source_binding_fingerprint");
     }
 
     @Test

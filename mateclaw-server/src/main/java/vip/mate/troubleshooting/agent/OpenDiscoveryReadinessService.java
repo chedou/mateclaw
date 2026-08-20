@@ -33,18 +33,24 @@ public final class OpenDiscoveryReadinessService {
         List<String> blockers = new ArrayList<>(agent.blockers());
         List<OpenDiscoveryReadiness.PlanSummary> plans = listPlans(workspaceId, system);
         long visible = plans.stream().filter(OpenDiscoveryReadiness.PlanSummary::visibleForRequestedSystem).count();
-        boolean trueSourcePermitted = plans.stream().anyMatch(
+        boolean genericBoundedRuntimeReady = genericBoundedRuntimeReady();
+        boolean trueSourcePermitted = genericBoundedRuntimeReady || plans.stream().anyMatch(
                 OpenDiscoveryReadiness.PlanSummary::includesTrueSource);
 
-        if (plans.isEmpty()) {
+        if (!genericBoundedRuntimeReady && plans.isEmpty()) {
             blockers.add("尚未配置任何已审核开放调查计划（approved-scenario-plans）");
-        } else if (system != null && !system.isBlank() && visible == 0) {
+        } else if (!genericBoundedRuntimeReady
+                && system != null && !system.isBlank() && visible == 0) {
             blockers.add("当前系统没有可见的开放调查计划；模型只能从本系统已审核计划中选一个 key");
         }
 
         OpenDiscoveryReadiness.Status status;
         String nextAction;
-        if (agent.status() == OpenDiscoveryAgentGate.Status.DISABLED) {
+        if (genericBoundedRuntimeReady) {
+            status = OpenDiscoveryReadiness.Status.READY_FOR_BOUNDED_FALLBACK;
+            blockers = List.of();
+            nextAction = "填写精确系统和服务后可申请正式受限调查；运行前仍会校验试点范围、T7 录制批次和 owner 验收";
+        } else if (agent.status() == OpenDiscoveryAgentGate.Status.DISABLED) {
             status = OpenDiscoveryReadiness.Status.DISABLED;
             nextAction = "按 agent-miss-path-runbook 创建专用数字员工后，打开 mateclaw.troubleshooting.agent.enabled";
         } else if (!blockers.isEmpty() || agent.status() != OpenDiscoveryAgentGate.Status.AGENT_READY) {
@@ -74,6 +80,22 @@ public final class OpenDiscoveryReadinessService {
                 plans,
                 blockers,
                 nextAction);
+    }
+
+    private boolean genericBoundedRuntimeReady() {
+        if (!properties.isBoundedInvestigationEnabled()
+                || properties.getBoundedInvestigationMaxIterations() <= 0
+                || properties.getBoundedInvestigationMaxToolCalls() <= 0
+                || properties.getMaxEvidenceRequests() <= 0
+                || properties.getBoundedInvestigationTimeout() == null
+                || properties.getBoundedInvestigationTimeout().isZero()
+                || properties.getBoundedInvestigationTimeout().isNegative()) {
+            return false;
+        }
+        return properties.getBoundedInvestigationPermittedPlatforms() != null
+                && properties.getBoundedInvestigationPermittedPlatforms().stream()
+                .map(OpenDiscoveryReadinessService::normalize)
+                .anyMatch("guance"::equals);
     }
 
     private List<OpenDiscoveryReadiness.PlanSummary> listPlans(long workspaceId, String system) {

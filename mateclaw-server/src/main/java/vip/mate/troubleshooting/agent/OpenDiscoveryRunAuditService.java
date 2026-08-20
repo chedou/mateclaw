@@ -68,6 +68,9 @@ public class OpenDiscoveryRunAuditService {
         entity.setStopReason(audit.stopReason().name());
         entity.setEvidenceRefs(writeList(audit.evidenceRefs()));
         entity.setActorRef(audit.actorRef());
+        entity.setFormalPilotPlanVersion(audit.formalPilotPlanVersion());
+        entity.setSourceAcceptanceId(audit.sourceAcceptanceId());
+        entity.setSourceBindingFingerprint(audit.sourceBindingFingerprint());
         entity.setStartedAt(LocalDateTime.ofInstant(audit.startedAt(), ZoneOffset.UTC));
         LocalDateTime completed = LocalDateTime.ofInstant(
                 audit.completedAt(), ZoneOffset.UTC);
@@ -95,7 +98,10 @@ public class OpenDiscoveryRunAuditService {
                     readList(entity.getEvidenceRefs()),
                     entity.getStartedAt().toInstant(ZoneOffset.UTC),
                     entity.getCompletedAt().toInstant(ZoneOffset.UTC),
-                    entity.getActorRef());
+                    entity.getActorRef(),
+                    entity.getFormalPilotPlanVersion(),
+                    entity.getSourceAcceptanceId(),
+                    entity.getSourceBindingFingerprint());
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException failure) {
             throw invalid("stored open discovery run audit is invalid");
         }

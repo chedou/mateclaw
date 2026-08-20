@@ -131,7 +131,7 @@ const openDiscoveryAlertType = computed(() => {
 const openDiscoveryTitle = computed(() => {
   switch (props.openDiscoveryReadiness?.status) {
     case 'READY_FOR_BOUNDED_FALLBACK':
-      return '没有标准方案时，可用受限只读调查（真源已允许）'
+      return '没有标准方案时，可申请正式受限调查'
     case 'READY_FOR_REHEARSAL':
       return '没有标准方案时，可先演练；尚未接真源'
     case 'DISABLED':

@@ -14,9 +14,9 @@
     <div class="conv-mode">
       <el-checkbox
         v-model="rehearsal"
-        :disabled="loading || messages.length > 0"
-      >演练模式（推荐首次使用）</el-checkbox>
-      <span>{{ rehearsal ? '生成演练排障单，不占用生产去重窗口' : '生成正式排障单，适用于真实值班告警' }}</span>
+        disabled
+      >演练模式（当前对话入口仅支持演练）</el-checkbox>
+      <span>正式通用调查请使用「新建排障单」；这里不会把演练冒充成正式结果。</span>
     </div>
 
     <div ref="threadEl" class="conv-thread" aria-live="polite">

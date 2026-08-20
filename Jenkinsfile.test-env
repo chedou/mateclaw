@@ -39,8 +39,8 @@ pipeline {
     APPROVED_FOUNDATION_TO = '217'
     APPROVED_FOUNDATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
     APPROVED_FORMAL_DIAGNOSIS_FROM = '217'
-    APPROVED_FORMAL_DIAGNOSIS_TO = '219'
-    APPROVED_FORMAL_DIAGNOSIS_SHA256 = 'f4f7bd80cf4ed835e559a06713643a2bd85eb3247e4e1f09732b2c103c71d7ea'
+    APPROVED_FORMAL_DIAGNOSIS_TO = '220'
+    APPROVED_FORMAL_DIAGNOSIS_SHA256 = '1d48f6502f7049f9c4f3a66ef3f925ce9604060265c7ecdcee985c6fa8faa12d'
     CANDIDATE_IMAGE = "mateclaw-troubleshooting:jenkins-candidate-${BUILD_NUMBER}"
   }
 
@@ -154,8 +154,8 @@ case "$env_mode" in
   400|600) ;;
   *) fail "mateclaw.env 权限必须为 0400 或 0600，当前为 $env_mode" ;;
 esac
-grep -Eq '^SPRING_PROFILES_ACTIVE=mysql$' "$ENV_FILE" \
-  || fail "测试环境未明确使用 MySQL profile"
+grep -Eq '^SPRING_PROFILES_ACTIVE=(mysql,csdp-guance-evidence-pilot|csdp-guance-evidence-pilot,mysql)$' "$ENV_FILE" \
+  || fail "测试环境必须同时启用 MySQL 与通用观测云调查 profile"
 grep -Eq '^DB_HOST=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_HOST"
 grep -Eq '^DB_USERNAME=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_USERNAME"
 grep -Eq '^DB_PASSWORD=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_PASSWORD"
@@ -310,28 +310,33 @@ if [[ "$pending_count" -gt 0 ]]; then
     || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
   formal_diagnosis_migration_sha="$(
     cd "$migration_dir"
-    sha256sum V{218..219}__*.sql | sha256sum | awk '{print $1}'
+    sha256sum V{218..220}__*.sql | sha256sum | awk '{print $1}'
   )"
   [[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V218-V219 内容已变化，必须重新审核" >&2; exit 1; }
+    || { echo "MIGRATION_PRECHECK_FAILED: V218-V220 内容已变化，必须重新审核" >&2; exit 1; }
 
   case "$current_version" in
     "$APPROVED_FOUNDATION_FROM")
-      [[ "$pending_count" -eq 15 ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 15 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
-      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V219" >&2; exit 1; }
+      [[ "$pending_count" -eq 16 ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 16 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
+      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V220" >&2; exit 1; }
       migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}"
       ;;
     "$APPROVED_FORMAL_DIAGNOSIS_FROM")
-      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '218 219' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V219" >&2; exit 1; }
+      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '218 219 220' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V220" >&2; exit 1; }
       migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     218)
-      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '219' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219" >&2; exit 1; }
+      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '219 220' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V220" >&2; exit 1; }
       migration_policy="APPROVED_V218_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      ;;
+    219)
+      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '220' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220" >&2; exit 1; }
+      migration_policy="APPROVED_V219_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     *)
       echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2
@@ -479,7 +484,7 @@ fi
 # 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
 # mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
 # 本次只允许无 pending，或哈希冻结的 V204-V217 基础包与
-# V218-V219 正式排障包；失败时恢复旧容器，
+# V218-V220 正式排障包；失败时恢复旧容器，
 # 并保留该备份供人工恢复。
 docker run --rm \
   -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \

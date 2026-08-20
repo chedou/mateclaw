@@ -499,6 +499,61 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void formalUnknownErrorCodeUsesGenericOpenDiscoveryWithoutD20OrAPlaybook() {
+        IncidentContext unknown = new IncidentContext(
+                "incident-generic", "CSDP", "csdp-session-service", "999999",
+                "未知会话异常", "P2",
+                IncidentImpact.unknown("影响待确认"), null, NOW, null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED, "未知会话异常");
+        StoredDiagnosis expected = org.mockito.Mockito.mock(StoredDiagnosis.class);
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "999999"))
+                .thenReturn(null);
+        when(agent.triageFormal(
+                WORKSPACE_ID,
+                unknown,
+                List.of(),
+                "no SOP registered for CSDP:999999",
+                NOW,
+                NOW))
+                .thenReturn(expected);
+
+        org.assertj.core.api.Assertions.assertThat(intake.report(
+                WORKSPACE_ID, unknown, List.of(), false, NOW))
+                .isSameAs(expected);
+
+        verifyNoInteractions(formalAdmissions, evidenceSpine, diagnosisService);
+        verify(agent).triageFormal(
+                WORKSPACE_ID,
+                unknown,
+                List.of(),
+                "no SOP registered for CSDP:999999",
+                NOW,
+                NOW);
+    }
+
+    @Test
+    void formalAlertWithoutErrorCodeUsesGenericOpenDiscoveryWithoutD20() {
+        IncidentContext unknown = new IncidentContext(
+                "incident-generic-no-code", "CSDP", "csdp-session-service", null,
+                "会话服务持续失败", "P2",
+                IncidentImpact.unknown("影响待确认"), null, NOW, null,
+                "alert_webhook", IncidentCompleteness.SYMPTOM, "会话服务持续失败");
+        StoredDiagnosis expected = org.mockito.Mockito.mock(StoredDiagnosis.class);
+        String reason = "incident carries no errorCode; deterministic routing needs one";
+        when(agent.triageFormal(
+                WORKSPACE_ID, unknown, List.of(), reason, NOW, NOW))
+                .thenReturn(expected);
+
+        org.assertj.core.api.Assertions.assertThat(intake.report(
+                WORKSPACE_ID, unknown, List.of(), false, NOW))
+                .isSameAs(expected);
+
+        verifyNoInteractions(formalAdmissions, evidenceSpine, diagnosisService);
+        verify(agent).triageFormal(
+                WORKSPACE_ID, unknown, List.of(), reason, NOW, NOW);
+    }
+
+    @Test
     void admittedRunRejectsFixtureProvenanceBeforeRevalidationOrPersistence() {
         SopEntry playbook = playbook();
         FormalDiagnosisAdmission admission = admission(playbook);

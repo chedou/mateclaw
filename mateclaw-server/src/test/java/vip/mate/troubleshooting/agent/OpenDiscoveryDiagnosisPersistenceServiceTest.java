@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.model.Confidence;
 import vip.mate.troubleshooting.model.BoundedInvestigationDraft;
 import vip.mate.troubleshooting.model.Diagnosis;
@@ -15,6 +16,8 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
+import vip.mate.troubleshooting.service.IncidentDeduplicationKey;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 
 import java.time.Duration;
@@ -211,6 +214,91 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 .hasMessageContaining("stopReason must agree");
     }
 
+    @Test
+    void persistsFormalDiagnosisAuditAndClaimAsOneTransactionBoundary() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        OpenDiscoveryRunAudit audit = formalBoundedAudit(admission);
+        OpenDiscoveryRunClaim claim = new OpenDiscoveryRunClaim(
+                IncidentDeduplicationKey.create(
+                                diagnosis.incident(), false, NOW)
+                        .orElseThrow(),
+                "claim-formal-1",
+                NOW,
+                NOW.plusSeconds(80));
+        when(diagnoses.createOrGet(
+                WORKSPACE_ID, diagnosis, NOW, 4, claim))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true, 4));
+
+        StoredDiagnosis stored = service.persistFormal(
+                WORKSPACE_ID, diagnosis, NOW, null, claim, audit, admission,
+                NOW.plusSeconds(12));
+
+        assertThat(stored.pilotPlanVersion()).isEqualTo(4);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                diagnoses, runAudits, claims);
+        order.verify(claims).complete(
+                WORKSPACE_ID, claim, diagnosis.diagnosisId(), NOW.plusSeconds(12));
+        order.verify(diagnoses).createOrGet(
+                WORKSPACE_ID, diagnosis, NOW, 4, claim);
+        order.verify(runAudits).insert(WORKSPACE_ID, audit);
+    }
+
+    @Test
+    void rejectsFormalAuditThatDoesNotMatchTheFrozenAdmission() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        OpenDiscoveryRunAudit mismatched = new OpenDiscoveryRunAudit(
+                "run-bounded-1", "diag-bounded-1",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1", "0".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2, 2, 2, Duration.ofSeconds(10),
+                OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                List.of("open-discovery-error-log-scan"), NOW, NOW,
+                "planner:bounded-open-discovery-v1", 4,
+                "t7-other-acceptance-000001", "b".repeat(64));
+
+        assertThatThrownBy(() -> service.persistFormal(
+                WORKSPACE_ID, diagnosis, NOW, null, null, mismatched, admission,
+                NOW.plusSeconds(12)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must match its admission");
+
+        verify(diagnoses, never()).createOrGet(
+                eq(WORKSPACE_ID), eq(diagnosis), eq(NOW), eq(4), any());
+    }
+
+    @Test
+    void reusesACompletedFormalDiagnosisOnlyWhenItsAuditMatchesCurrentAuthority() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis, 2, false, 4);
+        when(runAudits.latest(WORKSPACE_ID, diagnosis.diagnosisId()))
+                .thenReturn(Optional.of(formalBoundedAudit(admission)));
+
+        assertThat(service.requireCompletedFormal(
+                WORKSPACE_ID, stored, admission)).isSameAs(stored);
+    }
+
+    @Test
+    void rejectsLegacyCompletedDiagnosisWithoutMatchingFormalAuditAuthority() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis, 2, false, 4);
+        when(runAudits.latest(WORKSPACE_ID, diagnosis.diagnosisId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requireCompletedFormal(
+                WORKSPACE_ID, stored, admission))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("frozen formal authority");
+    }
+
     private Diagnosis diagnosis() {
         IncidentContext incident = new IncidentContext(
                 "incident-agent-1", "CSDP", "csdp-task", null,
@@ -286,5 +374,28 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 NOW,
                 NOW,
                 "planner:bounded-open-discovery-v1");
+    }
+
+    private OpenDiscoveryRunAudit formalBoundedAudit(
+            FormalOpenDiscoveryAdmission admission) {
+        return new OpenDiscoveryRunAudit(
+                "run-bounded-1",
+                "diag-bounded-1",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1",
+                "0".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2,
+                2,
+                2,
+                Duration.ofSeconds(10),
+                OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                List.of("open-discovery-error-log-scan"),
+                NOW,
+                NOW,
+                "planner:bounded-open-discovery-v1",
+                admission.pilotPlanVersion(),
+                admission.guanceAcceptanceId(),
+                admission.guanceBindingFingerprint());
     }
 }
