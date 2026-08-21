@@ -64,6 +64,38 @@ export interface ConversationTurnResult {
   rehearsal: boolean
 }
 
+export type DiagnosisFollowUpIntent =
+  | 'WHY'
+  | 'EVIDENCE'
+  | 'UNKNOWNS'
+  | 'NEXT_STEP'
+  | 'SUPPLEMENTAL_EVIDENCE'
+  | 'HELP'
+  | 'END'
+
+export interface DiagnosisFollowUpRun {
+  runId: string
+  diagnosisId: string
+  diagnosisVersion: number
+  conclusionType: ConclusionType
+  turnKind: 'SUPPLEMENTAL_EVIDENCE'
+  contentLength: number
+  disposition: 'RECORDED_NOT_VERIFIED'
+  actorRef: string
+  recordedAt: string
+}
+
+export interface DiagnosisFollowUpResult {
+  diagnosisId: string
+  status: 'ACTIVE' | 'ENDED'
+  intent: DiagnosisFollowUpIntent
+  conclusionType: ConclusionType
+  evidenceBasis: 'OBSERVED' | 'REPORTED' | 'RECORDED_REPLAY' | null
+  fixtureMode: boolean
+  answer: string
+  investigationRun: DiagnosisFollowUpRun | null
+}
+
 /** Explicit topology-scenario intake; routing, Playbook and Tool keys are server-owned. */
 export interface CreateDeploymentTopologyScenarioRequest {
   system: string

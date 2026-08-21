@@ -187,6 +187,20 @@
         </div>
       </div>
 
+      <div v-if="tsActiveDiagnosisId" class="ts-follow-up-banner" role="status">
+        <div class="ts-intent-copy">
+          <b>正在追问排障结论</b>
+          <span>
+            排障单 {{ tsActiveDiagnosisId }} · 可问原因、证据、未知和下一步；
+            补充材料请以“补充证据：”开头。
+          </span>
+        </div>
+        <div class="ts-intent-actions">
+          <button type="button" class="btn-secondary" @click="openActiveDiagnosis">查看详情</button>
+          <button type="button" class="btn-secondary" @click="runTroubleshootingIntakeTurn('结束排障')">结束排障</button>
+        </div>
+      </div>
+
       <!-- Cron job in-flight placeholder — visible while T2 hasn't committed
            the assistant message yet. Populated by pollActivity → /cron-jobs/active-runs. -->
       <div v-if="activeCronRuns.length > 0" class="cron-running-bar">
@@ -260,7 +274,9 @@
         :loading="(isGenerating && !hasPendingApproval) || tsIntakeLoading"
         :disabled="blockingPrompt || !currentAgent || workerConversationReadOnly || tsIntakeLoading"
         :skills-enabled="!!currentAgent && !currentAgent.skillsDisabled"
-        :placeholder="$t('chat.messagePlaceholder')"
+        :placeholder="tsActiveDiagnosisId
+          ? '继续追问当前排障单，或输入“结束排障”'
+          : $t('chat.messagePlaceholder')"
         :hint="currentRuntimeModel"
         :attachments="pendingAttachments"
         :uploading="uploadingAttachment"
@@ -303,8 +319,10 @@
 
         <ConversationIntakeDialog
           v-model="conversationIntakeOpen"
+          :origin-chat-conversation-id="currentConversationId"
           @switch-form="goTroubleshootingForm"
           @ready="onConversationIntakeReady"
+          @ended="onConversationIntakeEnded"
         />
       </div>
     </div>
@@ -372,6 +390,12 @@ import {
   shouldOfferTroubleshootingIntake,
   troubleshootingDiagnosisResultMessage,
 } from '@/views/Troubleshooting/chatTroubleshootingIntent'
+import {
+  applyDiagnosisFollowUpContextOutcome,
+  clearDiagnosisFollowUpContext,
+  loadDiagnosisFollowUpContext,
+  saveDiagnosisFollowUpContext,
+} from '@/views/Troubleshooting/diagnosisFollowUpContext'
 import { troubleshootingApi } from '@/api'
 
 const TS_LAUNCH_SUGGESTION = '发起排障（粘贴告警）'
@@ -381,10 +405,12 @@ const showTalkMode = ref(false)
 const conversationIntakeOpen = ref(false)
 /** Soft confirm when chat text looks like an alert but is not HIGH confidence. */
 const tsIntentOffer = ref<{ text: string } | null>(null)
-/** After user confirms, subsequent turns stay on Intake until READY / exit. */
+/** Intake collection and Diagnosis-bound follow-up share one explicit chat mode. */
 const tsIntakeActive = ref(false)
 const tsIntakeConversationId = ref<string | null>(null)
+const tsActiveDiagnosisId = ref<string | null>(null)
 const tsIntakeLoading = ref(false)
+const tsLatestRequestByChat = new Map<string, number>()
 /** User chose "continue normal chat" for this browser chat conversation. */
 const tsIntentSuppressedConvIds = ref<Set<string>>(new Set())
 
@@ -1408,6 +1434,10 @@ watch([selectedAgentId, currentConversationId], () => {
   syncRouteState()
 })
 
+watch(currentConversationId, (conversationId) => {
+  hydrateDiagnosisFollowUp(conversationId)
+}, { immediate: true })
+
 // Load the active goal whenever the user switches conversation. The
 // avatar ring listens on goalStore.activeGoalByConv[cid]; without this
 // fetch the ring would only appear after an SSE event mutated the store.
@@ -1430,6 +1460,7 @@ function openConversationIntake() {
   if (currentConversationId.value) {
     tsIntentSuppressedConvIds.value.delete(currentConversationId.value)
   }
+  ensureLocalConversationId()
   conversationIntakeOpen.value = true
 }
 
@@ -1440,10 +1471,19 @@ function goTroubleshootingForm() {
 
 async function onConversationIntakeReady(payload: {
   diagnosisId: string
+  conversationId: string
   created: boolean | null
   rehearsal: boolean
+  originChatConversationId: string | null
 }) {
-  exitTroubleshootingIntakeMode()
+  const originChatConversationId = payload.originChatConversationId
+  if (!originChatConversationId) return
+  activateDiagnosisFollowUp(
+    payload.diagnosisId,
+    payload.conversationId,
+    originChatConversationId,
+  )
+  if (currentConversationId.value !== originChatConversationId) return
   if (payload.created === false) {
     ElMessage.info(`已汇合既有排障单 ${payload.diagnosisId}；分析结果已显示在排障对话`)
   } else {
@@ -1453,11 +1493,88 @@ async function onConversationIntakeReady(payload: {
   }
 }
 
+function onConversationIntakeEnded(payload: {
+  diagnosisId: string
+  originChatConversationId: string | null
+}) {
+  const originChatConversationId = payload.originChatConversationId
+  if (!originChatConversationId) return
+  const routing = typeof sessionStorage !== 'undefined'
+    ? applyDiagnosisFollowUpContextOutcome(
+        sessionStorage,
+        originChatConversationId,
+        currentConversationId.value,
+        { type: 'ENDED', expectedDiagnosisId: payload.diagnosisId },
+      )
+    : {
+        appliesToCurrentConversation: originChatConversationId === currentConversationId.value,
+        contextChanged: true,
+      }
+  if (routing.appliesToCurrentConversation
+    && routing.contextChanged
+    && tsActiveDiagnosisId.value === payload.diagnosisId) {
+    resetTroubleshootingIntakeUi()
+  }
+}
+
 function exitTroubleshootingIntakeMode() {
+  if (currentConversationId.value && typeof sessionStorage !== 'undefined') {
+    clearDiagnosisFollowUpContext(sessionStorage, currentConversationId.value)
+  }
+  resetTroubleshootingIntakeUi()
+}
+
+function resetTroubleshootingIntakeUi() {
   tsIntakeActive.value = false
   tsIntakeConversationId.value = null
+  tsActiveDiagnosisId.value = null
   tsIntakeLoading.value = false
   tsIntentOffer.value = null
+}
+
+function ensureLocalConversationId() {
+  if (!currentConversationId.value) {
+    currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  }
+}
+
+function activateDiagnosisFollowUp(
+  diagnosisId: string,
+  intakeConversationId: string | null,
+  chatConversationId = currentConversationId.value,
+) {
+  if (!chatConversationId) {
+    ensureLocalConversationId()
+    chatConversationId = currentConversationId.value
+  }
+  if (!chatConversationId) return
+  if (typeof sessionStorage !== 'undefined') {
+    saveDiagnosisFollowUpContext(sessionStorage, chatConversationId, {
+      diagnosisId,
+      intakeConversationId,
+    })
+  }
+  if (currentConversationId.value !== chatConversationId) return
+  tsIntakeActive.value = true
+  tsActiveDiagnosisId.value = diagnosisId
+  tsIntakeConversationId.value = intakeConversationId
+}
+
+function hydrateDiagnosisFollowUp(chatConversationId: string) {
+  const context = chatConversationId && typeof sessionStorage !== 'undefined'
+    ? loadDiagnosisFollowUpContext(sessionStorage, chatConversationId)
+    : null
+  tsActiveDiagnosisId.value = context?.diagnosisId ?? null
+  tsIntakeConversationId.value = context?.intakeConversationId ?? null
+  tsIntakeActive.value = context !== null
+}
+
+function openActiveDiagnosis() {
+  if (!tsActiveDiagnosisId.value) return
+  router.push({
+    path: '/troubleshooting',
+    query: { view: 'detail', diagnosisId: tsActiveDiagnosisId.value },
+  })
 }
 
 function isTsIntentSuppressed(): boolean {
@@ -1499,17 +1616,72 @@ function appendLocalChatMessage(
 async function runTroubleshootingIntakeTurn(text: string) {
   const trimmed = text.trim()
   if (!trimmed || tsIntakeLoading.value) return
+  ensureLocalConversationId()
+  const originChatConversationId = currentConversationId.value
+  if (!originChatConversationId) return
+  const originDiagnosisId = tsActiveDiagnosisId.value
+  const requestVersion = (tsLatestRequestByChat.get(originChatConversationId) ?? 0) + 1
+  tsLatestRequestByChat.set(originChatConversationId, requestVersion)
   tsIntakeLoading.value = true
   tsIntentOffer.value = null
   appendLocalChatMessage('user', trimmed)
   inputText.value = ''
   chatInputRef.value?.clear?.()
   try {
+    if (originDiagnosisId) {
+      const { data } = await troubleshootingApi.diagnosisFollowUp(
+        originDiagnosisId,
+        trimmed,
+      )
+      if (tsLatestRequestByChat.get(originChatConversationId) !== requestVersion) return
+      const followUpRouting = typeof sessionStorage !== 'undefined'
+        ? applyDiagnosisFollowUpContextOutcome(
+            sessionStorage,
+            originChatConversationId,
+            currentConversationId.value,
+            data.status === 'ENDED'
+              ? { type: 'ENDED', expectedDiagnosisId: originDiagnosisId }
+              : { type: 'UNCHANGED' },
+          )
+        : {
+            appliesToCurrentConversation: originChatConversationId === currentConversationId.value,
+            contextChanged: data.status === 'ENDED',
+          }
+      if (!followUpRouting.appliesToCurrentConversation
+        || (data.status === 'ENDED' && !followUpRouting.contextChanged)
+        || tsActiveDiagnosisId.value !== originDiagnosisId) return
+      appendLocalChatMessage('assistant', data.answer, { asEmployee: true })
+      if (data.status === 'ENDED') {
+        resetTroubleshootingIntakeUi()
+      }
+      return
+    }
     const { data } = await troubleshootingApi.conversationTurn({
       conversationId: tsIntakeConversationId.value,
       text: trimmed,
       rehearsal: true,
     })
+    if (tsLatestRequestByChat.get(originChatConversationId) !== requestVersion) return
+    const readyDiagnosisId = data.status === 'READY' && data.diagnosisId
+      ? data.diagnosisId
+      : null
+    const appliesToCurrentConversation = typeof sessionStorage !== 'undefined'
+      ? applyDiagnosisFollowUpContextOutcome(
+          sessionStorage,
+          originChatConversationId,
+          currentConversationId.value,
+          readyDiagnosisId
+            ? {
+                type: 'ATTACHED',
+                context: {
+                  diagnosisId: readyDiagnosisId,
+                  intakeConversationId: data.conversationId,
+                },
+              }
+            : { type: 'UNCHANGED' },
+        ).appliesToCurrentConversation
+      : originChatConversationId === currentConversationId.value
+    if (!appliesToCurrentConversation) return
     tsIntakeActive.value = true
     tsIntakeConversationId.value = data.conversationId
     const resultAction = data.status === 'READY' && data.diagnosisId
@@ -1524,8 +1696,14 @@ async function runTroubleshootingIntakeTurn(text: string) {
       resultAction ? `${data.prompt}\n\n${resultAction}` : data.prompt,
       { asEmployee: true },
     )
-    if (data.status === 'READY' && data.diagnosisId) {
-      exitTroubleshootingIntakeMode()
+    if (readyDiagnosisId) {
+      activateDiagnosisFollowUp(readyDiagnosisId, data.conversationId, originChatConversationId)
+      appendLocalChatMessage(
+        'assistant',
+        '你可以继续问“为什么是这个原因”“有哪些证据”“还缺什么”“下一步查什么”。'
+          + '补充材料请以“补充证据：”开头；输入“结束排障”才会退出。',
+        { asEmployee: true },
+      )
       const employee = currentAgent.value?.name
       ElMessage.success(
         data.created === false
@@ -1534,13 +1712,19 @@ async function runTroubleshootingIntakeTurn(text: string) {
       )
     }
   } catch (error: any) {
-    appendLocalChatMessage(
-      'assistant',
-      error?.message || '排障补问失败，已保留在当前对话。你可以改点「继续普通对话」或重试。',
-      { asEmployee: true },
-    )
+    if (tsLatestRequestByChat.get(originChatConversationId) === requestVersion
+      && currentConversationId.value === originChatConversationId) {
+      appendLocalChatMessage(
+        'assistant',
+        error?.message || '排障补问失败，已保留在当前对话。你可以改点「继续普通对话」或重试。',
+        { asEmployee: true },
+      )
+    }
   } finally {
-    tsIntakeLoading.value = false
+    if (tsLatestRequestByChat.get(originChatConversationId) === requestVersion
+      && currentConversationId.value === originChatConversationId) {
+      tsIntakeLoading.value = false
+    }
   }
 }
 
@@ -1942,7 +2126,7 @@ async function selectConversation(conv: Conversation, routeAgentId = '') {
   if (switchingAway) {
     resetForNewConversation()
     messageListRef.value?.resetScrollLock()
-    exitTroubleshootingIntakeMode()
+    resetTroubleshootingIntakeUi()
   }
   currentConversationId.value = conv.conversationId
   selectedAgentId.value = resolveConversationAgentSelection({
@@ -2085,7 +2269,7 @@ function newConversation() {
   // Creating a new chat is just local navigation. Keep any previous backend
   // run alive so the user can return and reconnect to it later.
   resetForNewConversation()
-  exitTroubleshootingIntakeMode()
+  resetTroubleshootingIntakeUi()
   currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   messages.value = []
   // A fresh conversation defers to the selected agent's model (then the global
@@ -2188,6 +2372,11 @@ async function handleSendMessage(content: string) {
       || blockingPrompt.value
       || workerConversationReadOnly.value) return
   // 不再阻止运行中发送 — useChat 会自动走 interrupt/queue 路径
+
+  if (tsActiveDiagnosisId.value && pendingAttachments.value.length > 0) {
+    ElMessage.warning('排障追问暂不接收附件；请用“补充证据：事实摘要”，不要粘贴密钥或整段原始日志')
+    return
+  }
 
   // 拦截 /approve 和 /deny 命令 —— 通过 SSE 流发送（和普通消息相同通道）
   const trimmed = content.trim().toLowerCase()
@@ -2934,7 +3123,8 @@ function handleCodeCopy(e: MouseEvent) {
   color: var(--mc-primary);
 }
 
-.ts-intent-banner {
+.ts-intent-banner,
+.ts-follow-up-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2945,6 +3135,10 @@ function handleCodeCopy(e: MouseEvent) {
   border: 1px solid color-mix(in srgb, var(--mc-primary) 28%, var(--mc-border));
   border-radius: 12px;
   background: color-mix(in srgb, var(--mc-primary) 8%, var(--mc-bg));
+}
+.ts-follow-up-banner {
+  border-color: color-mix(in srgb, var(--mc-success, #2f855a) 32%, var(--mc-border));
+  background: color-mix(in srgb, var(--mc-success, #2f855a) 7%, var(--mc-bg));
 }
 .ts-intent-copy {
   display: flex;

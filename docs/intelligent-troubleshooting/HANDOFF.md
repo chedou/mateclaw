@@ -23,11 +23,14 @@
   未启用、返回非 Guance 证据或权限在取证期间变化时均 409，不回退开放式 Agent。
 - V220 在 OPEN_DISCOVERY 不可变审计中冻结 `pilotPlanVersion`、`acceptanceId` 与
   `bindingFingerprint`，不保存 DQL、查询正文、原始日志或关联 ID。
+- V221 增加 Diagnosis 绑定的持续追问与补充材料台账：原因、证据、未知和下一步均从
+  既有安全投影确定性回答；补充材料只追加版本化的 `RECORDED_NOT_VERIFIED` 回执，
+  不保存原文或可关联内容指纹，也不改写原 Diagnosis。只有“结束排障”删除会话绑定。
 - D20 仍只阻断 `SCENARIO_PLAYBOOK` 的正式运行。CTI 等场景级能力继续演练并逐项补齐
   scenario-scoped binding/acceptance，不再阻塞通用平台的正式上线。
 - 首版正式通用入口只是 Web 工作台 / Incident API；Conversation Intake 在独立的
   正式 claim 接缝完成前仍明确 409，不会静默回落演练或 Agent。
-- **运行态边界不变**：当前真实录制批次仍为 `0 / 20`，测试/生产环境未执行 V220，
+- **运行态边界不变**：当前真实录制批次仍为 `0 / 20`，测试/生产环境未执行 V221，
   因此这是代码就绪，不是已投产证明。
 
 | 轴 | 当前事实 | 下一步 |

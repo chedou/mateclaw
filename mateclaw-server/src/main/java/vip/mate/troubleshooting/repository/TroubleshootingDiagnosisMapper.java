@@ -31,6 +31,19 @@ public interface TroubleshootingDiagnosisMapper extends BaseMapper<Troubleshooti
             @Param("workspaceId") long workspaceId,
             @Param("diagnosisId") String diagnosisId);
 
+    /** Locks and returns the exact Diagnosis version for an immutable follow-up append. */
+    @Select("""
+            SELECT version
+              FROM mate_troubleshooting_diagnosis
+             WHERE workspace_id = #{workspaceId}
+               AND diagnosis_id = #{diagnosisId}
+               AND deleted = 0
+             FOR UPDATE
+            """)
+    Integer lockVersionForFollowUpAppend(
+            @Param("workspaceId") long workspaceId,
+            @Param("diagnosisId") String diagnosisId);
+
     /** Schedules only channel-origin diagnoses; direct Web/API cases have no route. */
     @Update("""
             UPDATE mate_troubleshooting_diagnosis

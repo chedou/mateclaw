@@ -227,6 +227,7 @@
 
     <ConversationIntakeDialog
       v-model="conversationIntakeOpen"
+      :origin-chat-conversation-id="null"
       @switch-form="openIncidentIntakeFromConversation"
       @ready="onConversationReady"
     />

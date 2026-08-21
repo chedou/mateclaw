@@ -80,4 +80,35 @@ describe('the troubleshooting intake dialogs', () => {
     )
     expect(chatConsoleSource).toContain('await runTroubleshootingIntakeTurn(content)')
   })
+
+  it('keeps the diagnosis context after READY and exits only on an explicit end result', () => {
+    const selectConversationHandler = chatConsoleSource.match(
+      /async function selectConversation[\s\S]*?(?=\nfunction newConversation)/,
+    )?.[0]
+    const newConversationHandler = chatConsoleSource.match(
+      /function newConversation[\s\S]*?(?=\nfunction onConversationsDeleted)/,
+    )?.[0]
+
+    expect(chatConsoleSource).toContain('tsActiveDiagnosisId')
+    expect(chatConsoleSource).toContain('troubleshootingApi.diagnosisFollowUp')
+    expect(chatConsoleSource).toContain('saveDiagnosisFollowUpContext')
+    expect(chatConsoleSource).toContain("data.status === 'ENDED'")
+    expect(chatConsoleSource).toContain('结束排障')
+    expect(conversationDialogSource).not.toContain(':disabled="loading || !!diagnosisId"')
+    expect(conversationDialogSource).toContain('troubleshootingApi.diagnosisFollowUp')
+    expect(conversationDialogSource).toContain("emit('ended'")
+    expect(conversationDialogSource).toContain('requestGeneration')
+    expect(conversationDialogSource).toContain('originChatConversationId')
+    expect(conversationDialogSource).toContain('requestGeneration !== generation')
+    expect(conversationDialogSource).toContain('watch(() => props.originChatConversationId')
+    expect(chatConsoleSource).toContain(':origin-chat-conversation-id="currentConversationId"')
+    expect(chatConsoleSource).toContain('@ended="onConversationIntakeEnded"')
+    expect(chatConsoleSource).toContain('applyDiagnosisFollowUpContextOutcome(')
+    expect(chatConsoleSource).toContain('ensureLocalConversationId()\n  conversationIntakeOpen.value = true')
+    expect(chatConsoleSource).not.toContain('payload.originChatConversationId\n    || currentConversationId.value')
+    expect(selectConversationHandler).toContain('resetTroubleshootingIntakeUi()')
+    expect(selectConversationHandler).not.toContain('exitTroubleshootingIntakeMode()')
+    expect(newConversationHandler).toContain('resetTroubleshootingIntakeUi()')
+    expect(newConversationHandler).not.toContain('exitTroubleshootingIntakeMode()')
+  })
 })

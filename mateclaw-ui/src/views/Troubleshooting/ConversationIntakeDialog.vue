@@ -41,22 +41,21 @@
         :rows="4"
         maxlength="4000"
         show-word-limit
-        :disabled="loading || !!diagnosisId"
-        placeholder="输入这一轮要补充的内容，Enter 发送（Shift+Enter 换行）"
+        :disabled="loading || followUpEnded"
+        :placeholder="composerPlaceholder"
         @keydown.enter.exact.prevent="send"
       />
     </el-form>
 
     <template #footer>
       <el-button text @click="$emit('switch-form')">改用表单填写</el-button>
-      <el-button @click="open = false">关闭</el-button>
+      <el-button :disabled="loading" @click="open = false">关闭</el-button>
       <el-button
         v-if="diagnosisId"
-        type="primary"
         @click="goDiagnosisDetail"
       >查看排障详情</el-button>
       <el-button
-        v-else
+        v-if="!followUpEnded"
         type="primary"
         :loading="loading"
         :disabled="!canSend"
@@ -77,33 +76,57 @@ type ChatRole = 'user' | 'assistant'
 type ChatMessage = { role: ChatRole; text: string }
 
 const open = defineModel<boolean>({ required: true })
+const props = defineProps<{
+  originChatConversationId: string | null
+}>()
 const router = useRouter()
 const emit = defineEmits<{
   'switch-form': []
-  ready: [payload: { diagnosisId: string; created: boolean | null; rehearsal: boolean }]
+  ready: [payload: {
+    diagnosisId: string
+    conversationId: string
+    created: boolean | null
+    rehearsal: boolean
+    originChatConversationId: string | null
+  }]
+  ended: [payload: {
+    diagnosisId: string
+    originChatConversationId: string | null
+  }]
 }>()
 
 const draft = ref('')
 const loading = ref(false)
 const conversationId = ref<string | null>(null)
 const diagnosisId = ref<string | null>(null)
+const followUpEnded = ref(false)
 const messages = ref<ChatMessage[]>([])
 const threadEl = ref<HTMLElement | null>(null)
 const rehearsal = ref(true)
+let requestGeneration = 0
 
 const canSend = computed(() =>
-  !loading.value && !diagnosisId.value && draft.value.trim().length > 0,
+  !loading.value && !followUpEnded.value && draft.value.trim().length > 0,
 )
+const composerPlaceholder = computed(() => diagnosisId.value
+  ? '可问原因、证据、未知和下一步；补充材料请以“补充证据：”开头；输入“结束排障”退出'
+  : '输入这一轮要补充的内容，Enter 发送（Shift+Enter 换行）')
 
 watch(open, (value) => {
   if (value) resetLocal()
 })
 
+watch(() => props.originChatConversationId, (value, previous) => {
+  if (open.value && value !== previous) resetLocal()
+})
+
 function resetLocal() {
+  requestGeneration += 1
   draft.value = ''
   loading.value = false
   conversationId.value = null
   diagnosisId.value = null
+  followUpEnded.value = false
   messages.value = []
   rehearsal.value = true
 }
@@ -117,39 +140,66 @@ async function scrollToBottom() {
 async function send() {
   const text = draft.value.trim()
   if (!canSend.value) return
+  const generation = ++requestGeneration
+  const originChatConversationId = props.originChatConversationId ?? null
+  const originDiagnosisId = diagnosisId.value
   messages.value.push({ role: 'user', text })
   draft.value = ''
   await scrollToBottom()
   loading.value = true
   try {
-    const { data } = await troubleshootingApi.conversationTurn({
-      conversationId: conversationId.value,
-      text,
-      rehearsal: rehearsal.value,
-    })
-    applyTurn(data)
+    if (originDiagnosisId) {
+      const { data } = await troubleshootingApi.diagnosisFollowUp(originDiagnosisId, text)
+      if (!open.value || requestGeneration !== generation) return
+      messages.value.push({ role: 'assistant', text: data.answer })
+      followUpEnded.value = data.status === 'ENDED'
+      if (followUpEnded.value) emit('ended', {
+        diagnosisId: originDiagnosisId,
+        originChatConversationId,
+      })
+    } else {
+      const { data } = await troubleshootingApi.conversationTurn({
+        conversationId: conversationId.value,
+        text,
+        rehearsal: rehearsal.value,
+      })
+      if (!open.value || requestGeneration !== generation) return
+      applyTurn(data, originChatConversationId)
+    }
   } catch (error: any) {
+    if (!open.value || requestGeneration !== generation) return
     ElMessage.error(error?.message || '对话发起失败')
     messages.value.push({
       role: 'assistant',
       text: '这一轮没有收下，请检查内容后重试。不要粘贴密钥或原始日志。',
     })
   } finally {
-    loading.value = false
-    await scrollToBottom()
+    if (open.value && requestGeneration === generation) {
+      loading.value = false
+      await scrollToBottom()
+    }
   }
 }
 
-function applyTurn(data: ConversationTurnResult) {
+function applyTurn(
+  data: ConversationTurnResult,
+  originChatConversationId: string | null,
+) {
   conversationId.value = data.conversationId
   rehearsal.value = data.rehearsal
   messages.value.push({ role: 'assistant', text: data.prompt })
   if (data.status === 'READY' && data.diagnosisId) {
     diagnosisId.value = data.diagnosisId
+    messages.value.push({
+      role: 'assistant',
+      text: '你可以继续问原因、证据、未知和下一步；输入“结束排障”才会退出。',
+    })
     emit('ready', {
       diagnosisId: data.diagnosisId,
+      conversationId: data.conversationId,
       created: data.created,
       rehearsal: data.rehearsal,
+      originChatConversationId,
     })
   }
 }

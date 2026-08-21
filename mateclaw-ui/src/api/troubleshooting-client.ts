@@ -9,6 +9,8 @@ import type {
   ClosureOutcome,
   ConversationTurnRequest,
   ConversationTurnResult,
+  DiagnosisFollowUpResult,
+  DiagnosisFollowUpRun,
   CreateDeploymentTopologyScenarioRequest,
   DeclareEvidenceRouteRequest,
   DeclareEvidenceContractRequest,
@@ -80,6 +82,19 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Multi-turn Web conversation intake; READY returns the same Diagnosis as WeCom. */
   conversationTurn: (data: ConversationTurnRequest) =>
     http.post<ConversationTurnResult>('/troubleshooting/conversation/turns', data),
+
+  /** Deterministic questions bound to one saved Diagnosis. */
+  diagnosisFollowUp: (diagnosisId: string, text: string) =>
+    http.post<DiagnosisFollowUpResult>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/follow-ups`,
+      { text },
+    ),
+
+  /** Immutable receipts for supplemental material; submitted bodies are never returned. */
+  diagnosisFollowUpRuns: (diagnosisId: string) =>
+    http.get<DiagnosisFollowUpRun[]>(
+      `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/follow-up-runs`,
+    ),
 
   /** Opens one exact approved scenario without claiming a cause. */
   createScenarioDiagnosis: (scenarioKey: string, data: ScenarioDiagnosisRequest) =>
