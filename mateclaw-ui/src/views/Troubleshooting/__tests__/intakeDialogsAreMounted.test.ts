@@ -72,4 +72,12 @@ describe('the troubleshooting intake dialogs', () => {
     expect(handler).not.toContain('conversationIntakeOpen.value = false')
     expect(handler).toContain('分析结果已显示在排障对话')
   })
+
+  it('routes alert-like prompts through Intake when the troubleshooting robot is selected', () => {
+    expect(chatConsoleSource).toContain('isTroubleshootingReadOnlyTriageAgent')
+    expect(chatConsoleSource).toContain(
+      'preferIntakeForTroubleshootingAgent: isTroubleshootingReadOnlyTriageAgent(currentAgent.value)',
+    )
+    expect(chatConsoleSource).toContain('await runTroubleshootingIntakeTurn(content)')
+  })
 })

@@ -367,6 +367,7 @@ import GoalSetInlinePrompt from '@/components/goal/GoalSetInlinePrompt.vue'
 import GoalSystemLine from '@/components/goal/GoalSystemLine.vue'
 import ConversationIntakeDialog from '@/views/Troubleshooting/ConversationIntakeDialog.vue'
 import {
+  isTroubleshootingReadOnlyTriageAgent,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
   troubleshootingDiagnosisResultMessage,
@@ -2237,6 +2238,7 @@ async function handleSendMessage(content: string) {
       canOperate: canOperateTroubleshooting.value,
       suppressed: isTsIntentSuppressed(),
       intakeActive: tsIntakeActive.value,
+      preferIntakeForTroubleshootingAgent: isTroubleshootingReadOnlyTriageAgent(currentAgent.value),
     }
     if (shouldAutoStartTroubleshootingIntake(content, gate)) {
       await runTroubleshootingIntakeTurn(content)

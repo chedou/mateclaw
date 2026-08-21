@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyChatTroubleshootingIntent,
+  isTroubleshootingReadOnlyTriageAgent,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
   troubleshootingDiagnosisResultMessage,
@@ -24,6 +25,46 @@ describe('chatTroubleshootingIntent', () => {
       canOperate: true,
       suppressed: false,
       intakeActive: false,
+    })).toBe(false)
+  })
+
+  it('routes a medium-confidence failure straight to Intake when the selected Agent is the troubleshooting robot', () => {
+    const text = JSON.stringify({
+      url: 'https://example.invalid/icare/channel/accept',
+      error: '工单渠道与当前登录用户渠道不一致',
+    })
+
+    expect(classifyChatTroubleshootingIntent(text)).toBe('MEDIUM')
+    expect(isTroubleshootingReadOnlyTriageAgent({
+      name: 'troubleshooting-readonly-triage',
+    })).toBe(true)
+    expect(shouldAutoStartTroubleshootingIntake(text, {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+      preferIntakeForTroubleshootingAgent: true,
+    })).toBe(true)
+  })
+
+  it('keeps ordinary questions in normal chat even when the troubleshooting robot is selected', () => {
+    expect(isTroubleshootingReadOnlyTriageAgent({ name: '通用助手' })).toBe(false)
+    expect(shouldAutoStartTroubleshootingIntake('什么是排障方案', {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+      preferIntakeForTroubleshootingAgent: true,
+    })).toBe(false)
+  })
+
+  it('does not treat a bare JSON error example as an operational incident', () => {
+    const text = JSON.stringify({ error: 'expected validation error in sample code' })
+
+    expect(classifyChatTroubleshootingIntent(text)).toBe('LOW')
+    expect(shouldAutoStartTroubleshootingIntake(text, {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+      preferIntakeForTroubleshootingAgent: true,
     })).toBe(false)
   })
 
