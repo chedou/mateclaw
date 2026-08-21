@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import vip.mate.agent.repository.AgentMapper;
 import vip.mate.approval.repository.ToolApprovalMapper;
 import vip.mate.auth.model.UserEntity;
@@ -271,6 +272,22 @@ class ConversationServiceOwnershipWorkspaceTest {
 
         assertThat(got.getConversationId()).isEqualTo(ALICE_CONV);
         verify(conversationMapper, never()).insert(any(ConversationEntity.class));
+    }
+
+    @Test
+    @DisplayName("getOrCreate: concurrent first insert returns the locking-read winner")
+    void getOrCreateReturnsConcurrentWinner() {
+        ConversationEntity winner = conv(ALICE_CONV, "alice", WS_TENANT_A);
+        when(conversationMapper.selectOne(any())).thenReturn(null);
+        org.mockito.Mockito.doThrow(new DuplicateKeyException("concurrent winner"))
+                .when(conversationMapper).insert(any(ConversationEntity.class));
+        when(conversationMapper.lockByConversationId(ALICE_CONV)).thenReturn(winner);
+
+        ConversationEntity got =
+                service.getOrCreateConversation(ALICE_CONV, 1L, "alice", WS_TENANT_A);
+
+        assertThat(got).isSameAs(winner);
+        verify(conversationMapper).lockByConversationId(ALICE_CONV);
     }
 
     private static ConversationEntity conv(String conversationId, String username, Long workspaceId) {

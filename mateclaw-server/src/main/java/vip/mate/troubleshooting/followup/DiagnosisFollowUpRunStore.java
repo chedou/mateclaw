@@ -43,6 +43,23 @@ public class DiagnosisFollowUpRunStore {
                     "err.troubleshooting.follow_up_stale", 409,
                     "diagnosis changed before the follow-up run could be appended");
         }
+        TroubleshootingDiagnosisFollowUpRunEntity existing =
+                mapper.findByRunId(workspaceId, run.runId());
+        if (existing != null) {
+            DiagnosisFollowUpRun persisted = toDomain(existing);
+            if (!persisted.diagnosisId().equals(run.diagnosisId())
+                    || persisted.diagnosisVersion() != run.diagnosisVersion()
+                    || persisted.conclusionType() != run.conclusionType()
+                    || persisted.turnKind() != run.turnKind()
+                    || persisted.contentLength() != run.contentLength()
+                    || persisted.disposition() != run.disposition()
+                    || !persisted.actorRef().equals(run.actorRef())) {
+                throw new MateClawException(
+                        "err.troubleshooting.follow_up_turn_conflict", 409,
+                        "client turn already belongs to another supplemental record");
+            }
+            return persisted;
+        }
         TroubleshootingDiagnosisFollowUpRunEntity row = new TroubleshootingDiagnosisFollowUpRunEntity();
         row.setWorkspaceId(workspaceId);
         row.setRunId(run.runId());

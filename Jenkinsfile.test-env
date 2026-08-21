@@ -39,8 +39,8 @@ pipeline {
     APPROVED_FOUNDATION_TO = '217'
     APPROVED_FOUNDATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
     APPROVED_FORMAL_DIAGNOSIS_FROM = '217'
-    APPROVED_FORMAL_DIAGNOSIS_TO = '221'
-    APPROVED_FORMAL_DIAGNOSIS_SHA256 = 'd3590f08499d5b944afac46f7c6fa9984d43be984b9957fe1bf5ce05f09fb6a7'
+    APPROVED_FORMAL_DIAGNOSIS_TO = '222'
+    APPROVED_FORMAL_DIAGNOSIS_SHA256 = '4f06fb88498a4a2cbe145ec9885ee24387c9dd19fbcfb951d92c161e4a68ec0b'
     CANDIDATE_IMAGE = "mateclaw-troubleshooting:jenkins-candidate-${BUILD_NUMBER}"
   }
 
@@ -310,38 +310,43 @@ if [[ "$pending_count" -gt 0 ]]; then
     || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
   formal_diagnosis_migration_sha="$(
     cd "$migration_dir"
-    sha256sum V{218..221}__*.sql | sha256sum | awk '{print $1}'
+    sha256sum V{218..222}__*.sql | sha256sum | awk '{print $1}'
   )"
   [[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V218-V221 内容已变化，必须重新审核" >&2; exit 1; }
+    || { echo "MIGRATION_PRECHECK_FAILED: V218-V222 内容已变化，必须重新审核" >&2; exit 1; }
 
   case "$current_version" in
     "$APPROVED_FOUNDATION_FROM")
-      [[ "$pending_count" -eq 17 ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 17 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
-      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V221" >&2; exit 1; }
+      [[ "$pending_count" -eq 18 ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 18 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
+      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V222" >&2; exit 1; }
       migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}"
       ;;
     "$APPROVED_FORMAL_DIAGNOSIS_FROM")
-      [[ "$pending_count" -eq 4 && "${pending_versions[*]}" == '218 219 220 221' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V221" >&2; exit 1; }
+      [[ "$pending_count" -eq 5 && "${pending_versions[*]}" == '218 219 220 221 222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V222" >&2; exit 1; }
       migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     218)
-      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '219 220 221' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V221" >&2; exit 1; }
+      [[ "$pending_count" -eq 4 && "${pending_versions[*]}" == '219 220 221 222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V222" >&2; exit 1; }
       migration_policy="APPROVED_V218_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     219)
-      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '220 221' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220-V221" >&2; exit 1; }
+      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '220 221 222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220-V222" >&2; exit 1; }
       migration_policy="APPROVED_V219_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     220)
-      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '221' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V220 恢复路径只允许已审核的 V221" >&2; exit 1; }
+      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '221 222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V220 恢复路径只允许已审核的 V221-V222" >&2; exit 1; }
       migration_policy="APPROVED_V220_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      ;;
+    221)
+      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '222' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V221 恢复路径只允许已审核的 V222" >&2; exit 1; }
+      migration_policy="APPROVED_V221_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
       ;;
     *)
       echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2
@@ -489,7 +494,7 @@ fi
 # 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
 # mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
 # 本次只允许无 pending，或哈希冻结的 V204-V217 基础包与
-# V218-V221 正式排障包；失败时恢复旧容器，
+# V218-V222 正式排障包；失败时恢复旧容器，
 # 并保留该备份供人工恢复。
 docker run --rm \
   -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \

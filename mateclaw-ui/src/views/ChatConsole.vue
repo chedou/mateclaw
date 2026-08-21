@@ -320,9 +320,14 @@
         <ConversationIntakeDialog
           v-model="conversationIntakeOpen"
           :origin-chat-conversation-id="currentConversationId"
+          :agent-id="String(selectedAgentId)"
+          :active-diagnosis-id="tsActiveDiagnosisId"
+          :active-intake-conversation-id="tsIntakeConversationId"
+          :persisted-messages="messages"
           @switch-form="goTroubleshootingForm"
           @ready="onConversationIntakeReady"
           @ended="onConversationIntakeEnded"
+          @persisted="onTroubleshootingTranscriptPersisted"
         />
       </div>
     </div>
@@ -388,12 +393,13 @@ import {
   isTroubleshootingReadOnlyTriageAgent,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
-  troubleshootingDiagnosisResultMessage,
 } from '@/views/Troubleshooting/chatTroubleshootingIntent'
 import {
   applyDiagnosisFollowUpContextOutcome,
   clearDiagnosisFollowUpContext,
   loadDiagnosisFollowUpContext,
+  projectDiagnosisFollowUpFromTranscript,
+  projectRetryableTroubleshootingTurn,
   saveDiagnosisFollowUpContext,
 } from '@/views/Troubleshooting/diagnosisFollowUpContext'
 import { troubleshootingApi } from '@/api'
@@ -411,6 +417,11 @@ const tsIntakeConversationId = ref<string | null>(null)
 const tsActiveDiagnosisId = ref<string | null>(null)
 const tsIntakeLoading = ref(false)
 const tsLatestRequestByChat = new Map<string, number>()
+const tsRetryTurnByChat = new Map<string, {
+  text: string | null
+  diagnosisId: string | null
+  clientTurnId: string
+}>()
 /** User chose "continue normal chat" for this browser chat conversation. */
 const tsIntentSuppressedConvIds = ref<Set<string>>(new Set())
 
@@ -1438,6 +1449,12 @@ watch(currentConversationId, (conversationId) => {
   hydrateDiagnosisFollowUp(conversationId)
 }, { immediate: true })
 
+watch(messages, () => {
+  if (currentConversationId.value) {
+    hydrateDiagnosisFollowUp(currentConversationId.value)
+  }
+})
+
 // Load the active goal whenever the user switches conversation. The
 // avatar ring listens on goalStore.activeGoalByConv[cid]; without this
 // fetch the ring would only appear after an SSE event mutated the store.
@@ -1517,6 +1534,20 @@ function onConversationIntakeEnded(payload: {
   }
 }
 
+async function onTroubleshootingTranscriptPersisted(
+  chatConversationId: string,
+  completed?: () => void,
+) {
+  try {
+    await Promise.all([
+      refreshCurrentConversationMessages(chatConversationId),
+      loadConversations(),
+    ])
+  } finally {
+    completed?.()
+  }
+}
+
 function exitTroubleshootingIntakeMode() {
   if (currentConversationId.value && typeof sessionStorage !== 'undefined') {
     clearDiagnosisFollowUpContext(sessionStorage, currentConversationId.value)
@@ -1561,12 +1592,30 @@ function activateDiagnosisFollowUp(
 }
 
 function hydrateDiagnosisFollowUp(chatConversationId: string) {
-  const context = chatConversationId && typeof sessionStorage !== 'undefined'
-    ? loadDiagnosisFollowUpContext(sessionStorage, chatConversationId)
-    : null
+  const server = projectDiagnosisFollowUpFromTranscript(messages.value, chatConversationId)
+  let context = server.context
+  if (server.foundTranscript && typeof sessionStorage !== 'undefined') {
+    if (context) saveDiagnosisFollowUpContext(sessionStorage, chatConversationId, context)
+    else clearDiagnosisFollowUpContext(sessionStorage, chatConversationId)
+  }
+  if (!server.foundTranscript && chatConversationId && typeof sessionStorage !== 'undefined') {
+    context = loadDiagnosisFollowUpContext(sessionStorage, chatConversationId)
+  }
   tsActiveDiagnosisId.value = context?.diagnosisId ?? null
-  tsIntakeConversationId.value = context?.intakeConversationId ?? null
-  tsIntakeActive.value = context !== null
+  tsIntakeConversationId.value = context?.intakeConversationId
+    ?? server.intakeConversationId
+    ?? null
+  tsIntakeActive.value = context !== null || server.intakeConversationId !== null
+  const retryable = projectRetryableTroubleshootingTurn(messages.value, chatConversationId)
+  if (retryable) {
+    tsRetryTurnByChat.set(chatConversationId, {
+      text: null,
+      diagnosisId: context?.diagnosisId ?? null,
+      clientTurnId: retryable.clientTurnId,
+    })
+  } else {
+    tsRetryTurnByChat.delete(chatConversationId)
+  }
 }
 
 function openActiveDiagnosis() {
@@ -1582,57 +1631,46 @@ function isTsIntentSuppressed(): boolean {
   return Boolean(cid && tsIntentSuppressedConvIds.value.has(cid))
 }
 
-function appendLocalChatMessage(
-  role: 'user' | 'assistant',
-  content: string,
-  opts?: { asEmployee?: boolean },
-) {
-  if (!currentConversationId.value) {
-    currentConversationId.value = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  }
-  let text = content
-  if (role === 'assistant' && opts?.asEmployee && currentAgent.value) {
-    const name = currentAgent.value.name || '数字员工'
-    text = `【${name} · 排障】\n${content}`
-  }
-  messages.value.push({
-    id: `ts-local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    conversationId: currentConversationId.value,
-    role,
-    content: text,
-    contentParts: [{ type: 'text', text }],
-    status: 'completed',
-    createTime: new Date().toISOString(),
-    metadata: opts?.asEmployee && selectedAgentId.value
-      ? {
-          troubleshooting: true,
-          agentId: String(selectedAgentId.value),
-          agentName: currentAgent.value?.name,
-        } as any
-      : undefined,
-  })
-}
-
 async function runTroubleshootingIntakeTurn(text: string) {
   const trimmed = text.trim()
   if (!trimmed || tsIntakeLoading.value) return
   ensureLocalConversationId()
   const originChatConversationId = currentConversationId.value
   if (!originChatConversationId) return
+  const originAgentId = String(selectedAgentId.value || '')
+  if (!originAgentId) return
   const originDiagnosisId = tsActiveDiagnosisId.value
+  const retryTurn = tsRetryTurnByChat.get(originChatConversationId)
+  const clientTurnId = retryTurn?.diagnosisId === originDiagnosisId
+    && (retryTurn.text === null || retryTurn.text === trimmed)
+    ? retryTurn.clientTurnId
+    : (typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `turn-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`)
+  tsRetryTurnByChat.set(originChatConversationId, {
+    text: trimmed,
+    diagnosisId: originDiagnosisId,
+    clientTurnId,
+  })
   const requestVersion = (tsLatestRequestByChat.get(originChatConversationId) ?? 0) + 1
   tsLatestRequestByChat.set(originChatConversationId, requestVersion)
   tsIntakeLoading.value = true
   tsIntentOffer.value = null
-  appendLocalChatMessage('user', trimmed)
   inputText.value = ''
   chatInputRef.value?.clear?.()
   try {
     if (originDiagnosisId) {
       const { data } = await troubleshootingApi.diagnosisFollowUp(
         originDiagnosisId,
-        trimmed,
+        {
+          text: trimmed,
+          clientTurnId,
+          chatConversationId: originChatConversationId,
+          agentId: originAgentId,
+        },
       )
+      await onTroubleshootingTranscriptPersisted(originChatConversationId)
+      tsRetryTurnByChat.delete(originChatConversationId)
       if (tsLatestRequestByChat.get(originChatConversationId) !== requestVersion) return
       const followUpRouting = typeof sessionStorage !== 'undefined'
         ? applyDiagnosisFollowUpContextOutcome(
@@ -1650,7 +1688,6 @@ async function runTroubleshootingIntakeTurn(text: string) {
       if (!followUpRouting.appliesToCurrentConversation
         || (data.status === 'ENDED' && !followUpRouting.contextChanged)
         || tsActiveDiagnosisId.value !== originDiagnosisId) return
-      appendLocalChatMessage('assistant', data.answer, { asEmployee: true })
       if (data.status === 'ENDED') {
         resetTroubleshootingIntakeUi()
       }
@@ -1658,9 +1695,14 @@ async function runTroubleshootingIntakeTurn(text: string) {
     }
     const { data } = await troubleshootingApi.conversationTurn({
       conversationId: tsIntakeConversationId.value,
+      clientTurnId,
+      chatConversationId: originChatConversationId,
+      agentId: originAgentId,
       text: trimmed,
       rehearsal: true,
     })
+    await onTroubleshootingTranscriptPersisted(originChatConversationId)
+    tsRetryTurnByChat.delete(originChatConversationId)
     if (tsLatestRequestByChat.get(originChatConversationId) !== requestVersion) return
     const readyDiagnosisId = data.status === 'READY' && data.diagnosisId
       ? data.diagnosisId
@@ -1684,26 +1726,8 @@ async function runTroubleshootingIntakeTurn(text: string) {
     if (!appliesToCurrentConversation) return
     tsIntakeActive.value = true
     tsIntakeConversationId.value = data.conversationId
-    const resultAction = data.status === 'READY' && data.diagnosisId
-      ? troubleshootingDiagnosisResultMessage(
-          data.diagnosisId,
-          data.created,
-          data.rehearsal,
-        )
-      : ''
-    appendLocalChatMessage(
-      'assistant',
-      resultAction ? `${data.prompt}\n\n${resultAction}` : data.prompt,
-      { asEmployee: true },
-    )
     if (readyDiagnosisId) {
       activateDiagnosisFollowUp(readyDiagnosisId, data.conversationId, originChatConversationId)
-      appendLocalChatMessage(
-        'assistant',
-        '你可以继续问“为什么是这个原因”“有哪些证据”“还缺什么”“下一步查什么”。'
-          + '补充材料请以“补充证据：”开头；输入“结束排障”才会退出。',
-        { asEmployee: true },
-      )
       const employee = currentAgent.value?.name
       ElMessage.success(
         data.created === false
@@ -1712,13 +1736,15 @@ async function runTroubleshootingIntakeTurn(text: string) {
       )
     }
   } catch (error: any) {
+    try {
+      await onTroubleshootingTranscriptPersisted(originChatConversationId)
+    } catch {
+      // Keep the original domain error. A later reload can still recover the
+      // server-side PENDING/FAILED_RETRYABLE turn identity.
+    }
     if (tsLatestRequestByChat.get(originChatConversationId) === requestVersion
       && currentConversationId.value === originChatConversationId) {
-      appendLocalChatMessage(
-        'assistant',
-        error?.message || '排障补问失败，已保留在当前对话。你可以改点「继续普通对话」或重试。',
-        { asEmployee: true },
-      )
+      ElMessage.error(error?.message || '排障补问失败，请重试。')
     }
   } finally {
     if (tsLatestRequestByChat.get(originChatConversationId) === requestVersion

@@ -3,6 +3,8 @@ import {
   applyDiagnosisFollowUpContextOutcome,
   clearDiagnosisFollowUpContext,
   loadDiagnosisFollowUpContext,
+  projectDiagnosisFollowUpFromTranscript,
+  projectRetryableTroubleshootingTurn,
   saveDiagnosisFollowUpContext,
 } from '../diagnosisFollowUpContext'
 
@@ -17,6 +19,61 @@ class MemoryStorage implements Storage {
 }
 
 describe('diagnosisFollowUpContext', () => {
+  it('recovers a pending or retryable client turn id from MySQL message metadata', () => {
+    expect(projectRetryableTroubleshootingTurn([
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript',
+        transcriptStatus: 'FAILED_RETRYABLE',
+        clientTurnId: 'turn-retry-0001',
+      } },
+    ], 'chat-a')).toEqual({ clientTurnId: 'turn-retry-0001' })
+    expect(projectRetryableTroubleshootingTurn([
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript',
+        transcriptStatus: 'FAILED_RETRYABLE',
+        clientTurnId: 'turn-old-0001',
+      } },
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript',
+        transcriptStatus: 'COMPLETED',
+        clientTurnId: 'turn-done-0001',
+      } },
+    ], 'chat-a')).toBeNull()
+  })
+
+  it('restores and ends the active diagnosis from server message metadata', () => {
+    expect(projectDiagnosisFollowUpFromTranscript([
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript', diagnosisId: 'diag-1',
+      } },
+    ], 'chat-a')).toEqual({
+      foundTranscript: true,
+      context: { diagnosisId: 'diag-1', intakeConversationId: null },
+      intakeConversationId: null,
+    })
+
+    expect(projectDiagnosisFollowUpFromTranscript([
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript', diagnosisId: 'diag-1',
+      } },
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript', diagnosisId: 'diag-1', followUpIntent: 'END',
+      } },
+    ], 'chat-a')).toEqual({
+      foundTranscript: true, context: null, intakeConversationId: null,
+    })
+
+    expect(projectDiagnosisFollowUpFromTranscript([
+      { conversationId: 'chat-a', role: 'assistant', metadata: {
+        type: 'troubleshooting_transcript', intakeConversationId: 'web-conv-1',
+      } },
+    ], 'chat-a')).toEqual({
+      foundTranscript: true,
+      context: null,
+      intakeConversationId: 'web-conv-1',
+    })
+  })
+
   it('keeps one diagnosis bound to the originating chat until explicitly cleared', () => {
     const storage = new MemoryStorage()
 

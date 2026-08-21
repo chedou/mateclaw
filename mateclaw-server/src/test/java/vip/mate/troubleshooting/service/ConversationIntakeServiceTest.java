@@ -66,18 +66,22 @@ class ConversationIntakeServiceTest {
                         "msg-1",
                         "conv-1",
                         "admin",
-                        "消息发不出去了",
+                        "张三工单 T2026081000378 消息发不出去了",
                         List.of(),
                         NOW));
         when(sessions.accept(any())).thenReturn(IntakeDecision.from(awaiting, false, false));
+        when(sessions.get(1L, "intake-1")).thenReturn(awaiting);
 
         ConversationIntakeService.ConversationTurnResult result = service.turn(
-                1L, "admin", "conv-1", "消息发不出去了", true);
+                1L, "admin", "conv-1", "张三工单 T2026081000378 消息发不出去了", true);
 
         assertThat(result.status()).isEqualTo(IntakeSessionStatus.AWAITING_INPUT.name());
         assertThat(result.diagnosisId()).isNull();
         assertThat(result.rehearsal()).isTrue();
         assertThat(result.prompt()).contains("还需要");
+        assertThat(result.transcriptUserMessage())
+                .contains("现象：已识别", "原文未保存")
+                .doesNotContain("张三", "T2026081000378");
         ArgumentCaptor<IntakeMessageEnvelope> envelope = ArgumentCaptor.forClass(IntakeMessageEnvelope.class);
         verify(sessions).accept(envelope.capture());
         assertThat(envelope.getValue().source()).isEqualTo(TroubleshootingIntakeSources.WEB_CONVERSATION);
@@ -238,6 +242,9 @@ class ConversationIntakeServiceTest {
         assertThat(result.prompt())
                 .contains("工单关联变更单")
                 .contains("改用 PC 端");
+        assertThat(result.transcriptUserMessage())
+                .contains("排障告警（已规范化）", "CSDP", "sf-icare-openapi")
+                .doesNotContain("token", "Authorization", "T0000000001", "某某");
         ArgumentCaptor<IntakeSession> reported = ArgumentCaptor.forClass(IntakeSession.class);
         verify(intakeService).report(reported.capture(), eq(true));
         assertThat(reported.getValue())

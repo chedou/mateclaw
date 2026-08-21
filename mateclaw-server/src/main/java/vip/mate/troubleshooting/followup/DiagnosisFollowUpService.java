@@ -17,6 +17,7 @@ import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 /** Deterministic, Diagnosis-bound follow-up answers with no model invocation. */
@@ -59,6 +60,15 @@ public class DiagnosisFollowUpService {
             String diagnosisId,
             String text,
             String actorRef) {
+        return respond(workspaceId, diagnosisId, null, text, actorRef);
+    }
+
+    public DiagnosisFollowUpResult respond(
+            long workspaceId,
+            String diagnosisId,
+            String clientTurnId,
+            String text,
+            String actorRef) {
         if (workspaceId <= 0 || diagnosisId == null || diagnosisId.isBlank()
                 || text == null || text.isBlank()
                 || actorRef == null || actorRef.isBlank()) {
@@ -80,7 +90,7 @@ public class DiagnosisFollowUpService {
             BusinessSummary summary =
                     projections.project(workspaceId, normalizedDiagnosisId).businessSummary();
             return recordSupplement(
-                    workspaceId, stored, summary, normalizedText, actorRef.trim());
+                    workspaceId, stored, summary, clientTurnId, normalizedText, actorRef.trim());
         }
 
         DiagnosisExperienceProjection projection =
@@ -113,6 +123,7 @@ public class DiagnosisFollowUpService {
             long workspaceId,
             StoredDiagnosis stored,
             BusinessSummary summary,
+            String clientTurnId,
             String text,
             String actorRef) {
         String payload = SUPPLEMENT.matcher(text).replaceFirst("").trim();
@@ -128,8 +139,14 @@ public class DiagnosisFollowUpService {
                     null);
         }
         Diagnosis diagnosis = stored.diagnosis();
+        String runId = clientTurnId == null || clientTurnId.isBlank()
+                ? "follow-up-run-" + UUID.randomUUID().toString().replace("-", "")
+                : "follow-up-run-" + UUID.nameUUIDFromBytes(
+                        (workspaceId + ":" + stored.diagnosis().diagnosisId() + ":"
+                                + clientTurnId.trim()).getBytes(StandardCharsets.UTF_8))
+                        .toString().replace("-", "");
         DiagnosisFollowUpRun run = runs.insert(workspaceId, new DiagnosisFollowUpRun(
-                "follow-up-run-" + UUID.randomUUID().toString().replace("-", ""),
+                runId,
                 diagnosis.diagnosisId(),
                 stored.version(),
                 diagnosis.conclusionType(),

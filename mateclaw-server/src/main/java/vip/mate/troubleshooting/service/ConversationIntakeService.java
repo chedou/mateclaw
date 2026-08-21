@@ -13,6 +13,7 @@ import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -61,6 +62,16 @@ public class ConversationIntakeService {
             String conversationId,
             String text,
             boolean rehearsal) {
+        return turn(workspaceId, reporterRef, conversationId, null, text, rehearsal);
+    }
+
+    public ConversationTurnResult turn(
+            long workspaceId,
+            String reporterRef,
+            String conversationId,
+            String clientTurnId,
+            String text,
+            boolean rehearsal) {
         if (reporterRef == null || reporterRef.isBlank()) {
             throw new MateClawException(
                     "err.troubleshooting.actor_required",
@@ -77,7 +88,9 @@ public class ConversationIntakeService {
                 ? "web-conv-" + UUID.randomUUID()
                 : conversationId.trim();
         Instant receivedAt = clock.instant();
-        String messageId = "web-msg-" + UUID.randomUUID();
+        String messageId = clientTurnId == null || clientTurnId.isBlank()
+                ? "web-msg-" + UUID.randomUUID()
+                : "web-msg-" + clientTurnId.trim();
         String deliveryConversationId = TroubleshootingIntakeSources.WEB_CONVERSATION
                 + ":" + conversationRef;
         IntakeDecision decision = sessions.accept(new IntakeMessageEnvelope(
@@ -93,10 +106,20 @@ public class ConversationIntakeService {
         String diagnosisId = null;
         Boolean created = null;
         String prompt = decision.prompt();
+        var aggregate = sessions.get(workspaceId, decision.intakeSessionId());
+        String transcriptUserMessage = aggregate == null
+                ? "排障告警（已规范化）\n原文未保存"
+                : renderTranscriptUserMessage(aggregate);
+        if (!decision.missingFields().isEmpty()) {
+            transcriptUserMessage += "\n当前还需补充："
+                    + String.join("、", decision.missingFields());
+        }
         if (decision.status() == IntakeSessionStatus.READY) {
-            StoredDiagnosis stored = intakeService.report(
-                    sessions.getReady(workspaceId, decision.intakeSessionId()),
-                    rehearsal);
+            var ready = aggregate == null
+                    ? sessions.getReady(workspaceId, decision.intakeSessionId())
+                    : aggregate;
+            transcriptUserMessage = renderTranscriptUserMessage(ready);
+            StoredDiagnosis stored = intakeService.report(ready, rehearsal);
             diagnosisId = stored.diagnosis().diagnosisId();
             created = stored.created();
             prompt = summaryRenderer.render(
@@ -104,6 +127,13 @@ public class ConversationIntakeService {
             if (Boolean.FALSE.equals(created)) {
                 prompt = "已汇合到既有排障单。\n" + prompt;
             }
+            prompt = prompt + "\n\n"
+                    + (rehearsal ? "已生成演练排障单" : "已生成正式排障单")
+                    + "：" + diagnosisId
+                    + "\n[打开排障详情](/troubleshooting?view=detail&diagnosisId="
+                    + diagnosisId + ")"
+                    + "\n\n可以继续问“为什么是这个原因”“有哪些证据”"
+                    + "“还缺什么”“下一步查什么”；输入“结束排障”才会退出。";
         }
         return new ConversationTurnResult(
                 conversationRef,
@@ -115,7 +145,48 @@ public class ConversationIntakeService {
                 decision.outOfOrder(),
                 diagnosisId,
                 created,
-                rehearsal);
+                rehearsal,
+                transcriptUserMessage);
+    }
+
+    private String renderTranscriptUserMessage(vip.mate.troubleshooting.intake.IntakeSession session) {
+        List<String> lines = new ArrayList<>();
+        lines.add("排障告警（已规范化）");
+        lines.add("原文未保存");
+        if (session.normalizedFactKind() != null) {
+            addLine(lines, "系统", session.system());
+            addLine(lines, "服务", session.service());
+            addLine(lines, "错误码", session.errorCode());
+        } else {
+            addTechnicalLine(lines, "系统", session.system());
+            addTechnicalLine(lines, "服务", session.service());
+            addTechnicalLine(lines, "错误码", session.errorCode());
+        }
+        if (session.occurredAt() != null) {
+            addLine(lines, "发生时间", session.occurredAt().toString());
+        }
+        if (session.normalizedFactKind() != null) {
+            addLine(lines, "现象", session.symptom());
+        } else if (session.symptom() != null && !session.symptom().isBlank()) {
+            lines.add("现象：已识别（可能含个人或工单信息，原文未保存）");
+        }
+        return String.join("\n", lines);
+    }
+
+    private void addLine(List<String> lines, String label, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String safe = vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy.forChannel(
+                value, 500);
+        lines.add(label + "：" + safe);
+    }
+
+    private void addTechnicalLine(List<String> lines, String label, String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.matches("[A-Za-z0-9._:-]{1,128}")) {
+            addLine(lines, label, normalized);
+        }
     }
 
     public record ConversationTurnResult(
@@ -128,6 +199,7 @@ public class ConversationIntakeService {
             boolean outOfOrder,
             String diagnosisId,
             Boolean created,
-            boolean rehearsal) {
+            boolean rehearsal,
+            @com.fasterxml.jackson.annotation.JsonIgnore String transcriptUserMessage) {
     }
 }

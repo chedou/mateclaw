@@ -18,6 +18,19 @@ public interface TroubleshootingDiagnosisFollowUpRunMapper
                    disposition, actor_ref, recorded_at, deleted, create_time, update_time
               FROM mate_troubleshooting_diagnosis_follow_up_run
              WHERE workspace_id = #{workspaceId}
+               AND run_id = #{runId}
+               AND deleted = 0
+            """)
+    TroubleshootingDiagnosisFollowUpRunEntity findByRunId(
+            @Param("workspaceId") long workspaceId,
+            @Param("runId") String runId);
+
+    @Select("""
+            SELECT id, workspace_id, run_id, diagnosis_id, diagnosis_version,
+                   conclusion_type, turn_kind, content_length,
+                   disposition, actor_ref, recorded_at, deleted, create_time, update_time
+              FROM mate_troubleshooting_diagnosis_follow_up_run
+             WHERE workspace_id = #{workspaceId}
                AND diagnosis_id = #{diagnosisId}
                AND deleted = 0
              ORDER BY recorded_at DESC, id DESC

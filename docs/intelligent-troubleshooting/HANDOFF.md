@@ -26,11 +26,17 @@
 - V221 增加 Diagnosis 绑定的持续追问与补充材料台账：原因、证据、未知和下一步均从
   既有安全投影确定性回答；补充材料只追加版本化的 `RECORDED_NOT_VERIFIED` 回执，
   不保存原文或可关联内容指纹，也不改写原 Diagnosis。只有“结束排障”删除会话绑定。
+- V222 将每次排障问答写入现有 `mate_conversation / mate_message`；指针台账只记录
+  `clientTurnId` 与两条顺序消息 ID，同会话加锁后幂等写入。领域处理前先写入不含原文的
+  `PENDING` 消息对，处理成功后在锁内原位完成；普通异常原位标为 `FAILED_RETRYABLE`。
+  刷新或换设备后前端从消息 metadata 恢复原 `clientTurnId`，用户重新发送上一条问题时
+  复用同一轮次，不会重复追加不可变调查记录。
+  个人信息、工单原文和原始日志不进聊天表。
 - D20 仍只阻断 `SCENARIO_PLAYBOOK` 的正式运行。CTI 等场景级能力继续演练并逐项补齐
   scenario-scoped binding/acceptance，不再阻塞通用平台的正式上线。
 - 首版正式通用入口只是 Web 工作台 / Incident API；Conversation Intake 在独立的
   正式 claim 接缝完成前仍明确 409，不会静默回落演练或 Agent。
-- **运行态边界不变**：当前真实录制批次仍为 `0 / 20`，测试/生产环境未执行 V221，
+- **运行态边界不变**：当前真实录制批次仍为 `0 / 20`，测试/生产环境未执行 V222，
   因此这是代码就绪，不是已投产证明。
 
 | 轴 | 当前事实 | 下一步 |

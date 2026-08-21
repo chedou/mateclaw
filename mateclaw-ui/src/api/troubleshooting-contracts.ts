@@ -47,8 +47,18 @@ export interface IncidentReportRequest {
 /** One turn of the Web conversation intake that reuses IntakeSession. */
 export interface ConversationTurnRequest {
   conversationId?: string | null
+  clientTurnId?: string
+  chatConversationId?: string
+  agentId?: string
   text: string
   rehearsal: boolean
+}
+
+export interface DiagnosisFollowUpRequest {
+  text: string
+  clientTurnId?: string
+  chatConversationId?: string
+  agentId?: string
 }
 
 export interface ConversationTurnResult {

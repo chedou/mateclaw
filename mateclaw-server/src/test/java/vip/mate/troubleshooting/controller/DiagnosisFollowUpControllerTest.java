@@ -14,12 +14,14 @@ import vip.mate.troubleshooting.followup.DiagnosisFollowUpService;
 import vip.mate.troubleshooting.followup.DiagnosisFollowUpStatus;
 import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis;
+import vip.mate.troubleshooting.service.TroubleshootingChatTranscriptService;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,7 +33,8 @@ class DiagnosisFollowUpControllerTest {
     @Test
     void bindsTheQuestionToThePathDiagnosisAndAuthenticatedActor() throws Exception {
         DiagnosisFollowUpService service = mock(DiagnosisFollowUpService.class);
-        when(service.respond(7L, "diag-1", "为什么是这个原因？", "alice"))
+        TroubleshootingChatTranscriptService transcripts = mock(TroubleshootingChatTranscriptService.class);
+        when(service.respond(7L, "diag-1", "turn-test-0002", "为什么是这个原因？", "alice"))
                 .thenReturn(new DiagnosisFollowUpResult(
                         "diag-1",
                         DiagnosisFollowUpStatus.ACTIVE,
@@ -42,7 +45,7 @@ class DiagnosisFollowUpControllerTest {
                         "当前结论来自已记录证据。",
                         null));
         MockMvc mvc = MockMvcBuilders
-                .standaloneSetup(new DiagnosisFollowUpController(service))
+                .standaloneSetup(new DiagnosisFollowUpController(service, transcripts))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         new ObjectMapper().findAndRegisterModules()))
                 .build();
@@ -52,7 +55,10 @@ class DiagnosisFollowUpControllerTest {
             mvc.perform(post("/api/v1/troubleshooting/diagnoses/diag-1/follow-ups")
                             .header("X-Workspace-Id", "7")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"text\":\"为什么是这个原因？\"}"))
+                            .content("{\"text\":\"为什么是这个原因？\","
+                                    + "\"clientTurnId\":\"turn-test-0002\","
+                                    + "\"chatConversationId\":\"conv-chat-1\","
+                                    + "\"agentId\":\"2083128519379722242\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.diagnosisId").value("diag-1"))
                     .andExpect(jsonPath("$.data.status").value("ACTIVE"))
@@ -63,7 +69,20 @@ class DiagnosisFollowUpControllerTest {
         } finally {
             SecurityContextHolder.clearContext();
         }
-        verify(service).respond(7L, "diag-1", "为什么是这个原因？", "alice");
+        org.mockito.InOrder order = inOrder(transcripts, service);
+        order.verify(transcripts).begin(org.mockito.ArgumentMatchers.argThat(turn ->
+                turn.workspaceId() == 7L
+                        && "turn-test-0002".equals(turn.clientTurnId())
+                        && "conv-chat-1".equals(turn.chatConversationId())));
+        order.verify(service).respond(
+                7L, "diag-1", "turn-test-0002", "为什么是这个原因？", "alice");
+        order.verify(transcripts).persistFollowUp(
+                7L, "turn-test-0002", "conv-chat-1", 2083128519379722242L, "alice",
+                "为什么是这个原因？",
+                new DiagnosisFollowUpResult(
+                        "diag-1", DiagnosisFollowUpStatus.ACTIVE, DiagnosisFollowUpIntent.WHY,
+                        ConclusionType.HYPOTHESIS, EvidenceBasis.OBSERVED, false,
+                        "当前结论来自已记录证据。", null));
     }
 
     @Test

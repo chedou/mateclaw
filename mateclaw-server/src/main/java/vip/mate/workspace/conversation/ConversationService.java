@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -357,7 +358,19 @@ public class ConversationService {
             conv.setTitle("新对话");
             conv.setMessageCount(0);
             conv.setLastActiveTime(LocalDateTime.now());
-            conversationMapper.insert(conv);
+            try {
+                conversationMapper.insert(conv);
+            } catch (DuplicateKeyException concurrentWinner) {
+                // A concurrent first turn may have created the same browser
+                // conversation after our initial snapshot read. A locking read
+                // is a MySQL current read, so it observes the committed winner
+                // even under REPEATABLE READ.
+                conv = conversationMapper.lockByConversationId(conversationId);
+                if (conv == null) {
+                    throw concurrentWinner;
+                }
+                requireConversationOwner(conv, username, workspaceId);
+            }
         } else {
             // Defense-in-depth workspace isolation: an existing row whose owning
             // workspace differs from the caller's means two workspaces resolved to
@@ -365,17 +378,22 @@ public class ConversationService {
             // happen for channel traffic; refuse rather than silently write the
             // caller's message into another workspace's conversation. Also closes the
             // web-console bare-"default" cross-workspace edge case.
-            if (workspaceId != null && conv.getWorkspaceId() != null
-                    && !conv.getWorkspaceId().equals(workspaceId)) {
-                log.warn("[Conversation] Cross-workspace conversationId collision: id={} owner={} requested={}",
-                        conversationId, conv.getWorkspaceId(), workspaceId);
-                throw new IllegalArgumentException("会话不属于当前工作区");
-            }
-            if (!conv.getUsername().equals(username)) {
-                throw new IllegalArgumentException("无权操作该会话");
-            }
+            requireConversationOwner(conv, username, workspaceId);
         }
         return conv;
+    }
+
+    private void requireConversationOwner(
+            ConversationEntity conversation, String username, Long workspaceId) {
+        if (workspaceId != null && conversation.getWorkspaceId() != null
+                && !conversation.getWorkspaceId().equals(workspaceId)) {
+            log.warn("[Conversation] Cross-workspace conversationId collision: id={} owner={} requested={}",
+                    conversation.getConversationId(), conversation.getWorkspaceId(), workspaceId);
+            throw new IllegalArgumentException("会话不属于当前工作区");
+        }
+        if (!conversation.getUsername().equals(username)) {
+            throw new IllegalArgumentException("无权操作该会话");
+        }
     }
 
     /**
@@ -698,6 +716,66 @@ public class ConversationService {
             conversationMapper.updateById(conv);
         }
         return message;
+    }
+
+    @Transactional
+    public void lockConversation(String conversationId) {
+        if (conversationMapper.lockId(conversationId) == null) {
+            throw new IllegalArgumentException("会话不存在");
+        }
+    }
+
+    public MessageEntity getMessage(long messageId) {
+        return messageMapper.selectById(messageId);
+    }
+
+    /** Replaces only the expected troubleshooting placeholder while its parent is locked. */
+    @Transactional
+    public void replaceTroubleshootingMessage(
+            long messageId,
+            String expectedConversationId,
+            String expectedRole,
+            List<String> expectedStatuses,
+            String content,
+            List<MessageContentPart> parts,
+            String status,
+            String metadata) {
+        MessageEntity existing = messageMapper.selectById(messageId);
+        if (existing == null
+                || !expectedConversationId.equals(existing.getConversationId())
+                || !expectedRole.equals(existing.getRole())
+                || !expectedStatuses.contains(existing.getStatus())
+                || existing.getMetadata() == null
+                || !existing.getMetadata().contains("\"type\":\"troubleshooting_transcript\"")) {
+            throw new IllegalArgumentException("排障消息不是预期的待完成记录");
+        }
+        MessageEntity message = new MessageEntity();
+        message.setId(messageId);
+        message.setContent(content);
+        message.setContentParts(serializeParts(parts));
+        message.setStatus(status);
+        message.setMetadata(metadata);
+        if (messageMapper.updateById(message) != 1) {
+            throw new IllegalArgumentException("消息不存在");
+        }
+        ConversationEntity conversation = conversationMapper.selectOne(
+                new LambdaQueryWrapper<ConversationEntity>()
+                        .eq(ConversationEntity::getConversationId, existing.getConversationId()));
+        if (conversation != null) {
+            String summary = summarizeMessage(content, parts);
+            if ("user".equals(existing.getRole())
+                    && ("新对话".equals(conversation.getTitle())
+                    || "排障请求已提交（原文未保存）".equals(conversation.getTitle()))) {
+                conversation.setTitle(summary.length() > 20
+                        ? summary.substring(0, 20) + "..." : summary);
+            }
+            if ("assistant".equals(existing.getRole())) {
+                conversation.setLastMessage(summary.length() > 50
+                        ? summary.substring(0, 50) + "..." : summary);
+            }
+            conversation.setLastActiveTime(LocalDateTime.now());
+            conversationMapper.updateById(conversation);
+        }
     }
 
     /**

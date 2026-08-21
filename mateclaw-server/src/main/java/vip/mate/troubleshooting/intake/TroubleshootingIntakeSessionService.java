@@ -136,6 +136,11 @@ public class TroubleshootingIntakeSessionService {
         return getReadyDispatch(workspaceId, intakeSessionId).session();
     }
 
+    /** Loads the current safe aggregate for transcript projection. */
+    public IntakeSession get(long workspaceId, String intakeSessionId) {
+        return read(requiredSession(workspaceId, intakeSessionId));
+    }
+
     /**
      * Loads READY business state together with the separately persisted
      * transport route. Keeping the two fields separate preserves the stable

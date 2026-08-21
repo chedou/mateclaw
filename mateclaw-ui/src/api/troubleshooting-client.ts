@@ -9,6 +9,7 @@ import type {
   ClosureOutcome,
   ConversationTurnRequest,
   ConversationTurnResult,
+  DiagnosisFollowUpRequest,
   DiagnosisFollowUpResult,
   DiagnosisFollowUpRun,
   CreateDeploymentTopologyScenarioRequest,
@@ -84,10 +85,10 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
     http.post<ConversationTurnResult>('/troubleshooting/conversation/turns', data),
 
   /** Deterministic questions bound to one saved Diagnosis. */
-  diagnosisFollowUp: (diagnosisId: string, text: string) =>
+  diagnosisFollowUp: (diagnosisId: string, data: DiagnosisFollowUpRequest) =>
     http.post<DiagnosisFollowUpResult>(
       `/troubleshooting/diagnoses/${encodeURIComponent(diagnosisId)}/follow-ups`,
-      { text },
+      data,
     ),
 
   /** Immutable receipts for supplemental material; submitted bodies are never returned. */
