@@ -32,6 +32,11 @@
   刷新或换设备后前端从消息 metadata 恢复原 `clientTurnId`，用户重新发送上一条问题时
   复用同一轮次，不会重复追加不可变调查记录。
   个人信息、工单原文和原始日志不进聊天表。
+- 三层 MySQL 持久化边界是：普通聊天保存在 `mate_conversation / mate_message`；
+  排障输入状态与结论保存在 `mate_troubleshooting_intake_session /
+  mate_troubleshooting_diagnosis`；排障追问以安全规范化问答进入同一聊天时间线，
+  补充材料另以 `mate_troubleshooting_diagnosis_follow_up_run` 保存不可变回执，
+  `mate_troubleshooting_chat_turn` 只负责把 `clientTurnId` 幂等关联到两条消息。
 - D20 仍只阻断 `SCENARIO_PLAYBOOK` 的正式运行。CTI 等场景级能力继续演练并逐项补齐
   scenario-scoped binding/acceptance，不再阻塞通用平台的正式上线。
 - 首版正式通用入口只是 Web 工作台 / Incident API；Conversation Intake 在独立的
