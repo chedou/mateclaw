@@ -56,8 +56,9 @@ MCP 工具。P4 的调用级最终交集才是 miss-path 的权威工具面；To
 
 ## 2. 启用前置条件
 
-- Flyway 已应用 V173，工具表中存在 id `1000000028`、名称 `TroubleshootingEvidenceTool`、bean
-  `troubleshootingEvidenceTool`，且 bean 已被 Spring 扫描；
+- Flyway 已应用 V223，工具表中存在 id `1000000905`、名称 `TroubleshootingEvidenceTool`、bean
+  `troubleshootingEvidenceTool`，且 bean 已被 Spring 扫描；V223 修复了 V173 与 V208 共用
+  `1000000028` 造成的工具覆盖，该旧 ID 现专用于 `ChannelMessageTool`；
 - workspace 有一个名称唯一的 enabled 主模型，专用 Agent 的 `modelName` 显式指向它；所属 provider 必须启用、
   配置完整，且模型/所属 provider 的 `enableSearch` 显式为 `false`；
 - 只读证据源按 `evidence-adapter-runbook.md` 配置。没有可用源也能安全弃权，但不能形成有证据支撑的结论；
@@ -66,6 +67,10 @@ MCP 工具。P4 的调用级最终交集才是 miss-path 的权威工具面；To
 - 用于报障的 PAT/JWT 只具备所需 workspace 权限，不在请求或日志中保存真实 Token。
 
 ## 3. 创建专用 Agent
+
+V223 会在默认 workspace（ID `1`）初始化 `troubleshooting-readonly-triage`，并只绑定
+`TroubleshootingEvidenceTool`。默认 workspace 不需要再手工创建；非默认 workspace 仍按下述方式独立
+创建和验收，不允许跨 workspace 复用。
 
 推荐在 Agent 管理页创建一个**只用于后端 miss-path 调用**的 Agent。关键字段必须是：
 

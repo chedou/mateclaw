@@ -96,6 +96,113 @@ class TroubleshootingMigrationTest {
     }
 
     @Test
+    void h2MigrationRestoresDedicatedTroubleshootingAgentAfterToolIdCollision() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:troubleshooting-v223;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa",
+                "")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("""
+                        CREATE TABLE mate_tool (
+                            id BIGINT PRIMARY KEY,
+                            name VARCHAR(128),
+                            display_name VARCHAR(128),
+                            description VARCHAR(1000),
+                            tool_type VARCHAR(50),
+                            bean_name VARCHAR(128),
+                            icon VARCHAR(20),
+                            enabled BOOLEAN,
+                            builtin BOOLEAN,
+                            create_time TIMESTAMP,
+                            update_time TIMESTAMP,
+                            deleted INT
+                        )
+                        """);
+                statement.execute("""
+                        CREATE TABLE mate_agent (
+                            id BIGINT PRIMARY KEY,
+                            name VARCHAR(128) NOT NULL,
+                            description VARCHAR(1000),
+                            agent_type VARCHAR(32),
+                            system_prompt VARCHAR(4000),
+                            model_name VARCHAR(128),
+                            max_iterations INT,
+                            enabled BOOLEAN,
+                            icon VARCHAR(20),
+                            tags VARCHAR(256),
+                            workspace_id BIGINT,
+                            create_time TIMESTAMP,
+                            update_time TIMESTAMP,
+                            deleted INT,
+                            skills_disabled BOOLEAN,
+                            tools_disabled BOOLEAN,
+                            wiki_disabled BOOLEAN,
+                            UNIQUE (workspace_id, name)
+                        )
+                        """);
+                statement.execute("""
+                        CREATE TABLE mate_agent_tool (
+                            id BIGINT PRIMARY KEY,
+                            agent_id BIGINT NOT NULL,
+                            tool_name VARCHAR(128) NOT NULL,
+                            enabled BOOLEAN,
+                            create_time TIMESTAMP,
+                            update_time TIMESTAMP,
+                            deleted INT,
+                            UNIQUE (agent_id, tool_name)
+                        )
+                        """);
+            }
+
+            executeMigration(connection, "db/migration/h2/V173__register_troubleshooting_evidence_tool.sql");
+            executeMigration(connection, "db/migration/h2/V208__register_channel_message_tool.sql");
+            executeMigration(connection, "db/migration/h2/V223__troubleshooting_agent_seed.sql");
+            executeMigration(connection, "db/migration/h2/V223__troubleshooting_agent_seed.sql");
+
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT name FROM mate_tool WHERE id = 1000000028
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals("ChannelMessageTool", row.getString("name"));
+            }
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT name, bean_name FROM mate_tool WHERE id = 1000000905
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals("TroubleshootingEvidenceTool", row.getString("name"));
+                assertEquals("troubleshootingEvidenceTool", row.getString("bean_name"));
+            }
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT id, model_name, max_iterations, enabled,
+                           skills_disabled, tools_disabled, wiki_disabled
+                    FROM mate_agent
+                    WHERE workspace_id = 1 AND name = 'troubleshooting-readonly-triage'
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals(1000000950L, row.getLong("id"));
+                assertEquals("qwen-plus", row.getString("model_name"));
+                assertEquals(4, row.getInt("max_iterations"));
+                assertTrue(row.getBoolean("enabled"));
+                assertTrue(row.getBoolean("skills_disabled"));
+                assertFalse(row.getBoolean("tools_disabled"));
+                assertTrue(row.getBoolean("wiki_disabled"));
+                assertFalse(row.next());
+            }
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT tool_name, enabled, deleted
+                    FROM mate_agent_tool
+                    WHERE agent_id = 1000000950
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals("TroubleshootingEvidenceTool", row.getString("tool_name"));
+                assertTrue(row.getBoolean("enabled"));
+                assertEquals(0, row.getInt("deleted"));
+                assertFalse(row.next());
+            }
+        }
+    }
+
+    @Test
     void h2MigrationCreatesAnIdempotentReviewOnlyPlaybookCandidateTable() throws Exception {
         try (Connection connection = DriverManager.getConnection(
                 "jdbc:h2:mem:troubleshooting-v174;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
