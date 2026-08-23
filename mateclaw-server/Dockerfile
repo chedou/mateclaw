@@ -1,28 +1,18 @@
 # Multi-stage build
 #
-# Stage 1 — Frontend (Node / pnpm)
+# Stage 1 — Frontend (Node / npm)
 #   Builds the Vue 3 admin SPA and emits static files to /static inside the
 #   build container. These files are later copied into the JAR's classpath so
 #   Spring Boot serves the SPA at the root URL.
 FROM node:22-alpine AS frontend-builder
-# Pin pnpm to a major version so the Docker build doesn't break when the npm
-# `latest` tag jumps majors. pnpm v10+ blocks dependency lifecycle scripts by
-# default; the allowed packages live under `pnpm.onlyBuiltDependencies` in
-# mateclaw-ui/package.json.
-RUN npm install -g pnpm@10 --silent
 WORKDIR /frontend
 # Install dependencies first (layer cache)
-COPY mateclaw-ui/package.json mateclaw-ui/pnpm-lock.yaml ./
+COPY mateclaw-ui/package.json mateclaw-ui/package-lock.json ./
 # Jenkins 200.200.4.33 runs Docker 18.06 with the legacy `overlay` driver.
-# pnpm's default isolated linker creates a symlink-heavy virtual store and can
-# finish downloading every package before the old driver rejects its final
-# metadata write with EPERM. A hoisted, copy-only layout keeps the lockfile
-# deterministic while using ordinary directories that this storage driver can
-# persist reliably.
-RUN pnpm install \
-    --frozen-lockfile \
-    --node-linker=hoisted \
-    --package-import-method=copy
+# pnpm completes every download but the old driver rejects its final metadata
+# write with EPERM, including copy-only and hoisted layouts. npm uses a plain
+# node_modules layout here; package-lock.json keeps the release graph exact.
+RUN npm ci --no-audit --no-fund
 # Copy source and build
 COPY mateclaw-ui/ ./
 # Override outDir: vite.config.ts writes to ../mateclaw-server/…/static which
@@ -37,7 +27,7 @@ COPY mateclaw-ui/ ./
 # itself; it is keeping the build reproducible on smaller hosts.
 # Skipping vue-tsc here is intentional — type errors are caught in CI, not in
 # the production Docker image build.
-RUN NODE_OPTIONS=--max-old-space-size=6144 pnpm exec vite build --outDir /static --emptyOutDir
+RUN NODE_OPTIONS=--max-old-space-size=6144 npm exec -- vite build --outDir /static --emptyOutDir
 
 # Stage 2 — Backend (Maven)
 FROM maven:3.9-eclipse-temurin-21 AS builder

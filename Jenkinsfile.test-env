@@ -166,7 +166,7 @@ grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
   echo "current_container_state=$current_state"
   echo "current_image=$current_image"
   echo "current_health=$current_health"
-  echo "source_build=GITHUB_EXACT_COMMIT_ARCHIVE"
+  echo "source_build=INTERNAL_GITLAB_EXACT_COMMIT_CHECKOUT"
 } > preflight-report.txt
 
 cat preflight-report.txt
