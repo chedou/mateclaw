@@ -13,11 +13,16 @@ RUN npm install -g pnpm@10 --silent
 WORKDIR /frontend
 # Install dependencies first (layer cache)
 COPY mateclaw-ui/package.json mateclaw-ui/pnpm-lock.yaml ./
-# Jenkins 200.200.4.33 runs an older Docker/overlay stack where pnpm's
-# auto-selected hardlink/reflink importer can finish downloading and then fail
-# with `EPERM: operation not permitted, write`. Copying packages avoids that
-# filesystem-specific optimization while keeping the lockfile deterministic.
-RUN pnpm install --frozen-lockfile --package-import-method=copy
+# Jenkins 200.200.4.33 runs Docker 18.06 with the legacy `overlay` driver.
+# pnpm's default isolated linker creates a symlink-heavy virtual store and can
+# finish downloading every package before the old driver rejects its final
+# metadata write with EPERM. A hoisted, copy-only layout keeps the lockfile
+# deterministic while using ordinary directories that this storage driver can
+# persist reliably.
+RUN pnpm install \
+    --frozen-lockfile \
+    --node-linker=hoisted \
+    --package-import-method=copy
 # Copy source and build
 COPY mateclaw-ui/ ./
 # Override outDir: vite.config.ts writes to ../mateclaw-server/…/static which
