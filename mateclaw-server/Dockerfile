@@ -30,7 +30,10 @@ COPY mateclaw-ui/ ./
 RUN NODE_OPTIONS=--max-old-space-size=6144 npm exec -- vite build --outDir /static --emptyOutDir
 
 # Stage 2 — Backend (Maven)
-FROM maven:3.9-eclipse-temurin-21 AS builder
+# Pin the Alpine variant built in the same generation as the test host's
+# Docker engine. Newer Noble-based Maven layers are pulled successfully by
+# Docker 18.06/legacy-overlay but `/usr/bin/mvn` then fails with EPERM.
+FROM maven:3.9.6-eclipse-temurin-21-alpine AS builder
 
 # Optional Maven extra flags passed at build time.
 # Set MAVEN_FLAGS=-Paliyun-first in .env (or via --build-arg) to put Aliyun
