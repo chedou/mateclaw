@@ -74,6 +74,13 @@ set +x
 set -euo pipefail
 umask 077
 
+# Declarative Pipeline parameters are materialized as job properties after the
+# first run. Replays can temporarily clear those properties, so keep the first
+# VERIFY_ONLY run deterministic without weakening DEPLOY's SHA requirement.
+ACTION="${ACTION:-VERIFY_ONLY}"
+BRANCH="${BRANCH:-intelligent-troubleshooting-design}"
+EXPECTED_COMMIT="${EXPECTED_COMMIT:-}"
+
 fail() {
   echo "SOURCE_PRECHECK_FAILED: $*" >&2
   exit 1
