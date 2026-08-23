@@ -186,6 +186,7 @@ SOURCE_DIR="$WORKSPACE/source"
 
 docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
 docker build \
+  --build-arg "MAVEN_FLAGS=-Paliyun-first -Dmaven.wagon.http.connectTimeout=15000 -Dmaven.wagon.http.readTimeout=60000" \
   --build-arg "MATECLAW_RELEASE_COMMIT=$resolved_commit" \
   -t "$CANDIDATE_IMAGE" \
   -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
