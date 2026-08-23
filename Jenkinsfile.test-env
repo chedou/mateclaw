@@ -16,8 +16,8 @@ pipeline {
     )
     string(
       name: 'BRANCH',
-      defaultValue: 'claude/intelligent-troubleshooting-design',
-      description: '从 GitHub 检出的分支。'
+      defaultValue: 'intelligent-troubleshooting-design',
+      description: '从内网 GitLab 检出的分支。'
     )
     string(
       name: 'EXPECTED_COMMIT',
@@ -27,7 +27,10 @@ pipeline {
   }
 
   environment {
-    REPOSITORY_URL = 'https://github.com/chedou/mateclaw.git'
+    ACTION = "${params.ACTION}"
+    BRANCH = "${params.BRANCH}"
+    EXPECTED_COMMIT = "${params.EXPECTED_COMMIT}"
+    REPOSITORY_URL = 'http://itgitlab.sangfor.com/it-sre/mateclaw.git'
     RELEASES_DIR = '/opt/mateclaw/releases'
     DATA_DIR = '/opt/mateclaw/data'
     ENV_FILE = '/opt/mateclaw/mateclaw.env'
@@ -50,6 +53,21 @@ pipeline {
         script {
           currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.ACTION}"
           currentBuild.description = "${params.BRANCH} ${params.EXPECTED_COMMIT ?: 'branch-head'}"
+          if (!(params.BRANCH ==~ /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/) || params.BRANCH.contains('..') || params.BRANCH.contains('//') || params.BRANCH.contains('@{') || params.BRANCH.endsWith('/') || params.BRANCH.endsWith('.lock')) {
+            error('BRANCH 格式不合法或包含不安全片段')
+          }
+          if (params.ACTION == 'DEPLOY' && !(params.EXPECTED_COMMIT ==~ /^[0-9a-fA-F]{40}$/)) {
+            error('DEPLOY 必须提供完整 40 位 EXPECTED_COMMIT')
+          }
+          dir('source') {
+            deleteDir()
+            checkout([
+              $class: 'GitSCM',
+              branches: [[name: "refs/heads/${params.BRANCH}"]],
+              extensions: [[$class: 'CloneOption', depth: 1, noTags: true, shallow: true, timeout: 20]],
+              userRemoteConfigs: [[credentialsId: 'mateclaw-itgitlab-readonly', url: env.REPOSITORY_URL]]
+            ])
+          }
         }
         sh '''#!/usr/bin/env bash
 set +x
@@ -64,8 +82,6 @@ fail() {
 command -v git >/dev/null || fail "git 命令不存在"
 command -v docker >/dev/null || fail "docker 命令不存在"
 command -v curl >/dev/null || fail "curl 命令不存在"
-command -v gzip >/dev/null || fail "gzip 命令不存在"
-command -v tar >/dev/null || fail "tar 命令不存在"
 command -v sha256sum >/dev/null || fail "sha256sum 命令不存在"
 command -v find >/dev/null || fail "find 命令不存在"
 command -v sort >/dev/null || fail "sort 命令不存在"
@@ -90,47 +106,19 @@ case "$SOURCE_DIR" in
   "$WORKSPACE"/source) ;;
   *) fail "源码目录越出 Jenkins Workspace" ;;
 esac
-rm -rf -- "$SOURCE_DIR"
-
-remote_ref="$(git ls-remote --heads "$REPOSITORY_URL" "refs/heads/$BRANCH")"
-remote_count="$(printf '%s\n' "$remote_ref" | sed '/^[[:space:]]*$/d' | wc -l | tr -d '[:space:]')"
-[[ "$remote_count" == "1" ]] || fail "无法唯一解析远端分支 $BRANCH"
-resolved_commit="$(printf '%s\n' "$remote_ref" | awk '{print tolower($1)}')"
-[[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析远端分支提交"
+test -d "$SOURCE_DIR/.git" || fail "内网 GitLab 检出目录缺少 .git"
+resolved_commit="$(git --git-dir="$SOURCE_DIR/.git" --work-tree="$SOURCE_DIR" rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]] || fail "无法解析检出提交"
 
 if [[ -n "$EXPECTED_COMMIT" ]]; then
   expected_commit="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
   [[ "$resolved_commit" == "$expected_commit" ]] \
-    || fail "分支头 $resolved_commit 与期望提交 $expected_commit 不一致"
+    || fail "检出提交 $resolved_commit 与期望提交 $expected_commit 不一致"
 fi
 
-archive_file="$WORKSPACE/source-$resolved_commit.tar.gz"
-archive_url="https://codeload.github.com/chedou/mateclaw/tar.gz/$resolved_commit"
-archive_ready=0
-if [[ -f "$archive_file" ]] && gzip -t "$archive_file"; then
-  echo "复用已校验的固定提交归档"
-  archive_ready=1
-else
-  for attempt in $(seq 1 8); do
-    echo "下载固定提交归档：第 $attempt/8 次"
-    if curl --fail --location --silent --show-error \
-        --connect-timeout 20 --max-time 1800 \
-        --retry 3 --retry-delay 5 --continue-at - \
-        --output "$archive_file" "$archive_url" \
-        && gzip -t "$archive_file"; then
-      archive_ready=1
-      break
-    fi
-    sleep 5
-  done
-fi
-[[ "$archive_ready" -eq 1 ]] || fail "固定提交归档下载或完整性校验失败"
-
-mkdir -p "$SOURCE_DIR"
-tar -xzf "$archive_file" --strip-components=1 -C "$SOURCE_DIR"
 test -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
-  || fail "固定提交归档缺少后端 Dockerfile"
-test -f "$SOURCE_DIR/pom.xml" || fail "固定提交归档缺少根 pom.xml"
+  || fail "内网 GitLab 检出缺少后端 Dockerfile"
+test -f "$SOURCE_DIR/pom.xml" || fail "内网 GitLab 检出缺少根 pom.xml"
 
 printf '%s\n' "$resolved_commit" > resolved-commit.txt
 printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt

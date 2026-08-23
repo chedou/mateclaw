@@ -13,7 +13,11 @@ RUN npm install -g pnpm@10 --silent
 WORKDIR /frontend
 # Install dependencies first (layer cache)
 COPY mateclaw-ui/package.json mateclaw-ui/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# Jenkins 200.200.4.33 runs an older Docker/overlay stack where pnpm's
+# auto-selected hardlink/reflink importer can finish downloading and then fail
+# with `EPERM: operation not permitted, write`. Copying packages avoids that
+# filesystem-specific optimization while keeping the lockfile deterministic.
+RUN pnpm install --frozen-lockfile --package-import-method=copy
 # Copy source and build
 COPY mateclaw-ui/ ./
 # Override outDir: vite.config.ts writes to ../mateclaw-server/…/static which
