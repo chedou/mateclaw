@@ -9,6 +9,8 @@ import vip.mate.troubleshooting.intake.IntakeSessionStatus;
 import vip.mate.troubleshooting.intake.TroubleshootingChannelSummaryRenderer;
 import vip.mate.troubleshooting.intake.TroubleshootingIntakeSessionService;
 import vip.mate.troubleshooting.intake.TroubleshootingIntakeSources;
+import vip.mate.troubleshooting.model.Diagnosis;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 
 import java.nio.charset.StandardCharsets;
@@ -139,8 +141,11 @@ public class ConversationIntakeService {
             StoredDiagnosis stored = intakeService.report(ready, lockedRehearsal);
             diagnosisId = stored.diagnosis().diagnosisId();
             created = stored.created();
-            prompt = summaryRenderer.render(
-                    projectionService.project(workspaceId, diagnosisId).businessSummary());
+            prompt = renderInvestigationRoute(stored.diagnosis())
+                    + "\n\n"
+                    + summaryRenderer.render(
+                            projectionService.project(workspaceId, diagnosisId)
+                                    .businessSummary());
             if (Boolean.FALSE.equals(created)) {
                 prompt = "已汇合到既有排障单。\n" + prompt;
             }
@@ -164,6 +169,52 @@ public class ConversationIntakeService {
                 created,
                 lockedRehearsal,
                 transcriptUserMessage);
+    }
+
+    /**
+     * Makes the already-enforced SOP-first routing visible in Chat.
+     *
+     * <p>The Intake service chooses and freezes the route before collecting
+     * evidence. This renderer only explains that persisted result; it never
+     * re-matches mutable SOP data after the investigation has completed.</p>
+     */
+    private String renderInvestigationRoute(Diagnosis diagnosis) {
+        if (diagnosis == null || diagnosis.investigationMode() == null) {
+            throw new IllegalStateException(
+                    "persisted Diagnosis has no investigation route");
+        }
+        if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY) {
+            return "排障路径：未找到可正式执行的已审核 SOP，"
+                    + "已进入通用只读调查。";
+        }
+        if (diagnosis.sourcePlaybookVersionRef() == null) {
+            return "排障路径：历史排障记录未冻结准确 SOP 版本，"
+                    + "无法确认当时采用哪一版 SOP；未使用当前 SOP 反推。";
+        }
+        String title = firstNonBlank(
+                diagnosis.sopTitle(),
+                diagnosis.sopKey(),
+                diagnosis.sourcePlaybookVersionRef().playbookId());
+        String safeTitle = vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy
+                .forChannel(title, 160);
+        String safeVersion = vip.mate.troubleshooting.TroubleshootingBusinessTextPolicy
+                .forChannel(
+                        diagnosis.sourcePlaybookVersionRef().playbookId()
+                                + "@v"
+                                + diagnosis.sourcePlaybookVersionRef().playbookVersion(),
+                        160);
+        return "排障路径：已匹配并采用已审核 SOP「" + safeTitle + "」"
+                + "（" + safeVersion + "），按该 SOP 进行只读取证和判断。";
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        throw new IllegalStateException(
+                "Playbook Diagnosis has no displayable SOP identity");
     }
 
     /**

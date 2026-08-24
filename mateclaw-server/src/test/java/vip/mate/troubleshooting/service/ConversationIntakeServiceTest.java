@@ -16,6 +16,8 @@ import vip.mate.troubleshooting.intake.TroubleshootingChannelSummaryRenderer;
 import vip.mate.troubleshooting.intake.TroubleshootingIntakeSessionService;
 import vip.mate.troubleshooting.intake.TroubleshootingIntakeSources;
 import vip.mate.troubleshooting.model.Diagnosis;
+import vip.mate.troubleshooting.model.InvestigationMode;
+import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.BusinessSummary;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
@@ -127,6 +129,10 @@ class ConversationIntakeServiceTest {
         when(sessions.getReady(1L, "intake-2")).thenReturn(ready);
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-ready");
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.ERROR_CODE_PLAYBOOK);
+        when(diagnosis.sopTitle()).thenReturn("ITGW 访问失败");
+        when(diagnosis.sourcePlaybookVersionRef())
+                .thenReturn(new PlaybookVersionRef("sop-itgw-token=top-secret", 3));
         when(intakeService.report(ready, true)).thenReturn(new StoredDiagnosis(diagnosis, 1, true));
 
         BusinessSummary summary = mock(BusinessSummary.class);
@@ -147,6 +153,10 @@ class ConversationIntakeServiceTest {
         assertThat(result.rehearsal()).isTrue();
         assertThat(result.prompt()).contains("结论：证据不足");
         assertThat(result.prompt()).contains("正式工作台");
+        assertThat(result.prompt())
+                .contains("排障路径：已匹配并采用已审核 SOP「ITGW 访问失败」")
+                .contains("<REDACTED>")
+                .doesNotContain("top-secret");
         verify(intakeService).report(eq(ready), eq(true));
         verify(summaryRenderer).render(summary);
     }
@@ -180,6 +190,7 @@ class ConversationIntakeServiceTest {
         when(sessions.get(1L, "intake-generic-formal")).thenReturn(ready);
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-generic-formal");
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.OPEN_DISCOVERY);
         when(intakeService.report(ready, false))
                 .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
         BusinessSummary summary = mock(BusinessSummary.class);
@@ -201,6 +212,8 @@ class ConversationIntakeServiceTest {
         assertThat(result.diagnosisId()).isEqualTo("diag-generic-formal");
         assertThat(result.rehearsal()).isFalse();
         assertThat(result.prompt())
+                .contains("排障路径：未找到可正式执行的已审核 SOP")
+                .contains("已进入通用只读调查")
                 .contains("当前结论：通用只读调查已完成")
                 .contains("已生成正式排障单：diag-generic-formal")
                 .contains("打开排障详情")
@@ -310,6 +323,10 @@ class ConversationIntakeServiceTest {
                 .thenAnswer(call -> storedSession.get());
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-itgw");
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.ERROR_CODE_PLAYBOOK);
+        when(diagnosis.sopTitle()).thenReturn("ITGW 访问失败");
+        when(diagnosis.sourcePlaybookVersionRef())
+                .thenReturn(new PlaybookVersionRef("sop-itgw", 3));
         when(intakeService.report(any(IntakeSession.class), eq(true)))
                 .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
         BusinessSummary summary = mock(BusinessSummary.class);
@@ -356,6 +373,7 @@ class ConversationIntakeServiceTest {
                 .thenAnswer(call -> storedSession.get());
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-icare-mobile-finish");
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.SCENARIO_PLAYBOOK);
         when(intakeService.report(any(IntakeSession.class), eq(true)))
                 .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
         BusinessSummary summary = mock(BusinessSummary.class);
@@ -373,6 +391,9 @@ class ConversationIntakeServiceTest {
         assertThat(result.status()).isEqualTo("READY");
         assertThat(result.diagnosisId()).isEqualTo("diag-icare-mobile-finish");
         assertThat(result.prompt())
+                .contains("历史排障记录未冻结准确 SOP 版本")
+                .contains("未使用当前 SOP 反推")
+                .doesNotContain("已匹配并采用已审核 SOP")
                 .contains("工单关联变更单")
                 .contains("改用 PC 端");
         assertThat(result.transcriptUserMessage())
@@ -419,6 +440,10 @@ class ConversationIntakeServiceTest {
                 .thenAnswer(call -> storedSession.get());
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-icare-revisit-required");
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.SCENARIO_PLAYBOOK);
+        when(diagnosis.sopTitle()).thenReturn("iCare 回访信息校验");
+        when(diagnosis.sourcePlaybookVersionRef())
+                .thenReturn(new PlaybookVersionRef("sop-icare-revisit-required", 2));
         when(intakeService.report(any(IntakeSession.class), eq(true)))
                 .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
         BusinessSummary summary = mock(BusinessSummary.class);
