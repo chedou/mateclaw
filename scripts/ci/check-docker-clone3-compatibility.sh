@@ -31,14 +31,16 @@ lowest_version="$(
 
 seccomp_enabled="false"
 while IFS= read -r security_option; do
-  if [[ "${security_option}" == name=seccomp* ]]; then
-    seccomp_enabled="true"
-    break
-  fi
+  case "${security_option}" in
+    name=seccomp,profile=default|name=seccomp,profile=builtin)
+      seccomp_enabled="true"
+      break
+      ;;
+  esac
 done <<<"${security_options}"
 
 [[ "${seccomp_enabled}" == "true" ]] || fail \
-  "Docker daemon 未报告启用 seccomp；禁止在缺少默认容器隔离的宿主上发布"
+  "Docker daemon 未报告启用默认 seccomp profile；禁止在隔离关闭或 profile 未审核的宿主上发布"
 
 printf 'PASS: Docker Server %s supports clone3-aware seccomp behavior with seccomp enabled\n' \
   "${raw_version}"

@@ -34,9 +34,11 @@ expect_pass '20.10.24+dfsg1' $'name=apparmor\nname=seccomp,profile=builtin'
 expect_pass '24.0.7'
 expect_pass '28.3.3'
 expect_fail '20.10.24+dfsg1' 'name=apparmor'
+expect_fail '20.10.24+dfsg1' 'name=seccomp,profile=unconfined'
+expect_fail '20.10.24+dfsg1' 'name=seccomp-disabled'
 expect_fail '20.10.9+dfsg1'
 
-if rg -Fq -- '--security-opt seccomp=unconfined' "${ROOT_DIR}/Jenkinsfile.test-env"; then
+if grep -Fq -- '--security-opt seccomp=unconfined' "${ROOT_DIR}/Jenkinsfile.test-env"; then
   fail "test-environment pipeline must not disable seccomp"
 fi
 
