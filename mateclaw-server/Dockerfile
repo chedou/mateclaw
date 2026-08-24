@@ -107,7 +107,18 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # cryptography transitive deps, and RFC-051 PR-1c will replace the Python
 # hop with JVM-native Tika extraction anyway. Leaving it out keeps the
 # image ~200 MB smaller and the build reproducible.
-RUN apt-get update \
+# The Playwright image carries NodeSource only to install the Node runtime it
+# already contains. Keeping that repository enabled makes every later APT
+# operation depend on an unrelated third-party signing key. Remove it before
+# installing our runtime packages. Jenkins' Docker 18.06 + legacy overlay has
+# also exposed inherited keyrings without read permission for the `_apt` user;
+# restore read access explicitly instead of disabling signature verification.
+RUN rm -f /etc/apt/sources.list.d/nodesource.list \
+        /etc/apt/sources.list.d/nodesource.sources \
+    && chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
+    && find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
+        -type f \( -name '*.gpg' -o -name '*.asc' \) -exec chmod a+r {} + \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         openjdk-21-jre-headless \
         fonts-noto-cjk \

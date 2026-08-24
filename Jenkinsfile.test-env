@@ -126,6 +126,10 @@ fi
 test -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
   || fail "内网 GitLab 检出缺少后端 Dockerfile"
 test -f "$SOURCE_DIR/pom.xml" || fail "内网 GitLab 检出缺少根 pom.xml"
+test -x "$SOURCE_DIR/scripts/ci/test-runtime-apt-hardening.sh" \
+  || fail "缺少可执行的运行镜像 APT 回归检查"
+"$SOURCE_DIR/scripts/ci/test-runtime-apt-hardening.sh" \
+  || fail "运行镜像 APT 回归检查失败"
 
 printf '%s\n' "$resolved_commit" > resolved-commit.txt
 printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt
@@ -243,6 +247,25 @@ chmod 600 "$MYSQL_CNF"
 
 docker pull "$MYSQL_CLIENT_IMAGE" >/dev/null
 docker inspect --format '{{.Id}}' "$MYSQL_CLIENT_IMAGE" > mysql-client-image-id.txt
+failed_migration_count="$(docker run --rm \
+  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
+  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
+  -e "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0" \
+  "$DB_NAME_VALUE")"
+[[ "$failed_migration_count" =~ ^[0-9]+$ ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 无法确认 Flyway 失败历史" >&2; exit 1; }
+printf '%s\n' "$failed_migration_count" > failed-migration-count.txt
+if [[ "$failed_migration_count" -ne 0 ]]; then
+  echo "MIGRATION_PRECHECK_FAILED: 存在 $failed_migration_count 条失败迁移，禁止自动 repair 后继续发布" >&2
+  docker run --rm \
+    -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+    --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
+    --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
+    -e "SELECT installed_rank, COALESCE(version, 'repeatable'), LEFT(description, 80) FROM flyway_schema_history WHERE success = 0 ORDER BY installed_rank" \
+    "$DB_NAME_VALUE" >&2
+  exit 1
+fi
 current_version="$(docker run --rm \
   -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
   --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
@@ -559,6 +582,25 @@ curl -fsS --max-time 5 "$HEALTH_URL" > deployed-health.json
 curl -fsS --max-time 5 "$INFO_URL" > deployed-info.json
 grep -Fq "\"commit\":\"$resolved_commit\"" deployed-info.json
 
+deployed_flyway_version="$(docker run --rm \
+  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
+  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
+  -e "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1" \
+  "$DB_NAME_VALUE")"
+deployed_failed_migration_count="$(docker run --rm \
+  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
+  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
+  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
+  -e "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0" \
+  "$DB_NAME_VALUE")"
+printf '%s\n' "$deployed_flyway_version" > deployed-flyway-version.txt
+printf '%s\n' "$deployed_failed_migration_count" > deployed-failed-migration-count.txt
+[[ "$deployed_flyway_version" == "$APPROVED_FORMAL_DIAGNOSIS_TO" ]] \
+  || { echo "DEPLOY_FAILED: 数据库 Flyway 最终版本为 V$deployed_flyway_version，期望 V$APPROVED_FORMAL_DIAGNOSIS_TO" >&2; false; }
+[[ "$deployed_failed_migration_count" == '0' ]] \
+  || { echo "DEPLOY_FAILED: 发布后存在 $deployed_failed_migration_count 条失败迁移" >&2; false; }
+
 new_image_id="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
 new_state="$(docker inspect --format '{{.State.Status}}' "$CONTAINER")"
 
@@ -580,6 +622,8 @@ rm -f -- "$MYSQL_CNF"
   echo "new_image_id=$new_image_id"
   echo "container_state=$new_state"
   echo "health=UP"
+  echo "flyway_version=$deployed_flyway_version"
+  echo "failed_migration_count=$deployed_failed_migration_count"
   echo "rollback_data=$BACKUP_DATA"
   echo "mysql_backup=$DB_BACKUP"
   echo "migration_policy=$(cat migration-policy.txt)"
@@ -610,7 +654,7 @@ if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
 fi
 '''
       archiveArtifacts(
-        artifacts: 'preflight-report.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployment-manifest.txt,resolved-commit.txt,target-image.txt',
+        artifacts: 'preflight-report.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt',
         allowEmptyArchive: true,
         fingerprint: true
       )
