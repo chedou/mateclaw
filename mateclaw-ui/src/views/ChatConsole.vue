@@ -178,17 +178,22 @@
 
       <div
         v-if="canOperateTroubleshooting
-          && isTroubleshootingReadOnlyTriageAgent(currentAgent)
+          && currentTroubleshootingAgentMode
           && !tsActiveDiagnosisId"
         class="ts-mode-banner"
         role="note"
       >
         <div class="ts-intent-copy">
-          <b>当前是安全试用模式</b>
-          <span>聊天自动识别的告警会先按演练处理，不会占用生产排障窗口。</span>
+          <b>{{ currentTroubleshootingAgentMode === 'FORMAL' ? '正式只读排障已启用' : '当前是安全试用模式' }}</b>
+          <span v-if="currentTroubleshootingAgentMode === 'FORMAL'">
+            故障问题会优先进入补问、只读取证和根因分析，不会只交给大模型自由回答。
+          </span>
+          <span v-else>聊天自动识别的告警会先按演练处理，不会占用生产排障窗口。</span>
         </div>
         <div class="ts-intent-actions">
-          <button type="button" class="btn-secondary" @click="openConversationIntake">选择正式只读调查</button>
+          <button type="button" class="btn-secondary" @click="openConversationIntake">
+            {{ currentTroubleshootingAgentMode === 'FORMAL' ? '手动填写排障信息' : '选择正式只读调查' }}
+          </button>
         </div>
       </div>
 
@@ -406,9 +411,10 @@ import GoalSetInlinePrompt from '@/components/goal/GoalSetInlinePrompt.vue'
 import GoalSystemLine from '@/components/goal/GoalSystemLine.vue'
 import ConversationIntakeDialog from '@/views/Troubleshooting/ConversationIntakeDialog.vue'
 import {
-  isTroubleshootingReadOnlyTriageAgent,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
+  troubleshootingAgentMode,
+  troubleshootingTurnRehearsal,
 } from '@/views/Troubleshooting/chatTroubleshootingIntent'
 import {
   applyDiagnosisFollowUpContextOutcome,
@@ -963,6 +969,7 @@ const connectionStatusLabel = computed(() => {
 
 // ============ 计算属性 ============
 const currentAgent = computed(() => agents.value.find(a => String(a.id) === String(selectedAgentId.value)))
+const currentTroubleshootingAgentMode = computed(() => troubleshootingAgentMode(currentAgent.value))
 
 /** Human label for the agent's runtime mode — surfaces in the badge tooltip
  *  only, never in the visible header. */
@@ -1655,6 +1662,9 @@ async function runTroubleshootingIntakeTurn(text: string) {
   if (!originChatConversationId) return
   const originAgentId = String(selectedAgentId.value || '')
   if (!originAgentId) return
+  const originAgent = currentAgent.value
+  const originTroubleshootingAgentMode = troubleshootingAgentMode(originAgent)
+  const originEmployeeName = originAgent?.name
   const originDiagnosisId = tsActiveDiagnosisId.value
   const retryTurn = tsRetryTurnByChat.get(originChatConversationId)
   const clientTurnId = retryTurn?.diagnosisId === originDiagnosisId
@@ -1715,7 +1725,10 @@ async function runTroubleshootingIntakeTurn(text: string) {
       chatConversationId: originChatConversationId,
       agentId: originAgentId,
       text: trimmed,
-      rehearsal: true,
+      rehearsal: troubleshootingTurnRehearsal(
+        originTroubleshootingAgentMode,
+        tsIntakeConversationId.value,
+      ),
     })
     await onTroubleshootingTranscriptPersisted(originChatConversationId)
     tsRetryTurnByChat.delete(originChatConversationId)
@@ -1744,11 +1757,10 @@ async function runTroubleshootingIntakeTurn(text: string) {
     tsIntakeConversationId.value = data.conversationId
     if (readyDiagnosisId) {
       activateDiagnosisFollowUp(readyDiagnosisId, data.conversationId, originChatConversationId)
-      const employee = currentAgent.value?.name
       ElMessage.success(
         data.created === false
-          ? `已汇合既有排障单；结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`
-          : `演练排障结论已由${employee ? `「${employee}」` : '当前员工'}回写本对话`,
+          ? `已汇合既有排障单；结论已由${originEmployeeName ? `「${originEmployeeName}」` : '当前员工'}回写本对话`
+          : `${data.rehearsal ? '演练' : '正式'}排障结论已由${originEmployeeName ? `「${originEmployeeName}」` : '当前员工'}回写本对话`,
       )
     }
   } catch (error: any) {
@@ -2469,7 +2481,7 @@ async function handleSendMessage(content: string) {
       canOperate: canOperateTroubleshooting.value,
       suppressed: isTsIntentSuppressed(),
       intakeActive: tsIntakeActive.value,
-      preferIntakeForTroubleshootingAgent: isTroubleshootingReadOnlyTriageAgent(currentAgent.value),
+      preferIntakeForTroubleshootingAgent: troubleshootingAgentMode(currentAgent.value) !== null,
     }
     if (shouldAutoStartTroubleshootingIntake(content, gate)) {
       await runTroubleshootingIntakeTurn(content)

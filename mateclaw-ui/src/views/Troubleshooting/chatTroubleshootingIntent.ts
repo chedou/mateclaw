@@ -11,13 +11,44 @@ const FIELD_LINE = /(?:^|\n)\s*(?:系统|服务|集群|错误码|发生时间|�
 const ERROR_CODE_BRACKET = /【\s*\d{3,8}\s*】|\berror[_ ]?code\b\s*[=:：]?\s*\d{3,8}/i
 // 慢请求 belongs here even though nothing failed: a latency alert is still an
 // alert, and it is the one shape that carries no error code to score on.
-const ALERT_FAILURE = /告警|报障|排障|故障|ITGW|访问失败|发送失败|发不出去|创建会话失败|会话创建失败|超时|慢请求|超限制|异常码|失败/
+const ALERT_FAILURE = /告警|报障|排障|故障|报错|不能用|不可用|无响应|崩溃|卡住|起不来|白屏|接口返回\s*[45]\d{2}|ITGW|访问失败|发送失败|发不出去|创建会话失败|会话创建失败|超时|慢请求|超限制|异常码|失败/
+const CONTEXTUAL_ERROR = /(?:接口|服务|请求|页面|数据库|调用|任务).{0,8}错误|错误.{0,8}(?:接口|服务|请求|返回码|日志)/
 const WEAK_OPS = /观测云|Guance|调用链|trace[_ ]?id|ps[_ ]?id|生产故障/i
-const CLEARLY_GENERAL = /^(写一|帮我写|翻译|总结一下|什么是|讲个笑话|今天天气)|```[\s\S]{40,}/
+const CLEARLY_GENERAL = /^(写一|帮我写|翻译|总结一下|什么是|如何设计|介绍.{0,12}(?:规范|机制)|解释.{0,12}(?:类型|概念)|讲个笑话|今天天气)|```[\s\S]{40,}/
 const STRUCTURED_ERROR_FIELD = /["']error["']\s*:\s*["'][^"'\r\n]{2,}/i
 const STRUCTURED_INCIDENT_CONTEXT = /["']url["']\s*:|(?:^|\n)\s*(?:系统|服务|集群|发生时间|现象|异常)\s*[:：]/im
 
 const TROUBLESHOOTING_READONLY_TRIAGE_AGENT = 'troubleshooting-readonly-triage'
+
+export type TroubleshootingAgentMode = 'FORMAL' | 'REHEARSAL'
+
+/**
+ * Employee capability is configuration-driven. A formal employee must carry
+ * all three tags so an accidental generic `troubleshooting` label cannot
+ * silently turn model chat into a production investigation.
+ */
+export function troubleshootingAgentMode(
+  agent: { name?: string | null; tags?: string | null } | null | undefined,
+): TroubleshootingAgentMode | null {
+  const name = agent?.name?.trim().toLowerCase()
+  if (name === TROUBLESHOOTING_READONLY_TRIAGE_AGENT) return 'REHEARSAL'
+  const tags = new Set((agent?.tags || '')
+    .split(',')
+    .map(tag => tag.trim().toLowerCase())
+    .filter(Boolean))
+  if (!tags.has('troubleshooting')) return null
+  if (tags.has('readonly') && tags.has('formal')) return 'FORMAL'
+  return 'REHEARSAL'
+}
+
+/** New intake freezes its mode once; later turns must inherit the server fact. */
+export function troubleshootingTurnRehearsal(
+  mode: TroubleshootingAgentMode | null,
+  existingIntakeConversationId: string | null | undefined,
+): boolean | undefined {
+  if (existingIntakeConversationId?.trim()) return undefined
+  return mode !== 'FORMAL'
+}
 
 export function isTroubleshootingReadOnlyTriageAgent(
   agent: { name?: string | null } | null | undefined,
@@ -38,6 +69,7 @@ export function classifyChatTroubleshootingIntent(raw: string): ChatTroubleshoot
 
   if (ERROR_CODE_BRACKET.test(text)) score += 2
   if (ALERT_FAILURE.test(text)) score += 2
+  if (CONTEXTUAL_ERROR.test(text)) score += 2
   if (WEAK_OPS.test(text)) score += 1
   if (STRUCTURED_ERROR_FIELD.test(text) && STRUCTURED_INCIDENT_CONTEXT.test(text)) score += 2
   if (/\b\d{5,6}\b/.test(text) && /失败|告警|错误/.test(text)) score += 1

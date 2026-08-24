@@ -111,14 +111,15 @@ describe('the troubleshooting intake dialogs', () => {
   })
 
   it('routes alert-like prompts through Intake when the troubleshooting robot is selected', () => {
-    expect(chatConsoleSource).toContain('isTroubleshootingReadOnlyTriageAgent')
+    expect(chatConsoleSource).toContain('troubleshootingAgentMode')
     expect(chatConsoleSource).toContain(
-      'preferIntakeForTroubleshootingAgent: isTroubleshootingReadOnlyTriageAgent(currentAgent.value)',
+      "preferIntakeForTroubleshootingAgent: troubleshootingAgentMode(currentAgent.value) !== null",
     )
     expect(chatConsoleSource).toContain('await runTroubleshootingIntakeTurn(content)')
-    expect(chatConsoleSource).toContain('聊天自动识别的告警会先按演练处理')
-    expect(chatConsoleSource).toContain('选择正式只读调查')
-    expect(chatConsoleSource).toContain('rehearsal: true')
+    expect(chatConsoleSource).toContain('正式只读排障已启用')
+    expect(chatConsoleSource).toContain('troubleshootingTurnRehearsal(')
+    expect(chatConsoleSource).toContain('originEmployeeName')
+    expect(chatConsoleSource).not.toContain('rehearsal: true')
   })
 
   it('keeps the diagnosis context after READY and exits only on an explicit end result', () => {

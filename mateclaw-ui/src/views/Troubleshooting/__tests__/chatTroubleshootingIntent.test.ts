@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyChatTroubleshootingIntent,
   isTroubleshootingReadOnlyTriageAgent,
+  troubleshootingAgentMode,
+  troubleshootingTurnRehearsal,
   shouldAutoStartTroubleshootingIntake,
   shouldOfferTroubleshootingIntake,
   troubleshootingDiagnosisResultMessage,
@@ -44,6 +46,50 @@ describe('chatTroubleshootingIntent', () => {
       intakeActive: false,
       preferIntakeForTroubleshootingAgent: true,
     })).toBe(true)
+  })
+
+  it('uses a formal tagged employee for real troubleshooting instead of ordinary model chat', () => {
+    expect(troubleshootingAgentMode({ name: 'smartfix-sit', tags: '' })).toBeNull()
+    expect(troubleshootingAgentMode({
+      name: 'smartfix-sit',
+      tags: 'troubleshooting,readonly,formal',
+    })).toBe('FORMAL')
+    expect(troubleshootingAgentMode({
+      name: 'troubleshooting-readonly-triage',
+      tags: 'troubleshooting,readonly,triage',
+    })).toBe('REHEARSAL')
+    expect(troubleshootingAgentMode({ name: '通用助手', tags: 'default,assistant' }))
+      .toBeNull()
+  })
+
+  it('recognizes plain developer problem language as troubleshooting intent', () => {
+    expect(classifyChatTroubleshootingIntent('接口一直报错，帮我定位原因')).toBe('MEDIUM')
+    expect(classifyChatTroubleshootingIntent('接口返回 502')).toBe('MEDIUM')
+    expect(classifyChatTroubleshootingIntent('服务起不来')).toBe('MEDIUM')
+    expect(classifyChatTroubleshootingIntent('页面白屏')).toBe('MEDIUM')
+    expect(shouldAutoStartTroubleshootingIntake('接口一直报错，帮我定位原因', {
+      canOperate: true,
+      suppressed: false,
+      intakeActive: false,
+      preferIntakeForTroubleshootingAgent: true,
+    })).toBe(true)
+  })
+
+  it('does not turn ordinary cause or positioning questions into formal incidents', () => {
+    expect(classifyChatTroubleshootingIntent('分析一下项目延期原因')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('如何定位客户需求')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('如何设计错误处理机制')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('解释这个错误类型')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('如何设计接口错误处理机制')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('介绍服务错误码规范')).toBe('LOW')
+    expect(classifyChatTroubleshootingIntent('接口请求错误')).toBe('MEDIUM')
+  })
+
+  it('freezes mode on the first turn and inherits it on later turns', () => {
+    expect(troubleshootingTurnRehearsal('FORMAL', null)).toBe(false)
+    expect(troubleshootingTurnRehearsal('REHEARSAL', null)).toBe(true)
+    expect(troubleshootingTurnRehearsal('REHEARSAL', 'web-formal-1')).toBeUndefined()
+    expect(troubleshootingTurnRehearsal(null, 'web-rehearsal-1')).toBeUndefined()
   })
 
   it('keeps ordinary questions in normal chat even when the troubleshooting robot is selected', () => {
