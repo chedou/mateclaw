@@ -25,6 +25,8 @@ runtime_block="$(awk '
 ' "${DOCKERFILE}")"
 
 [[ -n "${runtime_block}" ]] || fail "Playwright runtime stage is missing"
+grep -Fq -- 'FROM mcr.microsoft.com/playwright:v1.62.0-noble' <<<"${runtime_block}" \
+  || fail "runtime must use the Playwright version pinned by the Java driver"
 
 line_of() {
   local needle="$1"
@@ -36,8 +38,9 @@ keyring_copy_line="$(line_of 'COPY mateclaw-server/docker/ubuntu-archive-keyring
 keyring_decode_line="$(line_of 'base64 --decode < /tmp/ubuntu-archive-keyring.gpg.b64')"
 keyring_checksum_line="$(line_of '| sha256sum --check --strict -')"
 keyring_install_line="$(line_of 'install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg')"
+keyring_trusted_install_line="$(line_of 'install -m 0644 /tmp/ubuntu-archive-keyring.gpg /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg')"
 keyring_permission_line="$(line_of 'find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d')"
-apt_update_line="$(line_of '&& apt-get -o APT::Sandbox::User=root update')"
+apt_update_line="$(line_of '&& apt-get update')"
 
 [[ -n "${nodesource_line}" ]] \
   || fail "runtime stage must remove the unused NodeSource repository"
@@ -49,6 +52,8 @@ apt_update_line="$(line_of '&& apt-get -o APT::Sandbox::User=root update')"
   || fail "runtime stage must verify the pinned archive keyring digest"
 [[ -n "${keyring_install_line}" ]] \
   || fail "runtime stage must restore the archive keyring used by ubuntu.sources"
+[[ -n "${keyring_trusted_install_line}" ]] \
+  || fail "runtime stage must restore the archive keyring fallback used by legacy sources"
 [[ -n "${keyring_permission_line}" ]] \
   || fail "runtime stage must make inherited APT keyrings readable"
 [[ -n "${apt_update_line}" ]] \
@@ -61,8 +66,12 @@ apt_update_line="$(line_of '&& apt-get -o APT::Sandbox::User=root update')"
   || fail "archive keyring decoding must happen before checksum verification"
 (( keyring_checksum_line < keyring_install_line )) \
   || fail "archive keyring must be verified before installation"
+(( keyring_checksum_line < keyring_trusted_install_line )) \
+  || fail "archive keyring must be verified before trusted-store installation"
 (( keyring_install_line < apt_update_line )) \
   || fail "archive keyring must be restored before apt-get update"
+(( keyring_trusted_install_line < apt_update_line )) \
+  || fail "trusted-store keyring must be restored before apt-get update"
 (( keyring_permission_line < apt_update_line )) \
   || fail "keyring permission repair must happen before apt-get update"
 
@@ -75,9 +84,9 @@ grep -Fq -- '-exec chmod a+r {} +' <<<"${runtime_block}" \
 grep -Fq -- 'echo "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31  /tmp/ubuntu-archive-keyring.gpg"' <<<"${runtime_block}" \
   || fail "Ubuntu archive keyring digest must be fixed in the build instruction"
 
-sandbox_root_count="$(grep -Fc -- 'apt-get -o APT::Sandbox::User=root' <<<"${runtime_block}")"
-[[ "${sandbox_root_count}" == "2" ]] \
-  || fail "legacy Docker workaround must be scoped to APT update and install only"
+if grep -Fq -- 'APT::Sandbox::User=root' <<<"${runtime_block}"; then
+  fail "runtime must keep APT's default _apt sandbox"
+fi
 
 for insecure_bypass in \
   allow-unauthenticated \

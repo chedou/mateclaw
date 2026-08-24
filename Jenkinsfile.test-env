@@ -92,8 +92,12 @@ command -v curl >/dev/null || fail "curl 命令不存在"
 command -v sha256sum >/dev/null || fail "sha256sum 命令不存在"
 command -v find >/dev/null || fail "find 命令不存在"
 command -v sort >/dev/null || fail "sort 命令不存在"
+command -v sed >/dev/null || fail "sed 命令不存在"
+command -v tr >/dev/null || fail "tr 命令不存在"
 test -S /var/run/docker.sock || fail "Jenkins 无法访问 Docker socket"
 docker info >/dev/null 2>&1 || fail "Jenkins 无法访问 Docker daemon"
+docker_server_version="$(docker version --format '{{.Server.Version}}')"
+docker_security_options="$(docker info --format '{{range .SecurityOptions}}{{println .}}{{end}}')"
 
 [[ "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] \
   || fail "BRANCH 格式不合法"
@@ -130,6 +134,15 @@ test -x "$SOURCE_DIR/scripts/ci/test-runtime-apt-hardening.sh" \
   || fail "缺少可执行的运行镜像 APT 回归检查"
 "$SOURCE_DIR/scripts/ci/test-runtime-apt-hardening.sh" \
   || fail "运行镜像 APT 回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
+  || fail "缺少可执行的 Docker clone3 门禁回归检查"
+"$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
+  || fail "Docker clone3 门禁回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
+  || fail "缺少可执行的 Docker clone3 兼容性检查"
+"$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
+  "$docker_server_version" "$docker_security_options" \
+  || fail "Docker 宿主不满足现代 glibc 的 seccomp 要求；禁止用 seccomp=unconfined 绕过"
 
 printf '%s\n' "$resolved_commit" > resolved-commit.txt
 printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt
@@ -146,6 +159,10 @@ if docker inspect "$CONTAINER" >/dev/null 2>&1; then
     current_health="UP"
   fi
 fi
+
+docker_security_options_report="$(
+  printf '%s\n' "$docker_security_options" | tr '\n' ',' | sed 's/,$//'
+)"
 
 test -f "$ENV_FILE" || fail "缺少 $ENV_FILE"
 env_mode="$(stat -c '%a' "$ENV_FILE")"
@@ -166,7 +183,9 @@ grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
   echo "branch=$BRANCH"
   echo "resolved_commit=$resolved_commit"
   echo "target_image=$(cat target-image.txt)"
-  echo "docker_server=$(docker version --format '{{.Server.Version}}')"
+  echo "docker_server=$docker_server_version"
+  echo "docker_security_options=$docker_security_options_report"
+  echo "docker_clone3_seccomp=SUPPORTED"
   echo "current_container_state=$current_state"
   echo "current_image=$current_image"
   echo "current_health=$current_health"
