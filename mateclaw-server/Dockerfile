@@ -93,10 +93,10 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # Playwright's Noble image inherits Ubuntu's deb822 sources, which explicitly
 # trust /usr/share/keyrings/ubuntu-archive-keyring.gpg. On the test host's old
 # Docker 18.06/legacy-overlay stack that inherited file can become unreadable,
-# so restore it from Ubuntu's canonical HTTPS endpoint before the first APT
-# operation. Pinning the complete keyring digest in the instruction makes this
-# a deliberate, reviewable trust-root update instead of an overridable build
-# argument or an unverified key download.
+# and curl cannot create its DNS resolver thread inside a build container.
+# Vendor the keyring fetched from Ubuntu's canonical HTTPS endpoint as base64,
+# then pin the decoded digest. Updating this trust root therefore requires a
+# deliberate source change and review, while the build remains offline-safe.
 
 # JDK 21 is NOT part of the base image (it ships Node for the JS driver).
 # Install openjdk-21 explicitly and add CJK fonts so Chinese pages render
@@ -122,17 +122,15 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # also exposed inherited keyrings without read permission for the `_apt` user;
 # restore the pinned Ubuntu archive keyring and its read access explicitly
 # instead of disabling signature verification.
+COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64
 RUN rm -f /etc/apt/sources.list.d/nodesource.list \
         /etc/apt/sources.list.d/nodesource.sources \
-    && curl --fail --silent --show-error --location \
-        --connect-timeout 15 --retry 5 --retry-all-errors \
-        --retry-delay 2 --retry-max-time 300 \
-        --output /tmp/ubuntu-archive-keyring.gpg \
-        https://archive.ubuntu.com/ubuntu/project/ubuntu-archive-keyring.gpg \
+    && base64 --decode < /tmp/ubuntu-archive-keyring.gpg.b64 \
+        > /tmp/ubuntu-archive-keyring.gpg \
     && echo "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31  /tmp/ubuntu-archive-keyring.gpg" \
         | sha256sum --check --strict - \
     && install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg \
-    && rm -f /tmp/ubuntu-archive-keyring.gpg \
+    && rm -f /tmp/ubuntu-archive-keyring.gpg /tmp/ubuntu-archive-keyring.gpg.b64 \
     && chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
     && find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
         -type f \( -name '*.gpg' -o -name '*.asc' \) -exec chmod a+r {} + \
