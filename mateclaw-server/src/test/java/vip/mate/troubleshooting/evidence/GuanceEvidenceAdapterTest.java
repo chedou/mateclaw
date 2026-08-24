@@ -18,9 +18,12 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GuanceEvidenceAdapterTest {
 
@@ -28,6 +31,422 @@ class GuanceEvidenceAdapterTest {
     private static final Instant NOW = Instant.parse("2026-07-25T09:12:03Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void rechecksTheFrozenBindingFingerprintBeforeAnyGuanceTransportIo() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EvidenceProperties.Guance config = guanceConfig();
+        GuanceBindingFingerprintService fingerprints =
+                org.mockito.Mockito.mock(GuanceBindingFingerprintService.class);
+        String accepted = "a".repeat(64);
+        String changed = "b".repeat(64);
+        org.mockito.Mockito.when(fingerprints.currentForFormalAuthority(
+                WORKSPACE_ID, "CSDP", "order-svc"))
+                .thenReturn(Optional.of(new GuanceBindingFingerprintService.Snapshot(
+                        "c".repeat(64),
+                        changed,
+                        "CSDP",
+                        "order-svc",
+                        Set.of("log_count"),
+                        "d".repeat(64))));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config,
+                objectMapper,
+                transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                null,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void formalCollectionNeverFallsBackWhenWorkspaceSettingsLookupFails() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID))
+                .thenThrow(new IllegalStateException("settings store unavailable"));
+        String accepted = "a".repeat(64);
+        String settingsFingerprint = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints = matchingFingerprints(
+                accepted, settingsFingerprint);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_FAILURE);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void formalCollectionRejectsACredentialIdentityDifferentFromTheAcceptedSnapshot() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EffectiveEvidenceSettings effective = EffectiveEvidenceSettings.resolved(
+                true, "https://workspace.example", "credential-b",
+                false, false, false, EffectiveEvidenceSettings.Origin.WORKSPACE);
+        WorkspaceEvidenceSettingsService settings = settings(effective);
+        String accepted = "a".repeat(64);
+        String acceptedSettings = "b".repeat(64);
+        GuanceBindingFingerprintService fingerprints = matchingFingerprints(
+                accepted, acceptedSettings);
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn("c".repeat(64));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void formalCollectionSurfacesOutboundPolicyBlockInsteadOfMissingEvidence() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EffectiveEvidenceSettings effective = EffectiveEvidenceSettings.resolved(
+                true, "https://blocked.example", "workspace-key",
+                false, false, false, EffectiveEvidenceSettings.Origin.WORKSPACE);
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID)).thenReturn(effective);
+        org.mockito.Mockito.doThrow(new SecurityException("DNS resolution failed closed"))
+                .when(settings).assertReachableEndpointStrict("https://blocked.example");
+        String accepted = "a".repeat(64);
+        String settingsFingerprint = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints = matchingFingerprints(
+                accepted, settingsFingerprint);
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn(settingsFingerprint);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.POLICY_BLOCKED);
+        assertThat(transport.calls).hasValue(0);
+        org.mockito.Mockito.verify(settings)
+                .assertReachableEndpointStrict("https://blocked.example");
+        org.mockito.Mockito.verify(settings, org.mockito.Mockito.never())
+                .assertReachableEndpoint("https://blocked.example");
+    }
+
+    @Test
+    void formalCollectionStrictlyValidatesADeploymentOriginEndpointBeforeTransport() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EffectiveEvidenceSettings effective = EffectiveEvidenceSettings.resolved(
+                true, "https://deployment-dns-failure.example", "deployment-key",
+                false, false, false, EffectiveEvidenceSettings.Origin.DEPLOYMENT);
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID)).thenReturn(effective);
+        org.mockito.Mockito.doThrow(new SecurityException("DNS resolution failed closed"))
+                .when(settings).assertReachableEndpointStrict(
+                        "https://deployment-dns-failure.example");
+        String accepted = "a".repeat(64);
+        String settingsFingerprint = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints = matchingFingerprints(
+                accepted, settingsFingerprint);
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn(settingsFingerprint);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.POLICY_BLOCKED);
+        assertThat(transport.calls).hasValue(0);
+        org.mockito.Mockito.verify(settings)
+                .assertReachableEndpointStrict(
+                        "https://deployment-dns-failure.example");
+    }
+
+    @Test
+    void formalCollectionFailsClosedWhenTheStrictEndpointVerifierIsUnavailable() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        String accepted = "a".repeat(64);
+        String settingsFingerprint = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints = matchingFingerprints(
+                accepted, settingsFingerprint);
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn(settingsFingerprint);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                null,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_UNAVAILABLE);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void formalCollectionRechecksSettingsAuthorityImmediatelyBeforeTransport() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EffectiveEvidenceSettings effective = EffectiveEvidenceSettings.resolved(
+                true, "https://workspace.example", "workspace-key",
+                false, false, false, EffectiveEvidenceSettings.Origin.WORKSPACE);
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID)).thenReturn(effective);
+        String accepted = "a".repeat(64);
+        String acceptedSettings = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints =
+                org.mockito.Mockito.mock(GuanceBindingFingerprintService.class);
+        GuanceBindingFingerprintService.Snapshot acceptedSnapshot =
+                new GuanceBindingFingerprintService.Snapshot(
+                        "c".repeat(64), accepted, "CSDP", "order-svc",
+                        Set.of("log_count"), acceptedSettings);
+        GuanceBindingFingerprintService.Snapshot changedSnapshot =
+                new GuanceBindingFingerprintService.Snapshot(
+                        "c".repeat(64), "b".repeat(64), "CSDP", "order-svc",
+                        Set.of("log_count"), "e".repeat(64));
+        org.mockito.Mockito.when(fingerprints.currentForFormalAuthority(
+                        WORKSPACE_ID, "CSDP", "order-svc"))
+                .thenReturn(Optional.of(acceptedSnapshot), Optional.of(changedSnapshot));
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn(acceptedSettings);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
+        assertThat(transport.calls).hasValue(0);
+        org.mockito.Mockito.verify(fingerprints, org.mockito.Mockito.times(2))
+                .currentForFormalAuthority(WORKSPACE_ID, "CSDP", "order-svc");
+    }
+
+    @Test
+    void formalCollectionPropagatesVerifierFailureFromTheSecondGuard() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        EffectiveEvidenceSettings effective = EffectiveEvidenceSettings.resolved(
+                true, "https://workspace.example", "workspace-key",
+                false, false, false, EffectiveEvidenceSettings.Origin.WORKSPACE);
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID)).thenReturn(effective);
+        String accepted = "a".repeat(64);
+        String acceptedSettings = "d".repeat(64);
+        GuanceBindingFingerprintService fingerprints =
+                org.mockito.Mockito.mock(GuanceBindingFingerprintService.class);
+        GuanceBindingFingerprintService.Snapshot acceptedSnapshot =
+                new GuanceBindingFingerprintService.Snapshot(
+                        "c".repeat(64), accepted, "CSDP", "order-svc",
+                        Set.of("log_count"), acceptedSettings);
+        org.mockito.Mockito.when(fingerprints.currentForFormalAuthority(
+                        WORKSPACE_ID, "CSDP", "order-svc"))
+                .thenReturn(Optional.of(acceptedSnapshot))
+                .thenThrow(FormalEvidenceAuthorityException.verifierFailure(
+                        "workspace settings store failed during final guard",
+                        new IllegalStateException("settings store unavailable")));
+        org.mockito.Mockito.when(fingerprints.settingsFingerprint(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EffectiveEvidenceSettings.class)))
+                .thenReturn(acceptedSettings);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                fingerprints,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        accepted))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_FAILURE);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void rehearsalCollectionKeepsDeploymentFallbackWhenWorkspaceSettingsLookupFails() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        WorkspaceEvidenceSettingsService settings =
+                org.mockito.Mockito.mock(WorkspaceEvidenceSettingsService.class);
+        org.mockito.Mockito.when(settings.effective(WORKSPACE_ID))
+                .thenThrow(new IllegalStateException("settings store unavailable"));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(), objectMapper, transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                settings,
+                CLOCK);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request("-15m"), incident(), Duration.ofSeconds(3));
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
+        assertThat(transport.calls).hasValue(1);
+        assertThat(transport.headers).containsEntry("DF-API-KEY", "secret-key");
+    }
+
+    private GuanceBindingFingerprintService matchingFingerprints(
+            String accepted,
+            String settingsFingerprint) {
+        GuanceBindingFingerprintService fingerprints =
+                org.mockito.Mockito.mock(GuanceBindingFingerprintService.class);
+        org.mockito.Mockito.when(fingerprints.currentForFormalAuthority(
+                        WORKSPACE_ID, "CSDP", "order-svc"))
+                .thenReturn(Optional.of(new GuanceBindingFingerprintService.Snapshot(
+                        "c".repeat(64), accepted, "CSDP", "order-svc",
+                        Set.of("log_count"), settingsFingerprint)));
+        return fingerprints;
+    }
+
+    @Test
+    void formalCollectionFailsExplicitlyWhenTheFingerprintVerifierIsMissing() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(),
+                objectMapper,
+                transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                null,
+                (GuanceBindingFingerprintService) null,
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        "a".repeat(64)))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_UNAVAILABLE);
+        assertThat(transport.calls).hasValue(0);
+    }
+
+    @Test
+    void formalCollectionFailsExplicitlyWhenTheFingerprintVerifierThrows() {
+        CapturingTransport transport = new CapturingTransport(200, "{}");
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig(),
+                objectMapper,
+                transport,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                null,
+                () -> {
+                    throw new IllegalStateException("authority store unavailable");
+                },
+                CLOCK);
+
+        assertThatThrownBy(() -> adapter.collect(
+                        WORKSPACE_ID,
+                        request("-15m"),
+                        incident(),
+                        Duration.ofSeconds(3),
+                        "a".repeat(64)))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_FAILURE);
+        assertThat(transport.calls).hasValue(0);
+    }
 
     @Test
     void refusesGlobalCredentialsWithoutAnExplicitWorkspaceAssetBinding() {

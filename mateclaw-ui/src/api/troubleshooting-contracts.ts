@@ -51,6 +51,13 @@ export interface ConversationTurnRequest {
   chatConversationId?: string
   agentId?: string
   text: string
+  rehearsal?: boolean
+}
+
+export interface ConversationModeResult {
+  conversationId: string
+  intakeSessionId: string
+  status: 'RECEIVED' | 'AWAITING_INPUT' | 'READY' | string
   rehearsal: boolean
 }
 

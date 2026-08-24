@@ -7,14 +7,27 @@ package vip.mate.troubleshooting.service;
 public record FormalOpenDiscoveryAdmission(
         int pilotPlanVersion,
         String guanceAcceptanceId,
-        String guanceBindingFingerprint) {
+        String guanceBindingFingerprint,
+        FormalOpenDiscoveryPlan plan) {
+
+    public FormalOpenDiscoveryAdmission(
+            int pilotPlanVersion,
+            String guanceAcceptanceId,
+            String guanceBindingFingerprint) {
+        this(
+                pilotPlanVersion,
+                guanceAcceptanceId,
+                guanceBindingFingerprint,
+                FormalOpenDiscoveryPlan.current());
+    }
 
     public FormalOpenDiscoveryAdmission {
         if (pilotPlanVersion < 1
                 || guanceAcceptanceId == null
                 || guanceAcceptanceId.isBlank()
                 || guanceBindingFingerprint == null
-                || !guanceBindingFingerprint.matches("[a-f0-9]{64}")) {
+                || !guanceBindingFingerprint.matches("[a-f0-9]{64}")
+                || plan == null) {
             throw new IllegalArgumentException(
                     "formal open-discovery admission identity is incomplete");
         }

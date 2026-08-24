@@ -7,10 +7,12 @@ import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vip.mate.common.result.R;
 import vip.mate.exception.MateClawException;
@@ -63,7 +65,7 @@ public class ConversationIntakeController {
                     request.conversationId(),
                     request.clientTurnId(),
                     request.text(),
-                    request.isRehearsal());
+                    request.rehearsal());
             if (transcriptAgentId != null) {
                 transcripts.persist(new TroubleshootingChatTranscriptService.TranscriptTurn(
                         resolvedWorkspace,
@@ -90,6 +92,15 @@ public class ConversationIntakeController {
             }
             throw failure;
         }
+    }
+
+    @GetMapping("/mode")
+    @RequireWorkspaceRole("member")
+    public R<ConversationIntakeService.ConversationModeResult> mode(
+            @RequestParam @NotBlank @Size(max = 128) String conversationId,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(conversationIntakeService.mode(
+                resolveWorkspace(workspaceId), currentActor(), conversationId));
     }
 
     private long resolveWorkspace(Long workspaceId) {

@@ -14,28 +14,30 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
  * Produces a secret-free identity for the exact Guance configuration an owner
  * accepted during T7.
  *
- * <p>The digest includes the endpoint, route, query template, row budget and
- * field aliases, but never exposes those values. Runtime credentials are
- * deliberately excluded so key rotation does not invalidate a field-level
- * acceptance.</p>
+ * <p>The digest includes the settings origin, credential identity, endpoint,
+ * route, query template, row budget and field aliases, but never exposes any
+ * of those values. Credential rotation deliberately invalidates an acceptance:
+ * a formal invocation may only use the credential scope that was reviewed.</p>
  */
 @Service
 public class GuanceBindingFingerprintService {
 
     private static final Pattern SAFE_SCOPE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
-    private static final List<String> CORE_SIGNALS =
-            List.of("log_search", "log_trace_bundle");
     private static final String CONTRACT = "guance-binding/v2";
 
     private final EvidenceProperties properties;
     private final WorkspaceObservabilityAssets workspaceAssets;
+    private final WorkspaceEvidenceContracts workspaceContracts;
+    private final WorkspaceEvidenceRoutes workspaceRoutes;
     /**
      * Nullable; when present the endpoint half of the digest comes from the
      * workspace row instead of application.yml. Without this an owner could
@@ -46,50 +48,89 @@ public class GuanceBindingFingerprintService {
     private final WorkspaceEvidenceSettingsService workspaceSettings;
 
     public GuanceBindingFingerprintService(EvidenceProperties properties) {
-        this(properties, WorkspaceObservabilityAssets.NONE, null);
+        this(
+                properties,
+                WorkspaceObservabilityAssets.NONE,
+                WorkspaceEvidenceContracts.NONE,
+                WorkspaceEvidenceRoutes.NONE,
+                null);
     }
 
     public GuanceBindingFingerprintService(
             EvidenceProperties properties,
             WorkspaceObservabilityAssets workspaceAssets) {
-        this(properties, workspaceAssets, null);
+        this(
+                properties,
+                workspaceAssets,
+                WorkspaceEvidenceContracts.NONE,
+                WorkspaceEvidenceRoutes.NONE,
+                null);
+    }
+
+    public GuanceBindingFingerprintService(
+            EvidenceProperties properties,
+            WorkspaceObservabilityAssets workspaceAssets,
+            WorkspaceEvidenceSettingsService workspaceSettings) {
+        this(
+                properties,
+                workspaceAssets,
+                WorkspaceEvidenceContracts.NONE,
+                WorkspaceEvidenceRoutes.NONE,
+                workspaceSettings);
     }
 
     @Autowired
     public GuanceBindingFingerprintService(
             EvidenceProperties properties,
             WorkspaceObservabilityAssets workspaceAssets,
+            WorkspaceEvidenceContracts workspaceContracts,
+            WorkspaceEvidenceRoutes workspaceRoutes,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
             WorkspaceEvidenceSettingsService workspaceSettings) {
         this.properties = properties == null ? new EvidenceProperties() : properties;
         this.workspaceAssets = workspaceAssets == null
                 ? WorkspaceObservabilityAssets.NONE : workspaceAssets;
+        this.workspaceContracts = workspaceContracts == null
+                ? WorkspaceEvidenceContracts.NONE : workspaceContracts;
+        this.workspaceRoutes = workspaceRoutes == null
+                ? WorkspaceEvidenceRoutes.NONE : workspaceRoutes;
         this.workspaceSettings = workspaceSettings;
     }
 
-    /**
-     * The endpoint values that participate in the digest.
-     *
-     * <p>Only the endpoint and its scheme policy: the credential stays out of
-     * the digest by design, so rotating a key does not invalidate a
-     * field-level acceptance that the rotation cannot affect.
-     */
-    private EffectiveEvidenceSettings endpointSettings(long workspaceId) {
-        if (workspaceSettings != null) {
-            try {
-                return workspaceSettings.effective(workspaceId);
-            } catch (RuntimeException ignored) {
-                // Fall through to the deployment values rather than emitting a
-                // fingerprint that silently drops the endpoint entirely.
-            }
-        }
+    private EffectiveEvidenceSettings deploymentSettings() {
         EvidenceProperties.Guance guance = properties.getGuance();
-        // The fingerprint covers the endpoint, never the credential, so this
-        // supplier is expected to go unused here.
         return new EffectiveEvidenceSettings(
                 guance.isEnabled(), guance.getBaseUrl(), guance::getApiKey,
                 guance.isAllowInsecureHttp(), false, false,
                 EffectiveEvidenceSettings.Origin.DEPLOYMENT);
+    }
+
+    /**
+     * Resolves and freezes the settings identity covered by an authority
+     * fingerprint. Formal verification may never inherit deployment settings
+     * when the workspace settings store failed; non-formal inspection retains
+     * that historical fallback.
+     */
+    private SettingsSnapshot settingsSnapshot(long workspaceId, boolean formal) {
+        try {
+            EffectiveEvidenceSettings effective = workspaceSettings == null
+                    ? deploymentSettings()
+                    : workspaceSettings.effective(workspaceId);
+            EffectiveEvidenceSettings frozen = freezeSettings(effective);
+            return new SettingsSnapshot(
+                    frozen, settingsFingerprint(workspaceId, frozen));
+        } catch (FormalEvidenceAuthorityException authorityFailure) {
+            throw authorityFailure;
+        } catch (RuntimeException settingsFailure) {
+            if (formal) {
+                throw FormalEvidenceAuthorityException.verifierFailure(
+                        "formal Guance workspace settings lookup failed",
+                        settingsFailure);
+            }
+            EffectiveEvidenceSettings fallback = freezeSettings(deploymentSettings());
+            return new SettingsSnapshot(
+                    fallback, settingsFingerprint(workspaceId, fallback));
+        }
     }
 
     /**
@@ -100,6 +141,22 @@ public class GuanceBindingFingerprintService {
             long workspaceId,
             String system,
             String service) {
+        return current(workspaceId, system, service, false);
+    }
+
+    /** Exact no-fallback fingerprint used by formal admission and execution. */
+    public Optional<Snapshot> currentForFormalAuthority(
+            long workspaceId,
+            String system,
+            String service) {
+        return current(workspaceId, system, service, true);
+    }
+
+    private Optional<Snapshot> current(
+            long workspaceId,
+            String system,
+            String service,
+            boolean formal) {
         validateWorkspace(workspaceId);
         String safeSystem = safeScope(system, "system");
         String safeService = safeScope(service, "service");
@@ -148,25 +205,36 @@ public class GuanceBindingFingerprintService {
         Map<String, String> signalBindings =
                 normalizedStringMap(asset.signalBindings());
         Map<String, String> assetParameters =
-                normalizedStringMap(asset.parameters());
+                runtimeAssetParameterMap(asset.parameters());
         if (signalBindings == null
                 || assetParameters == null
-                || CORE_SIGNALS.stream().anyMatch(signal -> !signalBindings.containsKey(signal))) {
+                || signalBindings.isEmpty()) {
             return Optional.empty();
         }
 
-        Map<String, List<String>> routes = systemRoutes(normalizedSystem);
-        if (routes == null || CORE_SIGNALS.stream().anyMatch(
-                signal -> !routesExactlyOnceToGuance(routes.get(signal)))) {
+        Map<String, List<String>> routes = effectiveRoutes(
+                workspaceId,
+                normalizedSystem,
+                signalBindings.keySet());
+        if (routes == null) {
             return Optional.empty();
         }
 
-        Map<String, EvidenceProperties.Binding> configuredBindings =
-                normalizedBindingMap(properties.getGuance().getBindings());
+        Map<String, EvidenceProperties.Binding> configuredBindings;
+        try {
+            configuredBindings = resolvedBindingMap(workspaceId);
+        } catch (RuntimeException unavailableWorkspaceContracts) {
+            return Optional.empty();
+        }
         if (configuredBindings == null
                 || signalBindings.values().stream()
                         .anyMatch(reference -> !configuredBindings.containsKey(
                                 normalize(reference)))) {
+            return Optional.empty();
+        }
+        Set<String> readOnlySignalKinds = fingerprintCoveredSignalKinds(
+                signalBindings, assetParameters, routes, configuredBindings);
+        if (readOnlySignalKinds.isEmpty()) {
             return Optional.empty();
         }
 
@@ -175,11 +243,17 @@ public class GuanceBindingFingerprintService {
         digest.add("workspaceId", Long.toString(workspaceId));
         digest.add("system", normalizedSystem);
         digest.add("service", normalizedService);
-        EffectiveEvidenceSettings endpoint = endpointSettings(workspaceId);
+        SettingsSnapshot resolvedSettings = settingsSnapshot(workspaceId, formal);
+        EffectiveEvidenceSettings endpoint = resolvedSettings.settings();
+        digest.add("settings.origin", endpoint.origin().name());
+        digest.add("settings.guanceEnabled", Boolean.toString(endpoint.guanceEnabled()));
         digest.add("baseUrl", trim(endpoint.guanceBaseUrl()));
         digest.add("queryPath", trim(properties.getGuance().getQueryPath()));
         digest.add("allowInsecureHttp",
                 Boolean.toString(endpoint.guanceAllowInsecureHttp()));
+        // The credential enters only the outer digest. Neither the key nor a
+        // standalone key hash is exposed through Snapshot, logs, or audit.
+        digest.add("credential", exact(endpoint.guanceApiKey()));
         digest.add("timeout", String.valueOf(properties.getGuance().getTimeout()));
         digest.add("asset.origin", asset.origin());
         digest.add("asset.version", Integer.toString(asset.version()));
@@ -252,18 +326,25 @@ public class GuanceBindingFingerprintService {
                             ? Map.of()
                             : binding.getFieldAliases();
                     aliases.entrySet().stream()
-                            .sorted(Map.Entry.comparingByKey())
+                            .sorted(java.util.Comparator.comparing(
+                                    alias -> exact(alias.getKey())))
                             .forEach(alias -> {
-                                digest.add("binding.alias.source", trim(alias.getKey()));
-                                digest.add("binding.alias.canonical", trim(alias.getValue()));
+                                // Runtime column matching and canonical-field lookup are
+                                // exact. Whitespace/case here is not cosmetic and therefore
+                                // must not collapse to an already accepted fingerprint.
+                                digest.add("binding.alias.source", exact(alias.getKey()));
+                                digest.add("binding.alias.canonical", exact(alias.getValue()));
                             });
                     Map<String, String> constants = binding.getConstantFields() == null
                             ? Map.of()
                             : binding.getConstantFields();
                     constants.entrySet().stream()
-                            .sorted(Map.Entry.comparingByKey())
+                            .sorted(java.util.Comparator.comparing(
+                                    constant -> exact(constant.getKey())))
                             .forEach(constant -> {
-                                digest.add("binding.constant.canonical", trim(constant.getKey()));
+                                // Canonical constant names are matched exactly at runtime.
+                                digest.add("binding.constant.canonical", exact(constant.getKey()));
+                                // Constant values are validated and emitted in trimmed form.
                                 digest.add("binding.constant.value", trim(constant.getValue()));
                             });
                 });
@@ -274,7 +355,44 @@ public class GuanceBindingFingerprintService {
                 scopeKey,
                 digest.hex(),
                 safeSystem,
-                safeService));
+                safeService,
+                readOnlySignalKinds,
+                resolvedSettings.fingerprint()));
+    }
+
+    /** Secret-free identity of the exact settings frozen for one invocation. */
+    String settingsFingerprint(
+            long workspaceId,
+            EffectiveEvidenceSettings settings) {
+        validateWorkspace(workspaceId);
+        if (settings == null || settings.origin() == null) {
+            throw new IllegalArgumentException("effective evidence settings are required");
+        }
+        Digest digest = new Digest();
+        digest.add("contract", "guance-settings/v1");
+        digest.add("workspaceId", Long.toString(workspaceId));
+        digest.add("origin", settings.origin().name());
+        digest.add("enabled", Boolean.toString(settings.guanceEnabled()));
+        digest.add("baseUrl", trim(settings.guanceBaseUrl()));
+        digest.add("allowInsecureHttp",
+                Boolean.toString(settings.guanceAllowInsecureHttp()));
+        digest.add("credential", exact(settings.guanceApiKey()));
+        return digest.hex();
+    }
+
+    private EffectiveEvidenceSettings freezeSettings(
+            EffectiveEvidenceSettings settings) {
+        if (settings == null) {
+            throw new IllegalArgumentException("effective evidence settings are required");
+        }
+        return EffectiveEvidenceSettings.resolved(
+                settings.guanceEnabled(),
+                settings.guanceBaseUrl(),
+                settings.guanceApiKey(),
+                settings.guanceAllowInsecureHttp(),
+                settings.replayEnabled(),
+                settings.agentEnabled(),
+                settings.origin());
     }
 
     public String scopeKey(long workspaceId, String system, String service) {
@@ -285,15 +403,43 @@ public class GuanceBindingFingerprintService {
                 normalize(safeScope(service, "service")));
     }
 
-    private Map<String, List<String>> systemRoutes(String normalizedSystem) {
+    private Map<String, List<String>> effectiveRoutes(
+            long workspaceId,
+            String normalizedSystem,
+            Set<String> signalKinds) {
+        Map<String, List<String>> deployed = deploymentRoutes(normalizedSystem);
+        if (deployed == null) {
+            return null;
+        }
+        Map<String, List<String>> effective = new LinkedHashMap<>();
+        try {
+            for (String signalKind : new TreeSet<>(signalKinds)) {
+                Optional<List<String>> declared = workspaceRoutes.find(
+                        workspaceId, normalizedSystem, signalKind);
+                List<String> sources = declared.orElseGet(
+                        () -> deployed.getOrDefault(signalKind, List.of()));
+                effective.put(
+                        signalKind,
+                        sources == null ? List.of() : List.copyOf(sources));
+            }
+        } catch (RuntimeException unavailableWorkspaceRoutes) {
+            return null;
+        }
+        return Map.copyOf(effective);
+    }
+
+    private Map<String, List<String>> deploymentRoutes(String normalizedSystem) {
         Map<String, Map<String, List<String>>> configured = properties.getRoutes();
         if (configured == null) {
-            return null;
+            return Map.of();
         }
         List<Map.Entry<String, Map<String, List<String>>>> matches =
                 configured.entrySet().stream()
                         .filter(entry -> normalizedSystem.equals(normalize(entry.getKey())))
                         .toList();
+        if (matches.isEmpty()) {
+            return Map.of();
+        }
         if (matches.size() != 1 || matches.getFirst().getValue() == null) {
             return null;
         }
@@ -308,6 +454,21 @@ public class GuanceBindingFingerprintService {
         return normalized;
     }
 
+    private Map<String, EvidenceProperties.Binding> resolvedBindingMap(
+            long workspaceId) {
+        Map<String, EvidenceProperties.Binding> deployed =
+                normalizedBindingMap(properties.getGuance().getBindings());
+        Map<String, EvidenceProperties.Binding> declared =
+                normalizedBindingMap(workspaceContracts.bindings(workspaceId));
+        if (deployed == null || declared == null) {
+            return null;
+        }
+        Map<String, EvidenceProperties.Binding> merged =
+                new LinkedHashMap<>(deployed);
+        merged.putAll(declared);
+        return Map.copyOf(merged);
+    }
+
     private boolean routesExactlyOnceToGuance(List<String> sources) {
         if (sources == null) {
             return false;
@@ -315,6 +476,56 @@ public class GuanceBindingFingerprintService {
         return sources.stream()
                 .filter(source -> "guance".equals(normalize(source)))
                 .count() == 1;
+    }
+
+    /**
+     * Projects only the exact semantic capabilities structurally covered by
+     * this fingerprint. A binding reference alone is not enough: its declared
+     * signal must agree with the asset key, the system route must reach
+     * Guance, and every asset-owned placeholder must be fixed by this exact
+     * system/service asset.
+     */
+    private Set<String> fingerprintCoveredSignalKinds(
+            Map<String, String> signalBindings,
+            Map<String, String> assetParameters,
+            Map<String, List<String>> routes,
+            Map<String, EvidenceProperties.Binding> configuredBindings) {
+        TreeSet<String> covered = new TreeSet<>();
+        for (Map.Entry<String, String> entry : signalBindings.entrySet()) {
+            String signalKind = normalize(entry.getKey());
+            EvidenceProperties.Binding binding =
+                    configuredBindings.get(normalize(entry.getValue()));
+            if (binding == null
+                    || !signalKind.equals(normalize(binding.getSignalKind()))
+                    || !routesExactlyOnceToGuance(routes.get(signalKind))
+                    || !hasReviewedQuery(binding)
+                    || !hasAssetOwnedParameters(binding, assetParameters)) {
+                continue;
+            }
+            covered.add(signalKind);
+        }
+        return Set.copyOf(covered);
+    }
+
+    private boolean hasReviewedQuery(EvidenceProperties.Binding binding) {
+        boolean single = !trim(binding.getQueryTemplate()).isBlank();
+        boolean compound = binding.getQueryTemplates() != null
+                && binding.getQueryTemplates().stream()
+                        .anyMatch(template -> !trim(template).isBlank());
+        return binding.getMaxRows() > 0 && (single || compound);
+    }
+
+    private boolean hasAssetOwnedParameters(
+            EvidenceProperties.Binding binding,
+            Map<String, String> assetParameters) {
+        List<String> required = binding.getAssetParameters() == null
+                ? List.of()
+                : binding.getAssetParameters().stream()
+                        .map(this::normalize)
+                        .toList();
+        return required.stream()
+                .allMatch(parameter -> !parameter.isBlank()
+                        && assetParameters.containsKey(parameter));
     }
 
     private Map<String, String> normalizedStringMap(Map<String, String> input) {
@@ -332,6 +543,29 @@ public class GuanceBindingFingerprintService {
             }
         }
         return normalized;
+    }
+
+    /**
+     * Mirrors the adapter's workspace-parameter semantics: declared parameter
+     * names are canonical lowercase, then looked up by exact key; values are
+     * trimmed before query rendering. A raw key with extra whitespace therefore
+     * cannot share authority with the canonical key.
+     */
+    private Map<String, String> runtimeAssetParameterMap(Map<String, String> input) {
+        if (input == null) {
+            return Map.of();
+        }
+        Map<String, String> runtime = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : input.entrySet()) {
+            String key = exact(entry.getKey());
+            String value = trim(entry.getValue());
+            if (key.isBlank()
+                    || value.isBlank()
+                    || runtime.putIfAbsent(key, value) != null) {
+                return null;
+            }
+        }
+        return runtime;
     }
 
     private Map<String, EvidenceProperties.Binding> normalizedBindingMap(
@@ -387,6 +621,10 @@ public class GuanceBindingFingerprintService {
         return value == null ? "" : value.trim();
     }
 
+    private String exact(String value) {
+        return value == null ? "" : value;
+    }
+
     private record EffectiveAsset(
             String origin,
             int version,
@@ -401,22 +639,54 @@ public class GuanceBindingFingerprintService {
         }
     }
 
+    private record SettingsSnapshot(
+            EffectiveEvidenceSettings settings,
+            String fingerprint) {
+    }
+
     public record Snapshot(
             String scopeKey,
             String bindingFingerprint,
             String system,
-            String service) {
+            String service,
+            Set<String> readOnlySignalKinds,
+            String settingsFingerprint) {
+
+        public Snapshot(
+                String scopeKey,
+                String bindingFingerprint,
+                String system,
+                String service) {
+            this(
+                    scopeKey, bindingFingerprint, system, service, Set.of(),
+                    "0".repeat(64));
+        }
+
+        public Snapshot(
+                String scopeKey,
+                String bindingFingerprint,
+                String system,
+                String service,
+                Set<String> readOnlySignalKinds) {
+            this(
+                    scopeKey, bindingFingerprint, system, service,
+                    readOnlySignalKinds, "0".repeat(64));
+        }
 
         public Snapshot {
             if (scopeKey == null
                     || !scopeKey.matches("[a-f0-9]{64}")
                     || bindingFingerprint == null
-                    || !bindingFingerprint.matches("[a-f0-9]{64}")) {
+                    || !bindingFingerprint.matches("[a-f0-9]{64}")
+                    || settingsFingerprint == null
+                    || !settingsFingerprint.matches("[a-f0-9]{64}")) {
                 throw new IllegalArgumentException(
-                        "scope and binding fingerprints must be SHA-256 hex");
+                        "scope, binding and settings fingerprints must be SHA-256 hex");
             }
             system = system == null ? "" : system.trim();
             service = service == null ? "" : service.trim();
+            readOnlySignalKinds = Set.copyOf(
+                    readOnlySignalKinds == null ? Set.of() : readOnlySignalKinds);
         }
     }
 

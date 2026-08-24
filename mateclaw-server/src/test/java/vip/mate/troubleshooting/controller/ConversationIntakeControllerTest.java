@@ -22,10 +22,41 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class ConversationIntakeControllerTest {
+
+    @Test
+    void exposesTheLockedConversationModeForPageRestoration() throws Exception {
+        ConversationIntakeService intake = mock(ConversationIntakeService.class);
+        TroubleshootingChatTranscriptService transcripts = mock(TroubleshootingChatTranscriptService.class);
+        when(intake.mode(7L, "alice", "conv-formal-awaiting"))
+                .thenReturn(new ConversationIntakeService.ConversationModeResult(
+                        "conv-formal-awaiting",
+                        "intake-formal-awaiting",
+                        "AWAITING_INPUT",
+                        false));
+        MockMvc mvc = MockMvcBuilders
+                .standaloneSetup(new ConversationIntakeController(intake, transcripts))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(
+                        new ObjectMapper().findAndRegisterModules()))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of()));
+        try {
+            mvc.perform(get("/api/v1/troubleshooting/conversation/mode")
+                            .header("X-Workspace-Id", "7")
+                            .param("conversationId", "conv-formal-awaiting"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.intakeSessionId")
+                            .value("intake-formal-awaiting"))
+                    .andExpect(jsonPath("$.data.rehearsal").value(false));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
 
     @Test
     void createsTheSafePendingTranscriptBeforeDomainWorkCanFail() {

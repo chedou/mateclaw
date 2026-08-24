@@ -215,7 +215,7 @@ public class DiagnosisExperienceProjectionService {
             List<String> capabilityLimits) {
         if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
                 || diagnosis.sopKey() == null) {
-            capabilityLimits.add("这是开放调查：没有套用标准排障方案，所以结论不能按固定步骤复算。");
+            capabilityLimits.add("这是通用只读调查：没有套用标准排障方法，所以结论不能按固定步骤复算。");
             return null;
         }
         try {
@@ -250,7 +250,7 @@ public class DiagnosisExperienceProjectionService {
         return switch (conclusionType) {
             case LOCATED -> "已定位到出问题的环节";
             case EXCLUDED -> "现有证据已排除当前假设";
-            case HYPOTHESIS -> "已形成需要人工确认的根因假设";
+            case HYPOTHESIS -> "已找到最可能方向，待人工确认";
             case INSUFFICIENT_EVIDENCE -> "证据不足，系统已停止自动判断";
         };
     }
@@ -284,9 +284,12 @@ public class DiagnosisExperienceProjectionService {
                     diagnosis.summary(),
                     "经过审核的排障规则命中。请结合开发证据复核后推进处置。");
             case EXCLUDED -> "判据不支持当前假设。这是排除结论，不代表已经定位根因。";
-            case HYPOTHESIS -> fallback(
-                    diagnosis.summary(),
-                    "只读证据支持上述待确认方向，该结论未经过确定性 SOP 判据裁决。");
+            case HYPOTHESIS -> {
+                String summary = normalizeNullable(diagnosis.summary());
+                yield summary == null
+                        ? "只读证据支持上述最可能方向，仍需人工确认。"
+                        : "当前最可能方向：" + summary + "。这不是已确认的根因，仍需人工核对。";
+            }
             case INSUFFICIENT_EVIDENCE -> "关键证据缺失或互相矛盾，系统没有给出根因。"
                     + "请先补齐开发证据台列出的缺口，再重新调查。";
         };
@@ -425,8 +428,8 @@ public class DiagnosisExperienceProjectionService {
                             "当前只确认了直接失败点，未确认上游根因；" + WRITE_BOUNDARY)
                     : new NextStep(
                             "下一步",
-                            "请 " + team + " 沿当前证据方向确认或证伪根因假设。",
-                            "当前仍是假设，需要人工确认；" + WRITE_BOUNDARY);
+                            "请 " + team + " 沿当前证据方向确认或排除这个最可能方向。",
+                            "当前只是最可能方向，需要人工确认；" + WRITE_BOUNDARY);
             case INSUFFICIENT_EVIDENCE -> new NextStep(
                     isIcareProductMapping502(diagnosis) ? "继续核对 502 上游原因" : "下一步",
                     isIcareProductMapping502(diagnosis)
@@ -661,7 +664,7 @@ public class DiagnosisExperienceProjectionService {
                     "当前还在演练/演示证据模式；生产数据源联调完成前，不能当成正式验收通过。";
             case "开放调查路径没有可复算的确定性 SOP 判据链。",
                  "开放调查路径没有可复算的确定性 SOP 判据链" ->
-                    "这是开放调查：没有套用标准排障方案，所以结论不能按固定步骤复算。";
+                    "这是通用只读调查：没有套用标准排障方法，所以结论不能按固定步骤复算。";
             case "该旧记录创建时尚未采集 D14 阶段时间戳，不用 0 或当前时间回填。" ->
                     "这是旧记录：当时还没记下各阶段耗时，所以这里不会用 0 或当前时间凑数。";
             default -> plainRouteMissLimit(text);
@@ -672,12 +675,12 @@ public class DiagnosisExperienceProjectionService {
         if (text.startsWith("确定性路由未命中：")) {
             String reason = text.substring("确定性路由未命中：".length()).trim();
             if (reason.contains("no errorCode") || reason.contains("deterministic routing needs one")) {
-                return "这单没有错误码，没法自动匹配标准排障方案。";
+                return "这单没有错误码，没有匹配到标准排障方法；系统已改用通用只读调查。";
             }
             if (!reason.isBlank()) {
-                return "没法自动匹配标准排障方案：" + reason;
+                return "没有匹配到标准排障方法，已改用通用只读调查：" + reason;
             }
-            return "没法自动匹配标准排障方案。";
+            return "没有匹配到标准排障方法，已改用通用只读调查。";
         }
         if (text.startsWith("只读 Agent ")) {
             return text

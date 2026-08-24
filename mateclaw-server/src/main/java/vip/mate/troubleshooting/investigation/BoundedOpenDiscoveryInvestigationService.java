@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import vip.mate.troubleshooting.agent.TroubleshootingAgentProperties;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryPlan;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -56,16 +57,19 @@ public final class BoundedOpenDiscoveryInvestigationService {
 
     public Optional<Execution> investigate(long workspaceId, IncidentContext incident) {
         Set<String> platforms = permittedPlatforms();
+        HypothesisGraph graph = graphFactory.create(incident);
         return investigate(
                 workspaceId,
                 incident,
                 platforms,
-                graphFactory.create(incident),
+                graph,
                 Set.of(
                         EvidenceRouterReadOnlyTool.TOOL_KEY
                                 + "@" + EvidenceRouterReadOnlyTool.VERSION,
                         IncidentReportReadOnlyTool.TOOL_KEY
-                                + "@" + IncidentReportReadOnlyTool.VERSION));
+                                + "@" + IncidentReportReadOnlyTool.VERSION),
+                signalKinds(graph),
+                null);
     }
 
     /**
@@ -75,18 +79,76 @@ public final class BoundedOpenDiscoveryInvestigationService {
      */
     public Optional<Execution> investigateFormal(
             long workspaceId,
-            IncidentContext incident) {
+            IncidentContext incident,
+            FormalOpenDiscoveryPlan formalPlan) {
+        return investigateFormal(workspaceId, incident, formalPlan, null);
+    }
+
+    public Optional<Execution> investigateFormal(
+            long workspaceId,
+            IncidentContext incident,
+            FormalOpenDiscoveryPlan formalPlan,
+            String expectedBindingFingerprint) {
+        if (formalPlan == null) {
+            throw new IllegalArgumentException("formal plan is required");
+        }
         Set<String> configured = permittedPlatforms();
         if (!configured.contains("guance")) {
             return Optional.empty();
         }
+        HypothesisGraph graph = graphFactory.createFormal(incident, formalPlan);
         return investigate(
                 workspaceId,
                 incident,
                 Set.of("guance"),
-                graphFactory.createFormal(incident),
+                graph,
                 Set.of(EvidenceRouterReadOnlyTool.TOOL_KEY
-                        + "@" + EvidenceRouterReadOnlyTool.VERSION));
+                        + "@" + EvidenceRouterReadOnlyTool.VERSION),
+                formalPlan.allowedSignalKinds(),
+                expectedBindingFingerprint)
+                .map(this::limitFormalGenericConclusion);
+    }
+
+    /**
+     * A generic graph is deliberately non-exhaustive. Even when every question
+     * in that small graph was answered, it can support only a candidate
+     * direction; it can never prove that every production root-cause family was
+     * excluded.
+     */
+    private Execution limitFormalGenericConclusion(Execution execution) {
+        RootCauseFinding finding = execution.finding();
+        if (finding.type() != RootCauseFinding.Type.LOCATED) {
+            return execution;
+        }
+        BoundedInvestigationPlanner.StopReason stopReason =
+                BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED;
+        RootCauseFinding boundedFinding = new RootCauseFinding(
+                RootCauseFinding.Type.HYPOTHESIS,
+                finding.cause(),
+                "现有只读证据支持候选方向“" + finding.cause()
+                        + "”，但通用调查无法穷尽所有根因方向，未宣称唯一根因。",
+                finding.evidenceRefs(),
+                finding.supportedHypothesisIds(),
+                finding.excludedHypothesisIds(),
+                finding.missingHypothesisIds(),
+                stopReason);
+        BoundedInvestigationPlanner.Outcome outcome = execution.outcome();
+        return new Execution(
+                new BoundedInvestigationPlanner.Outcome(
+                        outcome.graph(),
+                        boundedFinding,
+                        outcome.evidence(),
+                        outcome.iterations(),
+                        outcome.toolCalls(),
+                        outcome.startedAt(),
+                        outcome.completedAt(),
+                        stopReason),
+                execution.planKey(),
+                execution.planFingerprint(),
+                execution.plannedSignalKinds(),
+                execution.maxIterations(),
+                execution.maxToolCalls(),
+                execution.timeBudget());
     }
 
     private Optional<Execution> investigate(
@@ -94,7 +156,9 @@ public final class BoundedOpenDiscoveryInvestigationService {
             IncidentContext incident,
             Set<String> platforms,
             HypothesisGraph graph,
-            Set<String> allowedToolIdentities) {
+            Set<String> allowedToolIdentities,
+            Set<String> allowedSignalKinds,
+            String sourceBindingFingerprint) {
         if (!properties.isBoundedInvestigationEnabled() || platforms.isEmpty()) {
             return Optional.empty();
         }
@@ -122,7 +186,9 @@ public final class BoundedOpenDiscoveryInvestigationService {
                         maxToolCalls,
                         timeout,
                         allowedToolIdentities),
-                platforms);
+                platforms,
+                allowedSignalKinds,
+                sourceBindingFingerprint);
         return Optional.of(new Execution(
                 outcome,
                 PLAN_KEY,
@@ -158,7 +224,9 @@ public final class BoundedOpenDiscoveryInvestigationService {
                         REVIEWED_REPORT_TIMEOUT,
                         Set.of(IncidentReportReadOnlyTool.TOOL_KEY
                                 + "@" + IncidentReportReadOnlyTool.VERSION)),
-                localPlatform);
+                localPlatform,
+                signalKinds(graph),
+                null);
         List<String> signalKinds = graph.nodes().stream()
                 .flatMap(node -> node.questions().stream())
                 .map(question -> question.request().signalKind())
@@ -185,6 +253,13 @@ public final class BoundedOpenDiscoveryInvestigationService {
             }
         }
         return Set.copyOf(normalized);
+    }
+
+    private Set<String> signalKinds(HypothesisGraph graph) {
+        return graph.nodes().stream()
+                .flatMap(node -> node.questions().stream())
+                .map(question -> question.request().signalKind())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     static String fingerprint(

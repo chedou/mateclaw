@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmissionService;
@@ -293,6 +294,70 @@ public final class TroubleshootingAgentTriageService {
             String routeMissReason,
             Instant reportedAt,
             Instant readyAt) {
+        return triageFormalInternal(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                routeMissReason,
+                reportedAt,
+                readyAt,
+                null,
+                null);
+    }
+
+    /** Formal generic investigation owned by one durable conversation IntakeSession. */
+    public StoredDiagnosis triageFormalForIntake(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId,
+            FormalDiagnosisClaim intakeClaim) {
+        if (intakeSessionId == null || intakeSessionId.isBlank() || intakeClaim == null) {
+            throw new IllegalArgumentException(
+                    "intakeSessionId and its formal claim are required");
+        }
+        return triageFormalInternal(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                routeMissReason,
+                reportedAt,
+                readyAt,
+                intakeSessionId.trim(),
+                intakeClaim);
+    }
+
+    /** Revalidates the frozen authority before a completed generic Intake is reused. */
+    public StoredDiagnosis requireCompletedFormalOpenDiscovery(
+            long workspaceId,
+            IncidentContext incident,
+            StoredDiagnosis stored) {
+        if (workspaceId <= 0 || incident == null || stored == null) {
+            throw new IllegalArgumentException(
+                    "workspaceId, incident and completed diagnosis are required");
+        }
+        if (formalOpenDiscoveryAdmissions == null) {
+            throw formalConflict("formal open-discovery admission is unavailable");
+        }
+        IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        FormalOpenDiscoveryAdmission admission =
+                formalOpenDiscoveryAdmissions.admit(workspaceId, sanitizedIncident);
+        return openDiscoveryPersistence.requireCompletedFormal(
+                workspaceId, stored, admission);
+    }
+
+    private StoredDiagnosis triageFormalInternal(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            String routeMissReason,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId,
+            FormalDiagnosisClaim intakeClaim) {
         if (workspaceId <= 0 || incident == null || reportedAt == null || readyAt == null) {
             throw new IllegalArgumentException(
                     "workspaceId, incident and formal timestamps are required");
@@ -314,7 +379,7 @@ public final class TroubleshootingAgentTriageService {
                 sanitizedIncident,
                 false,
                 reportedAt,
-                null,
+                intakeSessionId,
                 formalOpenDiscoveryClaimLease());
         if (reservation.alreadyCompleted()) {
             return openDiscoveryPersistence.requireCompletedFormal(
@@ -323,7 +388,10 @@ public final class TroubleshootingAgentTriageService {
         try {
             BoundedOpenDiscoveryInvestigationService.Execution execution =
                     boundedInvestigation.investigateFormal(
-                                    workspaceId, sanitizedIncident)
+                                    workspaceId,
+                                    sanitizedIncident,
+                                    admission.plan(),
+                                    admission.guanceBindingFingerprint())
                             .orElseThrow(() -> formalConflict(
                                     "formal bounded read-only planner is unavailable"));
             if (EvidenceProvenance.fixtureModeForAcceptedGuanceRun(
@@ -341,11 +409,12 @@ public final class TroubleshootingAgentTriageService {
                     false,
                     reportedAt,
                     readyAt,
-                    null,
+                    intakeSessionId,
                     reservation,
                     correlationId,
                     execution,
-                    admission);
+                    admission,
+                    intakeClaim);
         } catch (RuntimeException | Error failure) {
             openDiscoveryPersistence.release(workspaceId, reservation.claim());
             throw failure;
@@ -654,6 +723,34 @@ public final class TroubleshootingAgentTriageService {
             String correlationId,
             BoundedOpenDiscoveryInvestigationService.Execution execution,
             FormalOpenDiscoveryAdmission formalAdmission) {
+        return persistBoundedFinding(
+                workspaceId,
+                incident,
+                suppliedEvidence,
+                rehearsal,
+                reportedAt,
+                readyAt,
+                intakeSessionId,
+                reservation,
+                correlationId,
+                execution,
+                formalAdmission,
+                null);
+    }
+
+    private StoredDiagnosis persistBoundedFinding(
+            long workspaceId,
+            IncidentContext incident,
+            List<EvidenceResult> suppliedEvidence,
+            boolean rehearsal,
+            Instant reportedAt,
+            Instant readyAt,
+            String intakeSessionId,
+            OpenDiscoveryRunReservation reservation,
+            String correlationId,
+            BoundedOpenDiscoveryInvestigationService.Execution execution,
+            FormalOpenDiscoveryAdmission formalAdmission,
+            FormalDiagnosisClaim intakeClaim) {
         List<EvidenceResult> evidence = mergePlannerEvidence(
                 suppliedEvidence, execution.evidence());
         List<String> citations = boundedCitations(execution);
@@ -691,7 +788,9 @@ public final class TroubleshootingAgentTriageService {
                 diagnosis.diagnosisId(),
                 List.of(execution.planKey()),
                 execution.planKey(),
-                execution.planFingerprint(),
+                formalAdmission == null
+                        ? execution.planFingerprint()
+                        : formalAdmission.plan().fingerprint(),
                 execution.plannedSignalKinds(),
                 execution.maxIterations(),
                 execution.maxToolCalls(),
@@ -716,6 +815,7 @@ public final class TroubleshootingAgentTriageService {
                     reportedAt,
                     intakeSessionId,
                     reservation.claim(),
+                    intakeClaim,
                     runAudit,
                     formalAdmission,
                     clock.instant());
@@ -997,7 +1097,11 @@ public final class TroubleshootingAgentTriageService {
                 "err.troubleshooting.formal_open_discovery_conflict", 409, message);
     }
 
-    private Duration formalOpenDiscoveryClaimLease() {
+    /**
+     * Claim lifetime shared by direct and Intake-owned formal investigations.
+     * It always covers the configured bounded tool budget plus a commit margin.
+     */
+    public Duration formalOpenDiscoveryClaimLease() {
         Duration configuredBudget = properties.getBoundedInvestigationTimeout();
         if (configuredBudget == null
                 || configuredBudget.isZero()

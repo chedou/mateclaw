@@ -11,6 +11,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryPlan;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,8 +127,114 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
                         new DefaultOpenDiscoveryHypothesisGraphFactory(),
                         CLOCK);
 
-        assertThat(service.investigateFormal(1L, incident())).isPresent();
+        assertThat(service.investigateFormal(
+                1L, incident(), FormalOpenDiscoveryPlan.current())).isPresent();
         assertThat(observedPlatforms.get()).containsExactly("guance");
+    }
+
+    @Test
+    void formalGenericInvestigationNeverPresentsABroadDirectionAsALocatedRootCause() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        ReadOnlyEvidenceTool tool = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        EvidenceRouterReadOnlyTool.TOOL_KEY,
+                        EvidenceRouterReadOnlyTool.VERSION,
+                        Capability.READ_EVIDENCE,
+                        Set.of("error_log_scan", "k8s_workload_health"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                Map<String, Object> observed = request.signalKind().equals("error_log_scan")
+                        ? Map.of("error_count", 3)
+                        : Map.of(
+                                "pod_count", 4,
+                                "container_count", 4,
+                                "running_container_count", 4,
+                                "unhealthy_container_count", 0,
+                                "max_cpu_percent", 45,
+                                "max_memory_percent", 52);
+                return new EvidenceResult(
+                        request.requestId(), request.signalKind(), "",
+                        EvidenceStatus.ANOMALY, "canonical aggregate", observed,
+                        "guance:aggregate", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service =
+                new BoundedOpenDiscoveryInvestigationService(
+                        properties,
+                        new BoundedInvestigationPlanner(
+                                new ReadOnlyToolRegistry(List.of(tool), CLOCK),
+                                new CriterionEvaluator(), CLOCK),
+                        new DefaultOpenDiscoveryHypothesisGraphFactory(), CLOCK);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigateFormal(
+                                1L, incident(), FormalOpenDiscoveryPlan.current())
+                        .orElseThrow();
+
+        assertThat(execution.outcome().stopReason())
+                .isEqualTo(BoundedInvestigationPlanner.StopReason.EVIDENCE_EXHAUSTED);
+        assertThat(execution.finding().type())
+                .isEqualTo(RootCauseFinding.Type.HYPOTHESIS);
+        assertThat(execution.finding().summary())
+                .contains("候选方向")
+                .doesNotContain("已排除其他已登记方向");
+    }
+
+    @Test
+    void formalGenericInvestigationRunsOnlyTheAcceptedSafeSignal() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<String> sourceFingerprint = new AtomicReference<>();
+        ReadOnlyEvidenceTool tool = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        EvidenceRouterReadOnlyTool.TOOL_KEY,
+                        EvidenceRouterReadOnlyTool.VERSION,
+                        Capability.READ_EVIDENCE,
+                        Set.of("error_log_scan"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                calls.incrementAndGet();
+                sourceFingerprint.set(context.sourceBindingFingerprint());
+                return new EvidenceResult(
+                        request.requestId(), request.signalKind(), "",
+                        EvidenceStatus.ANOMALY, "canonical aggregate",
+                        Map.of("error_count", 3), "guance:aggregate", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service =
+                new BoundedOpenDiscoveryInvestigationService(
+                        properties,
+                        new BoundedInvestigationPlanner(
+                                new ReadOnlyToolRegistry(List.of(tool), CLOCK),
+                                new CriterionEvaluator(), CLOCK),
+                        new DefaultOpenDiscoveryHypothesisGraphFactory(), CLOCK);
+        FormalOpenDiscoveryPlan logOnly =
+                FormalOpenDiscoveryPlan.fromAcceptedCapabilities(
+                        Set.of("error_log_scan"));
+        String fingerprint = "a".repeat(64);
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigateFormal(
+                        1L, incident(), logOnly, fingerprint).orElseThrow();
+
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly("error_log_scan");
+        assertThat(execution.finding().type())
+                .isEqualTo(RootCauseFinding.Type.HYPOTHESIS);
+        assertThat(calls).hasValue(1);
+        assertThat(sourceFingerprint).hasValue(fingerprint);
     }
 
     @Test
@@ -169,7 +277,9 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
 
         BoundedOpenDiscoveryInvestigationService.Execution execution =
                 service.investigateFormal(
-                        1L, callerShapedLikeReviewedReport).orElseThrow();
+                        1L,
+                        callerShapedLikeReviewedReport,
+                        FormalOpenDiscoveryPlan.current()).orElseThrow();
 
         assertThat(execution.plannedSignalKinds())
                 .containsExactly("error_log_scan", "k8s_workload_health");

@@ -15,9 +15,9 @@
       <div class="route-card">
         <span>调查路径</span>
         <b>{{ investigationRouteLabel(developer) }}</b>
-        <code>{{ developer.playbookRef || '未命中已审核的排障方案' }}</code>
+        <code>{{ developer.playbookRef || '未命中已审核的标准排障方法' }}</code>
         <p class="playbook-help">
-          <strong>排障方案（Playbook）</strong>：一套经过审核、可重复使用的排障方法，规定要查什么、怎么判断以及何时停止。
+          <strong>标准排障方法</strong>：经过审核、可重复使用，规定要查什么、怎么判断以及何时停止。
         </p>
         <span
           v-if="developer.knowledgeEvidenceGrade"

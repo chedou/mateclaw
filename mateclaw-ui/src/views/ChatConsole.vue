@@ -176,6 +176,22 @@
         @dismiss="recoverableDismissed = true"
       />
 
+      <div
+        v-if="canOperateTroubleshooting
+          && isTroubleshootingReadOnlyTriageAgent(currentAgent)
+          && !tsActiveDiagnosisId"
+        class="ts-mode-banner"
+        role="note"
+      >
+        <div class="ts-intent-copy">
+          <b>当前是安全试用模式</b>
+          <span>聊天自动识别的告警会先按演练处理，不会占用生产排障窗口。</span>
+        </div>
+        <div class="ts-intent-actions">
+          <button type="button" class="btn-secondary" @click="openConversationIntake">选择正式只读调查</button>
+        </div>
+      </div>
+
       <div v-if="tsIntentOffer" class="ts-intent-banner" role="status">
         <div class="ts-intent-copy">
           <b>这句更像排障告警</b>
@@ -3149,6 +3165,7 @@ function handleCodeCopy(e: MouseEvent) {
   color: var(--mc-primary);
 }
 
+.ts-mode-banner,
 .ts-intent-banner,
 .ts-follow-up-banner {
   display: flex;
@@ -3161,6 +3178,10 @@ function handleCodeCopy(e: MouseEvent) {
   border: 1px solid color-mix(in srgb, var(--mc-primary) 28%, var(--mc-border));
   border-radius: 12px;
   background: color-mix(in srgb, var(--mc-primary) 8%, var(--mc-bg));
+}
+.ts-mode-banner {
+  border-color: color-mix(in srgb, var(--mc-warning, #b7791f) 30%, var(--mc-border));
+  background: color-mix(in srgb, var(--mc-warning, #b7791f) 7%, var(--mc-bg));
 }
 .ts-follow-up-banner {
   border-color: color-mix(in srgb, var(--mc-success, #2f855a) 32%, var(--mc-border));

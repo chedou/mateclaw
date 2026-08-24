@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 
@@ -200,6 +201,60 @@ class GuanceEvidenceValidationServiceTest {
                 .isEqualTo(GuanceEvidenceValidationReport.Stage.BLOCKED);
         assertThat(transport.calls.get()).isEqualTo(1);
         verify(replay, never()).collect(anyLong(), any(), any());
+    }
+
+    @Test
+    void liveValidatesEachGenericCapabilityInsteadOfInferringItFromBindingShape() {
+        SequenceTransport transport = new SequenceTransport(
+                response("[3]", "[\"error_count\"]"));
+        EvidenceProperties properties = new EvidenceProperties();
+        properties.setRoutes(Map.of(
+                "CSDP", Map.of("error_log_scan", List.of("guance"))));
+        EvidenceProperties.Guance config = new EvidenceProperties.Guance();
+        config.setEnabled(true);
+        config.setBaseUrl("https://guance.example");
+        config.setApiKey("runtime-secret");
+        config.setQueryPath("/api/v1/df/query_data_v1");
+        config.setTimeout(Duration.ofSeconds(3));
+        EvidenceProperties.Binding errorBinding = binding(
+                "L::logs:(count(*) as error_count) {service='{{service}}'} [{{window}}]",
+                Map.of(),
+                1);
+        errorBinding.setSignalKind("error_log_scan");
+        config.setBindings(Map.of("error-binding", errorBinding));
+        EvidenceProperties.AssetBinding asset = new EvidenceProperties.AssetBinding();
+        asset.setWorkspaceId(7L);
+        asset.setSystem("CSDP");
+        asset.setService("session-svc");
+        asset.setSignalBindings(Map.of("error_log_scan", "error-binding"));
+        config.setAssetBindings(List.of(asset));
+        properties.setGuance(config);
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                config, new ObjectMapper(), transport, CLOCK);
+        EvidenceSourceRouter router = new EvidenceSourceRouter(
+                List.of(adapter), properties, CLOCK);
+        GuanceEvidenceValidationService validation =
+                new GuanceEvidenceValidationService(
+                        router,
+                        new GuanceEvidenceReadinessService(properties, adapter),
+                        CLOCK,
+                        new SequenceTicker(
+                                0L,
+                                9_000_000L,
+                                10_000_000L,
+                                11_000_000L));
+
+        Map<String, Long> observed = validation.validateCapabilities(
+                7L,
+                "CSDP",
+                "session-svc",
+                Set.of("error_log_scan", "k8s_workload_health"),
+                "-15m",
+                NOW);
+
+        assertThat(observed).containsEntry("error_log_scan", 9L);
+        assertThat(observed).doesNotContainKey("k8s_workload_health");
+        assertThat(transport.calls.get()).isEqualTo(1);
     }
 
     private Fixture fixture(

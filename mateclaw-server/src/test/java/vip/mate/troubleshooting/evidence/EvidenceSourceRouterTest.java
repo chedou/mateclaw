@@ -45,6 +45,63 @@ class EvidenceSourceRouterTest {
     }
 
     @Test
+    void neverSwallowsAFormalEvidenceAuthorityFailure() throws Exception {
+        GuanceEvidenceAdapter guance = org.mockito.Mockito.mock(GuanceEvidenceAdapter.class);
+        org.mockito.Mockito.when(guance.platform()).thenReturn("guance");
+        // A binding drift can make the adapter stop advertising this signal.
+        // Formal execution must still enter the verifier instead of silently
+        // degrading the accepted run to MISSING evidence.
+        org.mockito.Mockito.when(guance.supports("log_count")).thenReturn(false);
+        org.mockito.Mockito.when(guance.collect(
+                        org.mockito.ArgumentMatchers.eq(WORKSPACE_ID),
+                        org.mockito.ArgumentMatchers.any(EvidenceRequest.class),
+                        org.mockito.ArgumentMatchers.any(IncidentContext.class),
+                        org.mockito.ArgumentMatchers.any(Duration.class),
+                        org.mockito.ArgumentMatchers.eq("a".repeat(64))))
+                .thenThrow(FormalEvidenceAuthorityException.configurationDrift(
+                        "accepted Guance binding changed"));
+        EvidenceSourceRouter router = router(
+                Map.of("CSDP", Map.of("log_count", List.of("guance"))), guance);
+
+        assertThatThrownBy(() -> router.collect(
+                        WORKSPACE_ID,
+                        request("EV-1", "log_count"),
+                        incident("CSDP"),
+                        Set.of("guance"),
+                        NOW.plusSeconds(3),
+                        "a".repeat(64)))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
+    }
+
+    @Test
+    void formalCollectionTreatsADisappearedAcceptedRouteAsAuthorityDrift() {
+        GuanceEvidenceAdapter guance = org.mockito.Mockito.mock(GuanceEvidenceAdapter.class);
+        org.mockito.Mockito.when(guance.platform()).thenReturn("guance");
+        EvidenceSourceRouter router = router(Map.of(), guance);
+
+        assertThatThrownBy(() -> router.collect(
+                        WORKSPACE_ID,
+                        request("EV-1", "log_count"),
+                        incident("CSDP"),
+                        Set.of("guance"),
+                        NOW.plusSeconds(3),
+                        "a".repeat(64)))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
+        org.mockito.Mockito.verify(guance, org.mockito.Mockito.never()).collect(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(EvidenceRequest.class),
+                org.mockito.ArgumentMatchers.any(IncidentContext.class),
+                org.mockito.ArgumentMatchers.any(Duration.class),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void treatsAWrongQueryIdAsAnInvalidPrimaryResultAndUsesFallback() {
         StubAdapter primary = StubAdapter.returning("primary", result("WRONG", "primary"));
         StubAdapter fallback = StubAdapter.returning("fallback", result("EV-1", "fallback"));

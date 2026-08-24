@@ -346,11 +346,15 @@ import {
   type TroubleshootingPilotPlan,
 } from '@/api'
 import { useTroubleshootingStore } from '@/stores/useTroubleshootingStore'
-import { diagnosisEvidenceSourcePresentation } from './formalProjection'
+import {
+  diagnosisEvidenceSourcePresentation,
+  formalAdmissionErrorMessage,
+} from './formalProjection'
 import {
   buildFormalIncidentReport,
   EMPTY_FORMAL_INCIDENT,
   formalIncidentFormErrors,
+  formalOpenDiscoveryReadinessScope,
   formalIncidentRoutePreview,
   type FormalIncidentForm,
 } from './incidentReport'
@@ -833,6 +837,7 @@ async function onConversationReady(payload: {
 
 function openTroubleshootingScenario() {
   if (canOperateTroubleshooting.value) {
+    resetIncidentReportForm()
     openIncidentIntake()
     return
   }
@@ -858,6 +863,7 @@ function startTroubleshootingScenario(command: TroubleshootingScenarioCommand) {
     resetMessageSendScenarioForm()
     messageSendScenarioOpen.value = true
   } else if (command === 'incident' && canOperateTroubleshooting.value) {
+    resetIncidentReportForm()
     openIncidentIntake()
   } else if (command === 'deployment' && canManageTroubleshooting.value) {
     openDeploymentTopologyScenarioIntake()
@@ -955,6 +961,7 @@ async function reportIncident() {
     if (incidentReportErrors.value[0]) ElMessage.warning(incidentReportErrors.value[0])
     return
   }
+  const formalInvestigation = !incidentReportForm.rehearsal
   incidentReportLoading.value = true
   try {
     const request = buildFormalIncidentReport(incidentReportForm)
@@ -972,9 +979,12 @@ async function reportIncident() {
     }
   } catch (error) {
     const routeBoundary = incidentRoutePreview.value.tone === 'DETERMINISTIC'
-      ? '有错误码但未命中已审核标准方案时，系统会明确拒绝，不会瞎猜。'
-      : '没有标准方案时的兜底调查未启用或配置不合规时，系统会明确拒绝。'
-    ElMessage.error(`未生成排障单：${errorText(error)} ${routeBoundary}`)
+      ? '有错误码但未命中标准排障方法时，系统会明确停止，不会瞎猜。'
+      : '通用只读调查未启用或配置不合规时，系统会明确停止。'
+    const failure = formalInvestigation
+      ? formalAdmissionErrorMessage(error)
+      : errorText(error)
+    ElMessage.error(`未生成排障单：${failure} ${routeBoundary}`)
   } finally {
     incidentReportLoading.value = false
   }
@@ -1186,16 +1196,21 @@ function openApprove(action: RecommendedAction) { targetAction.value = action; a
 function openOutcome(action: RecommendedAction) { targetAction.value = action; outcomeOpen.value = true }
 
 watch(
-  [incidentReportOpen, () => incidentReportForm.system, () => incidentRoutePreview.value.tone],
-  async ([open, system, tone]) => {
+  [
+    incidentReportOpen,
+    () => incidentReportForm.system,
+    () => incidentReportForm.service,
+    () => incidentRoutePreview.value.tone,
+  ],
+  async ([open, system, service, tone]) => {
     if (!open || tone !== 'BOUNDED_DISCOVERY') {
       openDiscoveryReadiness.value = null
       return
     }
     try {
-      const { data } = await troubleshootingApi.openDiscoveryReadiness({
-        ...(system.trim() ? { system: system.trim() } : {}),
-      })
+      const { data } = await troubleshootingApi.openDiscoveryReadiness(
+        formalOpenDiscoveryReadinessScope({ system, service }),
+      )
       openDiscoveryReadiness.value = data
     } catch {
       openDiscoveryReadiness.value = null

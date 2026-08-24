@@ -7,7 +7,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +41,14 @@ class GuanceEvidenceAcceptanceServiceTest {
                 "-15m",
                 NOW))
                 .thenReturn(report());
+        when(fixture.validation.validateCapabilities(
+                7L,
+                "CSDP",
+                "session-svc",
+                Set.of("error_log_scan", "k8s_workload_health"),
+                "-15m",
+                NOW))
+                .thenReturn(Map.of("error_log_scan", 9L));
         when(fixture.store.saveOrGet(eq(7L), eq(SCOPE), any()))
                 .thenAnswer(invocation -> {
                     GuanceEvidenceAcceptance acceptance =
@@ -68,6 +78,8 @@ class GuanceEvidenceAcceptanceServiceTest {
         assertThat(result.acceptance().validation().traceEntries()).isEqualTo(3);
         assertThat(result.acceptance().validation().psIdFingerprint())
                 .matches("[a-f0-9]{64}");
+        assertThat(result.acceptance().validation().liveCapabilityDurationsMs())
+                .containsOnlyKeys("error_log_scan");
         assertThat(result.acceptance().toString())
                 .doesNotContain(
                         "ps-message-001",
@@ -79,6 +91,13 @@ class GuanceEvidenceAcceptanceServiceTest {
                 "CSDP",
                 "session-svc",
                 "message_send_failed",
+                "-15m",
+                NOW);
+        verify(fixture.validation).validateCapabilities(
+                7L,
+                "CSDP",
+                "session-svc",
+                Set.of("error_log_scan", "k8s_workload_health"),
                 "-15m",
                 NOW);
     }
@@ -103,15 +122,37 @@ class GuanceEvidenceAcceptanceServiceTest {
                 .hasMessageContaining("all T7 owner confirmations");
         verify(fixture.validation, never()).validate(
                 anyLong(), any(), any(), any(), any(), any());
+        verify(fixture.validation, never()).validateCapabilities(
+                anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test
-    void refusesOwnerAcceptanceUntilTheRecordingBatchHasTwentyExecutableTargets() {
+    void acceptsOneExactBindingWithoutWaitingForTheWorkspaceRecordingBatch() {
         Fixture fixture = fixture();
         when(fixture.recordingBatchReadiness.inspect(7L))
                 .thenReturn(recordingBatch(0));
+        AtomicReference<GuanceEvidenceAcceptance> saved = new AtomicReference<>();
+        when(fixture.validation.validate(
+                7L,
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                "-15m",
+                NOW))
+                .thenReturn(report());
+        when(fixture.store.saveOrGet(eq(7L), eq(SCOPE), any()))
+                .thenAnswer(invocation -> {
+                    GuanceEvidenceAcceptance acceptance = invocation.getArgument(2);
+                    saved.set(acceptance);
+                    return new GuanceEvidenceAcceptanceStore.StoredAcceptance(
+                            acceptance, true);
+                });
+        when(fixture.store.findLatest(7L, SCOPE))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+        when(fixture.store.findByFingerprint(7L, SCOPE, FINGERPRINT))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
 
-        assertThatThrownBy(() -> fixture.service.accept(
+        GuanceEvidenceAcceptanceView result = fixture.service.accept(
                 7L,
                 "CSDP",
                 "session-svc",
@@ -119,15 +160,17 @@ class GuanceEvidenceAcceptanceServiceTest {
                 "-15m",
                 NOW,
                 completeChecklist(),
-                "owner"))
-                .isInstanceOf(MateClawException.class)
-                .hasMessageContaining("at least 20 executable workspace recording targets")
-                .hasMessageContaining("current=0");
-        verify(fixture.validation, never()).validate(
-                anyLong(), any(), any(), any(), any(), any());
-        verify(fixture.fingerprints, never()).current(
-                anyLong(), any(), any());
-        verify(fixture.recordingBatchReadiness).inspect(7L);
+                "owner");
+
+        assertThat(result.acceptedForCurrentBinding()).isTrue();
+        verify(fixture.validation).validate(
+                7L,
+                "CSDP",
+                "session-svc",
+                "message_send_failed",
+                "-15m",
+                NOW);
+        verify(fixture.recordingBatchReadiness, never()).inspect(anyLong());
     }
 
     @Test
@@ -179,7 +222,8 @@ class GuanceEvidenceAcceptanceServiceTest {
         assertThatThrownBy(() -> fixture.service.requireAccepted(
                 7L, "CSDP", "session-svc"))
                 .isInstanceOf(MateClawException.class)
-                .hasMessageContaining("T7 owner acceptance is required");
+                .hasMessageContaining("观测云只读取证尚未验收")
+                .hasMessageContaining("管理员完成数据源接入");
     }
 
     @Test
@@ -201,6 +245,129 @@ class GuanceEvidenceAcceptanceServiceTest {
         verify(fixture.store, never()).findByFingerprint(anyLong(), any(), any());
     }
 
+    @Test
+    void genericInvestigationUsesTheExactAcceptedBindingWithoutTheBatchGate() {
+        Fixture fixture = fixture();
+        GuanceEvidenceAcceptance accepted = acceptance(FINGERPRINT);
+        when(fixture.recordingBatchReadiness.inspect(7L))
+                .thenReturn(recordingBatch(0));
+        when(fixture.store.findByFingerprint(7L, SCOPE, FINGERPRINT))
+                .thenReturn(Optional.of(accepted));
+
+        assertThat(fixture.service.requireAcceptedBinding(
+                7L, "CSDP", "session-svc"))
+                .isEqualTo(accepted);
+
+        verify(fixture.recordingBatchReadiness, never()).inspect(anyLong());
+    }
+
+    @Test
+    void genericAuthorityFreezesOnlyCapabilitiesCoveredByTheAcceptedFingerprint() {
+        Fixture fixture = fixture();
+        GuanceEvidenceAcceptance accepted = acceptance(
+                FINGERPRINT, Map.of("error_log_scan", 9L));
+        GuanceBindingFingerprintService.Snapshot covered =
+                new GuanceBindingFingerprintService.Snapshot(
+                        SCOPE,
+                        FINGERPRINT,
+                        "CSDP",
+                        "session-svc",
+                        Set.of("error_log_scan", "k8s_workload_health"));
+        when(fixture.fingerprints.currentForFormalAuthority(
+                7L, "CSDP", "session-svc"))
+                .thenReturn(Optional.of(covered));
+        when(fixture.store.findByFingerprint(7L, SCOPE, FINGERPRINT))
+                .thenReturn(Optional.of(accepted));
+
+        GuanceEvidenceAcceptanceService.AcceptedBinding authority =
+                fixture.service.requireAcceptedBindingAuthority(
+                        7L, "CSDP", "session-svc");
+
+        assertThat(authority.acceptance()).isEqualTo(accepted);
+        assertThat(authority.readOnlySignalKinds())
+                .containsExactly("error_log_scan");
+    }
+
+    @Test
+    void structuralCapabilitiesWithoutTheirOwnLiveValidationDoNotBecomeGenericAuthority() {
+        Fixture fixture = fixture();
+        GuanceEvidenceAcceptance coreOnly = acceptance(FINGERPRINT);
+        GuanceBindingFingerprintService.Snapshot covered =
+                new GuanceBindingFingerprintService.Snapshot(
+                        SCOPE,
+                        FINGERPRINT,
+                        "CSDP",
+                        "session-svc",
+                        Set.of("error_log_scan", "k8s_workload_health"));
+        when(fixture.fingerprints.currentForFormalAuthority(
+                7L, "CSDP", "session-svc"))
+                .thenReturn(Optional.of(covered));
+        when(fixture.store.findByFingerprint(7L, SCOPE, FINGERPRINT))
+                .thenReturn(Optional.of(coreOnly));
+
+        GuanceEvidenceAcceptanceService.AcceptedBinding authority =
+                fixture.service.requireAcceptedBindingAuthority(
+                        7L, "CSDP", "session-svc");
+
+        assertThat(authority.readOnlySignalKinds()).isEmpty();
+    }
+
+    @Test
+    void recordsAGenericOnlyLiveAcceptanceButKeepsTheScenarioGateClosed() {
+        Fixture fixture = fixture();
+        AtomicReference<GuanceEvidenceAcceptance> saved = new AtomicReference<>();
+        GuanceBindingFingerprintService.Snapshot genericOnly =
+                new GuanceBindingFingerprintService.Snapshot(
+                        SCOPE,
+                        FINGERPRINT,
+                        "CSDP",
+                        "session-svc",
+                        Set.of("error_log_scan"));
+        when(fixture.fingerprints.current(7L, "CSDP", "session-svc"))
+                .thenReturn(Optional.of(genericOnly));
+        when(fixture.validation.validateCapabilities(
+                7L,
+                "CSDP",
+                "session-svc",
+                Set.of("error_log_scan"),
+                "-15m",
+                NOW))
+                .thenReturn(Map.of("error_log_scan", 7L));
+        when(fixture.store.saveOrGet(eq(7L), eq(SCOPE), any()))
+                .thenAnswer(invocation -> {
+                    GuanceEvidenceAcceptance acceptance = invocation.getArgument(2);
+                    saved.set(acceptance);
+                    return new GuanceEvidenceAcceptanceStore.StoredAcceptance(
+                            acceptance, true);
+                });
+        when(fixture.store.findLatest(7L, SCOPE))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+        when(fixture.store.findByFingerprint(7L, SCOPE, FINGERPRINT))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+
+        GuanceEvidenceAcceptanceView result = fixture.service.accept(
+                7L,
+                "CSDP",
+                "session-svc",
+                "unused-for-generic",
+                "-15m",
+                NOW,
+                completeChecklist(),
+                "owner");
+
+        assertThat(result.acceptedForCurrentBinding()).isTrue();
+        assertThat(result.acceptance().validation().coreChainObserved()).isFalse();
+        assertThat(result.acceptance().validation().liveAcceptedSignalKinds())
+                .containsExactly("error_log_scan");
+        verify(fixture.validation, never()).validate(
+                anyLong(), any(), any(), any(), any(), any());
+        assertThatThrownBy(() -> fixture.service.requireAccepted(
+                7L, "CSDP", "session-svc"))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("场景排障")
+                .hasMessageContaining("关联链");
+    }
+
     private Fixture fixture() {
         GuanceBindingFingerprintService fingerprints =
                 mock(GuanceBindingFingerprintService.class);
@@ -213,6 +380,9 @@ class GuanceEvidenceAcceptanceServiceTest {
         when(fingerprints.scopeKey(7L, "CSDP", "session-svc"))
                 .thenReturn(SCOPE);
         when(fingerprints.current(7L, "CSDP", "session-svc"))
+                .thenReturn(Optional.of(snapshot()));
+        when(fingerprints.currentForFormalAuthority(
+                7L, "CSDP", "session-svc"))
                 .thenReturn(Optional.of(snapshot()));
         when(recordingBatchReadiness.inspect(7L))
                 .thenReturn(recordingBatch(20));
@@ -231,7 +401,15 @@ class GuanceEvidenceAcceptanceServiceTest {
 
     private GuanceBindingFingerprintService.Snapshot snapshot() {
         return new GuanceBindingFingerprintService.Snapshot(
-                SCOPE, FINGERPRINT, "CSDP", "session-svc");
+                SCOPE,
+                FINGERPRINT,
+                "CSDP",
+                "session-svc",
+                Set.of(
+                        "log_search",
+                        "log_trace_bundle",
+                        "error_log_scan",
+                        "k8s_workload_health"));
     }
 
     private GuanceEvidenceAcceptance.Checklist completeChecklist() {
@@ -282,6 +460,12 @@ class GuanceEvidenceAcceptanceServiceTest {
     }
 
     private GuanceEvidenceAcceptance acceptance(String fingerprint) {
+        return acceptance(fingerprint, Map.of());
+    }
+
+    private GuanceEvidenceAcceptance acceptance(
+            String fingerprint,
+            Map<String, Long> liveCapabilityDurationsMs) {
         return new GuanceEvidenceAcceptance(
                 "t7-012345678901234567890123",
                 "CSDP",
@@ -294,8 +478,11 @@ class GuanceEvidenceAcceptanceServiceTest {
                         "d".repeat(64),
                         12L,
                         20L,
-                        40L,
-                        NOW),
+                        40L + liveCapabilityDurationsMs.values().stream()
+                                .mapToLong(Long::longValue)
+                                .sum(),
+                        NOW,
+                        liveCapabilityDurationsMs),
                 "owner",
                 NOW);
     }

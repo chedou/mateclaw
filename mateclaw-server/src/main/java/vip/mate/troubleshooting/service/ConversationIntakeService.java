@@ -11,9 +11,13 @@ import vip.mate.troubleshooting.intake.TroubleshootingIntakeSessionService;
 import vip.mate.troubleshooting.intake.TroubleshootingIntakeSources;
 import vip.mate.troubleshooting.projection.DiagnosisExperienceProjectionService;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -61,7 +65,7 @@ public class ConversationIntakeService {
             String reporterRef,
             String conversationId,
             String text,
-            boolean rehearsal) {
+            Boolean rehearsal) {
         return turn(workspaceId, reporterRef, conversationId, null, text, rehearsal);
     }
 
@@ -71,7 +75,7 @@ public class ConversationIntakeService {
             String conversationId,
             String clientTurnId,
             String text,
-            boolean rehearsal) {
+            Boolean rehearsal) {
         if (reporterRef == null || reporterRef.isBlank()) {
             throw new MateClawException(
                     "err.troubleshooting.actor_required",
@@ -88,12 +92,16 @@ public class ConversationIntakeService {
                 ? "web-conv-" + UUID.randomUUID()
                 : conversationId.trim();
         Instant receivedAt = clock.instant();
-        String messageId = clientTurnId == null || clientTurnId.isBlank()
+        String normalizedClientTurnId = clientTurnId == null || clientTurnId.isBlank()
+                ? null
+                : clientTurnId.trim();
+        String messageId = normalizedClientTurnId == null
                 ? "web-msg-" + UUID.randomUUID()
-                : "web-msg-" + clientTurnId.trim();
+                : scopedMessageId(
+                        reporterRef.trim(), conversationRef, normalizedClientTurnId);
         String deliveryConversationId = TroubleshootingIntakeSources.WEB_CONVERSATION
                 + ":" + conversationRef;
-        IntakeDecision decision = sessions.accept(new IntakeMessageEnvelope(
+        IntakeMessageEnvelope envelope = new IntakeMessageEnvelope(
                 workspaceId,
                 TroubleshootingIntakeSources.WEB_CONVERSATION,
                 messageId,
@@ -102,11 +110,21 @@ public class ConversationIntakeService {
                 reporterRef.trim(),
                 text.trim(),
                 List.of(),
-                receivedAt));
+                receivedAt);
+        IntakeDecision decision = normalizedClientTurnId == null
+                ? sessions.acceptConversation(envelope, rehearsal)
+                : sessions.acceptConversation(
+                        envelope,
+                        rehearsal,
+                        legacyReceiptLookupAlias(normalizedClientTurnId));
         String diagnosisId = null;
         Boolean created = null;
         String prompt = decision.prompt();
         var aggregate = sessions.get(workspaceId, decision.intakeSessionId());
+        if (aggregate == null && decision.status() == IntakeSessionStatus.READY) {
+            aggregate = sessions.getReady(workspaceId, decision.intakeSessionId());
+        }
+        boolean lockedRehearsal = requireLockedMode(aggregate);
         String transcriptUserMessage = aggregate == null
                 ? "排障告警（已规范化）\n原文未保存"
                 : renderTranscriptUserMessage(aggregate);
@@ -115,11 +133,10 @@ public class ConversationIntakeService {
                     + String.join("、", decision.missingFields());
         }
         if (decision.status() == IntakeSessionStatus.READY) {
-            var ready = aggregate == null
-                    ? sessions.getReady(workspaceId, decision.intakeSessionId())
-                    : aggregate;
+            var ready = aggregate;
             transcriptUserMessage = renderTranscriptUserMessage(ready);
-            StoredDiagnosis stored = intakeService.report(ready, rehearsal);
+            lockedRehearsal = requireLockedMode(ready);
+            StoredDiagnosis stored = intakeService.report(ready, lockedRehearsal);
             diagnosisId = stored.diagnosis().diagnosisId();
             created = stored.created();
             prompt = summaryRenderer.render(
@@ -128,7 +145,7 @@ public class ConversationIntakeService {
                 prompt = "已汇合到既有排障单。\n" + prompt;
             }
             prompt = prompt + "\n\n"
-                    + (rehearsal ? "已生成演练排障单" : "已生成正式排障单")
+                    + (lockedRehearsal ? "已生成演练排障单" : "已生成正式排障单")
                     + "：" + diagnosisId
                     + "\n[打开排障详情](/troubleshooting?view=detail&diagnosisId="
                     + diagnosisId + ")"
@@ -145,8 +162,73 @@ public class ConversationIntakeService {
                 decision.outOfOrder(),
                 diagnosisId,
                 created,
-                rehearsal,
+                lockedRehearsal,
                 transcriptUserMessage);
+    }
+
+    /**
+     * Browser turn ids are idempotency tokens, not globally trusted receipt
+     * ids. Scope and hash them so reusing a known token cannot address another
+     * operator's IntakeSession and no actor/conversation identifier is stored
+     * in plaintext in the receipt timeline.
+     */
+    private String scopedMessageId(
+            String reporterRef,
+            String conversationRef,
+            String clientTurnId) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] value = digest.digest((reporterRef + "\u0000"
+                    + conversationRef + "\u0000" + clientTurnId)
+                    .getBytes(StandardCharsets.UTF_8));
+            return "web-msg-" + HexFormat.of().formatHex(value);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
+
+    /**
+     * Reconstructs the pre-upgrade receipt id only as a bounded database read
+     * alias. New receipts always use {@link #scopedMessageId(String, String, String)};
+     * this value is never persisted or exposed in a response.
+     */
+    private String legacyReceiptLookupAlias(String clientTurnId) {
+        return "web-msg-" + clientTurnId;
+    }
+
+    /** Restores the immutable server-owned mode for a reopened conversation. */
+    public ConversationModeResult mode(
+            long workspaceId,
+            String reporterRef,
+            String conversationId) {
+        requireReporter(reporterRef);
+        var session = sessions.getConversationMode(
+                workspaceId, conversationId, reporterRef.trim());
+        return new ConversationModeResult(
+                session.conversationRef(),
+                session.intakeSessionId(),
+                session.status().name(),
+                requireLockedMode(session));
+    }
+
+    private boolean requireLockedMode(
+            vip.mate.troubleshooting.intake.IntakeSession session) {
+        if (session == null || session.rehearsal() == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.conversation_mode_unavailable",
+                    409,
+                    "troubleshooting conversation has no locked mode");
+        }
+        return session.rehearsal();
+    }
+
+    private void requireReporter(String reporterRef) {
+        if (reporterRef == null || reporterRef.isBlank()) {
+            throw new MateClawException(
+                    "err.troubleshooting.actor_required",
+                    401,
+                    "conversation intake requires an authenticated operator");
+        }
     }
 
     private String renderTranscriptUserMessage(vip.mate.troubleshooting.intake.IntakeSession session) {
@@ -201,5 +283,12 @@ public class ConversationIntakeService {
             Boolean created,
             boolean rehearsal,
             @com.fasterxml.jackson.annotation.JsonIgnore String transcriptUserMessage) {
+    }
+
+    public record ConversationModeResult(
+            String conversationId,
+            String intakeSessionId,
+            String status,
+            boolean rehearsal) {
     }
 }

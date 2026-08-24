@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.investigation;
 import org.junit.jupiter.api.Test;
 import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.engine.CriterionEvaluator;
+import vip.mate.troubleshooting.evidence.FormalEvidenceAuthorityException;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BoundedInvestigationPlannerTest {
 
@@ -95,6 +97,46 @@ class BoundedInvestigationPlannerTest {
                 .isEqualTo(BoundedInvestigationPlanner.StopReason.TIME_BUDGET_EXHAUSTED);
         assertThat(outcome.finding().type()).isEqualTo(RootCauseFinding.Type.ABSTAINED);
         assertThat(tool.calls()).isZero();
+    }
+
+    @Test
+    void formalAuthorityFailureAbortsInsteadOfProducingAnInsufficientEvidenceFinding() {
+        ReadOnlyEvidenceTool blocked = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        "canonical-evidence", "1", Capability.READ_EVIDENCE,
+                        Set.of("error_log_scan", "k8s_workload_health"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                throw FormalEvidenceAuthorityException.configurationDrift(
+                        "formal Guance binding changed after admission");
+            }
+        };
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        BoundedInvestigationPlanner planner = new BoundedInvestigationPlanner(
+                new ReadOnlyToolRegistry(List.of(blocked), clock),
+                new CriterionEvaluator(),
+                clock);
+
+        assertThatThrownBy(() -> planner.investigate(
+                        1L,
+                        incident(),
+                        graph(),
+                        new BoundedInvestigationPlanner.Budget(
+                                4, 4, Duration.ofSeconds(10),
+                                Set.of("canonical-evidence@1")),
+                        Set.of("guance"),
+                        Set.of("error_log_scan", "k8s_workload_health"),
+                        "a".repeat(64)))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.CONFIGURATION_DRIFT);
     }
 
     private static BoundedInvestigationPlanner planner(SequencedTool tool, Clock clock) {

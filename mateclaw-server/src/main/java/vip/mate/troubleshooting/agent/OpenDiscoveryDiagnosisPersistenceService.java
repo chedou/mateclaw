@@ -7,6 +7,9 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.service.IncidentDeduplicationKey;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimService;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimKey;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
@@ -14,6 +17,7 @@ import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 
 /** Atomic, short database boundary for an OPEN_DISCOVERY Diagnosis and its run audit. */
 @Service
@@ -22,14 +26,17 @@ public class OpenDiscoveryDiagnosisPersistenceService {
     private final TroubleshootingPersistenceService diagnoses;
     private final OpenDiscoveryRunAuditService runAudits;
     private final OpenDiscoveryRunClaimService claims;
+    private final FormalDiagnosisClaimService formalClaims;
 
     public OpenDiscoveryDiagnosisPersistenceService(
             TroubleshootingPersistenceService diagnoses,
             OpenDiscoveryRunAuditService runAudits,
-            OpenDiscoveryRunClaimService claims) {
+            OpenDiscoveryRunClaimService claims,
+            FormalDiagnosisClaimService formalClaims) {
         this.diagnoses = diagnoses;
         this.runAudits = runAudits;
         this.claims = claims;
+        this.formalClaims = formalClaims;
     }
 
     public OpenDiscoveryRunReservation reserve(
@@ -106,6 +113,10 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             throw formalConflict(
                     "the completed diagnosis does not match the current frozen formal authority");
         }
+        if (!matchesPlan(audit, admission)) {
+            throw formalConflict(
+                    "the completed diagnosis does not match the current frozen capability plan");
+        }
         return stored;
     }
 
@@ -167,6 +178,7 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             Instant receivedAt,
             String intakeSessionId,
             OpenDiscoveryRunClaim claim,
+            FormalDiagnosisClaim intakeClaim,
             OpenDiscoveryRunAudit runAudit,
             FormalOpenDiscoveryAdmission admission,
             Instant claimCompletedAt) {
@@ -179,12 +191,6 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             throw new IllegalArgumentException(
                     "workspaceId, diagnosis, receivedAt, runAudit, formal admission and claim completion time are required");
         }
-        if (intakeSessionId != null) {
-            throw new MateClawException(
-                    "err.troubleshooting.formal_open_discovery_conflict",
-                    409,
-                    "formal generic IntakeSession persistence is not available yet");
-        }
         validateRunIdentity(diagnosis, runAudit);
         if (diagnosis.rehearsal()
                 || runAudit.formalPilotPlanVersion() == null
@@ -195,26 +201,67 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             throw new IllegalArgumentException(
                     "formal open-discovery audit must match its admission");
         }
-        // This must be the transaction's first database write. On Kingbase,
-        // CURRENT_TIMESTAMP is the transaction start time; completing the CAS
-        // first both validates the lease at the transaction boundary and locks
-        // the owner row. Any later Diagnosis/audit failure rolls this update back.
-        claims.complete(
-                workspaceId,
-                claim,
-                diagnosis.diagnosisId(),
-                claimCompletedAt);
-        StoredDiagnosis stored = diagnoses.createOrGet(
-                workspaceId,
-                diagnosis,
-                receivedAt,
-                admission.pilotPlanVersion(),
-                claim);
+        if (!matchesPlan(runAudit, admission)) {
+            throw new IllegalArgumentException(
+                    "formal open-discovery audit must match its admission capability plan");
+        }
+        boolean intakeOwned = intakeSessionId != null;
+        String normalizedIntakeSessionId = intakeOwned
+                ? required(intakeSessionId) : null;
+        if (intakeOwned) {
+            if (intakeClaim == null || claim != null
+                    || formalClaims == null) {
+                throw formalConflict(
+                        "formal generic IntakeSession requires exactly its live session claim");
+            }
+            String expectedClaimKey = FormalDiagnosisClaimKey.forIntake(
+                    workspaceId, normalizedIntakeSessionId);
+            if (!expectedClaimKey.equals(intakeClaim.dedupKey())) {
+                throw formalConflict(
+                        "formal generic IntakeSession claim identity does not match its session");
+            }
+            // The session claim is the only owner for an Intake run. Re-locking
+            // it is the transaction's first write, before Diagnosis or audit.
+            formalClaims.lockForCommit(workspaceId, intakeClaim);
+        } else {
+            if (claim == null || intakeClaim != null) {
+                throw formalConflict(
+                        "direct formal open discovery requires exactly its live run claim");
+            }
+            // On Kingbase CURRENT_TIMESTAMP is the transaction start time. The
+            // CAS completion first validates and locks the direct-run owner;
+            // later failures roll this update back with the Diagnosis and audit.
+            claims.complete(
+                    workspaceId,
+                    claim,
+                    diagnosis.diagnosisId(),
+                    claimCompletedAt);
+        }
+        StoredDiagnosis stored = intakeOwned
+                ? diagnoses.createOrGetForIntake(
+                        workspaceId,
+                        diagnosis,
+                        normalizedIntakeSessionId,
+                        admission.pilotPlanVersion(),
+                        intakeClaim)
+                : diagnoses.createOrGet(
+                        workspaceId,
+                        diagnosis,
+                        receivedAt,
+                        admission.pilotPlanVersion(),
+                        claim);
         if (!stored.created()) {
             throw new IllegalStateException(
                     "a claimed formal open-discovery run cannot resolve to an existing diagnosis");
         }
         runAudits.insert(workspaceId, runAudit);
+        if (intakeOwned) {
+            formalClaims.complete(
+                    workspaceId,
+                    intakeClaim,
+                    diagnosis.diagnosisId(),
+                    claimCompletedAt);
+        }
         return stored;
     }
 
@@ -246,6 +293,16 @@ public class OpenDiscoveryDiagnosisPersistenceService {
             throw new IllegalArgumentException("intakeSessionId must not be blank");
         }
         return value.trim();
+    }
+
+    private boolean matchesPlan(
+            OpenDiscoveryRunAudit audit,
+            FormalOpenDiscoveryAdmission admission) {
+        return admission.plan().planKey().equals(audit.selectedScenarioKey())
+                && admission.plan().fingerprint()
+                        .equals(audit.selectedPlanFingerprint())
+                && admission.plan().allowedSignalKinds()
+                        .equals(Set.copyOf(audit.plannedSignalKinds()));
     }
 
     private MateClawException formalConflict(String message) {

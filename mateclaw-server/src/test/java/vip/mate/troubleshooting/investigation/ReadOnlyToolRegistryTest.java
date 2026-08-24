@@ -6,12 +6,14 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.evidence.FormalEvidenceAuthorityException;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,11 +32,68 @@ class ReadOnlyToolRegistryTest {
                 incident(),
                 request("error_log_scan"),
                 Set.of("canonical-evidence@1"),
+                Set.of("error_log_scan"),
                 Set.of("guance"),
                 Instant.MAX));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.ANOMALY);
         assertThat(tool.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void passesTheFrozenSourceFingerprintToTheSelectedReadOnlyTool() {
+        AtomicReference<String> observed = new AtomicReference<>();
+        StubTool tool = new StubTool(
+                "canonical-evidence", "1", Set.of("error_log_scan")) {
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                observed.set(context.sourceBindingFingerprint());
+                return super.collect(context, request);
+            }
+        };
+        ReadOnlyToolRegistry registry = new ReadOnlyToolRegistry(List.of(tool));
+        String fingerprint = "a".repeat(64);
+
+        registry.collect(new ReadOnlyToolRegistry.Invocation(
+                "canonical-evidence",
+                "1",
+                1L,
+                incident(),
+                request("error_log_scan"),
+                Set.of("canonical-evidence@1"),
+                Set.of("error_log_scan"),
+                Set.of("guance"),
+                Instant.MAX,
+                fingerprint));
+
+        assertThat(observed).hasValue(fingerprint);
+    }
+
+    @Test
+    void neverConvertsAFormalEvidenceAuthorityFailureIntoMissingEvidence() {
+        ReadOnlyEvidenceTool tool = new StubTool(
+                "canonical-evidence", "1", Set.of("error_log_scan")) {
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                throw FormalEvidenceAuthorityException.verifierUnavailable(
+                        "formal fingerprint verifier is unavailable");
+            }
+        };
+        ReadOnlyToolRegistry registry = new ReadOnlyToolRegistry(List.of(tool));
+
+        assertThatThrownBy(() -> registry.collect(new ReadOnlyToolRegistry.Invocation(
+                        "canonical-evidence", "1", 1L, incident(),
+                        request("error_log_scan"), Set.of("canonical-evidence@1"),
+                        Set.of("error_log_scan"), Set.of("guance"), Instant.MAX,
+                        "a".repeat(64))))
+                .isInstanceOf(FormalEvidenceAuthorityException.class)
+                .extracting(failure ->
+                        ((FormalEvidenceAuthorityException) failure).reason())
+                .isEqualTo(FormalEvidenceAuthorityException.Reason.VERIFIER_UNAVAILABLE);
     }
 
     @Test
@@ -44,14 +103,38 @@ class ReadOnlyToolRegistryTest {
 
         assertThatThrownBy(() -> registry.collect(new ReadOnlyToolRegistry.Invocation(
                 "canonical-evidence", "1", 1L, incident(), request("error_log_scan"),
-                Set.of("another-tool@1"), Set.of(), Instant.MAX)))
+                Set.of("another-tool@1"), Set.of("error_log_scan"), Set.of(), Instant.MAX)))
                 .isInstanceOf(ReadOnlyToolRegistry.PolicyViolation.class)
                 .hasMessageContaining("not allowed");
         assertThatThrownBy(() -> registry.collect(new ReadOnlyToolRegistry.Invocation(
                 "canonical-evidence", "1", 1L, incident(), request("metric"),
-                Set.of("canonical-evidence@1"), Set.of(), Instant.MAX)))
+                Set.of("canonical-evidence@1"), Set.of("metric"), Set.of(), Instant.MAX)))
                 .isInstanceOf(ReadOnlyToolRegistry.PolicyViolation.class)
                 .hasMessageContaining("does not support");
+        assertThat(tool.calls()).isZero();
+    }
+
+    @Test
+    void rejectsARegisteredSignalOutsideTheFrozenAcceptedCapabilitySet() {
+        StubTool tool = new StubTool(
+                "canonical-evidence",
+                "1",
+                Set.of("error_log_scan", "k8s_workload_health"));
+        ReadOnlyToolRegistry registry = new ReadOnlyToolRegistry(List.of(tool));
+
+        assertThatThrownBy(() -> registry.collect(new ReadOnlyToolRegistry.Invocation(
+                "canonical-evidence",
+                "1",
+                1L,
+                incident(),
+                request("k8s_workload_health"),
+                Set.of("canonical-evidence@1"),
+                Set.of("error_log_scan"),
+                Set.of("guance"),
+                Instant.MAX)))
+                .isInstanceOf(ReadOnlyToolRegistry.PolicyViolation.class)
+                .hasMessageContaining("signal is not allowed by the frozen plan")
+                .hasMessageContaining("k8s_workload_health");
         assertThat(tool.calls()).isZero();
     }
 
@@ -82,7 +165,8 @@ class ReadOnlyToolRegistryTest {
 
         EvidenceResult result = registry.collect(new ReadOnlyToolRegistry.Invocation(
                 "canonical-evidence", "1", 1L, incident(), request("error_log_scan"),
-                Set.of("canonical-evidence@1"), Set.of(), Instant.MAX));
+                Set.of("canonical-evidence@1"), Set.of("error_log_scan"),
+                Set.of(), Instant.MAX));
 
         assertThat(result.status()).isEqualTo(EvidenceStatus.MISSING);
         assertThat(result.observed()).isEmpty();

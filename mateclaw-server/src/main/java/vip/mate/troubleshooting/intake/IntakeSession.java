@@ -31,7 +31,8 @@ public record IntakeSession(
         Instant readyAt,
         Instant lastMessageAt,
         List<IntakeSessionEvent> timeline,
-        NormalizedIncidentFactKind normalizedFactKind) {
+        NormalizedIncidentFactKind normalizedFactKind,
+        Boolean rehearsal) {
 
     public static final String CURRENT_CONTRACT_VERSION = "intake-session.v1";
 
@@ -70,6 +71,41 @@ public record IntakeSession(
         }
     }
 
+    /**
+     * Compatibility constructor for aggregates created before conversation mode
+     * became an immutable server-owned fact. A null mode is accepted only for
+     * those legacy/non-Web aggregates; new Web conversation sessions bind it on
+     * their first message.
+     */
+    public IntakeSession(
+            String intakeSessionId,
+            String contractVersion,
+            long workspaceId,
+            String source,
+            String conversationRef,
+            String reporterRef,
+            IntakeSessionStatus status,
+            String symptom,
+            String system,
+            String service,
+            String customerRef,
+            String errorCode,
+            String traceId,
+            Instant occurredAt,
+            List<IntakeAttachmentRef> attachments,
+            List<String> missingFields,
+            Instant reportedAt,
+            Instant readyAt,
+            Instant lastMessageAt,
+            List<IntakeSessionEvent> timeline,
+            NormalizedIncidentFactKind normalizedFactKind) {
+        this(
+                intakeSessionId, contractVersion, workspaceId, source, conversationRef,
+                reporterRef, status, symptom, system, service, customerRef, errorCode,
+                traceId, occurredAt, attachments, missingFields, reportedAt, readyAt,
+                lastMessageAt, timeline, normalizedFactKind, null);
+    }
+
     /** Source compatibility for sessions predating structured normalized provenance. */
     public IntakeSession(
             String intakeSessionId,
@@ -96,6 +132,15 @@ public record IntakeSession(
                 intakeSessionId, contractVersion, workspaceId, source, conversationRef,
                 reporterRef, status, symptom, system, service, customerRef, errorCode,
                 traceId, occurredAt, attachments, missingFields, reportedAt, readyAt,
-                lastMessageAt, timeline, null);
+                lastMessageAt, timeline, null, null);
+    }
+
+    /** Returns the same immutable aggregate with its one-time mode fact bound. */
+    public IntakeSession withRehearsal(boolean lockedRehearsal) {
+        return new IntakeSession(
+                intakeSessionId, contractVersion, workspaceId, source, conversationRef,
+                reporterRef, status, symptom, system, service, customerRef, errorCode,
+                traceId, occurredAt, attachments, missingFields, reportedAt, readyAt,
+                lastMessageAt, timeline, normalizedFactKind, lockedRehearsal);
     }
 }

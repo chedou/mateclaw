@@ -622,8 +622,14 @@ class DiagnosisExperienceProjectionServiceTest {
                 .isEqualTo(RouteAuthority.MODEL_PROPOSED);
         assertThat(projection.developerEvidence().routeSemanticsProvenance())
                 .isEqualTo(RouteSemanticsProvenance.PERSISTED);
+        assertThat(projection.businessSummary().headline())
+                .isEqualTo("已找到最可能方向，待人工确认");
+        assertThat(projection.businessSummary().narrative())
+                .contains("最可能方向")
+                .doesNotContain("根因假设");
         assertThat(projection.developerEvidence().capabilityLimits())
-                .anyMatch(item -> item.contains("开放调查") && item.contains("标准排障方案"));
+                .anyMatch(item -> item.contains("通用只读调查")
+                        && item.contains("标准排障方法"));
         assertThat(projection.developerEvidence().steps())
                 .extracting(DiagnosisExperienceProjection.EvidenceStep::kind)
                 .doesNotContain(DiagnosisExperienceProjection.EvidenceStepKind.CRITERION);

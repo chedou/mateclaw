@@ -111,18 +111,60 @@ public class TroubleshootingIntakeSessionService {
     }
 
     public IntakeDecision accept(IntakeMessageEnvelope envelope) {
+        return accept(envelope, ConversationModeRequest.none(), null);
+    }
+
+    /**
+     * Accepts a Web conversation turn while freezing its formal/rehearsal mode
+     * in the durable aggregate. A missing mode defaults only when creating the
+     * very first session; later turns inherit the stored fact.
+     */
+    public IntakeDecision acceptConversation(
+            IntakeMessageEnvelope envelope,
+            Boolean rehearsal) {
+        return acceptConversation(envelope, rehearsal, null);
+    }
+
+    /**
+     * Accepts a scoped Web receipt while optionally consulting one legacy
+     * unscoped receipt id from the pre-upgrade deployment.
+     *
+     * <p>The legacy id is lookup-only: it is never claimed, copied or returned.
+     * A matching row is reusable only when its persisted aggregate proves the
+     * same workspace, source, conversation and authenticated reporter.</p>
+     */
+    public IntakeDecision acceptConversation(
+            IntakeMessageEnvelope envelope,
+            Boolean rehearsal,
+            String legacyReceiptLookupId) {
+        if (!TroubleshootingIntakeSources.WEB_CONVERSATION.equals(envelope.source())) {
+            throw new IllegalArgumentException(
+                    "conversation mode can only be bound to Web conversation intake");
+        }
+        return accept(
+                envelope,
+                ConversationModeRequest.requested(rehearsal),
+                normalizeLegacyReceiptLookupId(envelope, legacyReceiptLookupId));
+    }
+
+    private IntakeDecision accept(
+            IntakeMessageEnvelope envelope,
+            ConversationModeRequest modeRequest,
+            String legacyReceiptLookupId) {
         String routingKey = routingKey(envelope);
         ReentrantLock lock = lock(routingKey);
         lock.lock();
         try {
             try {
-                return inTransaction(() -> acceptOnce(envelope, routingKey));
+                return inTransaction(() -> acceptOnce(
+                        envelope, routingKey, modeRequest, legacyReceiptLookupId));
             } catch (DuplicateKeyException concurrentWinner) {
                 // The first transaction is fully rolled back before execute()
                 // rethrows. A single fresh transaction can now observe the
                 // committed winner and either return the duplicate decision or
                 // apply this distinct message to the winner's active session.
-                return inTransaction(() -> acceptOnce(envelope, routingKey));
+                return inTransaction(() -> acceptOnce(
+                        envelope, routingKey, modeRequest, legacyReceiptLookupId));
             }
         } finally {
             // TransactionTemplate commits/rolls back before returning, so the
@@ -139,6 +181,40 @@ public class TroubleshootingIntakeSessionService {
     /** Loads the current safe aggregate for transcript projection. */
     public IntakeSession get(long workspaceId, String intakeSessionId) {
         return read(requiredSession(workspaceId, intakeSessionId));
+    }
+
+    /** Returns the latest server-owned mode fact for one authenticated Web conversation. */
+    public IntakeSession getConversationMode(
+            long workspaceId,
+            String conversationRef,
+            String reporterRef) {
+        if (conversationRef == null || conversationRef.isBlank()
+                || reporterRef == null || reporterRef.isBlank()) {
+            throw new MateClawException(
+                    "err.troubleshooting.conversation_identity_required",
+                    400,
+                    "conversationId and authenticated operator are required");
+        }
+        String routingKey = routingKey(
+                workspaceId,
+                TroubleshootingIntakeSources.WEB_CONVERSATION,
+                conversationRef.trim(),
+                reporterRef.trim());
+        TroubleshootingIntakeSessionEntity latest = findLatest(workspaceId, routingKey);
+        if (latest == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.conversation_not_found",
+                    404,
+                    "troubleshooting conversation was not found");
+        }
+        IntakeSession session = read(latest);
+        if (session.rehearsal() == null) {
+            throw new MateClawException(
+                    "err.troubleshooting.conversation_mode_unavailable",
+                    409,
+                    "legacy troubleshooting conversation has no locked mode");
+        }
+        return session;
     }
 
     /**
@@ -202,23 +278,32 @@ public class TroubleshootingIntakeSessionService {
 
     private IntakeDecision acceptOnce(
             IntakeMessageEnvelope envelope,
-            String routingKey) {
+            String routingKey,
+            ConversationModeRequest modeRequest,
+            String legacyReceiptLookupId) {
         TroubleshootingIntakeMessageReceiptEntity existingReceipt = findReceipt(envelope);
         if (existingReceipt != null) {
-            return IntakeDecision.from(
-                    read(requiredSession(
-                            envelope.workspaceId(), existingReceipt.getIntakeSessionId())),
-                    true,
-                    false);
+            TroubleshootingIntakeSessionEntity existing = requiredSession(
+                    envelope.workspaceId(), existingReceipt.getIntakeSessionId());
+            requireSameMessageOwner(read(existing), envelope);
+            IntakeSession session = requireConversationMode(existing, modeRequest);
+            return IntakeDecision.from(session, true, false);
+        }
+
+        TroubleshootingIntakeSessionEntity legacyOwner =
+                findOwnedLegacyReceiptSession(envelope, legacyReceiptLookupId);
+        if (legacyOwner != null) {
+            IntakeSession session = requireConversationMode(legacyOwner, modeRequest);
+            return IntakeDecision.from(session, true, false);
         }
 
         TroubleshootingIntakeSessionEntity latest = findLatest(
                 envelope.workspaceId(), routingKey);
         if (latest == null) {
-            return create(envelope, routingKey);
+            return create(envelope, routingKey, modeRequest.initialMode());
         }
 
-        IntakeSession newest = read(latest);
+        IntakeSession newest = requireConversationMode(latest, modeRequest);
         if (!envelope.receivedAt().isBefore(newest.reportedAt())) {
             if (newest.status() != IntakeSessionStatus.READY) {
                 claimMessage(envelope, newest.intakeSessionId());
@@ -228,7 +313,7 @@ public class TroubleshootingIntakeSessionService {
                 claimMessage(envelope, newest.intakeSessionId());
                 return IntakeDecision.from(newest, false, true);
             }
-            return create(envelope, routingKey);
+            return create(envelope, routingKey, newest.rehearsal());
         }
 
         // A callback older than the latest session's immutable start boundary
@@ -241,7 +326,7 @@ public class TroubleshootingIntakeSessionService {
         if (historical == null) {
             historical = findEarliest(envelope.workspaceId(), routingKey);
         }
-        IntakeSession owner = read(historical);
+        IntakeSession owner = requireConversationMode(historical, modeRequest);
         claimMessage(envelope, owner.intakeSessionId());
         return IntakeDecision.from(owner, false, true);
     }
@@ -290,16 +375,94 @@ public class TroubleshootingIntakeSessionService {
 
     private IntakeDecision create(
             IntakeMessageEnvelope envelope,
-            String routingKey) {
+            String routingKey,
+            Boolean rehearsal) {
         String sessionId = newSessionId();
         claimMessage(envelope, sessionId);
-        IntakeSession created = reducer.start(sessionId, envelope);
+        IntakeSession created = reducer.start(sessionId, envelope, rehearsal);
         created = resolveExactOperationalRoute(created, envelope);
         insert(routingKey, created, envelope.deliveryConversationId());
         if (created.status() == IntakeSessionStatus.READY) {
             enqueueInvestigation(created);
         }
         return IntakeDecision.from(created, false, false);
+    }
+
+    /**
+     * A source receipt proves only that a message id was seen. It must never be
+     * usable as a cross-conversation lookup handle for the session it points
+     * to, especially for Web message ids supplied by a browser.
+     */
+    private void requireSameMessageOwner(
+            IntakeSession owner,
+            IntakeMessageEnvelope envelope) {
+        if (!sameMessageOwner(owner, envelope)) {
+            throw new MateClawException(
+                    "err.troubleshooting.message_identity_conflict",
+                    409,
+                    "the message id belongs to a different troubleshooting conversation");
+        }
+    }
+
+    private boolean sameMessageOwner(
+            IntakeSession owner,
+            IntakeMessageEnvelope envelope) {
+        return owner.workspaceId() == envelope.workspaceId()
+                && owner.source().equals(envelope.source())
+                && owner.conversationRef().equals(envelope.conversationRef())
+                && owner.reporterRef().equals(envelope.reporterRef());
+    }
+
+    private TroubleshootingIntakeSessionEntity findOwnedLegacyReceiptSession(
+            IntakeMessageEnvelope envelope,
+            String legacyReceiptLookupId) {
+        if (legacyReceiptLookupId == null) {
+            return null;
+        }
+        TroubleshootingIntakeMessageReceiptEntity legacyReceipt = findReceipt(
+                envelope.workspaceId(), envelope.source(), legacyReceiptLookupId);
+        if (legacyReceipt == null) {
+            return null;
+        }
+        TroubleshootingIntakeSessionEntity candidate = requiredSession(
+                envelope.workspaceId(), legacyReceipt.getIntakeSessionId());
+        // Legacy browser ids were globally unscoped. A collision belonging to
+        // another actor/conversation is not this turn's duplicate; continue
+        // with the scoped receipt rather than letting the old id capture or
+        // block the new conversation.
+        return sameMessageOwner(read(candidate), envelope) ? candidate : null;
+    }
+
+    private IntakeSession requireConversationMode(
+            TroubleshootingIntakeSessionEntity entity,
+            ConversationModeRequest modeRequest) {
+        IntakeSession current = read(entity);
+        if (!modeRequest.active()) {
+            return current;
+        }
+        if (current.rehearsal() == null) {
+            if (modeRequest.requested() == null) {
+                throw new MateClawException(
+                        "err.troubleshooting.conversation_mode_unavailable",
+                        409,
+                        "legacy troubleshooting conversation has no locked mode");
+            }
+            IntakeSession locked = current.withRehearsal(modeRequest.requested());
+            update(entity, locked, null);
+            entity.setAggregateJson(json(locked));
+            entity.setVersion(entity.getVersion() + 1);
+            entity.setStatus(locked.status().name());
+            entity.setLastMessageAt(toLocal(locked.lastMessageAt()));
+            return locked;
+        }
+        if (modeRequest.requested() != null
+                && !current.rehearsal().equals(modeRequest.requested())) {
+            throw new MateClawException(
+                    "err.troubleshooting.conversation_mode_conflict",
+                    409,
+                    "troubleshooting conversation mode is already locked");
+        }
+        return current;
     }
 
     private IntakeSession resolveExactOperationalRoute(
@@ -485,15 +648,44 @@ public class TroubleshootingIntakeSessionService {
 
     private TroubleshootingIntakeMessageReceiptEntity findReceipt(
             IntakeMessageEnvelope envelope) {
+        return findReceipt(
+                envelope.workspaceId(),
+                envelope.source(),
+                envelope.sourceMessageId());
+    }
+
+    private TroubleshootingIntakeMessageReceiptEntity findReceipt(
+            long workspaceId,
+            String source,
+            String sourceMessageId) {
         return receiptMapper.selectOne(
                 new LambdaQueryWrapper<TroubleshootingIntakeMessageReceiptEntity>()
                         .eq(TroubleshootingIntakeMessageReceiptEntity::getWorkspaceId,
-                                envelope.workspaceId())
+                                workspaceId)
                         .eq(TroubleshootingIntakeMessageReceiptEntity::getSource,
-                                envelope.source())
+                                source)
                         .eq(TroubleshootingIntakeMessageReceiptEntity::getSourceMessageId,
-                                envelope.sourceMessageId())
+                                sourceMessageId)
                         .eq(TroubleshootingIntakeMessageReceiptEntity::getDeleted, 0));
+    }
+
+    private String normalizeLegacyReceiptLookupId(
+            IntakeMessageEnvelope envelope,
+            String legacyReceiptLookupId) {
+        if (legacyReceiptLookupId == null || legacyReceiptLookupId.isBlank()) {
+            return null;
+        }
+        String normalized = legacyReceiptLookupId.trim();
+        if (normalized.equals(envelope.sourceMessageId())) {
+            return null;
+        }
+        if (!normalized.matches("web-msg-[A-Za-z0-9_-]{8,128}")) {
+            // This value exists only to bridge receipts written by the old
+            // browser deployment. An unusable compatibility alias must not
+            // reject an otherwise valid scoped turn.
+            return null;
+        }
+        return normalized;
     }
 
     private IntakeSession read(TroubleshootingIntakeSessionEntity entity) {
@@ -513,10 +705,20 @@ public class TroubleshootingIntakeSessionService {
     }
 
     private String routingKey(IntakeMessageEnvelope envelope) {
-        return sha256(envelope.workspaceId() + "\u0000"
-                + envelope.source() + "\u0000"
-                + envelope.conversationRef() + "\u0000"
-                + envelope.reporterRef());
+        return routingKey(
+                envelope.workspaceId(), envelope.source(),
+                envelope.conversationRef(), envelope.reporterRef());
+    }
+
+    private String routingKey(
+            long workspaceId,
+            String source,
+            String conversationRef,
+            String reporterRef) {
+        return sha256(workspaceId + "\u0000"
+                + source + "\u0000"
+                + conversationRef + "\u0000"
+                + reporterRef);
     }
 
     private String sha256(String value) {
@@ -554,5 +756,22 @@ public class TroubleshootingIntakeSessionService {
                 "err.troubleshooting.intake_persistence",
                 500,
                 "failed to " + operation + suffix);
+    }
+
+    private record ConversationModeRequest(boolean active, Boolean requested) {
+        private static ConversationModeRequest none() {
+            return new ConversationModeRequest(false, null);
+        }
+
+        private static ConversationModeRequest requested(Boolean rehearsal) {
+            return new ConversationModeRequest(true, rehearsal);
+        }
+
+        private Boolean initialMode() {
+            if (!active) {
+                return null;
+            }
+            return requested == null ? Boolean.TRUE : requested;
+        }
     }
 }

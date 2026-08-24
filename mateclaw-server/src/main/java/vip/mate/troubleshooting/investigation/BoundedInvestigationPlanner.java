@@ -49,6 +49,47 @@ public final class BoundedInvestigationPlanner {
             HypothesisGraph initialGraph,
             Budget budget,
             Set<String> permittedPlatforms) {
+        Set<String> graphSignalKinds = initialGraph == null
+                ? Set.of()
+                : initialGraph.nodes().stream()
+                        .flatMap(node -> node.questions().stream())
+                        .map(question -> question.request().signalKind())
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return investigate(
+                workspaceId,
+                incident,
+                initialGraph,
+                budget,
+                permittedPlatforms,
+                graphSignalKinds,
+                null);
+    }
+
+    public Outcome investigate(
+            long workspaceId,
+            IncidentContext incident,
+            HypothesisGraph initialGraph,
+            Budget budget,
+            Set<String> permittedPlatforms,
+            Set<String> allowedSignalKinds) {
+        return investigate(
+                workspaceId,
+                incident,
+                initialGraph,
+                budget,
+                permittedPlatforms,
+                allowedSignalKinds,
+                null);
+    }
+
+    public Outcome investigate(
+            long workspaceId,
+            IncidentContext incident,
+            HypothesisGraph initialGraph,
+            Budget budget,
+            Set<String> permittedPlatforms,
+            Set<String> allowedSignalKinds,
+            String sourceBindingFingerprint) {
         if (workspaceId <= 0 || incident == null || initialGraph == null || budget == null) {
             throw new IllegalArgumentException(
                     "workspaceId, incident, graph and budget are required");
@@ -93,8 +134,10 @@ public final class BoundedInvestigationPlanner {
                         incident,
                         question.request(),
                         budget.allowedToolIdentities(),
+                        allowedSignalKinds,
                         permittedPlatforms,
-                        deadline));
+                        deadline,
+                        sourceBindingFingerprint));
             } catch (ReadOnlyToolRegistry.PolicyViolation blocked) {
                 stopReason = StopReason.POLICY_BLOCKED;
                 break;

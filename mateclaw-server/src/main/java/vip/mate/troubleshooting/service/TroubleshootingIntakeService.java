@@ -17,6 +17,7 @@ import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.SopEntry;
 import vip.mate.troubleshooting.intake.IntakeSession;
 import vip.mate.troubleshooting.intake.IntakeSessionStatus;
@@ -50,6 +51,12 @@ import java.util.Set;
  * server-collected Guance evidence, then revalidates mutable authority before
  * persistence. A genuine Guance {@code MISSING} result remains an honest
  * abstention; replay, fallback and caller evidence cannot masquerade as formal.</p>
+ *
+ * <p>If a matched Playbook cannot pass that initial formal admission, Intake
+ * preserves the reported incident and enters the separately bounded generic
+ * read-only investigation. Only the admission service's explicit conflict is
+ * eligible: source, persistence and arbitrary runtime failures still surface
+ * unchanged.</p>
  */
 @Service
 public class TroubleshootingIntakeService {
@@ -57,6 +64,10 @@ public class TroubleshootingIntakeService {
     /** The Agent's own key for "I am switched off / misconfigured", not "I failed". */
     private static final String AGENT_MISCONFIGURED =
             "err.troubleshooting.agent_misconfigured";
+    private static final String FORMAL_ADMISSION_CONFLICT =
+            "err.troubleshooting.formal_admission_conflict";
+    private static final String FORMAL_ADMISSION_FALLBACK_REASON =
+            "标准排障方法未通过正式准入，已转入通用只读调查";
     private static final Duration FORMAL_WEB_CLAIM_LEASE = Duration.ofMinutes(5);
 
     private final TroubleshootingSopPersistenceService sopPersistence;
@@ -301,6 +312,7 @@ public class TroubleshootingIntakeService {
             throw badRequest("reportedAt is required");
         }
         IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        IncidentContext originalSanitizedIncident = sanitizedIncident;
         requireSafeIncidentText(sanitizedIncident);
         List<EvidenceResult> sanitizedSuppliedEvidence =
                 TroubleshootingEvidenceSanitizer.sanitizeSupplied(evidence);
@@ -324,12 +336,24 @@ public class TroubleshootingIntakeService {
                     workspaceId,
                     FormalDiagnosisClaimKey.forIntake(workspaceId, intakeSessionId),
                     clock.instant(),
-                    FORMAL_WEB_CLAIM_LEASE);
+                    formalIntakeClaimLease());
             switch (claimed.state()) {
                 case COMPLETED -> {
-                    return requireIntakeMode(
-                            existingDiagnoses.get(workspaceId, claimed.diagnosisId()),
-                            rehearsal);
+                    StoredDiagnosis completed = existingDiagnoses.get(
+                            workspaceId, claimed.diagnosisId());
+                    if (!rehearsal
+                            && completed != null
+                            && completed.diagnosis() != null
+                            && completed.diagnosis().investigationMode()
+                                    == InvestigationMode.OPEN_DISCOVERY) {
+                        // The completed claim is the immutable idempotency
+                        // authority for this IntakeSession. Re-admitting against
+                        // today's mutable asset configuration would turn a safe
+                        // retry into a different investigation (or reject a
+                        // result that was valid when atomically committed).
+                        return requireCompletedGenericIntake(completed);
+                    }
+                    return requireIntakeMode(completed, rehearsal);
                 }
                 case IN_PROGRESS -> throw conflict(
                         "the same intake session is already in progress");
@@ -376,23 +400,35 @@ public class TroubleshootingIntakeService {
                                 : scenarioRouter.route(workspaceId, sanitizedIncident);
                 if (scenarioRoute != null && scenarioRoute.matched()) {
                     sop = scenarioRoute.playbook();
+                    if (!rehearsal && sop.scenarioScoped()) {
+                        // A reviewed scenario may help rehearsal routing, but
+                        // without scenario-scoped formal authority it must not
+                        // stamp its selector onto the real alert. Investigate
+                        // the original incident through the generic read-only
+                        // lane instead.
+                        return triageFormalRouteMiss(
+                                workspaceId,
+                                sanitizedIncident,
+                                routeMissReason,
+                                reportedAt,
+                                intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                                intakeSessionId,
+                                formalClaim);
+                    }
                     // The alert named no code; the matched Playbook names the route.
                     // Stamping it here is what lets the scenario lane reuse the one
                     // deterministic engine instead of growing a parallel one.
                     sanitizedIncident = sanitizedIncident.withResolvedRoute(sop.errorCode());
                 } else {
                     if (!rehearsal) {
-                        if (intakeSessionId != null) {
-                            throw routeMiss(
-                                    routeMissReason
-                                            + "; formal generic investigation for IntakeSession is not available yet");
-                        }
                         return triageFormalRouteMiss(
                                 workspaceId,
                                 sanitizedIncident,
                                 routeMissReason,
                                 reportedAt,
-                                intakeReadyAt == null ? clock.instant() : intakeReadyAt);
+                                intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                                intakeSessionId,
+                                formalClaim);
                     }
                     StoredDiagnosis triaged = triageRouteMiss(
                             workspaceId,
@@ -420,17 +456,14 @@ public class TroubleshootingIntakeService {
                     String reason = "no SOP registered for "
                             + sanitizedIncident.system() + ":"
                             + sanitizedIncident.errorCode();
-                    if (intakeSessionId != null) {
-                        throw routeMiss(
-                                reason
-                                        + "; formal generic investigation for IntakeSession is not available yet");
-                    }
                     return triageFormalRouteMiss(
                             workspaceId,
                             sanitizedIncident,
                             reason,
                             reportedAt,
-                            intakeReadyAt == null ? clock.instant() : intakeReadyAt);
+                            intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                            intakeSessionId,
+                            formalClaim);
                 }
                 StoredDiagnosis triaged = triageRouteMiss(
                         workspaceId,
@@ -445,6 +478,22 @@ public class TroubleshootingIntakeService {
                         normalizedFactKind);
                 return completeClaimedMissPath(
                         workspaceId, triaged, formalClaim, intakeSessionId);
+            }
+
+            if (!rehearsal && sop.scenarioScoped()) {
+                // Scenario Playbooks currently have no scenario-scoped formal
+                // authority. A caller-supplied scenario selector must not make
+                // that Playbook's selector or reviewed conclusion look like
+                // evidence. Preserve the reported facts, remove only the
+                // deterministic selector, and enter the generic read-only lane.
+                return triageFormalRouteMiss(
+                        workspaceId,
+                        withoutDeterministicSelector(sanitizedIncident),
+                        "场景专用排障能力尚未完成验收，已转入通用只读调查",
+                        reportedAt,
+                        intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                        intakeSessionId,
+                        formalClaim);
             }
 
             if (!rehearsal && intakeSessionId == null) {
@@ -468,6 +517,36 @@ public class TroubleshootingIntakeService {
                 }
             }
 
+            FormalDiagnosisAdmission formalAdmission = null;
+            if (!rehearsal) {
+                try {
+                    formalAdmission = formalAdmissions.admit(
+                            workspaceId, sanitizedIncident, sop);
+                } catch (MateClawException rejected) {
+                    if (!isFormalAdmissionConflict(rejected)) {
+                        throw rejected;
+                    }
+                    // A direct deterministic run and the generic run use
+                    // different durable idempotency claims. Retire the former
+                    // before handing work over; an IntakeSession instead keeps
+                    // its single live claim and delegates it to generic
+                    // persistence for atomic completion.
+                    if (intakeSessionId == null && formalClaim != null) {
+                        FormalDiagnosisClaim deterministicClaim = formalClaim;
+                        formalClaim = null;
+                        formalClaims.release(workspaceId, deterministicClaim);
+                    }
+                    return triageFormalRouteMiss(
+                            workspaceId,
+                            originalSanitizedIncident,
+                            FORMAL_ADMISSION_FALLBACK_REASON,
+                            reportedAt,
+                            intakeReadyAt == null ? clock.instant() : intakeReadyAt,
+                            intakeSessionId,
+                            formalClaim);
+                }
+            }
+
             return diagnoseWithPlaybook(
                     workspaceId,
                     sanitizedIncident,
@@ -477,6 +556,7 @@ public class TroubleshootingIntakeService {
                     intakeReadyAt,
                     intakeSessionId,
                     sop,
+                    formalAdmission,
                     formalClaim);
         } catch (RuntimeException failure) {
             if (formalClaim != null) {
@@ -499,11 +579,9 @@ public class TroubleshootingIntakeService {
             Instant intakeReadyAt,
             String intakeSessionId,
             SopEntry sop,
+            FormalDiagnosisAdmission formalAdmission,
             FormalDiagnosisClaim formalClaim) {
         Instant readyAt = intakeReadyAt == null ? clock.instant() : intakeReadyAt;
-        FormalDiagnosisAdmission formalAdmission = !rehearsal
-                ? formalAdmissions.admit(workspaceId, sanitizedIncident, sop)
-                : null;
         List<EvidenceResult> collectedEvidence = TroubleshootingEvidenceSanitizer.sanitize(
                 collectMissingEvidence(
                         workspaceId,
@@ -585,6 +663,19 @@ public class TroubleshootingIntakeService {
                 || stored.diagnosis().sourcePlaybookVersionRef() == null) {
             throw conflict(
                     "the existing intake Diagnosis has no admitted pilot identity");
+        }
+        return stored;
+    }
+
+    private StoredDiagnosis requireCompletedGenericIntake(StoredDiagnosis stored) {
+        if (stored == null
+                || stored.diagnosis() == null
+                || stored.diagnosis().rehearsal()
+                || stored.diagnosis().investigationMode()
+                        != InvestigationMode.OPEN_DISCOVERY
+                || stored.pilotPlanVersion() == null) {
+            throw conflict(
+                    "the completed intake has no committed formal generic identity");
         }
         return stored;
     }
@@ -697,6 +788,23 @@ public class TroubleshootingIntakeService {
         return incident.completeness() != IncidentCompleteness.SYMPTOM;
     }
 
+    private IncidentContext withoutDeterministicSelector(IncidentContext incident) {
+        return new IncidentContext(
+                incident.incidentId(),
+                incident.system(),
+                incident.service(),
+                null,
+                incident.title(),
+                incident.severity(),
+                incident.impact(),
+                incident.traceId(),
+                incident.occurredAt(),
+                incident.slaRemaining(),
+                incident.intakeSource(),
+                incident.completeness(),
+                incident.rawInput());
+    }
+
     private String deterministicRouteMissReason(IncidentContext incident) {
         if (incident.errorCode() == null || incident.errorCode().isBlank()) {
             return "incident carries no errorCode; deterministic routing needs one";
@@ -759,10 +867,23 @@ public class TroubleshootingIntakeService {
             IncidentContext incident,
             String reason,
             Instant reportedAt,
-            Instant readyAt) {
+            Instant readyAt,
+            String intakeSessionId,
+            FormalDiagnosisClaim intakeClaim) {
         if (agentTriageService == null) {
             throw routeMiss(
                     reason + "; bounded read-only investigation is disabled or unavailable");
+        }
+        if (intakeSessionId != null) {
+            return agentTriageService.triageFormalForIntake(
+                    workspaceId,
+                    incident,
+                    List.of(),
+                    reason,
+                    reportedAt,
+                    readyAt,
+                    intakeSessionId,
+                    intakeClaim);
         }
         return agentTriageService.triageFormal(
                 workspaceId,
@@ -797,6 +918,11 @@ public class TroubleshootingIntakeService {
                 + " mateclaw.troubleshooting.agent.enabled");
     }
 
+    private boolean isFormalAdmissionConflict(MateClawException rejected) {
+        return rejected.getCode() == 409
+                && FORMAL_ADMISSION_CONFLICT.equals(rejected.getMsgKey());
+    }
+
     private MateClawException routeMiss(String message) {
         return new MateClawException("err.troubleshooting.route_miss", 409, message);
     }
@@ -807,5 +933,26 @@ public class TroubleshootingIntakeService {
 
     private MateClawException badRequest(String message) {
         return new MateClawException("err.troubleshooting.invalid_request", 400, message);
+    }
+
+    /**
+     * Keeps the durable Intake owner alive for the whole bounded investigation.
+     *
+     * <p>The five-minute floor preserves the original web retry window. A
+     * configured planner may legitimately run longer, so its own lease policy
+     * must win instead of allowing a second request to take over the same
+     * IntakeSession while the first one still owns live tool work.</p>
+     */
+    private Duration formalIntakeClaimLease() {
+        Duration boundedLease = agentTriageService == null
+                ? null
+                : agentTriageService.formalOpenDiscoveryClaimLease();
+        if (boundedLease == null
+                || boundedLease.isZero()
+                || boundedLease.isNegative()
+                || boundedLease.compareTo(FORMAL_WEB_CLAIM_LEASE) < 0) {
+            return FORMAL_WEB_CLAIM_LEASE;
+        }
+        return boundedLease;
     }
 }

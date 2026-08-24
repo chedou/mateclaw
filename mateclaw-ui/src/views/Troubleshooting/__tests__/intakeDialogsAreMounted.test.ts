@@ -43,6 +43,8 @@ describe('the troubleshooting intake dialogs', () => {
     expect(formalWorkbenchSource).toContain('@start="startFirstUseRehearsal"')
     expect(firstUseGuideSource).toContain('<el-drawer')
     expect(firstUseGuideSource).toContain('日常排障不从配置页开始')
+    expect(firstUseGuideSource).toContain('有标准排障方法就直接复用')
+    expect(firstUseGuideSource).toContain('没有时进入通用只读调查')
     expect(firstUseGuideSource).toContain('TROUBLESHOOTING_UI_LABELS.startRehearsal')
     expect(formalWorkbenchSource).toContain('openIncidentIntake')
     expect(formalWorkbenchSource).toContain('@pick-scenario="openKnownScenarioPicker"')
@@ -52,15 +54,50 @@ describe('the troubleshooting intake dialogs', () => {
     expect(incidentDialogSource).toContain('改用对话补问')
     expect(incidentDialogSource).toContain('故障发生时间（有就填）')
     expect(incidentDialogSource).toContain('v-model="form.occurredAt"')
-    expect(conversationDialogSource).toContain('演练模式（当前对话入口仅支持演练）')
-    expect(conversationDialogSource).toContain('disabled')
-    expect(conversationDialogSource).toContain('正式通用调查请使用「新建排障单」')
-    expect(conversationDialogSource).not.toContain('生成正式排障单，适用于真实值班告警')
+    expect(incidentDialogSource).toContain('真实告警 · 正式只读调查')
+    expect(incidentDialogSource).toContain('试用演练')
+    expect(incidentDialogSource).not.toContain('排障员工：')
+    expect(incidentDialogSource).not.toContain('当前系统可见计划')
+    expect(incidentDialogSource).not.toContain('openDiscoveryReadiness.nextAction')
+    expect(incidentDialogSource).not.toContain('openDiscoveryReadiness.blockers')
+    expect(incidentDialogSource).toContain('openDiscoveryReadinessPresentation')
+    expect(incidentDialogSource).toContain("form.rehearsal ? '生成演练单' : '开始正式只读调查'")
+    expect(incidentDialogSource).not.toContain('标记为演练（推荐试用；不占用生产去重窗口）')
+    expect(conversationDialogSource).toContain('真实告警 · 正式只读调查')
+    expect(conversationDialogSource).toContain('试用演练')
+    expect(conversationDialogSource).toContain('v-model="rehearsal"')
+    expect(conversationDialogSource).toContain(':value="false"')
+    expect(conversationDialogSource).toContain(':value="true"')
+    expect(conversationDialogSource).toContain(':disabled="modeLoading || loading || Boolean(conversationId) || Boolean(diagnosisId)"')
+    expect(conversationDialogSource).toContain('对话开始后会锁定本次模式')
     expect(conversationDialogSource).toContain('rehearsal: rehearsal.value')
     expect(conversationDialogSource).toContain('直接粘贴完整告警')
     expect(conversationDialogSource).toContain('查看排障详情')
     expect(conversationDialogSource).toContain("query: { view: 'detail', diagnosisId: diagnosisId.value }")
     expect(scenarioDialogSource).toContain('返回粘贴告警')
+  })
+
+  it('starts ordinary and first-use entries in rehearsal without overwriting the formal pilot entry', () => {
+    const ordinaryEntry = formalWorkbenchSource.match(
+      /function openTroubleshootingScenario\(\)[\s\S]*?\n}/,
+    )?.[0]
+    const firstUseEntry = formalWorkbenchSource.match(
+      /function startFirstUseRehearsal\(\)[\s\S]*?\n}/,
+    )?.[0]
+    const formalPilotEntry = formalWorkbenchSource.match(
+      /function launchFormalPilotIncident[\s\S]*?\n}/,
+    )?.[0]
+
+    expect(ordinaryEntry).toContain('resetIncidentReportForm()')
+    expect(firstUseEntry).toContain('openTroubleshootingScenario()')
+    expect(formalPilotEntry).toContain('incidentReportForm.rehearsal = false')
+    expect(formalPilotEntry).not.toContain('openTroubleshootingScenario()')
+  })
+
+  it('refreshes bounded-discovery readiness when either system or service changes', () => {
+    expect(formalWorkbenchSource).toContain('() => incidentReportForm.system')
+    expect(formalWorkbenchSource).toContain('() => incidentReportForm.service')
+    expect(formalWorkbenchSource).toContain('formalOpenDiscoveryReadinessScope({ system, service })')
   })
 
   it('keeps the completed analysis visible in Chat instead of closing the result drawer', () => {
@@ -79,6 +116,9 @@ describe('the troubleshooting intake dialogs', () => {
       'preferIntakeForTroubleshootingAgent: isTroubleshootingReadOnlyTriageAgent(currentAgent.value)',
     )
     expect(chatConsoleSource).toContain('await runTroubleshootingIntakeTurn(content)')
+    expect(chatConsoleSource).toContain('聊天自动识别的告警会先按演练处理')
+    expect(chatConsoleSource).toContain('选择正式只读调查')
+    expect(chatConsoleSource).toContain('rehearsal: true')
   })
 
   it('keeps the diagnosis context after READY and exits only on an explicit end result', () => {

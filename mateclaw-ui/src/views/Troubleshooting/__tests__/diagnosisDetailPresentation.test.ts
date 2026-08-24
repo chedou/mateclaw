@@ -114,4 +114,24 @@ describe('diagnosis detail presentation', () => {
       canEvaluate: false,
     }).primaryAction).toBe('transfer')
   })
+
+  it.each(['HYPOTHESIS', 'INSUFFICIENT_EVIDENCE'] as const)(
+    'never tells a developer to confirm an unlocated %s conclusion',
+    (conclusionType) => {
+      const panel = diagnosisNextStepPanel({
+        perspective: 'developer',
+        status: 'READY_FOR_HUMAN',
+        conclusionType,
+        nextStep: null,
+        canOperate: true,
+        canTransfer: true,
+        canClose: false,
+        canEvaluate: false,
+      })
+
+      expect(panel.primaryAction).toBe('transfer')
+      expect(`${panel.title} ${panel.detail}`).not.toMatch(/确认定位|认可就确认/)
+      expect(`${panel.title} ${panel.detail}`).toMatch(/继续查|补证据|转给/)
+    },
+  )
 })

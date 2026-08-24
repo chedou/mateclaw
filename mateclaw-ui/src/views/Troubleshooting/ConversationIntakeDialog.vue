@@ -7,17 +7,25 @@
     @closed="resetLocal"
   >
     <div class="conv-guide">
-      <p><strong>直接粘贴完整告警</strong>，系统会识别服务、错误码和发生时间，匹配已审核的排障方法并开始只读调查。</p>
+      <p><strong>直接粘贴完整告警</strong>，系统会识别服务、错误码和发生时间；有标准排障方法就复用，否则进入通用只读调查。</p>
       <p class="conv-hint">资料不足时系统会继续追问；有错误码请保留在告警原文中。</p>
     </div>
 
-    <div class="conv-mode">
-      <el-checkbox
+    <section class="conv-mode" aria-labelledby="conversation-mode-title">
+      <div class="conv-mode-head">
+        <b id="conversation-mode-title">这次要怎么查</b>
+        <span>默认演练；对话开始后会锁定本次模式</span>
+      </div>
+      <el-radio-group
         v-model="rehearsal"
-        disabled
-      >演练模式（当前对话入口仅支持演练）</el-checkbox>
-      <span>正式通用调查请使用「新建排障单」；这里不会把演练冒充成正式结果。</span>
-    </div>
+        class="conv-mode-options"
+        :disabled="modeLoading || loading || Boolean(conversationId) || Boolean(diagnosisId)"
+      >
+        <el-radio-button :value="false">真实告警 · 正式只读调查</el-radio-button>
+        <el-radio-button :value="true">试用演练</el-radio-button>
+      </el-radio-group>
+      <p>{{ conversationModeDetail }}</p>
+    </section>
 
     <div ref="threadEl" class="conv-thread" aria-live="polite">
       <div v-if="!messages.length" class="conv-empty">
@@ -76,6 +84,7 @@ import { useRouter } from 'vue-router'
 import { troubleshootingApi } from '@/api'
 import type { ConversationTurnResult } from '@/api'
 import { projectRetryableTroubleshootingTurn } from './diagnosisFollowUpContext'
+import { formalAdmissionErrorMessage } from './formalProjection'
 
 type ChatRole = 'user' | 'assistant'
 type ChatMessage = { role: ChatRole; text: string }
@@ -119,19 +128,29 @@ const messages = ref<ChatMessage[]>([])
 const pendingText = ref<string | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
 const rehearsal = ref(true)
+const modeLoading = ref(false)
+const modeUnavailable = ref(false)
 let requestGeneration = 0
 let retryTurn: { text: string | null; diagnosisId: string | null; clientTurnId: string } | null = null
 
 const canSend = computed(() =>
-  !loading.value && !followUpEnded.value && draft.value.trim().length > 0,
+  !loading.value && !modeLoading.value && !modeUnavailable.value
+    && !followUpEnded.value && draft.value.trim().length > 0,
 )
 const composerPlaceholder = computed(() => diagnosisId.value
   ? '可问原因、证据、未知和下一步；补充材料请以“补充证据：”开头；输入“结束排障”退出'
   : '输入这一轮要补充的内容，Enter 发送（Shift+Enter 换行）')
+const conversationModeDetail = computed(() => {
+  if (modeLoading.value) return '正在读取这张排障单的已锁定模式……'
+  if (modeUnavailable.value) return '无法从服务端确认已锁定模式，已停止发送，请刷新后重试。'
+  return rehearsal.value
+    ? '仅用于熟悉流程；会明确标记为演练，不会冒充真实排障结果。'
+    : '面向真实告警；只读查询已接入数据源，未通过正式准入时会停止并说明原因。'
+})
 
 watch(open, (value) => {
   if (value) resetLocal()
-})
+}, { immediate: true })
 
 watch(() => props.originChatConversationId, (value, previous) => {
   if (open.value && value !== previous) resetLocal()
@@ -165,7 +184,7 @@ function restorePersistedMessages() {
 }
 
 function resetLocal() {
-  requestGeneration += 1
+  const generation = ++requestGeneration
   draft.value = ''
   loading.value = false
   conversationId.value = props.activeIntakeConversationId ?? null
@@ -173,7 +192,47 @@ function resetLocal() {
   followUpEnded.value = false
   pendingText.value = null
   restorePersistedMessages()
-  rehearsal.value = true
+  modeLoading.value = false
+  modeUnavailable.value = false
+  if (!props.activeDiagnosisId && !props.activeIntakeConversationId) {
+    rehearsal.value = true
+  }
+  if (open.value && (props.activeIntakeConversationId || props.activeDiagnosisId)) {
+    void restoreLockedMode(generation)
+  }
+}
+
+async function restoreLockedMode(generation: number) {
+  modeLoading.value = true
+  try {
+    const intakeConversationId = props.activeIntakeConversationId
+    if (intakeConversationId) {
+      try {
+        const { data } = await troubleshootingApi.conversationMode(intakeConversationId)
+        if (!open.value || requestGeneration !== generation
+          || props.activeIntakeConversationId !== intakeConversationId) return
+        rehearsal.value = data.rehearsal
+        return
+      } catch {
+        // Aggregates written before mode locking have no IntakeSession fact.
+        // A persisted Diagnosis is the only safe fallback because its mode is
+        // also server-owned; without one the outer catch remains fail-closed.
+        if (!props.activeDiagnosisId) throw new Error('locked intake mode unavailable')
+      }
+    }
+    const activeDiagnosisId = props.activeDiagnosisId
+    if (!activeDiagnosisId) return
+    const { data } = await troubleshootingApi.get(activeDiagnosisId)
+    if (!open.value || requestGeneration !== generation
+      || props.activeDiagnosisId !== activeDiagnosisId) return
+    rehearsal.value = data.diagnosis.rehearsal
+  } catch {
+    if (open.value && requestGeneration === generation) {
+      modeUnavailable.value = true
+    }
+  } finally {
+    if (open.value && requestGeneration === generation) modeLoading.value = false
+  }
 }
 
 async function refreshPersisted(chatConversationId: string | null) {
@@ -198,6 +257,7 @@ async function send() {
     ? { chatConversationId: originChatConversationId, agentId: props.agentId }
     : {}
   const originDiagnosisId = diagnosisId.value
+  const formalIntake = !originDiagnosisId && !rehearsal.value
   const clientTurnId = retryTurn?.diagnosisId === originDiagnosisId
       && (retryTurn.text === null || retryTurn.text === text)
     ? retryTurn.clientTurnId
@@ -237,9 +297,12 @@ async function send() {
       applyTurn(data, originChatConversationId)
       await refreshPersisted(originChatConversationId)
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (!open.value || requestGeneration !== generation) return
-    ElMessage.error(error?.message || '对话发起失败')
+    const failure = formalIntake
+      ? formalAdmissionErrorMessage(error)
+      : (error instanceof Error ? error.message : '对话发起失败')
+    ElMessage.error(failure)
     await refreshPersisted(originChatConversationId)
   } finally {
     if (open.value && requestGeneration === generation) {
@@ -253,6 +316,7 @@ function applyTurn(
   data: ConversationTurnResult,
   originChatConversationId: string | null,
 ) {
+  modeUnavailable.value = false
   conversationId.value = data.conversationId
   rehearsal.value = data.rehearsal
   if (data.status === 'READY' && data.diagnosisId) {
@@ -299,18 +363,33 @@ function goDiagnosisDetail() {
 .conv-mode {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   margin: -4px 0 14px;
   padding: 10px 14px;
   border: 1px solid var(--mc-border);
   border-radius: var(--mc-radius-sm, 8px);
   background: var(--mc-bg);
 }
-.conv-mode span {
-  padding-left: 24px;
+.conv-mode-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.conv-mode-head b { color: var(--mc-text-primary); font-size: 13px; }
+.conv-mode-head span {
   color: var(--mc-text-tertiary);
   font-size: 11px;
   line-height: 1.5;
+}
+.conv-mode-options { display: flex; }
+.conv-mode-options :deep(.el-radio-button) { flex: 1; }
+.conv-mode-options :deep(.el-radio-button__inner) { width: 100%; }
+.conv-mode p {
+  margin: 0;
+  color: var(--mc-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
 }
 .conv-thread {
   display: flex;

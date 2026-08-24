@@ -118,7 +118,8 @@ describe('buildFiveQuestionRail', () => {
     expect(items[1]).toMatchObject({
       title: '这次怎么查？',
       state: 'DONE',
-      answer: expect.stringContaining('标准方案'),
+      hint: '有标准排障方法就复用；没有则通用只读调查',
+      answer: expect.stringContaining('标准排障方法'),
     })
     expect(items[2].state).toBe('DONE')
     expect(items[3].state).toBe('DONE')

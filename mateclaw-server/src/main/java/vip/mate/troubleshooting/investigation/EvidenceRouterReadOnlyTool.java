@@ -40,6 +40,7 @@ public final class EvidenceRouterReadOnlyTool implements ReadOnlyEvidenceTool {
                 request,
                 context.incident(),
                 context.permittedPlatforms(),
-                context.deadline());
+                context.deadline(),
+                context.sourceBindingFingerprint());
     }
 }

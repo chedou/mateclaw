@@ -145,13 +145,22 @@ export function diagnosisNextStepPanel(input: {
       break
   }
 
+  const readyForHumanFallback = input.conclusionType === 'LOCATED'
+    ? {
+        title: '先判断：你是否认可这个定位？',
+        detail: input.canTransfer
+          ? '认可就确认；不认可或还需要专业判断，就转给其他人继续查。两种选择都不会修改生产环境。'
+          : '认可就确认；不认可或还需要专业判断，就先不要确认，联系有转派权限的负责人继续查。',
+      }
+    : {
+        title: input.conclusionType === 'INSUFFICIENT_EVIDENCE'
+          ? '先补证据，再继续调查'
+          : '把当前线索转给负责人继续查',
+        detail: '当前还没有形成明确原因，只能继续调查或转人工，不能当作已定位。',
+      }
+
   const fallbackByStatus: Record<DiagnosisStatus, { title: string; detail: string }> = {
-    READY_FOR_HUMAN: {
-      title: '先判断：你是否认可这个定位？',
-      detail: input.canTransfer
-        ? '认可就确认；不认可或还需要专业判断，就转给其他人继续查。两种选择都不会修改生产环境。'
-        : '认可就确认；不认可或还需要专业判断，就先不要确认，联系有转派权限的负责人继续查。',
-    },
+    READY_FOR_HUMAN: readyForHumanFallback,
     NEEDS_INVESTIGATION: {
       title: '先补证据，不要确认',
       detail: '页面已经说明缺什么。补齐数据源、查询规则或现场信息后，再重新形成可复核结论。',

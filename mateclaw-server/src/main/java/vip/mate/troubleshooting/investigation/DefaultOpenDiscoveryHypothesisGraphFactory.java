@@ -5,6 +5,7 @@ import vip.mate.troubleshooting.engine.Criterion;
 import vip.mate.troubleshooting.model.AnomalyCriterion;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.IncidentContext;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryPlan;
 
 import java.util.List;
 import java.util.Map;
@@ -72,12 +73,19 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
      * Builds the formal generic graph from external observability questions
      * only. Caller text can never promote itself into local reported evidence.
      */
-    public HypothesisGraph createFormal(IncidentContext incident) {
+    public HypothesisGraph createFormal(
+            IncidentContext incident,
+            FormalOpenDiscoveryPlan formalPlan) {
         if (incident == null) {
             throw new IllegalArgumentException("incident is required");
         }
+        if (formalPlan == null) {
+            throw new IllegalArgumentException(
+                    "formal plan does not authorize the reviewed graph");
+        }
         List<HypothesisGraph.Hypothesis> hypotheses = new java.util.ArrayList<>();
-        hypotheses.add(new HypothesisGraph.Hypothesis(
+        if (formalPlan.allowedSignalKinds().contains("error_log_scan")) {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
                         "application-errors",
                         "应用服务自身出现集中错误",
                         100,
@@ -89,7 +97,9 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "application-error-present",
                                 "应用 ERROR 数量大于零",
                                 new Criterion.NumericGte("error_count", 1)))));
-        hypotheses.add(new HypothesisGraph.Hypothesis(
+        }
+        if (formalPlan.allowedSignalKinds().contains("k8s_workload_health")) {
+            hypotheses.add(new HypothesisGraph.Hypothesis(
                         "runtime-health",
                         "Kubernetes 工作负载出现异常",
                         80,
@@ -102,6 +112,7 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                 "异常容器数量大于零",
                                 new Criterion.NumericGte(
                                         "unhealthy_container_count", 1)))));
+        }
         return HypothesisGraph.of(hypotheses);
     }
 

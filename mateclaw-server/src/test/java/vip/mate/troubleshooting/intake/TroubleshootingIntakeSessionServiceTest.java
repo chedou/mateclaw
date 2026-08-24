@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -97,6 +98,99 @@ class TroubleshootingIntakeSessionServiceTest {
         assertEquals("msg-1", receipt.getValue().getSourceMessageId());
         assertEquals(session.getValue().getIntakeSessionId(),
                 receipt.getValue().getIntakeSessionId());
+    }
+
+    @Test
+    void firstWebConversationMessageFreezesTheRequestedModeInTheAggregate() throws Exception {
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(null);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
+                .thenReturn(1);
+
+        IntakeDecision decision = service.acceptConversation(
+                webEnvelope("msg-formal-1", "会话创建失败", at(10, 0)), false);
+
+        ArgumentCaptor<TroubleshootingIntakeSessionEntity> inserted =
+                ArgumentCaptor.forClass(TroubleshootingIntakeSessionEntity.class);
+        verify(sessionMapper).insert(inserted.capture());
+        IntakeSession stored = objectMapper.readValue(
+                inserted.getValue().getAggregateJson(), IntakeSession.class);
+        assertEquals(false, stored.rehearsal());
+        assertEquals(stored.intakeSessionId(), decision.intakeSessionId());
+    }
+
+    @Test
+    void laterWebConversationTurnCannotChangeTheFrozenMode() throws Exception {
+        IntakeSession formal = new IntakeSessionReducer().start(
+                "intake-formal",
+                webEnvelope("msg-formal-1", "会话创建失败", at(10, 0)),
+                false);
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(entity(formal, 2));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.acceptConversation(
+                        webEnvelope("msg-formal-2", "系统: CSDP", at(10, 1)), true));
+
+        assertEquals(409, error.getCode());
+        assertEquals("err.troubleshooting.conversation_mode_conflict", error.getMsgKey());
+        verify(receiptMapper, never()).insert(
+                any(TroubleshootingIntakeMessageReceiptEntity.class));
+        verify(sessionMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    void omittedModeOnLaterTurnReusesTheFrozenServerMode() throws Exception {
+        IntakeSession formal = new IntakeSessionReducer().start(
+                "intake-formal",
+                webEnvelope("msg-formal-1", "会话创建失败", at(10, 0)),
+                false);
+        TroubleshootingIntakeSessionEntity entity = entity(formal, 2);
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(entity);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        IntakeDecision decision = service.acceptConversation(
+                webEnvelope("msg-formal-2", "系统: CSDP", at(10, 1)), null);
+
+        assertEquals("intake-formal", decision.intakeSessionId());
+        assertEquals(false, service.getConversationMode(
+                7L, "conv-web-1", "user-1").rehearsal());
+    }
+
+    @Test
+    void explicitChoiceBindsALegacyWebAggregateThatPredatesTheModeField() throws Exception {
+        IntakeSession legacy = new IntakeSessionReducer().start(
+                "intake-legacy",
+                webEnvelope("msg-legacy-1", "会话创建失败", at(10, 0)));
+        TroubleshootingIntakeSessionEntity legacyEntity = entity(legacy, 2);
+        com.fasterxml.jackson.databind.node.ObjectNode oldJson =
+                (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(
+                        legacyEntity.getAggregateJson());
+        oldJson.remove("rehearsal");
+        legacyEntity.setAggregateJson(objectMapper.writeValueAsString(oldJson));
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(legacyEntity);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        IntakeDecision decision = service.acceptConversation(
+                webEnvelope("msg-legacy-2", "系统: CSDP", at(10, 0)), false);
+
+        assertEquals("intake-legacy", decision.intakeSessionId());
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<LambdaUpdateWrapper> update =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(sessionMapper).update(isNull(), update.capture());
+        assertTrue(update.getValue().getParamNameValuePairs().values().stream()
+                .anyMatch(value -> value instanceof String text
+                        && text.contains("\"rehearsal\":false")));
     }
 
     @Test
@@ -194,6 +288,161 @@ class TroubleshootingIntakeSessionServiceTest {
         verify(receiptMapper, never()).insert(
                 any(TroubleshootingIntakeMessageReceiptEntity.class));
         verify(sessionMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    void duplicateReceiptCannotCrossConversationOrReporterBoundary() throws Exception {
+        IntakeSession stored = new IntakeSessionReducer().start(
+                "intake-user-1",
+                webEnvelope("web-msg-shared", "会话消息发送失败", at(10, 0)),
+                false);
+        TroubleshootingIntakeMessageReceiptEntity receipt =
+                new TroubleshootingIntakeMessageReceiptEntity();
+        receipt.setIntakeSessionId("intake-user-1");
+        when(receiptMapper.selectOne(any())).thenReturn(receipt);
+        when(sessionMapper.selectOne(any())).thenReturn(entity(stored, 2));
+
+        IntakeMessageEnvelope otherReporter = new IntakeMessageEnvelope(
+                7L,
+                TroubleshootingIntakeSources.WEB_CONVERSATION,
+                "web-msg-shared",
+                "conv-web-2",
+                "web-conversation:conv-web-2",
+                "user-2",
+                "会话消息发送失败",
+                List.of(),
+                at(10, 0));
+
+        MateClawException error = assertThrows(
+                MateClawException.class,
+                () -> service.acceptConversation(otherReporter, false));
+
+        assertEquals(409, error.getCode());
+        assertEquals("err.troubleshooting.message_identity_conflict", error.getMsgKey());
+        verify(receiptMapper, never()).insert(
+                any(TroubleshootingIntakeMessageReceiptEntity.class));
+        verify(sessionMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    void matchingLegacyWebReceiptIsReusedReadOnlyAfterScopedReceiptMisses() throws Exception {
+        String scopedMessageId = "web-msg-" + "a".repeat(64);
+        String legacyMessageId = "web-msg-turn-legacy-0001";
+        IntakeSession stored = new IntakeSessionReducer().start(
+                "intake-legacy-turn",
+                webEnvelope(legacyMessageId, "会话创建失败", at(10, 0)),
+                false);
+        TroubleshootingIntakeMessageReceiptEntity receipt =
+                new TroubleshootingIntakeMessageReceiptEntity();
+        receipt.setIntakeSessionId("intake-legacy-turn");
+        when(receiptMapper.selectOne(any())).thenReturn(null, receipt);
+        when(sessionMapper.selectOne(any())).thenReturn(entity(stored, 2));
+
+        IntakeDecision duplicate = service.acceptConversation(
+                webEnvelope(scopedMessageId, "会话创建失败", at(10, 0)),
+                false,
+                legacyMessageId);
+
+        assertTrue(duplicate.duplicate());
+        assertEquals("intake-legacy-turn", duplicate.intakeSessionId());
+        verify(receiptMapper, times(2)).selectOne(any());
+        verify(receiptMapper, never()).insert(
+                any(TroubleshootingIntakeMessageReceiptEntity.class));
+        verify(sessionMapper, never()).insert(
+                any(TroubleshootingIntakeSessionEntity.class));
+        verify(sessionMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    void legacyWebReceiptOwnedByAnotherConversationCannotCaptureTheScopedTurn()
+            throws Exception {
+        String scopedMessageId = "web-msg-" + "b".repeat(64);
+        String legacyMessageId = "web-msg-turn-shared-0001";
+        IntakeSession otherOwner = new IntakeSessionReducer().start(
+                "intake-other-owner",
+                webEnvelope(legacyMessageId, "会话创建失败", at(10, 0)),
+                false);
+        TroubleshootingIntakeMessageReceiptEntity legacyReceipt =
+                new TroubleshootingIntakeMessageReceiptEntity();
+        legacyReceipt.setIntakeSessionId("intake-other-owner");
+        when(receiptMapper.selectOne(any())).thenReturn(null, legacyReceipt);
+        when(sessionMapper.selectOne(any()))
+                .thenReturn(entity(otherOwner, 2))
+                .thenReturn(null);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
+                .thenReturn(1);
+        IntakeMessageEnvelope incoming = new IntakeMessageEnvelope(
+                7L,
+                TroubleshootingIntakeSources.WEB_CONVERSATION,
+                scopedMessageId,
+                "conv-web-2",
+                "web:conversation:conv-web-2",
+                "user-2",
+                "会话创建失败",
+                List.of(),
+                at(10, 0));
+
+        IntakeDecision created = service.acceptConversation(
+                incoming, false, legacyMessageId);
+
+        assertFalse(created.duplicate());
+        assertFalse("intake-other-owner".equals(created.intakeSessionId()));
+        ArgumentCaptor<TroubleshootingIntakeMessageReceiptEntity> insertedReceipt =
+                ArgumentCaptor.forClass(TroubleshootingIntakeMessageReceiptEntity.class);
+        verify(receiptMapper).insert(insertedReceipt.capture());
+        assertEquals(scopedMessageId, insertedReceipt.getValue().getSourceMessageId());
+        assertFalse(legacyMessageId.equals(
+                insertedReceipt.getValue().getSourceMessageId()));
+    }
+
+    @Test
+    void scopedWebReceiptWinsWithoutConsultingTheLegacyAlias() throws Exception {
+        String scopedMessageId = "web-msg-" + "c".repeat(64);
+        IntakeSession stored = new IntakeSessionReducer().start(
+                "intake-scoped-owner",
+                webEnvelope(scopedMessageId, "会话创建失败", at(10, 0)),
+                false);
+        TroubleshootingIntakeMessageReceiptEntity scopedReceipt =
+                new TroubleshootingIntakeMessageReceiptEntity();
+        scopedReceipt.setIntakeSessionId("intake-scoped-owner");
+        when(receiptMapper.selectOne(any())).thenReturn(scopedReceipt);
+        when(sessionMapper.selectOne(any())).thenReturn(entity(stored, 2));
+
+        IntakeDecision duplicate = service.acceptConversation(
+                webEnvelope(scopedMessageId, "会话创建失败", at(10, 0)),
+                false,
+                "web-msg-turn-legacy-unused");
+
+        assertTrue(duplicate.duplicate());
+        assertEquals("intake-scoped-owner", duplicate.intakeSessionId());
+        verify(receiptMapper, times(1)).selectOne(any());
+        verify(receiptMapper, never()).insert(
+                any(TroubleshootingIntakeMessageReceiptEntity.class));
+    }
+
+    @Test
+    void malformedLegacyLookupAliasIsIgnoredWithoutRejectingTheScopedTurn() {
+        String scopedMessageId = "web-msg-" + "d".repeat(64);
+        when(receiptMapper.selectOne(any())).thenReturn(null);
+        when(sessionMapper.selectOne(any())).thenReturn(null);
+        when(receiptMapper.insert(any(TroubleshootingIntakeMessageReceiptEntity.class)))
+                .thenReturn(1);
+        when(sessionMapper.insert(any(TroubleshootingIntakeSessionEntity.class)))
+                .thenReturn(1);
+
+        IntakeDecision created = service.acceptConversation(
+                webEnvelope(scopedMessageId, "会话创建失败", at(10, 0)),
+                false,
+                "web-msg-legacy/turn.1");
+
+        assertFalse(created.duplicate());
+        ArgumentCaptor<TroubleshootingIntakeMessageReceiptEntity> insertedReceipt =
+                ArgumentCaptor.forClass(TroubleshootingIntakeMessageReceiptEntity.class);
+        verify(receiptMapper).insert(insertedReceipt.capture());
+        assertEquals(scopedMessageId, insertedReceipt.getValue().getSourceMessageId());
+        verify(receiptMapper, times(1)).selectOne(any());
     }
 
     @Test
@@ -487,6 +736,19 @@ class TroubleshootingIntakeSessionServiceTest {
                 messageId,
                 "group-1",
                 "wecom:99:group-1",
+                "user-1",
+                text,
+                List.of(),
+                at);
+    }
+
+    private IntakeMessageEnvelope webEnvelope(String messageId, String text, Instant at) {
+        return new IntakeMessageEnvelope(
+                7L,
+                TroubleshootingIntakeSources.WEB_CONVERSATION,
+                messageId,
+                "conv-web-1",
+                "web:conversation:conv-web-1",
                 "user-1",
                 text,
                 List.of(),

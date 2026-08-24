@@ -58,7 +58,7 @@ export function buildFiveQuestionRail(
   const contrastReady = developer.contrast.available
   const modeLabel = investigationLabel(developer.investigationMode, developer.routeAuthority)
   const howAnswer = developer.playbookRef
-    ? `标准方案 · ${developer.playbookRef}`
+    ? `标准排障方法 · ${developer.playbookRef}`
     : modeLabel
 
   const foundState: FiveQuestionState = hasEvidence
@@ -90,7 +90,7 @@ export function buildFiveQuestionRail(
     {
       index: 2,
       title: '这次怎么查？',
-      hint: '标准方案优先；没有则受限只读调查',
+      hint: '有标准排障方法就复用；没有则通用只读调查',
       state: 'DONE',
       answer: howAnswer,
     },

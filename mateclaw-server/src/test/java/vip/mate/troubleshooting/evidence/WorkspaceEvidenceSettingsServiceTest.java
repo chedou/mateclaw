@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -254,6 +255,19 @@ class WorkspaceEvidenceSettingsServiceTest {
     void theEndpointIsValidatedAgainAtCallTimeBecauseDnsCanChangeAfterTheWriteSucceeded() {
         assertThatThrownBy(() -> service.assertReachableEndpoint("https://127.0.0.1:9529"))
                 .isInstanceOf(SecurityException.class);
+    }
+
+    @Test
+    void formalEndpointValidationFailsClosedWhenDnsCannotBeResolved() {
+        assertThatCode(() -> service.assertReachableEndpoint(
+                        "https://formal-guance-does-not-resolve.invalid"))
+                .as("legacy rehearsal validation keeps its historical fail-open behavior")
+                .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> service.assertReachableEndpointStrict(
+                        "https://formal-guance-does-not-resolve.invalid"))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("DNS");
     }
 
     @Test

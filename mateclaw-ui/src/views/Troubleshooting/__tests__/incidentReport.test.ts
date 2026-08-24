@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildFormalIncidentReport,
+  formalOpenDiscoveryReadinessScope,
   formalIncidentFormErrors,
   formalIncidentRoutePreview,
   type FormalIncidentForm,
@@ -98,8 +99,8 @@ describe('formal workbench incident report boundary', () => {
   it('keeps the route preview honest about standard plans and bounded discovery', () => {
     expect(formalIncidentRoutePreview(baseForm)).toEqual({
       tone: 'DETERMINISTIC',
-      title: '优先走标准排障方案',
-      detail: expect.stringContaining('已审核的标准方法'),
+      title: '自动使用标准排障方法',
+      detail: expect.stringContaining('匹配不上会转入通用只读调查'),
     })
 
     const discovery = formalIncidentRoutePreview({
@@ -108,8 +109,7 @@ describe('formal workbench incident report boundary', () => {
       traceId: '',
     })
     expect(discovery.tone).toBe('BOUNDED_DISCOVERY')
-    expect(discovery.title).toContain('没有标准方案')
-    expect(discovery.title).toContain('受限只读调查')
+    expect(discovery.title).toBe('通用只读调查')
     expect(discovery.detail).toContain('证据不够就停')
 
     const withTrace = formalIncidentRoutePreview({
@@ -117,7 +117,19 @@ describe('formal workbench incident report boundary', () => {
       errorCode: '',
       traceId: 'ps-abc123',
     })
-    expect(withTrace.detail).toContain('已批准的取证计划')
+    expect(withTrace.detail).toContain('已批准的只读查询范围')
+  })
+
+  it('scopes readiness to the exact system and service selected by the user', () => {
+    expect(formalOpenDiscoveryReadinessScope(baseForm)).toEqual({
+      system: 'CSDP',
+      service: 'csdp-session-service',
+    })
+    expect(formalOpenDiscoveryReadinessScope({
+      ...baseForm,
+      system: ' ',
+      service: ' ',
+    })).toEqual({})
   })
 
   it('rejects DQL and raw log text before it can leave the browser form', () => {

@@ -44,7 +44,7 @@ describe('seven-stage investigation trace presentation', () => {
       investigationStagePresentation('CONCLUSION').title,
     ]).toEqual([
       '收到告警',
-      '选定排障方法',
+      '选择调查方式',
       '明确要查什么',
       '连接只读数据源',
       '获取真实证据',
@@ -58,6 +58,10 @@ describe('seven-stage investigation trace presentation', () => {
       .toBe('执行查询，记录实际返回的证据和缺失项。')
     expect(investigationStagePresentation('CONCLUSION').description)
       .toContain('证据不足')
+    expect(investigationStagePresentation('PLAYBOOK_ROUTE').description)
+      .toBe('有标准排障方法就直接复用；没有时进入通用只读调查。')
+    expect(investigationStageQuestion('PLAYBOOK_ROUTE'))
+      .toBe('本次使用标准排障方法，还是通用只读调查？')
   })
 
   it('tells the operator what each step answers and why the flow continues', () => {
@@ -69,7 +73,9 @@ describe('seven-stage investigation trace presentation', () => {
       .toBe('现有证据能否支持明确结论？如果不能，是否应停止判断？')
 
     expect(investigationStageContinuationLabel('INCIDENT', 'COMPLETED'))
-      .toBe('基本信息已确认，下一步选择排障方法。')
+      .toBe('基本信息已确认，下一步选择调查方式。')
+    expect(investigationStageContinuationLabel('PLAYBOOK_ROUTE', 'COMPLETED'))
+      .toBe('调查方式已选定，下一步明确要查询的数据。')
     expect(investigationStageContinuationLabel('ADAPTER_SELECTION', 'PARTIAL'))
       .toContain('只使用已记录事实')
     expect(investigationStageContinuationLabel('CONCLUSION', 'STOPPED'))
@@ -80,13 +86,13 @@ describe('seven-stage investigation trace presentation', () => {
       .toBe('真实证据已获取，下一步用规则核对。')
   })
 
-  it('explains Playbook as a reviewed troubleshooting plan in user-facing text', () => {
+  it('explains standard methods and generic read-only investigation in user-facing text', () => {
     expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '开放调查，未命中已审核 Playbook'))
-      .toBe('开放调查，未命中已审核的排障方案')
+      .toBe('通用只读调查，未命中已审核的标准排障方法')
     expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '错误码 Playbook · 显式命中'))
-      .toBe('错误码排障方案 · 显式命中')
+      .toBe('标准排障方法（按错误码） · 直接命中')
     expect(investigationStageSummaryLabel('PLAYBOOK_ROUTE', '场景 Playbook · 规则命中'))
-      .toBe('场景排障方案 · 规则命中')
+      .toBe('标准排障方法（按场景） · 自动匹配')
     expect(investigationStageSummaryLabel('INCIDENT', 'Playbook 服务报错'))
       .toBe('Playbook 服务报错')
   })
@@ -150,7 +156,7 @@ describe('seven-stage investigation trace presentation', () => {
       investigationMode: 'ERROR_CODE_PLAYBOOK',
       routeAuthority: 'EXPLICIT',
       routeSemanticsProvenance: 'PERSISTED',
-    })).toBe('错误码排障方案 · 显式命中')
+    })).toBe('标准排障方法（按错误码） · 直接命中')
   })
 
   it('walks backwards from the conclusion through rules, criteria and evidence', () => {

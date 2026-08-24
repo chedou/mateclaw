@@ -41,6 +41,10 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(investigationTraceSource).not.toContain('证据合同')
     expect(formalWorkbenchSource).toContain('返回数据格式校验未通过')
     expect(formalWorkbenchSource).not.toContain('规范化合同阻断')
+    expect(formalWorkbenchSource).toContain('未命中标准排障方法')
+    expect(formalWorkbenchSource).toContain('通用只读调查未启用或配置不合规')
+    expect(developerEvidenceSource).toContain('<strong>标准排障方法</strong>')
+    expect(developerEvidenceSource).not.toContain('排障方案（Playbook）')
   })
 
   it('labels rehearsal and production diagnosis details by their persisted record type', () => {

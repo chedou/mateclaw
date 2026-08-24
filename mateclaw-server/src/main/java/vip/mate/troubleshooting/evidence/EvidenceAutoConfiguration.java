@@ -45,7 +45,8 @@ public class EvidenceAutoConfiguration {
             EvidenceHttpTransport transport,
             ObjectProvider<WorkspaceObservabilityAssets> workspaceAssets,
             ObjectProvider<WorkspaceEvidenceContracts> workspaceContracts,
-            ObjectProvider<WorkspaceEvidenceSettingsService> workspaceSettings) {
+            ObjectProvider<WorkspaceEvidenceSettingsService> workspaceSettings,
+            ObjectProvider<GuanceBindingFingerprintService> bindingFingerprints) {
         return new GuanceEvidenceAdapter(
                 properties.getGuance(), objectMapper, transport,
                 workspaceAssets.getIfAvailable(() -> WorkspaceObservabilityAssets.NONE),
@@ -53,6 +54,9 @@ public class EvidenceAutoConfiguration {
                 // Absent only in slices that do not component-scan the service;
                 // the adapter then reads application.yml exactly as before.
                 workspaceSettings.getIfAvailable(),
+                // Keep this lazy: fingerprint -> workspace routes -> adapter list
+                // is a valid runtime graph but a cycle during adapter creation.
+                bindingFingerprints::getIfAvailable,
                 Clock.systemUTC());
     }
 

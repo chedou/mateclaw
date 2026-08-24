@@ -23,6 +23,11 @@ export interface FormalIncidentRoutePreview {
   detail: string
 }
 
+export type FormalOpenDiscoveryReadinessScope = {
+  system?: string
+  service?: string
+}
+
 export const EMPTY_FORMAL_INCIDENT: FormalIncidentForm = {
   system: '',
   service: '',
@@ -124,6 +129,18 @@ export function buildFormalIncidentReport(form: FormalIncidentForm): IncidentRep
   }
 }
 
+/** Readiness belongs to one exact service asset, never to a system alone. */
+export function formalOpenDiscoveryReadinessScope(
+  form: Pick<FormalIncidentForm, 'system' | 'service'>,
+): FormalOpenDiscoveryReadinessScope {
+  const system = clean(form.system)
+  const service = clean(form.service)
+  return {
+    ...(system ? { system } : {}),
+    ...(service ? { service } : {}),
+  }
+}
+
 /** Keeps the UI honest about the route that the server will actually attempt. */
 export function formalIncidentRoutePreview(
   form: Pick<FormalIncidentForm, 'errorCode' | 'traceId'>,
@@ -131,15 +148,15 @@ export function formalIncidentRoutePreview(
   if (clean(form.errorCode)) {
     return {
       tone: 'DETERMINISTIC',
-      title: '优先走标准排障方案',
-      detail: '有错误码时，先匹配已审核的标准方法；匹配不上再走受限只读调查。配置不合规会明确拒绝，不会瞎猜。',
+      title: '自动使用标准排障方法',
+      detail: '有错误码时先自动匹配已审核的方法；匹配不上会转入通用只读调查。配置不合规会明确停止，不会瞎猜。',
     }
   }
   return {
     tone: 'BOUNDED_DISCOVERY',
-    title: '没有标准方案 · 受限只读调查',
+    title: '通用只读调查',
     detail: clean(form.traceId)
-      ? '只能使用已批准的取证计划；证据不够就停止并转人工，不会编造高把握根因。'
-      : '按现象做受限只读调查；结论最多按中等把握看待，证据不够就停，不会创建假诊断。',
+      ? '按已批准的只读查询范围追踪这条线索；证据不够就停止并转人工，不会编造高把握根因。'
+      : '按故障现象查询已接入的只读数据；结论最多按中等把握看待，证据不够就停，不会创造假诊断。',
   }
 }

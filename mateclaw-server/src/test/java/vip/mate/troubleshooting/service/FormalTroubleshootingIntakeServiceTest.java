@@ -22,6 +22,7 @@ import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
+import vip.mate.troubleshooting.model.InvestigationMode;
 import vip.mate.troubleshooting.model.PlaybookVersionRef;
 import vip.mate.troubleshooting.model.SopEntry;
 
@@ -127,12 +128,12 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
-    void failedAdmissionStopsBeforeAnyEvidenceSourceCall() {
+    void nonAdmissionFailureStopsBeforeAnyEvidenceSourceCall() {
         SopEntry playbook = playbook();
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "904003"))
                 .thenReturn(playbook);
         when(formalAdmissions.admit(WORKSPACE_ID, incident(), playbook))
-                .thenThrow(conflict("scope is not accepted"));
+                .thenThrow(nonAdmissionConflict("admission runtime unavailable"));
 
         assertThatThrownBy(() -> intake.report(
                 WORKSPACE_ID, incident(), List.of(), false))
@@ -250,6 +251,68 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void formalWebIntakeWithoutAPlaybookUsesTheGenericBoundedInvestigation() {
+        IntakeSession session = intakeSession();
+        FormalDiagnosisClaim claim = claimFor(session);
+        StoredDiagnosis expected = org.mockito.Mockito.mock(StoredDiagnosis.class);
+        when(persistence.findByIntakeSessionId(WORKSPACE_ID, "intake-formal-1"))
+                .thenReturn(Optional.empty());
+        when(sopPersistence.find(WORKSPACE_ID, "CSDP", "904003"))
+                .thenReturn(null);
+        when(agent.triageFormalForIntake(
+                        eq(WORKSPACE_ID),
+                        any(IncidentContext.class),
+                        eq(List.of()),
+                        eq("no SOP registered for CSDP:904003"),
+                        eq(NOW),
+                        eq(NOW),
+                        eq("intake-formal-1"),
+                        eq(claim)))
+                .thenReturn(expected);
+
+        org.assertj.core.api.Assertions.assertThat(intake.report(session, false))
+                .isSameAs(expected);
+
+        verify(agent).triageFormalForIntake(
+                eq(WORKSPACE_ID),
+                any(IncidentContext.class),
+                eq(List.of()),
+                eq("no SOP registered for CSDP:904003"),
+                eq(NOW),
+                eq(NOW),
+                eq("intake-formal-1"),
+                eq(claim));
+        verifyNoInteractions(formalAdmissions, evidenceSpine, diagnosisService);
+    }
+
+    @Test
+    void formalWebIntakeClaimOutlivesTheConfiguredBoundedInvestigationBudget() {
+        IntakeSession session = intakeSession();
+        Duration boundedClaimLease = Duration.ofMinutes(8);
+        when(agent.formalOpenDiscoveryClaimLease()).thenReturn(boundedClaimLease);
+        when(formalClaims.claim(
+                WORKSPACE_ID,
+                claimFor(session).dedupKey(),
+                NOW,
+                boundedClaimLease))
+                .thenReturn(FormalDiagnosisClaimService.ClaimResult.inProgress());
+
+        assertThatThrownBy(() -> intake.report(session, false))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("intake session is already in progress")
+                .extracting(error -> ((MateClawException) error).getCode())
+                .isEqualTo(409);
+
+        verify(formalClaims).claim(
+                WORKSPACE_ID,
+                claimFor(session).dedupKey(),
+                NOW,
+                boundedClaimLease);
+        verifyNoInteractions(
+                sopPersistence, formalAdmissions, evidenceSpine, diagnosisService);
+    }
+
+    @Test
     void concurrentFormalWebIntakeStopsAtClaimBeforeAdmissionOrGuance() {
         IntakeSession session = intakeSession();
         when(formalClaims.claim(
@@ -346,7 +409,7 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
-    void failedFormalWebIntakeReleasesItsClaimSoTheSessionCanRetry() {
+    void nonAdmissionFailureReleasesTheWebIntakeClaimSoTheSessionCanRetry() {
         IntakeSession session = intakeSession();
         SopEntry playbook = playbook();
         when(persistence.findByIntakeSessionId(WORKSPACE_ID, "intake-formal-1"))
@@ -354,7 +417,7 @@ class FormalTroubleshootingIntakeServiceTest {
         when(sopPersistence.find(WORKSPACE_ID, "CSDP", "904003"))
                 .thenReturn(playbook);
         when(formalAdmissions.admit(eq(WORKSPACE_ID), any(), eq(playbook)))
-                .thenThrow(conflict("scope is not accepted"));
+                .thenThrow(nonAdmissionConflict("admission runtime unavailable"));
 
         assertThatThrownBy(() -> intake.report(session, false))
                 .isInstanceOf(MateClawException.class)
@@ -363,6 +426,8 @@ class FormalTroubleshootingIntakeServiceTest {
 
         verify(formalClaims).release(WORKSPACE_ID, claimFor(session));
         verifyNoInteractions(evidenceSpine, diagnosisService);
+        verify(agent, never()).triageFormalForIntake(
+                anyLong(), any(), any(), anyString(), any(), any(), anyString(), any());
     }
 
     @Test
@@ -443,6 +508,35 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void aCompletedGenericIntakeClaimReturnsItsFormalOpenDiscoveryDiagnosis() {
+        IntakeSession session = intakeSession();
+        Diagnosis diagnosis = org.mockito.Mockito.mock(Diagnosis.class);
+        when(diagnosis.rehearsal()).thenReturn(false);
+        when(diagnosis.investigationMode()).thenReturn(InvestigationMode.OPEN_DISCOVERY);
+        StoredDiagnosis existing = new StoredDiagnosis(diagnosis, 1, false, 11);
+        when(formalClaims.claim(
+                WORKSPACE_ID,
+                claimFor(session).dedupKey(),
+                NOW,
+                Duration.ofMinutes(5)))
+                .thenReturn(FormalDiagnosisClaimService.ClaimResult.completed(
+                        "diag-completed-generic-intake"));
+        when(persistence.get(WORKSPACE_ID, "diag-completed-generic-intake"))
+                .thenReturn(existing);
+
+        org.assertj.core.api.Assertions.assertThat(intake.report(session, false))
+                .isSameAs(existing);
+
+        verify(agent, never()).requireCompletedFormalOpenDiscovery(
+                anyLong(), any(IncidentContext.class), any(StoredDiagnosis.class));
+        verify(agent, never()).triageFormalForIntake(
+                anyLong(), any(IncidentContext.class), any(), anyString(),
+                any(), any(), anyString(), any(FormalDiagnosisClaim.class));
+        verifyNoInteractions(
+                sopPersistence, formalAdmissions, evidenceSpine, diagnosisService);
+    }
+
+    @Test
     void admittedItgwRunUsesOnlyGuanceThenRevalidatesBeforePersistence() {
         SopEntry playbook = playbook();
         FormalDiagnosisAdmission admission = admission(playbook);
@@ -469,7 +563,7 @@ class FormalTroubleshootingIntakeServiceTest {
     }
 
     @Test
-    void ctiScenarioFormalRequestStopsAtTheD20AdmissionGateBeforeGuance() {
+    void scenarioWithoutFormalD20AuthorityFallsBackToGenericBoundedInvestigation() {
         SopEntry playbook = ctiPlaybook();
         IncidentContext alert = new IncidentContext(
                 "incident-cti", "CSDP", "csdp-task", null,
@@ -477,25 +571,61 @@ class FormalTroubleshootingIntakeServiceTest {
                 IncidentImpact.unknown("3 alerts"), null, NOW, null,
                 "alert_webhook", IncidentCompleteness.STRUCTURED,
                 "CTI创建会话失败");
-        IncidentContext resolved = alert.withResolvedRoute(playbook.errorCode());
+        StoredDiagnosis expected = org.mockito.Mockito.mock(StoredDiagnosis.class);
+        String reason = "incident carries no errorCode; deterministic routing needs one";
         when(sopPersistence.list(WORKSPACE_ID, "approved", "CSDP", 200))
                 .thenReturn(List.of(summary(playbook)));
         when(sopPersistence.find(
                 WORKSPACE_ID, "CSDP", "scenario:cti_create_conversation_failed"))
                 .thenReturn(playbook);
-        when(formalAdmissions.admit(WORKSPACE_ID, resolved, playbook))
-                .thenThrow(conflict(
-                        "formal scenario diagnosis requires D20 scenario-scoped binding"));
+        when(agent.triageFormal(
+                WORKSPACE_ID, alert, List.of(), reason, NOW, NOW))
+                .thenReturn(expected);
 
-        assertThatThrownBy(() -> intake.report(
+        org.assertj.core.api.Assertions.assertThat(intake.report(
                 WORKSPACE_ID, alert, List.of(), false))
-                .isInstanceOf(MateClawException.class)
-                .hasMessageContaining("D20 scenario-scoped binding")
-                .extracting(error -> ((MateClawException) error).getCode())
-                .isEqualTo(409);
+                .isSameAs(expected);
 
-        verify(formalClaims).release(WORKSPACE_ID, claimFor(resolved));
-        verifyNoInteractions(evidenceSpine, diagnosisService, agent, evidenceRouter);
+        verify(agent).triageFormal(
+                WORKSPACE_ID, alert, List.of(), reason, NOW, NOW);
+        verifyNoInteractions(formalAdmissions, evidenceSpine, diagnosisService, evidenceRouter);
+    }
+
+    @Test
+    void explicitScenarioSelectorWithoutD20AuthorityFallsBackWithoutSopClaims() {
+        SopEntry playbook = ctiPlaybook();
+        IncidentContext routedAlert = new IncidentContext(
+                "incident-cti-explicit", "CSDP", "csdp-task",
+                "scenario:cti_create_conversation_failed",
+                "CTI创建会话失败", "P1",
+                IncidentImpact.unknown("3 alerts"), null, NOW, null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED,
+                "CTI创建会话失败");
+        IncidentContext genericAlert = new IncidentContext(
+                "incident-cti-explicit", "CSDP", "csdp-task", null,
+                "CTI创建会话失败", "P1",
+                IncidentImpact.unknown("3 alerts"), null, NOW, null,
+                "alert_webhook", IncidentCompleteness.STRUCTURED,
+                "CTI创建会话失败");
+        String reason = "场景专用排障能力尚未完成验收，已转入通用只读调查";
+        StoredDiagnosis expected = org.mockito.Mockito.mock(StoredDiagnosis.class);
+        when(sopPersistence.find(
+                WORKSPACE_ID,
+                "CSDP",
+                "scenario:cti_create_conversation_failed"))
+                .thenReturn(playbook);
+        when(agent.triageFormal(
+                WORKSPACE_ID, genericAlert, List.of(), reason, NOW, NOW))
+                .thenReturn(expected);
+
+        org.assertj.core.api.Assertions.assertThat(intake.report(
+                WORKSPACE_ID, routedAlert, List.of(), false, NOW))
+                .isSameAs(expected);
+
+        verify(agent).triageFormal(
+                WORKSPACE_ID, genericAlert, List.of(), reason, NOW, NOW);
+        verifyNoInteractions(
+                formalAdmissions, evidenceSpine, diagnosisService, evidenceRouter);
     }
 
     @Test
@@ -787,5 +917,10 @@ class FormalTroubleshootingIntakeServiceTest {
     private MateClawException conflict(String message) {
         return new MateClawException(
                 "err.troubleshooting.formal_admission_conflict", 409, message);
+    }
+
+    private MateClawException nonAdmissionConflict(String message) {
+        return new MateClawException(
+                "err.troubleshooting.formal_runtime_failure", 409, message);
     }
 }

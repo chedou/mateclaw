@@ -11,8 +11,12 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Persists an explicit owner decision only after re-running the live,
@@ -20,6 +24,10 @@ import java.util.Optional;
  */
 @Service
 public class GuanceEvidenceAcceptanceService {
+
+    private static final Set<String> GENERIC_SAFE_SIGNALS = Set.of(
+            "error_log_scan",
+            "k8s_workload_health");
 
     private final GuanceBindingFingerprintService fingerprintService;
     private final GuanceEvidenceValidationService validationService;
@@ -125,24 +133,42 @@ public class GuanceEvidenceAcceptanceService {
             throw invalid("all T7 owner confirmations are required");
         }
         String safeActor = actor(actor);
-        requireRecordingBatchReady(workspaceId);
         GuanceBindingFingerprintService.Snapshot before =
                 fingerprintService.current(workspaceId, system, service)
                         .orElseThrow(() -> conflict(
                                 "current Guance binding cannot be uniquely fingerprinted"));
 
-        GuanceEvidenceValidationReport report = validationService.validate(
-                workspaceId,
-                system,
-                service,
-                searchTerm,
-                window,
-                occurredAt);
-        if (report.stage()
-                != GuanceEvidenceValidationReport.Stage.CANONICAL_CHAIN_OBSERVED) {
+        Set<String> genericCandidates = new LinkedHashSet<>(
+                before.readOnlySignalKinds());
+        genericCandidates.retainAll(GENERIC_SAFE_SIGNALS);
+        Map<String, Long> liveCapabilities = genericCandidates.isEmpty()
+                ? Map.of()
+                : validationService.validateCapabilities(
+                        workspaceId,
+                        system,
+                        service,
+                        Set.copyOf(genericCandidates),
+                        window,
+                        occurredAt);
+
+        GuanceEvidenceValidationReport report = null;
+        if (before.readOnlySignalKinds().containsAll(
+                Set.of("log_search", "log_trace_bundle"))) {
+            report = validationService.validate(
+                    workspaceId,
+                    system,
+                    service,
+                    searchTerm,
+                    window,
+                    occurredAt);
+        }
+        boolean coreObserved = report != null
+                && report.stage()
+                        == GuanceEvidenceValidationReport.Stage.CANONICAL_CHAIN_OBSERVED;
+        if (!coreObserved && liveCapabilities.isEmpty()) {
             throw conflict(
-                    "the live Guance canonical chain was not observed; "
-                            + "T7 acceptance was not recorded");
+                    "no configured Guance capability produced a live canonical result; "
+                            + "owner acceptance was not recorded");
         }
 
         GuanceBindingFingerprintService.Snapshot after =
@@ -162,7 +188,7 @@ public class GuanceEvidenceAcceptanceService {
                         before.service(),
                         before.bindingFingerprint(),
                         checklist,
-                        validationFacts(report),
+                        validationFacts(coreObserved ? report : null, liveCapabilities),
                         safeActor,
                         Instant.now(clock));
         store.saveOrGet(workspaceId, before.scopeKey(), acceptance);
@@ -179,14 +205,58 @@ public class GuanceEvidenceAcceptanceService {
         // Recheck the mutable batch before reading an existing acceptance so
         // a previously accepted 0/20 workspace cannot reach Guance source I/O.
         requireRecordingBatchReady(workspaceId);
-        GuanceEvidenceAcceptanceView view =
-                inspect(workspaceId, system, service);
-        if (!view.acceptedForCurrentBinding()) {
+        GuanceEvidenceAcceptance accepted =
+                requireAcceptedBinding(workspaceId, system, service);
+        if (!accepted.validation().coreChainObserved()) {
             throw conflict(
-                    "T7 owner acceptance is required for the current Guance "
-                            + "binding before collecting T8 samples");
+                    "该验收只覆盖通用调查能力；场景排障仍需完成"
+                            + "日志搜索与关联链的真实验证");
         }
-        return view.acceptance();
+        return accepted;
+    }
+
+    /**
+     * Exact service-level authority for generic bounded investigation.
+     * Workspace recording-batch size is a scale-readiness metric, not proof
+     * for (or against) this individual binding.
+     */
+    public GuanceEvidenceAcceptance requireAcceptedBinding(
+            long workspaceId,
+            String system,
+            String service) {
+        return requireAcceptedBindingAuthority(
+                workspaceId, system, service).acceptance();
+    }
+
+    /**
+     * Freezes the accepted fingerprint and the exact semantic read-only
+     * capabilities it covers. Callers must pass this immutable set into their
+     * planner instead of inferring tools from global registration.
+     */
+    public AcceptedBinding requireAcceptedBindingAuthority(
+            long workspaceId,
+            String system,
+            String service) {
+        GuanceBindingFingerprintService.Snapshot snapshot =
+                fingerprintService.currentForFormalAuthority(
+                                workspaceId, system, service)
+                        .orElseThrow(() -> bindingNotAccepted());
+        GuanceEvidenceAcceptance accepted = store.findByFingerprint(
+                        workspaceId,
+                        snapshot.scopeKey(),
+                        snapshot.bindingFingerprint())
+                .orElseThrow(this::bindingNotAccepted);
+        if (!same(snapshot.system(), accepted.system())
+                || !same(snapshot.service(), accepted.service())
+                || !snapshot.bindingFingerprint().equals(
+                        accepted.bindingFingerprint())) {
+            throw bindingNotAccepted();
+        }
+        Set<String> liveAccepted = new LinkedHashSet<>(
+                accepted.validation().liveAcceptedSignalKinds());
+        liveAccepted.retainAll(snapshot.readOnlySignalKinds());
+        liveAccepted.retainAll(GENERIC_SAFE_SIGNALS);
+        return new AcceptedBinding(accepted, liveAccepted);
     }
 
     private GuanceRecordingBatchReadiness requireRecordingBatchReady(
@@ -204,7 +274,22 @@ public class GuanceEvidenceAcceptanceService {
     }
 
     private GuanceEvidenceAcceptance.ValidationFacts validationFacts(
-            GuanceEvidenceValidationReport report) {
+            GuanceEvidenceValidationReport report,
+            Map<String, Long> liveCapabilities) {
+        if (report == null) {
+            long genericDuration = liveCapabilities.values().stream()
+                    .mapToLong(Long::longValue)
+                    .sum();
+            return new GuanceEvidenceAcceptance.ValidationFacts(
+                    0,
+                    0,
+                    null,
+                    0,
+                    0,
+                    genericDuration,
+                    Instant.now(clock),
+                    liveCapabilities);
+        }
         if (report.matchCount() == null
                 || report.psId() == null
                 || report.traceEntries() == null) {
@@ -213,14 +298,18 @@ public class GuanceEvidenceAcceptanceService {
         }
         long logSearchDuration = duration(report, "log_search");
         long logTraceDuration = duration(report, "log_trace_bundle");
+        long genericDuration = liveCapabilities.values().stream()
+                .mapToLong(Long::longValue)
+                .sum();
         return new GuanceEvidenceAcceptance.ValidationFacts(
                 report.matchCount(),
                 report.traceEntries(),
                 sha256(report.psId()),
                 logSearchDuration,
                 logTraceDuration,
-                report.totalDurationMs(),
-                report.completedAt());
+                report.totalDurationMs() + genericDuration,
+                report.completedAt(),
+                liveCapabilities);
     }
 
     private long duration(
@@ -261,6 +350,11 @@ public class GuanceEvidenceAcceptanceService {
         return value == null ? "" : value.trim();
     }
 
+    private boolean same(String left, String right) {
+        return normalize(left).toLowerCase(Locale.ROOT)
+                .equals(normalize(right).toLowerCase(Locale.ROOT));
+    }
+
     private String sha256(String value) {
         try {
             return HexFormat.of().formatHex(
@@ -279,5 +373,24 @@ public class GuanceEvidenceAcceptanceService {
     private MateClawException conflict(String message) {
         return new MateClawException(
                 "err.troubleshooting.guance_acceptance_conflict", 409, message);
+    }
+
+    private MateClawException bindingNotAccepted() {
+        return conflict(
+                "当前系统/服务的观测云只读取证尚未验收；"
+                        + "请管理员完成数据源接入、精确资产配置和连通验证");
+    }
+
+    public record AcceptedBinding(
+            GuanceEvidenceAcceptance acceptance,
+            Set<String> readOnlySignalKinds) {
+
+        public AcceptedBinding {
+            if (acceptance == null) {
+                throw new IllegalArgumentException("acceptance is required");
+            }
+            readOnlySignalKinds = Set.copyOf(
+                    readOnlySignalKinds == null ? Set.of() : readOnlySignalKinds);
+        }
     }
 }

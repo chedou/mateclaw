@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -166,6 +167,67 @@ public class GuanceEvidenceValidationService {
                 entryCount,
                 steps,
                 validationStarted);
+    }
+
+    /**
+     * Executes each requested semantic capability against Guance and returns
+     * only the capabilities that produced a valid canonical result. A binding
+     * declaration or field map alone never becomes live execution authority.
+     */
+    public Map<String, Long> validateCapabilities(
+            long workspaceId,
+            String system,
+            String service,
+            Set<String> signalKinds,
+            String window,
+            Instant occurredAt) {
+        if (workspaceId <= 0) {
+            throw invalid("workspaceId must be positive");
+        }
+        String safeSystem = safeValue(system, "system");
+        String safeService = safeValue(service, "service");
+        String safeWindow = safeWindow(window);
+        Instant observationEnd = safeOccurredAt(occurredAt);
+        IncidentContext incident = new IncidentContext(
+                "guance-capability-validation-" + observationEnd.toEpochMilli(),
+                safeSystem,
+                safeService,
+                null,
+                "Guance generic read-only capability validation",
+                "P2",
+                "validation only",
+                null,
+                observationEnd,
+                null,
+                "guance_capability_validation",
+                IncidentCompleteness.LOG,
+                null);
+        Map<String, Long> observed = new LinkedHashMap<>();
+        for (String signalKind : signalKinds == null
+                ? List.<String>of()
+                : signalKinds.stream().sorted().toList()) {
+            String safeSignal = safeValue(signalKind, "signalKind")
+                    .toLowerCase(java.util.Locale.ROOT);
+            if (!CanonicalEvidenceSchema.isExternallyRoutable(safeSignal)) {
+                continue;
+            }
+            EvidenceRequest request = new EvidenceRequest(
+                    "T7-GUANCE-CAPABILITY-" + safeSignal.toUpperCase(
+                            java.util.Locale.ROOT).replace('_', '-'),
+                    safeSignal,
+                    "Validate one Guance generic read-only capability",
+                    Map.of(),
+                    safeWindow,
+                    true);
+            TimedEvidenceResult timed = collectTimed(request, workspaceId, incident);
+            EvidenceResult result = timed.result();
+            if (usable(request, result, "guance:" + safeSignal)
+                    && CanonicalEvidenceSchema.isValid(
+                            safeSignal, result.observed())) {
+                observed.put(safeSignal, timed.durationMs());
+            }
+        }
+        return Map.copyOf(observed);
     }
 
     private EvidenceResult collect(

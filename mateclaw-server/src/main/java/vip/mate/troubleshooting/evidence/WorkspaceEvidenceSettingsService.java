@@ -215,6 +215,18 @@ public class WorkspaceEvidenceSettingsService {
         UrlSafetyChecker.check(baseUrl, ssrfProperties.getSsrfAllowlist(), false);
     }
 
+    /**
+     * Formal evidence cannot defer an unresolved hostname to the transport.
+     * If DNS cannot prove the target safe now, the invocation stops before any
+     * authenticated request is attempted.
+     */
+    public void assertReachableEndpointStrict(String baseUrl) {
+        UrlSafetyChecker.checkStrict(
+                baseUrl,
+                ssrfProperties.getSsrfAllowlist(),
+                false);
+    }
+
     private EffectiveEvidenceSettings deploymentSettings() {
         EvidenceProperties.Guance guance = deploymentDefaults.getGuance();
         return new EffectiveEvidenceSettings(

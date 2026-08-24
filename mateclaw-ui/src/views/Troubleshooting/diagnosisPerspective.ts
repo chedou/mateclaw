@@ -85,6 +85,10 @@ export function diagnosisRootCauseAnswer(input: {
   if (input.conclusionType === 'LOCATED') {
     return input.rootCause?.trim() || input.headline.trim() || '根因已定位，但结论文案未记录'
   }
+  if (input.conclusionType === 'HYPOTHESIS') {
+    const direction = input.rootCause?.trim() || input.headline.trim()
+    return direction ? `最可能方向：${direction}` : '已发现线索，尚未查明'
+  }
   if (input.conclusionType === 'INSUFFICIENT_EVIDENCE') return '证据不足，尚无法判断'
   return '尚未查明'
 }

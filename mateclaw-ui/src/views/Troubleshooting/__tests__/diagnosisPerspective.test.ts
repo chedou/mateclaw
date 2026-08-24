@@ -80,7 +80,12 @@ describe('diagnosis perspective', () => {
       conclusionType: 'HYPOTHESIS',
       rootCause: '直接失败点：上游返回 502。',
       headline: '已形成候选方向',
-    })).toBe('尚未查明')
+    })).toBe('最可能方向：直接失败点：上游返回 502。')
+    expect(diagnosisRootCauseAnswer({
+      conclusionType: 'INSUFFICIENT_EVIDENCE',
+      rootCause: null,
+      headline: '暂无结论',
+    })).toBe('证据不足，尚无法判断')
   })
 
   it('uses the located root cause as the primary known fact instead of a supporting count', () => {

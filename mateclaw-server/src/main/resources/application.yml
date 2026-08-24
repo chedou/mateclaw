@@ -159,6 +159,14 @@ mateclaw:
       # Separate from the normal conversation window because this invocation
       # deliberately bypasses ambient conversation context.
       max-prompt-chars: ${MATECLAW_TROUBLESHOOTING_AGENT_MAX_PROMPT_CHARS:32000}
+      # Generic formal investigation is independent from the optional LLM
+      # miss-path above. Operators can enable this bounded read-only runtime
+      # without activating a CSDP-specific Spring profile.
+      bounded-investigation-enabled: ${MATECLAW_TROUBLESHOOTING_BOUNDED_INVESTIGATION_ENABLED:false}
+      bounded-investigation-max-iterations: ${MATECLAW_TROUBLESHOOTING_BOUNDED_INVESTIGATION_MAX_ITERATIONS:2}
+      bounded-investigation-max-tool-calls: ${MATECLAW_TROUBLESHOOTING_BOUNDED_INVESTIGATION_MAX_TOOL_CALLS:2}
+      bounded-investigation-timeout: ${MATECLAW_TROUBLESHOOTING_BOUNDED_INVESTIGATION_TIMEOUT:10s}
+      bounded-investigation-permitted-platforms: ${MATECLAW_TROUBLESHOOTING_BOUNDED_INVESTIGATION_PERMITTED_PLATFORMS:}
       # Initial approved Scenario plans. The model can return only these keys;
       # search term, window and source allowlist remain server-owned. Default
       # plans stay replay-only; set

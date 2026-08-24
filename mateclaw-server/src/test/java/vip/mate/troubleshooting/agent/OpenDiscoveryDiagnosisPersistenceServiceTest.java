@@ -16,7 +16,11 @@ import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.NorthStarTimings;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimService;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimKey;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
+import vip.mate.troubleshooting.service.FormalOpenDiscoveryPlan;
 import vip.mate.troubleshooting.service.IncidentDeduplicationKey;
 import vip.mate.troubleshooting.service.TroubleshootingPersistenceService;
 
@@ -24,10 +28,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,13 +53,15 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
     private OpenDiscoveryRunAuditService runAudits;
     @Mock
     private OpenDiscoveryRunClaimService claims;
+    @Mock
+    private FormalDiagnosisClaimService formalClaims;
 
     private OpenDiscoveryDiagnosisPersistenceService service;
 
     @BeforeEach
     void setUp() {
         service = new OpenDiscoveryDiagnosisPersistenceService(
-                diagnoses, runAudits, claims);
+                diagnoses, runAudits, claims, formalClaims);
     }
 
     @Test
@@ -232,7 +242,7 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 .thenReturn(new StoredDiagnosis(diagnosis, 0, true, 4));
 
         StoredDiagnosis stored = service.persistFormal(
-                WORKSPACE_ID, diagnosis, NOW, null, claim, audit, admission,
+                WORKSPACE_ID, diagnosis, NOW, null, claim, null, audit, admission,
                 NOW.plusSeconds(12));
 
         assertThat(stored.pilotPlanVersion()).isEqualTo(4);
@@ -243,6 +253,81 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
         order.verify(diagnoses).createOrGet(
                 WORKSPACE_ID, diagnosis, NOW, 4, claim);
         order.verify(runAudits).insert(WORKSPACE_ID, audit);
+    }
+
+    @Test
+    void rejectsAFormalIntakeClaimForAnotherSessionBeforeLockingIt() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        OpenDiscoveryRunAudit audit = formalBoundedAudit(admission);
+        FormalDiagnosisClaim wrongClaim = new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(WORKSPACE_ID, "another-session"),
+                "claim-intake-wrong",
+                NOW,
+                NOW.plusSeconds(80));
+
+        assertThatThrownBy(() -> service.persistFormal(
+                WORKSPACE_ID,
+                diagnosis,
+                NOW,
+                "intake-formal-1",
+                null,
+                wrongClaim,
+                audit,
+                admission,
+                NOW.plusSeconds(12)))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("claim identity");
+
+        verify(formalClaims, never()).lockForCommit(anyLong(), any());
+        verify(diagnoses, never()).createOrGetForIntake(
+                anyLong(), any(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void persistsAFormalIntakeDiagnosisAuditAndSessionClaimAtomically() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4, "t7-accepted-generic-000001", "a".repeat(64));
+        OpenDiscoveryRunAudit audit = formalBoundedAudit(admission);
+        FormalDiagnosisClaim intakeClaim = new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(WORKSPACE_ID, "intake-formal-1"),
+                "claim-intake-1",
+                NOW,
+                NOW.plusSeconds(80));
+        when(diagnoses.createOrGetForIntake(
+                WORKSPACE_ID,
+                diagnosis,
+                "intake-formal-1",
+                4,
+                intakeClaim))
+                .thenReturn(new StoredDiagnosis(diagnosis, 0, true, 4));
+
+        StoredDiagnosis stored = service.persistFormal(
+                WORKSPACE_ID,
+                diagnosis,
+                NOW,
+                "intake-formal-1",
+                null,
+                intakeClaim,
+                audit,
+                admission,
+                NOW.plusSeconds(12));
+
+        assertThat(stored.created()).isTrue();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                formalClaims, diagnoses, runAudits);
+        order.verify(formalClaims).lockForCommit(WORKSPACE_ID, intakeClaim);
+        order.verify(diagnoses).createOrGetForIntake(
+                WORKSPACE_ID, diagnosis, "intake-formal-1", 4, intakeClaim);
+        order.verify(runAudits).insert(WORKSPACE_ID, audit);
+        order.verify(formalClaims).complete(
+                WORKSPACE_ID,
+                intakeClaim,
+                diagnosis.diagnosisId(),
+                NOW.plusSeconds(12));
+        verify(claims, never()).complete(anyLong(), any(), anyString(), any());
     }
 
     @Test
@@ -262,7 +347,7 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 "t7-other-acceptance-000001", "b".repeat(64));
 
         assertThatThrownBy(() -> service.persistFormal(
-                WORKSPACE_ID, diagnosis, NOW, null, null, mismatched, admission,
+                WORKSPACE_ID, diagnosis, NOW, null, null, null, mismatched, admission,
                 NOW.plusSeconds(12)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("must match its admission");
@@ -282,6 +367,44 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
 
         assertThat(service.requireCompletedFormal(
                 WORKSPACE_ID, stored, admission)).isSameAs(stored);
+    }
+
+    @Test
+    void rejectsACompletedFormalDiagnosisWhenItsFrozenCapabilityPlanChanged() {
+        Diagnosis diagnosis = boundedDiagnosis(false);
+        FormalOpenDiscoveryAdmission admission = new FormalOpenDiscoveryAdmission(
+                4,
+                "t7-accepted-generic-000001",
+                "a".repeat(64),
+                FormalOpenDiscoveryPlan.fromAcceptedCapabilities(
+                        Set.of("error_log_scan")));
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis, 2, false, 4);
+        OpenDiscoveryRunAudit staleTwoSignalAudit = new OpenDiscoveryRunAudit(
+                "run-bounded-1",
+                "diag-bounded-1",
+                List.of("bounded-open-discovery-v1"),
+                "bounded-open-discovery-v1",
+                "0".repeat(64),
+                List.of("error_log_scan", "k8s_workload_health"),
+                2,
+                2,
+                2,
+                Duration.ofSeconds(10),
+                OpenDiscoveryRunAudit.StopReason.BOUNDED_EVIDENCE_EXHAUSTED,
+                List.of("open-discovery-error-log-scan"),
+                NOW,
+                NOW,
+                "planner:bounded-open-discovery-v1",
+                admission.pilotPlanVersion(),
+                admission.guanceAcceptanceId(),
+                admission.guanceBindingFingerprint());
+        when(runAudits.latest(WORKSPACE_ID, diagnosis.diagnosisId()))
+                .thenReturn(Optional.of(staleTwoSignalAudit));
+
+        assertThatThrownBy(() -> service.requireCompletedFormal(
+                WORKSPACE_ID, stored, admission))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("frozen capability plan");
     }
 
     @Test
@@ -383,8 +506,8 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 "diag-bounded-1",
                 List.of("bounded-open-discovery-v1"),
                 "bounded-open-discovery-v1",
-                "0".repeat(64),
-                List.of("error_log_scan", "k8s_workload_health"),
+                admission.plan().fingerprint(),
+                admission.plan().allowedSignalKinds().stream().sorted().toList(),
                 2,
                 2,
                 2,

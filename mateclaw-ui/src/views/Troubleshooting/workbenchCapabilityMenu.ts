@@ -32,13 +32,6 @@ export const WORKBENCH_PRIMARY_CAPABILITIES: ReadonlyArray<WorkbenchCapabilityNa
     description: '登记系统模块，并在模块里选择取证方法',
     requiredCapability: 'manage:troubleshooting',
   },
-  {
-    key: 't7-owner-contract',
-    command: 't7-owner-contract',
-    label: '标准查登记',
-    description: '登记首批 20 条重点故障怎么查（准备材料，不等于验收）',
-    requiredCapability: 'view:troubleshooting',
-  },
 ]
 
 export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGroup> = [

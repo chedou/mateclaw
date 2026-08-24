@@ -7,6 +7,7 @@ import type {
   CaptureEvaluationSampleRequest,
   CaptureRecordedReplayEvaluationSampleRequest,
   ClosureOutcome,
+  ConversationModeResult,
   ConversationTurnRequest,
   ConversationTurnResult,
   DiagnosisFollowUpRequest,
@@ -84,6 +85,12 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   conversationTurn: (data: ConversationTurnRequest) =>
     http.post<ConversationTurnResult>('/troubleshooting/conversation/turns', data),
 
+  /** Immutable formal/rehearsal mode for a reopened intake conversation. */
+  conversationMode: (conversationId: string) =>
+    http.get<ConversationModeResult>('/troubleshooting/conversation/mode', {
+      params: { conversationId },
+    }),
+
   /** Deterministic questions bound to one saved Diagnosis. */
   diagnosisFollowUp: (diagnosisId: string, data: DiagnosisFollowUpRequest) =>
     http.post<DiagnosisFollowUpResult>(
@@ -149,7 +156,7 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
     http.get<GuanceEvidenceReadiness>('/troubleshooting/evidence/readiness', { params }),
 
   /** Secret-free OPEN_DISCOVERY / miss-path readiness; does not call a model. */
-  openDiscoveryReadiness: (params?: { system?: string }) =>
+  openDiscoveryReadiness: (params?: { system?: string; service?: string }) =>
     http.get<OpenDiscoveryReadiness>('/troubleshooting/open-discovery/readiness', { params }),
 
   /** Current workspace digital-employee binding for OPEN_DISCOVERY. */

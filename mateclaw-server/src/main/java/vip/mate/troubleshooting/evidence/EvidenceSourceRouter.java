@@ -76,6 +76,23 @@ public final class EvidenceSourceRouter {
             IncidentContext incident,
             Set<String> permittedPlatforms,
             Instant deadline) {
+        return collect(
+                workspaceId,
+                request,
+                incident,
+                permittedPlatforms,
+                deadline,
+                null);
+    }
+
+    /** Collects under an optional, already accepted Guance binding fingerprint. */
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Set<String> permittedPlatforms,
+            Instant deadline,
+            String expectedGuanceBindingFingerprint) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
@@ -83,8 +100,18 @@ public final class EvidenceSourceRouter {
             throw new IllegalArgumentException("request and incident are required");
         }
         Set<String> permitted = normalizePermitted(permittedPlatforms);
-        List<String> route = routeFor(
-                workspaceId, incident.system(), request.signalKind());
+        List<String> route = List.copyOf(routeFor(
+                workspaceId, incident.system(), request.signalKind()));
+        if (formalExpectation(expectedGuanceBindingFingerprint)) {
+            return collectFormalGuance(
+                    workspaceId,
+                    request,
+                    incident,
+                    permitted,
+                    deadline,
+                    expectedGuanceBindingFingerprint,
+                    route);
+        }
         if (route.isEmpty()) {
             // 拒绝要说出下一步。只报「没配路由」，读者分不清是该去配路由、还是
             // 这台部署压根没启用任何源——两件事的下一步完全不同，而猜的时候最省事
@@ -108,14 +135,32 @@ public final class EvidenceSourceRouter {
             if (adapter == null || !supports(adapter, request.signalKind())) {
                 continue;
             }
+            if (expectedGuanceBindingFingerprint != null
+                    && !(adapter instanceof GuanceEvidenceAdapter)) {
+                continue;
+            }
             try {
-                EvidenceResult result = deadline == null
-                        ? adapter.collect(workspaceId, request, incident)
-                        : adapter.collect(
-                                workspaceId,
-                                request,
-                                incident,
-                                Duration.between(clock.instant(), deadline));
+                EvidenceResult result;
+                if (adapter instanceof GuanceEvidenceAdapter guance
+                        && expectedGuanceBindingFingerprint != null) {
+                    if (deadline == null) {
+                        continue;
+                    }
+                    result = guance.collect(
+                            workspaceId,
+                            request,
+                            incident,
+                            Duration.between(clock.instant(), deadline),
+                            expectedGuanceBindingFingerprint);
+                } else {
+                    result = deadline == null
+                            ? adapter.collect(workspaceId, request, incident)
+                            : adapter.collect(
+                                    workspaceId,
+                                    request,
+                                    incident,
+                                    Duration.between(clock.instant(), deadline));
+                }
                 if (usable(request, result)) {
                     return result;
                 }
@@ -125,6 +170,8 @@ public final class EvidenceSourceRouter {
                         && normalize(result.source()).endsWith(":no_canonical_evidence")) {
                     canonicalMissing = result;
                 }
+            } catch (FormalEvidenceAuthorityException authorityFailure) {
+                throw authorityFailure;
             } catch (RuntimeException failure) {
                 log.warn("Evidence source {} failed for request {} ({})",
                         adapter.platform(), request.requestId(),
@@ -135,6 +182,67 @@ public final class EvidenceSourceRouter {
             return canonicalMissing;
         }
         return missing(request, "router:unavailable", "all configured evidence sources unavailable");
+    }
+
+    /**
+     * A formally admitted call is bound to Guance and to an exact route/config
+     * fingerprint. It must reach the authority verifier even when binding drift
+     * made {@link EvidenceSourceAdapter#supports(String)} return false; otherwise
+     * the drift would be rewritten as ordinary missing evidence.
+     */
+    private EvidenceResult collectFormalGuance(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Set<String> permitted,
+            Instant deadline,
+            String expectedFingerprint,
+            List<String> route) {
+        long guanceRoutes = route.stream()
+                .filter(source -> "guance".equals(normalize(source)))
+                .count();
+        if (guanceRoutes != 1) {
+            throw FormalEvidenceAuthorityException.configurationDrift(
+                    "formal Guance evidence route changed after admission");
+        }
+        if (permitted != null && !permitted.contains("guance")) {
+            throw FormalEvidenceAuthorityException.invalidExpectation(
+                    "formal Guance invocation is outside the frozen platform policy");
+        }
+        if (deadline == null) {
+            throw FormalEvidenceAuthorityException.invalidExpectation(
+                    "formal Guance invocation requires an absolute deadline");
+        }
+        if (!clock.instant().isBefore(deadline)) {
+            return missing(request, "router:deadline_exhausted",
+                    "read-only evidence deadline exhausted before source invocation");
+        }
+        EvidenceSourceAdapter selected = adapters.get("guance");
+        if (!(selected instanceof GuanceEvidenceAdapter guance)) {
+            throw FormalEvidenceAuthorityException.verifierUnavailable(
+                    "formal Guance evidence adapter is unavailable");
+        }
+        EvidenceResult result = guance.collect(
+                workspaceId,
+                request,
+                incident,
+                Duration.between(clock.instant(), deadline),
+                expectedFingerprint);
+        if (usable(request, result)) {
+            return result;
+        }
+        if (result != null
+                && request.requestId().equals(result.queryId())
+                && result.status() == EvidenceStatus.MISSING
+                && normalize(result.source()).endsWith(":no_canonical_evidence")) {
+            return result;
+        }
+        return missing(request, "router:unavailable",
+                "accepted Guance evidence source unavailable");
+    }
+
+    private boolean formalExpectation(String expectedFingerprint) {
+        return expectedFingerprint != null && !expectedFingerprint.isBlank();
     }
 
     private Set<String> normalizePermitted(Set<String> permittedPlatforms) {

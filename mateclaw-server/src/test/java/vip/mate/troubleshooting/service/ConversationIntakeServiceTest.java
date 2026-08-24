@@ -68,8 +68,10 @@ class ConversationIntakeServiceTest {
                         "admin",
                         "张三工单 T2026081000378 消息发不出去了",
                         List.of(),
-                        NOW));
-        when(sessions.accept(any())).thenReturn(IntakeDecision.from(awaiting, false, false));
+                        NOW),
+                true);
+        when(sessions.acceptConversation(any(), eq(true)))
+                .thenReturn(IntakeDecision.from(awaiting, false, false));
         when(sessions.get(1L, "intake-1")).thenReturn(awaiting);
 
         ConversationIntakeService.ConversationTurnResult result = service.turn(
@@ -83,7 +85,7 @@ class ConversationIntakeServiceTest {
                 .contains("现象：已识别", "原文未保存")
                 .doesNotContain("张三", "T2026081000378");
         ArgumentCaptor<IntakeMessageEnvelope> envelope = ArgumentCaptor.forClass(IntakeMessageEnvelope.class);
-        verify(sessions).accept(envelope.capture());
+        verify(sessions).acceptConversation(envelope.capture(), eq(true));
         assertThat(envelope.getValue().source()).isEqualTo(TroubleshootingIntakeSources.WEB_CONVERSATION);
         assertThat(envelope.getValue().conversationRef()).isEqualTo("conv-1");
     }
@@ -102,7 +104,8 @@ class ConversationIntakeServiceTest {
                                 "admin",
                                 "现象: ITGW失败",
                                 List.of(),
-                                NOW)),
+                                NOW),
+                        true),
                 new IntakeMessageEnvelope(
                         1L,
                         TroubleshootingIntakeSources.WEB_CONVERSATION,
@@ -119,7 +122,8 @@ class ConversationIntakeServiceTest {
                         List.of(),
                         NOW.plusSeconds(30)));
         assertThat(ready.status()).isEqualTo(IntakeSessionStatus.READY);
-        when(sessions.accept(any())).thenReturn(IntakeDecision.from(ready, false, false));
+        when(sessions.acceptConversation(any(), eq(true)))
+                .thenReturn(IntakeDecision.from(ready, false, false));
         when(sessions.getReady(1L, "intake-2")).thenReturn(ready);
         Diagnosis diagnosis = mock(Diagnosis.class);
         when(diagnosis.diagnosisId()).thenReturn("diag-ready");
@@ -148,6 +152,134 @@ class ConversationIntakeServiceTest {
     }
 
     @Test
+    @DisplayName("无 SOP/错误码的正式对话仍生成通用排障单并保留追问上下文")
+    void formalGenericTurnWithoutErrorCodeReturnsDiagnosisAndFollowUpContext() {
+        IntakeSession ready = new IntakeSession(
+                "intake-generic-formal",
+                IntakeSession.CURRENT_CONTRACT_VERSION,
+                1L,
+                TroubleshootingIntakeSources.WEB_CONVERSATION,
+                "conv-generic-formal",
+                "admin",
+                IntakeSessionStatus.READY,
+                "会话创建失败",
+                "CSDP",
+                "csdp-task",
+                "未知",
+                null,
+                null,
+                NOW.minusSeconds(60),
+                List.of(),
+                List.of(),
+                NOW,
+                NOW,
+                NOW,
+                List.of()).withRehearsal(false);
+        when(sessions.acceptConversation(any(), eq(false)))
+                .thenReturn(IntakeDecision.from(ready, false, false));
+        when(sessions.get(1L, "intake-generic-formal")).thenReturn(ready);
+        Diagnosis diagnosis = mock(Diagnosis.class);
+        when(diagnosis.diagnosisId()).thenReturn("diag-generic-formal");
+        when(intakeService.report(ready, false))
+                .thenReturn(new StoredDiagnosis(diagnosis, 1, true));
+        BusinessSummary summary = mock(BusinessSummary.class);
+        DiagnosisExperienceProjection projection = mock(DiagnosisExperienceProjection.class);
+        when(projection.businessSummary()).thenReturn(summary);
+        when(projectionService.project(1L, "diag-generic-formal"))
+                .thenReturn(projection);
+        when(summaryRenderer.render(summary)).thenReturn(
+                "当前结论：通用只读调查已完成\n还缺：下游返回码");
+
+        ConversationIntakeService.ConversationTurnResult result = service.turn(
+                1L,
+                "admin",
+                "conv-generic-formal",
+                "系统: CSDP\n服务: csdp-task\n客户ID: 未知\n发生时间: 2026-08-12 13:59:00\n现象: 会话创建失败",
+                false);
+
+        assertThat(result.status()).isEqualTo(IntakeSessionStatus.READY.name());
+        assertThat(result.diagnosisId()).isEqualTo("diag-generic-formal");
+        assertThat(result.rehearsal()).isFalse();
+        assertThat(result.prompt())
+                .contains("当前结论：通用只读调查已完成")
+                .contains("已生成正式排障单：diag-generic-formal")
+                .contains("打开排障详情")
+                .contains("为什么是这个原因", "还缺什么", "结束排障");
+        assertThat(result.transcriptUserMessage())
+                .contains("排障告警（已规范化）", "系统：CSDP", "服务：csdp-task")
+                .doesNotContain("错误码：");
+        verify(intakeService).report(ready, false);
+        verify(summaryRenderer).render(summary);
+    }
+
+    @Test
+    @DisplayName("页面重开时从服务端 IntakeSession 恢复已锁定模式")
+    void restoresLockedModeFromServerSession() {
+        IntakeSession formal = new IntakeSessionReducer().start(
+                "intake-formal-awaiting",
+                new IntakeMessageEnvelope(
+                        1L,
+                        TroubleshootingIntakeSources.WEB_CONVERSATION,
+                        "msg-formal-1",
+                        "conv-formal-awaiting",
+                        "admin",
+                        "会话创建失败",
+                        List.of(),
+                        NOW),
+                false);
+        when(sessions.getConversationMode(
+                1L, "conv-formal-awaiting", "admin")).thenReturn(formal);
+
+        ConversationIntakeService.ConversationModeResult result = service.mode(
+                1L, "admin", "conv-formal-awaiting");
+
+        assertThat(result.conversationId()).isEqualTo("conv-formal-awaiting");
+        assertThat(result.intakeSessionId()).isEqualTo("intake-formal-awaiting");
+        assertThat(result.status()).isEqualTo("AWAITING_INPUT");
+        assertThat(result.rehearsal()).isFalse();
+    }
+
+    @Test
+    @DisplayName("客户端 turn id 会绑定操作者与会话，不能跨会话碰撞收据")
+    void scopesClientTurnIdToReporterAndConversation() {
+        IntakeSession awaiting = new IntakeSessionReducer().start(
+                "intake-scoped-turn",
+                new IntakeMessageEnvelope(
+                        1L,
+                        TroubleshootingIntakeSources.WEB_CONVERSATION,
+                        "msg-1",
+                        "conv-a",
+                        "alice",
+                        "会话创建失败",
+                        List.of(),
+                        NOW),
+                false);
+        when(sessions.acceptConversation(
+                        any(),
+                        eq(false),
+                        eq("web-msg-shared-turn-id")))
+                .thenReturn(IntakeDecision.from(awaiting, false, false));
+        when(sessions.get(1L, "intake-scoped-turn")).thenReturn(awaiting);
+
+        service.turn(1L, "alice", "conv-a", "shared-turn-id", "会话创建失败", false);
+        service.turn(1L, "bob", "conv-b", "shared-turn-id", "会话创建失败", false);
+
+        ArgumentCaptor<IntakeMessageEnvelope> envelopes =
+                ArgumentCaptor.forClass(IntakeMessageEnvelope.class);
+        verify(sessions, org.mockito.Mockito.times(2))
+                .acceptConversation(
+                        envelopes.capture(),
+                        eq(false),
+                        eq("web-msg-shared-turn-id"));
+        List<IntakeMessageEnvelope> values = envelopes.getAllValues();
+        assertThat(values.get(0).sourceMessageId())
+                .isNotEqualTo(values.get(1).sourceMessageId())
+                .doesNotContain("alice", "conv-a", "shared-turn-id");
+        assertThat(values.get(1).sourceMessageId())
+                .doesNotContain("bob", "conv-b", "shared-turn-id");
+    }
+
+    @Test
     @DisplayName("完整 ITGW 告警一轮进入已审核规则并返回原因结论")
     void fullItgwAlertReturnsADiagnosisAndCauseInOneTurn() {
         String alert = """
@@ -160,16 +292,17 @@ class ConversationIntakeServiceTest {
                 说明：异常事件
                 """;
         AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
-        when(sessions.accept(any())).thenAnswer(call -> {
+        when(sessions.acceptConversation(any(), eq(true))).thenAnswer(call -> {
             IntakeMessageEnvelope envelope = call.getArgument(0);
-            IntakeSession parsed = new IntakeSessionReducer().start("intake-itgw", envelope);
+            IntakeSession parsed = new IntakeSessionReducer().start(
+                    "intake-itgw", envelope, true);
             IntakeSession ready = new IntakeSession(
                     parsed.intakeSessionId(), parsed.contractVersion(), parsed.workspaceId(),
                     parsed.source(), parsed.conversationRef(), parsed.reporterRef(),
                     IntakeSessionStatus.READY, parsed.symptom(), "CSDP", parsed.service(),
                     parsed.customerRef(), parsed.errorCode(), parsed.traceId(), parsed.occurredAt(),
                     parsed.attachments(), List.of(), parsed.reportedAt(), parsed.lastMessageAt(),
-                    parsed.lastMessageAt(), parsed.timeline());
+                    parsed.lastMessageAt(), parsed.timeline()).withRehearsal(true);
             storedSession.set(ready);
             return IntakeDecision.from(ready, false, false);
         });
@@ -212,10 +345,10 @@ class ConversationIntakeServiceTest {
                  "error":"移动端不支持该操作【工单涉及变更单】；请到PC端操作"}
                 """;
         AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
-        when(sessions.accept(any())).thenAnswer(call -> {
+        when(sessions.acceptConversation(any(), eq(true))).thenAnswer(call -> {
             IntakeMessageEnvelope envelope = call.getArgument(0);
             IntakeSession ready = new IntakeSessionReducer().start(
-                    "intake-icare-mobile-finish", envelope);
+                    "intake-icare-mobile-finish", envelope, true);
             storedSession.set(ready);
             return IntakeDecision.from(ready, false, false);
         });
@@ -275,10 +408,10 @@ class ConversationIntakeServiceTest {
                  "error":"当前工单需要填写回访信息，不能完结"}
                 """;
         AtomicReference<IntakeSession> storedSession = new AtomicReference<>();
-        when(sessions.accept(any())).thenAnswer(call -> {
+        when(sessions.acceptConversation(any(), eq(true))).thenAnswer(call -> {
             IntakeMessageEnvelope envelope = call.getArgument(0);
             IntakeSession ready = new IntakeSessionReducer().start(
-                    "intake-icare-revisit-required", envelope);
+                    "intake-icare-revisit-required", envelope, true);
             storedSession.set(ready);
             return IntakeDecision.from(ready, false, false);
         });

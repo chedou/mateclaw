@@ -26,6 +26,8 @@ import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmission;
 import vip.mate.troubleshooting.service.FormalOpenDiscoveryAdmissionService;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaim;
+import vip.mate.troubleshooting.service.FormalDiagnosisClaimKey;
 import vip.mate.troubleshooting.service.StoredDiagnosis;
 import vip.mate.troubleshooting.statemachine.DiagnosisStateMachine;
 
@@ -102,11 +104,15 @@ class FormalOpenDiscoveryTriageServiceTest {
         IncidentContext incident = incident();
         BoundedOpenDiscoveryInvestigationService.Execution execution = execution("guance");
         when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
-        when(boundedInvestigation.investigateFormal(WORKSPACE_ID, incident))
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
                 .thenReturn(Optional.of(execution));
         when(persistence.persistFormal(
                 eq(WORKSPACE_ID), any(Diagnosis.class), eq(NOW), eq(null),
-                any(), any(OpenDiscoveryRunAudit.class), eq(admission), eq(NOW)))
+                any(), eq(null), any(OpenDiscoveryRunAudit.class), eq(admission), eq(NOW)))
                 .thenAnswer(call -> new StoredDiagnosis(call.getArgument(1), 0, true, 4));
 
         StoredDiagnosis stored = service.triageFormal(
@@ -120,7 +126,7 @@ class FormalOpenDiscoveryTriageServiceTest {
                 ArgumentCaptor.forClass(OpenDiscoveryRunAudit.class);
         verify(persistence).persistFormal(
                 eq(WORKSPACE_ID), eq(stored.diagnosis()), eq(NOW), eq(null),
-                eq(null), audit.capture(), eq(admission), eq(NOW));
+                eq(null), eq(null), audit.capture(), eq(admission), eq(NOW));
         assertThat(audit.getValue().formalPilotPlanVersion()).isEqualTo(4);
         assertThat(audit.getValue().sourceAcceptanceId())
                 .isEqualTo("t7-accepted-generic-000001");
@@ -130,10 +136,81 @@ class FormalOpenDiscoveryTriageServiceTest {
     }
 
     @Test
+    void formalIntakeUsesTheSameBoundedPlannerAndItsSessionOwner() {
+        IncidentContext incident = incident();
+        BoundedOpenDiscoveryInvestigationService.Execution execution = execution("guance");
+        FormalDiagnosisClaim intakeClaim = new FormalDiagnosisClaim(
+                FormalDiagnosisClaimKey.forIntake(WORKSPACE_ID, "intake-formal-1"),
+                "claim-intake-1",
+                NOW,
+                NOW.plusSeconds(80));
+        when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
+        when(persistence.reserve(
+                eq(WORKSPACE_ID),
+                eq(incident),
+                eq(false),
+                eq(NOW),
+                eq("intake-formal-1"),
+                any()))
+                .thenReturn(OpenDiscoveryRunReservation.unclaimed());
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
+                .thenReturn(Optional.of(execution));
+        when(persistence.persistFormal(
+                eq(WORKSPACE_ID),
+                any(Diagnosis.class),
+                eq(NOW),
+                eq("intake-formal-1"),
+                eq(null),
+                eq(intakeClaim),
+                any(OpenDiscoveryRunAudit.class),
+                eq(admission),
+                eq(NOW)))
+                .thenAnswer(call -> new StoredDiagnosis(call.getArgument(1), 0, true, 4));
+
+        StoredDiagnosis stored = service.triageFormalForIntake(
+                WORKSPACE_ID,
+                incident,
+                List.of(),
+                "no SOP",
+                NOW,
+                NOW,
+                "intake-formal-1",
+                intakeClaim);
+
+        assertThat(stored.diagnosis().rehearsal()).isFalse();
+        verify(persistence).reserve(
+                eq(WORKSPACE_ID),
+                eq(incident),
+                eq(false),
+                eq(NOW),
+                eq("intake-formal-1"),
+                any());
+        verify(persistence).persistFormal(
+                eq(WORKSPACE_ID),
+                eq(stored.diagnosis()),
+                eq(NOW),
+                eq("intake-formal-1"),
+                eq(null),
+                eq(intakeClaim),
+                any(OpenDiscoveryRunAudit.class),
+                eq(admission),
+                eq(NOW));
+        verifyNoInteractions(agentService);
+    }
+
+    @Test
     void stopsInsteadOfFallingBackToTheAgentWhenBoundedPlanningIsUnavailable() {
         IncidentContext incident = incident();
         when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
-        when(boundedInvestigation.investigateFormal(WORKSPACE_ID, incident))
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.triageFormal(
@@ -145,14 +222,18 @@ class FormalOpenDiscoveryTriageServiceTest {
 
         verifyNoInteractions(agentService);
         verify(persistence, never()).persistFormal(
-                anyLong(), any(), any(), any(), any(), any(), any(), any());
+                anyLong(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void rejectsNonGuanceEvidenceBeforeAuthorityRevalidationOrPersistence() {
         IncidentContext incident = incident();
         when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
-        when(boundedInvestigation.investigateFormal(WORKSPACE_ID, incident))
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
                 .thenReturn(Optional.of(execution("recorded-replay")));
 
         assertThatThrownBy(() -> service.triageFormal(
@@ -162,7 +243,7 @@ class FormalOpenDiscoveryTriageServiceTest {
 
         verify(admissions, never()).revalidate(anyLong(), any(), any());
         verify(persistence, never()).persistFormal(
-                anyLong(), any(), any(), any(), any(), any(), any(), any());
+                anyLong(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -170,7 +251,11 @@ class FormalOpenDiscoveryTriageServiceTest {
         IncidentContext incident = incident();
         properties.setBoundedInvestigationTimeout(Duration.ofMinutes(3));
         when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
-        when(boundedInvestigation.investigateFormal(WORKSPACE_ID, incident))
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.triageFormal(
@@ -203,6 +288,50 @@ class FormalOpenDiscoveryTriageServiceTest {
 
         verify(persistence).requireCompletedFormal(WORKSPACE_ID, completed, admission);
         verifyNoInteractions(boundedInvestigation);
+    }
+
+    @Test
+    void completedFormalIntakeRetryRevalidatesItsFrozenAuthorityWithoutRerunningTools() {
+        IncidentContext incident = incident();
+        StoredDiagnosis completed = new StoredDiagnosis(
+                org.mockito.Mockito.mock(Diagnosis.class),
+                2,
+                false,
+                4);
+        when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
+        when(persistence.requireCompletedFormal(WORKSPACE_ID, completed, admission))
+                .thenReturn(completed);
+
+        assertThat(service.requireCompletedFormalOpenDiscovery(
+                WORKSPACE_ID, incident, completed))
+                .isSameAs(completed);
+
+        verify(admissions).admit(WORKSPACE_ID, incident);
+        verify(persistence).requireCompletedFormal(WORKSPACE_ID, completed, admission);
+        verifyNoInteractions(boundedInvestigation, agentService);
+    }
+
+    @Test
+    void completedFormalIntakeRetryPropagatesFrozenAuthorityRejection() {
+        IncidentContext incident = incident();
+        StoredDiagnosis completed = new StoredDiagnosis(
+                org.mockito.Mockito.mock(Diagnosis.class),
+                2,
+                false,
+                4);
+        MateClawException rejected = new MateClawException(
+                "err.troubleshooting.formal_open_discovery_conflict",
+                409,
+                "the completed diagnosis does not match the current frozen formal authority");
+        when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
+        when(persistence.requireCompletedFormal(WORKSPACE_ID, completed, admission))
+                .thenThrow(rejected);
+
+        assertThatThrownBy(() -> service.requireCompletedFormalOpenDiscovery(
+                WORKSPACE_ID, incident, completed))
+                .isSameAs(rejected);
+
+        verifyNoInteractions(boundedInvestigation, agentService);
     }
 
     private IncidentContext incident() {

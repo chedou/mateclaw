@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -58,6 +59,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
      * three values could only come from application.yml.
      */
     private final WorkspaceEvidenceSettingsService workspaceSettings;
+    /** Rechecks formal binding authority immediately before transport I/O. */
+    private final Supplier<GuanceBindingFingerprintService> bindingFingerprintSource;
     private final Clock clock;
     private final ConcurrentMap<ObservationKey, Instant> observations =
             new ConcurrentHashMap<>();
@@ -134,6 +137,46 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             WorkspaceEvidenceContracts workspaceContracts,
             WorkspaceEvidenceSettingsService workspaceSettings,
             Clock clock) {
+        this(
+                config,
+                objectMapper,
+                transport,
+                workspaceAssets,
+                workspaceContracts,
+                workspaceSettings,
+                (Supplier<GuanceBindingFingerprintService>) null,
+                clock);
+    }
+
+    GuanceEvidenceAdapter(
+            EvidenceProperties.Guance config,
+            ObjectMapper objectMapper,
+            EvidenceHttpTransport transport,
+            WorkspaceObservabilityAssets workspaceAssets,
+            WorkspaceEvidenceContracts workspaceContracts,
+            WorkspaceEvidenceSettingsService workspaceSettings,
+            GuanceBindingFingerprintService bindingFingerprints,
+            Clock clock) {
+        this(
+                config,
+                objectMapper,
+                transport,
+                workspaceAssets,
+                workspaceContracts,
+                workspaceSettings,
+                bindingFingerprints == null ? null : () -> bindingFingerprints,
+                clock);
+    }
+
+    GuanceEvidenceAdapter(
+            EvidenceProperties.Guance config,
+            ObjectMapper objectMapper,
+            EvidenceHttpTransport transport,
+            WorkspaceObservabilityAssets workspaceAssets,
+            WorkspaceEvidenceContracts workspaceContracts,
+            WorkspaceEvidenceSettingsService workspaceSettings,
+            Supplier<GuanceBindingFingerprintService> bindingFingerprintSource,
+            Clock clock) {
         this.config = config == null ? new EvidenceProperties.Guance() : config;
         this.objectMapper = objectMapper;
         this.transport = transport;
@@ -142,6 +185,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         this.workspaceContracts = workspaceContracts == null
                 ? WorkspaceEvidenceContracts.NONE : workspaceContracts;
         this.workspaceSettings = workspaceSettings;
+        this.bindingFingerprintSource = bindingFingerprintSource == null
+                ? () -> null : bindingFingerprintSource;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -213,6 +258,20 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             EvidenceRequest request,
             IncidentContext incident,
             Duration callerTimeout) {
+        return collect(workspaceId, request, incident, callerTimeout, null);
+    }
+
+    /**
+     * Formal collection guarded by the exact binding fingerprint accepted at
+     * admission. The binding, endpoint, credential and timeout used below are
+     * copied before the final fingerprint check and never resolved again.
+     */
+    public EvidenceResult collect(
+            long workspaceId,
+            EvidenceRequest request,
+            IncidentContext incident,
+            Duration callerTimeout,
+            String expectedBindingFingerprint) {
         if (workspaceId <= 0) {
             throw new IllegalArgumentException("workspaceId must be positive");
         }
@@ -222,37 +281,103 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         if (callerTimeout == null || callerTimeout.isZero() || callerTimeout.isNegative()) {
             return missing(request, "caller evidence deadline is exhausted");
         }
-        AuthorizedBinding authorized;
+        VerifiedAuthority admittedAuthority = assertAcceptedAuthorityStillCurrent(
+                workspaceId,
+                incident,
+                request.signalKind(),
+                expectedBindingFingerprint);
+        AuthorizedBinding resolved;
         try {
-            authorized = authorizedBinding(
+            resolved = authorizedBinding(
                     workspaceId, incident.system(), incident.service(), request.signalKind());
         } catch (RuntimeException resolutionFailure) {
+            if (formalExpectation(expectedBindingFingerprint)) {
+                throw FormalEvidenceAuthorityException.configurationDrift(
+                        "formal Guance binding could not be resolved after admission");
+            }
             log.warn("Guance workspace asset resolution failed ({})",
                     resolutionFailure.getClass().getSimpleName());
             return missing(request, "workspace asset resolution failed");
         }
-        if (authorized == null) {
+        if (resolved == null) {
+            if (formalExpectation(expectedBindingFingerprint)) {
+                throw FormalEvidenceAuthorityException.configurationDrift(
+                        "formal Guance binding is no longer authorized");
+            }
             return missing(request, "workspace asset or signal binding is not authorized");
         }
-        EffectiveEvidenceSettings settings = settingsFor(workspaceId);
-        if (!baseConfigured(settings)) {
+        AuthorizedBinding authorized = new AuthorizedBinding(
+                copyBinding(resolved.binding()),
+                Map.copyOf(resolved.parameters()));
+        EffectiveEvidenceSettings settings;
+        try {
+            settings = freezeSettings(admittedAuthority == null
+                    ? settingsFor(workspaceId)
+                    : settingsForFormalAuthority(workspaceId));
+            if (admittedAuthority != null) {
+                String frozenSettingsFingerprint =
+                        admittedAuthority.verifier().settingsFingerprint(
+                                workspaceId, settings);
+                if (!frozenSettingsFingerprint.equals(
+                        admittedAuthority.snapshot().settingsFingerprint())) {
+                    throw FormalEvidenceAuthorityException.configurationDrift(
+                            "formal Guance settings changed after admission");
+                }
+            }
+        } catch (FormalEvidenceAuthorityException authorityFailure) {
+            throw authorityFailure;
+        } catch (RuntimeException settingsFailure) {
+            if (formalExpectation(expectedBindingFingerprint)) {
+                throw FormalEvidenceAuthorityException.verifierFailure(
+                        "formal Guance settings could not be frozen",
+                        settingsFailure);
+            }
+            throw settingsFailure;
+        }
+        if (!settings.guanceCallable()) {
+            if (formalExpectation(expectedBindingFingerprint)) {
+                throw FormalEvidenceAuthorityException.configurationDrift(
+                        "formal Guance source configuration is no longer callable");
+            }
             return missing(request, "adapter disabled or base configuration missing");
         }
+        boolean formalAuthority = formalExpectation(expectedBindingFingerprint);
+        if (formalAuthority && workspaceSettings == null) {
+            throw FormalEvidenceAuthorityException.verifierUnavailable(
+                    "formal Guance endpoint policy verifier is unavailable");
+        }
         if (workspaceSettings != null
-                && settings.origin() == EffectiveEvidenceSettings.Origin.WORKSPACE) {
-            // The endpoint is workspace-editable, so it is re-validated here
-            // and not only when it was saved: a hostname that resolved
-            // publicly at write time can resolve to a private address now.
+                && (formalAuthority
+                        || settings.origin() == EffectiveEvidenceSettings.Origin.WORKSPACE)) {
+            // Formal calls always need a fresh, strict proof. Rehearsal keeps
+            // the historical guard only for workspace-editable endpoints.
             try {
-                workspaceSettings.assertReachableEndpoint(settings.guanceBaseUrl());
+                if (formalAuthority) {
+                    workspaceSettings.assertReachableEndpointStrict(
+                            settings.guanceBaseUrl());
+                } else {
+                    workspaceSettings.assertReachableEndpoint(
+                            settings.guanceBaseUrl());
+                }
             } catch (SecurityException blocked) {
                 log.warn("Workspace {} Guance endpoint rejected by the outbound guard", workspaceId);
+                if (formalAuthority) {
+                    throw FormalEvidenceAuthorityException.policyBlocked(
+                            "formal Guance endpoint is blocked by outbound policy");
+                }
                 return missing(request, "Guance endpoint is not permitted by the outbound guard");
             }
         }
 
         try {
             EvidenceProperties.Binding binding = authorized.binding();
+            URI endpoint = queryUri(settings);
+            Duration requestTimeout = boundedTimeout(callerTimeout);
+            assertAcceptedAuthorityStillCurrent(
+                    workspaceId,
+                    incident,
+                    request.signalKind(),
+                    expectedBindingFingerprint);
             WindowRange window = window(request.window(), incident.occurredAt());
             List<String> queries = configuredQueryTemplates(binding).stream()
                     .map(template -> render(
@@ -263,12 +388,12 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                     normalizeKey(request.signalKind()),
                     transport.getClass().getSimpleName());
             EvidenceHttpTransport.Response response = transport.postJson(
-                    queryUri(settings),
+                    endpoint,
                     Map.of(
                             "Content-Type", "application/json",
                             "DF-API-KEY", settings.guanceApiKey()),
                     body,
-                    boundedTimeout(callerTimeout));
+                    requestTimeout);
             log.debug("Guance evidence signal {} returned HTTP {}",
                     normalizeKey(request.signalKind()), response.statusCode());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -295,12 +420,142 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return missing(request, "Guance collection interrupted");
+        } catch (FormalEvidenceAuthorityException authorityFailure) {
+            throw authorityFailure;
         } catch (Exception failure) {
             log.warn("Guance evidence collection failed for request {} ({})",
                     request.requestId(), failure.getClass().getSimpleName());
             return missing(request, "Guance collection failed: "
                     + failure.getClass().getSimpleName());
         }
+    }
+
+    private VerifiedAuthority assertAcceptedAuthorityStillCurrent(
+            long workspaceId,
+            IncidentContext incident,
+            String signalKind,
+            String expectedBindingFingerprint) {
+        if (!formalExpectation(expectedBindingFingerprint)) {
+            return null;
+        }
+        String expected = expectedBindingFingerprint.trim().toLowerCase(Locale.ROOT);
+        if (!expected.matches("[a-f0-9]{64}")) {
+            throw FormalEvidenceAuthorityException.invalidExpectation(
+                    "formal Guance binding fingerprint must be SHA-256 hex");
+        }
+        GuanceBindingFingerprintService bindingFingerprints;
+        try {
+            bindingFingerprints = bindingFingerprintSource.get();
+        } catch (RuntimeException unavailableAuthority) {
+            throw FormalEvidenceAuthorityException.verifierFailure(
+                    "formal Guance binding verifier failed", unavailableAuthority);
+        }
+        if (bindingFingerprints == null) {
+            throw FormalEvidenceAuthorityException.verifierUnavailable(
+                    "formal Guance binding verifier is unavailable");
+        }
+        GuanceBindingFingerprintService.Snapshot current;
+        try {
+            current = bindingFingerprints.currentForFormalAuthority(
+                            workspaceId, incident.system(), incident.service())
+                    .orElseThrow(() -> FormalEvidenceAuthorityException.configurationDrift(
+                            "formal Guance binding authority is no longer present"));
+        } catch (FormalEvidenceAuthorityException authorityFailure) {
+            throw authorityFailure;
+        } catch (RuntimeException unavailableAuthority) {
+            throw FormalEvidenceAuthorityException.verifierFailure(
+                    "formal Guance binding verifier failed", unavailableAuthority);
+        }
+        if (!expected.equals(current.bindingFingerprint())
+                || !current.readOnlySignalKinds().contains(normalizeKey(signalKind))) {
+            throw FormalEvidenceAuthorityException.configurationDrift(
+                    "formal Guance binding changed after admission");
+        }
+        return new VerifiedAuthority(bindingFingerprints, current);
+    }
+
+    private boolean formalExpectation(String expectedBindingFingerprint) {
+        return expectedBindingFingerprint != null
+                && !expectedBindingFingerprint.isBlank();
+    }
+
+    private EffectiveEvidenceSettings settingsForFormalAuthority(long workspaceId) {
+        if (workspaceSettings == null || workspaceId <= 0) {
+            return deploymentSettings();
+        }
+        try {
+            return workspaceSettings.effective(workspaceId);
+        } catch (RuntimeException lookupFailure) {
+            throw FormalEvidenceAuthorityException.verifierFailure(
+                    "formal Guance workspace settings lookup failed",
+                    lookupFailure);
+        }
+    }
+
+    private EffectiveEvidenceSettings freezeSettings(
+            EffectiveEvidenceSettings settings) {
+        if (settings == null) {
+            return EffectiveEvidenceSettings.resolved(
+                    false,
+                    "",
+                    null,
+                    false,
+                    false,
+                    false,
+                    EffectiveEvidenceSettings.Origin.DEPLOYMENT);
+        }
+        return EffectiveEvidenceSettings.resolved(
+                settings.guanceEnabled(),
+                settings.guanceBaseUrl(),
+                settings.guanceApiKey(),
+                settings.guanceAllowInsecureHttp(),
+                settings.replayEnabled(),
+                settings.agentEnabled(),
+                settings.origin());
+    }
+
+    private EvidenceProperties.Binding copyBinding(
+            EvidenceProperties.Binding source) {
+        EvidenceProperties.Binding copy = new EvidenceProperties.Binding();
+        copy.setSignalKind(source.getSignalKind());
+        copy.setNamespace(source.getNamespace());
+        copy.setSummary(source.getSummary());
+        copy.setScenario(source.getScenario());
+        copy.setQuestion(source.getQuestion());
+        copy.setFixedConditions(List.copyOf(
+                source.getFixedConditions() == null
+                        ? List.of() : source.getFixedConditions()));
+        copy.setQueryTemplate(source.getQueryTemplate());
+        copy.setQueryTemplates(List.copyOf(
+                source.getQueryTemplates() == null
+                        ? List.of() : source.getQueryTemplates()));
+        copy.setQueryOptions(copyQueryOptions(source.getQueryOptions()));
+        copy.setMaxRows(source.getMaxRows());
+        copy.setFieldAliases(Map.copyOf(
+                source.getFieldAliases() == null
+                        ? Map.of() : source.getFieldAliases()));
+        copy.setConstantFields(Map.copyOf(
+                source.getConstantFields() == null
+                        ? Map.of() : source.getConstantFields()));
+        copy.setAssetParameters(List.copyOf(
+                source.getAssetParameters() == null
+                        ? List.of() : source.getAssetParameters()));
+        return copy;
+    }
+
+    private EvidenceProperties.QueryOptions copyQueryOptions(
+            EvidenceProperties.QueryOptions source) {
+        if (source == null) {
+            return null;
+        }
+        EvidenceProperties.QueryOptions copy = new EvidenceProperties.QueryOptions();
+        copy.setMaxPointCount(source.getMaxPointCount());
+        copy.setInterval(source.getInterval());
+        copy.setAlignTime(source.isAlignTime());
+        copy.setSeriesLimit(source.getSeriesLimit());
+        copy.setDisableSampling(source.isDisableSampling());
+        copy.setTimeZone(source.getTimeZone());
+        return copy;
     }
 
     @Override
@@ -1584,6 +1839,11 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private record AuthorizedBinding(
             EvidenceProperties.Binding binding,
             Map<String, String> parameters) {
+    }
+
+    private record VerifiedAuthority(
+            GuanceBindingFingerprintService verifier,
+            GuanceBindingFingerprintService.Snapshot snapshot) {
     }
 
     private record AssetScope(

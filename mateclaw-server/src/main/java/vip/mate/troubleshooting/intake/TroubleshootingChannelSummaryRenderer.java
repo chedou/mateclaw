@@ -74,7 +74,7 @@ public class TroubleshootingChannelSummaryRenderer {
         return switch (conclusionType) {
             case LOCATED -> "已定位";
             case EXCLUDED -> "已排除";
-            case HYPOTHESIS -> "待确认假设";
+            case HYPOTHESIS -> "最可能方向";
             case INSUFFICIENT_EVIDENCE -> "证据不足";
         };
     }

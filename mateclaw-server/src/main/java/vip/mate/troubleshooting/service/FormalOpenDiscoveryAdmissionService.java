@@ -6,7 +6,6 @@ import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptance;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.model.IncidentContext;
-import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 
 import java.util.Locale;
 
@@ -18,17 +17,15 @@ import java.util.Locale;
 @Service
 public class FormalOpenDiscoveryAdmissionService {
 
-    private final TroubleshootingPilotPlanService pilotPlans;
+    private static final int GENERIC_AUTHORITY_VERSION = 1;
     private final GuanceEvidenceAcceptanceService guanceAcceptance;
 
     public FormalOpenDiscoveryAdmissionService(
-            TroubleshootingPilotPlanService pilotPlans,
             GuanceEvidenceAcceptanceService guanceAcceptance) {
-        if (pilotPlans == null || guanceAcceptance == null) {
+        if (guanceAcceptance == null) {
             throw new IllegalArgumentException(
-                    "pilot and Guance admission services are required");
+                    "Guance admission service is required");
         }
-        this.pilotPlans = pilotPlans;
         this.guanceAcceptance = guanceAcceptance;
     }
 
@@ -37,19 +34,18 @@ public class FormalOpenDiscoveryAdmissionService {
             long workspaceId,
             IncidentContext incident) {
         requireStructuredScope(workspaceId, incident);
-        Integer pilotPlanVersion = pilotPlans.enrollmentVersion(
-                workspaceId, incident.system(), incident.service(), false);
-        if (pilotPlanVersion == null) {
-            throw conflict(
-                    "formal open discovery requires an enabled pilot plan containing the exact system/service");
-        }
-        GuanceEvidenceAcceptance accepted = guanceAcceptance.requireAccepted(
+        GuanceEvidenceAcceptanceService.AcceptedBinding authority =
+                guanceAcceptance.requireAcceptedBindingAuthority(
                 workspaceId, incident.system(), incident.service());
+        GuanceEvidenceAcceptance accepted = authority.acceptance();
         requireExactAcceptance(incident, accepted);
+        FormalOpenDiscoveryPlan plan = requireFormalPlan(
+                authority.readOnlySignalKinds());
         return new FormalOpenDiscoveryAdmission(
-                pilotPlanVersion,
+                GENERIC_AUTHORITY_VERSION,
                 accepted.acceptanceId(),
-                accepted.bindingFingerprint());
+                accepted.bindingFingerprint(),
+                plan);
     }
 
     public void revalidate(
@@ -60,19 +56,24 @@ public class FormalOpenDiscoveryAdmissionService {
         if (admission == null) {
             throw conflict("formal open-discovery admission is required");
         }
-        Integer currentPilot = pilotPlans.enrollmentVersion(
-                workspaceId, incident.system(), incident.service(), false);
-        if (currentPilot == null || currentPilot != admission.pilotPlanVersion()) {
-            throw conflict("pilot plan changed during formal open discovery");
+        if (admission.pilotPlanVersion() != GENERIC_AUTHORITY_VERSION) {
+            throw conflict("generic investigation authority version changed");
         }
-        GuanceEvidenceAcceptance current = guanceAcceptance.requireAccepted(
+        GuanceEvidenceAcceptanceService.AcceptedBinding authority =
+                guanceAcceptance.requireAcceptedBindingAuthority(
                 workspaceId, incident.system(), incident.service());
+        GuanceEvidenceAcceptance current = authority.acceptance();
         requireExactAcceptance(incident, current);
         if (!admission.guanceAcceptanceId().equals(current.acceptanceId())
                 || !admission.guanceBindingFingerprint()
                         .equals(current.bindingFingerprint())) {
             throw conflict(
                     "Guance owner acceptance changed during formal open discovery");
+        }
+        if (!admission.plan().equals(
+                requireFormalPlan(authority.readOnlySignalKinds()))) {
+            throw conflict(
+                    "accepted read-only capabilities changed during formal open discovery");
         }
     }
 
@@ -95,6 +96,18 @@ public class FormalOpenDiscoveryAdmissionService {
                 || !same(incident.service(), accepted.service())) {
             throw conflict(
                     "Guance owner acceptance belongs to a different system/service");
+        }
+    }
+
+    private FormalOpenDiscoveryPlan requireFormalPlan(
+            java.util.Set<String> acceptedSignalKinds) {
+        try {
+            return FormalOpenDiscoveryPlan.fromAcceptedCapabilities(
+                    acceptedSignalKinds);
+        } catch (IllegalArgumentException missingCapabilities) {
+            throw conflict(
+                    "当前系统/服务尚未验收通用调查所需的只读能力；"
+                            + missingCapabilities.getMessage());
         }
     }
 

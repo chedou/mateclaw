@@ -98,6 +98,7 @@ class TroubleshootingChannelSummaryRendererTest {
                 vip.mate.troubleshooting.projection.DiagnosisExperienceProjection.EvidenceBasis.OBSERVED);
 
         assertThat(new TroubleshootingChannelSummaryRenderer("").render(hypothesis))
+                .startsWith("最可能方向 ·")
                 .contains("候选方向：网关连接异常")
                 .doesNotContain("根因：网关连接异常");
     }

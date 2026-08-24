@@ -107,6 +107,26 @@ public final class UrlSafetyChecker {
      *                            the agent has no path to the public internet.
      */
     public static void check(String url, Collection<String> allowlist, boolean allowPrivateNetwork) {
+        check(url, allowlist, allowPrivateNetwork, false);
+    }
+
+    /**
+     * Strict variant for formal outbound operations. In addition to the usual
+     * SSRF checks, DNS resolution must succeed so the caller can prove that
+     * every resolved address was inspected before opening a connection.
+     */
+    public static void checkStrict(
+            String url,
+            Collection<String> allowlist,
+            boolean allowPrivateNetwork) {
+        check(url, allowlist, allowPrivateNetwork, true);
+    }
+
+    private static void check(
+            String url,
+            Collection<String> allowlist,
+            boolean allowPrivateNetwork,
+            boolean failClosedOnDnsError) {
         if (url == null || url.isBlank()) {
             throw new SecurityException("URL is required");
         }
@@ -164,6 +184,11 @@ public final class UrlSafetyChecker {
         } catch (SecurityException e) {
             throw e;
         } catch (Exception e) {
+            if (failClosedOnDnsError) {
+                throw new SecurityException(
+                        "DNS resolution failed; outbound target safety could not be verified",
+                        e);
+            }
             // DNS resolution failure — let the caller deal with it (browser will show its own error).
             // Known limitation: a deliberately slow/timeout DNS server can use this to bypass the
             // guard. Not fixable here without a hard fail policy; document as accepted risk.

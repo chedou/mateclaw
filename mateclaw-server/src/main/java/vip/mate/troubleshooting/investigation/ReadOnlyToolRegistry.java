@@ -3,6 +3,7 @@ package vip.mate.troubleshooting.investigation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema;
+import vip.mate.troubleshooting.evidence.FormalEvidenceAuthorityException;
 import vip.mate.troubleshooting.model.EvidenceRequest;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
@@ -59,6 +60,12 @@ public final class ReadOnlyToolRegistry {
         if (!invocation.allowedToolIdentities().contains(identity)) {
             throw new PolicyViolation("read-only evidence tool is not allowed: " + identity);
         }
+        if (!invocation.allowedSignalKinds().contains(
+                normalizeSignal(invocation.request().signalKind()))) {
+            throw new PolicyViolation(
+                    "signal is not allowed by the frozen plan: "
+                            + invocation.request().signalKind());
+        }
         ReadOnlyEvidenceTool tool = tools.get(identity);
         if (tool == null) {
             throw new PolicyViolation("read-only evidence tool is not registered: " + identity);
@@ -78,8 +85,11 @@ public final class ReadOnlyToolRegistry {
                             invocation.workspaceId(),
                             invocation.incident(),
                             invocation.permittedPlatforms(),
-                            invocation.deadline()),
+                            invocation.deadline(),
+                            invocation.sourceBindingFingerprint()),
                     invocation.request());
+        } catch (FormalEvidenceAuthorityException authorityFailure) {
+            throw authorityFailure;
         } catch (RuntimeException unavailable) {
             return missing(invocation.request(), "tool-registry:unavailable");
         }
@@ -122,6 +132,10 @@ public final class ReadOnlyToolRegistry {
         return required(value, "tool identity").toLowerCase(Locale.ROOT);
     }
 
+    private static String normalizeSignal(String value) {
+        return required(value, "signal kind").toLowerCase(Locale.ROOT);
+    }
+
     private static String required(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");
@@ -136,8 +150,33 @@ public final class ReadOnlyToolRegistry {
             IncidentContext incident,
             EvidenceRequest request,
             Set<String> allowedToolIdentities,
+            Set<String> allowedSignalKinds,
             Set<String> permittedPlatforms,
-            Instant deadline) {
+            Instant deadline,
+            String sourceBindingFingerprint) {
+
+        public Invocation(
+                String toolKey,
+                String version,
+                long workspaceId,
+                IncidentContext incident,
+                EvidenceRequest request,
+                Set<String> allowedToolIdentities,
+                Set<String> allowedSignalKinds,
+                Set<String> permittedPlatforms,
+                Instant deadline) {
+            this(
+                    toolKey,
+                    version,
+                    workspaceId,
+                    incident,
+                    request,
+                    allowedToolIdentities,
+                    allowedSignalKinds,
+                    permittedPlatforms,
+                    deadline,
+                    null);
+        }
 
         public Invocation {
             toolKey = required(toolKey, "toolKey");
@@ -152,7 +191,10 @@ public final class ReadOnlyToolRegistry {
                 allowed.add(normalizeIdentity(identity));
             }
             allowedToolIdentities = Set.copyOf(allowed);
+            allowedSignalKinds = normalizeSet(allowedSignalKinds);
             permittedPlatforms = normalizeSet(permittedPlatforms);
+            sourceBindingFingerprint = optionalFingerprint(
+                    sourceBindingFingerprint);
         }
     }
 
@@ -160,7 +202,16 @@ public final class ReadOnlyToolRegistry {
             long workspaceId,
             IncidentContext incident,
             Set<String> permittedPlatforms,
-            Instant deadline) {
+            Instant deadline,
+            String sourceBindingFingerprint) {
+
+        public Context(
+                long workspaceId,
+                IncidentContext incident,
+                Set<String> permittedPlatforms,
+                Instant deadline) {
+            this(workspaceId, incident, permittedPlatforms, deadline, null);
+        }
 
         public Context {
             if (workspaceId <= 0 || incident == null || deadline == null) {
@@ -168,7 +219,21 @@ public final class ReadOnlyToolRegistry {
                         "workspaceId, incident and deadline are required");
             }
             permittedPlatforms = normalizeSet(permittedPlatforms);
+            sourceBindingFingerprint = optionalFingerprint(
+                    sourceBindingFingerprint);
         }
+    }
+
+    private static String optionalFingerprint(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.matches("[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "source binding fingerprint must be SHA-256 hex");
+        }
+        return normalized;
     }
 
     private static Set<String> normalizeSet(Set<String> values) {

@@ -25,9 +25,9 @@ const STAGE_PRESENTATIONS: Record<
     question: '系统、服务、发生时间和错误码是否明确？',
   },
   PLAYBOOK_ROUTE: {
-    title: '选定排障方法',
-    description: '用系统、服务和错误码匹配一套已经审核的排障方法。',
-    question: '是否找到已审核、可直接执行的排障方法？',
+    title: '选择调查方式',
+    description: '有标准排障方法就直接复用；没有时进入通用只读调查。',
+    question: '本次使用标准排障方法，还是通用只读调查？',
   },
   EVIDENCE_CONTRACT: {
     title: '明确要查什么',
@@ -57,8 +57,8 @@ const STAGE_PRESENTATIONS: Record<
 }
 
 const NEXT_STEP_LABELS: Record<InvestigationStageKey, string> = {
-  INCIDENT: '基本信息已确认，下一步选择排障方法。',
-  PLAYBOOK_ROUTE: '排障方法已选定，下一步明确要查询的数据。',
+  INCIDENT: '基本信息已确认，下一步选择调查方式。',
+  PLAYBOOK_ROUTE: '调查方式已选定，下一步明确要查询的数据。',
   EVIDENCE_CONTRACT: '查询内容已固定，下一步连接只读数据源。',
   ADAPTER_SELECTION: '数据源已连接，下一步执行只读查询。',
   EVIDENCE_COLLECTION: '真实证据已获取，下一步用规则核对。',
@@ -106,9 +106,14 @@ export function investigationStageSummaryLabel(
 ) {
   if (key !== 'PLAYBOOK_ROUTE') return value
   return value
-    .replaceAll('未命中已审核 Playbook', '未命中已审核的排障方案')
-    .replaceAll('错误码 Playbook', '错误码排障方案')
-    .replaceAll('场景 Playbook', '场景排障方案')
+    .replaceAll('未命中已审核 Playbook', '未命中已审核的标准排障方法')
+    .replaceAll('错误码 Playbook', '标准排障方法（按错误码）')
+    .replaceAll('场景 Playbook', '标准排障方法（按场景）')
+    .replaceAll('开放调查', '通用只读调查')
+    .replaceAll('显式命中', '直接命中')
+    .replaceAll('规则命中', '自动匹配')
+    .replaceAll('模型提议', 'AI 规划')
+    .replaceAll('受限调查提议', '受限规划')
 }
 
 export function investigationRouteLabel(

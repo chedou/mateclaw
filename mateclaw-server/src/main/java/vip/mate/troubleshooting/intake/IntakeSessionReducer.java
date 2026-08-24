@@ -103,6 +103,14 @@ public final class IntakeSessionReducer {
             "(?:[?&])time=(\\d{10})(?:&|\\\"|$)");
 
     public IntakeSession start(String intakeSessionId, IntakeMessageEnvelope envelope) {
+        return start(intakeSessionId, envelope, null);
+    }
+
+    /** Starts a session with the Web conversation mode frozen by the server. */
+    public IntakeSession start(
+            String intakeSessionId,
+            IntakeMessageEnvelope envelope,
+            Boolean rehearsal) {
         ParsedInput parsed = parse(envelope.text());
         List<IntakeSessionEvent> initialTimeline = List.of(
                 new IntakeSessionEvent(
@@ -122,7 +130,8 @@ public final class IntakeSessionReducer {
                 envelope.attachments(),
                 envelope.receivedAt(),
                 null,
-                initialTimeline);
+                initialTimeline,
+                rehearsal);
     }
 
     public IntakeSession accept(IntakeSession current, IntakeMessageEnvelope envelope) {
@@ -161,7 +170,8 @@ public final class IntakeSessionReducer {
                 mergeAttachments(current.attachments(), envelope.attachments()),
                 current.reportedAt(),
                 current.readyAt(),
-                current.timeline());
+                current.timeline(),
+                current.rehearsal());
     }
 
     /**
@@ -203,7 +213,8 @@ public final class IntakeSessionReducer {
                 current.attachments(),
                 current.reportedAt(),
                 current.readyAt(),
-                current.timeline());
+                current.timeline(),
+                current.rehearsal());
     }
 
     private IntakeSession build(
@@ -220,7 +231,8 @@ public final class IntakeSessionReducer {
             List<IntakeAttachmentRef> attachments,
             Instant reportedAt,
             Instant existingReadyAt,
-            List<IntakeSessionEvent> timeline) {
+            List<IntakeSessionEvent> timeline,
+            Boolean rehearsal) {
         List<String> missing = missing(symptom, system, service, customerRef, occurredAt);
         IntakeSessionStatus status = missing.isEmpty()
                 ? IntakeSessionStatus.READY
@@ -257,7 +269,8 @@ public final class IntakeSessionReducer {
                 readyAt,
                 envelope.receivedAt(),
                 nextTimeline,
-                normalizedFactKind);
+                normalizedFactKind,
+                rehearsal);
     }
 
     private ParsedInput parse(String raw) {

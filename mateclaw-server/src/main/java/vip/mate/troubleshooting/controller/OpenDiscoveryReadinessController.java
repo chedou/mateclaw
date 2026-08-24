@@ -28,8 +28,10 @@ public class OpenDiscoveryReadinessController {
     @RequireWorkspaceRole("viewer")
     public R<OpenDiscoveryReadiness> readiness(
             @RequestParam(required = false) String system,
+            @RequestParam(required = false) String service,
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
-        return R.ok(readinessService.inspect(resolveWorkspace(workspaceId), system));
+        return R.ok(readinessService.inspect(
+                resolveWorkspace(workspaceId), system, service));
     }
 
     private long resolveWorkspace(Long workspaceId) {

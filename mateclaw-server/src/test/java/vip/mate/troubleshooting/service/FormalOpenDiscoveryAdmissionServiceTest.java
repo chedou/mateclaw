@@ -11,9 +11,9 @@ import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
 import vip.mate.troubleshooting.model.IncidentCompleteness;
 import vip.mate.troubleshooting.model.IncidentContext;
 import vip.mate.troubleshooting.model.IncidentImpact;
-import vip.mate.troubleshooting.pilot.TroubleshootingPilotPlanService;
 
 import java.time.Instant;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,36 +27,35 @@ class FormalOpenDiscoveryAdmissionServiceTest {
     private static final long WORKSPACE_ID = 7L;
     private static final Instant NOW = Instant.parse("2026-08-21T01:00:00Z");
 
-    @Mock private TroubleshootingPilotPlanService pilotPlans;
     @Mock private GuanceEvidenceAcceptanceService guanceAcceptance;
 
     private FormalOpenDiscoveryAdmissionService service;
 
     @BeforeEach
     void setUp() {
-        service = new FormalOpenDiscoveryAdmissionService(
-                pilotPlans, guanceAcceptance);
+        service = new FormalOpenDiscoveryAdmissionService(guanceAcceptance);
     }
 
     @Test
     void admitsAStructuredGenericIncidentWithoutAPlaybookOrD20() {
         IncidentContext incident = incident(IncidentCompleteness.SYMPTOM);
         GuanceEvidenceAcceptance accepted = accepted();
-        when(pilotPlans.enrollmentVersion(
-                WORKSPACE_ID, "CSDP", "csdp-session-service", false))
-                .thenReturn(4);
-        when(guanceAcceptance.requireAccepted(
+        when(guanceAcceptance.requireAcceptedBindingAuthority(
                 WORKSPACE_ID, "CSDP", "csdp-session-service"))
-                .thenReturn(accepted);
+                .thenReturn(authority(accepted,
+                        "error_log_scan", "k8s_workload_health"));
 
         FormalOpenDiscoveryAdmission admission = service.admit(
                 WORKSPACE_ID, incident);
 
-        assertThat(admission.pilotPlanVersion()).isEqualTo(4);
+        assertThat(admission.pilotPlanVersion()).isEqualTo(1);
         assertThat(admission.guanceAcceptanceId())
                 .isEqualTo(accepted.acceptanceId());
         assertThat(admission.guanceBindingFingerprint())
                 .isEqualTo(accepted.bindingFingerprint());
+        assertThat(admission.plan().allowedSignalKinds())
+                .containsExactlyInAnyOrder(
+                        "error_log_scan", "k8s_workload_health");
     }
 
     @Test
@@ -73,8 +72,23 @@ class FormalOpenDiscoveryAdmissionServiceTest {
                 .extracting(error -> ((MateClawException) error).getCode())
                 .isEqualTo(409);
 
-        verify(guanceAcceptance, never()).requireAccepted(
+        verify(guanceAcceptance, never()).requireAcceptedBindingAuthority(
                 WORKSPACE_ID, "CSDP", "csdp-session-service");
+    }
+
+    @Test
+    void admitsTheSafeAcceptedSubsetWhenK8sHasNotBeenAccepted() {
+        IncidentContext incident = incident(IncidentCompleteness.STRUCTURED);
+        GuanceEvidenceAcceptance accepted = accepted();
+        when(guanceAcceptance.requireAcceptedBindingAuthority(
+                WORKSPACE_ID, "CSDP", "csdp-session-service"))
+                .thenReturn(authority(accepted, "error_log_scan"));
+
+        FormalOpenDiscoveryAdmission admission = service.admit(
+                WORKSPACE_ID, incident);
+
+        assertThat(admission.plan().allowedSignalKinds())
+                .containsExactly("error_log_scan");
     }
 
     @Test
@@ -85,12 +99,13 @@ class FormalOpenDiscoveryAdmissionServiceTest {
                 "t7-changed-acceptance-000001", "CSDP", "csdp-session-service",
                 "b".repeat(64), before.checklist(), before.validation(),
                 "owner", NOW.plusSeconds(1));
-        when(pilotPlans.enrollmentVersion(
-                WORKSPACE_ID, "CSDP", "csdp-session-service", false))
-                .thenReturn(4);
-        when(guanceAcceptance.requireAccepted(
+        when(guanceAcceptance.requireAcceptedBindingAuthority(
                 WORKSPACE_ID, "CSDP", "csdp-session-service"))
-                .thenReturn(before, after);
+                .thenReturn(
+                        authority(before,
+                                "error_log_scan", "k8s_workload_health"),
+                        authority(after,
+                                "error_log_scan", "k8s_workload_health"));
         FormalOpenDiscoveryAdmission admission = service.admit(
                 WORKSPACE_ID, incident);
 
@@ -119,5 +134,12 @@ class FormalOpenDiscoveryAdmissionServiceTest {
         return new GuanceEvidenceAcceptance(
                 "t7-accepted-generic-000001", "CSDP", "csdp-session-service",
                 "a".repeat(64), checklist, validation, "owner", NOW);
+    }
+
+    private GuanceEvidenceAcceptanceService.AcceptedBinding authority(
+            GuanceEvidenceAcceptance accepted,
+            String... signalKinds) {
+        return new GuanceEvidenceAcceptanceService.AcceptedBinding(
+                accepted, Set.of(signalKinds));
     }
 }

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import vip.mate.troubleshooting.repository.TroubleshootingEvidenceRouteMapper;
 
 import java.util.List;
 
@@ -14,6 +17,55 @@ class EvidenceAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(EvidenceAutoConfiguration.class)
             .withBean(ObjectMapper.class, ObjectMapper::new);
+
+    @Test
+    void composesTheFingerprintVerifierWithoutCreatingAnAdapterRouteCycle() {
+        contextRunner
+                .withUserConfiguration(FingerprintCycleWitness.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(GuanceEvidenceAdapter.class);
+                    assertThat(context).hasSingleBean(
+                            GuanceBindingFingerprintService.class);
+                });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FingerprintCycleWitness {
+
+        @Bean
+        WorkspaceObservabilityAssets workspaceObservabilityAssets() {
+            return WorkspaceObservabilityAssets.NONE;
+        }
+
+        @Bean
+        WorkspaceEvidenceContracts workspaceEvidenceContracts() {
+            return WorkspaceEvidenceContracts.NONE;
+        }
+
+        @Bean
+        TroubleshootingEvidenceRouteMapper troubleshootingEvidenceRouteMapper() {
+            return org.mockito.Mockito.mock(
+                    TroubleshootingEvidenceRouteMapper.class);
+        }
+
+        @Bean
+        EvidenceRouteService evidenceRouteService(
+                TroubleshootingEvidenceRouteMapper mapper,
+                List<EvidenceSourceAdapter> adapters) {
+            return new EvidenceRouteService(mapper, adapters);
+        }
+
+        @Bean
+        GuanceBindingFingerprintService guanceBindingFingerprintService(
+                EvidenceProperties properties,
+                WorkspaceObservabilityAssets assets,
+                WorkspaceEvidenceContracts contracts,
+                WorkspaceEvidenceRoutes routes) {
+            return new GuanceBindingFingerprintService(
+                    properties, assets, contracts, routes, null);
+        }
+    }
 
     @Test
     void composesEveryAdapterAndKeepsThemDisabledByDefault() {

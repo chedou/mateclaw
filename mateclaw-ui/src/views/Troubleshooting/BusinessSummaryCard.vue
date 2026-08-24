@@ -388,11 +388,7 @@ const nextStepPanel = computed(() => {
     detail: confirmedCandidateGuidance.detail,
   }
 })
-const showConfirmAction = computed(() => (
-  props.perspective === 'developer'
-    && props.canOperate
-    && props.status === 'READY_FOR_HUMAN'
-))
+const showConfirmAction = computed(() => nextStepPanel.value.primaryAction === 'confirm')
 
 defineEmits<{
   confirm: []

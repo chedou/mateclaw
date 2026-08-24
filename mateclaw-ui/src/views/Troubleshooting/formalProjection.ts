@@ -11,14 +11,15 @@ import type {
   GuanceValidationStage,
   InvestigationMode,
   KnowledgeEvidenceGrade,
+  OpenDiscoveryReadiness,
   RouteAuthority,
   RouteSemanticsProvenance,
 } from '@/api'
 
 const CONCLUSION_LABEL: Record<ConclusionType, string> = {
-  LOCATED: '已定位',
+  LOCATED: '已定位原因',
   EXCLUDED: '已排除（非定位）',
-  HYPOTHESIS: '根因假设',
+  HYPOTHESIS: '最可能方向',
   INSUFFICIENT_EVIDENCE: '证据不足',
 }
 
@@ -30,16 +31,16 @@ const CLOSURE_OUTCOME_LABEL: Record<ClosureOutcome, string> = {
 }
 
 const INVESTIGATION_LABEL: Record<InvestigationMode, string> = {
-  ERROR_CODE_PLAYBOOK: '错误码排障方案',
-  SCENARIO_PLAYBOOK: '场景排障方案',
-  OPEN_DISCOVERY: '开放调查',
+  ERROR_CODE_PLAYBOOK: '标准排障方法（按错误码）',
+  SCENARIO_PLAYBOOK: '标准排障方法（按场景）',
+  OPEN_DISCOVERY: '通用只读调查',
 }
 
 const AUTHORITY_LABEL: Record<RouteAuthority, string> = {
-  EXPLICIT: '显式命中',
-  RULE_MATCHED: '规则命中',
-  MODEL_PROPOSED: '模型提议',
-  POLICY_PROPOSED: '受限调查提议',
+  EXPLICIT: '直接命中',
+  RULE_MATCHED: '自动匹配',
+  MODEL_PROPOSED: 'AI 规划',
+  POLICY_PROPOSED: '受限规划',
 }
 
 const KNOWLEDGE_EVIDENCE_GRADE_LABEL: Record<KnowledgeEvidenceGrade, string> = {
@@ -78,6 +79,12 @@ const GUANCE_SPINE_PREVIEW_LABEL: Record<GuanceSpinePreviewStage, string> = {
 const GUANCE_OWNER_BLOCKER_LABEL: Record<string, string> = {
   'the current Guance binding has not been explicitly accepted by an owner':
     '当前数据源配置尚未由 Workspace 负责人确认。',
+}
+
+export interface OpenDiscoveryReadinessPresentation {
+  title: string
+  detail: string
+  alertType: 'success' | 'warning' | 'error'
 }
 
 export type GuanceAcceptanceState = 'BLOCKED' | 'READY' | 'OWNER_EVIDENCE_REQUIRED'
@@ -151,6 +158,75 @@ export function conclusionLabel(value: ConclusionType) {
 
 export function closureOutcomeLabel(value: ClosureOutcome) {
   return CLOSURE_OUTCOME_LABEL[value]
+}
+
+/**
+ * The readiness API intentionally keeps operational diagnostics for admins.
+ * An intake user only needs to know whether they can start and what action to
+ * take next, so raw blockers and internal execution topology never reach this
+ * surface.
+ */
+export function openDiscoveryReadinessPresentation(
+  readiness: Pick<OpenDiscoveryReadiness, 'status'>,
+): OpenDiscoveryReadinessPresentation {
+  switch (readiness.status) {
+    case 'READY_FOR_BOUNDED_FALLBACK':
+      return {
+        title: '通用只读调查已就绪',
+        detail: '信息填完整后即可开始；提交时会按当前系统和服务再做一次安全检查。',
+        alertType: 'success',
+      }
+    case 'READY_FOR_REHEARSAL':
+      return {
+        title: '通用只读调查当前只能演练',
+        detail: '要调查真实告警，请联系管理员在“接入系统”中完成真实数据连接和只读能力验收。',
+        alertType: 'warning',
+      }
+    case 'DISABLED':
+      return {
+        title: '通用只读调查未启用',
+        detail: '你可以先使用演练；要调查真实告警，请联系管理员开通通用只读调查。',
+        alertType: 'error',
+      }
+    case 'BLOCKED':
+      return {
+        title: '通用只读调查尚未就绪',
+        detail: '请联系管理员到“接入系统”补齐当前系统和服务的数据连接与只读能力。',
+        alertType: 'error',
+      }
+  }
+}
+
+function failureText(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error
+    && typeof error.message === 'string') return error.message
+  return ''
+}
+
+/** Translate formal admission internals into one user-owned next action. */
+export function formalAdmissionErrorMessage(error: unknown) {
+  const message = failureText(error)
+  if (/changed during formal|configuration changed|authority changed/i.test(message)) {
+    return '调查期间配置发生变化，系统已安全停止。请刷新页面后重新开始正式只读调查。'
+  }
+  if (/requires structured system and service/i.test(message)) {
+    return '请先填写系统、服务和故障现象，再开始正式只读调查。'
+  }
+  if (/requires an enabled pilot plan containing the exact system\/service/i.test(message)) {
+    return '当前系统和服务还未开通正式只读调查。请联系管理员在“接入系统”中完成接入后重试。'
+  }
+  if (/尚未验收通用调查所需的只读能力|accepted read-only capabilities|supported accepted read-only capability/i.test(message)) {
+    return '当前系统和服务还缺少可用的只读查询能力。请联系管理员到“接入系统”补齐并验证后重试。'
+  }
+  if (/owner acceptance|binding has not been explicitly accepted|T7 owner/i.test(message)) {
+    return '当前系统和服务的数据源尚未完成正式验收。请联系管理员到“接入系统”完成只读数据验证后重试。'
+  }
+  if (/bounded read-only (?:planner|investigation).*(?:unavailable|disabled)/i.test(message)) {
+    return '通用只读调查当前不可用。你可以先使用演练，或联系管理员检查只读调查配置。'
+  }
+  return '正式只读调查未完成。请稍后重试；如持续失败，请联系管理员。'
 }
 
 export function investigationLabel(mode: InvestigationMode, authority: RouteAuthority) {

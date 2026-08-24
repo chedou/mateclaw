@@ -5,6 +5,7 @@ import type {
   GuanceRecordingBatchReadiness,
   GuanceReadinessStatus,
   GuanceSignalStatus,
+  OpenDiscoveryReadiness,
 } from '@/api'
 import {
   closureOutcomeLabel,
@@ -12,6 +13,7 @@ import {
   diagnosisSummaryRouteLabel,
   diagnosisGuanceUsageLabel,
   diagnosisEvidenceSourcePresentation,
+  formalAdmissionErrorMessage,
   formatDuration,
   guanceAcceptanceProgress,
   guanceAcceptanceStateLabel,
@@ -26,6 +28,7 @@ import {
   impactMetrics,
   investigationLabel,
   knowledgeEvidenceGradeLabel,
+  openDiscoveryReadinessPresentation,
   timingState,
 } from '../formalProjection'
 
@@ -123,10 +126,50 @@ function recordingBatch(executableTargetCount: number): GuanceRecordingBatchRead
 }
 
 describe('formal troubleshooting projection formatting', () => {
+  it.each([
+    ['formal open discovery requires an enabled pilot plan containing the exact system/service', '还未开通正式只读调查'],
+    ['Guance owner acceptance belongs to a different system/service', '数据源尚未完成正式验收'],
+    ['当前系统/服务尚未验收通用调查所需的只读能力；no supported accepted read-only capability is available', '还缺少可用的只读查询能力'],
+    ['formal open discovery requires structured system and service', '请先填写系统、服务和故障现象'],
+    ['formal bounded read-only planner is unavailable', '通用只读调查当前不可用'],
+    ['pilot plan changed during formal open discovery', '调查期间配置发生变化'],
+  ])('translates a formal-admission failure into a user action: %s', (raw, expected) => {
+    const projected = formalAdmissionErrorMessage(new Error(raw))
+
+    expect(projected).toContain(expected)
+    expect(projected).not.toMatch(/T7|owner|pilot|contract|Playbook|planner/i)
+  })
+
+  it.each([
+    ['READY_FOR_BOUNDED_FALLBACK', '通用只读调查已就绪', 'success'],
+    ['READY_FOR_REHEARSAL', '通用只读调查当前只能演练', 'warning'],
+    ['DISABLED', '通用只读调查未启用', 'error'],
+    ['BLOCKED', '通用只读调查尚未就绪', 'error'],
+  ] as const)('shows only the user action for readiness %s', (status, title, alertType) => {
+    const readiness: OpenDiscoveryReadiness = {
+      status,
+      agentEnabled: false,
+      configuredAgentId: 0,
+      agentReady: false,
+      configuredPlanCount: 0,
+      visiblePlanCount: 0,
+      trueSourcePermitted: false,
+      plans: [],
+      blockers: ['T7 owner contract is missing'],
+      nextAction: 'enable Agent and pilot plan',
+    }
+    const projected = openDiscoveryReadinessPresentation(readiness)
+
+    expect(projected).toMatchObject({ title, alertType })
+    expect(projected.detail).toMatch(/管理员|开始/)
+    expect(`${projected.title} ${projected.detail}`)
+      .not.toMatch(/T7|owner|pilot|contract|Agent|planner|计划/i)
+  })
+
   it('keeps conclusion semantics explicit', () => {
-    expect(conclusionLabel('LOCATED')).toBe('已定位')
+    expect(conclusionLabel('LOCATED')).toBe('已定位原因')
     expect(conclusionLabel('EXCLUDED')).toBe('已排除（非定位）')
-    expect(conclusionLabel('HYPOTHESIS')).toBe('根因假设')
+    expect(conclusionLabel('HYPOTHESIS')).toBe('最可能方向')
     expect(conclusionLabel('INSUFFICIENT_EVIDENCE')).toBe('证据不足')
   })
 
@@ -154,18 +197,18 @@ describe('formal troubleshooting projection formatting', () => {
     expect(formatDuration('PT4M')).toBe('4分钟')
     expect(formatDuration('PT0.031853S')).toBe('<1秒')
     expect(investigationLabel('ERROR_CODE_PLAYBOOK', 'EXPLICIT'))
-      .toBe('错误码排障方案 · 显式命中')
+      .toBe('标准排障方法（按错误码） · 直接命中')
     expect(investigationLabel('OPEN_DISCOVERY', 'MODEL_PROPOSED'))
-      .toBe('开放调查 · 模型提议')
+      .toBe('通用只读调查 · AI 规划')
     expect(investigationLabel('OPEN_DISCOVERY', 'POLICY_PROPOSED'))
-      .toBe('开放调查 · 受限调查提议')
+      .toBe('通用只读调查 · 受限规划')
   })
 
   it('keeps persisted route semantics distinct from legacy reconstruction', () => {
     expect(diagnosisSummaryRouteLabel(null, null, 'LEGACY_DERIVED'))
       .toBe('旧版记录推导 · 详情可见兼容值')
     expect(diagnosisSummaryRouteLabel('SCENARIO_PLAYBOOK', 'RULE_MATCHED', 'PERSISTED'))
-      .toBe('场景排障方案 · 规则命中')
+      .toBe('标准排障方法（按场景） · 自动匹配')
     expect(diagnosisSummaryRouteLabel(null, 'RULE_MATCHED', 'PERSISTED'))
       .toBe('路由字段缺失')
   })
