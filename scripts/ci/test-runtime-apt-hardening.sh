@@ -37,7 +37,7 @@ keyring_decode_line="$(line_of 'base64 --decode < /tmp/ubuntu-archive-keyring.gp
 keyring_checksum_line="$(line_of '| sha256sum --check --strict -')"
 keyring_install_line="$(line_of 'install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg')"
 keyring_permission_line="$(line_of 'find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d')"
-apt_update_line="$(line_of '&& apt-get update')"
+apt_update_line="$(line_of '&& apt-get -o APT::Sandbox::User=root update')"
 
 [[ -n "${nodesource_line}" ]] \
   || fail "runtime stage must remove the unused NodeSource repository"
@@ -74,6 +74,10 @@ grep -Fq -- '-exec chmod a+r {} +' <<<"${runtime_block}" \
   || fail "keyring repair must grant read access without weakening write permissions"
 grep -Fq -- 'echo "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31  /tmp/ubuntu-archive-keyring.gpg"' <<<"${runtime_block}" \
   || fail "Ubuntu archive keyring digest must be fixed in the build instruction"
+
+sandbox_root_count="$(grep -Fc -- 'apt-get -o APT::Sandbox::User=root' <<<"${runtime_block}")"
+[[ "${sandbox_root_count}" == "2" ]] \
+  || fail "legacy Docker workaround must be scoped to APT update and install only"
 
 for insecure_bypass in \
   allow-unauthenticated \

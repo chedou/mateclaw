@@ -121,7 +121,10 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # installing our runtime packages. Jenkins' Docker 18.06 + legacy overlay has
 # also exposed inherited keyrings without read permission for the `_apt` user;
 # restore the pinned Ubuntu archive keyring and its read access explicitly
-# instead of disabling signature verification.
+# instead of disabling signature verification. The same legacy runtime blocks
+# `_apt` from consuming even a freshly installed 0644 keyring, so acquisition
+# runs as the container's existing root build user. This option is scoped to
+# these two build commands; repository signature checks remain mandatory.
 COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64
 RUN rm -f /etc/apt/sources.list.d/nodesource.list \
         /etc/apt/sources.list.d/nodesource.sources \
@@ -134,8 +137,8 @@ RUN rm -f /etc/apt/sources.list.d/nodesource.list \
     && chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
     && find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
         -type f \( -name '*.gpg' -o -name '*.asc' \) -exec chmod a+r {} + \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && apt-get -o APT::Sandbox::User=root update \
+    && apt-get -o APT::Sandbox::User=root install -y --no-install-recommends \
         openjdk-21-jre-headless \
         fonts-noto-cjk \
         fonts-noto-color-emoji \
