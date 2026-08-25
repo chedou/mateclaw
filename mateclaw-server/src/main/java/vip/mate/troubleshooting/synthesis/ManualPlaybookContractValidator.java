@@ -195,6 +195,33 @@ public final class ManualPlaybookContractValidator {
                 key(item.baselineField(), 128, path + ".baselineField", errors);
                 finite(item.multiplier(), path + ".multiplier", errors);
             }
+            case Criterion.NumericLte item -> {
+                key(item.field(), 128, path + ".field", errors);
+                finite(item.threshold(), path + ".threshold", errors);
+            }
+            case Criterion.MultipleLte item -> {
+                key(item.field(), 128, path + ".field", errors);
+                key(item.baselineField(), 128, path + ".baselineField", errors);
+                finite(item.multiplier(), path + ".multiplier", errors);
+            }
+            case Criterion.FractionGte item -> {
+                key(item.numeratorField(), 128, path + ".numeratorField", errors);
+                key(item.denominatorField(), 128, path + ".denominatorField", errors);
+                finite(item.threshold(), path + ".threshold", errors);
+            }
+            case Criterion.RateMultipleGt item -> {
+                key(item.currentEventField(), 128, path + ".currentEventField", errors);
+                key(item.currentPopulationField(), 128, path + ".currentPopulationField", errors);
+                key(item.baselineEventField(), 128, path + ".baselineEventField", errors);
+                key(item.baselinePopulationField(), 128, path + ".baselinePopulationField", errors);
+                finite(item.multiplier(), path + ".multiplier", errors);
+            }
+            case Criterion.AllOf item -> {
+                size(item.criteria(), path + ".criteria", true, errors);
+                for (int index = 0; index < item.criteria().size(); index++) {
+                    criterion(item.criteria().get(index), path + ".criteria[" + index + "]", errors);
+                }
+            }
             case Criterion.ContainsAndIn item -> {
                 key(item.containsField(), 128, path + ".containsField", errors);
                 text(item.substring(), path + ".substring", true, errors);

@@ -467,6 +467,7 @@ class OpenDiscoveryDiagnosisPersistenceServiceTest {
                 abstained ? "" : "应用服务自身出现集中错误",
                 abstained ? Confidence.LOW : Confidence.MEDIUM,
                 abstained,
+                false,
                 NorthStarTimings.concluded(NOW, NOW, NOW),
                 false,
                 false,

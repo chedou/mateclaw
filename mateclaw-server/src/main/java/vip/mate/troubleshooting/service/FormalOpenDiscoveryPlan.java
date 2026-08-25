@@ -23,7 +23,8 @@ public record FormalOpenDiscoveryPlan(
     public static final String PLAN_KEY = "bounded-open-discovery-v1";
     private static final List<String> SAFE_SIGNAL_KINDS = List.of(
             "error_log_scan",
-            "k8s_workload_health");
+            "k8s_workload_health",
+            "slow_request_analysis");
 
     public FormalOpenDiscoveryPlan {
         if (!PLAN_KEY.equals(planKey)) {

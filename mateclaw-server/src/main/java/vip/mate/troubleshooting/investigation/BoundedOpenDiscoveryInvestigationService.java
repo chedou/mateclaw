@@ -26,6 +26,8 @@ public final class BoundedOpenDiscoveryInvestigationService {
 
     public static final String PLAN_KEY = "bounded-open-discovery-v1";
     public static final String REVIEWED_REPORT_PLAN_KEY = "reviewed-incident-report-v1";
+    public static final String CSDP_WECHAT_SLOW_REQUEST_PLAN_KEY =
+            "csdp-wechat-slow-request-v1";
     private static final Duration REVIEWED_REPORT_TIMEOUT = Duration.ofSeconds(2);
 
     private final TroubleshootingAgentProperties properties;
@@ -69,7 +71,8 @@ public final class BoundedOpenDiscoveryInvestigationService {
                         IncidentReportReadOnlyTool.TOOL_KEY
                                 + "@" + IncidentReportReadOnlyTool.VERSION),
                 signalKinds(graph),
-                null);
+                null,
+                PLAN_KEY);
     }
 
     /**
@@ -97,6 +100,11 @@ public final class BoundedOpenDiscoveryInvestigationService {
             return Optional.empty();
         }
         HypothesisGraph graph = graphFactory.createFormal(incident, formalPlan);
+        boolean reviewedSlowRequest =
+                ReviewedIncidentPolicy.isCsdpWechatSlowRequest(incident)
+                        && graph.nodes().stream().anyMatch(node ->
+                                "csdp-wechat-partner-user-info-hotspot"
+                                        .equals(node.hypothesisId()));
         return investigate(
                 workspaceId,
                 incident,
@@ -105,8 +113,10 @@ public final class BoundedOpenDiscoveryInvestigationService {
                 Set.of(EvidenceRouterReadOnlyTool.TOOL_KEY
                         + "@" + EvidenceRouterReadOnlyTool.VERSION),
                 formalPlan.allowedSignalKinds(),
-                expectedBindingFingerprint)
-                .map(this::limitFormalGenericConclusion);
+                expectedBindingFingerprint,
+                reviewedSlowRequest ? CSDP_WECHAT_SLOW_REQUEST_PLAN_KEY : PLAN_KEY)
+                .map(execution -> reviewedSlowRequest
+                        ? execution : limitFormalGenericConclusion(execution));
     }
 
     /**
@@ -158,7 +168,8 @@ public final class BoundedOpenDiscoveryInvestigationService {
             HypothesisGraph graph,
             Set<String> allowedToolIdentities,
             Set<String> allowedSignalKinds,
-            String sourceBindingFingerprint) {
+            String sourceBindingFingerprint,
+            String planKey) {
         if (!properties.isBoundedInvestigationEnabled() || platforms.isEmpty()) {
             return Optional.empty();
         }
@@ -191,8 +202,8 @@ public final class BoundedOpenDiscoveryInvestigationService {
                 sourceBindingFingerprint);
         return Optional.of(new Execution(
                 outcome,
-                PLAN_KEY,
-                fingerprint(graph, platforms, maxIterations, maxToolCalls, timeout),
+                planKey,
+                fingerprint(planKey, graph, platforms, maxIterations, maxToolCalls, timeout),
                 signalKinds,
                 maxIterations,
                 maxToolCalls,
@@ -236,7 +247,7 @@ public final class BoundedOpenDiscoveryInvestigationService {
                 outcome,
                 REVIEWED_REPORT_PLAN_KEY,
                 fingerprint(
-                        graph, localPlatform, maxIterations, maxToolCalls,
+                        REVIEWED_REPORT_PLAN_KEY, graph, localPlatform, maxIterations, maxToolCalls,
                         REVIEWED_REPORT_TIMEOUT),
                 signalKinds,
                 maxIterations,
@@ -268,6 +279,16 @@ public final class BoundedOpenDiscoveryInvestigationService {
             int maxIterations,
             int maxToolCalls,
             Duration timeout) {
+        return fingerprint(PLAN_KEY, graph, platforms, maxIterations, maxToolCalls, timeout);
+    }
+
+    static String fingerprint(
+            String planKey,
+            HypothesisGraph graph,
+            Set<String> platforms,
+            int maxIterations,
+            int maxToolCalls,
+            Duration timeout) {
         String graphShape = graph.nodes().stream()
                 .flatMap(node -> node.questions().stream()
                         .map(question -> String.join(
@@ -290,7 +311,7 @@ public final class BoundedOpenDiscoveryInvestigationService {
                 .collect(java.util.stream.Collectors.joining("|"));
         String canonical = String.join(
                 "\u001f",
-                PLAN_KEY,
+                planKey,
                 graphShape,
                 platforms.stream().sorted().collect(java.util.stream.Collectors.joining(",")),
                 Integer.toString(maxIterations),

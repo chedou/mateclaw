@@ -109,6 +109,23 @@ final class ManualPlaybookReplaySuiteTemplateFactory {
                 put(writes, rule.baselineField(), 1D);
                 put(writes, rule.field(), finite(rule.multiplier()));
             }
+            case Criterion.NumericLte rule ->
+                    put(writes, rule.field(), finite(Math.nextUp(rule.threshold())));
+            case Criterion.MultipleLte rule -> {
+                put(writes, rule.baselineField(), 1D);
+                put(writes, rule.field(), finite(Math.nextUp(rule.multiplier())));
+            }
+            case Criterion.FractionGte rule -> {
+                put(writes, rule.denominatorField(), 1D);
+                put(writes, rule.numeratorField(), 0D);
+            }
+            case Criterion.RateMultipleGt rule -> {
+                put(writes, rule.currentPopulationField(), 100D);
+                put(writes, rule.currentEventField(), 1D);
+                put(writes, rule.baselinePopulationField(), 100D);
+                put(writes, rule.baselineEventField(), 1D);
+            }
+            case Criterion.AllOf rule -> writeCounterexample(rule.criteria().getFirst(), writes);
             case Criterion.ContainsAndIn rule -> writeStringCounterexample(rule, writes);
             case Criterion.BooleanEquals rule -> put(writes, rule.field(), !rule.expected());
         }

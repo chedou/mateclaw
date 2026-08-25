@@ -14,6 +14,7 @@ public record BoundedInvestigationDraft(
         String hypothesis,
         Confidence confidence,
         boolean abstained,
+        boolean located,
         NorthStarTimings timings,
         boolean rehearsal,
         boolean fixtureMode,
@@ -28,6 +29,10 @@ public record BoundedInvestigationDraft(
         }
         if (confidence == Confidence.HIGH) {
             throw new IllegalArgumentException("bounded investigation confidence cannot be HIGH");
+        }
+        if (abstained && located) {
+            throw new IllegalArgumentException(
+                    "bounded investigation cannot be both located and abstained");
         }
         if (abstained && confidence != Confidence.LOW) {
             throw new IllegalArgumentException("abstained bounded investigation confidence must be LOW");

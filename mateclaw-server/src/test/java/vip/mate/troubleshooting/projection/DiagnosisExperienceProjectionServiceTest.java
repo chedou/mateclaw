@@ -659,6 +659,30 @@ class DiagnosisExperienceProjectionServiceTest {
     }
 
     @Test
+    void reviewedSlowRequestLocationTranslatesEveryEvidenceNumberIntoPlainLanguage() {
+        when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
+                .thenReturn(new StoredDiagnosis(csdpWechatSlowRequestDiagnosis(), 0, true));
+
+        DiagnosisExperienceProjection projection = service.project(WORKSPACE_ID, DIAGNOSIS_ID);
+        DiagnosisExperienceProjection.BusinessSummary summary = projection.businessSummary();
+
+        assertThat(summary.conclusionType()).isEqualTo(ConclusionType.LOCATED);
+        assertThat(summary.headline()).isEqualTo("已定位到出问题的环节");
+        assertThat(summary.rootCause()).contains("partner_user_info", "流量未增长");
+        assertThat(summary.keyEvidence())
+                .contains("慢请求 19 条（前窗 1 条）")
+                .contains("总请求 19585（前窗 20417，未增长）")
+                .contains("partner_user_info 占 10/19")
+                .contains("超时错误 0 条");
+        assertThat(summary.nextStep().label())
+                .isEqualTo("继续定位 partner_user_info 内部耗时");
+        assertThat(summary.nextStep().text()).contains("Mongo", "N+1", "性能剖析");
+        assertThat(projection.developerEvidence().capabilityLimits())
+                .anyMatch(item -> item.contains("已审核场景判据")
+                        && item.contains("没有让大模型自由猜原因"));
+    }
+
+    @Test
     void reportedMobileFinishPolicyShowsTheReasonAndSafeManualNextStep() {
         when(persistence.get(WORKSPACE_ID, DIAGNOSIS_ID))
                 .thenReturn(new StoredDiagnosis(icareMobileFinishPolicyDiagnosis(), 0, true));
@@ -1144,6 +1168,49 @@ class DiagnosisExperienceProjectionServiceTest {
                 List.of("icare-mobile-change-order-finish-policy-present"),
                 List.of(), List.of(), List.of(new TimelineEvent(
                         NOW, "受限调查形成待确认假设", "system", "done")));
+    }
+
+    private Diagnosis csdpWechatSlowRequestDiagnosis() {
+        IncidentContext incident = new IncidentContext(
+                "incident-wechat-slow", "CSDP", "csdp-wechat", null,
+                "系统突然这么卡了", "P2", "页面加载变慢", null,
+                NOW, null, "wecom", IncidentCompleteness.STRUCTURED,
+                "页面加载很慢");
+        EvidenceResult aggregate = new EvidenceResult(
+                "open-discovery-csdp-wechat-slow-request-analysis",
+                "slow_request_analysis", "", EvidenceStatus.ANOMALY,
+                "reviewed slow request aggregate",
+                Map.of(
+                        "baseline_request_count", 20417,
+                        "baseline_slow_request_count", 1,
+                        "current_request_count", 19585,
+                        "current_slow_request_count", 19,
+                        "affected_trace_count", 19,
+                        "affected_pod_count", 1,
+                        "partner_user_info_slow_count", 10,
+                        "timeout_error_count", 0),
+                "guance:slow-request-analysis", NOW);
+        Diagnosis pending = Diagnosis.initial(
+                DIAGNOSIS_ID, "case-wechat-slow", "run-wechat-slow", incident,
+                RouteMode.BOUNDED_DISCOVERY,
+                InvestigationMode.OPEN_DISCOVERY,
+                RouteAuthority.POLICY_PROPOSED,
+                ConclusionType.INSUFFICIENT_EVIDENCE,
+                NorthStarTimings.concluded(REPORTED_AT, READY_AT, READY_AT),
+                DiagnosisStatus.NEEDS_INVESTIGATION,
+                "等待只读调查", "", Confidence.LOW, true,
+                null, null, null, List.of(), List.of(), List.of(),
+                "csdp-wechat 开发", true, false, List.of(), List.of());
+        return pending.evidenceRecorded(
+                ConclusionType.LOCATED,
+                "明确排障原因：partner_user_info 查询链路出现性能退化；"
+                        + "慢请求显著增长且过半集中于该接口，同期流量未增长、未见超时",
+                "审核判据已命中。",
+                Confidence.MEDIUM,
+                List.of(aggregate),
+                List.of("csdp-wechat-partner-user-info-hotspot-present"),
+                List.of(), List.of(), List.of(new TimelineEvent(
+                        NOW, "已定位直接慢环节", "system", "done")));
     }
 
     private Diagnosis icareMissingRevisitResultDiagnosis() {

@@ -20,6 +20,11 @@ import java.util.List;
                 value = Criterion.FailureSuccessRateContrast.class,
                 name = "failure_success_rate_contrast"),
         @JsonSubTypes.Type(value = Criterion.MultipleGt.class, name = "multiple_gt"),
+        @JsonSubTypes.Type(value = Criterion.NumericLte.class, name = "numeric_lte"),
+        @JsonSubTypes.Type(value = Criterion.MultipleLte.class, name = "multiple_lte"),
+        @JsonSubTypes.Type(value = Criterion.FractionGte.class, name = "fraction_gte"),
+        @JsonSubTypes.Type(value = Criterion.RateMultipleGt.class, name = "rate_multiple_gt"),
+        @JsonSubTypes.Type(value = Criterion.AllOf.class, name = "all_of"),
         @JsonSubTypes.Type(value = Criterion.ContainsAndIn.class, name = "contains_and_in"),
         @JsonSubTypes.Type(value = Criterion.BooleanEquals.class, name = "boolean_equals")
 })
@@ -28,6 +33,11 @@ public sealed interface Criterion permits Criterion.NumericGte,
         Criterion.RatioOfSumGt,
         Criterion.FailureSuccessRateContrast,
         Criterion.MultipleGt,
+        Criterion.NumericLte,
+        Criterion.MultipleLte,
+        Criterion.FractionGte,
+        Criterion.RateMultipleGt,
+        Criterion.AllOf,
         Criterion.ContainsAndIn,
         Criterion.BooleanEquals {
 
@@ -88,6 +98,56 @@ public sealed interface Criterion permits Criterion.NumericGte,
         }
     }
 
+    record NumericLte(String field, double threshold) implements Criterion {
+        public NumericLte {
+            field = required(field, "field");
+        }
+    }
+
+    record MultipleLte(String field, String baselineField, double multiplier)
+            implements Criterion {
+        public MultipleLte {
+            field = required(field, "field");
+            baselineField = required(baselineField, "baselineField");
+            positive(multiplier, "multiplier");
+        }
+    }
+
+    record FractionGte(String numeratorField, String denominatorField, double threshold)
+            implements Criterion {
+        public FractionGte {
+            numeratorField = required(numeratorField, "numeratorField");
+            denominatorField = required(denominatorField, "denominatorField");
+            unitInterval(threshold, "threshold");
+        }
+    }
+
+    /** Compares two event rates without being distorted by different request volumes. */
+    record RateMultipleGt(
+            String currentEventField,
+            String currentPopulationField,
+            String baselineEventField,
+            String baselinePopulationField,
+            double multiplier) implements Criterion {
+        public RateMultipleGt {
+            currentEventField = required(currentEventField, "currentEventField");
+            currentPopulationField = required(currentPopulationField, "currentPopulationField");
+            baselineEventField = required(baselineEventField, "baselineEventField");
+            baselinePopulationField = required(baselinePopulationField, "baselinePopulationField");
+            positive(multiplier, "multiplier");
+        }
+    }
+
+    /** Every child rule must be supported by the same canonical evidence result. */
+    record AllOf(List<Criterion> criteria) implements Criterion {
+        public AllOf {
+            criteria = List.copyOf(criteria == null ? List.of() : criteria);
+            if (criteria.isEmpty() || criteria.stream().anyMatch(java.util.Objects::isNull)) {
+                throw new IllegalArgumentException("criteria must not be empty or contain null");
+            }
+        }
+    }
+
     record ContainsAndIn(
             String containsField,
             String substring,
@@ -121,6 +181,12 @@ public sealed interface Criterion permits Criterion.NumericGte,
     private static void unitInterval(double value, String name) {
         if (!Double.isFinite(value) || value < 0D || value > 1D) {
             throw new IllegalArgumentException(name + " must be between 0 and 1");
+        }
+    }
+
+    private static void positive(double value, String name) {
+        if (!Double.isFinite(value) || value <= 0D) {
+            throw new IllegalArgumentException(name + " must be positive");
         }
     }
 }

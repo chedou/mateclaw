@@ -45,6 +45,20 @@ public final class CriterionRenderer {
                             + number(rule.minRateDelta());
             case Criterion.MultipleGt rule ->
                     rule.field() + " > " + number(rule.multiplier()) + " × " + rule.baselineField();
+            case Criterion.NumericLte rule ->
+                    rule.field() + " ≤ " + number(rule.threshold());
+            case Criterion.MultipleLte rule ->
+                    rule.field() + " ≤ " + number(rule.multiplier()) + " × " + rule.baselineField();
+            case Criterion.FractionGte rule ->
+                    rule.numeratorField() + " ÷ " + rule.denominatorField()
+                            + " ≥ " + number(rule.threshold());
+            case Criterion.RateMultipleGt rule ->
+                    rule.currentEventField() + " ÷ " + rule.currentPopulationField()
+                            + " > " + number(rule.multiplier()) + " × "
+                            + rule.baselineEventField() + " ÷ " + rule.baselinePopulationField();
+            case Criterion.AllOf rule -> rule.criteria().stream()
+                    .map(this::expression)
+                    .collect(java.util.stream.Collectors.joining("  ∧  ", "(", ")"));
             case Criterion.ContainsAndIn rule ->
                     rule.containsField() + " ∋ \"" + rule.substring() + "\"  ∧  "
                             + rule.membershipField() + " ∈ {" + String.join(", ", rule.acceptedValues()) + "}";
@@ -145,6 +159,56 @@ public final class CriterionRenderer {
                 yield number(value) + (value > threshold ? " > " : " ≤ ")
                         + number(rule.multiplier()) + " × " + number(baseline) + " = " + number(threshold);
             }
+            case Criterion.NumericLte rule -> {
+                Double value = number(observed, rule.field());
+                yield value == null
+                        ? rule.field() + " 不可读"
+                        : rule.field() + "=" + number(value)
+                                + (value <= rule.threshold() ? " ≤ " : " > ")
+                                + number(rule.threshold());
+            }
+            case Criterion.MultipleLte rule -> {
+                Double value = number(observed, rule.field());
+                Double baseline = number(observed, rule.baselineField());
+                if (value == null || baseline == null || baseline <= 0D) {
+                    yield "当前值或基线不可读";
+                }
+                double threshold = baseline * rule.multiplier();
+                yield number(value) + (value <= threshold ? " ≤ " : " > ")
+                        + number(rule.multiplier()) + " × " + number(baseline)
+                        + " = " + number(threshold);
+            }
+            case Criterion.FractionGte rule -> {
+                Double numerator = number(observed, rule.numeratorField());
+                Double denominator = number(observed, rule.denominatorField());
+                if (numerator == null || denominator == null || denominator <= 0D) {
+                    yield "分子或分母不可读";
+                }
+                double fraction = numerator / denominator;
+                yield number(numerator) + " ÷ " + number(denominator) + " = "
+                        + number(fraction)
+                        + (fraction >= rule.threshold() ? " ≥ " : " < ")
+                        + number(rule.threshold());
+            }
+            case Criterion.RateMultipleGt rule -> {
+                Double currentEvents = number(observed, rule.currentEventField());
+                Double currentPopulation = number(observed, rule.currentPopulationField());
+                Double baselineEvents = number(observed, rule.baselineEventField());
+                Double baselinePopulation = number(observed, rule.baselinePopulationField());
+                if (currentEvents == null || currentPopulation == null
+                        || baselineEvents == null || baselinePopulation == null
+                        || currentPopulation <= 0D || baselinePopulation <= 0D) {
+                    yield "当前或基线比率不可读";
+                }
+                double currentRate = currentEvents / currentPopulation;
+                double baselineRate = baselineEvents / baselinePopulation;
+                yield "当前慢请求率=" + number(currentRate)
+                        + "，基线慢请求率=" + number(baselineRate)
+                        + "，倍数门槛=" + number(rule.multiplier());
+            }
+            case Criterion.AllOf rule -> rule.criteria().stream()
+                    .map(child -> substitution(child, observed))
+                    .collect(java.util.stream.Collectors.joining("；"));
             case Criterion.ContainsAndIn rule -> {
                 Object contains = observed.get(rule.containsField());
                 Object membership = observed.get(rule.membershipField());

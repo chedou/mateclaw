@@ -40,6 +40,12 @@ public final class CriterionEvaluator {
             case Criterion.FailureSuccessRateContrast rule ->
                     evaluateFailureSuccessRateContrast(rule, observed);
             case Criterion.MultipleGt rule -> evaluateMultiple(rule, observed);
+            case Criterion.NumericLte rule -> compare(
+                    number(observed, rule.field()), value -> value <= rule.threshold());
+            case Criterion.MultipleLte rule -> evaluateMultipleLte(rule, observed);
+            case Criterion.FractionGte rule -> evaluateFractionGte(rule, observed);
+            case Criterion.RateMultipleGt rule -> evaluateRateMultipleGt(rule, observed);
+            case Criterion.AllOf rule -> evaluateAllOf(rule, observed);
             case Criterion.ContainsAndIn rule -> evaluateContainsAndIn(rule, observed);
             case Criterion.BooleanEquals rule -> observed.get(rule.field()) instanceof Boolean value
                     ? outcome(value == rule.expected())
@@ -143,6 +149,75 @@ public final class CriterionEvaluator {
         }
         return outcome(baseline.getAsDouble() > 0
                 && value.getAsDouble() > baseline.getAsDouble() * rule.multiplier());
+    }
+
+    private CriterionOutcome evaluateMultipleLte(
+            Criterion.MultipleLte rule,
+            Map<String, ?> observed) {
+        OptionalDouble value = number(observed, rule.field());
+        OptionalDouble baseline = number(observed, rule.baselineField());
+        if (value.isEmpty() || baseline.isEmpty()
+                || value.getAsDouble() < 0D || baseline.getAsDouble() <= 0D) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        return outcome(value.getAsDouble() <= baseline.getAsDouble() * rule.multiplier());
+    }
+
+    private CriterionOutcome evaluateFractionGte(
+            Criterion.FractionGte rule,
+            Map<String, ?> observed) {
+        OptionalDouble numerator = number(observed, rule.numeratorField());
+        OptionalDouble denominator = number(observed, rule.denominatorField());
+        if (numerator.isEmpty() || denominator.isEmpty()
+                || numerator.getAsDouble() < 0D
+                || denominator.getAsDouble() <= 0D
+                || numerator.getAsDouble() > denominator.getAsDouble()) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        return outcome(numerator.getAsDouble() / denominator.getAsDouble()
+                >= rule.threshold());
+    }
+
+    private CriterionOutcome evaluateRateMultipleGt(
+            Criterion.RateMultipleGt rule,
+            Map<String, ?> observed) {
+        OptionalDouble currentEvents = number(observed, rule.currentEventField());
+        OptionalDouble currentPopulation = number(observed, rule.currentPopulationField());
+        OptionalDouble baselineEvents = number(observed, rule.baselineEventField());
+        OptionalDouble baselinePopulation = number(observed, rule.baselinePopulationField());
+        if (currentEvents.isEmpty() || currentPopulation.isEmpty()
+                || baselineEvents.isEmpty() || baselinePopulation.isEmpty()) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        double currentEventCount = currentEvents.getAsDouble();
+        double currentPopulationCount = currentPopulation.getAsDouble();
+        double baselineEventCount = baselineEvents.getAsDouble();
+        double baselinePopulationCount = baselinePopulation.getAsDouble();
+        if (currentPopulationCount <= 0D || baselinePopulationCount <= 0D
+                || currentEventCount < 0D || baselineEventCount < 0D
+                || currentEventCount > currentPopulationCount
+                || baselineEventCount > baselinePopulationCount) {
+            return CriterionOutcome.UNEVALUATED;
+        }
+        double currentRate = currentEventCount / currentPopulationCount;
+        double baselineRate = baselineEventCount / baselinePopulationCount;
+        return outcome(currentEventCount > 0D
+                && (baselineRate == 0D
+                        || currentRate > baselineRate * rule.multiplier()));
+    }
+
+    private CriterionOutcome evaluateAllOf(
+            Criterion.AllOf rule,
+            Map<String, ?> observed) {
+        boolean unevaluated = false;
+        for (Criterion child : rule.criteria()) {
+            CriterionOutcome outcome = evaluate(child, observed);
+            if (outcome == CriterionOutcome.EXCLUDED) {
+                return CriterionOutcome.EXCLUDED;
+            }
+            unevaluated |= outcome == CriterionOutcome.UNEVALUATED;
+        }
+        return unevaluated ? CriterionOutcome.UNEVALUATED : CriterionOutcome.SATISFIED;
     }
 
     private CriterionOutcome evaluateContainsAndIn(

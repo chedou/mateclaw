@@ -250,6 +250,57 @@ class GuanceEvidenceLiveContractIT {
         });
     }
 
+    @Test
+    @EnabledIfEnvironmentVariable(
+            named = "MATECLAW_TROUBLESHOOTING_GUANCE_API_KEY",
+            matches = ".+")
+    void observesTheReviewedCsdpWechatSlowRequestComparison() {
+        contextRunner.run(context -> {
+            IncidentContext incident = new IncidentContext(
+                    "inc-live-wechat-slow-20260825",
+                    "CSDP",
+                    "csdp-wechat",
+                    null,
+                    "系统突然这么卡了",
+                    "P2",
+                    "read-only",
+                    null,
+                    Instant.parse("2026-08-25T13:35:00Z"),
+                    null,
+                    "manual",
+                    IncidentCompleteness.STRUCTURED,
+                    "页面加载很慢");
+
+            var result = context.getBean(EvidenceSourceRouter.class).collect(
+                    1L,
+                    new EvidenceRequest(
+                            "EV-LIVE-WECHAT-SLOW",
+                            "slow_request_analysis",
+                            "verify adjacent-window slow request hotspot",
+                            Map.of(),
+                            "-20m",
+                            true),
+                    incident,
+                    Set.of("guance"));
+
+            assertThat(result.status()).as(result.summary())
+                    .isEqualTo(EvidenceStatus.NORMAL);
+            assertThat(result.observed()).containsOnlyKeys(
+                    "baseline_request_count",
+                    "baseline_slow_request_count",
+                    "current_request_count",
+                    "current_slow_request_count",
+                    "affected_trace_count",
+                    "affected_pod_count",
+                    "partner_user_info_slow_count",
+                    "timeout_error_count");
+            assertThat(number(result.observed().get("current_slow_request_count")))
+                    .isPositive();
+            assertThat(number(result.observed().get("partner_user_info_slow_count")))
+                    .isPositive();
+        });
+    }
+
     private static boolean nonBlank(Object value) {
         return value instanceof String text && !text.isBlank();
     }

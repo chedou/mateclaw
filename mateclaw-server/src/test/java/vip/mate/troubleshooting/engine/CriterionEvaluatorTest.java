@@ -79,6 +79,38 @@ class CriterionEvaluatorTest {
     }
 
     @Test
+    void allOfCanProveASlowRequestHotspotWithoutConfusingTrafficOrTimeoutsForTheCause() {
+        Criterion rule = new Criterion.AllOf(List.of(
+                new Criterion.RateMultipleGt(
+                        "current_slow_request_count", "current_request_count",
+                        "baseline_slow_request_count", "baseline_request_count", 5),
+                new Criterion.FractionGte(
+                        "partner_user_info_slow_count", "current_slow_request_count", 0.5),
+                new Criterion.MultipleLte(
+                        "current_request_count", "baseline_request_count", 1.5),
+                new Criterion.NumericLte("timeout_error_count", 0)));
+
+        Map<String, Object> observed = Map.of(
+                "baseline_request_count", 20417,
+                "baseline_slow_request_count", 1,
+                "current_request_count", 19585,
+                "current_slow_request_count", 19,
+                "partner_user_info_slow_count", 10,
+                "timeout_error_count", 0);
+
+        assertTrue(evaluator.matches(rule, observed));
+        assertEquals(
+                CriterionOutcome.EXCLUDED,
+                evaluator.evaluate(rule, with(observed, "current_request_count", 40000)));
+        assertEquals(
+                CriterionOutcome.EXCLUDED,
+                evaluator.evaluate(rule, with(observed, "timeout_error_count", 1)));
+        assertEquals(
+                CriterionOutcome.UNEVALUATED,
+                evaluator.evaluate(rule, without(observed, "baseline_request_count")));
+    }
+
+    @Test
     void containsAndInIsCaseInsensitive() {
         Criterion rule = new Criterion.ContainsAndIn(
                 "failed_hop", "mongo", "status", List.of("error", "timeout"));
@@ -152,5 +184,18 @@ class CriterionEvaluatorTest {
                 observed,
                 "fixture",
                 Instant.parse("2026-07-25T00:00:00Z"));
+    }
+
+    private Map<String, Object> with(
+            Map<String, Object> source, String field, Object value) {
+        Map<String, Object> copy = new java.util.LinkedHashMap<>(source);
+        copy.put(field, value);
+        return Map.copyOf(copy);
+    }
+
+    private Map<String, Object> without(Map<String, Object> source, String field) {
+        Map<String, Object> copy = new java.util.LinkedHashMap<>(source);
+        copy.remove(field);
+        return Map.copyOf(copy);
     }
 }

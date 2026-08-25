@@ -21,6 +21,8 @@ import java.util.regex.Pattern;
 public final class IncidentServiceIdentityResolver {
 
     private static final String PLACEHOLDER_SERVICE = "main";
+    private static final Map<String, String> REVIEWED_SERVICE_ALIASES =
+            Map.of("csp-wechat", "csdp-wechat");
     /**
      * Deployment-reviewed identities. The csp-service -> csp-api mapping was
      * confirmed from Guance service-grouped evidence. The date and the
@@ -42,7 +44,14 @@ public final class IncidentServiceIdentityResolver {
     }
 
     public static IncidentContext resolve(IncidentContext incident) {
-        if (incident == null || !isPlaceholder(incident.service())) {
+        if (incident == null) {
+            return null;
+        }
+        String alias = REVIEWED_SERVICE_ALIASES.get(normalize(incident.service()));
+        if (alias != null) {
+            return incident.withResolvedService(alias);
+        }
+        if (!isPlaceholder(incident.service())) {
             return incident;
         }
         String rawInput = incident.rawInput();
@@ -79,6 +88,10 @@ public final class IncidentServiceIdentityResolver {
     private static boolean isPlaceholder(String service) {
         return service != null
                 && PLACEHOLDER_SERVICE.equals(service.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static IllegalArgumentException unresolved() {

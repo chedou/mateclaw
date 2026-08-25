@@ -756,9 +756,14 @@ public final class TroubleshootingAgentTriageService {
         List<String> citations = boundedCitations(execution);
         List<String> warnings = new ArrayList<>();
         boolean abstained = execution.finding().type() == RootCauseFinding.Type.ABSTAINED;
+        boolean located = execution.finding().type() == RootCauseFinding.Type.LOCATED
+                && BoundedOpenDiscoveryInvestigationService
+                        .CSDP_WECHAT_SLOW_REQUEST_PLAN_KEY.equals(execution.planKey());
         warnings.add(abstained
                 ? "现有只读证据不足，系统已停止判断并转人工深查。"
-                : "这是受限只读调查得到的候选方向，不是已经确认的精确根因。");
+                : located
+                        ? "已按审核判据定位直接原因；更深层代码机制仍需开发结合性能剖析确认。"
+                        : "这是受限只读调查得到的候选方向，不是已经确认的精确根因。");
         warnings.add("系统没有执行任何生产写操作；请由负责人核对证据并继续深查。");
         if (!execution.finding().missingHypothesisIds().isEmpty()) {
             warnings.add("仍未排除的方向："
@@ -775,6 +780,7 @@ public final class TroubleshootingAgentTriageService {
                 execution.finding().cause(),
                 abstained ? Confidence.LOW : Confidence.MEDIUM,
                 abstained,
+                located,
                 NorthStarTimings.concluded(
                         reportedAt, readyAt, execution.outcome().completedAt()),
                 rehearsal,

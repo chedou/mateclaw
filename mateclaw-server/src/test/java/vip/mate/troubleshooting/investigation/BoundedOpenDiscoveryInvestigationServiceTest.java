@@ -187,6 +187,80 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
     }
 
     @Test
+    void formalReviewedWechatSlowRequestPlanReturnsOnePlainLanguageRootCause() {
+        TroubleshootingAgentProperties properties = enabledProperties();
+        properties.setBoundedInvestigationMaxIterations(1);
+        properties.setBoundedInvestigationMaxToolCalls(1);
+        ReadOnlyEvidenceTool tool = new ReadOnlyEvidenceTool() {
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        EvidenceRouterReadOnlyTool.TOOL_KEY,
+                        EvidenceRouterReadOnlyTool.VERSION,
+                        Capability.READ_EVIDENCE,
+                        Set.of("slow_request_analysis"));
+            }
+
+            @Override
+            public EvidenceResult collect(
+                    ReadOnlyToolRegistry.Context context,
+                    EvidenceRequest request) {
+                return new EvidenceResult(
+                        request.requestId(), request.signalKind(), "",
+                        EvidenceStatus.ANOMALY, "reviewed slow request aggregate",
+                        Map.of(
+                                "baseline_request_count", 20417,
+                                "baseline_slow_request_count", 1,
+                                "current_request_count", 19585,
+                                "current_slow_request_count", 19,
+                                "affected_trace_count", 19,
+                                "affected_pod_count", 1,
+                                "partner_user_info_slow_count", 10,
+                                "timeout_error_count", 0),
+                        "guance:slow-request-analysis", NOW);
+            }
+        };
+        BoundedOpenDiscoveryInvestigationService service =
+                new BoundedOpenDiscoveryInvestigationService(
+                        properties,
+                        new BoundedInvestigationPlanner(
+                                new ReadOnlyToolRegistry(List.of(tool), CLOCK),
+                                new CriterionEvaluator(), CLOCK),
+                        new DefaultOpenDiscoveryHypothesisGraphFactory(), CLOCK);
+        FormalOpenDiscoveryPlan plan =
+                FormalOpenDiscoveryPlan.fromAcceptedCapabilities(
+                        Set.of("slow_request_analysis"));
+
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                service.investigateFormal(1L, slowIncident(), plan).orElseThrow();
+
+        assertThat(execution.planKey()).isEqualTo(
+                BoundedOpenDiscoveryInvestigationService.CSDP_WECHAT_SLOW_REQUEST_PLAN_KEY);
+        assertThat(execution.plannedSignalKinds())
+                .containsExactly("slow_request_analysis");
+        assertThat(execution.sourceRequestCount()).isEqualTo(1);
+        assertThat(execution.finding().type()).isEqualTo(RootCauseFinding.Type.LOCATED);
+        assertThat(execution.finding().cause())
+                .startsWith("明确排障原因：")
+                .contains("partner_user_info", "流量未增长", "未见超时");
+    }
+
+    @Test
+    void similarSlowWordingOnAnotherServiceStaysOnTheGenericPlan() {
+        DefaultOpenDiscoveryHypothesisGraphFactory factory =
+                new DefaultOpenDiscoveryHypothesisGraphFactory();
+        IncidentContext otherService = new IncidentContext(
+                "incident-slow-other", "CSDP", "csdp-task", null,
+                "系统突然很卡", "P2", "待确认", null, NOW,
+                null, "web", IncidentCompleteness.STRUCTURED, "页面加载很慢");
+
+        assertThat(factory.createFormal(
+                        otherService, FormalOpenDiscoveryPlan.current()).nodes())
+                .extracting(HypothesisGraph.Node::hypothesisId)
+                .doesNotContain("csdp-wechat-partner-user-info-hotspot");
+    }
+
+    @Test
     void formalGenericInvestigationRunsOnlyTheAcceptedSafeSignal() {
         TroubleshootingAgentProperties properties = enabledProperties();
         AtomicInteger calls = new AtomicInteger();
@@ -486,6 +560,14 @@ class BoundedOpenDiscoveryInvestigationServiceTest {
                 "incident-1", "CSDP", "csdp-wechat", "904003", "ITGW访问失败",
                 "P1", "客户受影响", null, NOW, null, "web",
                 IncidentCompleteness.STRUCTURED, null);
+    }
+
+    private static IncidentContext slowIncident() {
+        return new IncidentContext(
+                "incident-wechat-slow-20260825", "CSDP", "csdp-wechat", null,
+                "系统突然这么卡了", "P2", "页面加载变慢", null,
+                NOW, null, "wecom", IncidentCompleteness.STRUCTURED,
+                "csp-wechat 页面加载很慢");
     }
 
     private static final class NeverCalledTool implements ReadOnlyEvidenceTool {

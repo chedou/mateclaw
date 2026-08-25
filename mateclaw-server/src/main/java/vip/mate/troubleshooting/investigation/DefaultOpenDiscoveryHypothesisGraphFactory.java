@@ -83,6 +83,10 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
             throw new IllegalArgumentException(
                     "formal plan does not authorize the reviewed graph");
         }
+        if (ReviewedIncidentPolicy.isCsdpWechatSlowRequest(incident)
+                && formalPlan.allowedSignalKinds().contains("slow_request_analysis")) {
+            return createCsdpWechatSlowRequest();
+        }
         List<HypothesisGraph.Hypothesis> hypotheses = new java.util.ArrayList<>();
         if (formalPlan.allowedSignalKinds().contains("error_log_scan")) {
             hypotheses.add(new HypothesisGraph.Hypothesis(
@@ -114,6 +118,32 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
                                         "unhealthy_container_count", 1)))));
         }
         return HypothesisGraph.of(hypotheses);
+    }
+
+    private HypothesisGraph createCsdpWechatSlowRequest() {
+        Criterion reviewedCriterion = new Criterion.AllOf(List.of(
+                new Criterion.RateMultipleGt(
+                        "current_slow_request_count", "current_request_count",
+                        "baseline_slow_request_count", "baseline_request_count", 5D),
+                new Criterion.FractionGte(
+                        "partner_user_info_slow_count", "current_slow_request_count", 0.5D),
+                new Criterion.MultipleLte(
+                        "current_request_count", "baseline_request_count", 1.5D),
+                new Criterion.NumericLte("timeout_error_count", 0D)));
+        return HypothesisGraph.of(List.of(new HypothesisGraph.Hypothesis(
+                "csdp-wechat-partner-user-info-hotspot",
+                "明确排障原因：partner_user_info 查询链路出现性能退化；"
+                        + "慢请求显著增长且过半集中于该接口，同期流量未增长、未见超时",
+                180,
+                List.of(question(
+                        "open-discovery-csdp-wechat-slow-request-analysis",
+                        180,
+                        "slow_request_analysis",
+                        "对比故障窗口与前一等长窗口，确认慢请求热点及排除流量/超时方向",
+                        "csdp-wechat-partner-user-info-hotspot-present",
+                        "慢请求率放大、partner_user_info 占比过半、流量无显著增长且无超时错误",
+                        reviewedCriterion,
+                        "-20m")))));
     }
 
     /** Builds a local-only graph after IntakeSession provenance has been verified. */
@@ -161,11 +191,24 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
             String signal,
             String description,
             Criterion criterion) {
+        return question(
+                id, priority, signalKind, purpose, signal, description, criterion, "-15m");
+    }
+
+    private HypothesisGraph.Question question(
+            String id,
+            int priority,
+            String signalKind,
+            String purpose,
+            String signal,
+            String description,
+            Criterion criterion,
+            String window) {
         return questionWithTool(
                 id, priority,
                 EvidenceRouterReadOnlyTool.TOOL_KEY,
                 EvidenceRouterReadOnlyTool.VERSION,
-                signalKind, purpose, signal, description, criterion);
+                signalKind, purpose, signal, description, criterion, window);
     }
 
     private HypothesisGraph.Question questionWithTool(
@@ -178,12 +221,28 @@ public final class DefaultOpenDiscoveryHypothesisGraphFactory {
             String signal,
             String description,
             Criterion criterion) {
+        return questionWithTool(
+                id, priority, toolKey, toolVersion, signalKind, purpose,
+                signal, description, criterion, "-15m");
+    }
+
+    private HypothesisGraph.Question questionWithTool(
+            String id,
+            int priority,
+            String toolKey,
+            String toolVersion,
+            String signalKind,
+            String purpose,
+            String signal,
+            String description,
+            Criterion criterion,
+            String window) {
         EvidenceRequest request = new EvidenceRequest(
                 id,
                 signalKind,
                 purpose,
                 Map.of(),
-                "-15m",
+                window,
                 true);
         return new HypothesisGraph.Question(
                 id,

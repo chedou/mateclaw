@@ -333,6 +333,13 @@ public class GuanceBindingFingerprintService {
                             Integer.toString(queryTemplates.size()));
                     queryTemplates.forEach(template ->
                             digest.add("binding.queryTemplates.item", trim(template)));
+                    List<java.time.Duration> queryWindowOffsets =
+                            binding.getQueryWindowOffsets() == null
+                                    ? List.of() : binding.getQueryWindowOffsets();
+                    digest.add("binding.queryWindowOffsets.count",
+                            Integer.toString(queryWindowOffsets.size()));
+                    queryWindowOffsets.forEach(offset -> digest.add(
+                            "binding.queryWindowOffsets.item", String.valueOf(offset)));
                     EvidenceProperties.QueryOptions queryOptions =
                             binding.getQueryOptions();
                     if (queryOptions != null) {

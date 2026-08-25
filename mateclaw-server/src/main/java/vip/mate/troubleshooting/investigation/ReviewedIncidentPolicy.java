@@ -7,6 +7,9 @@ import vip.mate.troubleshooting.intake.NormalizedIncidentFactKind;
 /** Exact, reviewed predicates that may activate incident-specific investigation behavior. */
 public final class ReviewedIncidentPolicy {
 
+    private static final java.util.List<String> CSDP_WECHAT_SLOW_TERMS = java.util.List.of(
+            "卡顿", "很卡", "这么卡", "变卡", "慢请求", "响应慢", "加载慢", "加载很慢", "url慢请求");
+
     public static final String ICARE_PRODUCT_MAPPING_502_TITLE =
             "调用接口异常（HTTP 502 · get_icare_product_mapping）";
     public static final String ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED_TITLE =
@@ -58,6 +61,20 @@ public final class ReviewedIncidentPolicy {
     public static boolean isReviewedIcareFinishRejection(IncidentContext incident) {
         return isIcareMobileChangeOrderFinishRejected(incident)
                 || isIcareRequiredRevisitResultMissing(incident);
+    }
+
+    /** Reviewed entry for the service-specific Guance slow-request contract. */
+    public static boolean isCsdpWechatSlowRequest(IncidentContext incident) {
+        if (incident == null
+                || incident.completeness() != IncidentCompleteness.STRUCTURED
+                || !"CSDP".equalsIgnoreCase(incident.system())
+                || !"csdp-wechat".equalsIgnoreCase(incident.service())) {
+            return false;
+        }
+        String text = (incident.title() + "\n"
+                + (incident.rawInput() == null ? "" : incident.rawInput()))
+                .toLowerCase(java.util.Locale.ROOT);
+        return CSDP_WECHAT_SLOW_TERMS.stream().anyMatch(text::contains);
     }
 
     public static boolean matchesTrustedFact(

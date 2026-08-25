@@ -89,6 +89,11 @@ public class EvidenceProperties {
         private String queryTemplate;
         /** Ordered DQL components for one compound read-only evidence contract. */
         private List<String> queryTemplates = List.of();
+        /**
+         * Optional per-component lookback offsets. A positive value moves that
+         * query to an earlier, equal-length baseline window.
+         */
+        private List<Duration> queryWindowOffsets = List.of();
         private QueryOptions queryOptions;
 
         /** Maximum accepted rows; Guance receives one extra overflow sentinel row. */

@@ -249,6 +249,16 @@ class TroubleshootingDemoSeederTest {
                     value.successMatchField(),
                     value.successSampleField());
             case Criterion.MultipleGt value -> Set.of(value.field(), value.baselineField());
+            case Criterion.NumericLte value -> Set.of(value.field());
+            case Criterion.MultipleLte value -> Set.of(value.field(), value.baselineField());
+            case Criterion.FractionGte value ->
+                    Set.of(value.numeratorField(), value.denominatorField());
+            case Criterion.RateMultipleGt value -> Set.of(
+                    value.currentEventField(), value.currentPopulationField(),
+                    value.baselineEventField(), value.baselinePopulationField());
+            case Criterion.AllOf value -> value.criteria().stream()
+                    .flatMap(item -> fieldsOf(item).stream())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
             case Criterion.ContainsAndIn value ->
                     Set.of(value.containsField(), value.membershipField());
             case Criterion.BooleanEquals value -> Set.of(value.field());

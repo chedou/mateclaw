@@ -32,6 +32,7 @@ mateclaw:
           contrast_sample: [guance]
           cti_failure_pattern_scan: [guance]
           external_api_http_failure: [guance]
+          slow_request_analysis: [guance]
           error_log_scan: [guance]
           monitor_event_scan: [guance]
           k8s_workload_health: [guance]
@@ -92,11 +93,58 @@ mateclaw:
               # 告警解析只决定要查这个语义工具；DQL 和
               # 稳定操作名仍固定在服务端审核合同中。
               external_api_http_failure: csdp-wechat-icare-mapping-http-failure
+              slow_request_analysis: csdp-wechat-slow-request-analysis
               # Generic bounded discovery may establish only the broad
               # application-error direction. Runtime stays MISSING until an
               # owner registers the exact deployment/namespace asset.
               monitor_event_scan: csdp-monitor-event-scan
         bindings:
+          # Reviewed on the 2026-08-25 21:15~21:35 csdp-wechat slowdown.
+          # The first two components are moved to the immediately preceding
+          # equal-length window; the other four remain anchored to occurredAt.
+          # Only aggregate counts leave Guance. No URL payload, log text,
+          # trace id or user identifier enters the Diagnosis.
+          csdp-wechat-slow-request-analysis:
+            signal-kind: slow_request_analysis
+            namespace: L
+            summary: CSDP WeChat 慢请求热点与前窗对照
+            scenario: csdp-wechat 页面突然卡顿
+            question: 慢请求是否显著增长并集中在 partner_user_info，且不是流量或超时导致？
+            fixed-conditions:
+              - 日志源=csdp-wechat
+              - 慢请求定义=level:warn AND code:1010
+              - 热点路径=/scl/v1/external/partner_user_info
+              - 基线=故障窗口前一等长窗口
+              - 仅返回聚合计数，不返回原始日志或关联 ID
+            max-rows: 1
+            query-templates:
+              - >-
+                L::`csdp-wechat`:(count(*) as baseline_request_count)
+                { `message` = queryString("\"[Controller-Finish]\"") }
+              - >-
+                L::`csdp-wechat`:(count(*) as baseline_slow_request_count)
+                { `message` = queryString("level:warn") AND `message` = queryString("code:1010") }
+              - >-
+                L::`csdp-wechat`:(count(*) as current_request_count)
+                { `message` = queryString("\"[Controller-Finish]\"") }
+              - >-
+                L::`csdp-wechat`:(count(*) as current_slow_request_count,count_distinct(`@trace_id`) as affected_trace_count,count_distinct(`pod_name`) as affected_pod_count)
+                { `message` = queryString("level:warn") AND `message` = queryString("code:1010") }
+              - >-
+                L::`csdp-wechat`:(count(*) as partner_user_info_slow_count)
+                { `message` = queryString("level:warn") AND `message` = queryString("code:1010") AND `message` = queryString("\"/scl/v1/external/partner_user_info\"") }
+              - >-
+                L::`csdp-wechat`:(count(*) as timeout_error_count)
+                { `message` = queryString("\"context deadline exceeded\" OR \"Client.Timeout\" OR \"i/o timeout\" OR \"server selection error\"") }
+            query-window-offsets: [20m, 20m, 0s, 0s, 0s, 0s]
+            query-options:
+              max-point-count: 1
+              interval: 1200
+              align-time: false
+              series-limit: 20
+              disable-sampling: false
+              time-zone: Asia/Shanghai
+            field-aliases: {}
           # No-SOP bounded investigation for the reviewed csdp-wechat alert.
           # It proves only the immediate failure point: this external mapping
           # operation returned HTTP 502. It does not claim why the gateway or

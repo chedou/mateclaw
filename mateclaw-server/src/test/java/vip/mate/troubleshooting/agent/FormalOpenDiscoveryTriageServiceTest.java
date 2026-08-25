@@ -18,6 +18,7 @@ import vip.mate.troubleshooting.investigation.DefaultOpenDiscoveryHypothesisGrap
 import vip.mate.troubleshooting.investigation.HypothesisGraph;
 import vip.mate.troubleshooting.investigation.RootCauseFinding;
 import vip.mate.troubleshooting.model.CriterionOutcome;
+import vip.mate.troubleshooting.model.ConclusionType;
 import vip.mate.troubleshooting.model.Diagnosis;
 import vip.mate.troubleshooting.model.EvidenceResult;
 import vip.mate.troubleshooting.model.EvidenceStatus;
@@ -132,6 +133,79 @@ class FormalOpenDiscoveryTriageServiceTest {
                 .isEqualTo("t7-accepted-generic-000001");
         assertThat(audit.getValue().sourceBindingFingerprint())
                 .isEqualTo("a".repeat(64));
+        verifyNoInteractions(agentService);
+    }
+
+    @Test
+    void persistsReviewedCsdpWechatSlowRequestAsALocatedDirectCause() {
+        IncidentContext incident = slowRequestIncident();
+        EvidenceResult aggregate = new EvidenceResult(
+                "open-discovery-csdp-wechat-slow-request-analysis",
+                "slow_request_analysis",
+                "",
+                EvidenceStatus.ANOMALY,
+                "reviewed slow request aggregate",
+                Map.of(
+                        "baseline_request_count", 20417,
+                        "baseline_slow_request_count", 1,
+                        "current_request_count", 19585,
+                        "current_slow_request_count", 19,
+                        "affected_trace_count", 19,
+                        "affected_pod_count", 1,
+                        "partner_user_info_slow_count", 10,
+                        "timeout_error_count", 0),
+                "guance:slow-request-analysis",
+                NOW);
+        HypothesisGraph graph = new DefaultOpenDiscoveryHypothesisGraphFactory()
+                .createFormal(incident, admission.plan())
+                .recordOutcome(
+                        "open-discovery-csdp-wechat-slow-request-analysis",
+                        CriterionOutcome.SATISFIED,
+                        aggregate.queryId());
+        BoundedInvestigationPlanner.Outcome outcome =
+                new BoundedInvestigationPlanner.Outcome(
+                        graph,
+                        RootCauseFinding.from(
+                                graph,
+                                BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED),
+                        List.of(aggregate),
+                        1,
+                        1,
+                        NOW,
+                        NOW.plusSeconds(1),
+                        BoundedInvestigationPlanner.StopReason.ROOT_CAUSE_LOCATED);
+        BoundedOpenDiscoveryInvestigationService.Execution execution =
+                new BoundedOpenDiscoveryInvestigationService.Execution(
+                        outcome,
+                        BoundedOpenDiscoveryInvestigationService
+                                .CSDP_WECHAT_SLOW_REQUEST_PLAN_KEY,
+                        "f".repeat(64),
+                        List.of("slow_request_analysis"),
+                        2,
+                        2,
+                        Duration.ofSeconds(10));
+        when(admissions.admit(WORKSPACE_ID, incident)).thenReturn(admission);
+        when(boundedInvestigation.investigateFormal(
+                WORKSPACE_ID,
+                incident,
+                admission.plan(),
+                admission.guanceBindingFingerprint()))
+                .thenReturn(Optional.of(execution));
+        when(persistence.persistFormal(
+                eq(WORKSPACE_ID), any(Diagnosis.class), eq(NOW), eq(null),
+                any(), eq(null), any(OpenDiscoveryRunAudit.class), eq(admission), eq(NOW)))
+                .thenAnswer(call -> new StoredDiagnosis(call.getArgument(1), 0, true, 4));
+
+        StoredDiagnosis stored = service.triageFormal(
+                WORKSPACE_ID, incident, List.of(), "no SOP", NOW, NOW);
+
+        assertThat(stored.diagnosis().conclusionType()).isEqualTo(ConclusionType.LOCATED);
+        assertThat(stored.diagnosis().rootCause())
+                .contains("partner_user_info", "流量未增长", "未见超时");
+        assertThat(stored.diagnosis().evidenceCitations())
+                .containsExactly(aggregate.queryId());
+        assertThat(stored.diagnosis().confidence())
+                .isEqualTo(vip.mate.troubleshooting.model.Confidence.MEDIUM);
         verifyNoInteractions(agentService);
     }
 
@@ -340,6 +414,14 @@ class FormalOpenDiscoveryTriageServiceTest {
                 "未知会话异常", "P2", IncidentImpact.unknown("影响待确认"),
                 null, NOW, null, "alert_webhook", IncidentCompleteness.STRUCTURED,
                 "未知会话异常");
+    }
+
+    private IncidentContext slowRequestIncident() {
+        return new IncidentContext(
+                "incident-wechat-slow", "CSDP", "csdp-wechat", null,
+                "系统突然这么卡了", "P2", IncidentImpact.unknown("页面加载变慢"),
+                null, NOW, null, "wecom", IncidentCompleteness.STRUCTURED,
+                "服务支付页面突然很卡");
     }
 
     private BoundedOpenDiscoveryInvestigationService.Execution execution(String source) {

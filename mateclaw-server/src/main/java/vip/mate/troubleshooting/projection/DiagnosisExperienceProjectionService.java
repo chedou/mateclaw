@@ -41,6 +41,7 @@ import vip.mate.troubleshooting.synthesis.ApprovedPlaybookVersion;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** Builds the formal business and developer views from one authoritative aggregate. */
@@ -215,7 +216,11 @@ public class DiagnosisExperienceProjectionService {
             List<String> capabilityLimits) {
         if (diagnosis.investigationMode() == InvestigationMode.OPEN_DISCOVERY
                 || diagnosis.sopKey() == null) {
-            capabilityLimits.add("这是通用只读调查：没有套用标准排障方法，所以结论不能按固定步骤复算。");
+            capabilityLimits.add(diagnosis.conclusionType() == ConclusionType.LOCATED
+                    && diagnosis.routeMode()
+                            == vip.mate.troubleshooting.model.RouteMode.BOUNDED_DISCOVERY
+                            ? "这是已审核场景判据调查：结论来自只读聚合数字和固定门槛，没有让大模型自由猜原因。"
+                            : "这是通用只读调查：没有套用标准排障方法，所以结论不能按固定步骤复算。");
             return null;
         }
         try {
@@ -331,6 +336,19 @@ public class DiagnosisExperienceProjectionService {
                 return "告警已经明确：iCare 产品映射接口调用返回 HTTP 502。"
                         + "这能确认直接失败点，但不能证明上游为什么返回 502。";
             }
+            EvidenceResult slow = slowRequestEvidence(diagnosis);
+            if (slow != null) {
+                Map<String, Object> observed = slow.observed();
+                return "故障窗口慢请求 "
+                        + count(observed, "current_slow_request_count") + " 条（前窗 "
+                        + count(observed, "baseline_slow_request_count") + " 条）；总请求 "
+                        + count(observed, "current_request_count") + "（前窗 "
+                        + count(observed, "baseline_request_count") + "，未增长）；"
+                        + "partner_user_info 占 "
+                        + count(observed, "partner_user_info_slow_count") + "/"
+                        + count(observed, "current_slow_request_count")
+                        + "；超时错误 " + count(observed, "timeout_error_count") + " 条。";
+            }
             return null;
         }
         return "异常 "
@@ -401,6 +419,16 @@ public class DiagnosisExperienceProjectionService {
                             + "如 PC 端仍无法完成，携带脱敏工单号和发生时间联系 iCare 技术支持。",
                     "平台不会代替你提交完结操作；尚未验证 PC 端结果，也未判断变更单状态是否正确。");
         }
+        if (conclusionType == ConclusionType.LOCATED
+                && slowRequestEvidence(diagnosis) != null) {
+            return new NextStep(
+                    "继续定位 partner_user_info 内部耗时",
+                    "由 csdp-wechat 开发对该接口做一次只读性能剖析："
+                            + "统计单请求 Mongo 调用次数与分段耗时，优先核对列表后串行补查角色、渠道和解密的 N+1 风险；"
+                            + "再决定是否做批量查询或缓存优化。",
+                    "当前已定位直接慢环节；N+1/缓存仍是待性能剖析证实的深层机制；"
+                            + WRITE_BOUNDARY);
+        }
         String team = fallback(diagnosis.routeToTeam(), "责任开发");
         return switch (conclusionType) {
             case LOCATED -> {
@@ -461,6 +489,21 @@ public class DiagnosisExperienceProjectionService {
     private boolean isIcareProductMapping502(Diagnosis diagnosis) {
         return vip.mate.troubleshooting.investigation.ReviewedIncidentPolicy
                 .isIcareProductMapping502(diagnosis.incident());
+    }
+
+    private EvidenceResult slowRequestEvidence(Diagnosis diagnosis) {
+        return diagnosis.evidence().stream()
+                .filter(item -> item.status()
+                        != vip.mate.troubleshooting.model.EvidenceStatus.MISSING)
+                .filter(item -> vip.mate.troubleshooting.evidence.CanonicalEvidenceSchema
+                        .isValid("slow_request_analysis", item.observed()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private long count(Map<String, Object> observed, String field) {
+        Object value = observed.get(field);
+        return value instanceof Number number ? number.longValue() : -1L;
     }
 
     private boolean isIcareMobileChangeOrderFinishRejected(Diagnosis diagnosis) {

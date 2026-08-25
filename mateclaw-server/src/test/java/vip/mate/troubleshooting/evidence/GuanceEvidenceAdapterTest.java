@@ -1625,6 +1625,63 @@ class GuanceEvidenceAdapterTest {
     }
 
     @Test
+    void movesOnlyBaselineComponentsToThePreviousEqualLengthWindow() throws Exception {
+        CapturingTransport transport = new CapturingTransport(200, """
+                {
+                  "code": 200,
+                  "success": true,
+                  "content": {"data": [
+                    {"series": [{"columns": ["time", "baseline_request_count"],
+                                  "values": [[1753434723000, 20417]]}]},
+                    {"series": [{"columns": ["time", "baseline_slow_request_count"],
+                                  "values": [[1753434723000, 1]]}]},
+                    {"series": [{"columns": ["time", "current_request_count"],
+                                  "values": [[1753434723000, 19585]]}]},
+                    {"series": [{"columns": ["time", "current_slow_request_count",
+                                               "affected_trace_count", "affected_pod_count"],
+                                  "values": [[1753434723000, 19, 19, 1]]}]},
+                    {"series": [{"columns": ["time", "partner_user_info_slow_count"],
+                                  "values": [[1753434723000, 10]]}]},
+                    {"series": [{"columns": ["time", "timeout_error_count"],
+                                  "values": [[1753434723000, 0]]}]}
+                  ]}
+                }
+                """);
+        EvidenceProperties.Binding binding = binding(
+                "L", "csdp-wechat slow request analysis", "unused", Map.of(), 1);
+        binding.setQueryTemplate(null);
+        binding.setQueryTemplates(List.of("q1", "q2", "q3", "q4", "q5", "q6"));
+        binding.setQueryWindowOffsets(List.of(
+                Duration.ofMinutes(20), Duration.ofMinutes(20),
+                Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO));
+        GuanceEvidenceAdapter adapter = new GuanceEvidenceAdapter(
+                guanceConfig("slow_request_analysis", binding),
+                objectMapper, transport, CLOCK);
+        EvidenceRequest request = new EvidenceRequest(
+                "EV-SLOW", "slow_request_analysis", "compare adjacent windows",
+                Map.of(), "-20m", true);
+
+        EvidenceResult result = adapter.collect(
+                WORKSPACE_ID, request, incidentWithoutErrorCode());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.NORMAL);
+        assertThat(result.observed())
+                .containsEntry("current_slow_request_count", 19)
+                .containsEntry("partner_user_info_slow_count", 10);
+        JsonNode queries = objectMapper.readTree(transport.body).path("queries");
+        long incidentStart = NOW.minus(Duration.ofMinutes(20)).toEpochMilli();
+        long incidentEnd = NOW.toEpochMilli();
+        assertThat(queries.path(0).path("query").path("timeRange").path(0).asLong())
+                .isEqualTo(NOW.minus(Duration.ofMinutes(40)).toEpochMilli());
+        assertThat(queries.path(0).path("query").path("timeRange").path(1).asLong())
+                .isEqualTo(incidentStart);
+        assertThat(queries.path(2).path("query").path("timeRange").path(0).asLong())
+                .isEqualTo(incidentStart);
+        assertThat(queries.path(2).path("query").path("timeRange").path(1).asLong())
+                .isEqualTo(incidentEnd);
+    }
+
+    @Test
     void intersectsBoundedCtiCorrelationSetsAndEmitsCountsOnly()
             throws Exception {
         CapturingTransport transport = new CapturingTransport(200, """

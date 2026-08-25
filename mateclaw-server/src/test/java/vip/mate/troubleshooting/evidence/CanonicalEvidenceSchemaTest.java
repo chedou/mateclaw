@@ -10,6 +10,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CanonicalEvidenceSchemaTest {
 
     @Test
+    void acceptsOnlyInternallyConsistentSlowRequestAnalysisAggregates() {
+        Map<String, Object> observed = Map.of(
+                "baseline_request_count", 20417,
+                "baseline_slow_request_count", 1,
+                "current_request_count", 19585,
+                "current_slow_request_count", 19,
+                "affected_trace_count", 19,
+                "affected_pod_count", 1,
+                "partner_user_info_slow_count", 10,
+                "timeout_error_count", 0);
+
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "slow_request_analysis", observed)).isTrue();
+        assertThat(CanonicalEvidenceSchema.detectSignalKind(observed))
+                .isEqualTo("slow_request_analysis");
+        Map<String, Object> impossible = new java.util.LinkedHashMap<>(observed);
+        impossible.put("partner_user_info_slow_count", 20);
+        assertThat(CanonicalEvidenceSchema.isValid(
+                "slow_request_analysis", impossible))
+                .as("one endpoint cannot exceed all slow requests")
+                .isFalse();
+        assertThat(CanonicalEvidenceSchema.isExternallyRoutable(
+                "slow_request_analysis")).isTrue();
+    }
+
+    @Test
     void incidentReportedFactsAreCanonicalButCannotBeExternallyRouted() {
         assertThat(CanonicalEvidenceSchema.signalKinds())
                 .contains(

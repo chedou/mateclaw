@@ -91,6 +91,15 @@ public final class CanonicalEvidenceSchema {
                             "affected_trace_count", FieldType.NUMBER,
                             "latest_trace_id", FieldType.STRING),
                     Set.of("affected_trace_count", "latest_trace_id"))),
+            Map.entry("slow_request_analysis", scalar(Map.of(
+                    "baseline_request_count", FieldType.NUMBER,
+                    "baseline_slow_request_count", FieldType.NUMBER,
+                    "current_request_count", FieldType.NUMBER,
+                    "current_slow_request_count", FieldType.NUMBER,
+                    "affected_trace_count", FieldType.NUMBER,
+                    "affected_pod_count", FieldType.NUMBER,
+                    "partner_user_info_slow_count", FieldType.NUMBER,
+                    "timeout_error_count", FieldType.NUMBER))),
             Map.entry("monitor_event_scan", scalar(
                     Map.of(
                             "event_count", FieldType.NUMBER,
@@ -178,6 +187,7 @@ public final class CanonicalEvidenceSchema {
         return switch (normalize(signalKind)) {
             case "incident_impact" -> validIncidentImpact(observed);
             case "error_log_scan" -> validErrorLogScan(observed);
+            case "slow_request_analysis" -> validSlowRequestAnalysis(observed);
             case "monitor_event_scan" -> validMonitorEventScan(observed);
             case "cti_failure_pattern_scan" -> validCtiFailurePatternScan(observed);
             case "external_api_http_failure" -> validExternalApiHttpFailure(observed);
@@ -330,6 +340,40 @@ public final class CanonicalEvidenceSchema {
                 ? CanonicalNumberParser.parseExactLong(observed.get("affected_trace_count"))
                 : null;
         return traceCount == null || traceCount <= errorCount;
+    }
+
+    private static boolean validSlowRequestAnalysis(Map<String, Object> observed) {
+        if (!validNonNegativeCounts(
+                observed,
+                "baseline_request_count",
+                "baseline_slow_request_count",
+                "current_request_count",
+                "current_slow_request_count",
+                "affected_trace_count",
+                "affected_pod_count",
+                "partner_user_info_slow_count",
+                "timeout_error_count")) {
+            return false;
+        }
+        long baselineRequests = exactLong(observed, "baseline_request_count");
+        long baselineSlow = exactLong(observed, "baseline_slow_request_count");
+        long currentRequests = exactLong(observed, "current_request_count");
+        long currentSlow = exactLong(observed, "current_slow_request_count");
+        long traces = exactLong(observed, "affected_trace_count");
+        long pods = exactLong(observed, "affected_pod_count");
+        long partnerSlow = exactLong(observed, "partner_user_info_slow_count");
+        return baselineRequests > 0
+                && currentRequests > 0
+                && baselineSlow <= baselineRequests
+                && currentSlow <= currentRequests
+                && traces <= currentSlow
+                && pods <= currentSlow
+                && partnerSlow <= currentSlow;
+    }
+
+    private static long exactLong(Map<String, Object> observed, String field) {
+        Long value = CanonicalNumberParser.parseExactLong(observed.get(field));
+        return value == null ? -1L : value;
     }
 
     private static boolean validMonitorEventScan(Map<String, Object> observed) {

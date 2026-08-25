@@ -254,6 +254,7 @@ class EvidenceAutoConfigurationTest {
                             .containsEntry("log_trace_bundle", List.of("guance"))
                             .containsEntry("contrast_sample", List.of("guance"))
                             .containsEntry("external_api_http_failure", List.of("guance"))
+                            .containsEntry("slow_request_analysis", List.of("guance"))
                             .containsEntry("error_log_scan", List.of("guance"))
                             .containsEntry("monitor_event_scan", List.of("guance"))
                             .containsEntry("k8s_workload_health", List.of("guance"))
@@ -274,7 +275,8 @@ class EvidenceAutoConfigurationTest {
                                     "guance-service-pod-status",
                                     "guance-service-node-status",
                                     "guance-service-host-status",
-                                    "csdp-k8s-workload-health");
+                                    "csdp-k8s-workload-health",
+                                    "csdp-wechat-slow-request-analysis");
                     assertThat(guance.getAssetBindings()).hasSize(3);
                     assertThat(guance.getAssetBindings().get(0)).satisfies(asset -> {
                                 assertThat(asset.getWorkspaceId()).isEqualTo(1L);
@@ -345,6 +347,9 @@ class EvidenceAutoConfigurationTest {
                                 .containsEntry(
                                         "external_api_http_failure",
                                         "csdp-wechat-icare-mapping-http-failure")
+                                .containsEntry(
+                                        "slow_request_analysis",
+                                        "csdp-wechat-slow-request-analysis")
                                 .doesNotContainKey("error_log_scan");
                     });
 
@@ -363,7 +368,20 @@ class EvidenceAutoConfigurationTest {
                                     "csdp-itgw-access-log-search",
                                     "csdp-itgw-access-trace-bundle",
                                     "csdp-itgw-access-contrast",
-                                    "csdp-wechat-icare-mapping-http-failure");
+                                    "csdp-wechat-icare-mapping-http-failure",
+                                    "csdp-wechat-slow-request-analysis");
+                    EvidenceProperties.Binding slowRequest = guance.getBindings()
+                            .get("csdp-wechat-slow-request-analysis");
+                    assertThat(slowRequest.getSignalKind())
+                            .isEqualTo("slow_request_analysis");
+                    assertThat(slowRequest.getQueryTemplates()).hasSize(6);
+                    assertThat(slowRequest.getQueryWindowOffsets()).containsExactly(
+                            java.time.Duration.ofMinutes(20),
+                            java.time.Duration.ofMinutes(20),
+                            java.time.Duration.ZERO,
+                            java.time.Duration.ZERO,
+                            java.time.Duration.ZERO,
+                            java.time.Duration.ZERO);
                     EvidenceProperties.Binding icare502 = guance.getBindings()
                             .get("csdp-wechat-icare-mapping-http-failure");
                     assertThat(icare502.getSignalKind())

@@ -44,7 +44,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private static final Pattern SAFE_CURL_EXIT =
             Pattern.compile("native curl transport failed with exit code ([0-9]{1,3})");
     private static final int MAX_BOUND_ROWS = 500;
-    private static final int MAX_COMPONENT_QUERIES = 4;
+    private static final int MAX_COMPONENT_QUERIES = 8;
+    private static final Duration MAX_QUERY_WINDOW_OFFSET = Duration.ofHours(24);
     private static final int MAX_POINT_COUNT = 10_000;
     private static final int MAX_INTERVAL_SECONDS = 86_400;
 
@@ -540,6 +541,9 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         copy.setQueryTemplates(List.copyOf(
                 source.getQueryTemplates() == null
                         ? List.of() : source.getQueryTemplates()));
+        copy.setQueryWindowOffsets(List.copyOf(
+                source.getQueryWindowOffsets() == null
+                        ? List.of() : source.getQueryWindowOffsets()));
         copy.setQueryOptions(copyQueryOptions(source.getQueryOptions()));
         copy.setMaxRows(source.getMaxRows());
         copy.setFieldAliases(Map.copyOf(
@@ -1053,6 +1057,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 || binding.getMaxRows() < 1
                 || binding.getMaxRows() > MAX_BOUND_ROWS
                 || !validAssetParameters(binding, queryTemplates)
+                || !validQueryWindowOffsets(binding, queryTemplates.size())
                 || !validQueryOptions(binding.getQueryOptions())) {
             return false;
         }
@@ -1067,6 +1072,19 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                 canonicalFields.contains(entry.getKey())
                         && safeReference(entry.getValue()));
         return validAliases && validConstants;
+    }
+
+    private boolean validQueryWindowOffsets(
+            EvidenceProperties.Binding binding,
+            int queryCount) {
+        List<Duration> offsets = binding.getQueryWindowOffsets() == null
+                ? List.of() : binding.getQueryWindowOffsets();
+        if (!offsets.isEmpty() && offsets.size() != queryCount) {
+            return false;
+        }
+        return offsets.stream().allMatch(offset -> offset != null
+                && !offset.isNegative()
+                && offset.compareTo(MAX_QUERY_WINDOW_OFFSET) <= 0);
     }
 
     private boolean validAssetParameters(
@@ -1107,13 +1125,19 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             String signalKind) throws Exception {
         ObjectNode root = objectMapper.createObjectNode();
         var queryItems = root.putArray("queries");
-        for (String query : queries) {
+        List<Duration> offsets = binding.getQueryWindowOffsets() == null
+                || binding.getQueryWindowOffsets().isEmpty()
+                        ? java.util.Collections.nCopies(queries.size(), Duration.ZERO)
+                        : binding.getQueryWindowOffsets();
+        for (int index = 0; index < queries.size(); index++) {
+            String query = queries.get(index);
+            Duration offset = offsets.get(index);
             ObjectNode querySpec = objectMapper.createObjectNode();
             querySpec.put("q", query);
             addQueryOptions(querySpec, binding.getQueryOptions(), window, signalKind);
             querySpec.putArray("timeRange")
-                    .add(window.start().toEpochMilli())
-                    .add(window.end().toEpochMilli());
+                    .add(window.start().minus(offset).toEpochMilli())
+                    .add(window.end().minus(offset).toEpochMilli());
             querySpec.put("limit", binding.getMaxRows() + 1);
             ObjectNode item = objectMapper.createObjectNode();
             item.put("qtype", "dql");

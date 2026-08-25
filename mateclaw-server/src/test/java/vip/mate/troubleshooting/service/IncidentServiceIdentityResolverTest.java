@@ -43,6 +43,16 @@ class IncidentServiceIdentityResolverTest {
     }
 
     @Test
+    void canonicalizesTheReviewedCspWechatAliasToTheObservableService() {
+        IncidentContext reported = incident("csp-wechat", "用户反馈系统突然很卡");
+
+        IncidentContext resolved = IncidentServiceIdentityResolver.resolve(reported);
+
+        assertThat(resolved.service()).isEqualTo("csdp-wechat");
+        assertThat(resolved.rawInput()).isEqualTo(reported.rawInput());
+    }
+
+    @Test
     void rejectsAPlaceholderWhenTheStackHasCompetingOwners() {
         IncidentContext reported = incident(
                 "main",

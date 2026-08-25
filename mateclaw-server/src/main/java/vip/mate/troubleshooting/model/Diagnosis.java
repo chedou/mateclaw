@@ -450,7 +450,9 @@ public record Diagnosis(
                 RouteAuthority.POLICY_PROPOSED,
                 draft.abstained()
                         ? ConclusionType.INSUFFICIENT_EVIDENCE
-                        : ConclusionType.HYPOTHESIS,
+                        : draft.located()
+                                ? ConclusionType.LOCATED
+                                : ConclusionType.HYPOTHESIS,
                 status,
                 draft.summary(),
                 draft.hypothesis(),
@@ -721,10 +723,16 @@ public record Diagnosis(
                 throw new IllegalArgumentException(
                         "OPEN_DISCOVERY route and proposal authority must agree");
             }
-            if (conclusionType != ConclusionType.HYPOTHESIS
+            boolean reviewedBoundedLocation = routeMode == RouteMode.BOUNDED_DISCOVERY
+                    && routeAuthority == RouteAuthority.POLICY_PROPOSED
+                    && conclusionType == ConclusionType.LOCATED
+                    && confidence == Confidence.MEDIUM
+                    && !abstained;
+            if (!reviewedBoundedLocation
+                    && conclusionType != ConclusionType.HYPOTHESIS
                     && conclusionType != ConclusionType.INSUFFICIENT_EVIDENCE) {
                 throw new IllegalArgumentException(
-                        "OPEN_DISCOVERY may only produce HYPOTHESIS or INSUFFICIENT_EVIDENCE");
+                        "OPEN_DISCOVERY may locate a cause only through reviewed bounded policy evidence");
             }
             return;
         }

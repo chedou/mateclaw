@@ -967,6 +967,9 @@ class TroubleshootingAgentTriageServiceTest {
                         .ICARE_MOBILE_CHANGE_ORDER_FINISH_REJECTED);
 
         assertThat(stored.diagnosis().routeMode()).isEqualTo(RouteMode.BOUNDED_DISCOVERY);
+        assertThat(stored.diagnosis().conclusionType())
+                .as("a generic plan key cannot promote a bounded finding to a located cause")
+                .isEqualTo(ConclusionType.HYPOTHESIS);
         assertThat(stored.diagnosis().rootCause()).contains("工单关联变更单");
         verify(agentService, never()).chatWithToolAllowlist(
                 anyLong(), any(), any(), any(), any());

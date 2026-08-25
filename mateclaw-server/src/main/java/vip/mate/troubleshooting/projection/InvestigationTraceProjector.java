@@ -67,6 +67,11 @@ public final class InvestigationTraceProjector {
                     "required_information_missing", "recommended_action", "evidence_grade")),
             Map.entry("error_log_scan", Set.of(
                     "error_count", "affected_trace_count", "latest_trace_id")),
+            Map.entry("slow_request_analysis", Set.of(
+                    "baseline_request_count", "baseline_slow_request_count",
+                    "current_request_count", "current_slow_request_count",
+                    "affected_trace_count", "affected_pod_count",
+                    "partner_user_info_slow_count", "timeout_error_count")),
             Map.entry("monitor_event_scan", Set.of(
                     "event_count", "latest_status", "latest_checker")),
             Map.entry("k8s_workload_health", Set.of(

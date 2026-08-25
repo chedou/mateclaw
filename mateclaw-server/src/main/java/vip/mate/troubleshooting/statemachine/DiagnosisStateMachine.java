@@ -148,7 +148,9 @@ public final class DiagnosisStateMachine {
                         clock.instant(),
                         draft.abstained()
                                 ? "现有只读证据不足，已停止判断并转人工深查"
-                                : "形成候选原因，等待人工确认",
+                                : draft.located()
+                                        ? "已按审核判据定位直接原因，等待负责人复核"
+                                        : "形成候选原因，等待人工确认",
                         "orchestrator",
                         "current"));
         return Diagnosis.initialBoundedInvestigation(
