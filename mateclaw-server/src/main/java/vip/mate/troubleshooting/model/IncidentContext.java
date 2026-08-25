@@ -88,6 +88,14 @@ public record IncidentContext(
                 traceId, occurredAt, slaRemaining, intakeSource, completeness, rawInput);
     }
 
+    /** Replaces a process-entrypoint placeholder with one corroborated service identity. */
+    public IncidentContext withResolvedService(String resolvedService) {
+        return new IncidentContext(
+                incidentId, system, required(resolvedService, "resolvedService"), errorCode,
+                title, severity, impact, traceId, occurredAt, slaRemaining,
+                intakeSource, completeness, rawInput);
+    }
+
     private static String required(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");

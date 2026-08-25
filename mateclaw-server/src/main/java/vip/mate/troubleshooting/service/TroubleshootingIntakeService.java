@@ -311,7 +311,13 @@ public class TroubleshootingIntakeService {
         if (reportedAt == null) {
             throw badRequest("reportedAt is required");
         }
-        IncidentContext sanitizedIncident = TroubleshootingSecretRedactor.redact(incident);
+        IncidentContext sanitizedIncident;
+        try {
+            sanitizedIncident = IncidentServiceIdentityResolver.resolve(
+                    TroubleshootingSecretRedactor.redact(incident));
+        } catch (IllegalArgumentException unresolvedService) {
+            throw badRequest(unresolvedService.getMessage());
+        }
         IncidentContext originalSanitizedIncident = sanitizedIncident;
         requireSafeIncidentText(sanitizedIncident);
         List<EvidenceResult> sanitizedSuppliedEvidence =

@@ -749,6 +749,75 @@ class TroubleshootingIntakeServiceTest {
     }
 
     @Test
+    void normalizesAPlaceholderServiceBeforeTheGenericInvestigation() {
+        IncidentContext reported = new IncidentContext(
+                "inc-main-502",
+                "CSDP",
+                "main",
+                "HTTP_502",
+                "调用接口异常",
+                "P1",
+                IncidentImpact.unknown("影响待确认"),
+                null,
+                NOW,
+                null,
+                "alert-webhook",
+                IncidentCompleteness.STRUCTURED,
+                """
+                github.com/csp/csp-service/v3/pkg/alertor.Log
+                github.com/csp/csp-service/v3/pkg/css/util.(CssClient).SendGeneralRequestWithHeaders
+                github.com/csp/csp-service/v3/pkg/css/partner.(partnerClient).GetPartnerUserInfo
+                """);
+        StoredDiagnosis stored = new StoredDiagnosis(diagnosis(), 1, true);
+        when(agentTriageService.triage(
+                anyLong(), any(), any(), anyBoolean(), any(), any(), any()))
+                .thenReturn(stored);
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        wired.report(WORKSPACE_ID, reported, List.of(), true);
+
+        ArgumentCaptor<IncidentContext> normalized =
+                ArgumentCaptor.forClass(IncidentContext.class);
+        verify(agentTriageService).triage(
+                eq(WORKSPACE_ID), normalized.capture(), eq(List.of()), eq(true),
+                any(), eq(NOW), eq(NOW));
+        assertThat(normalized.getValue().service()).isEqualTo("csp-api");
+    }
+
+    @Test
+    void stopsBeforeRoutingWhenAPlaceholderServiceCannotBeResolved() {
+        IncidentContext ambiguous = new IncidentContext(
+                "inc-main-ambiguous",
+                "CSDP",
+                "main",
+                "HTTP_502",
+                "调用接口异常",
+                "P1",
+                IncidentImpact.unknown("影响待确认"),
+                null,
+                NOW,
+                null,
+                "alert-webhook",
+                IncidentCompleteness.STRUCTURED,
+                "github.com/csp/csp-service/v3/pkg/alertor.Log");
+        TroubleshootingIntakeService wired = new TroubleshootingIntakeService(
+                sopPersistence, diagnosisService, evidenceRouter, agentTriageService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() ->
+                wired.report(WORKSPACE_ID, ambiguous, List.of(), true))
+                .isInstanceOf(MateClawException.class)
+                .hasMessageContaining("请补充真实服务名")
+                .extracting(failure -> ((MateClawException) failure).getCode())
+                .isEqualTo(400);
+
+        verifyNoInteractions(
+                sopPersistence, diagnosisService, evidenceRouter, agentTriageService);
+    }
+
+    @Test
     void rejectsASymptomOnlyReportBecauseDeterministicRoutingCannotKeyOnIt() {
         assertThatThrownBy(() -> intake.report(
                 WORKSPACE_ID, incident("903001", IncidentCompleteness.SYMPTOM), List.of(), true))
