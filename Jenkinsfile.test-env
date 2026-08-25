@@ -44,6 +44,9 @@ pipeline {
     APPROVED_FORMAL_DIAGNOSIS_FROM = '217'
     APPROVED_FORMAL_DIAGNOSIS_TO = '223'
     APPROVED_FORMAL_DIAGNOSIS_SHA256 = 'c700c79e21b35391582403cc878dd88aaf8d42dc7d5b2fef2870a064c2aead3f'
+    APPROVED_ITDB_FROM = '223'
+    APPROVED_ITDB_TO = '225'
+    APPROVED_ITDB_SHA256 = '04be0b2cf0d4aa2925e8df22bf3a27e279ad9562f63ecab68d59cd8b0470d5f0'
     CANDIDATE_IMAGE = "mateclaw-troubleshooting:jenkins-candidate-${BUILD_NUMBER}"
   }
 
@@ -176,6 +179,33 @@ grep -Eq '^DB_HOST=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_HOST"
 grep -Eq '^DB_USERNAME=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_USERNAME"
 grep -Eq '^DB_PASSWORD=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_PASSWORD"
 grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
+grep -Eq '^MATECLAW_ITDB_ENABLED=true$' "$ENV_FILE" \
+  || fail "测试环境必须启用 MATECLAW_ITDB_ENABLED=true"
+grep -Eq '^MATECLAW_ITDB_BASE_URL=https://[^[:space:]]+$' "$ENV_FILE" \
+  || fail "环境文件缺少 HTTPS 的 MATECLAW_ITDB_BASE_URL"
+grep -Eq '^MATECLAW_ITDB_USERNAME=.+$' "$ENV_FILE" \
+  || fail "环境文件缺少 MATECLAW_ITDB_USERNAME"
+grep -Eq '^MATECLAW_ITDB_PASSWORD=.+$' "$ENV_FILE" \
+  || fail "环境文件缺少 MATECLAW_ITDB_PASSWORD"
+grep -Eq '^MATECLAW_ITDB_ALLOWED_HOSTS=.+$' "$ENV_FILE" \
+  || fail "环境文件缺少 MATECLAW_ITDB_ALLOWED_HOSTS"
+
+itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' "$ENV_FILE" | head -1)"
+itdb_username="$(sed -n 's/^MATECLAW_ITDB_USERNAME=//p' "$ENV_FILE" | head -1)"
+itdb_password="$(sed -n 's/^MATECLAW_ITDB_PASSWORD=//p' "$ENV_FILE" | head -1)"
+itdb_token_probe="$WORKSPACE/.itdb-token-probe-${BUILD_NUMBER}.json"
+cleanup_itdb_probe() { rm -f -- "$itdb_token_probe"; }
+trap cleanup_itdb_probe EXIT
+curl --fail --silent --show-error --max-time 15 --max-redirs 0 --proto '=https' \
+  --data-urlencode "username=$itdb_username" \
+  --data-urlencode "password=$itdb_password" \
+  -o "$itdb_token_probe" \
+  "$itdb_base_url/api/auth/token/" \
+  || fail "ITDB JWT API 不可直连、发生重定向或账号不可用"
+grep -Eq '"access"[[:space:]]*:' "$itdb_token_probe" \
+  || fail "ITDB JWT API 未返回 access token"
+cleanup_itdb_probe
+trap - EXIT
 
 {
   echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -338,8 +368,10 @@ migration_policy="NO_PENDING_MIGRATIONS"
 if [[ "$pending_count" -gt 0 ]]; then
   [[ "$APPROVED_FOUNDATION_TO" == "$APPROVED_FORMAL_DIAGNOSIS_FROM" ]] \
     || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移包不连续" >&2; exit 1; }
-  [[ "$repo_max_version" == "$APPROVED_FORMAL_DIAGNOSIS_TO" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 待执行迁移的仓库终点必须为 V$APPROVED_FORMAL_DIAGNOSIS_TO" >&2; exit 1; }
+  [[ "$APPROVED_FORMAL_DIAGNOSIS_TO" == "$APPROVED_ITDB_FROM" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: ITDB 迁移包与正式排障包不连续" >&2; exit 1; }
+  [[ "$repo_max_version" == "$APPROVED_ITDB_TO" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: 待执行迁移的仓库终点必须为 V$APPROVED_ITDB_TO" >&2; exit 1; }
   foundation_migration_sha="$(
     cd "$migration_dir"
     sha256sum V{205..217}__*.sql | sha256sum | awk '{print $1}'
@@ -352,44 +384,60 @@ if [[ "$pending_count" -gt 0 ]]; then
   )"
   [[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
     || { echo "MIGRATION_PRECHECK_FAILED: V218-V223 内容已变化，必须重新审核" >&2; exit 1; }
+  itdb_migration_sha="$(
+    cd "$migration_dir"
+    sha256sum V{224..225}__*.sql | sha256sum | awk '{print $1}'
+  )"
+  [[ "$itdb_migration_sha" == "$APPROVED_ITDB_SHA256" ]] \
+    || { echo "MIGRATION_PRECHECK_FAILED: V224-V225 ITDB 迁移包已变化，必须重新审核" >&2; exit 1; }
 
   case "$current_version" in
     "$APPROVED_FOUNDATION_FROM")
-      [[ "$pending_count" -eq 19 ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 19 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
-      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 21 ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 21 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
+      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_ITDB_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     "$APPROVED_FORMAL_DIAGNOSIS_FROM")
-      [[ "$pending_count" -eq 6 && "${pending_versions[*]}" == '218 219 220 221 222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 8 && "${pending_versions[*]}" == '218 219 220 221 222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     218)
-      [[ "$pending_count" -eq 5 && "${pending_versions[*]}" == '219 220 221 222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V218_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 7 && "${pending_versions[*]}" == '219 220 221 222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V218_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     219)
-      [[ "$pending_count" -eq 4 && "${pending_versions[*]}" == '220 221 222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V219_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 6 && "${pending_versions[*]}" == '220 221 222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V219_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     220)
-      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '221 222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V220 恢复路径只允许已审核的 V221-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V220_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 5 && "${pending_versions[*]}" == '221 222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V220 恢复路径只允许已审核的 V221-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V220_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     221)
-      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '222 223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V221 恢复路径只允许已审核的 V222-V223" >&2; exit 1; }
-      migration_policy="APPROVED_V221_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 4 && "${pending_versions[*]}" == '222 223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V221 恢复路径只允许已审核的 V222-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V221_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
       ;;
     222)
-      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '223' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V222 恢复路径只允许已审核的 V223" >&2; exit 1; }
-      migration_policy="APPROVED_V222_TO_V${APPROVED_FORMAL_DIAGNOSIS_TO}_${formal_diagnosis_migration_sha}"
+      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '223 224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V222 恢复路径只允许已审核的 V223-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V222_TO_V${APPROVED_ITDB_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}"
+      ;;
+    "$APPROVED_ITDB_FROM")
+      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '224 225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V223 起点只允许已审核的 V224-V225" >&2; exit 1; }
+      migration_policy="APPROVED_V${APPROVED_ITDB_FROM}_TO_V${APPROVED_ITDB_TO}_${itdb_migration_sha}"
+      ;;
+    224)
+      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '225' ]] \
+        || { echo "MIGRATION_PRECHECK_FAILED: V224 起点只允许已审核的 V225" >&2; exit 1; }
+      migration_policy="APPROVED_V224_TO_V${APPROVED_ITDB_TO}_${itdb_migration_sha}"
       ;;
     *)
       echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2
@@ -537,7 +585,7 @@ fi
 # 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
 # mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
 # 本次只允许无 pending，或哈希冻结的 V204-V217 基础包与
-# V218-V223 正式排障包；失败时恢复旧容器，
+# V218-V223 正式排障包与 V224-V225 ITDB 审批员工包；失败时恢复旧容器，
 # 并保留该备份供人工恢复。
 docker run --rm \
   -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
@@ -615,8 +663,8 @@ deployed_failed_migration_count="$(docker run --rm \
   "$DB_NAME_VALUE")"
 printf '%s\n' "$deployed_flyway_version" > deployed-flyway-version.txt
 printf '%s\n' "$deployed_failed_migration_count" > deployed-failed-migration-count.txt
-[[ "$deployed_flyway_version" == "$APPROVED_FORMAL_DIAGNOSIS_TO" ]] \
-  || { echo "DEPLOY_FAILED: 数据库 Flyway 最终版本为 V$deployed_flyway_version，期望 V$APPROVED_FORMAL_DIAGNOSIS_TO" >&2; false; }
+[[ "$deployed_flyway_version" == "$APPROVED_ITDB_TO" ]] \
+  || { echo "DEPLOY_FAILED: 数据库 Flyway 最终版本为 V$deployed_flyway_version，期望 V$APPROVED_ITDB_TO" >&2; false; }
 [[ "$deployed_failed_migration_count" == '0' ]] \
   || { echo "DEPLOY_FAILED: 发布后存在 $deployed_failed_migration_count 条失败迁移" >&2; false; }
 

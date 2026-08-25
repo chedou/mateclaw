@@ -35,6 +35,13 @@ services:
       # Swagger stays admin-only on the production DB profiles. A test box is
       # the sanctioned place to open it; still defaults to closed.
       MATECLAW_OPENAPI_EXPOSE_UI: ${MATECLAW_OPENAPI_EXPOSE_UI:-false}
+      # ITDB SQL approval integration. Keep credentials only in the mode-0600
+      # deployment env file; never put them in source, Agent prompts, or Skills.
+      MATECLAW_ITDB_ENABLED: ${MATECLAW_ITDB_ENABLED:-false}
+      MATECLAW_ITDB_BASE_URL: ${MATECLAW_ITDB_BASE_URL:-https://itdb.atrust.sangfor.com}
+      MATECLAW_ITDB_USERNAME: ${MATECLAW_ITDB_USERNAME:-}
+      MATECLAW_ITDB_PASSWORD: ${MATECLAW_ITDB_PASSWORD:-}
+      MATECLAW_ITDB_ALLOWED_HOSTS: ${MATECLAW_ITDB_ALLOWED_HOSTS:-itdb.atrust.sangfor.com}
       #
       # Troubleshooting read-only evidence. Every switch defaults to OFF and
       # must stay off until a workspace owner has verified the real Guance

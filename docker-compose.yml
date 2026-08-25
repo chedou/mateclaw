@@ -119,6 +119,11 @@ services:
       # Explicit production intent. Keep false for local/test rehearsals. A
       # production deployment must set true and satisfy every startup gate.
       MATECLAW_PRODUCTION_ENABLED: ${MATECLAW_PRODUCTION_ENABLED:-false}
+      MATECLAW_ITDB_ENABLED: ${MATECLAW_ITDB_ENABLED:-false}
+      MATECLAW_ITDB_BASE_URL: ${MATECLAW_ITDB_BASE_URL:-https://itdb.atrust.sangfor.com}
+      MATECLAW_ITDB_USERNAME: ${MATECLAW_ITDB_USERNAME:-}
+      MATECLAW_ITDB_PASSWORD: ${MATECLAW_ITDB_PASSWORD:-}
+      MATECLAW_ITDB_ALLOWED_HOSTS: ${MATECLAW_ITDB_ALLOWED_HOSTS:-itdb.atrust.sangfor.com}
       JWT_SECRET: ${JWT_SECRET:-}
       # Decrypts secrets stored in the database (Official Account app_secret,
       # Guance API key, ...). Unset falls back to a passphrase compiled into the

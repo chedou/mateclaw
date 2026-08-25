@@ -10,9 +10,9 @@
 > - 编排合并：已用 Docker Compose v2.40.3 实测。MySQL 模式下 `!override` 确实移除了
 >   PostgreSQL 健康门，合并结果只剩 `mateclaw-server` + `searxng`，环境变量注入正确；
 >   PostgreSQL 模式不受影响。
-> - 镜像构建与启动：已实测至 V217。服务端镜像可构建（约 1.23 GB），
->   容器起来后 `/actuator/health` 返回 `UP`。当前源码最高迁移为 V223；
->   V218–V223 已通过三方言形状与 H2 执行验证，
+> - 镜像构建与启动：已实测至 V223。服务端镜像可构建（约 1.23 GB），
+>   容器起来后 `/actuator/health` 返回 `UP`。当前源码最高迁移为 V225；
+>   V218–V225 已通过三方言形状与 H2 执行验证，
 >   测试环境切换仍需按本文维护窗流程执行。
 > - 外部 MySQL：已在 MySQL 8.0.11 上实测建表、H2 全量复制和本地应用启动；110 张业务表、
 >   2,723 行数据逐表行数一致。测试服务器切换属于单独的环境验收，不能由本地结果代替。
@@ -109,9 +109,9 @@ Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按�
 1. 从内网 GitLab 检出指定分支，并要求分支头与 `EXPECTED_COMMIT` 完全一致；
 2. 从该提交构建带不可变版本号的 Docker 镜像；
 3. 只读检查当前 Flyway 版本并拒绝任何失败历史；无待执行迁移可直接继续，或只允许内容哈希完全一致的
-   `V204 → V217` 基础包与 `V217 → V223` 正式排障包；
+   `V204 → V217` 基础包、`V217 → V223` 正式排障包与 `V223 → V225` ITDB 审批员工包；
 4. `DEPLOY` 才进入维护窗口：停止旧应用、生成 MySQL 逻辑备份，再启动新版本；
-5. 新版本必须同时通过健康检查、精确 Git 版本校验和数据库 `V223` 校验，且失败迁移数必须为 0；
+5. 新版本必须同时通过健康检查、精确 Git 版本校验和数据库 `V225` 校验，且失败迁移数必须为 0；
    否则恢复旧容器并保留 MySQL 备份。
 
 `scripts/release-test-env.sh` 默认发送 `ACTION=DEPLOY`、当前分支和当前完整 HEAD，
@@ -119,13 +119,15 @@ Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按�
 `--parameter ACTION=VERIFY_ONLY`；脚本会自动跳过未切换站点的版本比对。
 
 流水线不会让候选容器提前连接正在服务的 MySQL，也不会自动执行破坏性的数据库恢复。
-本任务通常只允许数据库已无待执行迁移时发布应用。已审核两个连续例外：
+本任务通常只允许数据库已无待执行迁移时发布应用。已审核三个连续例外：
 
 - `V204 → V217`：13 个 Agent Team 基础迁移；
 - `V217 → V223`：6 个正式排障迁移，增加评估样本来源字段、正式诊断 claim 表、通用正式调查的来源验收审计字段、诊断后补充材料的不可变安全台账、排障对话轮次的幂等指针台账，以及专用只读排障 Agent 与无冲突的取证工具种子。
+- `V223 → V224`：注册受控的 `ItDbWorkflowTool`。该工具只提供实时待办、完整 SQL 审核和逐单审批推进；审批必须经过 MateClaw 持久化确认，且代码中不存在 ITDB 执行接口。
+- `V224 → V225`：完善 `SXF-ITDB SQL审批安全官` 的角色、目标、背景和安全协议，只绑定 4 个 `SXF-` ITDB Skills 与 `ItDbWorkflowTool`，并清理该员工误绑的无关能力。
 
-两个包的文件范围和组合 SHA-256 均在 `Jenkinsfile.test-env` 冻结。可从 V204
-一次升至 V223，也可从 V217 只执行 V218–V223；V218–V222 中断后只允许继续完成同一审核包。
+三个包的文件范围和组合 SHA-256 均在 `Jenkinsfile.test-env` 冻结。可从 V204
+一次升至 V225，也可从 V217 执行 V218–V225、从 V223 执行 V224–V225，或从 V224 只执行 V225；中断后只允许继续完成同一审核包。
 任一文件内容、数量、起点或终点变化都会 fail-closed。切换前的完整逻辑备份
 保留在 `/opt/mateclaw/releases`。其他 schema 升级必须先走独立数据库维护窗口。
 
@@ -143,6 +145,18 @@ Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按�
 
 数据库密码、`MATECLAW_SETTING_KEY` 和观测云密钥继续只保存在 Jenkins Credentials
 或部署机的 mode-600 `/opt/mateclaw/mateclaw.env` 中，不进入参数、构建日志或仓库。
+
+若启用 `SXF-ITDB SQL审批安全官` 的原生审核能力，还需要在同一个 mode-600 环境文件中配置：
+
+```text
+MATECLAW_ITDB_ENABLED=true
+MATECLAW_ITDB_BASE_URL=https://itdb.atrust.sangfor.com
+MATECLAW_ITDB_USERNAME=<最小权限审批账号>
+MATECLAW_ITDB_PASSWORD=<仅保存在部署机>
+MATECLAW_ITDB_ALLOWED_HOSTS=itdb.atrust.sangfor.com
+```
+
+该账号必须能调用 JWT API；如果服务端被 302/307 重定向到 aTrust 浏览器登录页，工具会失败关闭并提示配置服务端授权 API 路由，不会把账号密码转发给网关页面。
 
 ### 2.1 取代码
 

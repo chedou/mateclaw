@@ -254,8 +254,15 @@ public class ApprovalWorkflowService implements ApplicationRunner {
         });
 
         // 3. DB 层
-        persistToDb(pendingId, conversationId, userId, toolName, toolArguments,
-                toolCallPayload, siblingToolCalls, agentId, evaluation, chatOriginJson);
+        try {
+            persistToDb(pendingId, conversationId, userId, toolName, toolArguments,
+                    toolCallPayload, siblingToolCalls, agentId, evaluation, chatOriginJson);
+        } catch (Exception e) {
+            approvalService.removeFromMap(pendingId);
+            log.error("[ApprovalWorkflow] Failed to persist approval {}; removed in-memory entry",
+                    pendingId, e);
+            throw new IllegalStateException("Failed to persist approval; no approval was created", e);
+        }
 
         return pendingId;
     }
@@ -823,8 +830,7 @@ public class ApprovalWorkflowService implements ApplicationRunner {
                              String toolName, String toolArguments,
                              String toolCallPayload, String siblingToolCalls, String agentId,
                              GuardEvaluation evaluation, String chatOriginJson) {
-        try {
-            ToolApprovalEntity entity = new ToolApprovalEntity();
+        ToolApprovalEntity entity = new ToolApprovalEntity();
             entity.setPendingId(pendingId);
             entity.setConversationId(conversationId);
             entity.setUserId(userId);
@@ -850,9 +856,9 @@ public class ApprovalWorkflowService implements ApplicationRunner {
                 }
             }
 
-            approvalMapper.insert(entity);
-        } catch (Exception e) {
-            log.warn("[ApprovalWorkflow] Failed to persist approval to DB: {}", e.getMessage());
+        int rows = approvalMapper.insert(entity);
+        if (rows != 1) {
+            throw new IllegalStateException("Expected one approval row, inserted " + rows);
         }
     }
 
