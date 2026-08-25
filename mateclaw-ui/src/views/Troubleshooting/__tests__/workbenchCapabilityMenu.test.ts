@@ -54,9 +54,9 @@ describe('troubleshooting secondary navigation information architecture', () => 
       { section: 'source', label: '数据连接' },
     ])
     expect(items.map(item => item.description)).toEqual([
-      '登记系统模块，并在模块里选择取证方法',
+      '每个系统只接入一次，服务名由告警自动带入',
       '维护方法库（可设通用或指定系统/模块），再在接入系统里选用',
-      '检查观测云能否正常读取',
+      '先查看数据源列表，再进入具体数据源配置',
       '场景、步骤与判断标准',
       '用真实样本验证效果',
       '沉淀已解决的故障',

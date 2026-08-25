@@ -358,6 +358,35 @@ class ObservabilityAssetServiceTest {
                 .satisfies(asset -> assertThat(asset.origin()).isEqualTo("WORKSPACE"));
     }
 
+    @Test
+    void declaresOneSystemAssetWithoutAUserMaintainedModule() {
+        EvidenceProperties configured = properties();
+        EvidenceProperties.Binding errors = new EvidenceProperties.Binding();
+        errors.setSignalKind("error_log_scan");
+        errors.setScenario("通用错误日志调查");
+        errors.setQuestion("当前服务有哪些错误日志？");
+        errors.setQueryTemplate(
+                "L::logs:(count(*) as error_count) {service='{{service}}'}");
+        errors.setMaxRows(1);
+        Map<String, EvidenceProperties.Binding> bindings =
+                new LinkedHashMap<>(configured.getGuance().getBindings());
+        bindings.put("generic-error-scan", errors);
+        configured.getGuance().setBindings(bindings);
+        service = newService(configured);
+
+        ObservabilityAssetView declared = service.declareSystem(
+                WORKSPACE_ID,
+                new SystemObservabilityAssetDeclaration(
+                        "CSDP", "客服数字化", "guance", "prd",
+                        null, null, null, true,
+                        Map.of("error_log_scan", "generic-error-scan"),
+                        Map.of(), null, "开通系统级通用只读调查"),
+                "admin");
+
+        assertThat(declared.service()).isEqualTo("system-scope");
+        assertThat(service.findSystem(WORKSPACE_ID, "CSDP")).isPresent();
+    }
+
     private ObservabilityAssetDeclaration declaration(
             Integer expectedVersion,
             boolean enabled,

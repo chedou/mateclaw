@@ -29,7 +29,7 @@ export const WORKBENCH_PRIMARY_CAPABILITIES: ReadonlyArray<WorkbenchCapabilityNa
     command: 'observability-assets',
     section: 'modules',
     label: '接入系统',
-    description: '登记系统模块，并在模块里选择取证方法',
+    description: '每个系统只接入一次，服务名由告警自动带入',
     requiredCapability: 'manage:troubleshooting',
   },
 ]
@@ -52,7 +52,7 @@ export const WORKBENCH_CAPABILITY_GROUPS: ReadonlyArray<WorkbenchCapabilityNavGr
         command: 'observability-assets',
         section: 'source',
         label: '数据连接',
-        description: '检查观测云能否正常读取',
+        description: '先查看数据源列表，再进入具体数据源配置',
         requiredCapability: 'manage:troubleshooting',
       },
       {
@@ -91,9 +91,9 @@ export const EVIDENCE_SETUP_SECTIONS: ReadonlyArray<{
   label: string
   description: string
 }> = [
-  { key: 'modules', label: '接入系统', description: '登记要排障的系统和模块；点进模块即可勾选取证方法、查看数据源缺口并试跑。' },
+  { key: 'modules', label: '接入系统', description: '每个系统只接入一次；告警中的服务名会在排障时自动作为查询条件。' },
   { key: 'tools', label: '取证方法', description: '方法库：配置查什么、要哪些参数、作用域是通用还是指定系统/模块；查询模板由管理员维护。' },
-  { key: 'source', label: '数据连接', description: '检查系统能否只读访问观测云并正常获取排障数据。' },
+  { key: 'source', label: '数据连接', description: '先查看所有数据源的连接状态，再进入具体数据源完成配置。' },
 ]
 
 export function normalizeEvidenceSetupSection(value: unknown): EvidenceSetupSection {

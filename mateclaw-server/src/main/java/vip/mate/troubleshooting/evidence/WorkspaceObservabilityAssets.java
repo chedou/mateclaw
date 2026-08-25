@@ -24,6 +24,15 @@ public interface WorkspaceObservabilityAssets {
     Optional<WorkspaceObservabilityAsset> find(
             long workspaceId, String system, String service);
 
+    /** One admin-owned asset shared by runtime services in the same system. */
+    default Optional<WorkspaceObservabilityAsset> findSystem(
+            long workspaceId, String system) {
+        return find(
+                workspaceId,
+                system,
+                SystemObservabilityScopePolicy.SYSTEM_SERVICE);
+    }
+
     /** Exact binding references currently reachable from latest enabled revisions. */
     Set<String> activeBindingReferences(String signalKind);
 

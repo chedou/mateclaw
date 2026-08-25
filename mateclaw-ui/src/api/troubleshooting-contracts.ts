@@ -1419,6 +1419,21 @@ export interface DeclareObservabilityAssetRequest {
   reason: string
 }
 
+export interface DeclareSystemObservabilityAssetRequest {
+  system: string
+  displayName: string
+  platform: 'guance'
+  environment: string
+  region?: string
+  cluster?: string
+  namespace?: string
+  enabled: boolean
+  signalBindings: Record<string, string>
+  parameters: Record<string, string>
+  expectedVersion?: number
+  reason: string
+}
+
 export type GuanceEvidenceAcceptanceStatus =
   | 'BLOCKED'
   | 'NOT_ACCEPTED'

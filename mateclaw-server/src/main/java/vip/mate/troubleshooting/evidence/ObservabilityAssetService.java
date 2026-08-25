@@ -28,7 +28,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Workspace-owned registry connecting one business module to reviewed source contracts.
+ * Workspace-owned registry connecting a business system (or an optional
+ * module override) to reviewed source contracts.
  *
  * <p>Every change inserts a new revision. The registry stores resource identifiers only;
  * endpoint hosts, credentials, query text and raw source rows remain deployment-owned.</p>
@@ -241,6 +242,53 @@ public class ObservabilityAssetService implements WorkspaceObservabilityAssets {
             throw conflict("asset version changed concurrently; reload and retry");
         }
         return view(entity);
+    }
+
+    /**
+     * Declares one system once. Runtime service names come from incidents and
+     * may only enter reviewed contracts through the server-owned service
+     * placeholder.
+     */
+    @Transactional
+    public ObservabilityAssetView declareSystem(
+            long workspaceId,
+            SystemObservabilityAssetDeclaration declaration,
+            String actor) {
+        if (declaration == null) {
+            throw invalid("system asset declaration is required");
+        }
+        Map<String, String> bindings = declaration.signalBindings() == null
+                ? Map.of() : declaration.signalBindings();
+        for (Map.Entry<String, String> entry : bindings.entrySet()) {
+            if (!SystemObservabilityScopePolicy.allowsSignal(entry.getKey())) {
+                throw invalid("system-wide onboarding only supports generic error-log investigation");
+            }
+            EvidenceProperties.Binding binding = exactBinding(
+                    workspaceId, safeScope(entry.getValue(), "contractRef"));
+            EvidenceContractCatalogView.EvidenceContractView contract =
+                    evidenceContracts.detail(workspaceId, entry.getValue(), false);
+            if (!"generic".equals(normalize(contract.scopeType()))
+                    || !SystemObservabilityScopePolicy.safelyFiltersRuntimeService(binding)) {
+                throw invalid("a system-wide query contract must be generic and filter {{service}}");
+            }
+        }
+        return declare(
+                workspaceId,
+                new ObservabilityAssetDeclaration(
+                        declaration.system(),
+                        SystemObservabilityScopePolicy.SYSTEM_SERVICE,
+                        declaration.displayName(),
+                        declaration.platform(),
+                        declaration.environment(),
+                        declaration.region(),
+                        declaration.cluster(),
+                        declaration.namespace(),
+                        declaration.enabled(),
+                        bindings,
+                        declaration.parameters(),
+                        declaration.expectedVersion(),
+                        declaration.reason()),
+                actor);
     }
 
     private ValidatedBindings validateBindings(

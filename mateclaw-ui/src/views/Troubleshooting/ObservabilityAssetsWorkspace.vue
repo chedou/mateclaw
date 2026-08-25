@@ -38,7 +38,6 @@
           <el-option label="指定模块" value="MODULE" />
         </el-select>
         <template v-if="setupSection === 'modules'">
-          <el-button @click="moduleChooserOpen = true">新增模块</el-button>
           <el-button type="primary" @click="openNewSystem">新增系统</el-button>
         </template>
         <el-button
@@ -66,12 +65,12 @@
               <b>它不是真实生产观测</b>——真实故障要等真源接通。
             </p>
             <p v-else>
-              模块和绑定可以先离线配好，但
+              系统接入配置可以先离线保存，但
               <b>取证方法跑不起来，也做不了只读试跑</b>——这一步要等数据连接可用。
             </p>
           </div>
           <!-- 同一个动作一页只出现一次：没有模块时空态已经在带路，这里就只陈述事实。 -->
-          <el-button v-if="hasModules" type="primary" plain @click="selectSetupSection('source')">检查数据连接</el-button>
+          <el-button v-if="hasSystems" type="primary" plain @click="selectSetupSection('source')">检查数据连接</el-button>
         </div>
         <ul class="source-gate-list source-gate-list-compact">
           <li v-for="source in blockedSources" :key="source.platform">
@@ -81,20 +80,22 @@
         </ul>
       </section>
 
-      <EvidenceSourceSettingsCard
-        v-if="setupSection === 'source' && canManageTroubleshooting"
-        @saved="loadCatalog"
-      />
-
       <section v-if="setupSection === 'source'" class="list-workspace source-list-workspace">
         <div class="list-heading">
           <div>
             <h2>数据源列表</h2>
-            <p>共 {{ filteredSources.length }} 个数据源；下面是各适配器的实际就绪状态，改配置请用上方设置卡。</p>
+            <p>共 {{ filteredSources.length }} 个数据源。先看连接状态；需要调整时，点具体数据源进入它的配置页。</p>
           </div>
         </div>
         <el-table v-if="filteredSources.length" :data="filteredSources" class="management-table" stripe>
-          <el-table-column prop="platform" label="数据源" min-width="170" />
+          <el-table-column label="数据源" min-width="170">
+            <template #default="scope">
+              <div class="source-name">
+                <b>{{ sourceDisplayName(scope.row.platform) }}</b>
+                <small>{{ scope.row.platform }}</small>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="支持的取证类型" min-width="240" class-name="optional-column" label-class-name="optional-column">
             <template #default="scope">{{ sourceSignalLabel(scope.row.supportedSignals) }}</template>
           </el-table-column>
@@ -123,13 +124,11 @@
           <el-table-column label="操作" width="130" align="right" fixed="right">
             <template #default="scope">
               <el-button
-                v-if="!isRecordedReplay(scope.row.platform)"
                 type="primary"
                 text
-                :loading="loading"
-                @click="loadCatalog"
-              >刷新状态</el-button>
-              <span v-else class="muted-action">演示回放</span>
+                :disabled="!canManageTroubleshooting"
+                @click="openSourceEditor(scope.row)"
+              >{{ canManageTroubleshooting ? '配置' : '查看' }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -137,66 +136,45 @@
       </section>
 
       <section
-        v-else-if="setupSection === 'modules' && filteredSetupModules.length"
+        v-else-if="setupSection === 'modules' && filteredSystems.length"
         class="list-workspace module-list-workspace"
       >
         <div class="list-heading">
           <div>
-            <h2>系统模块列表</h2>
-            <p>共 {{ filteredSetupModules.length }} 个模块；系统标识相同的模块归在同一系统下。</p>
+            <h2>已接入系统</h2>
+            <p>共 {{ filteredSystems.length }} 个系统。一个系统只配置一次，服务名从告警中自动识别并限定查询范围。</p>
           </div>
         </div>
-        <el-table :data="filteredSetupModules" class="management-table module-table" stripe>
-          <el-table-column label="系统 / 模块" min-width="240">
+        <el-table :data="filteredSystems" class="management-table module-table" stripe>
+          <el-table-column label="系统" min-width="240">
             <template #default="scope">
               <div class="table-primary-cell">
-                <b>{{ scope.row.service }}</b>
-                <small>{{ scope.row.system }} · {{ scope.row.displayName }}</small>
+                <b>{{ scope.row.displayName }}</b>
+                <small>{{ scope.row.system }}</small>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="运行范围" min-width="230" class-name="optional-column" label-class-name="optional-column">
+          <el-table-column label="数据源" min-width="180">
             <template #default="scope">
               <div class="table-primary-cell compact-cell">
-                <b>{{ scope.row.asset?.environment || '未登记环境' }}</b>
-                <small>{{ moduleResourceScope(scope.row) }}</small>
+                <b>{{ scope.row.asset?.platform || '观测云' }}</b>
+                <small>{{ scope.row.asset?.environment || '环境待配置' }}</small>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="配置来源" width="120">
+          <el-table-column label="通用排障" min-width="220">
             <template #default="scope">
-              <el-tag :type="moduleOriginTagType(scope.row)" effect="plain" size="small">
-                {{ moduleOriginLabel(scope.row) }}
+              <el-tag :type="scope.row.ready ? 'success' : 'warning'" effect="plain" size="small">
+                {{ scope.row.ready ? '已就绪' : scope.row.asset ? '待联调' : '待接入' }}
               </el-tag>
+              <small class="system-scope-hint">{{ scope.row.hint }}</small>
             </template>
           </el-table-column>
-          <el-table-column label="取证就绪" width="110">
+          <el-table-column label="操作" width="140" align="right" fixed="right">
             <template #default="scope">
-              <span class="readiness-count">{{ moduleRailLabel(scope.row) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="接入进度" min-width="180">
-            <template #default="scope">
-              <button
-                type="button"
-                class="onboarding-progress-trigger"
-                :disabled="loading"
-                @click="openModuleOnboarding(scope.row)"
-              >
-                <b>{{ moduleOnboarding(scope.row).completedSteps }}/{{ moduleOnboarding(scope.row).totalSteps }}</b>
-                <small>
-                  {{ moduleOnboarding(scope.row).status === 'READY_FOR_PILOT'
-                    ? '已具备试点条件'
-                    : `下一步：${moduleOnboarding(scope.row).nextStep?.label || '核对状态'}` }}
-                </small>
-              </button>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" min-width="280" align="right" fixed="right">
-            <template #default="scope">
-              <el-button type="primary" text @click="openModuleWorkspace(scope.row)">打开配置</el-button>
-              <el-button text @click="openModuleWorkspace(scope.row)">查看</el-button>
-              <el-button text @click="openModuleWorkspace(scope.row, 'tools')">取证方法</el-button>
+              <el-button type="primary" text @click="openSystemEditor(scope.row)">
+                {{ scope.row.asset ? '修改接入' : '开始接入' }}
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -263,16 +241,16 @@
         空态分两种，原来只有一句话概括了它们：源没通时先去联调，源通了就登记模块。
         「登记模块」在源没通时仍然可做（离线准备），所以它留着，只是不抢主位。
       -->
-      <section v-else-if="!hasModules" class="setup-empty">
+      <section v-else-if="setupSection === 'modules' && !hasSystems" class="setup-empty">
         <h2>{{ setupGate === 'NEEDS_SOURCE' ? '先检查数据连接' : '接入第一个系统' }}</h2>
         <p v-if="setupGate === 'NEEDS_SOURCE'">
-          还没有任何模块，也还没有真实数据源。两件事都要做，但先做数据源——
+          还没有接入系统，也还没有真实数据源。两件事都要做，但先做数据源——
           {{ replayOnly
-            ? '现在只有受控回放，模块登记完也仍然取不到真实证据。'
-            : '没有源的话，模块登记完也仍然取不到证据。' }}
+            ? '现在只有受控回放，系统接入完也仍然取不到真实证据。'
+            : '没有源的话，系统接入完也仍然取不到证据。' }}
         </p>
         <p v-else>
-          数据连接已就绪。新增你要排障的系统和模块，然后选择发生故障时要使用的取证方法。
+          数据连接已就绪。新增你要排障的系统；后续告警里出现的任何服务都会复用这个接入。
         </p>
         <div class="setup-empty-actions">
           <el-button v-if="setupGate === 'NEEDS_SOURCE'" type="primary" @click="selectSetupSection('source')">检查数据连接</el-button>
@@ -282,9 +260,62 @@
           >{{ setupGate === 'NEEDS_SOURCE' ? '仍然先新增系统' : '新增第一个系统' }}</el-button>
         </div>
       </section>
-      <el-empty v-else description="没有匹配当前搜索的系统模块" />
+      <el-empty v-else description="没有匹配当前搜索的系统" />
       </template>
     </div>
+
+    <el-drawer v-model="systemDrawerOpen" size="560px" destroy-on-close title="接入系统">
+      <div class="system-editor-intro">
+        <b>只需配置一次</b>
+        <p>不用维护模块或服务清单。排障时，系统会把告警中的服务名自动带入只读查询。</p>
+      </div>
+      <el-form label-position="top" class="asset-form">
+        <el-form-item label="系统标识">
+          <el-input v-model="systemForm.system" :disabled="Boolean(systemForm.expectedVersion)" placeholder="例如 CSDP" />
+        </el-form-item>
+        <el-form-item label="系统名称">
+          <el-input v-model="systemForm.displayName" placeholder="例如 客服数字化" />
+        </el-form-item>
+        <el-form-item label="运行环境">
+          <el-input v-model="systemForm.environment" placeholder="例如 prd" />
+        </el-form-item>
+        <el-form-item label="通用只读调查">
+          <el-select v-model="systemForm.bindingRef" filterable placeholder="选择服务错误日志查询方法">
+            <el-option
+              v-for="option in systemContractOptions"
+              :key="option.contractRef"
+              :label="option.question || option.scenario"
+              :value="option.contractRef"
+            />
+          </el-select>
+          <p class="field-help">该方法必须是通用规则，并由服务端强制按告警服务名过滤。</p>
+        </el-form-item>
+        <div class="asset-enabled-row">
+          <div><b>启用该系统</b><small>停用后，该系统的通用调查会明确停止。</small></div>
+          <el-switch v-model="systemForm.enabled" />
+        </div>
+        <el-form-item label="变更原因">
+          <el-input v-model="systemForm.reason" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="例如：开通 CSDP 通用只读排障" />
+        </el-form-item>
+      </el-form>
+      <div class="module-workspace-actions">
+        <el-button @click="systemDrawerOpen = false">取消</el-button>
+        <el-button type="primary" :loading="systemSaving" :disabled="!systemFormReady" @click="saveSystem">保存系统</el-button>
+      </div>
+    </el-drawer>
+
+    <el-drawer
+      v-model="sourceDrawerOpen"
+      size="640px"
+      destroy-on-close
+      :title="selectedSource ? `${sourceDisplayName(selectedSource.platform)} · 数据源配置` : '数据源配置'"
+    >
+      <EvidenceSourceSettingsCard
+        v-if="selectedSource"
+        :platform="selectedSource.platform"
+        @saved="handleSourceSaved"
+      />
+    </el-drawer>
 
     <el-drawer
       v-model="moduleWorkspaceOpen"
@@ -1027,6 +1058,37 @@ type ToolListRow = {
   row: ContractRow | null
 }
 
+type SystemListRow = {
+  system: string
+  displayName: string
+  asset: ObservabilityAsset | null
+  ready: boolean
+  hint: string
+}
+
+type SystemForm = {
+  system: string
+  displayName: string
+  environment: string
+  bindingRef: string
+  enabled: boolean
+  expectedVersion?: number
+  reason: string
+}
+
+const SYSTEM_SCOPE_SERVICE = 'system-scope'
+
+function emptySystemForm(): SystemForm {
+  return {
+    system: '',
+    displayName: '',
+    environment: 'prd',
+    bindingRef: '',
+    enabled: true,
+    reason: '',
+  }
+}
+
 type AssetForm = {
   system: string
   service: string
@@ -1124,6 +1186,11 @@ const routeTarget = ref<ContractRow | null>(null)
 const routePlatforms = ref<string[]>([])
 const routeReason = ref('')
 const moduleChooserOpen = ref(false)
+const systemDrawerOpen = ref(false)
+const systemSaving = ref(false)
+const systemForm = ref<SystemForm>(emptySystemForm())
+const sourceDrawerOpen = ref(false)
+const selectedSource = ref<EvidenceCatalogSource | null>(null)
 const assetSaving = ref(false)
 const assetForm = ref<AssetForm>(emptyAssetForm())
 const playbooks = ref<SopSummary[] | null>(null)
@@ -1202,6 +1269,65 @@ const setupModules = computed(() => listSetupModules(
 ))
 
 const hasModules = computed(() => setupModules.value.length > 0)
+const systemRows = computed<SystemListRow[]>(() => {
+  const names = new Map<string, string>()
+  for (const system of catalog.value?.systems || []) {
+    names.set(system.system.trim().toLowerCase(), system.system)
+  }
+  for (const asset of assetCatalog.value?.assets || []) {
+    names.set(asset.system.trim().toLowerCase(), asset.system)
+  }
+  return [...names.values()].sort((left, right) => left.localeCompare(right)).map(system => {
+    const systemAsset = (assetCatalog.value?.assets || []).find(asset =>
+      asset.system.trim().toLowerCase() === system.trim().toLowerCase()
+        && asset.service.trim().toLowerCase() === SYSTEM_SCOPE_SERVICE)
+      || null
+    const hasGenericBinding = Boolean(systemAsset?.signalBindings?.error_log_scan)
+    const ready = Boolean(systemAsset?.enabled && hasGenericBinding && realSourceReady.value)
+    return {
+      system,
+      displayName: systemAsset?.displayName || system,
+      asset: systemAsset,
+      ready,
+      hint: !systemAsset
+        ? '只需登记系统，不用新增模块'
+        : !systemAsset.enabled
+          ? '已停用'
+          : !hasGenericBinding
+            ? '还没有绑定通用错误日志查询'
+            : !realSourceReady.value
+              ? '配置已保存，等待数据源就绪'
+              : '可对告警中任意服务执行受限只读调查',
+    }
+  })
+})
+const hasSystems = computed(() => systemRows.value.length > 0)
+const filteredSystems = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  if (!keyword) return systemRows.value
+  return systemRows.value.filter(row => [
+    row.system,
+    row.displayName,
+    row.asset?.environment || '',
+    row.asset?.platform || '',
+  ].some(value => value.toLowerCase().includes(keyword)))
+})
+const systemContractOptions = computed(() => {
+  const genericRefs = new Set((evidenceContractCatalog.value?.contracts || [])
+    .filter(contract => String(contract.scopeType).toUpperCase() === 'GENERIC'
+      && contract.signalKind === 'error_log_scan'
+      && contract.enabled !== false)
+    .map(contract => contract.contractRef))
+  return (assetCatalog.value?.contracts || []).filter(option =>
+    option.signalKind === 'error_log_scan' && genericRefs.has(option.contractRef))
+})
+const systemFormReady = computed(() => Boolean(
+  systemForm.value.system.trim()
+    && systemForm.value.displayName.trim()
+    && systemForm.value.environment.trim()
+    && systemForm.value.bindingRef
+    && systemForm.value.reason.trim(),
+))
 const systemChoices = computed(() => {
   const counts = new Map<string, number>()
   for (const entry of setupModules.value) {
@@ -1215,9 +1341,9 @@ const showListToolbar = computed(() => setupSection.value === 'source'
   ? Boolean(catalog.value?.sources?.length)
   : setupSection.value === 'tools'
     ? true
-    : hasModules.value)
+    : hasSystems.value)
 const listSearchPlaceholder = computed(() => ({
-  modules: '搜索系统或模块',
+  modules: '搜索系统',
   tools: '搜索方法标识、场景或问题',
   source: '搜索数据源或支持的取证类型',
 }[setupSection.value]))
@@ -1279,7 +1405,7 @@ const filteredSources = computed(() => {
  * 补范围、改绑定都是离线能做的准备，藏起来等于把人已经做过的工作抹掉。
  */
 const setupGate = computed<'NEEDS_SOURCE' | 'NEEDS_MODULE' | 'SOURCE_BLOCKED' | 'READY'>(() => {
-  if (!hasModules.value) return realSourceReady.value ? 'NEEDS_MODULE' : 'NEEDS_SOURCE'
+  if (!hasSystems.value) return realSourceReady.value ? 'NEEDS_MODULE' : 'NEEDS_SOURCE'
   return realSourceReady.value ? 'READY' : 'SOURCE_BLOCKED'
 })
 
@@ -1769,9 +1895,28 @@ function sourceStateLabel(source: EvidenceCatalogSource) {
   return isRecordedReplay(source.platform) ? '仅回放' : '已就绪'
 }
 
+function sourceDisplayName(platform: string) {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'guance') return '观测云'
+  if (normalized === 'recorded-replay') return '受控回放'
+  if (normalized === 'k8s' || normalized === 'kubernetes') return 'Kubernetes'
+  if (normalized === 'hci') return 'HCI'
+  return platform
+}
+
 function sourceStateTagType(source: EvidenceCatalogSource): 'success' | 'warning' | 'info' {
   if (source.status !== 'READY') return 'warning'
   return isRecordedReplay(source.platform) ? 'info' : 'success'
+}
+
+function openSourceEditor(source: EvidenceCatalogSource) {
+  selectedSource.value = source
+  sourceDrawerOpen.value = true
+}
+
+async function handleSourceSaved() {
+  sourceDrawerOpen.value = false
+  await loadCatalog()
 }
 
 function contractKey(system: string, service: string, contract: EvidenceQueryContract) {
@@ -1974,11 +2119,54 @@ function rebindActiveCatalogTargets() {
 }
 
 function openNewSystem() {
-  assetForm.value = emptyAssetForm()
-  moduleWorkspaceTarget.value = draftModuleEntry()
-  onboardingTarget.value = moduleWorkspaceTarget.value
-  moduleWorkspaceOpen.value = true
-  moduleWorkspacePanel.value = 'edit'
+  systemForm.value = emptySystemForm()
+  systemForm.value.bindingRef = systemContractOptions.value[0]?.contractRef || ''
+  systemDrawerOpen.value = true
+}
+
+function openSystemEditor(row: SystemListRow) {
+  const asset = row.asset
+  systemForm.value = {
+    system: row.system,
+    displayName: asset?.displayName || row.displayName || row.system,
+    environment: asset?.environment || 'prd',
+    bindingRef: asset?.signalBindings?.error_log_scan
+      || systemContractOptions.value[0]?.contractRef
+      || '',
+    enabled: asset?.enabled ?? true,
+    expectedVersion: asset?.origin === 'WORKSPACE' ? asset.version : undefined,
+    reason: '',
+  }
+  systemDrawerOpen.value = true
+}
+
+async function saveSystem() {
+  const form = systemForm.value
+  if (!systemFormReady.value) {
+    ElMessage.warning('请填写系统、环境、通用查询方法和变更原因')
+    return
+  }
+  systemSaving.value = true
+  try {
+    await troubleshootingApi.declareSystemObservabilityAsset({
+      system: form.system.trim(),
+      displayName: form.displayName.trim(),
+      platform: 'guance',
+      environment: form.environment.trim(),
+      enabled: form.enabled,
+      signalBindings: { error_log_scan: form.bindingRef },
+      parameters: {},
+      expectedVersion: form.expectedVersion,
+      reason: form.reason.trim(),
+    })
+    systemDrawerOpen.value = false
+    ElMessage.success(form.expectedVersion ? '系统接入已更新' : '系统已接入')
+    await loadCatalog()
+  } catch (failure) {
+    ElMessage.error(failure instanceof Error ? failure.message : '系统接入保存失败')
+  } finally {
+    systemSaving.value = false
+  }
 }
 
 function openNewEvidenceContract() {
@@ -2303,6 +2491,15 @@ onMounted(loadCatalog)
 
 <style scoped>
 .assets-page { display: grid; gap: 14px; }
+.system-scope-hint { display: block; margin-top: 6px; color: var(--el-text-color-secondary); }
+.system-editor-intro {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-light);
+}
+.system-editor-intro p { margin: 6px 0 0; color: var(--el-text-color-secondary); line-height: 1.65; }
 .page-alert { margin-bottom: 2px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .search-input { flex: 1; min-width: min(100%, 240px); }
@@ -2485,6 +2682,9 @@ onMounted(loadCatalog)
 .status-cell { display: grid; justify-items: start; gap: 5px; }
 .status-cell small { color: var(--mc-text-secondary); font-size: 10.5px; line-height: 1.35; }
 .source-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.source-name { display: flex; flex-direction: column; gap: 2px; }
+.source-name b { color: var(--el-text-color-primary); font-weight: 600; }
+.source-name small { color: var(--el-text-color-secondary); font-size: 11px; }
 .muted-action { color: var(--mc-text-tertiary); font-size: 11px; }
 .dialog-help { margin: 0 0 14px; color: var(--mc-text-secondary); font-size: 12px; line-height: 1.6; }
 .system-choice-list { display: grid; border-top: 1px solid var(--mc-border-light); }

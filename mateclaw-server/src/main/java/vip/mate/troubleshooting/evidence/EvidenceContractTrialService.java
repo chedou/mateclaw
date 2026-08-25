@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.LongSupplier;
@@ -105,9 +106,8 @@ public class EvidenceContractTrialService {
         Map<String, String> supplied = safeParameters(request.parameters());
         String window = safeWindow(request.window());
         Instant occurredAt = safeOccurredAt(request.occurredAt());
-        WorkspaceObservabilityAsset asset = assetService.find(workspaceId, system, service)
-                .orElseThrow(() -> conflict(
-                        "a workspace system asset must be registered before admin trial"));
+        WorkspaceObservabilityAsset asset = trialAsset(
+                workspaceId, system, service, contract);
         if (!asset.enabled()) {
             throw conflict("the selected workspace system asset is not active");
         }
@@ -222,6 +222,32 @@ public class EvidenceContractTrialService {
         return view(entity, canonicalFields);
     }
 
+    private WorkspaceObservabilityAsset trialAsset(
+            long workspaceId,
+            String system,
+            String service,
+            EvidenceQueryCatalogView.ContractView contract) {
+        Optional<WorkspaceObservabilityAsset> exact =
+                assetService.find(workspaceId, system, service);
+        if (exact.isPresent()) {
+            WorkspaceObservabilityAsset candidate = exact.orElseThrow();
+            if (!candidate.enabled()
+                    || contract.contractRef().equals(
+                            candidate.signalBindings().get(contract.signalKind()))) {
+                return candidate;
+            }
+        }
+        if (SystemObservabilityScopePolicy.allowsSignal(contract.signalKind())) {
+            Optional<WorkspaceObservabilityAsset> systemAsset =
+                    assetService.findSystem(workspaceId, system);
+            if (systemAsset.isPresent()) {
+                return systemAsset.orElseThrow();
+            }
+        }
+        return exact.orElseThrow(() -> conflict(
+                "a workspace system asset must be registered before admin trial"));
+    }
+
     private long durationMs(long started) {
         return Math.max(0L, (ticker.getAsLong() - started) / 1_000_000L);
     }
@@ -265,8 +291,8 @@ public class EvidenceContractTrialService {
     private EvidenceQueryCatalogView.ContractView exactContract(
             long workspaceId, String system, String service, String contractRef) {
         List<EvidenceQueryCatalogView.ContractView> matches = new ArrayList<>();
-        for (EvidenceQueryCatalogView.SystemView systemView :
-                catalogService.inspect(workspaceId).systems()) {
+        EvidenceQueryCatalogView catalog = catalogService.inspect(workspaceId);
+        for (EvidenceQueryCatalogView.SystemView systemView : catalog.systems()) {
             if (!normalize(systemView.system()).equals(system)) {
                 continue;
             }
@@ -277,6 +303,24 @@ public class EvidenceContractTrialService {
                 module.contracts().stream()
                         .filter(contract -> normalize(contract.contractRef()).equals(contractRef))
                         .forEach(matches::add);
+            }
+        }
+        if (matches.isEmpty()) {
+            for (EvidenceQueryCatalogView.SystemView systemView : catalog.systems()) {
+                if (!normalize(systemView.system()).equals(system)) {
+                    continue;
+                }
+                for (EvidenceQueryCatalogView.ModuleView module : systemView.modules()) {
+                    if (!SystemObservabilityScopePolicy.isSystemService(module.service())) {
+                        continue;
+                    }
+                    module.contracts().stream()
+                            .filter(contract -> normalize(contract.contractRef())
+                                    .equals(contractRef))
+                            .filter(contract -> SystemObservabilityScopePolicy
+                                    .allowsSignal(contract.signalKind()))
+                            .forEach(matches::add);
+                }
             }
         }
         if (matches.size() != 1) {

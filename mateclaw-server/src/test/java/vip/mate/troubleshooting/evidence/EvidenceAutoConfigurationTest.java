@@ -323,7 +323,10 @@ class EvidenceAutoConfigurationTest {
                                         "csdp-cti-create-conversation-contrast")
                                 .containsEntry(
                                         "cti_failure_pattern_scan",
-                                        "csdp-cti-create-conversation-failure-patterns");
+                                        "csdp-cti-create-conversation-failure-patterns")
+                                .containsEntry(
+                                        "error_log_scan",
+                                        "guance-service-error-scan");
                     });
                     assertThat(guance.getAssetBindings().get(2)).satisfies(asset -> {
                         assertThat(asset.getWorkspaceId()).isEqualTo(1L);

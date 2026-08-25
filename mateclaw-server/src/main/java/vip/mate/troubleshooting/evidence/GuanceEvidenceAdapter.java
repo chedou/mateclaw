@@ -41,6 +41,8 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
     private static final Pattern SAFE_VALUE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}");
     private static final Pattern WINDOW = Pattern.compile("-?([1-9][0-9]*)([smhd])");
+    private static final Pattern SAFE_CURL_EXIT =
+            Pattern.compile("native curl transport failed with exit code ([0-9]{1,3})");
     private static final int MAX_BOUND_ROWS = 500;
     private static final int MAX_COMPONENT_QUERIES = 4;
     private static final int MAX_POINT_COUNT = 10_000;
@@ -423,11 +425,20 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         } catch (FormalEvidenceAuthorityException authorityFailure) {
             throw authorityFailure;
         } catch (Exception failure) {
+            String safeFailure = safeFailureKind(failure);
             log.warn("Guance evidence collection failed for request {} ({})",
-                    request.requestId(), failure.getClass().getSimpleName());
-            return missing(request, "Guance collection failed: "
-                    + failure.getClass().getSimpleName());
+                    request.requestId(), safeFailure);
+            return missing(request, "Guance collection failed: " + safeFailure);
         }
+    }
+
+    private String safeFailureKind(Exception failure) {
+        String kind = failure.getClass().getSimpleName();
+        String message = failure.getMessage();
+        Matcher curlExit = message == null ? null : SAFE_CURL_EXIT.matcher(message);
+        return curlExit != null && curlExit.matches()
+                ? kind + ":exit-" + curlExit.group(1)
+                : kind;
     }
 
     private VerifiedAuthority assertAcceptedAuthorityStillCurrent(
@@ -655,7 +666,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         String normalizedSignal = normalizeKey(signalKind);
         List<AssetScope> matches;
         try {
-            matches = exactAssetScopes(workspaceId, system, service);
+            matches = effectiveAssetScopes(workspaceId, system, service, signalKind);
         } catch (RuntimeException resolutionFailure) {
             return new SignalInspection(
                     GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
@@ -717,6 +728,15 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                     bindingRef, null, "canonical binding is missing or invalid");
         }
         EvidenceProperties.Binding binding = bindingEntries.getFirst().getValue();
+        if (SystemObservabilityScopePolicy.isSystemService(asset.service())
+                && (!SystemObservabilityScopePolicy.allowsSignal(signalKind)
+                        || !SystemObservabilityScopePolicy
+                                .safelyFiltersRuntimeService(binding))) {
+            return new SignalInspection(
+                    GuanceEvidenceReadiness.SignalStatus.INVALID_BINDING,
+                    bindingRef, null,
+                    "system-wide binding does not safely filter the runtime service");
+        }
         if (asset.workspaceOwned()
                 && !asset.parameters().keySet().containsAll(assetParameterNames(binding))) {
             return new SignalInspection(
@@ -802,7 +822,7 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
             String service,
             String signalKind) {
         List<AssetScope> matches =
-                exactAssetScopes(workspaceId, system, service);
+                effectiveAssetScopes(workspaceId, system, service, signalKind);
         if (matches.size() != 1) {
             return null;
         }
@@ -812,6 +832,12 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
         }
         EvidenceProperties.Binding binding = bindingFor(asset, signalKind);
         if (binding == null) {
+            return null;
+        }
+        if (SystemObservabilityScopePolicy.isSystemService(asset.service())
+                && (!SystemObservabilityScopePolicy.allowsSignal(signalKind)
+                        || !SystemObservabilityScopePolicy
+                                .safelyFiltersRuntimeService(binding))) {
             return null;
         }
         Map<String, String> parameters = new LinkedHashMap<>();
@@ -975,6 +1001,45 @@ public final class GuanceEvidenceAdapter implements EvidenceSourceAdapter {
                         asset.getWorkspaceId(), asset.getSystem(), asset.getService(), PLATFORM,
                         true, asset.getSignalBindings(), Map.of(), false))
                 .toList();
+    }
+
+    /**
+     * A module asset is an optional override. A disabled exact asset is an
+     * explicit stop; an enabled exact binding wins for that signal; otherwise
+     * the system-wide generic binding may serve the runtime service.
+     */
+    private List<AssetScope> effectiveAssetScopes(
+            long workspaceId,
+            String system,
+            String service,
+            String signalKind) {
+        Optional<WorkspaceObservabilityAsset> exact =
+                workspaceAssets.find(workspaceId, system, service);
+        if (exact.isPresent()) {
+            WorkspaceObservabilityAsset asset = exact.orElseThrow();
+            if (!asset.enabled()
+                    || SystemObservabilityScopePolicy.hasSignal(asset, signalKind)) {
+                return List.of(workspaceScope(asset));
+            }
+        }
+        if (SystemObservabilityScopePolicy.allowsSignal(signalKind)) {
+            Optional<WorkspaceObservabilityAsset> systemAsset =
+                    workspaceAssets.findSystem(workspaceId, system);
+            if (systemAsset.isPresent()) {
+                WorkspaceObservabilityAsset asset = systemAsset.orElseThrow();
+                return List.of(workspaceScope(asset));
+            }
+        }
+        if (exact.isPresent()) {
+            return List.of(workspaceScope(exact.orElseThrow()));
+        }
+        return exactAssetScopes(workspaceId, system, service);
+    }
+
+    private AssetScope workspaceScope(WorkspaceObservabilityAsset asset) {
+        return new AssetScope(
+                asset.workspaceId(), asset.system(), asset.service(), asset.platform(),
+                asset.enabled(), asset.signalBindings(), asset.parameters(), true);
     }
 
     private boolean validBinding(String signalKind, EvidenceProperties.Binding binding) {

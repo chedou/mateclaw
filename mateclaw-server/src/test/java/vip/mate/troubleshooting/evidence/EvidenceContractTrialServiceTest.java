@@ -86,6 +86,54 @@ class EvidenceContractTrialServiceTest {
     }
 
     @Test
+    void trialsAnAllowedGenericContractThroughTheSystemAssetForTheRuntimeService() {
+        EvidenceQueryCatalogService catalog = mock(EvidenceQueryCatalogService.class);
+        when(catalog.inspect(WORKSPACE_ID)).thenReturn(catalog(
+                "system-scope", contract("error_log_scan", List.of())));
+        ObservabilityAssetService assets = mock(ObservabilityAssetService.class);
+        when(assets.find(WORKSPACE_ID, "csdp", "csp-service"))
+                .thenReturn(Optional.empty());
+        when(assets.findSystem(WORKSPACE_ID, "csdp")).thenReturn(Optional.of(
+                new WorkspaceObservabilityAsset(
+                        "asset-system", WORKSPACE_ID, "csdp", "system-scope",
+                        "guance", true,
+                        Map.of("error_log_scan", "guance-service-error-scan"),
+                        Map.of(), 1)));
+        EvidenceSourceRouter router = mock(EvidenceSourceRouter.class);
+        AtomicReference<vip.mate.troubleshooting.model.IncidentContext> routedIncident =
+                new AtomicReference<>();
+        when(router.collect(eq(WORKSPACE_ID), any(), any(), eq(java.util.Set.of("guance"))))
+                .thenAnswer(call -> {
+                    vip.mate.troubleshooting.model.EvidenceRequest request = call.getArgument(1);
+                    routedIncident.set(call.getArgument(2));
+                    return new EvidenceResult(
+                            request.requestId(), "csdp", "", EvidenceStatus.NORMAL,
+                            "canonical evidence observed",
+                            Map.of("error_count", 3L, "affected_trace_count", 2L,
+                                    "latest_trace_id", "trace-safe"),
+                            "guance:error_log_scan", NOW);
+                });
+        TroubleshootingEvidenceContractTrialMapper mapper =
+                mock(TroubleshootingEvidenceContractTrialMapper.class);
+        when(mapper.insert(any(TroubleshootingEvidenceContractTrialEntity.class)))
+                .thenReturn(1);
+        EvidenceContractTrialService service = new EvidenceContractTrialService(
+                catalog, assets, router, mapper,
+                Clock.fixed(NOW, ZoneOffset.UTC), System::nanoTime);
+
+        EvidenceContractTrialView result = service.run(
+                WORKSPACE_ID,
+                new EvidenceContractTrialRequest(
+                        "CSDP", "csp-service", "guance-service-error-scan",
+                        Map.of(), "-15m", NOW),
+                "ops-admin");
+
+        assertThat(result.status()).isEqualTo(EvidenceContractTrialView.Status.OBSERVED);
+        assertThat(result.assetId()).isEqualTo("asset-system");
+        assertThat(routedIncident.get().service()).isEqualTo("csp-service");
+    }
+
+    @Test
     void refusesToLetTheBrowserSupplyAParameterOwnedByPreviousEvidence() {
         EvidenceQueryCatalogService catalog = mock(EvidenceQueryCatalogService.class);
         when(catalog.inspect(WORKSPACE_ID)).thenReturn(catalog(contract(
@@ -385,20 +433,31 @@ class EvidenceContractTrialServiceTest {
     }
 
     private EvidenceQueryCatalogView catalog(EvidenceQueryCatalogView.ContractView contract) {
+        return catalog("session-service", contract);
+    }
+
+    private EvidenceQueryCatalogView catalog(
+            String service,
+            EvidenceQueryCatalogView.ContractView contract) {
         return new EvidenceQueryCatalogView(
                 "evidence-query-catalog.v1", WORKSPACE_ID, List.of(),
                 List.of(new EvidenceQueryCatalogView.SystemView(
                         "csdp",
                         List.of(new EvidenceQueryCatalogView.ModuleView(
-                                "session-service", "READY", 1, List.of(), null,
+                                service, "READY", 1, List.of(), null,
                                 List.of(contract))))));
     }
 
     private EvidenceQueryCatalogView.ContractView contract(
             String signalKind,
             List<EvidenceQueryCatalogView.ParameterView> parameters) {
+        String contractRef = switch (signalKind) {
+            case "log_search" -> "csdp-log-search";
+            case "error_log_scan" -> "guance-service-error-scan";
+            default -> "csdp-log-trace";
+        };
         return new EvidenceQueryCatalogView.ContractView(
-                signalKind.equals("log_search") ? "csdp-log-search" : "csdp-log-trace",
+                contractRef,
                 signalKind,
                 "会话消息发送失败",
                 "发生了什么？",
@@ -418,7 +477,7 @@ class EvidenceContractTrialServiceTest {
                         "WORKSPACE", List.of("guance"), false, null, null, null),
                 new EvidenceQueryCatalogView.BindingView(
                         "READY_FOR_VALIDATION",
-                        signalKind.equals("log_search") ? "csdp-log-search" : "csdp-log-trace",
+                        contractRef,
                         null, "ready"),
                 true,
                 List.of());

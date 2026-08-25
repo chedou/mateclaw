@@ -165,8 +165,20 @@ public class GuanceBindingFingerprintService {
 
         EffectiveAsset asset;
         try {
-            Optional<WorkspaceObservabilityAsset> declared = workspaceAssets.find(
+            Optional<WorkspaceObservabilityAsset> exact = workspaceAssets.find(
                     workspaceId, normalizedSystem, normalizedService);
+            if (exact.isPresent() && !exact.orElseThrow().enabled()) {
+                return Optional.empty();
+            }
+            Optional<WorkspaceObservabilityAsset> declared = exact
+                    .filter(candidate -> SystemObservabilityScopePolicy.hasAnyAllowedSignal(
+                            candidate.signalBindings()));
+            if (declared.isEmpty()) {
+                declared = workspaceAssets.findSystem(workspaceId, normalizedSystem);
+            }
+            if (declared.isEmpty()) {
+                declared = exact;
+            }
             if (declared.isPresent()) {
                 WorkspaceObservabilityAsset workspaceAsset = declared.orElseThrow();
                 if (!workspaceAsset.enabled()
@@ -178,7 +190,8 @@ public class GuanceBindingFingerprintService {
                         workspaceAsset.version(),
                         workspaceAsset.platform(),
                         workspaceAsset.signalBindings(),
-                        workspaceAsset.parameters());
+                        workspaceAsset.parameters(),
+                        normalize(workspaceAsset.service()));
             } else {
                 List<EvidenceProperties.AssetBinding> assets =
                         properties.getGuance().getAssetBindings() == null
@@ -196,7 +209,8 @@ public class GuanceBindingFingerprintService {
                 }
                 asset = new EffectiveAsset(
                         "deployment", 0, "guance",
-                        assets.getFirst().getSignalBindings(), Map.of());
+                        assets.getFirst().getSignalBindings(), Map.of(),
+                        normalizedService);
             }
         } catch (RuntimeException registryFailure) {
             return Optional.empty();
@@ -234,6 +248,19 @@ public class GuanceBindingFingerprintService {
         }
         Set<String> readOnlySignalKinds = fingerprintCoveredSignalKinds(
                 signalBindings, assetParameters, routes, configuredBindings);
+        if (SystemObservabilityScopePolicy.isSystemService(
+                asset.authorityService())) {
+            readOnlySignalKinds = readOnlySignalKinds.stream()
+                    .filter(SystemObservabilityScopePolicy::allowsSignal)
+                    .filter(signal -> {
+                        String reference = signalBindings.get(signal);
+                        EvidenceProperties.Binding binding = reference == null
+                                ? null : configuredBindings.get(normalize(reference));
+                        return SystemObservabilityScopePolicy
+                                .safelyFiltersRuntimeService(binding);
+                    })
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
         if (readOnlySignalKinds.isEmpty()) {
             return Optional.empty();
         }
@@ -242,7 +269,7 @@ public class GuanceBindingFingerprintService {
         digest.add("contract", CONTRACT);
         digest.add("workspaceId", Long.toString(workspaceId));
         digest.add("system", normalizedSystem);
-        digest.add("service", normalizedService);
+        digest.add("service", asset.authorityService());
         SettingsSnapshot resolvedSettings = settingsSnapshot(workspaceId, formal);
         EffectiveEvidenceSettings endpoint = resolvedSettings.settings();
         digest.add("settings.origin", endpoint.origin().name());
@@ -350,12 +377,12 @@ public class GuanceBindingFingerprintService {
                 });
 
         String scopeKey = digestScopeKey(
-                workspaceId, normalizedSystem, normalizedService);
+                workspaceId, normalizedSystem, asset.authorityService());
         return Optional.of(new Snapshot(
                 scopeKey,
                 digest.hex(),
                 safeSystem,
-                safeService,
+                asset.authorityService(),
                 readOnlySignalKinds,
                 resolvedSettings.fingerprint()));
     }
@@ -630,12 +657,14 @@ public class GuanceBindingFingerprintService {
             int version,
             String platform,
             Map<String, String> signalBindings,
-            Map<String, String> parameters) {
+            Map<String, String> parameters,
+            String authorityService) {
 
         private EffectiveAsset {
             signalBindings = Map.copyOf(
                     signalBindings == null ? Map.of() : signalBindings);
             parameters = Map.copyOf(parameters == null ? Map.of() : parameters);
+            authorityService = authorityService == null ? "" : authorityService;
         }
     }
 

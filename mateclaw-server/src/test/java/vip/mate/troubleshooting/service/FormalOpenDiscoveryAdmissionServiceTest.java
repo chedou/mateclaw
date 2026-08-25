@@ -92,6 +92,21 @@ class FormalOpenDiscoveryAdmissionServiceTest {
     }
 
     @Test
+    void admitsAnAcceptanceOwnedByTheWholeSystemForARuntimeService() {
+        IncidentContext incident = incident(IncidentCompleteness.STRUCTURED);
+        GuanceEvidenceAcceptance accepted = acceptedForService("system-scope");
+        when(guanceAcceptance.requireAcceptedBindingAuthority(
+                WORKSPACE_ID, "CSDP", "csdp-session-service"))
+                .thenReturn(authority(accepted, "error_log_scan"));
+
+        FormalOpenDiscoveryAdmission admission = service.admit(
+                WORKSPACE_ID, incident);
+
+        assertThat(admission.plan().allowedSignalKinds())
+                .containsExactly("error_log_scan");
+    }
+
+    @Test
     void revalidationRejectsAnAcceptanceChangedDuringBoundedInvestigation() {
         IncidentContext incident = incident(IncidentCompleteness.STRUCTURED);
         GuanceEvidenceAcceptance before = accepted();
@@ -125,6 +140,10 @@ class FormalOpenDiscoveryAdmissionServiceTest {
     }
 
     private GuanceEvidenceAcceptance accepted() {
+        return acceptedForService("csdp-session-service");
+    }
+
+    private GuanceEvidenceAcceptance acceptedForService(String service) {
         GuanceEvidenceAcceptance.Checklist checklist =
                 new GuanceEvidenceAcceptance.Checklist(
                         true, true, true, true, true, true, true);
@@ -132,7 +151,7 @@ class FormalOpenDiscoveryAdmissionServiceTest {
                 new GuanceEvidenceAcceptance.ValidationFacts(
                         1, 1, "c".repeat(64), 5, 5, 10, NOW);
         return new GuanceEvidenceAcceptance(
-                "t7-accepted-generic-000001", "CSDP", "csdp-session-service",
+                "t7-accepted-generic-000001", "CSDP", service,
                 "a".repeat(64), checklist, validation, "owner", NOW);
     }
 

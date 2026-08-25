@@ -17,6 +17,7 @@ import type {
   DeclareEvidenceRouteRequest,
   DeclareEvidenceContractRequest,
   DeclareObservabilityAssetRequest,
+  DeclareSystemObservabilityAssetRequest,
   DeploymentTopologyAssetSummary,
   DeploymentTopologyImportResult,
   DeploymentTopologySopResult,
@@ -256,6 +257,10 @@ export const createTroubleshootingApi = (http: AxiosInstance) => ({
   /** Adds the next immutable asset revision; existing versions remain auditable. */
   declareObservabilityAsset: (data: DeclareObservabilityAssetRequest) =>
     http.put<ObservabilityAsset>('/troubleshooting/evidence/assets', data),
+
+  /** Registers one system once; incident service names are runtime filters. */
+  declareSystemObservabilityAsset: (data: DeclareSystemObservabilityAssetRequest) =>
+    http.put<ObservabilityAsset>('/troubleshooting/evidence/assets/system', data),
 
   /** Persistent owner acceptance for the exact current Guance binding fingerprint. */
   guanceEvidenceAcceptance: (params: { system: string; service: string }) =>

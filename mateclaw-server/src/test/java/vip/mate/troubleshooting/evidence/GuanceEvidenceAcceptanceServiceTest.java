@@ -222,8 +222,9 @@ class GuanceEvidenceAcceptanceServiceTest {
         assertThatThrownBy(() -> fixture.service.requireAccepted(
                 7L, "CSDP", "session-svc"))
                 .isInstanceOf(MateClawException.class)
-                .hasMessageContaining("观测云只读取证尚未验收")
-                .hasMessageContaining("管理员完成数据源接入");
+                .hasMessageContaining("只读查询配置已就绪")
+                .hasMessageContaining("尚待系统负责人确认启用")
+                .hasMessageContaining("接入系统");
     }
 
     @Test

@@ -2,9 +2,9 @@
   <section class="evidence-settings" v-loading="loading">
     <header class="settings-head">
       <div>
-        <h2>数据源连接设置</h2>
+        <h2>{{ sourceTitle }}</h2>
         <p>
-          这些开关按 Workspace 生效，保存后立即对下一次调查生效，不需要重启服务。
+          {{ sourceDescription }}
           <template v-if="view && view.origin === 'DEPLOYMENT'">
             当前本 Workspace 还没有自己的配置，下面显示的是部署环境（application.yml / 环境变量）的默认值。
           </template>
@@ -17,25 +17,32 @@
 
     <el-alert v-if="error" type="error" :closable="false" show-icon :title="error" class="settings-alert" />
 
-    <el-form v-if="view" label-position="top" class="settings-form">
-      <div class="settings-grid">
+    <el-alert
+      v-if="view && !isOnlineConfigurable"
+      type="info"
+      :closable="false"
+      show-icon
+      title="该数据源暂不支持在线修改"
+      description="当前页面只展示接入状态。它由部署配置或专用适配器管理，如需修改，请由管理员更新对应的数据连接。"
+      class="settings-alert"
+    />
+
+    <el-form v-if="view && isOnlineConfigurable" label-position="top" class="settings-form">
+      <div v-if="isGuance" class="settings-grid">
         <el-form-item label="观测云（Guance）">
           <el-switch v-model="form.guanceEnabled" active-text="启用" inactive-text="停用" />
           <small class="field-hint">关闭后本 Workspace 不会再向观测云发起任何取证请求。</small>
         </el-form-item>
+      </div>
 
+      <div v-else-if="isReplay" class="settings-grid">
         <el-form-item label="受控回放（Recorded Replay）">
           <el-switch v-model="form.replayEnabled" active-text="启用" inactive-text="停用" />
           <small class="field-hint">脱敏样本回放，用于演示与联调，结论会标注为非真实观测云。</small>
         </el-form-item>
-
-        <el-form-item label="未命中路 Agent（OPEN_DISCOVERY）">
-          <el-switch v-model="form.agentEnabled" active-text="启用" inactive-text="停用" />
-          <small class="field-hint">没有命中 SOP 时是否允许受限 Agent 兜底调查；仍受专用绑定与工具白名单约束。</small>
-        </el-form-item>
       </div>
 
-      <template v-if="form.guanceEnabled">
+      <template v-if="isGuance && form.guanceEnabled">
         <el-form-item label="观测云 API 地址">
           <el-input v-model="form.guanceBaseUrl" placeholder="https://openapi.guance.com" />
           <small class="field-hint">
@@ -105,12 +112,28 @@ import { troubleshootingApi } from '@/api'
 import type { EvidenceSettingsView } from '@/api/troubleshooting-contracts'
 
 const emit = defineEmits<{ (event: 'saved', value: EvidenceSettingsView): void }>()
+const props = defineProps<{ platform: string }>()
 
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const view = ref<EvidenceSettingsView | null>(null)
 const clearKey = ref(false)
+
+const normalizedPlatform = computed(() => props.platform.trim().toLowerCase())
+const isGuance = computed(() => normalizedPlatform.value === 'guance')
+const isReplay = computed(() => normalizedPlatform.value === 'recorded-replay')
+const isOnlineConfigurable = computed(() => isGuance.value || isReplay.value)
+const sourceTitle = computed(() => {
+  if (isGuance.value) return '观测云连接配置'
+  if (isReplay.value) return '受控回放配置'
+  return `${props.platform} 数据源`
+})
+const sourceDescription = computed(() => {
+  if (isGuance.value) return '配置观测云 API 地址与凭据，供系统执行真实的只读日志查询。保存后对下一次调查生效。'
+  if (isReplay.value) return '控制是否允许使用脱敏样本进行演示和联调；回放结果不会被标记为生产真实证据。'
+  return '查看这个数据源当前的接入状态和管理方式。'
+})
 
 const form = reactive({
   guanceEnabled: false,
@@ -133,6 +156,7 @@ const showInsecureToggle = computed(() =>
 )
 
 const formIssue = computed(() => {
+  if (!isGuance.value) return ''
   if (!form.guanceEnabled) return ''
   const baseUrl = form.guanceBaseUrl.trim()
   if (!baseUrl) return '启用观测云需要填写 API 地址。'
@@ -148,7 +172,9 @@ const formIssue = computed(() => {
 })
 
 const footerHint = computed(() =>
-  view.value?.origin === 'DEPLOYMENT'
+  isReplay.value
+    ? '保存后立即影响后续演示与联调，不影响已完成的调查记录。'
+    : view.value?.origin === 'DEPLOYMENT'
     ? '首次保存会为本 Workspace 建立独立配置，之后不再跟随部署默认值变化。'
     : '保存后立即生效；修改地址会让已有的 T7 验收失效，需要重新验收。',
 )

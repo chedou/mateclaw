@@ -19,6 +19,7 @@ import vip.mate.troubleshooting.evidence.ObservabilityAssetCatalogView;
 import vip.mate.troubleshooting.evidence.ObservabilityAssetDeclaration;
 import vip.mate.troubleshooting.evidence.ObservabilityAssetService;
 import vip.mate.troubleshooting.evidence.ObservabilityAssetView;
+import vip.mate.troubleshooting.evidence.SystemObservabilityAssetDeclaration;
 import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.util.Map;
@@ -63,6 +64,39 @@ public class ObservabilityAssetController {
                         request.expectedVersion(),
                         request.reason()),
                 currentActor()));
+    }
+
+    /** Registers one system once; services are supplied by incidents at runtime. */
+    @PutMapping("/system")
+    @RequireWorkspaceRole("admin")
+    public R<ObservabilityAssetView> declareSystem(
+            @Valid @RequestBody SystemObservabilityAssetRequest request,
+            @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
+        return R.ok(assets.declareSystem(
+                resolveWorkspace(workspaceId),
+                new SystemObservabilityAssetDeclaration(
+                        request.system(), request.displayName(), request.platform(),
+                        request.environment(), request.region(), request.cluster(),
+                        request.namespace(), request.enabled(), request.signalBindings(),
+                        request.parameters(), request.expectedVersion(), request.reason()),
+                currentActor()));
+    }
+
+    public record SystemObservabilityAssetRequest(
+            @NotBlank @Size(max = 128) String system,
+            @NotBlank @Size(max = 160) String displayName,
+            @NotBlank @Size(max = 64) String platform,
+            @NotBlank @Size(max = 256) String environment,
+            @Size(max = 256) String region,
+            @Size(max = 256) String cluster,
+            @Size(max = 256) String namespace,
+            boolean enabled,
+            @Size(max = 8) Map<@NotBlank @Size(max = 128) String,
+                    @NotBlank @Size(max = 128) String> signalBindings,
+            @Size(max = 16) Map<@NotBlank @Size(max = 64) String,
+                    @NotBlank @Size(max = 256) String> parameters,
+            @PositiveOrZero Integer expectedVersion,
+            @NotBlank @Size(max = 500) String reason) {
     }
 
     public record ObservabilityAssetRequest(

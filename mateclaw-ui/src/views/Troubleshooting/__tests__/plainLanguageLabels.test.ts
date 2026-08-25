@@ -13,6 +13,7 @@ import diagnosisPerspectiveSource from '../diagnosisPerspective.ts?raw'
 import synthesisPreviewSource from '../SynthesisPreviewDialog.vue?raw'
 import synthesisPreviewBodySource from '../SynthesisPreviewBody.vue?raw'
 import evaluationLedgerSource from '../EvaluationSampleLedgerWorkspace.vue?raw'
+import evidenceSourceSettingsSource from '../EvidenceSourceSettingsCard.vue?raw'
 
 describe('troubleshooting operator copy uses plain language', () => {
   it('calls evidence contracts query rules on operator-facing surfaces', () => {
@@ -210,14 +211,12 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(observabilityAssetsSource).toContain('查询成功，但这个时间范围没有完整证据')
   })
 
-  it('makes module setup inspectable and versioned changes understandable', () => {
-    expect(observabilityAssetsSource).toContain('打开配置')
-    expect(observabilityAssetsSource).toContain('>查看</el-button>')
-    expect(observabilityAssetsSource).toContain('去填配置')
-    expect(observabilityAssetsSource).toContain('去改配置')
-    expect(observabilityAssetsSource).toContain('修改配置 · ')
-    expect(observabilityAssetsSource).toContain('修改会保存为新版本')
-    expect(observabilityAssetsSource).toContain('不会覆盖原来的生产审计记录')
+  it('makes system-level onboarding direct and avoids requiring module setup', () => {
+    expect(observabilityAssetsSource).toContain('一个系统只配置一次')
+    expect(observabilityAssetsSource).toContain("scope.row.asset ? '修改接入' : '开始接入'")
+    expect(observabilityAssetsSource).toContain('不用维护模块或服务清单')
+    expect(observabilityAssetsSource).toContain('保存系统')
+    expect(observabilityAssetsSource).not.toContain('>新增模块</el-button>')
   })
 
   it('keeps module setup and trials inside the workspace drawer instead of stacked dialogs', () => {
@@ -235,9 +234,14 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(observabilityAssetsSource).toContain('v-model="onboardingDialogOpen"')
   })
 
-  it('centers daily setup on modules and demotes tool/source menus', () => {
+  it('centers daily setup on systems and keeps tool/source menus separate', () => {
     expect(observabilityAssetsSource).toContain('取证方法库')
     expect(observabilityAssetsSource).toContain('数据源列表')
+    expect(observabilityAssetsSource).toContain('点具体数据源进入它的配置页')
+    expect(observabilityAssetsSource).toContain('openSourceEditor')
+    expect(evidenceSourceSettingsSource).toContain("normalizedPlatform.value === 'guance'")
+    expect(evidenceSourceSettingsSource).toContain("normalizedPlatform.value === 'recorded-replay'")
+    expect(evidenceSourceSettingsSource).not.toContain('未命中路 Agent')
     expect(observabilityAssetsSource).toContain('module-workspace-drawer')
     expect(observabilityAssetsSource).toContain('openModuleWorkspace')
     expect(observabilityAssetsSource).toContain('你只需要做一件事')
@@ -251,7 +255,7 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(capabilityMenuSource).toContain("label: '取证方法'")
     expect(capabilityMenuSource).toContain("label: '数据连接'")
     expect(capabilityMenuSource).toContain("label: '更多配置'")
-    expect(capabilityMenuSource).toContain('登记系统模块，并在模块里选择取证方法')
+    expect(capabilityMenuSource).toContain('每个系统只接入一次，服务名由告警自动带入')
     expect(capabilityMenuSource).toContain('维护方法库（可设通用或指定系统/模块），再在接入系统里选用')
     expect(capabilityMenuSource).not.toContain('跨模块总览与筛选（日常请从接入系统进入）')
     expect(observabilityAssetsSource).toContain('新增取证方法')
@@ -265,8 +269,8 @@ describe('troubleshooting operator copy uses plain language', () => {
     expect(observabilityAssetsSource).toContain("setupSection === 'source'")
     expect(observabilityAssetsSource).toContain("setupSection === 'tools'")
     expect(observabilityAssetsSource).toContain("setupSection === 'modules'")
-    expect(observabilityAssetsSource).toContain('系统模块列表')
-    expect(observabilityAssetsSource).toContain('系统标识相同的模块归在同一系统下')
+    expect(observabilityAssetsSource).toContain('已接入系统')
+    expect(observabilityAssetsSource).toContain('一个系统只配置一次，服务名从告警中自动识别')
     expect(observabilityAssetsSource).toContain('module-list-workspace')
     expect(observabilityAssetsSource).toContain('tool-list-workspace')
     expect(observabilityAssetsSource).toContain('source-list-workspace')

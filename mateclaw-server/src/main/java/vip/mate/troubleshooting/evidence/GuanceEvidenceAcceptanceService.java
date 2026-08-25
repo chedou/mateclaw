@@ -66,10 +66,12 @@ public class GuanceEvidenceAcceptanceService {
             long workspaceId,
             String system,
             String service) {
-        String scopeKey = fingerprintService.scopeKey(
-                workspaceId, system, service);
         Optional<GuanceBindingFingerprintService.Snapshot> snapshot =
                 fingerprintService.current(workspaceId, system, service);
+        String scopeKey = snapshot
+                .map(GuanceBindingFingerprintService.Snapshot::scopeKey)
+                .orElseGet(() -> fingerprintService.scopeKey(
+                        workspaceId, system, service));
         Optional<GuanceEvidenceAcceptance> latest =
                 store.findLatest(workspaceId, scopeKey);
         if (snapshot.isEmpty()) {
@@ -240,17 +242,17 @@ public class GuanceEvidenceAcceptanceService {
         GuanceBindingFingerprintService.Snapshot snapshot =
                 fingerprintService.currentForFormalAuthority(
                                 workspaceId, system, service)
-                        .orElseThrow(() -> bindingNotAccepted());
+                        .orElseThrow(this::bindingUnavailable);
         GuanceEvidenceAcceptance accepted = store.findByFingerprint(
                         workspaceId,
                         snapshot.scopeKey(),
                         snapshot.bindingFingerprint())
-                .orElseThrow(this::bindingNotAccepted);
+                .orElseThrow(this::ownerAcceptanceMissing);
         if (!same(snapshot.system(), accepted.system())
                 || !same(snapshot.service(), accepted.service())
                 || !snapshot.bindingFingerprint().equals(
                         accepted.bindingFingerprint())) {
-            throw bindingNotAccepted();
+            throw ownerAcceptanceMissing();
         }
         Set<String> liveAccepted = new LinkedHashSet<>(
                 accepted.validation().liveAcceptedSignalKinds());
@@ -375,10 +377,16 @@ public class GuanceEvidenceAcceptanceService {
                 "err.troubleshooting.guance_acceptance_conflict", 409, message);
     }
 
-    private MateClawException bindingNotAccepted() {
+    private MateClawException bindingUnavailable() {
         return conflict(
-                "当前系统/服务的观测云只读取证尚未验收；"
-                        + "请管理员完成数据源接入、精确资产配置和连通验证");
+                "当前系统还没有可用于正式调查的观测云只读配置；"
+                        + "请管理员先完成系统接入和连通验证");
+    }
+
+    private MateClawException ownerAcceptanceMissing() {
+        return conflict(
+                "只读查询配置已就绪，尚待系统负责人确认启用；"
+                        + "请负责人在“接入系统”中完成验收后重试");
     }
 
     public record AcceptedBinding(

@@ -392,6 +392,46 @@ class GuanceBindingFingerprintServiceTest {
                 .containsExactly("error_log_scan");
     }
 
+    @Test
+    void oneSystemAssetOwnsTheSameAcceptedFingerprintForDifferentRuntimeServices() {
+        EvidenceProperties properties = properties();
+        properties.setRoutes(Map.of(
+                "CSDP", Map.of("error_log_scan", List.of("guance"))));
+        EvidenceProperties.Binding errors = binding("error_log_scan");
+        errors.setQueryTemplate(
+                "L::logs:(count(*) as error_count) {service='{{service}}'}");
+        properties.getGuance().setBindings(Map.of("error-binding", errors));
+        properties.getGuance().setAssetBindings(List.of());
+        WorkspaceObservabilityAsset systemAsset = new WorkspaceObservabilityAsset(
+                "system-asset", 7L, "csdp", "system-scope", "guance", true,
+                Map.of("error_log_scan", "error-binding"), Map.of(), 1);
+        WorkspaceObservabilityAssets assets = new WorkspaceObservabilityAssets() {
+            @Override
+            public Optional<WorkspaceObservabilityAsset> find(
+                    long workspaceId, String system, String service) {
+                return "system-scope".equalsIgnoreCase(service)
+                        ? Optional.of(systemAsset) : Optional.empty();
+            }
+
+            @Override
+            public Set<String> activeBindingReferences(String signalKind) {
+                return Set.of("error-binding");
+            }
+        };
+        GuanceBindingFingerprintService service =
+                new GuanceBindingFingerprintService(properties, assets);
+
+        GuanceBindingFingerprintService.Snapshot task = service.current(
+                7L, "CSDP", "csdp-task").orElseThrow();
+        GuanceBindingFingerprintService.Snapshot wechat = service.current(
+                7L, "CSDP", "csdp-wechat").orElseThrow();
+
+        assertThat(task.service()).isEqualTo("system-scope");
+        assertThat(task.scopeKey()).isEqualTo(wechat.scopeKey());
+        assertThat(task.bindingFingerprint()).isEqualTo(wechat.bindingFingerprint());
+        assertThat(task.readOnlySignalKinds()).containsExactly("error_log_scan");
+    }
+
     private EvidenceProperties properties() {
         EvidenceProperties properties = new EvidenceProperties();
         properties.setRoutes(new LinkedHashMap<>(Map.of(

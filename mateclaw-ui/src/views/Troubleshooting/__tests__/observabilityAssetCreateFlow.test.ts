@@ -86,7 +86,7 @@ describe('observability asset create flow', () => {
     host.remove()
   })
 
-  it('adds a module under the selected system without reusing the selected service', async () => {
+  it('does not expose module onboarding because a system is configured only once', async () => {
     routeState.query.section = 'modules'
     evidenceCatalog.mockResolvedValue({ data: catalogWithSelectedModule() })
     observabilityAssets.mockResolvedValue({ data: emptyAssets() })
@@ -107,24 +107,10 @@ describe('observability asset create flow', () => {
     app.mount(host)
     await settle()
 
-    const createButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.trim() === '新增模块')
-    expect(createButton).toBeTruthy()
-    createButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await nextTick()
-
-    const systemChoice = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('CSDP'))
-    expect(systemChoice).toBeTruthy()
-    systemChoice!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await nextTick()
-
-    const systemInput = host.querySelector<HTMLInputElement>('input[placeholder="例如 CSDP"]')
-    const serviceInput = host.querySelector<HTMLInputElement>('input[placeholder="例如 csdp-session-service"]')
-    expect(systemInput?.value).toBe('CSDP')
-    expect(systemInput?.disabled).toBe(true)
-    expect(serviceInput?.value).toBe('')
-    expect(serviceInput?.disabled).toBe(false)
+    expect([...host.querySelectorAll('button')]
+      .some(button => button.textContent?.trim() === '新增模块')).toBe(false)
+    expect(host.textContent).toContain('一个系统只配置一次')
+    expect(host.textContent).not.toContain('系统模块列表')
 
     app.unmount()
     host.remove()
@@ -160,108 +146,23 @@ describe('observability asset create flow', () => {
     }
   })
 
-  it('shows the exact five-step onboarding progress and the next missing fact', async () => {
-    routerPush.mockClear()
+  it('shows one system row and opens one system-level editor without module onboarding', async () => {
     routeState.query.section = 'modules'
     evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
-    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
-    listSops.mockResolvedValue({ data: [] })
+    observabilityAssets.mockResolvedValue({ data: workspaceSystemAsset() })
 
-    const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const app = createApp(Page)
-    app.component('ElButton', buttonStub)
-    app.component('ElInput', inputStub)
-    app.component('ElDialog', dialogStub)
-    app.component('ElDrawer', drawerStub)
-    app.component('ElTable', tableStub)
-    app.component('ElTableColumn', tableColumnStub)
-    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
-    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
-    app.use(createPinia())
-    app.mount(host)
-    await settle()
+    const { app, host } = await mountPage()
 
-    expect(host.textContent).toContain('3/5')
-    const progressButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('3/5')
-        || button.className?.includes?.('onboarding-progress-trigger'))
-    expect(progressButton).toBeTruthy()
-    progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(host.textContent).toContain('一个系统只配置一次')
+    expect(host.textContent).toContain('可对告警中任意服务执行受限只读调查')
+    expect(host.textContent).not.toContain('/5')
+    const editButton = [...host.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('修改接入'))
+    expect(editButton).toBeTruthy()
+    editButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
-
-    expect(host.textContent).toContain('还没有该模块可命中的已审核排障方案')
-    expect(host.textContent).toContain('负责人已确认查询口径')
-    const continueButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('去排障规则库'))
-    expect(continueButton).toBeTruthy()
-    continueButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(routerPush).toHaveBeenCalledWith({
-      path: '/troubleshooting/sops',
-      query: expect.objectContaining({ system: 'CSDP', service: 'csdp-task' }),
-    })
-
-    app.unmount()
-    host.remove()
-  })
-
-  it('opens owner acceptance with the selected system and service', async () => {
-    routerPush.mockClear()
-    routeState.query.section = 'modules'
-    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
-    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
-    listSops.mockResolvedValue({
-      data: [{
-        sopId: 'cti-v1',
-        routeKey: 'csdp:scenario:cti_create_conversation_failed',
-        system: 'CSDP',
-        service: 'csdp-task',
-        errorCode: 'scenario:cti_create_conversation_failed',
-        status: 'approved',
-        verified: true,
-        operational: true,
-        createTime: '2026-08-10T00:00:00Z',
-        updateTime: '2026-08-10T00:00:00Z',
-        knowledgeEvidenceGrade: 'RECORDED_AGGREGATE',
-      }],
-    })
-
-    const Page = (await import('../ObservabilityAssetsWorkspace.vue')).default
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const app = createApp(Page)
-    app.component('ElButton', buttonStub)
-    app.component('ElInput', inputStub)
-    app.component('ElDialog', dialogStub)
-    app.component('ElDrawer', drawerStub)
-    app.component('ElTable', tableStub)
-    app.component('ElTableColumn', tableColumnStub)
-    // 这一页要不要显示管理员设置卡由 manage:troubleshooting 决定。
-    // 测试不加载能力集，判定为 false，设置卡不渲染，断言只看列表本身。
-    app.use(createPinia())
-    app.mount(host)
-    await settle()
-
-    const progressButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('/5')
-        || button.className?.includes?.('onboarding-progress-trigger'))
-    expect(progressButton).toBeTruthy()
-    progressButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await nextTick()
-    const continueButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('去负责人验收'))
-    expect(continueButton).toBeTruthy()
-    continueButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-
-    expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({
-      path: '/troubleshooting',
-      query: expect.objectContaining({
-        capability: 'guance',
-        system: 'CSDP',
-        service: 'csdp-task',
-      }),
-    }))
+    expect(host.querySelector('[data-drawer-title="接入系统"]')).toBeTruthy()
+    expect(host.textContent).toContain('不用维护模块或服务清单')
 
     app.unmount()
     host.remove()
@@ -289,7 +190,7 @@ describe('observability asset create flow', () => {
     observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
 
     const { app, host } = await mountPage()
-    expect(host.querySelector('.onboarding-progress-trigger')).toBeTruthy()
+    expect(host.querySelector('.module-list-workspace')).toBeTruthy()
 
     evidenceContracts.mockRejectedValueOnce(new Error('配置快照已失效'))
     refreshButton(host).dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -320,9 +221,10 @@ describe('observability asset create flow', () => {
     await nextTick()
 
     const newestCatalog = catalogWithToolAndSource()
-    newestCatalog.systems[0]!.modules[0]!.service = 'csdp-newest'
-    const newestAssets = workspaceAssetsWithTool()
-    newestAssets.assets[0]!.service = 'csdp-newest'
+    newestCatalog.systems[0]!.system = 'CSDP-NEWEST'
+    const newestAssets = workspaceSystemAsset()
+    newestAssets.assets[0]!.system = 'CSDP-NEWEST'
+    newestAssets.assets[0]!.displayName = 'csdp-newest'
     observabilityAssets.mockResolvedValueOnce({ data: newestAssets })
     evidenceContracts.mockResolvedValueOnce({ data: { workspaceId: '1', contracts: [] } })
     evidenceCatalog.mockResolvedValueOnce({ data: newestCatalog })
@@ -332,7 +234,7 @@ describe('observability asset create flow', () => {
     await settle()
     expect(host.textContent).toContain('csdp-newest')
 
-    oldAssets.resolve({ data: workspaceAssetsWithTool() })
+    oldAssets.resolve({ data: workspaceSystemAsset() })
     oldContracts.resolve({ data: { workspaceId: '1', contracts: [] } })
     oldCatalog.resolve({ data: catalogWithToolAndSource() })
     oldPlaybooks.resolve({ data: [] })
@@ -345,40 +247,6 @@ describe('observability asset create flow', () => {
     host.remove()
   })
 
-  it('rebinds an open onboarding dialog to the refreshed module facts', async () => {
-    routeState.query.section = 'modules'
-    evidenceCatalog.mockResolvedValue({ data: catalogWithToolAndSource() })
-    observabilityAssets.mockResolvedValue({ data: workspaceAssetsWithTool() })
-    listSops.mockResolvedValue({ data: approvedCtiSops() })
-
-    const { app, host } = await mountPage()
-    host.querySelector<HTMLButtonElement>('.onboarding-progress-trigger')!
-      .dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await nextTick()
-    expect(host.textContent).toContain('去负责人验收')
-
-    const refreshedCatalog = catalogWithToolAndSource()
-    refreshedCatalog.systems[0]!.modules[0]!.acceptance = {
-      status: 'ACCEPTED',
-      currentBindingFingerprint: 'binding-v2',
-      acceptedBy: 'owner',
-      acceptedAt: '2026-08-20T00:00:00Z',
-      blockers: [],
-    }
-    evidenceCatalog.mockResolvedValueOnce({ data: refreshedCatalog })
-    observabilityAssets.mockResolvedValueOnce({ data: workspaceAssetsWithTool() })
-    evidenceContracts.mockResolvedValueOnce({ data: { workspaceId: '1', contracts: [] } })
-    listSops.mockResolvedValueOnce({ data: approvedCtiSops() })
-
-    refreshButton(host).dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await settle()
-
-    expect(host.textContent).toContain('该模块已具备生产试点的配置条件')
-    expect(host.textContent).not.toContain('去负责人验收')
-
-    app.unmount()
-    host.remove()
-  })
 })
 
 async function mountPage() {
@@ -590,6 +458,33 @@ function workspaceAssetsWithTool(): ObservabilityAssetCatalog {
       summary: '查询 CTI 失败日志',
       requiredAssetParameters: [],
     }],
+  } as unknown as ObservabilityAssetCatalog
+}
+
+function workspaceSystemAsset(): ObservabilityAssetCatalog {
+  return {
+    workspaceId: '1',
+    assets: [{
+      assetId: 'asset-csdp-system',
+      origin: 'WORKSPACE',
+      workspaceId: '1',
+      system: 'CSDP',
+      service: 'system-scope',
+      displayName: '客服数字化',
+      platform: 'guance',
+      environment: 'prd',
+      region: null,
+      cluster: null,
+      namespace: null,
+      enabled: true,
+      signalBindings: { error_log_scan: 'generic-error-log-scan-v1' },
+      parameters: {},
+      version: 1,
+      changedBy: 'owner',
+      reason: '开通系统级通用只读排障',
+      changedAt: '2026-08-25T00:00:00Z',
+    }],
+    contracts: [],
   } as unknown as ObservabilityAssetCatalog
 }
 

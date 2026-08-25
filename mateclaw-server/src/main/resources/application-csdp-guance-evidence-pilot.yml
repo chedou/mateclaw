@@ -77,6 +77,8 @@ mateclaw:
               log_trace_bundle: csdp-cti-create-conversation-trace-bundle
               contrast_sample: csdp-cti-create-conversation-contrast
               cti_failure_pattern_scan: csdp-cti-create-conversation-failure-patterns
+              # 通用排障按 service 聚合 ERROR，不依赖 CTI 场景或错误码。
+              error_log_scan: guance-service-error-scan
           # ITGW 904003 已在 2026-08-07 17:12 的 csdp-wechat 告警窗口
           # 验证。告警给出的集群仅作为事件元数据保留；Guance 合同只使用
           # 已验证的 service 和错误码字段，不猜测 cluster 字段映射。

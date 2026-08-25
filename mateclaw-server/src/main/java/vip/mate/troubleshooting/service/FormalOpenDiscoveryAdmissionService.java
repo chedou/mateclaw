@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vip.mate.exception.MateClawException;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptance;
 import vip.mate.troubleshooting.evidence.GuanceEvidenceAcceptanceService;
+import vip.mate.troubleshooting.evidence.SystemObservabilityScopePolicy;
 import vip.mate.troubleshooting.model.IncidentContext;
 
 import java.util.Locale;
@@ -93,9 +94,11 @@ public class FormalOpenDiscoveryAdmissionService {
             GuanceEvidenceAcceptance accepted) {
         if (accepted == null
                 || !same(incident.system(), accepted.system())
-                || !same(incident.service(), accepted.service())) {
+                || !(same(incident.service(), accepted.service())
+                        || SystemObservabilityScopePolicy.isSystemService(
+                                accepted.service()))) {
             throw conflict(
-                    "Guance owner acceptance belongs to a different system/service");
+                    "Guance owner acceptance belongs to a different system");
         }
     }
 
