@@ -3,11 +3,15 @@ package vip.mate.tool.itdb;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+import vip.mate.skill.manifest.SkillManifest;
+import vip.mate.skill.manifest.SkillManifestParser;
+import vip.mate.skill.runtime.SkillFrontmatterParser;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -166,10 +170,24 @@ class ItDbToolMigrationTest {
                 assertEquals(4, rs.getInt(2));
             }
             try (ResultSet rs = connection.createStatement().executeQuery(
-                    "SELECT enabled, deleted FROM mate_skill WHERE id=777001")) {
+                    "SELECT name, enabled, deleted FROM mate_skill WHERE id=777001")) {
+                assertTrue(rs.next());
+                assertEquals("sxf-itdb-sql-approval-reader-legacy-777001", rs.getString("name"));
+                assertTrue(rs.getBoolean("enabled"));
+                assertEquals(0, rs.getInt("deleted"));
+            }
+            try (ResultSet rs = connection.createStatement().executeQuery(
+                    "SELECT enabled, deleted FROM mate_agent_skill WHERE id=777002")) {
                 assertTrue(rs.next());
                 assertFalse(rs.getBoolean("enabled"));
                 assertEquals(1, rs.getInt("deleted"));
+            }
+            try (ResultSet rs = connection.createStatement().executeQuery("""
+                    SELECT COUNT(*) FROM mate_skill
+                    WHERE name='sxf-itdb-sql-approval-reader'
+                    """)) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1), "startup name lookup must remain single-row");
             }
         }
     }
@@ -200,12 +218,13 @@ class ItDbToolMigrationTest {
             assertTrue(sql.contains("sxf-itdb-sql-approval-submit"), dialect);
             assertFalse(sql.contains("/api/v1/workflow/execute/"), dialect);
             assertTrue(dedupSql.contains("id NOT IN"), dialect);
-            assertTrue(dedupSql.contains("enabled = FALSE"), dialect);
+            assertTrue(dedupSql.contains("-legacy-"), dialect);
         }
     }
 
     @Test
     void bundledItDbSkillContentsPreserveApprovalAndExecutionBoundary() throws Exception {
+        SkillManifestParser manifestParser = new SkillManifestParser(new SkillFrontmatterParser());
         for (String skill : new String[]{
                 "sxf-itdb-sql-approval-reader",
                 "sxf-itdb-sql-risk-assessor",
@@ -219,11 +238,15 @@ class ItDbToolMigrationTest {
             assertFalse(content.contains("browser session"), skill);
             assertFalse(content.contains("PAGE_OBSERVED"), skill);
             assertFalse(content.contains("/api/v1/workflow/execute/"), skill);
+            SkillManifest manifest = manifestParser.parse(content);
+            assertTrue(manifest.getAllowedTools().contains("itdb_review_sql_request"), skill);
         }
         String reader = new ClassPathResource("skills/sxf-itdb-sql-approval-reader/SKILL.md")
                 .getContentAsString(StandardCharsets.UTF_8);
         assertTrue(reader.contains("itdb_pending_sql_requests"));
         assertTrue(reader.contains("Do not fall back to browser automation"));
+        assertEquals(List.of("itdb_pending_sql_requests", "itdb_review_sql_request"),
+                manifestParser.parse(reader).getAllowedTools());
         String decision = new ClassPathResource(
                 "skills/sxf-itdb-sql-execution-decision/SKILL.md")
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -232,6 +255,11 @@ class ItDbToolMigrationTest {
                 .getContentAsString(StandardCharsets.UTF_8);
         assertTrue(submit.contains("itdb_approve_sql_request"));
         assertTrue(submit.contains("persisted human-approval guard"));
+        assertEquals(List.of(
+                        "itdb_pending_sql_requests",
+                        "itdb_review_sql_request",
+                        "itdb_approve_sql_request"),
+                manifestParser.parse(submit).getAllowedTools());
     }
 
     private static void execute(Connection connection, String resource) throws Exception {
