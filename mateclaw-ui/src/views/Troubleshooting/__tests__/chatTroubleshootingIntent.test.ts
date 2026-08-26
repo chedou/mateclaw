@@ -55,6 +55,12 @@ describe('chatTroubleshootingIntent', () => {
       tags: 'troubleshooting,readonly,formal',
     })).toBe('FORMAL')
     expect(troubleshootingAgentMode({
+      id: '1000000950',
+      name: 'troubleshooting-readonly-triage',
+      tags: 'troubleshooting,readonly,formal',
+    })).toBe('FORMAL')
+    expect(troubleshootingAgentMode({
+      id: 'custom-agent',
       name: 'troubleshooting-readonly-triage',
       tags: 'troubleshooting,readonly,triage',
     })).toBe('REHEARSAL')
@@ -67,6 +73,8 @@ describe('chatTroubleshootingIntent', () => {
     expect(classifyChatTroubleshootingIntent('接口返回 502')).toBe('MEDIUM')
     expect(classifyChatTroubleshootingIntent('服务起不来')).toBe('MEDIUM')
     expect(classifyChatTroubleshootingIntent('页面白屏')).toBe('MEDIUM')
+    expect(classifyChatTroubleshootingIntent('数字化平台系统突然这么卡了')).toBe('MEDIUM')
+    expect(classifyChatTroubleshootingIntent('服务支付页面加载慢')).toBe('MEDIUM')
     expect(shouldAutoStartTroubleshootingIntake('接口一直报错，帮我定位原因', {
       canOperate: true,
       suppressed: false,

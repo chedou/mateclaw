@@ -179,7 +179,8 @@
       <div
         v-if="canOperateTroubleshooting
           && currentTroubleshootingAgentMode
-          && !tsActiveDiagnosisId"
+          && !tsActiveDiagnosisId
+          && !tsIntakeActive"
         class="ts-mode-banner"
         role="note"
       >
@@ -344,6 +345,7 @@
           :agent-id="String(selectedAgentId)"
           :active-diagnosis-id="tsActiveDiagnosisId"
           :active-intake-conversation-id="tsIntakeConversationId"
+          :default-rehearsal="currentTroubleshootingAgentMode !== 'FORMAL'"
           :persisted-messages="messages"
           @switch-form="goTroubleshootingForm"
           @ready="onConversationIntakeReady"

@@ -120,6 +120,10 @@ describe('the troubleshooting intake dialogs', () => {
     expect(chatConsoleSource).toContain('troubleshootingTurnRehearsal(')
     expect(chatConsoleSource).toContain('originEmployeeName')
     expect(chatConsoleSource).not.toContain('rehearsal: true')
+    expect(conversationDialogSource).toContain('const rehearsal = ref(true)')
+    expect(conversationDialogSource).toContain('props.defaultRehearsal ?? true')
+    expect(chatConsoleSource).toContain(':default-rehearsal="currentTroubleshootingAgentMode !== \'FORMAL\'"')
+    expect(chatConsoleSource).toContain('&& !tsIntakeActive')
   })
 
   it('keeps the diagnosis context after READY and exits only on an explicit end result', () => {

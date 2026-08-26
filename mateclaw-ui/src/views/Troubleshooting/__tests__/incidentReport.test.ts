@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildFormalIncidentReport,
+  EMPTY_FORMAL_INCIDENT,
   formalOpenDiscoveryReadinessScope,
   formalIncidentFormErrors,
   formalIncidentRoutePreview,
@@ -19,6 +20,10 @@ const baseForm: FormalIncidentForm = {
 }
 
 describe('formal workbench incident report boundary', () => {
+  it('keeps the generic workbench in explicit rehearsal mode by default', () => {
+    expect(EMPTY_FORMAL_INCIDENT.rehearsal).toBe(true)
+  })
+
   it('normalizes a deterministic report without exposing unsafe intake fields', () => {
     const request = buildFormalIncidentReport(baseForm)
 

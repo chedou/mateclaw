@@ -43,7 +43,7 @@ describe('ConversationIntakeDialog mode restoration', () => {
     unmount()
   })
 
-  it('keeps a new ordinary conversation in the explicit default rehearsal mode', async () => {
+  it('keeps an ordinary new intake in rehearsal mode', async () => {
     const { text, unmount } = await render({
       activeDiagnosisId: null,
       activeIntakeConversationId: null,
@@ -51,6 +51,19 @@ describe('ConversationIntakeDialog mode restoration', () => {
 
     expect(getDiagnosis).not.toHaveBeenCalled()
     expect(text()).toContain('仅用于熟悉流程')
+    unmount()
+  })
+
+  it('starts a new intake in formal mode when the selected robot requests it', async () => {
+    const { text, unmount } = await render({
+      activeDiagnosisId: null,
+      activeIntakeConversationId: null,
+      defaultRehearsal: false,
+    })
+
+    expect(getDiagnosis).not.toHaveBeenCalled()
+    expect(text()).toContain('面向真实告警')
+    expect(text()).not.toContain('仅用于熟悉流程')
     unmount()
   })
 
@@ -101,6 +114,7 @@ describe('ConversationIntakeDialog mode restoration', () => {
 async function render(input: {
   activeDiagnosisId: string | null
   activeIntakeConversationId: string | null
+  defaultRehearsal?: boolean
 }) {
   const Dialog = (await import('../ConversationIntakeDialog.vue')).default
   const host = document.createElement('div')
@@ -111,6 +125,7 @@ async function render(input: {
     agentId: 'agent-1',
     activeDiagnosisId: input.activeDiagnosisId,
     activeIntakeConversationId: input.activeIntakeConversationId,
+    defaultRehearsal: input.defaultRehearsal,
     persistedMessages: [],
   })
   app.mount(host)

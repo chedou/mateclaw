@@ -14,7 +14,7 @@
     <section class="conv-mode" aria-labelledby="conversation-mode-title">
       <div class="conv-mode-head">
         <b id="conversation-mode-title">这次要怎么查</b>
-        <span>默认演练；对话开始后会锁定本次模式</span>
+        <span>{{ rehearsal ? '默认演练' : '默认正式只读调查' }}；对话开始后会锁定本次模式</span>
       </div>
       <el-radio-group
         v-model="rehearsal"
@@ -95,6 +95,7 @@ const props = defineProps<{
   agentId?: string
   activeDiagnosisId?: string | null
   activeIntakeConversationId?: string | null
+  defaultRehearsal?: boolean
   persistedMessages?: Array<{
     conversationId?: string
     role?: string
@@ -195,7 +196,7 @@ function resetLocal() {
   modeLoading.value = false
   modeUnavailable.value = false
   if (!props.activeDiagnosisId && !props.activeIntakeConversationId) {
-    rehearsal.value = true
+    rehearsal.value = props.defaultRehearsal ?? true
   }
   if (open.value && (props.activeIntakeConversationId || props.activeDiagnosisId)) {
     void restoreLockedMode(generation)

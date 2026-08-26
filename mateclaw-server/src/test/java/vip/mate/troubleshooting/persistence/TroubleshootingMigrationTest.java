@@ -158,6 +158,16 @@ class TroubleshootingMigrationTest {
             executeMigration(connection, "db/migration/h2/V208__register_channel_message_tool.sql");
             executeMigration(connection, "db/migration/h2/V223__troubleshooting_agent_seed.sql");
             executeMigration(connection, "db/migration/h2/V223__troubleshooting_agent_seed.sql");
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("""
+                        INSERT INTO mate_agent
+                            (id, name, tags, workspace_id, update_time, deleted)
+                        VALUES
+                            (1000000952, 'troubleshooting-readonly-triage',
+                             'troubleshooting,readonly,triage,custom', 2, NOW(), 0)
+                        """);
+            }
+            executeMigration(connection, "db/migration/h2/V226__enable_formal_troubleshooting_agent.sql");
 
             try (PreparedStatement query = connection.prepareStatement("""
                     SELECT name FROM mate_tool WHERE id = 1000000028
@@ -173,7 +183,7 @@ class TroubleshootingMigrationTest {
                 assertEquals("troubleshootingEvidenceTool", row.getString("bean_name"));
             }
             try (PreparedStatement query = connection.prepareStatement("""
-                    SELECT id, model_name, max_iterations, enabled,
+                    SELECT id, model_name, max_iterations, enabled, tags,
                            skills_disabled, tools_disabled, wiki_disabled
                     FROM mate_agent
                     WHERE workspace_id = 1 AND name = 'troubleshooting-readonly-triage'
@@ -186,6 +196,17 @@ class TroubleshootingMigrationTest {
                 assertTrue(row.getBoolean("skills_disabled"));
                 assertFalse(row.getBoolean("tools_disabled"));
                 assertTrue(row.getBoolean("wiki_disabled"));
+                assertEquals("troubleshooting,readonly,formal", row.getString("tags"));
+                assertFalse(row.next());
+            }
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT tags FROM mate_agent
+                    WHERE workspace_id = 2 AND name = 'troubleshooting-readonly-triage'
+                    """); ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertEquals(
+                        "troubleshooting,readonly,triage,custom",
+                        row.getString("tags"));
                 assertFalse(row.next());
             }
             try (PreparedStatement query = connection.prepareStatement("""
