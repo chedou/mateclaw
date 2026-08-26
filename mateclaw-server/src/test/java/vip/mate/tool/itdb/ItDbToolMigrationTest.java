@@ -119,6 +119,15 @@ class ItDbToolMigrationTest {
                     SELECT 777002, id, 777001, TRUE, NOW(), NOW(), 0
                     FROM mate_agent WHERE name='SXF-ITDB SQL审批安全官'
                     """);
+            connection.createStatement().execute("""
+                    INSERT INTO mate_agent (id, name, workspace_id, enabled, deleted)
+                    VALUES (888001, 'Legacy Skill Consumer', 1, TRUE, 0)
+                    """);
+            connection.createStatement().execute("""
+                    INSERT INTO mate_agent_skill
+                      (id, agent_id, skill_id, enabled, create_time, update_time, deleted)
+                    VALUES (888002, 888001, 777001, TRUE, NOW(), NOW(), 0)
+                    """);
             execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
             execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
             execute(connection, "db/migration/h2/" + SKILL_DEDUP_MIGRATION);
@@ -181,6 +190,12 @@ class ItDbToolMigrationTest {
                 assertTrue(rs.next());
                 assertFalse(rs.getBoolean("enabled"));
                 assertEquals(1, rs.getInt("deleted"));
+            }
+            try (ResultSet rs = connection.createStatement().executeQuery(
+                    "SELECT enabled, deleted FROM mate_agent_skill WHERE id=888002")) {
+                assertTrue(rs.next());
+                assertTrue(rs.getBoolean("enabled"));
+                assertEquals(0, rs.getInt("deleted"));
             }
             try (ResultSet rs = connection.createStatement().executeQuery("""
                     SELECT COUNT(*) FROM mate_skill
@@ -251,6 +266,12 @@ class ItDbToolMigrationTest {
                 "skills/sxf-itdb-sql-execution-decision/SKILL.md")
                 .getContentAsString(StandardCharsets.UTF_8);
         assertTrue(decision.contains("can_execute_sql=false"));
+        assertEquals(List.of("itdb_review_sql_request"),
+                manifestParser.parse(decision).getAllowedTools());
+        String risk = new ClassPathResource("skills/sxf-itdb-sql-risk-assessor/SKILL.md")
+                .getContentAsString(StandardCharsets.UTF_8);
+        assertEquals(List.of("itdb_review_sql_request"),
+                manifestParser.parse(risk).getAllowedTools());
         String submit = new ClassPathResource("skills/sxf-itdb-sql-approval-submit/SKILL.md")
                 .getContentAsString(StandardCharsets.UTF_8);
         assertTrue(submit.contains("itdb_approve_sql_request"));
