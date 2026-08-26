@@ -17,6 +17,7 @@ class ItDbToolMigrationTest {
 
     private static final String MIGRATION = "V224__register_itdb_workflow_tool.sql";
     private static final String EMPLOYEE_MIGRATION = "V225__bind_itdb_approval_employee.sql";
+    private static final String SKILL_MIGRATION = "V227__register_itdb_approval_skills.sql";
 
     @Test
     void h2MigrationRegistersOneIdempotentBuiltinToolRow() throws Exception {
@@ -80,7 +81,11 @@ class ItDbToolMigrationTest {
                       UNIQUE (workspace_id, name)
                     );
                     CREATE TABLE mate_skill (
-                      id BIGINT PRIMARY KEY, name VARCHAR(128), deleted INT
+                      id BIGINT PRIMARY KEY, name VARCHAR(128), description CLOB,
+                      skill_type VARCHAR(32), icon VARCHAR(256), version VARCHAR(32),
+                      author VARCHAR(64), config_json CLOB, skill_content CLOB,
+                      enabled BOOLEAN, builtin BOOLEAN, tags VARCHAR(256), workspace_id BIGINT,
+                      create_time TIMESTAMP, update_time TIMESTAMP, deleted INT
                     );
                     CREATE TABLE mate_agent_tool (
                       id BIGINT PRIMARY KEY, agent_id BIGINT, tool_name VARCHAR(128), enabled BOOLEAN,
@@ -93,16 +98,10 @@ class ItDbToolMigrationTest {
                       UNIQUE (agent_id, skill_id)
                     )
                     """);
-            connection.createStatement().execute("""
-                    INSERT INTO mate_skill VALUES
-                      (2091870934831804418, 'SXF-itdb-sql-approval-reader', 0),
-                      (2091870991194861569, 'SXF-itdb-sql-risk-assessor', 0),
-                      (2091871049277583362, 'SXF-itdb-sql-execution-decision', 0),
-                      (2091871106345283585, 'SXF-itdb-sql-approval-submit', 0)
-                    """);
-
             execute(connection, "db/migration/h2/" + EMPLOYEE_MIGRATION);
             execute(connection, "db/migration/h2/" + EMPLOYEE_MIGRATION);
+            execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
+            execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
 
             try (ResultSet rs = connection.createStatement().executeQuery("""
                     SELECT enabled, skills_disabled, tools_disabled, wiki_disabled, system_prompt
@@ -125,7 +124,10 @@ class ItDbToolMigrationTest {
                 assertEquals(1, rs.getInt(1));
             }
             try (ResultSet rs = connection.createStatement().executeQuery("""
-                    SELECT COUNT(*) FROM mate_agent_skill s JOIN mate_agent a ON a.id=s.agent_id
+                    SELECT COUNT(*)
+                    FROM mate_agent_skill s
+                    JOIN mate_agent a ON a.id=s.agent_id
+                    JOIN mate_skill skill ON skill.id=s.skill_id
                     WHERE a.name='SXF-ITDB SQL审批安全官' AND s.enabled=TRUE AND s.deleted=0
                     """)) {
                 assertTrue(rs.next());
@@ -144,6 +146,38 @@ class ItDbToolMigrationTest {
             assertTrue(sql.contains("2091871106345283585"), dialect);
             assertFalse(sql.contains("workflow/execute"), dialect);
         }
+    }
+
+    @Test
+    void everyDialectRegistersTheFourLatestItDbSkillsWithoutExecuteCapability() throws Exception {
+        for (String dialect : new String[]{"h2", "mysql", "kingbase"}) {
+            String sql = new ClassPathResource("db/migration/" + dialect + "/" + SKILL_MIGRATION)
+                    .getContentAsString(StandardCharsets.UTF_8);
+            assertTrue(sql.contains("sxf-itdb-sql-approval-reader"), dialect);
+            assertTrue(sql.contains("sxf-itdb-sql-risk-assessor"), dialect);
+            assertTrue(sql.contains("sxf-itdb-sql-execution-decision"), dialect);
+            assertTrue(sql.contains("sxf-itdb-sql-approval-submit"), dialect);
+            assertFalse(sql.contains("/api/v1/workflow/execute/"), dialect);
+        }
+    }
+
+    @Test
+    void bundledItDbSkillContentsPreserveApprovalAndExecutionBoundary() throws Exception {
+        for (String skill : new String[]{
+                "sxf-itdb-sql-approval-reader",
+                "sxf-itdb-sql-risk-assessor",
+                "sxf-itdb-sql-execution-decision",
+                "sxf-itdb-sql-approval-submit"}) {
+            String content = new ClassPathResource("skills/" + skill + "/SKILL.md")
+                    .getContentAsString(StandardCharsets.UTF_8);
+            assertTrue(content.contains("name: " + skill), skill);
+            assertTrue(content.contains("Never call") || content.contains("never"), skill);
+            assertFalse(content.contains("POST /api/v1/workflow/execute/"), skill);
+        }
+        String decision = new ClassPathResource(
+                "skills/sxf-itdb-sql-execution-decision/SKILL.md")
+                .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(decision.contains("can_execute_sql=false"));
     }
 
     private static void execute(Connection connection, String resource) throws Exception {
