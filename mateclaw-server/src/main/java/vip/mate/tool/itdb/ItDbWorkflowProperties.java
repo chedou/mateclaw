@@ -18,6 +18,7 @@ public class ItDbWorkflowProperties {
     private String baseUrl = "https://itdb.atrust.sangfor.com";
     private String username = "";
     private String password = "";
+    private String gatewayCookie = "";
     private Duration connectTimeout = Duration.ofSeconds(5);
     private Duration readTimeout = Duration.ofSeconds(20);
     private List<String> allowedHosts = new ArrayList<>(List.of("itdb.atrust.sangfor.com"));
@@ -48,5 +49,16 @@ public class ItDbWorkflowProperties {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         return URI.create(normalized);
+    }
+
+    public String validatedGatewayCookie() {
+        if (gatewayCookie == null || gatewayCookie.isBlank()) {
+            return "";
+        }
+        if (gatewayCookie.indexOf('\r') >= 0 || gatewayCookie.indexOf('\n') >= 0) {
+            throw new ItDbWorkflowException("INVALID_GATEWAY_COOKIE",
+                    "ITDB access gateway cookie contains invalid control characters");
+        }
+        return gatewayCookie.strip();
     }
 }

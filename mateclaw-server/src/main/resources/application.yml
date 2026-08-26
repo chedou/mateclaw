@@ -141,6 +141,10 @@ mateclaw:
     base-url: ${MATECLAW_ITDB_BASE_URL:https://itdb.atrust.sangfor.com}
     username: ${MATECLAW_ITDB_USERNAME:}
     password: ${MATECLAW_ITDB_PASSWORD:}
+    # Optional aTrust Web Proxy session for local/test deployments where the
+    # server does not have a dedicated service route. Treat it as a secret and
+    # renew it when aTrust expires the browser session.
+    gateway-cookie: ${MATECLAW_ITDB_GATEWAY_COOKIE:}
     connect-timeout: ${MATECLAW_ITDB_CONNECT_TIMEOUT:5s}
     read-timeout: ${MATECLAW_ITDB_READ_TIMEOUT:20s}
     # Exact hosts only. The client also requires HTTPS and refuses redirects to

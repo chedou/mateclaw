@@ -2,15 +2,19 @@ package vip.mate.tool.itdb;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ItDbHttpWorkflowGatewayTest {
@@ -60,6 +64,31 @@ class ItDbHttpWorkflowGatewayTest {
                 ItDbWorkflowException.class, gateway::pendingRequests);
 
         assertEquals("ITDB_ACCESS_GATEWAY_REQUIRED", error.code());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sendsConfiguredAccessGatewayCookieOnlyAsARequestHeader() throws Exception {
+        HttpClient client = mock(HttpClient.class);
+        HttpResponse<String> login = response(200,
+                "{\"access\":\"access-token\",\"refresh\":\"refresh-token\"}");
+        HttpResponse<String> pending = response(200, "{\"results\":[]}");
+        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(login, pending);
+        ItDbWorkflowProperties properties = properties();
+        properties.setGatewayCookie("sdp_user_token=test-gateway-token; sdp_app_session-443=test-session");
+        ItDbHttpWorkflowGateway gateway = new ItDbHttpWorkflowGateway(properties, objectMapper, client);
+
+        gateway.pendingRequests();
+
+        ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client, times(2)).send(requests.capture(), any(HttpResponse.BodyHandler.class));
+        List<HttpRequest> sent = requests.getAllValues();
+        assertEquals(2, sent.size());
+        for (HttpRequest request : sent) {
+            assertEquals("sdp_user_token=test-gateway-token; sdp_app_session-443=test-session",
+                    request.headers().firstValue("Cookie").orElseThrow());
+        }
     }
 
     @Test

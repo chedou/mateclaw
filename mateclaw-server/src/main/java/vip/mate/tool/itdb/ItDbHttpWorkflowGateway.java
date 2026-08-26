@@ -211,6 +211,10 @@ class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
                 .timeout(nonNullDuration(properties.getReadTimeout(), Duration.ofSeconds(20)))
                 .header("Accept", "application/json")
                 .header("User-Agent", "MateClaw-ITDB-Approval/1.0");
+        String gatewayCookie = properties.validatedGatewayCookie();
+        if (!gatewayCookie.isBlank()) {
+            builder.header("Cookie", gatewayCookie);
+        }
         if (token != null && !token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);
         }
@@ -234,7 +238,7 @@ class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
         int status = response.statusCode();
         if (status >= 300 && status < 400) {
             throw new ItDbWorkflowException("ITDB_ACCESS_GATEWAY_REQUIRED",
-                    "ITDB redirected to the aTrust access gateway; configure a server-authorized API route");
+                    "ITDB redirected to the aTrust access gateway; configure a server-authorized API route or renew the configured gateway session");
         }
         if (status < 200 || status >= 300) {
             throw new ItDbWorkflowException("ITDB_HTTP_" + status,

@@ -26,4 +26,15 @@ class ItDbWorkflowPropertiesTest {
         properties.setAllowedHosts(List.of("itdb.atrust.sangfor.com"));
         assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
     }
+
+    @Test
+    void rejectsGatewayCookieHeaderInjection() {
+        ItDbWorkflowProperties properties = new ItDbWorkflowProperties();
+        properties.setGatewayCookie("sdp_user_token=ok\r\nX-Injected: true");
+
+        ItDbWorkflowException error = assertThrows(
+                ItDbWorkflowException.class, properties::validatedGatewayCookie);
+
+        assertEquals("INVALID_GATEWAY_COOKIE", error.code());
+    }
 }
