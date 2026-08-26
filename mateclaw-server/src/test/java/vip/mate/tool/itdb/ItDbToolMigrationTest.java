@@ -18,6 +18,7 @@ class ItDbToolMigrationTest {
     private static final String MIGRATION = "V224__register_itdb_workflow_tool.sql";
     private static final String EMPLOYEE_MIGRATION = "V225__bind_itdb_approval_employee.sql";
     private static final String SKILL_MIGRATION = "V227__register_itdb_approval_skills.sql";
+    private static final String SKILL_DEDUP_MIGRATION = "V228__deduplicate_itdb_approval_skills.sql";
 
     @Test
     void h2MigrationRegistersOneIdempotentBuiltinToolRow() throws Exception {
@@ -100,8 +101,24 @@ class ItDbToolMigrationTest {
                     """);
             execute(connection, "db/migration/h2/" + EMPLOYEE_MIGRATION);
             execute(connection, "db/migration/h2/" + EMPLOYEE_MIGRATION);
+            connection.createStatement().execute("""
+                    INSERT INTO mate_skill
+                      (id, name, description, skill_type, enabled, builtin, workspace_id,
+                       create_time, update_time, deleted)
+                    VALUES
+                      (777001, 'sxf-itdb-sql-approval-reader', 'legacy copy', 'dynamic',
+                       TRUE, FALSE, 1, NOW(), NOW(), 0)
+                    """);
+            connection.createStatement().execute("""
+                    INSERT INTO mate_agent_skill
+                      (id, agent_id, skill_id, enabled, create_time, update_time, deleted)
+                    SELECT 777002, id, 777001, TRUE, NOW(), NOW(), 0
+                    FROM mate_agent WHERE name='SXF-ITDB SQL审批安全官'
+                    """);
             execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
             execute(connection, "db/migration/h2/" + SKILL_MIGRATION);
+            execute(connection, "db/migration/h2/" + SKILL_DEDUP_MIGRATION);
+            execute(connection, "db/migration/h2/" + SKILL_DEDUP_MIGRATION);
 
             try (ResultSet rs = connection.createStatement().executeQuery("""
                     SELECT enabled, skills_disabled, tools_disabled, wiki_disabled, system_prompt
@@ -129,9 +146,30 @@ class ItDbToolMigrationTest {
                     JOIN mate_agent a ON a.id=s.agent_id
                     JOIN mate_skill skill ON skill.id=s.skill_id
                     WHERE a.name='SXF-ITDB SQL审批安全官' AND s.enabled=TRUE AND s.deleted=0
+                      AND skill.enabled=TRUE AND skill.deleted=0
                     """)) {
                 assertTrue(rs.next());
                 assertEquals(4, rs.getInt(1));
+            }
+            try (ResultSet rs = connection.createStatement().executeQuery("""
+                    SELECT COUNT(DISTINCT name), COUNT(*)
+                    FROM mate_skill
+                    WHERE name IN (
+                      'sxf-itdb-sql-approval-reader',
+                      'sxf-itdb-sql-risk-assessor',
+                      'sxf-itdb-sql-execution-decision',
+                      'sxf-itdb-sql-approval-submit'
+                    ) AND enabled=TRUE AND deleted=0
+                    """)) {
+                assertTrue(rs.next());
+                assertEquals(4, rs.getInt(1));
+                assertEquals(4, rs.getInt(2));
+            }
+            try (ResultSet rs = connection.createStatement().executeQuery(
+                    "SELECT enabled, deleted FROM mate_skill WHERE id=777001")) {
+                assertTrue(rs.next());
+                assertFalse(rs.getBoolean("enabled"));
+                assertEquals(1, rs.getInt("deleted"));
             }
         }
     }
@@ -153,11 +191,16 @@ class ItDbToolMigrationTest {
         for (String dialect : new String[]{"h2", "mysql", "kingbase"}) {
             String sql = new ClassPathResource("db/migration/" + dialect + "/" + SKILL_MIGRATION)
                     .getContentAsString(StandardCharsets.UTF_8);
+            String dedupSql = new ClassPathResource(
+                    "db/migration/" + dialect + "/" + SKILL_DEDUP_MIGRATION)
+                    .getContentAsString(StandardCharsets.UTF_8);
             assertTrue(sql.contains("sxf-itdb-sql-approval-reader"), dialect);
             assertTrue(sql.contains("sxf-itdb-sql-risk-assessor"), dialect);
             assertTrue(sql.contains("sxf-itdb-sql-execution-decision"), dialect);
             assertTrue(sql.contains("sxf-itdb-sql-approval-submit"), dialect);
             assertFalse(sql.contains("/api/v1/workflow/execute/"), dialect);
+            assertTrue(dedupSql.contains("id NOT IN"), dialect);
+            assertTrue(dedupSql.contains("enabled = FALSE"), dialect);
         }
     }
 
@@ -171,13 +214,24 @@ class ItDbToolMigrationTest {
             String content = new ClassPathResource("skills/" + skill + "/SKILL.md")
                     .getContentAsString(StandardCharsets.UTF_8);
             assertTrue(content.contains("name: " + skill), skill);
-            assertTrue(content.contains("Never call") || content.contains("never"), skill);
-            assertFalse(content.contains("POST /api/v1/workflow/execute/"), skill);
+            assertTrue(content.contains("allowed-tools:"), skill);
+            assertTrue(content.contains("itdb_review_sql_request"), skill);
+            assertFalse(content.contains("browser session"), skill);
+            assertFalse(content.contains("PAGE_OBSERVED"), skill);
+            assertFalse(content.contains("/api/v1/workflow/execute/"), skill);
         }
+        String reader = new ClassPathResource("skills/sxf-itdb-sql-approval-reader/SKILL.md")
+                .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(reader.contains("itdb_pending_sql_requests"));
+        assertTrue(reader.contains("Do not fall back to browser automation"));
         String decision = new ClassPathResource(
                 "skills/sxf-itdb-sql-execution-decision/SKILL.md")
                 .getContentAsString(StandardCharsets.UTF_8);
         assertTrue(decision.contains("can_execute_sql=false"));
+        String submit = new ClassPathResource("skills/sxf-itdb-sql-approval-submit/SKILL.md")
+                .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(submit.contains("itdb_approve_sql_request"));
+        assertTrue(submit.contains("persisted human-approval guard"));
     }
 
     private static void execute(Connection connection, String resource) throws Exception {

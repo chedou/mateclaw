@@ -1,15 +1,17 @@
 ---
 name: sxf-itdb-sql-risk-assessor
 description: Assess complete ITDB SQL using platform SQL Check, structural rules, performance and lock risk, sensitive-data checks, rollback readiness, execution window, and business semantics. Use after fresh ticket evidence is available; this skill never submits approval or executes SQL.
+allowed-tools:
+  - itdb_review_sql_request
 ---
 
 # SXF ITDB SQL Risk Assessor
 
-Evaluate the complete SQL snapshot identified by ticket ID and SHA-256. Deterministic safety rules take precedence over semantic judgment.
+Evaluate the complete SQL snapshot returned by `itdb_review_sql_request(ticketId)`. This native callback uses the authenticated ITDB HTTP API. Deterministic safety rules take precedence over semantic judgment.
 
 ## Assessment Layers
 
-1. Run or consume the fresh ITDB `sqlcheck` result, preserving errors, warnings, critical flags, statement types, and affected rows.
+1. Call or consume the fresh `itdb_review_sql_request` result, preserving SQL Check errors, warnings, critical flags, statement types, and affected rows.
 2. Parse statement structure when a parser is available. If structure cannot be established reliably, record an unknown instead of treating a regex match as proof.
 3. Identify destructive DDL, missing or ineffective predicates, multi-table writes, cross-database writes, full scans, unbounded joins, hot-table DDL, large transactions, and lock risks.
 4. Detect credential-like literals, personal or sensitive data, privilege changes, and irreversible changes. Do not reproduce secrets in output.
@@ -27,4 +29,4 @@ Evaluate the complete SQL snapshot identified by ticket ID and SHA-256. Determin
 
 Return `risk_level` (`LOW|MEDIUM|HIGH|BLOCKED`), `signals`, `unknowns`, `rollback_assessment`, `recommendation` (`AUTO_APPROVABLE|MANUAL_REVIEW|REJECT`), and evidence items graded `PLATFORM_CONFIRMED|RULE_INFERENCE|UNKNOWN`.
 
-Never call approval, rejection, or SQL execution endpoints.
+Never call `itdb_approve_sql_request`, browser automation, rejection, or SQL execution endpoints.

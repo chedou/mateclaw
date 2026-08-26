@@ -1,11 +1,13 @@
 ---
 name: sxf-itdb-sql-execution-decision
 description: Convert fresh ITDB ticket evidence and SQL risk signals into AUTO_APPROVABLE, MANUAL_REVIEW, or REJECT with deterministic veto rules. Use to decide whether approval may be submitted; it never means SQL execution is authorized.
+allowed-tools:
+  - itdb_review_sql_request
 ---
 
 # SXF ITDB SQL Execution Decision
 
-Produce an auditable approval recommendation while keeping approval and SQL execution separate.
+Produce an auditable approval recommendation from the fresh `itdb_review_sql_request(ticketId)` result while keeping approval and SQL execution separate. The native callback uses the authenticated ITDB HTTP API; never substitute browser observations.
 
 ## Deterministic Vetoes
 
@@ -26,4 +28,4 @@ Return `AUTO_APPROVABLE` only when all are true:
 
 Return `recommendation`, `can_submit_approval`, `can_execute_sql=false`, `blocking_reasons`, `residual_risks`, `unknowns`, `evidence`, `confirmation_required=true`, and the ticket ID/SQL hash used.
 
-This Skill is read-only. `AUTO_APPROVABLE` permits displaying a per-ticket confirmation; it does not itself authorize the approval API or `/execute/`.
+This Skill is read-only. `AUTO_APPROVABLE` permits displaying a per-ticket confirmation; it does not itself authorize `itdb_approve_sql_request` or any SQL execution endpoint.
