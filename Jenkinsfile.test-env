@@ -163,6 +163,9 @@ docker_runtime_compatibility="$(
 legacy_runtime_probe="$(
   sed -n 's/^legacy_runtime_probe=//p' runtime-compatibility.txt | head -n 1
 )"
+legacy_libseccomp_version="$(
+  sed -n 's/^legacy_libseccomp_version=//p' runtime-compatibility.txt | head -n 1
+)"
 case "$docker_runtime_compatibility:$legacy_runtime_probe" in
   NATIVE_CLONE3_SECCOMP:NOT_REQUIRED|LEGACY_CUSTOM_SECCOMP:PASSED) ;;
   *) fail "Docker 兼容性报告不完整或状态不一致" ;;
@@ -238,6 +241,7 @@ trap - EXIT
   echo "docker_security_options=$docker_security_options_report"
   echo "docker_runtime_compatibility=$docker_runtime_compatibility"
   echo "legacy_runtime_probe=$legacy_runtime_probe"
+  echo "legacy_libseccomp_version=${legacy_libseccomp_version:-NOT_REQUIRED}"
   echo "current_container_state=$current_state"
   echo "current_image=$current_image"
   echo "current_health=$current_health"

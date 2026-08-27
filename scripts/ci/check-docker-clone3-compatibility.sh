@@ -4,6 +4,7 @@ set -euo pipefail
 
 MINIMUM_DOCKER_VERSION="20.10.10"
 REVIEWED_LEGACY_DOCKER_VERSION="18.06.0"
+MINIMUM_LEGACY_LIBSECCOMP_VERSION="2.5.0"
 REVIEWED_LEGACY_SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
 
 fail() {
@@ -51,6 +52,19 @@ fi
 
 [[ "${normalized_version}" == "${REVIEWED_LEGACY_DOCKER_VERSION}" ]] || fail \
   "Docker Server ${raw_version} 低于 ${MINIMUM_DOCKER_VERSION} 且不属于已审核的 ${REVIEWED_LEGACY_DOCKER_VERSION} 兼容例外"
+command -v rpm >/dev/null || fail \
+  "Docker 18 兼容例外只能在可核验 libseccomp RPM 的已审核宿主上使用"
+legacy_libseccomp_version="$(rpm -q --qf '%{VERSION}' libseccomp 2>/dev/null)" || fail \
+  "Docker 18 宿主未安装可核验的 libseccomp"
+[[ "${legacy_libseccomp_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail \
+  "无法解析 Docker 18 宿主的 libseccomp 版本：${legacy_libseccomp_version:-EMPTY}"
+lowest_libseccomp_version="$(
+  printf '%s\n%s\n' "${MINIMUM_LEGACY_LIBSECCOMP_VERSION}" "${legacy_libseccomp_version}" \
+    | sort -V \
+    | head -n 1
+)"
+[[ "${lowest_libseccomp_version}" == "${MINIMUM_LEGACY_LIBSECCOMP_VERSION}" ]] || fail \
+  "Docker 18 宿主 libseccomp ${legacy_libseccomp_version} 不认识 clone3；至少需要 ${MINIMUM_LEGACY_LIBSECCOMP_VERSION}，禁止用无效 profile 或 seccomp=unconfined 绕过"
 [[ -f "${legacy_seccomp_profile}" ]] || fail \
   "Docker 18 clone3 seccomp profile 不存在：${legacy_seccomp_profile}"
 legacy_seccomp_sha256="$(sha256sum "${legacy_seccomp_profile}" | awk '{print $1}')"
@@ -91,4 +105,5 @@ printf 'legacy_runtime_probe_image=%s\n' "${runtime_image}"
 printf 'legacy_runtime_probe_image_id=%s\n' "${runtime_image_id}"
 printf 'legacy_runtime_probe_image_source=%s\n' "${runtime_image_source}"
 printf 'legacy_seccomp_profile_sha256=%s\n' "${legacy_seccomp_sha256}"
+printf 'legacy_libseccomp_version=%s\n' "${legacy_libseccomp_version}"
 printf 'docker_server_version=%s\n' "${raw_version}"

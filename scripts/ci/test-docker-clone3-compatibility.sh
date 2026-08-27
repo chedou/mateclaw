@@ -16,6 +16,15 @@ fail() {
 
 mkdir -p "${TMP_DIR}/bin"
 printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ "${1:-}" == "-q" && "${2:-}" == "--qf" && "${4:-}" == "libseccomp" ]]; then' \
+  '  printf "%s" "${FAKE_LIBSECCOMP_VERSION:-2.5.0}"' \
+  '  exit "${FAKE_RPM_RESULT:-0}"' \
+  'fi' \
+  'exit 99' \
+  > "${TMP_DIR}/bin/rpm"
+chmod +x "${TMP_DIR}/bin/rpm"
+printf '%s\n' \
   'FROM node:22-alpine AS builder' \
   'FROM mcr.microsoft.com/playwright:v1.62.0-noble' \
   > "${TMP_DIR}/Dockerfile"
@@ -60,6 +69,18 @@ expect_fail() {
 }
 
 expect_pass '18.06.0-ce'
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_VERSION=2.3.1 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/old-libseccomp.out" 2>&1; then
+  fail "Docker 18 must reject libseccomp versions that cannot resolve clone3"
+fi
+grep -Fq 'libseccomp 2.3.1 不认识 clone3' "${TMP_DIR}/old-libseccomp.out" \
+  || fail "old libseccomp rejection must explain the real clone3 blocker"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_RPM_RESULT=1 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
+  fail "Docker 18 must reject an unverifiable libseccomp installation"
+fi
 expect_fail '18.06.0-ce' 'name=apparmor'
 expect_fail '18.06.0-ce' 'name=seccomp,profile=unconfined'
 expect_fail '18.06.0-ce' 'name=seccomp,profile=default' '1'
@@ -117,6 +138,8 @@ grep -Fq -- 'mateclaw-server/Dockerfile' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must pass the production Dockerfile to the compatibility checker"
 grep -Fq -- 'runtime-compatibility.txt' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must archive the checker-owned compatibility evidence"
+grep -Fq -- 'legacy_libseccomp_version=' "${ROOT_DIR}/Jenkinsfile.test-env" \
+  || fail "pipeline must record the verified Docker 18 libseccomp version"
 if grep -Fq -- "LEGACY_RUNTIME_PROBE_IMAGE" "${ROOT_DIR}/Jenkinsfile.test-env"; then
   fail "pipeline must not duplicate the runtime image pinned by the Dockerfile"
 fi
