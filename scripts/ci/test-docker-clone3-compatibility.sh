@@ -24,6 +24,15 @@ printf '%s\n' \
   > "${TMP_DIR}/bin/python3"
 chmod +x "${TMP_DIR}/bin/python3"
 printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  '[[ "${FAKE_TIMEOUT_RESULT:-0}" == "0" ]] || exit "${FAKE_TIMEOUT_RESULT}"' \
+  'while [[ "${1:-}" == --* ]]; do shift; done' \
+  '[[ "${1:-}" == "30s" ]] || exit 98' \
+  'shift' \
+  'exec "$@"' \
+  > "${TMP_DIR}/bin/timeout"
+chmod +x "${TMP_DIR}/bin/timeout"
+printf '%s\n' \
   'FROM node:22-alpine AS builder' \
   'FROM mcr.microsoft.com/playwright:v1.62.0-noble' \
   > "${TMP_DIR}/Dockerfile"
@@ -139,6 +148,12 @@ grep -Fq -- 'runtime-compatibility.txt' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must archive the checker-owned compatibility evidence"
 grep -Fq -- 'legacy_libseccomp_version=' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must record the verified Docker 18 libseccomp version"
+grep -Fq -- 'timeout --signal=TERM --kill-after=5s 30s docker run --rm' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must have a hard execution bound"
+grep -Fq -- '--name "${probe_container}"' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must use an exact cleanup target"
+grep -Fq -- 'docker rm -f "${probe_container}"' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must clean up a timed-out container"
 if grep -Fq -- "LEGACY_RUNTIME_PROBE_IMAGE" "${ROOT_DIR}/Jenkinsfile.test-env"; then
   fail "pipeline must not duplicate the runtime image pinned by the Dockerfile"
 fi

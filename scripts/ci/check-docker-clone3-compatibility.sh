@@ -83,6 +83,7 @@ case "${runtime_image}" in
 esac
 
 command -v docker >/dev/null || fail "docker 命令不存在，无法执行旧版本兼容探针"
+command -v timeout >/dev/null || fail "宿主缺少 timeout，无法有界执行旧版本兼容探针"
 runtime_image_source="LOCAL_CACHE"
 if ! docker inspect "${runtime_image}" >/dev/null 2>&1; then
   docker pull "${runtime_image}" >/dev/null \
@@ -92,12 +93,23 @@ fi
 runtime_image_id="$(docker inspect --format '{{.Id}}' "${runtime_image}")"
 [[ -n "${runtime_image_id}" ]] || fail "无法确认生产运行基础镜像 ID"
 
-docker run --rm \
+probe_container="mateclaw-clone3-probe-$$"
+cleanup_probe() {
+  docker rm -f "${probe_container}" >/dev/null 2>&1 || true
+}
+trap cleanup_probe EXIT
+probe_status=0
+timeout --signal=TERM --kill-after=5s 30s docker run --rm \
+  --name "${probe_container}" \
   --security-opt "seccomp=${legacy_seccomp_profile}" \
   --entrypoint node \
   "${runtime_image}" \
   -e 'const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));' \
-  || fail "Docker ${raw_version} 未能在已审核 clone3 seccomp 下运行生产基础镜像的线程创建探针"
+  || probe_status=$?
+cleanup_probe
+trap - EXIT
+[[ "${probe_status}" -eq 0 ]] \
+  || fail "Docker ${raw_version} 未能在 30 秒内通过已审核 clone3 seccomp 的线程创建探针"
 
 printf 'docker_runtime_compatibility=LEGACY_CUSTOM_SECCOMP\n'
 printf 'legacy_runtime_probe=PASSED\n'
