@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PIPELINE="${ROOT_DIR}/Jenkinsfile.test-env"
 RELEASE_SCRIPT="${ROOT_DIR}/scripts/release-test-env.sh"
+CANDIDATE_BUILDER="${ROOT_DIR}/scripts/ci/build-test-env-candidate-image.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -27,10 +28,15 @@ grep -Fq 'libseccomp-activation-report.txt' "${PIPELINE}" \
   || fail "pipeline must archive the activation and probe report"
 grep -Fq "expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }" "${PIPELINE}" \
   || fail "image build and migration stages must be skipped during host maintenance"
-grep -Fq 'build_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")' "${PIPELINE}" \
-  || fail "Docker 18 image build must use the same reviewed clone3 seccomp profile as runtime"
-grep -Fq 'build_security_mode="LEGACY_CUSTOM_SECCOMP"' "${PIPELINE}" \
-  || fail "pipeline must record the Docker 18 image-build security mode"
+grep -Fq 'build-test-env-candidate-image.sh' "${PIPELINE}" \
+  || fail "pipeline must use the reviewed Docker 18 candidate assembler"
+grep -Fq '"$LEGACY_SECCOMP_PROFILE"' "${PIPELINE}" \
+  || fail "pipeline must pass the reviewed clone3 seccomp profile to the assembler"
+grep -Fq "docker_build_security_mode='LEGACY_REVIEWED_SECCOMP_ASSEMBLY'" "${CANDIDATE_BUILDER}" \
+  || fail "assembler must record the reviewed Docker 18 security mode"
+if grep -Eq -- 'docker build[^\n]*(--security-opt|security-opt)' "${PIPELINE}" "${CANDIDATE_BUILDER}"; then
+  fail "Docker 18.06 docker build must never receive unsupported --security-opt"
+fi
 grep -Fq 'build-security.txt' "${PIPELINE}" \
   || fail "pipeline must archive image-build seccomp evidence"
 if grep -Fq -- '--security-opt seccomp=unconfined' "${PIPELINE}" "${RELEASE_SCRIPT}"; then

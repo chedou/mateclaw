@@ -144,6 +144,10 @@ test -x "$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
   || fail "缺少可执行的 Docker clone3 门禁回归检查"
 "$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
   || fail "Docker clone3 门禁回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/test-test-env-candidate-image-build.sh" \
+  || fail "缺少可执行的 Docker 18 候选镜像组装回归检查"
+"$SOURCE_DIR/scripts/ci/test-test-env-candidate-image-build.sh" \
+  || fail "Docker 18 候选镜像组装回归检查失败"
 test -x "$SOURCE_DIR/scripts/ci/test-detect-libseccomp-version.sh" \
   || fail "缺少可执行的 libseccomp 实际版本检测回归检查"
 "$SOURCE_DIR/scripts/ci/test-detect-libseccomp-version.sh" \
@@ -380,43 +384,21 @@ set -euo pipefail
 
 resolved_commit="$(cat resolved-commit.txt)"
 SOURCE_DIR="$WORKSPACE/source"
-
-docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
-build_security_args=()
-build_security_mode="NATIVE_DEFAULT_SECCOMP"
-build_seccomp_sha="NOT_REQUIRED"
-case "$(sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)" in
-  NATIVE_CLONE3_SECCOMP) ;;
-  LEGACY_CUSTOM_SECCOMP)
-    LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
-    expected_seccomp_sha="$(sed -n 's/^legacy_seccomp_profile_sha256=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)"
-    actual_seccomp_sha="$(sha256sum "$LEGACY_SECCOMP_PROFILE" | awk '{print $1}')"
-    [[ -n "$expected_seccomp_sha" && "$actual_seccomp_sha" == "$expected_seccomp_sha" ]] \
-      || { echo "IMAGE_BUILD_FAILED: Docker 18 seccomp profile 与预检证据不一致" >&2; exit 1; }
-    docker_build_help="$(docker build --help 2>&1)"
-    grep -Fq -- '--security-opt' <<<"$docker_build_help" \
-      || { echo "IMAGE_BUILD_FAILED: Docker 18 构建器不支持应用已审核 seccomp profile" >&2; exit 1; }
-    build_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")
-    build_security_mode="LEGACY_CUSTOM_SECCOMP"
-    build_seccomp_sha="$actual_seccomp_sha"
-    ;;
-  *)
-    echo "IMAGE_BUILD_FAILED: 缺少有效的 Docker 构建兼容性结论" >&2
-    exit 1
-    ;;
-esac
-{
-  echo "docker_build_security_mode=$build_security_mode"
-  echo "docker_build_seccomp_profile_sha256=$build_seccomp_sha"
-} > build-security.txt
-cat build-security.txt
-docker build \
-  "${build_security_args[@]}" \
-  --build-arg "MAVEN_FLAGS=-Paliyun-first -Dmaven.wagon.http.connectTimeout=15000 -Dmaven.wagon.http.readTimeout=60000" \
-  --build-arg "MATECLAW_RELEASE_COMMIT=$resolved_commit" \
-  -t "$CANDIDATE_IMAGE" \
-  -f "$SOURCE_DIR/mateclaw-server/Dockerfile" \
-  "$SOURCE_DIR"
+BUILD_SCRIPT="$SOURCE_DIR/scripts/ci/build-test-env-candidate-image.sh"
+LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
+docker_runtime_compatibility="$(
+  sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1
+)"
+test -x "$BUILD_SCRIPT" \
+  || { echo "IMAGE_BUILD_FAILED: 缺少可执行的候选镜像构建器" >&2; exit 1; }
+"$BUILD_SCRIPT" \
+  "$docker_runtime_compatibility" \
+  "$resolved_commit" \
+  "$SOURCE_DIR" \
+  "$CANDIDATE_IMAGE" \
+  "$LEGACY_SECCOMP_PROFILE" \
+  "$WORKSPACE/build-security.txt" \
+  "$WORKSPACE/runtime-package-manifest.txt"
 
 docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CANDIDATE_IMAGE" \
   > candidate-image-env.txt
@@ -937,7 +919,7 @@ if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
 fi
 '''
       archiveArtifacts(
-        artifacts: 'preflight-report.txt,runtime-compatibility.txt,build-security.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
+        artifacts: 'preflight-report.txt,runtime-compatibility.txt,build-security.txt,runtime-package-manifest.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
         allowEmptyArchive: true,
         fingerprint: true
       )

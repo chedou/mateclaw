@@ -125,39 +125,9 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # which carries the renewed 2018 archive signing certificate required after
 # the older certificate expired in 2026.
 COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64
-RUN rm -f /etc/apt/sources.list.d/nodesource.list \
-        /etc/apt/sources.list.d/nodesource.sources \
-    && base64 --decode < /tmp/ubuntu-archive-keyring.gpg.b64 \
-        > /tmp/ubuntu-archive-keyring.gpg \
-    && echo "655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835  /tmp/ubuntu-archive-keyring.gpg" \
-        | sha256sum --check --strict - \
-    && install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg \
-    && install -m 0644 /tmp/ubuntu-archive-keyring.gpg /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg \
-    && rm -f /tmp/ubuntu-archive-keyring.gpg /tmp/ubuntu-archive-keyring.gpg.b64 \
-    && chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
-    && find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
-        -type f \( -name '*.gpg' -o -name '*.asc' \) -exec chmod a+r {} + \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        openjdk-21-jre-headless \
-        fonts-noto-cjk \
-        fonts-noto-color-emoji \
-        poppler-utils \
-        tesseract-ocr \
-        tesseract-ocr-chi-sim \
-        tzdata \
-        python3-pip \
-        python-is-python3 \
-        python3-dev \
-        build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Remove PEP 668's EXTERNALLY-MANAGED marker so pip can install packages
-# system-wide without --break-system-packages. This is a container — there is
-# no host Python environment to protect. Skill scripts and LLM-generated code
-# need to `pip install` on the fly; PEP 668 would block every install with
-# "error: externally-managed-environment".
-RUN rm -f /usr/lib/python3*/EXTERNALLY-MANAGED
+COPY mateclaw-server/docker/install-runtime-dependencies.sh /usr/local/sbin/mateclaw-install-runtime-dependencies
+RUN /usr/local/sbin/mateclaw-install-runtime-dependencies /tmp/ubuntu-archive-keyring.gpg.b64 \
+    && rm -f /tmp/ubuntu-archive-keyring.gpg.b64
 
 # Tell Playwright Java where Microsoft's image stored the browsers.
 # BrowserLauncher's BUNDLED strategy will then succeed without extra config.
@@ -179,4 +149,6 @@ COPY --from=builder /build/mateclaw-server/target/*.jar app.jar
 
 EXPOSE 18088
 EXPOSE 1455
+USER 0:0
 ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD []

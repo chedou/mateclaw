@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKERFILE="${ROOT_DIR}/mateclaw-server/Dockerfile"
+INSTALLER="${ROOT_DIR}/mateclaw-server/docker/install-runtime-dependencies.sh"
 KEYRING_B64="${ROOT_DIR}/mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64"
 EXPECTED_KEYRING_SHA256="655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835"
 
@@ -12,106 +13,90 @@ fail() {
   exit 1
 }
 
-[[ -f "${DOCKERFILE}" ]] || fail "missing runtime Dockerfile"
-[[ -f "${KEYRING_B64}" ]] || fail "missing vendored Ubuntu archive keyring"
+[[ -f "$DOCKERFILE" ]] || fail "missing runtime Dockerfile"
+[[ -x "$INSTALLER" ]] || fail "missing executable shared runtime installer"
+[[ -f "$KEYRING_B64" ]] || fail "missing vendored Ubuntu archive keyring"
 
-actual_keyring_sha256="$(base64 --decode < "${KEYRING_B64}" | sha256sum | awk '{print $1}')"
-[[ "${actual_keyring_sha256}" == "${EXPECTED_KEYRING_SHA256}" ]] \
+actual_keyring_sha256="$(base64 --decode < "$KEYRING_B64" | sha256sum | awk '{print $1}')"
+[[ "$actual_keyring_sha256" == "$EXPECTED_KEYRING_SHA256" ]] \
   || fail "vendored Ubuntu archive keyring digest does not match the reviewed value"
 
 runtime_block="$(awk '
   /^FROM mcr\.microsoft\.com\/playwright:/ { capture = 1 }
   capture { print }
-' "${DOCKERFILE}")"
-
-[[ -n "${runtime_block}" ]] || fail "Playwright runtime stage is missing"
-grep -Fq -- 'FROM mcr.microsoft.com/playwright:v1.62.0-noble' <<<"${runtime_block}" \
+' "$DOCKERFILE")"
+installer_content="$(cat "$INSTALLER")"
+[[ -n "$runtime_block" ]] || fail "Playwright runtime stage is missing"
+grep -Fq -- 'FROM mcr.microsoft.com/playwright:v1.62.0-noble' <<<"$runtime_block" \
   || fail "runtime must use the Playwright version pinned by the Java driver"
+grep -Fq -- 'COPY mateclaw-server/docker/install-runtime-dependencies.sh /usr/local/sbin/mateclaw-install-runtime-dependencies' <<<"$runtime_block" \
+  || fail "runtime stage must copy the shared dependency installer"
+grep -Fq -- 'RUN /usr/local/sbin/mateclaw-install-runtime-dependencies /tmp/ubuntu-archive-keyring.gpg.b64' <<<"$runtime_block" \
+  || fail "runtime stage must execute the shared dependency installer"
+grep -Fq -- 'COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64' <<<"$runtime_block" \
+  || fail "runtime stage must copy the vendored Ubuntu archive keyring"
 
 line_of() {
   local needle="$1"
-  grep -nF -- "${needle}" <<<"${runtime_block}" | head -n 1 | cut -d: -f1 || true
+  grep -nF -- "$needle" "$INSTALLER" | head -n 1 | cut -d: -f1 || true
 }
 
 nodesource_line="$(line_of 'rm -f /etc/apt/sources.list.d/nodesource.list')"
-keyring_copy_line="$(line_of 'COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64')"
-keyring_decode_line="$(line_of 'base64 --decode < /tmp/ubuntu-archive-keyring.gpg.b64')"
+keyring_decode_line="$(line_of 'base64 --decode < "$keyring_b64"')"
 keyring_checksum_line="$(line_of '| sha256sum --check --strict -')"
-keyring_install_line="$(line_of 'install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg')"
-keyring_trusted_install_line="$(line_of 'install -m 0644 /tmp/ubuntu-archive-keyring.gpg /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg')"
+keyring_install_line="$(line_of 'install -m 0644 "$decoded_keyring" /usr/share/keyrings/ubuntu-archive-keyring.gpg')"
+keyring_trusted_install_line="$(line_of 'install -m 0644 "$decoded_keyring" /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg')"
 keyring_permission_line="$(line_of 'find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d')"
-apt_update_line="$(line_of '&& apt-get update')"
+apt_update_line="$(line_of 'apt-get update')"
 
-[[ -n "${nodesource_line}" ]] \
-  || fail "runtime stage must remove the unused NodeSource repository"
-[[ -n "${keyring_copy_line}" ]] \
-  || fail "runtime stage must copy the vendored Ubuntu archive keyring"
-[[ -n "${keyring_decode_line}" ]] \
-  || fail "runtime stage must decode the vendored Ubuntu archive keyring"
-[[ -n "${keyring_checksum_line}" ]] \
-  || fail "runtime stage must verify the pinned archive keyring digest"
-[[ -n "${keyring_install_line}" ]] \
-  || fail "runtime stage must restore the archive keyring used by ubuntu.sources"
-[[ -n "${keyring_trusted_install_line}" ]] \
-  || fail "runtime stage must restore the archive keyring fallback used by legacy sources"
-[[ -n "${keyring_permission_line}" ]] \
-  || fail "runtime stage must make inherited APT keyrings readable"
-[[ -n "${apt_update_line}" ]] \
-  || fail "runtime stage must update APT indexes"
-(( nodesource_line < apt_update_line )) \
-  || fail "NodeSource removal must happen before apt-get update"
-(( keyring_copy_line < keyring_decode_line )) \
-  || fail "archive keyring must be copied before it is decoded"
-(( keyring_decode_line < keyring_checksum_line )) \
-  || fail "archive keyring decoding must happen before checksum verification"
-(( keyring_checksum_line < keyring_install_line )) \
-  || fail "archive keyring must be verified before installation"
-(( keyring_checksum_line < keyring_trusted_install_line )) \
-  || fail "archive keyring must be verified before trusted-store installation"
-(( keyring_install_line < apt_update_line )) \
-  || fail "archive keyring must be restored before apt-get update"
-(( keyring_trusted_install_line < apt_update_line )) \
-  || fail "trusted-store keyring must be restored before apt-get update"
-(( keyring_permission_line < apt_update_line )) \
-  || fail "keyring permission repair must happen before apt-get update"
+for required_line in \
+  "$nodesource_line" "$keyring_decode_line" "$keyring_checksum_line" \
+  "$keyring_install_line" "$keyring_trusted_install_line" \
+  "$keyring_permission_line" "$apt_update_line"; do
+  [[ -n "$required_line" ]] || fail "shared installer is missing a required hardened APT step"
+done
+(( nodesource_line < apt_update_line )) || fail "NodeSource removal must happen before apt-get update"
+(( keyring_decode_line < keyring_checksum_line )) || fail "keyring must be decoded before verification"
+(( keyring_checksum_line < keyring_install_line )) || fail "keyring must be verified before installation"
+(( keyring_checksum_line < keyring_trusted_install_line )) || fail "keyring must be verified before trusted-store installation"
+(( keyring_install_line < apt_update_line )) || fail "keyring must be restored before apt-get update"
+(( keyring_trusted_install_line < apt_update_line )) || fail "trusted keyring must be restored before apt-get update"
+(( keyring_permission_line < apt_update_line )) || fail "keyring permissions must be repaired before apt-get update"
 
-grep -Fq -- '/etc/apt/sources.list.d/nodesource.sources' <<<"${runtime_block}" \
-  || fail "runtime stage must remove both NodeSource source formats"
-grep -Fq -- 'chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d' <<<"${runtime_block}" \
-  || fail "APT keyring directories must be traversable by the _apt user"
-grep -Fq -- '-exec chmod a+r {} +' <<<"${runtime_block}" \
-  || fail "keyring repair must grant read access without weakening write permissions"
-grep -Fq -- 'echo "655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835  /tmp/ubuntu-archive-keyring.gpg"' <<<"${runtime_block}" \
-  || fail "Ubuntu archive keyring digest must be fixed in the build instruction"
-grep -Fq -- 'ubuntu-keyring_2026.08.18_all.deb' <<<"${runtime_block}" \
+grep -Fq -- '/etc/apt/sources.list.d/nodesource.sources' "$INSTALLER" \
+  || fail "installer must remove both NodeSource source formats"
+grep -Fq -- 'chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d' "$INSTALLER" \
+  || fail "APT keyring directories must be traversable by _apt"
+grep -Fq -- '-exec chmod a+r {} +' "$INSTALLER" \
+  || fail "keyring repair must grant read access without weakening writes"
+grep -Fq -- "$EXPECTED_KEYRING_SHA256" "$INSTALLER" \
+  || fail "installer must pin the decoded Ubuntu keyring digest"
+grep -Fq -- 'ubuntu-keyring_2026.08.18_all.deb' "$INSTALLER" \
   || fail "Ubuntu archive keyring source package must be documented"
-grep -Fq -- 'fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40' <<<"${runtime_block}" \
+grep -Fq -- 'fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40' "$INSTALLER" \
   || fail "Ubuntu archive keyring source package digest must be documented"
+grep -Fq -- "dpkg-query --show --showformat='\${Package}=\${Version}\\n'" "$INSTALLER" \
+  || fail "installer must record the exact runtime package manifest"
 
-if grep -Fq -- 'APT::Sandbox::User=root' <<<"${runtime_block}"; then
-  fail "runtime must keep APT's default _apt sandbox"
-fi
-
-for insecure_bypass in \
-  allow-unauthenticated \
-  trusted=yes \
-  'Trusted: yes' \
-  AllowInsecureRepositories \
-  AllowDowngradeToInsecureRepositories \
-  'APT::Get::AllowUnauthenticated'; do
-  if grep -Fqi -- "${insecure_bypass}" <<<"${runtime_block}"; then
-    fail "runtime stage must not bypass APT signature verification: ${insecure_bypass}"
+for inspected_content in "$runtime_block" "$installer_content"; do
+  if grep -Fq -- 'APT::Sandbox::User=root' <<<"$inspected_content"; then
+    fail "runtime must keep APT's default _apt sandbox"
+  fi
+  for insecure_bypass in \
+    allow-unauthenticated trusted=yes 'Trusted: yes' AllowInsecureRepositories \
+    AllowDowngradeToInsecureRepositories 'APT::Get::AllowUnauthenticated'; do
+    if grep -Fqi -- "$insecure_bypass" <<<"$inspected_content"; then
+      fail "runtime must not bypass APT signature verification: $insecure_bypass"
+    fi
+  done
+  for unreviewed_key_path in apt-key keyserver.ubuntu.com; do
+    if grep -Fqi -- "$unreviewed_key_path" <<<"$inspected_content"; then
+      fail "runtime must not import an unpinned key: $unreviewed_key_path"
+    fi
+  done
+  if grep -Fq -- '|| true' <<<"$inspected_content"; then
+    fail "runtime must not ignore a failed trust or package operation"
   fi
 done
 
-if grep -Fq -- '|| true' <<<"${runtime_block}"; then
-  fail "runtime stage must not ignore a failed trust or package operation"
-fi
-
-for unreviewed_key_path in apt-key keyserver.ubuntu.com; do
-  if grep -Fqi -- "${unreviewed_key_path}" <<<"${runtime_block}"; then
-    fail "runtime stage must not import an unpinned key: ${unreviewed_key_path}"
-  fi
-done
-
-printf 'PASS: runtime APT sources are hardened before apt-get update\n'
+printf 'PASS: Dockerfile and Docker 18 assembly share one hardened runtime installer\n'
