@@ -25,10 +25,40 @@ printf '%s\n' \
 chmod +x "${TMP_DIR}/bin/python3"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  '[[ "${FAKE_TIMEOUT_RESULT:-0}" == "0" ]] || exit "${FAKE_TIMEOUT_RESULT}"' \
   'while [[ "${1:-}" == --* ]]; do shift; done' \
-  '[[ "${1:-}" == "30s" ]] || exit 98' \
+  'duration="${1:-}"' \
   'shift' \
+  '[[ "${1:-}" == "docker" ]] || exit 97' \
+  'docker_operation="${2:-}"' \
+  'case "${docker_operation}" in' \
+  '  inspect)' \
+  '    if [[ " ${*:3} " == *" --format "* ]]; then' \
+  '      expected_duration="15s"' \
+  '      forced_result="${FAKE_TIMEOUT_IMAGE_ID_INSPECT_RESULT:-0}"' \
+  '    else' \
+  '      expected_duration="15s"' \
+  '      forced_result="${FAKE_TIMEOUT_CACHE_INSPECT_RESULT:-0}"' \
+  '    fi' \
+  '    ;;' \
+  '  pull)' \
+  '    expected_duration="300s"' \
+  '    forced_result="${FAKE_TIMEOUT_PULL_RESULT:-0}"' \
+  '    ;;' \
+  '  run)' \
+  '    expected_duration="30s"' \
+  '    forced_result="${FAKE_TIMEOUT_RUN_RESULT:-0}"' \
+  '    ;;' \
+  '  rm)' \
+  '    expected_duration="15s"' \
+  '    forced_result="${FAKE_TIMEOUT_CLEANUP_RESULT:-0}"' \
+  '    ;;' \
+  '  *) exit 96 ;;' \
+  'esac' \
+  '[[ "${duration}" == "${expected_duration}" ]] || exit 98' \
+  'if [[ -n "${FAKE_TIMEOUT_CALL_LOG:-}" ]]; then' \
+  '  printf "%s %s\n" "${duration}" "$*" >> "${FAKE_TIMEOUT_CALL_LOG}"' \
+  'fi' \
+  '[[ "${forced_result}" == "0" ]] || exit "${forced_result}"' \
   'exec "$@"' \
   > "${TMP_DIR}/bin/timeout"
 chmod +x "${TMP_DIR}/bin/timeout"
@@ -52,6 +82,7 @@ printf '%s\n' \
   '    exit 1' \
   '    ;;' \
   '  run) exit "${FAKE_DOCKER_RUN_RESULT:-0}" ;;' \
+  '  rm) exit "${FAKE_DOCKER_CLEANUP_RESULT:-0}" ;;' \
   '  *) exit 99 ;;' \
   'esac' \
   > "${TMP_DIR}/bin/docker"
@@ -114,6 +145,71 @@ pulled_output="$(
 grep -Fq 'legacy_runtime_probe_image_source=PULLED' <<<"${pulled_output}" \
   || fail "legacy probe must report when it pulled a missing runtime image"
 
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_TIMEOUT_CACHE_INSPECT_RESULT=124 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cache-timeout.out" 2>&1; then
+  fail "legacy probe must fail when the bounded image-cache inspection times out"
+fi
+grep -Fq 'image-cache-inspect=FAILED exit=124' "${TMP_DIR}/cache-timeout.out" \
+  || fail "image-cache timeout must emit an explicit failed-stage record"
+
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_DOCKER_IMAGE_PRESENT=0 \
+  FAKE_TIMEOUT_PULL_RESULT=124 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/pull-timeout.out" 2>&1; then
+  fail "legacy probe must fail when the bounded production-image pull times out"
+fi
+grep -Fq 'image-pull=FAILED exit=124' "${TMP_DIR}/pull-timeout.out" \
+  || fail "image-pull timeout must emit an explicit failed-stage record"
+
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_TIMEOUT_IMAGE_ID_INSPECT_RESULT=124 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/image-id-timeout.out" 2>&1; then
+  fail "legacy probe must fail when the bounded production-image ID inspection times out"
+fi
+grep -Fq 'image-id-inspect=FAILED exit=124' "${TMP_DIR}/image-id-timeout.out" \
+  || fail "image-ID timeout must emit an explicit failed-stage record"
+
+run_timeout_log="${TMP_DIR}/run-timeout.calls"
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_TIMEOUT_RUN_RESULT=124 \
+  FAKE_TIMEOUT_CALL_LOG="${run_timeout_log}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/run-timeout.out" 2>&1; then
+  fail "legacy probe must fail when the bounded runtime probe times out"
+fi
+grep -Fq '30s docker run' "${run_timeout_log}" \
+  || fail "runtime probe must execute through the 30-second Docker daemon bound"
+grep -Fq '15s docker rm -f' "${run_timeout_log}" \
+  || fail "a timed-out runtime probe must still attempt exact-name bounded cleanup"
+grep -Fq 'runtime-probe-run=FAILED exit=124' "${TMP_DIR}/run-timeout.out" \
+  || fail "runtime timeout must emit an explicit failed-stage record"
+
+cleanup_timeout_log="${TMP_DIR}/cleanup-timeout.calls"
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_TIMEOUT_CLEANUP_RESULT=124 \
+  FAKE_TIMEOUT_CALL_LOG="${cleanup_timeout_log}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cleanup-timeout.out" 2>&1; then
+  fail "legacy probe must fail closed when exact-name cleanup times out"
+fi
+grep -Fq '15s docker rm -f' "${cleanup_timeout_log}" \
+  || fail "exact-name cleanup must execute through the 15-second Docker daemon bound"
+grep -Fq 'exact-name-cleanup=FAILED exit=124' "${TMP_DIR}/cleanup-timeout.out" \
+  || fail "cleanup timeout must emit an explicit failed-stage record"
+
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_DOCKER_CLEANUP_RESULT=1 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cleanup-failed.out" 2>&1; then
+  fail "legacy probe must fail closed when exact-name cleanup fails"
+fi
+grep -Fq 'exact-name-cleanup=FAILED exit=1' "${TMP_DIR}/cleanup-failed.out" \
+  || fail "cleanup failure must emit an explicit failed-stage record"
+
 rm -f "${TMP_DIR}/docker-state"
 if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_DOCKER_IMAGE_PRESENT=0 \
@@ -148,12 +244,34 @@ grep -Fq -- 'runtime-compatibility.txt' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must archive the checker-owned compatibility evidence"
 grep -Fq -- 'legacy_libseccomp_version=' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must record the verified Docker 18 libseccomp version"
-grep -Fq -- 'timeout --signal=TERM --kill-after=5s 30s docker run --rm' "${CHECKER}" \
-  || fail "Docker 18 runtime probe must have a hard execution bound"
+grep -Fq -- 'DOCKER_METADATA_TIMEOUT_SECONDS="15"' "${CHECKER}" \
+  || fail "Docker image metadata calls must have a declared hard execution bound"
+grep -Fq -- 'DOCKER_PULL_TIMEOUT_SECONDS="300"' "${CHECKER}" \
+  || fail "Docker image pull must have a declared hard execution bound"
+grep -Fq -- 'DOCKER_PROBE_TIMEOUT_SECONDS="30"' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must have a declared hard execution bound"
+grep -Fq -- 'DOCKER_CLEANUP_TIMEOUT_SECONDS="15"' "${CHECKER}" \
+  || fail "Docker exact-name cleanup must have a declared hard execution bound"
+grep -Fq -- 'bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect "${runtime_image}"' "${CHECKER}" \
+  || fail "runtime image cache inspection must use the Docker daemon bound"
+grep -Fq -- 'bounded_docker "${DOCKER_PULL_TIMEOUT_SECONDS}" pull "${runtime_image}"' "${CHECKER}" \
+  || fail "runtime image pull must use the Docker daemon bound"
+grep -Fq -- 'bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect --format' "${CHECKER}" \
+  || fail "runtime image ID inspection must use the Docker daemon bound"
+grep -Fq -- 'bounded_docker "${DOCKER_PROBE_TIMEOUT_SECONDS}" run' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must use the Docker daemon bound"
+grep -Fq -- 'bounded_docker "${DOCKER_CLEANUP_TIMEOUT_SECONDS}" rm -f "${probe_container}"' "${CHECKER}" \
+  || fail "Docker 18 exact-name cleanup must use the Docker daemon bound"
 grep -Fq -- '--name "${probe_container}"' "${CHECKER}" \
   || fail "Docker 18 runtime probe must use an exact cleanup target"
-grep -Fq -- 'docker rm -f "${probe_container}"' "${CHECKER}" \
-  || fail "Docker 18 runtime probe must clean up a timed-out container"
+grep -Fq -- '--security-opt "seccomp=${legacy_seccomp_profile}"' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must use the reviewed seccomp profile"
+if grep -Fq -- 'bounded_docker "${DOCKER_PROBE_TIMEOUT_SECONDS}" run --rm' "${CHECKER}"; then
+  fail "runtime probe must remain available for deterministic exact-name cleanup"
+fi
+if grep -Eq -- '--security-opt[= ]+seccomp[=:]unconfined' "${CHECKER}" "${ROOT_DIR}/Jenkinsfile.test-env"; then
+  fail "Docker 18 compatibility path must never disable seccomp"
+fi
 if grep -Fq -- "LEGACY_RUNTIME_PROBE_IMAGE" "${ROOT_DIR}/Jenkinsfile.test-env"; then
   fail "pipeline must not duplicate the runtime image pinned by the Dockerfile"
 fi
