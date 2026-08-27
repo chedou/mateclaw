@@ -153,6 +153,7 @@ test -x "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
 "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
   "$docker_server_version" "$docker_security_options" \
   "$SOURCE_DIR/mateclaw-server/Dockerfile" \
+  "$SOURCE_DIR/deploy/seccomp/docker18-clone3.json" \
   > runtime-compatibility.txt \
   || fail "Docker 宿主不满足现代 glibc 的 seccomp 要求；禁止用 seccomp=unconfined 绕过"
 cat runtime-compatibility.txt
@@ -163,7 +164,7 @@ legacy_runtime_probe="$(
   sed -n 's/^legacy_runtime_probe=//p' runtime-compatibility.txt | head -n 1
 )"
 case "$docker_runtime_compatibility:$legacy_runtime_probe" in
-  NATIVE_CLONE3_SECCOMP:NOT_REQUIRED|LEGACY_RUNTIME_PROBE_PASSED:PASSED) ;;
+  NATIVE_CLONE3_SECCOMP:NOT_REQUIRED|LEGACY_CUSTOM_SECCOMP:PASSED) ;;
   *) fail "Docker 兼容性报告不完整或状态不一致" ;;
 esac
 
@@ -652,7 +653,24 @@ if [[ "$OLD_STOPPED" -eq 1 ]]; then
 fi
 
 docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+runtime_security_args=()
+case "$(sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)" in
+  NATIVE_CLONE3_SECCOMP) ;;
+  LEGACY_CUSTOM_SECCOMP)
+    LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
+    expected_seccomp_sha="$(sed -n 's/^legacy_seccomp_profile_sha256=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)"
+    actual_seccomp_sha="$(sha256sum "$LEGACY_SECCOMP_PROFILE" | awk '{print $1}')"
+    [[ -n "$expected_seccomp_sha" && "$actual_seccomp_sha" == "$expected_seccomp_sha" ]] \
+      || { echo "DEPLOY_FAILED: Docker 18 seccomp profile 与预检证据不一致" >&2; false; }
+    runtime_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")
+    ;;
+  *)
+    echo "DEPLOY_FAILED: 缺少有效的 Docker 运行时兼容性结论" >&2
+    false
+    ;;
+esac
 docker run -d \
+  "${runtime_security_args[@]}" \
   --name "$CONTAINER" \
   --restart unless-stopped \
   --env-file "$ENV_FILE" \

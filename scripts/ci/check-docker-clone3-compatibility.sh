@@ -4,18 +4,20 @@ set -euo pipefail
 
 MINIMUM_DOCKER_VERSION="20.10.10"
 REVIEWED_LEGACY_DOCKER_VERSION="18.06.0"
+REVIEWED_LEGACY_SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
 
 fail() {
   printf 'DOCKER_RUNTIME_PRECHECK_FAILED: %s\n' "$1" >&2
   exit 1
 }
 
-[[ "$#" -eq 3 ]] || fail \
-  "usage: $0 <docker-server-version> <docker-security-options> <runtime-dockerfile>"
+[[ "$#" -eq 4 ]] || fail \
+  "usage: $0 <docker-server-version> <docker-security-options> <runtime-dockerfile> <legacy-seccomp-profile>"
 
 raw_version="$1"
 security_options="$2"
 runtime_dockerfile="$3"
+legacy_seccomp_profile="$4"
 if [[ "${raw_version}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([-+].*)?$ ]]; then
   normalized_version="${BASH_REMATCH[1]}"
 else
@@ -49,6 +51,11 @@ fi
 
 [[ "${normalized_version}" == "${REVIEWED_LEGACY_DOCKER_VERSION}" ]] || fail \
   "Docker Server ${raw_version} 低于 ${MINIMUM_DOCKER_VERSION} 且不属于已审核的 ${REVIEWED_LEGACY_DOCKER_VERSION} 兼容例外"
+[[ -f "${legacy_seccomp_profile}" ]] || fail \
+  "Docker 18 clone3 seccomp profile 不存在：${legacy_seccomp_profile}"
+legacy_seccomp_sha256="$(sha256sum "${legacy_seccomp_profile}" | awk '{print $1}')"
+[[ "${legacy_seccomp_sha256}" == "${REVIEWED_LEGACY_SECCOMP_SHA256}" ]] || fail \
+  "Docker 18 clone3 seccomp profile 哈希未通过审核：${legacy_seccomp_sha256}"
 [[ -f "${runtime_dockerfile}" ]] || fail \
   "生产运行 Dockerfile 不存在：${runtime_dockerfile}"
 
@@ -72,14 +79,16 @@ runtime_image_id="$(docker inspect --format '{{.Id}}' "${runtime_image}")"
 [[ -n "${runtime_image_id}" ]] || fail "无法确认生产运行基础镜像 ID"
 
 docker run --rm \
+  --security-opt "seccomp=${legacy_seccomp_profile}" \
   --entrypoint node \
   "${runtime_image}" \
   -e 'const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));' \
-  || fail "Docker ${raw_version} 未能在默认 seccomp 下运行生产基础镜像的线程创建探针"
+  || fail "Docker ${raw_version} 未能在已审核 clone3 seccomp 下运行生产基础镜像的线程创建探针"
 
-printf 'docker_runtime_compatibility=LEGACY_RUNTIME_PROBE_PASSED\n'
+printf 'docker_runtime_compatibility=LEGACY_CUSTOM_SECCOMP\n'
 printf 'legacy_runtime_probe=PASSED\n'
 printf 'legacy_runtime_probe_image=%s\n' "${runtime_image}"
 printf 'legacy_runtime_probe_image_id=%s\n' "${runtime_image_id}"
 printf 'legacy_runtime_probe_image_source=%s\n' "${runtime_image_source}"
+printf 'legacy_seccomp_profile_sha256=%s\n' "${legacy_seccomp_sha256}"
 printf 'docker_server_version=%s\n' "${raw_version}"

@@ -36,8 +36,9 @@
 
 `mateclaw-troubleshooting-release` 仅对现有 Jenkins 构建机的 Docker 18.06.0
 保留一个受控例外；其他低于 20.10.10 的版本一律拒绝。进入该例外时，流水线必须先用与正式运行阶段完全一致的 Playwright 基础镜像，
-在 Docker 默认 seccomp 下实际创建 Node Worker 线程。只有探针真实通过才会继续构建；
-未启用 seccomp、探针未执行或执行失败都会停止发布。该例外不使用
+在基于 Moby `v18.06.0-ce` 官方默认规则、仅补充 `clone3` 的审核 profile 下实际创建 Node Worker 线程。
+profile 固定 SHA-256，预检探针与正式容器必须使用同一文件；只有探针真实通过才会继续构建。
+未启用 seccomp、profile 被修改、探针未执行或执行失败都会停止发布。该例外不使用
 `seccomp=unconfined`，也不改变新部署机仍应使用受支持 Docker 版本的基线要求。
 探针优先验证宿主已缓存、且本次 Docker 构建实际会使用的正式运行基础镜像；
 仅当该镜像不存在时才从仓库拉取，并在发布证据中记录镜像 ID 与来源。
@@ -115,7 +116,7 @@ build arg 固化到镜像，并从 `/actuator/info` 反向验证。因此“未�
 Jenkins 的流水线定义随仓保存在 `Jenkinsfile.test-env`。任务会按以下顺序执行：
 
 1. 从内网 GitLab 检出指定分支，并要求分支头与 `EXPECTED_COMMIT` 完全一致；
-2. 在旧 Docker 上用正式运行基础镜像执行默认 seccomp 线程探针，再从该提交构建带不可变版本号的 Docker 镜像；
+2. 在旧 Docker 上用正式运行基础镜像和已审核的 clone3 seccomp 执行线程探针，再从该提交构建带不可变版本号的 Docker 镜像；
 3. 只读检查当前 Flyway 版本并拒绝任何失败历史；无待执行迁移可直接继续，或只允许内容哈希完全一致的
    `V204 → V217` 基础包、`V217 → V223` 正式排障包、`V223 → V225` ITDB 审批员工包与
    `V225 → V228` 运行态包；

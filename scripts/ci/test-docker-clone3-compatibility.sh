@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECKER="${ROOT_DIR}/scripts/ci/check-docker-clone3-compatibility.sh"
+SECCOMP_PROFILE="${ROOT_DIR}/deploy/seccomp/docker18-clone3.json"
+SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf -- "${TMP_DIR}"' EXIT
 
@@ -43,7 +45,7 @@ expect_pass() {
   local security_options="${2:-name=seccomp,profile=default}"
   local docker_run_result="${3:-0}"
   PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_RUN_RESULT="${docker_run_result}" \
-    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" >/dev/null \
+    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null \
     || fail "expected Docker ${version} to pass"
 }
 
@@ -52,7 +54,7 @@ expect_fail() {
   local security_options="${2:-name=seccomp,profile=default}"
   local docker_run_result="${3:-0}"
   if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_RUN_RESULT="${docker_run_result}" \
-    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" >/dev/null 2>&1; then
+    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
     fail "expected Docker ${version} to fail"
   fi
 }
@@ -78,7 +80,7 @@ pulled_output="$(
   PATH="${TMP_DIR}/bin:${PATH}" \
     FAKE_DOCKER_IMAGE_PRESENT=0 \
     FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
-    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile"
+    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}"
 )"
 grep -Fq 'legacy_runtime_probe_image_source=PULLED' <<<"${pulled_output}" \
   || fail "legacy probe must report when it pulled a missing runtime image"
@@ -88,7 +90,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_DOCKER_IMAGE_PRESENT=0 \
   FAKE_DOCKER_PULL_RESULT=1 \
   FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
-  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" \
   >/dev/null 2>&1; then
   fail "legacy probe must fail when the runtime image is absent and cannot be pulled"
 fi
@@ -96,13 +98,21 @@ fi
 printf 'FROM alpine:3.20\n' > "${TMP_DIR}/wrong-runtime.Dockerfile"
 if PATH="${TMP_DIR}/bin:${PATH}" \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/wrong-runtime.Dockerfile" >/dev/null 2>&1; then
+  "${TMP_DIR}/wrong-runtime.Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
   fail "legacy probe must reject a runtime Dockerfile without the reviewed Playwright base"
 fi
 
 if grep -Fq -- '--security-opt seccomp=unconfined' "${ROOT_DIR}/Jenkinsfile.test-env"; then
   fail "test-environment pipeline must not disable seccomp"
 fi
+[[ "$(sha256sum "${SECCOMP_PROFILE}" | awk '{print $1}')" == "${SECCOMP_SHA256}" ]] \
+  || fail "reviewed Docker 18 seccomp profile hash changed"
+jq -e '.defaultAction == "SCMP_ACT_ERRNO"' "${SECCOMP_PROFILE}" >/dev/null \
+  || fail "Docker 18 seccomp profile must remain default-deny"
+jq -e '[.syscalls[].names[]? | select(. == "clone3")] | length == 1' "${SECCOMP_PROFILE}" >/dev/null \
+  || fail "Docker 18 seccomp profile must allow clone3 exactly once"
+grep -Fq -- 'deploy/seccomp/docker18-clone3.json' "${ROOT_DIR}/Jenkinsfile.test-env" \
+  || fail "pipeline must use the reviewed Docker 18 seccomp profile"
 grep -Fq -- 'mateclaw-server/Dockerfile' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must pass the production Dockerfile to the compatibility checker"
 grep -Fq -- 'runtime-compatibility.txt' "${ROOT_DIR}/Jenkinsfile.test-env" \
