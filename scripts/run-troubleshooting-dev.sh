@@ -9,7 +9,15 @@ fi
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+common_env_file="${repo_root}/.env.local"
 local_env_file="${MATECLAW_TROUBLESHOOTING_ENV_FILE:-${repo_root}/.env.guance.local}"
+
+if [[ -f "${common_env_file}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${common_env_file}"
+  set +a
+fi
 
 if [[ -f "${local_env_file}" ]]; then
   set -a
