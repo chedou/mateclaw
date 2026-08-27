@@ -20,8 +20,18 @@ printf '%s\n' \
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'case "${1:-}" in' \
-  '  pull) exit "${FAKE_DOCKER_PULL_RESULT:-0}" ;;' \
-  '  inspect) printf "sha256:legacy-probe-image\n"; exit 0 ;;' \
+  '  pull)' \
+  '    [[ "${FAKE_DOCKER_PULL_RESULT:-0}" == "0" ]] || exit "${FAKE_DOCKER_PULL_RESULT}"' \
+  '    : > "${FAKE_DOCKER_STATE}"' \
+  '    exit 0' \
+  '    ;;' \
+  '  inspect)' \
+  '    if [[ "${FAKE_DOCKER_IMAGE_PRESENT:-1}" == "1" || -f "${FAKE_DOCKER_STATE}" ]]; then' \
+  '      printf "sha256:legacy-probe-image\n"' \
+  '      exit 0' \
+  '    fi' \
+  '    exit 1' \
+  '    ;;' \
   '  run) exit "${FAKE_DOCKER_RUN_RESULT:-0}" ;;' \
   '  *) exit 99 ;;' \
   'esac' \
@@ -62,6 +72,26 @@ expect_pass '28.3.3'
 expect_fail '20.10.24+dfsg1' 'name=apparmor'
 expect_fail '20.10.24+dfsg1' 'name=seccomp,profile=unconfined'
 expect_fail '20.10.24+dfsg1' 'name=seccomp-disabled'
+
+rm -f "${TMP_DIR}/docker-state"
+pulled_output="$(
+  PATH="${TMP_DIR}/bin:${PATH}" \
+    FAKE_DOCKER_IMAGE_PRESENT=0 \
+    FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
+    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile"
+)"
+grep -Fq 'legacy_runtime_probe_image_source=PULLED' <<<"${pulled_output}" \
+  || fail "legacy probe must report when it pulled a missing runtime image"
+
+rm -f "${TMP_DIR}/docker-state"
+if PATH="${TMP_DIR}/bin:${PATH}" \
+  FAKE_DOCKER_IMAGE_PRESENT=0 \
+  FAKE_DOCKER_PULL_RESULT=1 \
+  FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" \
+  >/dev/null 2>&1; then
+  fail "legacy probe must fail when the runtime image is absent and cannot be pulled"
+fi
 
 printf 'FROM alpine:3.20\n' > "${TMP_DIR}/wrong-runtime.Dockerfile"
 if PATH="${TMP_DIR}/bin:${PATH}" \

@@ -62,8 +62,12 @@ case "${runtime_image}" in
 esac
 
 command -v docker >/dev/null || fail "docker 命令不存在，无法执行旧版本兼容探针"
-docker pull "${runtime_image}" >/dev/null \
-  || fail "无法拉取生产运行基础镜像 ${runtime_image}"
+runtime_image_source="LOCAL_CACHE"
+if ! docker inspect "${runtime_image}" >/dev/null 2>&1; then
+  docker pull "${runtime_image}" >/dev/null \
+    || fail "宿主不存在生产运行基础镜像，且无法拉取 ${runtime_image}"
+  runtime_image_source="PULLED"
+fi
 runtime_image_id="$(docker inspect --format '{{.Id}}' "${runtime_image}")"
 [[ -n "${runtime_image_id}" ]] || fail "无法确认生产运行基础镜像 ID"
 
@@ -77,4 +81,5 @@ printf 'docker_runtime_compatibility=LEGACY_RUNTIME_PROBE_PASSED\n'
 printf 'legacy_runtime_probe=PASSED\n'
 printf 'legacy_runtime_probe_image=%s\n' "${runtime_image}"
 printf 'legacy_runtime_probe_image_id=%s\n' "${runtime_image_id}"
+printf 'legacy_runtime_probe_image_source=%s\n' "${runtime_image_source}"
 printf 'docker_server_version=%s\n' "${raw_version}"
