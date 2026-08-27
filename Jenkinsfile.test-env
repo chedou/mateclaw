@@ -160,6 +160,10 @@ test -x "$SOURCE_DIR/scripts/ci/test-test-env-migration-policy.sh" \
   || fail "缺少可执行的测试环境迁移门禁回归检查"
 "$SOURCE_DIR/scripts/ci/test-test-env-migration-policy.sh" \
   || fail "测试环境迁移门禁回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/test-test-env-optional-itdb.sh" \
+  || fail "缺少可执行的可选 ITDB 接入回归检查"
+"$SOURCE_DIR/scripts/ci/test-test-env-optional-itdb.sh" \
+  || fail "可选 ITDB 接入回归检查失败"
 
 printf '%s\n' "$resolved_commit" > resolved-commit.txt
 if [[ "$ACTION" == "UPGRADE_LIBSECCOMP" ]]; then
@@ -235,33 +239,39 @@ grep -Eq '^DB_HOST=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_HOST"
 grep -Eq '^DB_USERNAME=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_USERNAME"
 grep -Eq '^DB_PASSWORD=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_PASSWORD"
 grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
-grep -Eq '^MATECLAW_ITDB_ENABLED=true$' "$ENV_FILE" \
-  || fail "测试环境必须启用 MATECLAW_ITDB_ENABLED=true"
-grep -Eq '^MATECLAW_ITDB_BASE_URL=https://[^[:space:]]+$' "$ENV_FILE" \
-  || fail "环境文件缺少 HTTPS 的 MATECLAW_ITDB_BASE_URL"
-grep -Eq '^MATECLAW_ITDB_USERNAME=.+$' "$ENV_FILE" \
-  || fail "环境文件缺少 MATECLAW_ITDB_USERNAME"
-grep -Eq '^MATECLAW_ITDB_PASSWORD=.+$' "$ENV_FILE" \
-  || fail "环境文件缺少 MATECLAW_ITDB_PASSWORD"
-grep -Eq '^MATECLAW_ITDB_ALLOWED_HOSTS=.+$' "$ENV_FILE" \
-  || fail "环境文件缺少 MATECLAW_ITDB_ALLOWED_HOSTS"
+itdb_enabled="$(sed -n 's/^MATECLAW_ITDB_ENABLED=//p' "$ENV_FILE" | head -1)"
+itdb_enabled="${itdb_enabled:-false}"
+itdb_integration="DISABLED"
+if [[ "$itdb_enabled" == "true" ]]; then
+  grep -Eq '^MATECLAW_ITDB_BASE_URL=https://[^[:space:]]+$' "$ENV_FILE" \
+    || fail "已启用 ITDB，但环境文件缺少 HTTPS 的 MATECLAW_ITDB_BASE_URL"
+  grep -Eq '^MATECLAW_ITDB_USERNAME=.+$' "$ENV_FILE" \
+    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_USERNAME"
+  grep -Eq '^MATECLAW_ITDB_PASSWORD=.+$' "$ENV_FILE" \
+    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_PASSWORD"
+  grep -Eq '^MATECLAW_ITDB_ALLOWED_HOSTS=.+$' "$ENV_FILE" \
+    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_ALLOWED_HOSTS"
 
-itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' "$ENV_FILE" | head -1)"
-itdb_username="$(sed -n 's/^MATECLAW_ITDB_USERNAME=//p' "$ENV_FILE" | head -1)"
-itdb_password="$(sed -n 's/^MATECLAW_ITDB_PASSWORD=//p' "$ENV_FILE" | head -1)"
-itdb_token_probe="$WORKSPACE/.itdb-token-probe-${BUILD_NUMBER}.json"
-cleanup_itdb_probe() { rm -f -- "$itdb_token_probe"; }
-trap cleanup_itdb_probe EXIT
-curl --fail --silent --show-error --max-time 15 --max-redirs 0 --proto '=https' \
-  --data-urlencode "username=$itdb_username" \
-  --data-urlencode "password=$itdb_password" \
-  -o "$itdb_token_probe" \
-  "$itdb_base_url/api/auth/token/" \
-  || fail "ITDB JWT API 不可直连、发生重定向或账号不可用"
-grep -Eq '"access"[[:space:]]*:' "$itdb_token_probe" \
-  || fail "ITDB JWT API 未返回 access token"
-cleanup_itdb_probe
-trap - EXIT
+  itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' "$ENV_FILE" | head -1)"
+  itdb_username="$(sed -n 's/^MATECLAW_ITDB_USERNAME=//p' "$ENV_FILE" | head -1)"
+  itdb_password="$(sed -n 's/^MATECLAW_ITDB_PASSWORD=//p' "$ENV_FILE" | head -1)"
+  itdb_token_probe="$WORKSPACE/.itdb-token-probe-${BUILD_NUMBER}.json"
+  cleanup_itdb_probe() { rm -f -- "$itdb_token_probe"; }
+  trap cleanup_itdb_probe EXIT
+  curl --fail --silent --show-error --max-time 15 --max-redirs 0 --proto '=https' \
+    --data-urlencode "username=$itdb_username" \
+    --data-urlencode "password=$itdb_password" \
+    -o "$itdb_token_probe" \
+    "$itdb_base_url/api/auth/token/" \
+    || fail "ITDB JWT API 不可直连、发生重定向或账号不可用"
+  grep -Eq '"access"[[:space:]]*:' "$itdb_token_probe" \
+    || fail "ITDB JWT API 未返回 access token"
+  cleanup_itdb_probe
+  trap - EXIT
+  itdb_integration="ENABLED_AND_AUTHENTICATED"
+elif [[ "$itdb_enabled" != "false" ]]; then
+  fail "MATECLAW_ITDB_ENABLED 只允许 true 或 false"
+fi
 
 {
   echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -274,6 +284,7 @@ trap - EXIT
   echo "docker_runtime_compatibility=$docker_runtime_compatibility"
   echo "legacy_runtime_probe=$legacy_runtime_probe"
   echo "legacy_libseccomp_version=${legacy_libseccomp_version:-NOT_REQUIRED}"
+  echo "itdb_integration=$itdb_integration"
   echo "current_container_state=$current_state"
   echo "current_image=$current_image"
   echo "current_health=$current_health"
