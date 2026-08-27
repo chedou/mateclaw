@@ -17,13 +17,12 @@ fail() {
 mkdir -p "${TMP_DIR}/bin"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'if [[ "${1:-}" == "-q" && "${2:-}" == "--qf" && "${4:-}" == "libseccomp" ]]; then' \
-  '  printf "%s" "${FAKE_LIBSECCOMP_VERSION:-2.5.0}"' \
-  '  exit "${FAKE_RPM_RESULT:-0}"' \
-  'fi' \
-  'exit 99' \
-  > "${TMP_DIR}/bin/rpm"
-chmod +x "${TMP_DIR}/bin/rpm"
+  'case "${FAKE_LIBSECCOMP_RESULT:-ok}" in' \
+  '  ok) printf "%s\n" "${FAKE_LIBSECCOMP_VERSION:-2.5.6}" ;;' \
+  '  fail) exit 1 ;;' \
+  'esac' \
+  > "${TMP_DIR}/bin/python3"
+chmod +x "${TMP_DIR}/bin/python3"
 printf '%s\n' \
   'FROM node:22-alpine AS builder' \
   'FROM mcr.microsoft.com/playwright:v1.62.0-noble' \
@@ -76,7 +75,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_VERSION=2.3.1 \
 fi
 grep -Fq 'libseccomp 2.3.1 不认识 clone3' "${TMP_DIR}/old-libseccomp.out" \
   || fail "old libseccomp rejection must explain the real clone3 blocker"
-if PATH="${TMP_DIR}/bin:${PATH}" FAKE_RPM_RESULT=1 \
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_RESULT=fail \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
   "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
   fail "Docker 18 must reject an unverifiable libseccomp installation"

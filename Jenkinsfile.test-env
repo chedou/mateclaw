@@ -11,8 +11,8 @@ pipeline {
   parameters {
     choice(
       name: 'ACTION',
-      choices: ['VERIFY_ONLY', 'DEPLOY'],
-      description: 'VERIFY_ONLY 只构建并执行只读迁移预检；DEPLOY 才会切换测试环境。'
+      choices: ['VERIFY_ONLY', 'UPGRADE_LIBSECCOMP', 'DEPLOY'],
+      description: 'VERIFY_ONLY 只构建并预检；UPGRADE_LIBSECCOMP 仅受控升级 Docker18 宿主 libseccomp；DEPLOY 才切换测试环境。'
     )
     string(
       name: 'BRANCH',
@@ -22,7 +22,7 @@ pipeline {
     string(
       name: 'EXPECTED_COMMIT',
       defaultValue: '',
-      description: '期望发布的完整 40 位 Git SHA。DEPLOY 必填且不一致立即停止。'
+      description: '期望执行的完整 40 位 Git SHA。主机维护和 DEPLOY 必填且不一致立即停止。'
     )
   }
 
@@ -62,8 +62,8 @@ pipeline {
           if (!(params.BRANCH ==~ /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/) || params.BRANCH.contains('..') || params.BRANCH.contains('//') || params.BRANCH.contains('@{') || params.BRANCH.endsWith('/') || params.BRANCH.endsWith('.lock')) {
             error('BRANCH 格式不合法或包含不安全片段')
           }
-          if (params.ACTION == 'DEPLOY' && !(params.EXPECTED_COMMIT ==~ /^[0-9a-fA-F]{40}$/)) {
-            error('DEPLOY 必须提供完整 40 位 EXPECTED_COMMIT')
+          if (params.ACTION in ['DEPLOY', 'UPGRADE_LIBSECCOMP'] && !(params.EXPECTED_COMMIT ==~ /^[0-9a-fA-F]{40}$/)) {
+            error('主机维护和 DEPLOY 必须提供完整 40 位 EXPECTED_COMMIT')
           }
           dir('source') {
             deleteDir()
@@ -114,8 +114,8 @@ esac
 if [[ -n "$EXPECTED_COMMIT" ]]; then
   [[ "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] \
     || fail "EXPECTED_COMMIT 必须是完整 40 位 Git SHA"
-elif [[ "$ACTION" == "DEPLOY" ]]; then
-  fail "DEPLOY 必须提供 EXPECTED_COMMIT，禁止按漂移的分支头发布"
+elif [[ "$ACTION" == "DEPLOY" || "$ACTION" == "UPGRADE_LIBSECCOMP" ]]; then
+  fail "主机维护和 DEPLOY 必须提供 EXPECTED_COMMIT，禁止按漂移的分支头执行"
 fi
 
 SOURCE_DIR="$WORKSPACE/source"
@@ -144,10 +144,43 @@ test -x "$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
   || fail "缺少可执行的 Docker clone3 门禁回归检查"
 "$SOURCE_DIR/scripts/ci/test-docker-clone3-compatibility.sh" \
   || fail "Docker clone3 门禁回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/test-detect-libseccomp-version.sh" \
+  || fail "缺少可执行的 libseccomp 实际版本检测回归检查"
+"$SOURCE_DIR/scripts/ci/test-detect-libseccomp-version.sh" \
+  || fail "libseccomp 实际版本检测回归检查失败"
+test -x "$SOURCE_DIR/scripts/ci/test-libseccomp-maintenance-pipeline.sh" \
+  || fail "缺少可执行的 libseccomp 维护流水线回归检查"
+"$SOURCE_DIR/scripts/ci/test-libseccomp-maintenance-pipeline.sh" \
+  || fail "libseccomp 维护流水线回归检查失败"
+test -x "$SOURCE_DIR/scripts/ops/test-upgrade-libseccomp-docker18.sh" \
+  || fail "缺少可执行的 libseccomp 原子切换与回滚检查"
+"$SOURCE_DIR/scripts/ops/test-upgrade-libseccomp-docker18.sh" \
+  || fail "libseccomp 原子切换与回滚检查失败"
 test -x "$SOURCE_DIR/scripts/ci/test-test-env-migration-policy.sh" \
   || fail "缺少可执行的测试环境迁移门禁回归检查"
 "$SOURCE_DIR/scripts/ci/test-test-env-migration-policy.sh" \
   || fail "测试环境迁移门禁回归检查失败"
+
+printf '%s\n' "$resolved_commit" > resolved-commit.txt
+if [[ "$ACTION" == "UPGRADE_LIBSECCOMP" ]]; then
+  test -x "$SOURCE_DIR/scripts/ci/detect-libseccomp-version.sh" \
+    || fail "缺少可执行的 libseccomp 实际版本检测器"
+  test -x "$SOURCE_DIR/scripts/ops/upgrade-libseccomp-docker18.sh" \
+    || fail "缺少可执行的 libseccomp 受控维护脚本"
+  {
+    echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "action=$ACTION"
+    echo "branch=$BRANCH"
+    echo "resolved_commit=$resolved_commit"
+    echo "docker_server=$docker_server_version"
+    echo "host_maintenance=READY"
+    echo "source_build=INTERNAL_GITLAB_EXACT_COMMIT_CHECKOUT"
+  } > preflight-report.txt
+  cat preflight-report.txt
+  echo "SOURCE_PRECHECK_OK"
+  exit 0
+fi
+
 test -x "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
   || fail "缺少可执行的 Docker clone3 兼容性检查"
 "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
@@ -171,7 +204,6 @@ case "$docker_runtime_compatibility:$legacy_runtime_probe" in
   *) fail "Docker 兼容性报告不完整或状态不一致" ;;
 esac
 
-printf '%s\n' "$resolved_commit" > resolved-commit.txt
 printf 'mateclaw-troubleshooting:%s-mysql\n' "${resolved_commit:0:12}" > target-image.txt
 
 current_state="ABSENT"
@@ -254,7 +286,82 @@ echo "SOURCE_PRECHECK_OK"
       }
     }
 
+    stage('Docker18 libseccomp 受控维护') {
+      when {
+        expression { params.ACTION == 'UPGRADE_LIBSECCOMP' }
+      }
+      steps {
+        sh '''#!/usr/bin/env bash
+set +x
+set -Eeuo pipefail
+umask 077
+
+SOURCE_DIR="$WORKSPACE/source"
+UPGRADER="$SOURCE_DIR/scripts/ops/upgrade-libseccomp-docker18.sh"
+PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
+DETECTOR="$SOURCE_DIR/scripts/ci/detect-libseccomp-version.sh"
+STATE_DIR="/opt/mateclaw/libseccomp-maintenance"
+
+before_container_id="ABSENT"
+before_started_at="ABSENT"
+before_image="ABSENT"
+before_health="NOT_APPLICABLE"
+if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+  before_container_id="$(docker inspect --format '{{.Id}}' "$CONTAINER")"
+  before_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$CONTAINER")"
+  before_image="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
+  curl -fsS --max-time 5 "$HEALTH_URL" > libseccomp-before-health.json
+  before_health="UP"
+fi
+before_running_count="$(docker ps -q | wc -l | tr -d ' ')"
+
+"$UPGRADER" --all "$PROFILE" | tee libseccomp-maintenance.txt
+grep -Fxq 'LIBSECCOMP_PREPARE_OK' libseccomp-maintenance.txt
+grep -Fxq 'LIBSECCOMP_ACTIVATION_OK' libseccomp-maintenance.txt
+[[ "$("$DETECTOR")" == '2.5.6' ]]
+
+after_container_id="ABSENT"
+after_started_at="ABSENT"
+after_image="ABSENT"
+after_health="NOT_APPLICABLE"
+if [[ "$before_container_id" != "ABSENT" ]]; then
+  after_container_id="$(docker inspect --format '{{.Id}}' "$CONTAINER")"
+  after_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$CONTAINER")"
+  after_image="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
+  [[ "$after_container_id" == "$before_container_id" ]]
+  [[ "$after_started_at" == "$before_started_at" ]]
+  [[ "$after_image" == "$before_image" ]]
+  curl -fsS --max-time 5 "$HEALTH_URL" > libseccomp-after-health.json
+  after_health="UP"
+fi
+after_running_count="$(docker ps -q | wc -l | tr -d ' ')"
+
+cp "$STATE_DIR/prepare-report.txt" libseccomp-prepare-report.txt
+cp "$STATE_DIR/activation-report.txt" libseccomp-activation-report.txt
+{
+  echo "before_container_id=$before_container_id"
+  echo "after_container_id=$after_container_id"
+  echo "before_started_at=$before_started_at"
+  echo "after_started_at=$after_started_at"
+  echo "before_image=$before_image"
+  echo "after_image=$after_image"
+  echo "before_health=$before_health"
+  echo "after_health=$after_health"
+  echo "before_running_count=$before_running_count"
+  echo "after_running_count=$after_running_count"
+  echo "loaded_libseccomp_version=$("$DETECTOR")"
+  echo "existing_mateclaw_restarted=NO"
+} > libseccomp-host-continuity.txt
+cat libseccomp-host-continuity.txt
+echo 'LIBSECCOMP_HOST_MAINTENANCE_OK'
+'''
+      }
+    }
+
     stage('构建不可变镜像') {
+      when {
+        expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }
+      }
       steps {
         sh '''#!/usr/bin/env bash
 set +x
@@ -286,6 +393,9 @@ echo "IMAGE_BUILD_OK: $(cat candidate-image-id.txt)"
     }
 
     stage('镜像与迁移安全检查') {
+      when {
+        expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }
+      }
       steps {
         sh '''#!/usr/bin/env bash
 set +x
@@ -787,7 +897,7 @@ if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
 fi
 '''
       archiveArtifacts(
-        artifacts: 'preflight-report.txt,runtime-compatibility.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt',
+        artifacts: 'preflight-report.txt,runtime-compatibility.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
         allowEmptyArchive: true,
         fingerprint: true
       )

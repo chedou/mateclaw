@@ -52,12 +52,12 @@ fi
 
 [[ "${normalized_version}" == "${REVIEWED_LEGACY_DOCKER_VERSION}" ]] || fail \
   "Docker Server ${raw_version} 低于 ${MINIMUM_DOCKER_VERSION} 且不属于已审核的 ${REVIEWED_LEGACY_DOCKER_VERSION} 兼容例外"
-command -v rpm >/dev/null || fail \
-  "Docker 18 兼容例外只能在可核验 libseccomp RPM 的已审核宿主上使用"
-legacy_libseccomp_version="$(rpm -q --qf '%{VERSION}' libseccomp 2>/dev/null)" || fail \
-  "Docker 18 宿主未安装可核验的 libseccomp"
-[[ "${legacy_libseccomp_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail \
-  "无法解析 Docker 18 宿主的 libseccomp 版本：${legacy_libseccomp_version:-EMPTY}"
+checker_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+libseccomp_detector="${checker_dir}/detect-libseccomp-version.sh"
+[[ -x "${libseccomp_detector}" ]] || fail \
+  "缺少可执行的实际 libseccomp 版本检测器：${libseccomp_detector}"
+legacy_libseccomp_version="$("${libseccomp_detector}")" || fail \
+  "无法核验 Docker 18 宿主实际加载的 libseccomp"
 lowest_libseccomp_version="$(
   printf '%s\n%s\n' "${MINIMUM_LEGACY_LIBSECCOMP_VERSION}" "${legacy_libseccomp_version}" \
     | sort -V \

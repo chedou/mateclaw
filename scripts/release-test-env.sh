@@ -188,12 +188,16 @@ if ! has_parameter EXPECTED_COMMIT; then
 fi
 requested_action="$(parameter_value ACTION)"
 case "$requested_action" in
-    DEPLOY|VERIFY_ONLY) ;;
-    *) die "ACTION must be DEPLOY or VERIFY_ONLY" ;;
+    DEPLOY|VERIFY_ONLY|UPGRADE_LIBSECCOMP) ;;
+    *) die "ACTION must be DEPLOY, VERIFY_ONLY or UPGRADE_LIBSECCOMP" ;;
 esac
 if [ "$requested_action" = "VERIFY_ONLY" ]; then
     VERIFY_SITE=false
     log "VERIFY_ONLY requested: deployed-site verification is skipped because no cutover occurs"
+fi
+if [ "$requested_action" = "UPGRADE_LIBSECCOMP" ]; then
+    VERIFY_SITE=false
+    log "UPGRADE_LIBSECCOMP requested: deployed-site identity verification is skipped because no application cutover occurs"
 fi
 log "expected release commit: $EXPECTED_COMMIT"
 JOB_PATH=""
