@@ -12,6 +12,14 @@ fail() {
   exit 1
 }
 
+grep -Fq 'syscalls.perf.c' "${UPGRADER}" \
+  || fail "official release must use its pre-generated syscall table"
+grep -Fq 'GPERF="${gperf_guard}"' "${UPGRADER}" \
+  || fail "build must fail if it unexpectedly tries to regenerate the syscall table"
+if grep -Eq '(^|[[:space:]])(yum|dnf)[[:space:]]+.*install' "${UPGRADER}"; then
+  fail "shared host maintenance must not install build packages"
+fi
+
 mkdir -p "${TMP_DIR}/host/lib64" "${TMP_DIR}/prefix/lib64" "${TMP_DIR}/bin"
 printf 'old-library\n' > "${TMP_DIR}/host/lib64/libseccomp.so.2.3.1"
 ln -s libseccomp.so.2.3.1 "${TMP_DIR}/host/lib64/libseccomp.so.2"

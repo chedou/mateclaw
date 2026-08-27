@@ -85,9 +85,27 @@ prepare_library() {
   tar -xzf "${tarball}" -C "${build_dir}"
   source_dir="${build_dir}/libseccomp-${VERSION}"
   [[ -x "${source_dir}/configure" ]] || fail "发布源码缺少 configure"
+  generated_perf="${source_dir}/src/syscalls.perf"
+  generated_perf_c="${source_dir}/src/syscalls.perf.c"
+  syscall_csv="${source_dir}/src/syscalls.csv"
+  perf_template="${source_dir}/src/syscalls.perf.template"
+  [[ -f "${generated_perf}" && -f "${generated_perf_c}" ]] \
+    || fail "官方发布源码缺少预生成 syscall 表"
+  [[ "${generated_perf}" -nt "${syscall_csv}" \
+    && "${generated_perf}" -nt "${perf_template}" \
+    && "${generated_perf_c}" -nt "${generated_perf}" ]] \
+    || fail "官方发布源码的预生成 syscall 表时间戳不可信"
+  gperf_guard="${build_dir}/reject-gperf-regeneration"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'echo "unexpected syscall table regeneration" >&2' \
+    'exit 98' \
+    > "${gperf_guard}"
+  chmod 0700 "${gperf_guard}"
   (
     cd "${source_dir}"
-    ./configure --prefix="${PREFIX}" --libdir="${PREFIX}/lib64" --disable-python
+    GPERF="${gperf_guard}" \
+      ./configure --prefix="${PREFIX}" --libdir="${PREFIX}/lib64" --disable-python
     make -j2
     make install
   )
