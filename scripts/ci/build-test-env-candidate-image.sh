@@ -93,10 +93,7 @@ cleanup() {
 trap 'cleanup || true' EXIT
 
 bounded_docker "$docker_command_timeout" image rm "$candidate_image" >/dev/null 2>&1 || true
-runtime_base_image_id="$(bounded_docker "$docker_command_timeout" inspect --format '{{.Id}}' "$runtime_base_image_ref")" \
-  || fail "无法确认 Dockerfile 最终基础镜像的不可变 ID"
-[[ -n "$runtime_base_image_id" ]] || fail "Dockerfile 最终基础镜像 ID 为空"
-
+runtime_base_image_id='NOT_REQUIRED'
 artifact_image_id='NOT_REQUIRED'
 artifact_container_id='NOT_REQUIRED'
 assembly_container_id='NOT_REQUIRED'
@@ -129,6 +126,9 @@ case "$build_mode" in
     legacy_seccomp_sha256="$(sha256sum "$legacy_seccomp_profile" | awk '{print $1}')"
     [[ "$legacy_seccomp_sha256" == "$reviewed_seccomp_sha256" ]] \
       || fail "Docker 18 seccomp profile 哈希未通过审核：$legacy_seccomp_sha256"
+    runtime_base_image_id="$(bounded_docker "$docker_command_timeout" inspect --format '{{.Id}}' "$runtime_base_image_ref")" \
+      || fail "无法确认 Docker 18 预检已拉取基础镜像的不可变 ID"
+    [[ -n "$runtime_base_image_id" ]] || fail "Docker 18 基础镜像 ID 为空"
 
     bounded_docker "$build_timeout" build \
       --target builder \

@@ -54,7 +54,10 @@ case "$cmd" in
       *'.Config.ExposedPorts'*:*) printf '18088/tcp\n1455/tcp\n' ;;
       *'.RootFS.Layers'*:sha256:pinned-playwright-base) printf 'sha256:base-layer-1\nsha256:base-layer-2\n' ;;
       *'.RootFS.Layers'*:mateclaw:test-candidate) printf 'sha256:base-layer-1\nsha256:base-layer-2\nsha256:candidate-layer\n' ;;
-      *'.Id'*:mcr.microsoft.com/playwright:*) printf 'sha256:pinned-playwright-base\n' ;;
+      *'.Id'*:mcr.microsoft.com/playwright:*)
+        [[ "${FAKE_BASE_INSPECT_FAIL:-0}" != 1 ]] || exit 92
+        printf 'sha256:pinned-playwright-base\n'
+        ;;
       *'.Id'*:*'-builder') printf 'sha256:builder-artifact\n' ;;
       *'.Id'*:mateclaw-runtime-assembly-*) printf 'sha256:assembly-container\n' ;;
       *'.Id'*:*) printf 'sha256:candidate-image\n' ;;
@@ -194,6 +197,7 @@ native_log="$TMP_DIR/native-docker.log"
 : > "$native_log"
 PATH="$TMP_DIR/bin:$PATH" \
 FAKE_DOCKER_LOG="$native_log" FAKE_TIMEOUT_LOG="$TMP_DIR/native-timeout.log" \
+FAKE_BASE_INSPECT_FAIL=1 \
   "$BUILDER" NATIVE_CLONE3_SECCOMP "$release_commit" "$ROOT_DIR" \
   'mateclaw:native-candidate' "$SECCOMP_PROFILE" \
   "$TMP_DIR/native-evidence.txt" "$TMP_DIR/native-packages.txt" >/dev/null
@@ -204,6 +208,8 @@ if grep -Fq '<--target> <builder>' "$native_log"; then
 fi
 grep -Fq 'docker_build_security_mode=NATIVE_FULL_DOCKERFILE' "$TMP_DIR/native-evidence.txt" \
   || fail "modern evidence must identify the full Dockerfile build"
+grep -Fq 'runtime_base_image_id=NOT_REQUIRED' "$TMP_DIR/native-evidence.txt" \
+  || fail "modern cold-cache builds must not depend on a pre-existing runtime base tag"
 grep -Fq '3600 docker build --build-arg' "$TMP_DIR/native-timeout.log" \
   || fail "full Dockerfile build must be bounded"
 
