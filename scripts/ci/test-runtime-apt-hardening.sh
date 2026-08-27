@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKERFILE="${ROOT_DIR}/mateclaw-server/Dockerfile"
 KEYRING_B64="${ROOT_DIR}/mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64"
-EXPECTED_KEYRING_SHA256="80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31"
+EXPECTED_KEYRING_SHA256="655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -81,8 +81,12 @@ grep -Fq -- 'chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.g
   || fail "APT keyring directories must be traversable by the _apt user"
 grep -Fq -- '-exec chmod a+r {} +' <<<"${runtime_block}" \
   || fail "keyring repair must grant read access without weakening write permissions"
-grep -Fq -- 'echo "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31  /tmp/ubuntu-archive-keyring.gpg"' <<<"${runtime_block}" \
+grep -Fq -- 'echo "655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835  /tmp/ubuntu-archive-keyring.gpg"' <<<"${runtime_block}" \
   || fail "Ubuntu archive keyring digest must be fixed in the build instruction"
+grep -Fq -- 'ubuntu-keyring_2026.08.18_all.deb' <<<"${runtime_block}" \
+  || fail "Ubuntu archive keyring source package must be documented"
+grep -Fq -- 'fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40' <<<"${runtime_block}" \
+  || fail "Ubuntu archive keyring source package digest must be documented"
 
 if grep -Fq -- 'APT::Sandbox::User=root' <<<"${runtime_block}"; then
   fail "runtime must keep APT's default _apt sandbox"

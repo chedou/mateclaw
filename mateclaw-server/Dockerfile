@@ -119,13 +119,17 @@ ARG MATECLAW_RELEASE_COMMIT=unknown
 # installing our runtime packages. Jenkins' Docker 18.06 + legacy overlay has
 # also exposed inherited keyrings without read permission for the `_apt` user;
 # restore the pinned Ubuntu archive keyring and its read access explicitly
-# instead of disabling signature verification.
+# instead of disabling signature verification. The keyring is extracted from
+# Ubuntu's official ubuntu-keyring_2026.08.18_all.deb package (package SHA-256
+# fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40),
+# which carries the renewed 2018 archive signing certificate required after
+# the older certificate expired in 2026.
 COPY mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64 /tmp/ubuntu-archive-keyring.gpg.b64
 RUN rm -f /etc/apt/sources.list.d/nodesource.list \
         /etc/apt/sources.list.d/nodesource.sources \
     && base64 --decode < /tmp/ubuntu-archive-keyring.gpg.b64 \
         > /tmp/ubuntu-archive-keyring.gpg \
-    && echo "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31  /tmp/ubuntu-archive-keyring.gpg" \
+    && echo "655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835  /tmp/ubuntu-archive-keyring.gpg" \
         | sha256sum --check --strict - \
     && install -m 0644 /tmp/ubuntu-archive-keyring.gpg /usr/share/keyrings/ubuntu-archive-keyring.gpg \
     && install -m 0644 /tmp/ubuntu-archive-keyring.gpg /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg \
