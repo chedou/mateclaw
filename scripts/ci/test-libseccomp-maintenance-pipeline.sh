@@ -27,6 +27,12 @@ grep -Fq 'libseccomp-activation-report.txt' "${PIPELINE}" \
   || fail "pipeline must archive the activation and probe report"
 grep -Fq "expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }" "${PIPELINE}" \
   || fail "image build and migration stages must be skipped during host maintenance"
+grep -Fq 'build_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")' "${PIPELINE}" \
+  || fail "Docker 18 image build must use the same reviewed clone3 seccomp profile as runtime"
+grep -Fq 'build_security_mode="LEGACY_CUSTOM_SECCOMP"' "${PIPELINE}" \
+  || fail "pipeline must record the Docker 18 image-build security mode"
+grep -Fq 'build-security.txt' "${PIPELINE}" \
+  || fail "pipeline must archive image-build seccomp evidence"
 if grep -Fq -- '--security-opt seccomp=unconfined' "${PIPELINE}" "${RELEASE_SCRIPT}"; then
   fail "maintenance and release must never disable seccomp"
 fi
