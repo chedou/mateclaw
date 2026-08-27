@@ -4,13 +4,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.io.ByteArrayOutputStream;
+import java.net.Proxy;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -49,11 +59,27 @@ class ItDbHttpWorkflowGatewayTest {
         assertEquals(35398L, result.workflowId());
         assertEquals(2, result.workflowType());
         assertEquals("owner", result.currentAudit());
+
+        ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client, times(2)).send(requests.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest loginRequest = requests.getAllValues().get(0);
+        assertEquals(URI.create("http://itdb.sangfor.com/api/auth/token/"), loginRequest.uri());
+        assertEquals("POST", loginRequest.method());
+        assertFalse(loginRequest.headers().firstValue("Authorization").isPresent());
+        assertFalse(loginRequest.headers().firstValue("Cookie").isPresent());
+        String loginBody = body(loginRequest);
+        assertTrue(loginBody.contains("\"username\":\"reviewer\""));
+        assertTrue(loginBody.contains("\"password\":\"not-a-real-secret\""));
+
+        HttpRequest pendingRequest = requests.getAllValues().get(1);
+        assertEquals(URI.create("http://itdb.sangfor.com/api/v1/workflow/auditlist/"), pendingRequest.uri());
+        assertEquals("Bearer access-token", pendingRequest.headers().firstValue("Authorization").orElseThrow());
+        assertFalse(pendingRequest.headers().firstValue("Cookie").isPresent());
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void refusesAccessGatewayRedirectWithoutForwardingCredentials() throws Exception {
+    void refusesUnexpectedRedirectWithoutForwardingCredentials() throws Exception {
         HttpClient client = mock(HttpClient.class);
         HttpResponse<String> redirect = response(307, "");
         when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
@@ -63,32 +89,23 @@ class ItDbHttpWorkflowGatewayTest {
         ItDbWorkflowException error = assertThrows(
                 ItDbWorkflowException.class, gateway::pendingRequests);
 
-        assertEquals("ITDB_ACCESS_GATEWAY_REQUIRED", error.code());
+        assertEquals("ITDB_REDIRECT_REFUSED", error.code());
+        ArgumentCaptor<HttpRequest> request = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client, times(1)).send(request.capture(), any(HttpResponse.BodyHandler.class));
+        assertEquals(URI.create("http://itdb.sangfor.com/api/auth/token/"), request.getValue().uri());
+        assertFalse(request.getValue().headers().firstValue("Authorization").isPresent());
+        assertFalse(request.getValue().headers().firstValue("Cookie").isPresent());
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void sendsConfiguredAccessGatewayCookieOnlyAsARequestHeader() throws Exception {
-        HttpClient client = mock(HttpClient.class);
-        HttpResponse<String> login = response(200,
-                "{\"access\":\"access-token\",\"refresh\":\"refresh-token\"}");
-        HttpResponse<String> pending = response(200, "{\"results\":[]}");
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(login, pending);
-        ItDbWorkflowProperties properties = properties();
-        properties.setGatewayCookie("sdp_user_token=test-gateway-token; sdp_app_session-443=test-session");
-        ItDbHttpWorkflowGateway gateway = new ItDbHttpWorkflowGateway(properties, objectMapper, client);
+    void directClientBypassesSystemProxyPinsHttp11AndRefusesRedirects() {
+        HttpClient client = ItDbHttpWorkflowGateway.directHttpClient(properties());
 
-        gateway.pendingRequests();
-
-        ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(client, times(2)).send(requests.capture(), any(HttpResponse.BodyHandler.class));
-        List<HttpRequest> sent = requests.getAllValues();
-        assertEquals(2, sent.size());
-        for (HttpRequest request : sent) {
-            assertEquals("sdp_user_token=test-gateway-token; sdp_app_session-443=test-session",
-                    request.headers().firstValue("Cookie").orElseThrow());
-        }
+        assertEquals(HttpClient.Version.HTTP_1_1, client.version());
+        assertEquals(HttpClient.Redirect.NEVER, client.followRedirects());
+        List<Proxy> proxies = client.proxy().orElseThrow()
+                .select(URI.create("http://itdb.sangfor.com/api/auth/token/"));
+        assertEquals(List.of(Proxy.NO_PROXY), proxies);
     }
 
     @Test
@@ -118,6 +135,7 @@ class ItDbHttpWorkflowGatewayTest {
         properties.setEnabled(true);
         properties.setUsername("reviewer");
         properties.setPassword("not-a-real-secret");
+        properties.setAllowInsecureHttp(true);
         return properties;
     }
 
@@ -127,5 +145,34 @@ class ItDbHttpWorkflowGatewayTest {
         when(response.statusCode()).thenReturn(status);
         when(response.body()).thenReturn(body);
         return response;
+    }
+
+    private static String body(HttpRequest request) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        CompletableFuture<String> completed = new CompletableFuture<>();
+        request.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(ByteBuffer item) {
+                byte[] bytes = new byte[item.remaining()];
+                item.get(bytes);
+                output.writeBytes(bytes);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                completed.completeExceptionally(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                completed.complete(output.toString(StandardCharsets.UTF_8));
+            }
+        });
+        return completed.get(1, TimeUnit.SECONDS);
     }
 }

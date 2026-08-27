@@ -15,13 +15,13 @@ import java.util.List;
 public class ItDbWorkflowProperties {
 
     private boolean enabled;
-    private String baseUrl = "https://itdb.atrust.sangfor.com";
+    private String baseUrl = "http://itdb.sangfor.com";
     private String username = "";
     private String password = "";
-    private String gatewayCookie = "";
+    private boolean allowInsecureHttp;
     private Duration connectTimeout = Duration.ofSeconds(5);
     private Duration readTimeout = Duration.ofSeconds(20);
-    private List<String> allowedHosts = new ArrayList<>(List.of("itdb.atrust.sangfor.com"));
+    private List<String> allowedHosts = new ArrayList<>(List.of("itdb.sangfor.com"));
 
     public boolean configured() {
         return enabled && username != null && !username.isBlank()
@@ -35,8 +35,14 @@ public class ItDbWorkflowProperties {
         } catch (IllegalArgumentException e) {
             throw new ItDbWorkflowException("INVALID_BASE_URL", "ITDB base URL is invalid");
         }
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
-            throw new ItDbWorkflowException("INVALID_BASE_URL", "ITDB base URL must use HTTPS");
+        if (uri.getHost() == null) {
+            throw new ItDbWorkflowException("INVALID_BASE_URL", "ITDB base URL must include a host");
+        }
+        boolean https = "https".equalsIgnoreCase(uri.getScheme());
+        boolean explicitlyAllowedHttp = allowInsecureHttp && "http".equalsIgnoreCase(uri.getScheme());
+        if (!https && !explicitlyAllowedHttp) {
+            throw new ItDbWorkflowException("INVALID_BASE_URL",
+                    "ITDB base URL must use HTTPS unless trusted-network HTTP is explicitly enabled");
         }
         boolean allowed = allowedHosts != null && allowedHosts.stream()
                 .filter(host -> host != null && !host.isBlank())
@@ -51,14 +57,4 @@ public class ItDbWorkflowProperties {
         return URI.create(normalized);
     }
 
-    public String validatedGatewayCookie() {
-        if (gatewayCookie == null || gatewayCookie.isBlank()) {
-            return "";
-        }
-        if (gatewayCookie.indexOf('\r') >= 0 || gatewayCookie.indexOf('\n') >= 0) {
-            throw new ItDbWorkflowException("INVALID_GATEWAY_COOKIE",
-                    "ITDB access gateway cookie contains invalid control characters");
-        }
-        return gatewayCookie.strip();
-    }
 }

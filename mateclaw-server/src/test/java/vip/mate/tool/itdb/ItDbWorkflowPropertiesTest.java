@@ -10,31 +10,38 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ItDbWorkflowPropertiesTest {
 
     @Test
-    void defaultEndpointUsesHttpsAndExactAllowedHost() {
+    void defaultEndpointUsesDocumentedInternalHostButRequiresExplicitHttpOptIn() {
         ItDbWorkflowProperties properties = new ItDbWorkflowProperties();
 
-        assertEquals("https://itdb.atrust.sangfor.com", properties.validatedBaseUri().toString());
+        assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
+
+        properties.setAllowInsecureHttp(true);
+        assertEquals("http://itdb.sangfor.com", properties.validatedBaseUri().toString());
     }
 
     @Test
     void rejectsHttpAndHostsOutsideDeploymentAllowlist() {
         ItDbWorkflowProperties properties = new ItDbWorkflowProperties();
-        properties.setBaseUrl("http://itdb.atrust.sangfor.com");
+        properties.setBaseUrl("http://itdb.sangfor.com");
         assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
 
         properties.setBaseUrl("https://example.com");
-        properties.setAllowedHosts(List.of("itdb.atrust.sangfor.com"));
+        properties.setAllowedHosts(List.of("itdb.sangfor.com"));
         assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
     }
 
     @Test
-    void rejectsGatewayCookieHeaderInjection() {
+    void allowsExplicitInternalHttpEndpointWithoutAllowingOtherHosts() {
         ItDbWorkflowProperties properties = new ItDbWorkflowProperties();
-        properties.setGatewayCookie("sdp_user_token=ok\r\nX-Injected: true");
+        properties.setBaseUrl("http://itdb.sangfor.com");
+        properties.setAllowedHosts(List.of("itdb.sangfor.com"));
 
-        ItDbWorkflowException error = assertThrows(
-                ItDbWorkflowException.class, properties::validatedGatewayCookie);
+        assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
 
-        assertEquals("INVALID_GATEWAY_COOKIE", error.code());
+        properties.setAllowInsecureHttp(true);
+        assertEquals("http://itdb.sangfor.com", properties.validatedBaseUri().toString());
+
+        properties.setBaseUrl("http://example.com");
+        assertThrows(ItDbWorkflowException.class, properties::validatedBaseUri);
     }
 }

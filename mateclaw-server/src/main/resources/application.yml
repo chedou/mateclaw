@@ -138,18 +138,16 @@ mateclaw:
     # Controlled ITDB API integration for SQL approval employees. Credentials
     # are deployment secrets: never persist them in an Agent prompt, Skill, or DB row.
     enabled: ${MATECLAW_ITDB_ENABLED:false}
-    base-url: ${MATECLAW_ITDB_BASE_URL:https://itdb.atrust.sangfor.com}
+    base-url: ${MATECLAW_ITDB_BASE_URL:http://itdb.sangfor.com}
     username: ${MATECLAW_ITDB_USERNAME:}
     password: ${MATECLAW_ITDB_PASSWORD:}
-    # Optional aTrust Web Proxy session for local/test deployments where the
-    # server does not have a dedicated service route. Treat it as a secret and
-    # renew it when aTrust expires the browser session.
-    gateway-cookie: ${MATECLAW_ITDB_GATEWAY_COOKIE:}
+    # The documented internal ITDB API is HTTP-only. Keep this false outside
+    # the trusted Sangfor network so credentials and JWTs are never sent in plaintext.
+    allow-insecure-http: ${MATECLAW_ITDB_ALLOW_INSECURE_HTTP:false}
     connect-timeout: ${MATECLAW_ITDB_CONNECT_TIMEOUT:5s}
     read-timeout: ${MATECLAW_ITDB_READ_TIMEOUT:20s}
-    # Exact hosts only. The client also requires HTTPS and refuses redirects to
-    # the aTrust browser gateway so credentials cannot be forwarded there.
-    allowed-hosts: ${MATECLAW_ITDB_ALLOWED_HOSTS:itdb.atrust.sangfor.com}
+    # Exact hosts only. Redirects are refused so credentials cannot be forwarded.
+    allowed-hosts: ${MATECLAW_ITDB_ALLOWED_HOSTS:itdb.sangfor.com}
   troubleshooting:
     # Absolute browser origin used in IM deep links. In a reverse-proxy
     # deployment this normally equals MATECLAW_PUBLIC_BASE_URL; local channel

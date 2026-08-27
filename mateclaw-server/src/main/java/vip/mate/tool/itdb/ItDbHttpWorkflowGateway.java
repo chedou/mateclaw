@@ -8,6 +8,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -24,6 +27,17 @@ import java.util.Map;
 class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
 
     private static final int SQL_WORKFLOW_TYPE = 2;
+    private static final ProxySelector DIRECT_PROXY_SELECTOR = new ProxySelector() {
+        @Override
+        public List<Proxy> select(URI uri) {
+            return List.of(Proxy.NO_PROXY);
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress address, IOException failure) {
+            // Direct connections do not have a proxy endpoint to quarantine.
+        }
+    };
 
     private final ItDbWorkflowProperties properties;
     private final ObjectMapper objectMapper;
@@ -35,10 +49,20 @@ class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
 
     @Autowired
     ItDbHttpWorkflowGateway(ItDbWorkflowProperties properties, ObjectMapper objectMapper) {
-        this(properties, objectMapper, HttpClient.newBuilder()
+        this(properties, objectMapper, directHttpClient(properties));
+    }
+
+    static HttpClient directHttpClient(ItDbWorkflowProperties properties) {
+        return HttpClient.newBuilder()
                 .connectTimeout(nonNullDuration(properties.getConnectTimeout(), Duration.ofSeconds(5)))
                 .followRedirects(HttpClient.Redirect.NEVER)
-                .build());
+                // macOS may expose a browser-oriented system proxy. The documented
+                // internal ITDB endpoint must be reached directly instead.
+                .proxy(DIRECT_PROXY_SELECTOR)
+                // The documented internal endpoint is cleartext HTTP and its
+                // network path resets h2c upgrade attempts. Pin direct calls to HTTP/1.1.
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     ItDbHttpWorkflowGateway(ItDbWorkflowProperties properties,
@@ -211,10 +235,6 @@ class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
                 .timeout(nonNullDuration(properties.getReadTimeout(), Duration.ofSeconds(20)))
                 .header("Accept", "application/json")
                 .header("User-Agent", "MateClaw-ITDB-Approval/1.0");
-        String gatewayCookie = properties.validatedGatewayCookie();
-        if (!gatewayCookie.isBlank()) {
-            builder.header("Cookie", gatewayCookie);
-        }
         if (token != null && !token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);
         }
@@ -230,15 +250,16 @@ class ItDbHttpWorkflowGateway implements ItDbWorkflowGateway {
             Thread.currentThread().interrupt();
             throw new ItDbWorkflowException("ITDB_INTERRUPTED", "ITDB request was interrupted");
         } catch (IOException e) {
-            throw new ItDbWorkflowException("ITDB_UNREACHABLE", "ITDB could not be reached from the MateClaw server");
+            throw new ItDbWorkflowException("ITDB_UNREACHABLE",
+                    "ITDB could not be reached from the MateClaw server", e);
         }
     }
 
     private JsonNode parseSuccessfulResponse(HttpResponse<String> response) {
         int status = response.statusCode();
         if (status >= 300 && status < 400) {
-            throw new ItDbWorkflowException("ITDB_ACCESS_GATEWAY_REQUIRED",
-                    "ITDB redirected to the aTrust access gateway; configure a server-authorized API route or renew the configured gateway session");
+            throw new ItDbWorkflowException("ITDB_REDIRECT_REFUSED",
+                    "ITDB API redirected unexpectedly; verify MATECLAW_ITDB_BASE_URL points to the direct API endpoint");
         }
         if (status < 200 || status >= 300) {
             throw new ItDbWorkflowException("ITDB_HTTP_" + status,

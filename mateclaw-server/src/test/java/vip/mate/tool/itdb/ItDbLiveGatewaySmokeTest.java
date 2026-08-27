@@ -12,13 +12,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class ItDbLiveGatewaySmokeTest {
 
     @Test
-    void authenticatesThroughConfiguredGatewaySessionAndReadsPendingQueue() {
+    void authenticatesDirectlyAndReadsPendingQueue() {
         ItDbWorkflowProperties properties = new ItDbWorkflowProperties();
         properties.setEnabled(true);
         properties.setBaseUrl(requiredEnvironment("MATECLAW_ITDB_BASE_URL"));
         properties.setUsername(requiredEnvironment("MATECLAW_ITDB_USERNAME"));
         properties.setPassword(requiredEnvironment("MATECLAW_ITDB_PASSWORD"));
-        properties.setGatewayCookie(requiredEnvironment("MATECLAW_ITDB_GATEWAY_COOKIE"));
+        properties.setAllowInsecureHttp(Boolean.parseBoolean(
+                requiredEnvironment("MATECLAW_ITDB_ALLOW_INSECURE_HTTP")));
 
         List<ItDbPendingRequest> pending = new ItDbHttpWorkflowGateway(
                 properties, new ObjectMapper()).pendingRequests();

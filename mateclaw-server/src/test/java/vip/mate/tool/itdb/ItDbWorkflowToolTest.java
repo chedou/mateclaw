@@ -32,6 +32,7 @@ class ItDbWorkflowToolTest {
         properties.setEnabled(true);
         properties.setUsername("reviewer");
         properties.setPassword("not-a-real-secret");
+        properties.setAllowInsecureHttp(true);
         ToolGuardConfigService guardConfigService = mock(ToolGuardConfigService.class);
         when(guardConfigService.isEnabled()).thenReturn(true);
         tool = new ItDbWorkflowTool(gateway, new ItDbSqlReviewService(), objectMapper, properties,
@@ -109,6 +110,7 @@ class ItDbWorkflowToolTest {
         properties.setEnabled(true);
         properties.setUsername("reviewer");
         properties.setPassword("not-a-real-secret");
+        properties.setAllowInsecureHttp(true);
         ToolGuardConfigService disabledGuard = mock(ToolGuardConfigService.class);
         when(disabledGuard.isEnabled()).thenReturn(false);
         ItDbWorkflowTool guardedTool = new ItDbWorkflowTool(
