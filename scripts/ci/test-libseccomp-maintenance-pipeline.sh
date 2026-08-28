@@ -66,8 +66,12 @@ grep -Fq 'runtime_base_image" != "$APPROVED_RUNTIME_BASE_IMAGE' "${RELEASE_SCRIP
   || fail "release helper must reject any Playwright override that is not the reviewed digest"
 grep -Fq "APPROVED_RUNTIME_BASE_IMAGE = '${APPROVED_RUNTIME_BASE_IMAGE}'" "${PIPELINE}" \
   || fail "pipeline must pin the reviewed Playwright digest"
-grep -Fq 'params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE' "${PIPELINE}" \
-  || fail "pipeline must reject an unreviewed Playwright digest"
+grep -Fq "params.ACTION != 'UPGRADE_LIBSECCOMP' && params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE" "${PIPELINE}" \
+  || fail "pipeline must reject an unreviewed Playwright digest outside host-only maintenance"
+grep -Fq "if (params.ACTION != 'UPGRADE_LIBSECCOMP')" "${PIPELINE}" \
+  || fail "Harbor authentication must be skipped during host-only maintenance"
+grep -Fq 'HARBOR_LOGIN_SKIPPED: UPGRADE_LIBSECCOMP' "${PIPELINE}" \
+  || fail "host-only maintenance must record why Harbor authentication was skipped"
 grep -Fq "MATECLAW_BACKEND_BASE_IMAGE = '${APPROVED_BACKEND_BASE_IMAGE}'" "${PIPELINE}" \
   || fail "pipeline must pin the reviewed Maven digest"
 grep -Fq "approved_runtime_base_image='${APPROVED_RUNTIME_BASE_IMAGE}'" "${CANDIDATE_BUILDER}" \

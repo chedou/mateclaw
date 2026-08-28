@@ -76,7 +76,7 @@ pipeline {
           if (params.ACTION in ['DEPLOY', 'UPGRADE_LIBSECCOMP'] && !(params.EXPECTED_COMMIT ==~ /^[0-9a-fA-F]{40}$/)) {
             error('主机维护和 DEPLOY 必须提供完整 40 位 EXPECTED_COMMIT')
           }
-          if (params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE) {
+          if (params.ACTION != 'UPGRADE_LIBSECCOMP' && params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE) {
             error('MATECLAW_RUNTIME_BASE_IMAGE 必须等于代码中已审核的 Playwright 不可变引用')
           }
           dir('source') {
@@ -89,13 +89,15 @@ pipeline {
             ])
           }
         }
-        timeout(time: 2, unit: 'MINUTES') {
-          withCredentials([usernamePassword(
-            credentialsId: 'itharbor',
-            usernameVariable: 'HARBOR_USERNAME',
-            passwordVariable: 'HARBOR_PASSWORD'
-          )]) {
-            sh '''#!/usr/bin/env bash
+        script {
+          if (params.ACTION != 'UPGRADE_LIBSECCOMP') {
+            timeout(time: 2, unit: 'MINUTES') {
+              withCredentials([usernamePassword(
+                credentialsId: 'itharbor',
+                usernameVariable: 'HARBOR_USERNAME',
+                passwordVariable: 'HARBOR_PASSWORD'
+              )]) {
+                sh '''#!/usr/bin/env bash
 set +x
 set -euo pipefail
 umask 077
@@ -129,6 +131,10 @@ unset HARBOR_PASSWORD
 chmod 600 "$DOCKER_CONFIG/config.json"
 echo 'HARBOR_LOGIN_OK'
 '''
+              }
+            }
+          } else {
+            echo 'HARBOR_LOGIN_SKIPPED: UPGRADE_LIBSECCOMP 仅执行宿主维护'
           }
         }
         sh '''#!/usr/bin/env bash
