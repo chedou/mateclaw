@@ -82,11 +82,13 @@ case "$cmd" in
         printf 'fake-jar-%s\n' "$i" > "${destination%/}/mateclaw-${i}.jar"
         i=$((i + 1))
       done
+    elif [[ "$destination" == mateclaw-runtime-assembly-*:/tmp/* ]]; then
+      :
     else
       printf 'openjdk-21-jre-headless=21.test\n' > "$destination"
     fi
     ;;
-  run) exit 0 ;;
+  run|start) exit 0 ;;
   commit) exit 0 ;;
   *) exit 91 ;;
 esac
@@ -186,8 +188,8 @@ grep -Fq "<--build-arg> <MATECLAW_RUNTIME_BASE_IMAGE=$internal_runtime_image>" "
 if grep -E '^build .*security-opt' "$legacy_log" >/dev/null; then
   fail "Docker 18 docker build must not receive --security-opt"
 fi
-grep -Fq 'run <--name> <mateclaw-runtime-assembly-' "$legacy_log" \
-  || fail "legacy runtime assembly must use an exact container name"
+grep -Fq 'create <--name> <mateclaw-runtime-assembly-' "$legacy_log" \
+  || fail "legacy runtime assembly must create an exact-name stopped container"
 grep -Fq '<--user> <0:0>' "$legacy_log" \
   || fail "legacy runtime assembly must run with an explicit root identity"
 grep -Fq "<--security-opt> <seccomp=$SECCOMP_PROFILE>" "$legacy_log" \
@@ -197,18 +199,19 @@ grep -Fq "<$runtime_base_image_id>" "$legacy_log" \
 if grep -Fq '<mcr.microsoft.com/playwright:v1.62.0-noble>' "$legacy_log"; then
   fail "legacy build must never use the public runtime image"
 fi
-[[ "$(grep -o 'readonly' "$legacy_log" | wc -l | tr -d ' ')" == 1 ]] \
-  || fail "Docker 18 assembly must use one read-only staging-directory mount"
-grep -Eq '<--mount> <type=bind,src=.*/assembly-inputs,dst=/mnt,readonly>' "$legacy_log" \
-  || fail "Docker 18 assembly must mount the explicit-mode staging directory read-only"
-grep -Fq 'install -d -m 0755 "$assembly_inputs"' "$BUILDER" \
-  || fail "Docker 18 assembly staging directory must be explicitly traversable"
-grep -Fq 'install -m 0755 "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies"' "$BUILDER" \
-  || fail "runtime installer must be staged with mode 0755"
-grep -Fq 'install -m 0644 "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64"' "$BUILDER" \
-  || fail "Ubuntu keyring must be staged with mode 0644"
-grep -Fq 'install -m 0644 "$jar_path" "$assembly_inputs/app.jar"' "$BUILDER" \
-  || fail "application JAR must be staged with mode 0644"
+if grep -Fq -- '--mount' "$legacy_log"; then
+  fail "Docker 18 assembly must not depend on bind mounts"
+fi
+grep -Fq '<mateclaw-runtime-assembly-' "$legacy_log" \
+  || fail "Docker 18 assembly commands must target the exact temporary container"
+grep -Fq ':/tmp/mateclaw-install-runtime-dependencies>' "$legacy_log" \
+  || fail "runtime installer must be copied into the stopped assembly container"
+grep -Fq ':/tmp/ubuntu-archive-keyring.gpg.b64>' "$legacy_log" \
+  || fail "Ubuntu keyring must be copied into the stopped assembly container"
+grep -Fq ':/tmp/app.jar>' "$legacy_log" \
+  || fail "application JAR must be copied into the stopped assembly container"
+grep -Fq 'start <--attach> <mateclaw-runtime-assembly-' "$legacy_log" \
+  || fail "Docker 18 assembly container must be started with attached bounded execution"
 for forbidden in --privileged --cap-add /var/run/docker.sock ':rw'; do
   if grep -Fq -- "$forbidden" "$legacy_log"; then
     fail "legacy assembly contains forbidden Docker authority: $forbidden"
@@ -246,6 +249,10 @@ grep -Eq '^30 docker rm -f mateclaw-artifact-[0-9]+$' "$legacy_timeout_log" \
   || fail "artifact container cleanup must be exact-name and bounded"
 grep -Eq '^30 docker rm -f mateclaw-runtime-assembly-[0-9]+$' "$legacy_timeout_log" \
   || fail "assembly container cleanup must be exact-name and bounded"
+grep -Fq '30 docker create --name mateclaw-runtime-assembly-' "$legacy_timeout_log" \
+  || fail "assembly container creation must be bounded"
+grep -Fq '1800 docker start --attach mateclaw-runtime-assembly-' "$legacy_timeout_log" \
+  || fail "assembly container execution must be bounded"
 grep -Eq '^30 docker rm -f mateclaw-candidate-probe-[0-9]+$' "$legacy_timeout_log" \
   || fail "candidate probe cleanup must be exact-name and bounded"
 grep -Fq '60 docker run --name mateclaw-candidate-probe-' "$legacy_timeout_log" \
@@ -258,8 +265,11 @@ grep -Fq 'stat -c "%u:%g:%a" /app/app.jar' "$legacy_log" \
   || fail "candidate probe must validate app.jar root ownership and mode 0644"
 grep -Fq 'Worker' "$legacy_log" \
   || fail "candidate probe must exercise Node worker creation"
-if grep -Eq '^(stop|start|restart|kill) ' "$legacy_log"; then
-  fail "candidate build must not restart or stop any running container"
+if grep -Eq '^(stop|restart|kill) ' "$legacy_log"; then
+  fail "candidate build must not stop, restart or kill any running container"
+fi
+if grep -E '^start ' "$legacy_log" | grep -Ev '^start <--attach> <mateclaw-runtime-assembly-[0-9]+>$' >/dev/null; then
+  fail "candidate build may only start its exact stopped assembly container"
 fi
 
 for jar_count in 0 2; do

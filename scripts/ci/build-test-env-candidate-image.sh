@@ -100,7 +100,6 @@ candidate_probe_container="mateclaw-candidate-probe-$$"
 artifact_image="${candidate_image}-builder"
 temporary_dir="$(mktemp -d)"
 artifact_dir="${temporary_dir}/target"
-assembly_inputs="${temporary_dir}/assembly-inputs"
 artifact_container_created=false
 assembly_container_created=false
 manifest_container_created=false
@@ -211,36 +210,37 @@ case "$build_mode" in
       || fail "builder 产物必须且只能有一个 JAR，当前为 $jar_count 个"
     jar_path="$(find "$artifact_dir" -maxdepth 1 -type f -name '*.jar' -print | head -n 1)"
 
-    # Docker 18 on the test host does not reliably expose multiple individual
-    # read-only file mounts with their source permissions intact. Stage the
-    # three reviewed inputs with explicit modes and mount one read-only
-    # directory instead; no daemon, host library or running container changes.
-    install -d -m 0755 "$assembly_inputs"
-    install -m 0755 "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies"
-    install -m 0644 "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64"
-    install -m 0644 "$jar_path" "$assembly_inputs/app.jar"
-    cmp -s "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies" \
-      || fail "Docker 18 组装目录中的运行依赖安装器不一致"
-    cmp -s "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64" \
-      || fail "Docker 18 组装目录中的 Ubuntu keyring 不一致"
-    cmp -s "$jar_path" "$assembly_inputs/app.jar" \
-      || fail "Docker 18 组装目录中的 JAR 不一致"
-
+    # Docker 18 on the test host does not expose the reviewed inputs reliably
+    # through bind mounts. Create one stopped, exact-name container and copy
+    # the already verified files into it before the bounded start. This avoids
+    # host mutation, bind-mount labels and any change to running containers.
     assembly_container_created=true
-    bounded_docker "$assembly_timeout" run \
+    assembly_container_id="$(bounded_docker "$docker_command_timeout" create \
       --name "$assembly_container" \
       --user 0:0 \
       --security-opt "seccomp=$legacy_seccomp_profile" \
-      --mount "type=bind,src=$assembly_inputs,dst=/mnt,readonly" \
       --entrypoint /bin/bash \
       "$runtime_base_image_id" -ceu '
-        install -o root -g root -m 0755 /mnt/mateclaw-install-runtime-dependencies /usr/local/sbin/mateclaw-install-runtime-dependencies
-        /usr/local/sbin/mateclaw-install-runtime-dependencies /mnt/ubuntu-archive-keyring.gpg.b64
+        chmod 0755 /tmp/mateclaw-install-runtime-dependencies
+        chmod 0644 /tmp/ubuntu-archive-keyring.gpg.b64 /tmp/app.jar
+        install -o root -g root -m 0755 /tmp/mateclaw-install-runtime-dependencies /usr/local/sbin/mateclaw-install-runtime-dependencies
+        /usr/local/sbin/mateclaw-install-runtime-dependencies /tmp/ubuntu-archive-keyring.gpg.b64
         install -d -o root -g root -m 0755 /app
-        install -o root -g root -m 0644 /mnt/app.jar /app/app.jar
-      ' || fail "Docker 18 运行时组装容器执行失败或超时"
-    assembly_container_id="$(bounded_docker "$docker_command_timeout" inspect --format '{{.Id}}' "$assembly_container")" \
-      || fail "无法获取运行时组装容器 ID"
+        install -o root -g root -m 0644 /tmp/app.jar /app/app.jar
+        rm -f /tmp/mateclaw-install-runtime-dependencies /tmp/ubuntu-archive-keyring.gpg.b64 /tmp/app.jar
+      ')" || fail "无法创建 Docker 18 运行时组装容器"
+    [[ -n "$assembly_container_id" ]] || fail "Docker 18 运行时组装容器 ID 为空"
+    bounded_docker "$docker_command_timeout" cp \
+      "$installer" "$assembly_container:/tmp/mateclaw-install-runtime-dependencies" \
+      || fail "无法向 Docker 18 组装容器复制运行依赖安装器"
+    bounded_docker "$docker_command_timeout" cp \
+      "$keyring_b64" "$assembly_container:/tmp/ubuntu-archive-keyring.gpg.b64" \
+      || fail "无法向 Docker 18 组装容器复制 Ubuntu keyring"
+    bounded_docker "$docker_command_timeout" cp \
+      "$jar_path" "$assembly_container:/tmp/app.jar" \
+      || fail "无法向 Docker 18 组装容器复制应用 JAR"
+    bounded_docker "$assembly_timeout" start --attach "$assembly_container" \
+      || fail "Docker 18 运行时组装容器执行失败或超时"
     assembly_state="$(bounded_docker "$docker_command_timeout" inspect --format '{{.State.Status}}' "$assembly_container")" \
       || fail "无法确认运行时组装容器状态"
     [[ "$assembly_state" == exited ]] || fail "运行时组装容器未安全退出：$assembly_state"
