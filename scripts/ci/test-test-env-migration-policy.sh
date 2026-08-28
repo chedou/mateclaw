@@ -108,7 +108,9 @@ grep -Fq 'docker rename "$ROLLBACK_CONTAINER" "$CONTAINER"' "$pipeline" \
   || fail "old container is not restored on failed cutover"
 grep -Fq 'curl -fsS --max-time 5 "$HEALTH_URL" > deployed-health.json' "$pipeline" \
   || fail "deployed application health is not verified"
-grep -Fq 'grep -Fq "\"commit\":\"$resolved_commit\"" deployed-info.json' "$pipeline" \
+grep -Fq 'assert_deployed_commit deployed-info.json' "$pipeline" \
   || fail "deployed commit identity is not verified"
+grep -Fq '"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)"' "$pipeline" \
+  || fail "deployed commit identity must be parsed without jq"
 
 echo "test-test-env-migration-policy: PASS (static V205-V228; application-managed Flyway)"
