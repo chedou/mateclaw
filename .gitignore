@@ -124,6 +124,9 @@ scripts/.*-sync-state.json
 # but should not ship in the repo.
 outputs/
 
+# Local database rollback artifacts may contain credentials or customer data.
+/backups/
+
 # pnpm remains the developer package manager. The frontend also tracks an npm
 # lockfile because the test environment's Docker 18.06 legacy overlay driver
 # cannot complete pnpm's final metadata write during an image build.
