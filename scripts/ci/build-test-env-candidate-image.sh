@@ -100,6 +100,7 @@ candidate_probe_container="mateclaw-candidate-probe-$$"
 artifact_image="${candidate_image}-builder"
 temporary_dir="$(mktemp -d)"
 artifact_dir="${temporary_dir}/target"
+assembly_inputs="${temporary_dir}/assembly-inputs"
 artifact_container_created=false
 assembly_container_created=false
 manifest_container_created=false
@@ -210,14 +211,27 @@ case "$build_mode" in
       || fail "builder 产物必须且只能有一个 JAR，当前为 $jar_count 个"
     jar_path="$(find "$artifact_dir" -maxdepth 1 -type f -name '*.jar' -print | head -n 1)"
 
+    # Docker 18 on the test host does not reliably expose multiple individual
+    # read-only file mounts with their source permissions intact. Stage the
+    # three reviewed inputs with explicit modes and mount one read-only
+    # directory instead; no daemon, host library or running container changes.
+    install -d -m 0755 "$assembly_inputs"
+    install -m 0755 "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies"
+    install -m 0644 "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64"
+    install -m 0644 "$jar_path" "$assembly_inputs/app.jar"
+    cmp -s "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies" \
+      || fail "Docker 18 组装目录中的运行依赖安装器不一致"
+    cmp -s "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64" \
+      || fail "Docker 18 组装目录中的 Ubuntu keyring 不一致"
+    cmp -s "$jar_path" "$assembly_inputs/app.jar" \
+      || fail "Docker 18 组装目录中的 JAR 不一致"
+
     assembly_container_created=true
     bounded_docker "$assembly_timeout" run \
       --name "$assembly_container" \
       --user 0:0 \
       --security-opt "seccomp=$legacy_seccomp_profile" \
-      --mount "type=bind,src=$installer,dst=/mnt/mateclaw-install-runtime-dependencies,readonly" \
-      --mount "type=bind,src=$keyring_b64,dst=/mnt/ubuntu-archive-keyring.gpg.b64,readonly" \
-      --mount "type=bind,src=$jar_path,dst=/mnt/app.jar,readonly" \
+      --mount "type=bind,src=$assembly_inputs,dst=/mnt,readonly" \
       --entrypoint /bin/bash \
       "$runtime_base_image_id" -ceu '
         install -o root -g root -m 0755 /mnt/mateclaw-install-runtime-dependencies /usr/local/sbin/mateclaw-install-runtime-dependencies

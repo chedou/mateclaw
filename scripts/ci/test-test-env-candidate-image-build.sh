@@ -197,8 +197,18 @@ grep -Fq "<$runtime_base_image_id>" "$legacy_log" \
 if grep -Fq '<mcr.microsoft.com/playwright:v1.62.0-noble>' "$legacy_log"; then
   fail "legacy build must never use the public runtime image"
 fi
-[[ "$(grep -o 'readonly' "$legacy_log" | wc -l | tr -d ' ')" -ge 3 ]] \
-  || fail "installer, keyring, and JAR mounts must all be read-only"
+[[ "$(grep -o 'readonly' "$legacy_log" | wc -l | tr -d ' ')" == 1 ]] \
+  || fail "Docker 18 assembly must use one read-only staging-directory mount"
+grep -Eq '<--mount> <type=bind,src=.*/assembly-inputs,dst=/mnt,readonly>' "$legacy_log" \
+  || fail "Docker 18 assembly must mount the explicit-mode staging directory read-only"
+grep -Fq 'install -d -m 0755 "$assembly_inputs"' "$BUILDER" \
+  || fail "Docker 18 assembly staging directory must be explicitly traversable"
+grep -Fq 'install -m 0755 "$installer" "$assembly_inputs/mateclaw-install-runtime-dependencies"' "$BUILDER" \
+  || fail "runtime installer must be staged with mode 0755"
+grep -Fq 'install -m 0644 "$keyring_b64" "$assembly_inputs/ubuntu-archive-keyring.gpg.b64"' "$BUILDER" \
+  || fail "Ubuntu keyring must be staged with mode 0644"
+grep -Fq 'install -m 0644 "$jar_path" "$assembly_inputs/app.jar"' "$BUILDER" \
+  || fail "application JAR must be staged with mode 0644"
 for forbidden in --privileged --cap-add /var/run/docker.sock ':rw'; do
   if grep -Fq -- "$forbidden" "$legacy_log"; then
     fail "legacy assembly contains forbidden Docker authority: $forbidden"
