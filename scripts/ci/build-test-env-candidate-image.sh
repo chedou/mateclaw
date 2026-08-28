@@ -32,20 +32,61 @@ build_timeout="${MATECLAW_DOCKER_BUILD_TIMEOUT_SECONDS:-3600}"
 candidate_probe_timeout="${MATECLAW_DOCKER_CANDIDATE_PROBE_TIMEOUT_SECONDS:-60}"
 reviewed_seccomp_sha256='959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d'
 reviewed_keyring_sha256='655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835'
+approved_frontend_base_image='itharbor.sangfor.com/base-image/node:22.18.0-alpine@sha256:ac0d137a585eaaaf648c4f011a6f52cbb71952f9471e76c343fdb2d1cd711b62'
+approved_backend_base_image='itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:1750ed0e15881d6b9e11d8657026a492cd29e85e009481bbb1d0d7a0056e42b9'
+approved_runtime_base_image='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e'
+
+dockerfile_arg_default() {
+  local requested_name="$1"
+  awk -v requested_name="$requested_name" '
+    toupper($1) == "ARG" {
+      split($2, parts, "=")
+      if (parts[1] == requested_name) {
+        sub(/^[^=]*=/, "", $2)
+        print $2
+        exit
+      }
+    }
+  ' "$dockerfile"
+}
+
+require_internal_digest_ref() {
+  local variable_name="$1"
+  local image_ref="$2"
+  [[ -n "$image_ref" ]] \
+    || fail "$variable_name 未配置；请先将 Playwright v1.62.0-noble 精确镜像同步到深信服 Harbor，再传入完整 tag@sha256 引用"
+  [[ "$image_ref" =~ ^itharbor\.sangfor\.com/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$ ]] \
+    || fail "$variable_name 必须是 itharbor.sangfor.com 下带 tag 且固定 sha256 digest 的镜像引用"
+}
 
 [[ "$release_commit" =~ ^[0-9a-fA-F]{40}$ ]] || fail "RELEASE_COMMIT 必须是完整 40 位 Git SHA"
 [[ -d "$source_dir" && -f "$dockerfile" ]] || fail "源码目录或 Dockerfile 不存在"
 [[ -x "$installer" ]] || fail "运行依赖安装器不存在或不可执行：$installer"
 [[ -f "$keyring_b64" ]] || fail "经审核的 Ubuntu keyring 不存在"
 [[ -n "$candidate_image" ]] || fail "候选镜像名不能为空"
+frontend_base_image_ref="${MATECLAW_FRONTEND_BASE_IMAGE:-$(dockerfile_arg_default MATECLAW_FRONTEND_BASE_IMAGE)}"
+backend_base_image_ref="${MATECLAW_BACKEND_BASE_IMAGE:-$(dockerfile_arg_default MATECLAW_BACKEND_BASE_IMAGE)}"
+runtime_base_image_ref="${MATECLAW_RUNTIME_BASE_IMAGE:-$(dockerfile_arg_default MATECLAW_RUNTIME_BASE_IMAGE)}"
+require_internal_digest_ref MATECLAW_FRONTEND_BASE_IMAGE "$frontend_base_image_ref"
+require_internal_digest_ref MATECLAW_BACKEND_BASE_IMAGE "$backend_base_image_ref"
+require_internal_digest_ref MATECLAW_RUNTIME_BASE_IMAGE "$runtime_base_image_ref"
+[[ "$frontend_base_image_ref" == "$approved_frontend_base_image" ]] \
+  || fail "MATECLAW_FRONTEND_BASE_IMAGE 必须等于代码中已审核的 Node 不可变引用：$approved_frontend_base_image"
+[[ "$backend_base_image_ref" == "$approved_backend_base_image" ]] \
+  || fail "MATECLAW_BACKEND_BASE_IMAGE 必须等于代码中已审核的 Maven 不可变引用：$approved_backend_base_image"
+[[ "$runtime_base_image_ref" == "$approved_runtime_base_image" ]] \
+  || fail "MATECLAW_RUNTIME_BASE_IMAGE 必须等于代码中已审核的 Playwright 不可变引用：$approved_runtime_base_image"
+[[ "$runtime_base_image_ref" == *':v1.62.0-noble@sha256:'* ]] \
+  || fail "MATECLAW_RUNTIME_BASE_IMAGE 必须是 Playwright v1.62.0-noble 的内网 digest 镜像"
+grep -Fxq 'FROM ${MATECLAW_FRONTEND_BASE_IMAGE} AS frontend-builder' "$dockerfile" \
+  || fail "Dockerfile 前端构建阶段未使用 MATECLAW_FRONTEND_BASE_IMAGE"
+grep -Fxq 'FROM ${MATECLAW_BACKEND_BASE_IMAGE} AS builder' "$dockerfile" \
+  || fail "Dockerfile 后端构建阶段未使用 MATECLAW_BACKEND_BASE_IMAGE"
+grep -Fxq 'FROM ${MATECLAW_RUNTIME_BASE_IMAGE}' "$dockerfile" \
+  || fail "Dockerfile 运行阶段未使用 MATECLAW_RUNTIME_BASE_IMAGE"
+
 command -v docker >/dev/null || fail "docker 命令不存在"
 command -v timeout >/dev/null || fail "宿主缺少 timeout，无法有界执行 Docker 组装与清理"
-
-runtime_base_image_ref="$(awk 'toupper($1) == "FROM" { image = $2 } END { print image }' "$dockerfile")"
-case "$runtime_base_image_ref" in
-  mcr.microsoft.com/playwright:v*-noble) ;;
-  *) fail "Dockerfile 最终运行基础镜像未固定为 Playwright Noble：${runtime_base_image_ref:-EMPTY}" ;;
-esac
 
 installer_sha256="$(sha256sum "$installer" | awk '{print $1}')"
 keyring_sha256="$(base64 --decode < "$keyring_b64" | sha256sum | awk '{print $1}')"
@@ -104,6 +145,9 @@ jar_path=''
 case "$build_mode" in
   NATIVE_CLONE3_SECCOMP)
     bounded_docker "$build_timeout" build \
+      --build-arg "MATECLAW_FRONTEND_BASE_IMAGE=$frontend_base_image_ref" \
+      --build-arg "MATECLAW_BACKEND_BASE_IMAGE=$backend_base_image_ref" \
+      --build-arg "MATECLAW_RUNTIME_BASE_IMAGE=$runtime_base_image_ref" \
       --build-arg "MAVEN_FLAGS=$maven_flags" \
       --build-arg "MATECLAW_RELEASE_COMMIT=$release_commit" \
       -t "$candidate_image" \
@@ -138,6 +182,9 @@ case "$build_mode" in
 
     bounded_docker "$build_timeout" build \
       --target builder \
+      --build-arg "MATECLAW_FRONTEND_BASE_IMAGE=$frontend_base_image_ref" \
+      --build-arg "MATECLAW_BACKEND_BASE_IMAGE=$backend_base_image_ref" \
+      --build-arg "MATECLAW_RUNTIME_BASE_IMAGE=$runtime_base_image_ref" \
       --build-arg "MAVEN_FLAGS=$maven_flags" \
       -t "$artifact_image" \
       -f "$dockerfile" \
@@ -280,6 +327,8 @@ fi
 
 {
   echo "docker_build_security_mode=$docker_build_security_mode"
+  echo "frontend_base_image_ref=$frontend_base_image_ref"
+  echo "backend_base_image_ref=$backend_base_image_ref"
   echo "runtime_base_image_ref=$runtime_base_image_ref"
   echo "runtime_base_image_id=$runtime_base_image_id"
   echo "runtime_installer_sha256=$installer_sha256"

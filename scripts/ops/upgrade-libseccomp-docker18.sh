@@ -6,7 +6,7 @@ umask 077
 VERSION="2.5.6"
 SOURCE_URL="https://github.com/seccomp/libseccomp/releases/download/v${VERSION}/libseccomp-${VERSION}.tar.gz"
 SOURCE_SHA256="04c37d72965dce218a0c94519b056e1775cf786b5260ee2b7992956c4ee38633"
-RUNTIME_IMAGE="mcr.microsoft.com/playwright:v1.62.0-noble"
+RUNTIME_IMAGE="${MATECLAW_RUNTIME_BASE_IMAGE:-}"
 PROFILE_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -34,6 +34,16 @@ fail() {
   exit 1
 }
 
+bounded_docker() {
+  local timeout_seconds="$1"
+  shift
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    docker "$@"
+  else
+    timeout --signal=TERM --kill-after=2s "${timeout_seconds}" docker "$@"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -43,13 +53,25 @@ Usage:
 EOF
 }
 
+require_runtime_image_ref() {
+  [[ -n "${RUNTIME_IMAGE}" ]] || fail \
+    "必须通过 MATECLAW_RUNTIME_BASE_IMAGE 提供审核后的内网运行时镜像"
+  [[ "${RUNTIME_IMAGE}" =~ ^itharbor\.sangfor\.com/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*:v1\.62\.0-noble@sha256:[0-9a-f]{64}$ ]] \
+    || fail \
+      "MATECLAW_RUNTIME_BASE_IMAGE 必须是精确引用：itharbor.sangfor.com/<repository>:v1.62.0-noble@sha256:<64位小写十六进制摘要>"
+}
+
 require_host_baseline() {
+  require_runtime_image_ref
   if [[ "${TEST_MODE}" != "1" ]]; then
     [[ "$(id -u)" == "0" ]] || fail "必须由 root 执行"
   fi
   command -v docker >/dev/null 2>&1 || fail "docker 命令不存在"
-  docker info >/dev/null 2>&1 || fail "无法连接 Docker daemon"
-  docker_version="$(docker version --format '{{.Server.Version}}')"
+  if [[ "${TEST_MODE}" != "1" ]]; then
+    command -v timeout >/dev/null 2>&1 || fail "缺少 timeout，无法有界执行 Docker 维护探针"
+  fi
+  bounded_docker 15 info >/dev/null 2>&1 || fail "无法连接 Docker daemon"
+  docker_version="$(bounded_docker 15 version --format '{{.Server.Version}}')"
   [[ "${docker_version}" == 18.06.0* ]] || fail \
     "该维护动作只允许 Docker 18.06.0，实际为 ${docker_version}"
   [[ -x "${DETECTOR}" ]] || fail "libseccomp 检测器不可执行：${DETECTOR}"
@@ -170,6 +192,15 @@ activate_library() {
   [[ -f "${LIBDIR}/${old_target}" ]] || fail \
     "当前 libseccomp 目标文件不存在：${LIBDIR}/${old_target}"
   old_version="$(detect_loaded_version)" || fail "无法记录切换前 libseccomp 版本"
+  probe_container="mateclaw-libseccomp-probe-$$"
+
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    runtime_image_id="TEST_IMAGE"
+  else
+    bounded_docker 30 inspect "${RUNTIME_IMAGE}" >/dev/null 2>&1 \
+      || fail "正式 Playwright 基础镜像不在本地缓存，禁止在切换窗口内拉取"
+    runtime_image_id="$(bounded_docker 15 inspect --format '{{.Id}}' "${RUNTIME_IMAGE}")"
+  fi
 
   backup_dir="${STATE_DIR}/backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
   mkdir -p "${backup_dir}"
@@ -179,7 +210,7 @@ activate_library() {
   {
     echo "old_version=${old_version}"
     echo "old_target=${old_target}"
-    echo "running_containers_before=$(docker ps -q | wc -l | tr -d ' ')"
+    echo "running_containers_before=$(bounded_docker 15 ps -q | wc -l | tr -d ' ')"
     echo "docker_server=${docker_version}"
   } > "${backup_dir}/baseline.txt"
 
@@ -190,6 +221,10 @@ activate_library() {
     "安装后的 libseccomp 哈希与隔离构建结果不一致"
 
   switched=0
+  report_tmp=""
+  cleanup_probe() {
+    bounded_docker 15 rm -f "${probe_container}" >/dev/null 2>&1 || true
+  }
   rollback_link() {
     if [[ "${switched}" == "1" ]]; then
       rollback_tmp="${LIBDIR}/.libseccomp.so.2.rollback.$$"
@@ -200,7 +235,14 @@ activate_library() {
         "${old_target}" "${restored_version:-UNKNOWN}" >&2
     fi
   }
-  trap rollback_link EXIT
+  cleanup_and_rollback() {
+    cleanup_probe
+    if [[ -n "${report_tmp}" ]]; then
+      rm -f -- "${report_tmp}"
+    fi
+    rollback_link
+  }
+  trap cleanup_and_rollback EXIT
 
   next_link="${LIBDIR}/.libseccomp.so.2.next.$$"
   ln -s "${ACTIVE_LIBRARY_BASENAME}" "${next_link}"
@@ -211,22 +253,18 @@ activate_library() {
   [[ "${loaded_version}" == "${VERSION}" ]] || fail \
     "切换后实际加载版本不是 ${VERSION}：${loaded_version}"
 
-  if [[ "${TEST_MODE}" == "1" ]]; then
-    runtime_image_id="TEST_IMAGE"
-  else
-    docker inspect "${RUNTIME_IMAGE}" >/dev/null 2>&1 \
-      || fail "正式 Playwright 基础镜像不在本地缓存，禁止在切换窗口内拉取"
-    runtime_image_id="$(docker inspect --format '{{.Id}}' "${RUNTIME_IMAGE}")"
-  fi
-  docker run --rm \
+  bounded_docker 45 run --rm \
+    --name "${probe_container}" \
     --security-opt "seccomp=${profile}" \
     --entrypoint node \
     "${RUNTIME_IMAGE}" \
     -e 'const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));' \
     || fail "新版 libseccomp 下的正式 Node 线程探针失败"
 
-  switched=0
-  trap - EXIT
+  cleanup_probe
+  running_containers_after="$(bounded_docker 15 ps -q | wc -l | tr -d ' ')" \
+    || fail "无法在切换后确认运行容器数量"
+  report_tmp="${STATE_DIR}/.activation-report.txt.$$"
   {
     echo "activated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "old_version=${old_version}"
@@ -237,9 +275,13 @@ activate_library() {
     echo "runtime_image=${RUNTIME_IMAGE}"
     echo "runtime_image_id=${runtime_image_id}"
     echo "seccomp_profile=${profile}"
-    echo "running_containers_after=$(docker ps -q | wc -l | tr -d ' ')"
+    echo "running_containers_after=${running_containers_after}"
     echo "backup_dir=${backup_dir}"
-  } > "${STATE_DIR}/activation-report.txt"
+  } > "${report_tmp}"
+  mv -f -- "${report_tmp}" "${STATE_DIR}/activation-report.txt"
+  report_tmp=""
+  switched=0
+  trap - EXIT
   cat "${STATE_DIR}/activation-report.txt"
   echo "LIBSECCOMP_ACTIVATION_OK"
 }

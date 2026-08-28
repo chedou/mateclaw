@@ -15,6 +15,7 @@
 #   JENKINS_URL=http://200.200.4.33:8080
 #   JENKINS_JOB=mateclaw-troubleshooting-release
 #   MATECLAW_TEST_URL=http://smartfix-sit.sangfor.com
+#   MATECLAW_RUNTIME_BASE_IMAGE=itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:<digest>
 #
 # Parameterized jobs can receive one or more explicit parameters:
 #
@@ -32,6 +33,8 @@ cd "$(dirname "$0")/.."
 JENKINS_URL="${JENKINS_URL:-http://200.200.4.33:8080}"
 JENKINS_JOB="${JENKINS_JOB:-mateclaw-troubleshooting-release}"
 MATECLAW_TEST_URL="${MATECLAW_TEST_URL:-http://smartfix-sit.sangfor.com}"
+APPROVED_RUNTIME_BASE_IMAGE='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e'
+MATECLAW_RUNTIME_BASE_IMAGE="${MATECLAW_RUNTIME_BASE_IMAGE:-$APPROVED_RUNTIME_BASE_IMAGE}"
 POLL_SECONDS="${JENKINS_POLL_SECONDS:-5}"
 TIMEOUT_SECONDS="${JENKINS_RELEASE_TIMEOUT_SECONDS:-1800}"
 WAIT_FOR_BUILD=true
@@ -124,7 +127,7 @@ while [ $# -gt 0 ]; do
                 *=*)
                     parameter_name="${2%%=*}"
                     case "$parameter_name" in
-                        ACTION|BRANCH|EXPECTED_COMMIT) ;;
+                        ACTION|BRANCH|EXPECTED_COMMIT|MATECLAW_RUNTIME_BASE_IMAGE) ;;
                         *) die "unsupported Jenkins parameter '$parameter_name'" ;;
                     esac
                     ! has_parameter "$parameter_name" \
@@ -185,6 +188,13 @@ if ! has_parameter BRANCH; then
 fi
 if ! has_parameter EXPECTED_COMMIT; then
     PARAMETERS+=("EXPECTED_COMMIT=$EXPECTED_COMMIT")
+fi
+if ! has_parameter MATECLAW_RUNTIME_BASE_IMAGE && [ -n "$MATECLAW_RUNTIME_BASE_IMAGE" ]; then
+    PARAMETERS+=("MATECLAW_RUNTIME_BASE_IMAGE=$MATECLAW_RUNTIME_BASE_IMAGE")
+fi
+runtime_base_image="$(parameter_value MATECLAW_RUNTIME_BASE_IMAGE || true)"
+if [ "$runtime_base_image" != "$APPROVED_RUNTIME_BASE_IMAGE" ]; then
+    die "MATECLAW_RUNTIME_BASE_IMAGE must equal the reviewed immutable Sangfor Harbor Playwright reference"
 fi
 requested_action="$(parameter_value ACTION)"
 case "$requested_action" in

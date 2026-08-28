@@ -22,13 +22,18 @@ actual_keyring_sha256="$(base64 --decode < "$KEYRING_B64" | sha256sum | awk '{pr
   || fail "vendored Ubuntu archive keyring digest does not match the reviewed value"
 
 runtime_block="$(awk '
-  /^FROM mcr\.microsoft\.com\/playwright:/ { capture = 1 }
+  $0 == "FROM ${MATECLAW_RUNTIME_BASE_IMAGE}" { capture = 1 }
   capture { print }
 ' "$DOCKERFILE")"
 installer_content="$(cat "$INSTALLER")"
 [[ -n "$runtime_block" ]] || fail "Playwright runtime stage is missing"
-grep -Fq -- 'FROM mcr.microsoft.com/playwright:v1.62.0-noble' <<<"$runtime_block" \
-  || fail "runtime must use the Playwright version pinned by the Java driver"
+grep -Fq 'ARG MATECLAW_RUNTIME_BASE_IMAGE=itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e' "$DOCKERFILE" \
+  || fail "runtime mirror must pin the reviewed internal Harbor digest"
+grep -Fq -- 'FROM ${MATECLAW_RUNTIME_BASE_IMAGE}' <<<"$runtime_block" \
+  || fail "runtime must consume the required digest-pinned internal Harbor image"
+if grep -Fq -- 'mcr.microsoft.com/playwright:' "$DOCKERFILE"; then
+  fail "runtime must not fall back to the public Playwright registry"
+fi
 grep -Fq -- 'COPY mateclaw-server/docker/install-runtime-dependencies.sh /usr/local/sbin/mateclaw-install-runtime-dependencies' <<<"$runtime_block" \
   || fail "runtime stage must copy the shared dependency installer"
 grep -Fq -- 'RUN /usr/local/sbin/mateclaw-install-runtime-dependencies /tmp/ubuntu-archive-keyring.gpg.b64' <<<"$runtime_block" \

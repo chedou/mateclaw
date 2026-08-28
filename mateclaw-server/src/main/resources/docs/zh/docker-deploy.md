@@ -98,7 +98,7 @@ SEARXNG_BASE_URL=https://your-searxng.example.com
 
 ### 镜像里到底装了什么
 
-后端镜像以 `mcr.microsoft.com/playwright:v1.62.0-noble` 为基础（Ubuntu Noble 24.04，glibc），由 `mateclaw-server/Dockerfile` 的第三阶段拉起，额外装：
+后端镜像以经审核并同步到深信服 Harbor 的 `itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e` 为基础（上游为 Ubuntu Noble 24.04、glibc 的 Playwright 镜像），由 `mateclaw-server/Dockerfile` 的第三阶段拉起，额外装：
 
 - `openjdk-21-jre-headless` —— 跑 Spring Boot JAR
 - `fonts-noto-cjk` —— 中文页面截图不出豆腐块

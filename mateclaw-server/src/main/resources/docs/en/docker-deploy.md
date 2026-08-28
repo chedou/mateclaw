@@ -98,7 +98,7 @@ Then comment out the `searxng` service block in `docker-compose.yml`. Make sure 
 
 ### What the image actually contains
 
-The backend runtime stage (`mateclaw-server/Dockerfile` stage 3) is based on `mcr.microsoft.com/playwright:v1.62.0-noble` (Ubuntu Noble 24.04, glibc) and installs on top of it:
+The backend runtime stage (`mateclaw-server/Dockerfile` stage 3) is based on the reviewed Sangfor Harbor mirror `itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e` (upstream Playwright on Ubuntu Noble 24.04, glibc) and installs on top of it:
 
 - `openjdk-21-jre-headless` — runs the Spring Boot JAR
 - `fonts-noto-cjk` — Chinese/Japanese/Korean rendering in screenshots

@@ -24,6 +24,11 @@ pipeline {
       defaultValue: '',
       description: '期望执行的完整 40 位 Git SHA。主机维护和 DEPLOY 必填且不一致立即停止。'
     )
+    string(
+      name: 'MATECLAW_RUNTIME_BASE_IMAGE',
+      defaultValue: 'itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e',
+      description: '已同步到深信服 Harbor 的 Playwright v1.62.0-noble 完整 tag@sha256 引用。不是内网不可变引用时立即停止。'
+    )
   }
 
   environment {
@@ -37,7 +42,12 @@ pipeline {
     CONTAINER = 'mateclaw-server'
     HEALTH_URL = 'http://127.0.0.1:18080/actuator/health'
     INFO_URL = 'http://127.0.0.1:18080/actuator/info'
-    MYSQL_CLIENT_IMAGE = 'mysql:8.0'
+    HARBOR_REGISTRY = 'itharbor.sangfor.com'
+    DOCKER_CONFIG = "${WORKSPACE}/.docker-config-${BUILD_NUMBER}"
+    MATECLAW_FRONTEND_BASE_IMAGE = 'itharbor.sangfor.com/base-image/node:22.18.0-alpine@sha256:ac0d137a585eaaaf648c4f011a6f52cbb71952f9471e76c343fdb2d1cd711b62'
+    MATECLAW_BACKEND_BASE_IMAGE = 'itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:1750ed0e15881d6b9e11d8657026a492cd29e85e009481bbb1d0d7a0056e42b9'
+    APPROVED_RUNTIME_BASE_IMAGE = 'itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e'
+    MATECLAW_RUNTIME_BASE_IMAGE = "${params.MATECLAW_RUNTIME_BASE_IMAGE}"
     LEGACY_RUNTIME_IMAGE_RECORD = '/opt/mateclaw/libseccomp-maintenance/activation-report.txt'
     APPROVED_FOUNDATION_FROM = '204'
     APPROVED_FOUNDATION_TO = '217'
@@ -66,6 +76,9 @@ pipeline {
           if (params.ACTION in ['DEPLOY', 'UPGRADE_LIBSECCOMP'] && !(params.EXPECTED_COMMIT ==~ /^[0-9a-fA-F]{40}$/)) {
             error('主机维护和 DEPLOY 必须提供完整 40 位 EXPECTED_COMMIT')
           }
+          if (params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE) {
+            error('MATECLAW_RUNTIME_BASE_IMAGE 必须等于代码中已审核的 Playwright 不可变引用')
+          }
           dir('source') {
             deleteDir()
             checkout([
@@ -74,6 +87,48 @@ pipeline {
               extensions: [[$class: 'CloneOption', depth: 1, noTags: true, shallow: true, timeout: 20]],
               userRemoteConfigs: [[credentialsId: 'mateclaw-itgitlab-readonly', url: env.REPOSITORY_URL]]
             ])
+          }
+        }
+        timeout(time: 2, unit: 'MINUTES') {
+          withCredentials([usernamePassword(
+            credentialsId: 'itharbor',
+            usernameVariable: 'HARBOR_USERNAME',
+            passwordVariable: 'HARBOR_PASSWORD'
+          )]) {
+            sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+umask 077
+
+fail() {
+  echo "HARBOR_LOGIN_FAILED: $*" >&2
+  exit 1
+}
+
+expected_docker_config="$WORKSPACE/.docker-config-${BUILD_NUMBER}"
+[[ "$DOCKER_CONFIG" == "$expected_docker_config" ]] \
+  || fail "DOCKER_CONFIG 越出当前 Jenkins Workspace"
+[[ ! -L "$DOCKER_CONFIG" ]] \
+  || fail "临时 DOCKER_CONFIG 不允许是符号链接"
+if [[ -e "$DOCKER_CONFIG" && ! -d "$DOCKER_CONFIG" ]]; then
+  fail "临时 DOCKER_CONFIG 路径不是目录"
+fi
+mkdir -p -- "$DOCKER_CONFIG"
+find "$DOCKER_CONFIG" -mindepth 1 -delete
+chmod 700 "$DOCKER_CONFIG"
+
+command -v docker >/dev/null || fail "docker 命令不存在"
+printf '%s\n' "$HARBOR_PASSWORD" \
+  | docker login --username "$HARBOR_USERNAME" --password-stdin "$HARBOR_REGISTRY" \
+      >/dev/null \
+  || fail "无法使用 Jenkins credentialId itharbor 登录深信服 Harbor"
+unset HARBOR_PASSWORD
+
+[[ -f "$DOCKER_CONFIG/config.json" && ! -L "$DOCKER_CONFIG/config.json" ]] \
+  || fail "Docker 未生成可用的临时认证文件"
+chmod 600 "$DOCKER_CONFIG/config.json"
+echo 'HARBOR_LOGIN_OK'
+'''
           }
         }
         sh '''#!/usr/bin/env bash
@@ -245,6 +300,12 @@ grep -Eq '^DB_HOST=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_HOST"
 grep -Eq '^DB_USERNAME=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_USERNAME"
 grep -Eq '^DB_PASSWORD=.+$' "$ENV_FILE" || fail "环境文件缺少 DB_PASSWORD"
 grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" || fail "环境文件缺少 JWT_SECRET"
+flyway_auto_repair="$(sed -n 's/^MATECLAW_FLYWAY_AUTO_REPAIR=//p' "$ENV_FILE" | head -1)"
+case "$flyway_auto_repair" in
+  ''|false) ;;
+  *) fail "测试环境禁止 MATECLAW_FLYWAY_AUTO_REPAIR；失败迁移必须保留证据并 fail-closed" ;;
+esac
+sha256sum "$ENV_FILE" | awk '{print $1}' > env-file-sha256.txt
 itdb_enabled="$(sed -n 's/^MATECLAW_ITDB_ENABLED=//p' "$ENV_FILE" | head -1)"
 itdb_enabled="${itdb_enabled:-false}"
 itdb_integration="DISABLED"
@@ -421,7 +482,7 @@ echo "IMAGE_BUILD_OK: $(cat candidate-image-id.txt)"
       }
     }
 
-    stage('镜像与迁移安全检查') {
+    stage('镜像与迁移包安全检查') {
       when {
         expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }
       }
@@ -431,64 +492,18 @@ set +x
 set -euo pipefail
 umask 077
 
-env_value() {
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -1
-}
-
 resolved_commit="$(cat resolved-commit.txt)"
 SOURCE_DIR="$WORKSPACE/source"
-DB_HOST_VALUE="$(env_value DB_HOST)"
-DB_PORT_VALUE="$(env_value DB_PORT)"
-DB_NAME_VALUE="$(env_value DB_NAME)"
-DB_USER_VALUE="$(env_value DB_USERNAME)"
-DB_PASSWORD_VALUE="$(env_value DB_PASSWORD)"
-DB_PORT_VALUE="${DB_PORT_VALUE:-3306}"
 
-[[ "$DB_NAME_VALUE" =~ ^[A-Za-z0-9_]+$ ]] \
-  || { echo "MIGRATION_PRECHECK_FAILED: DB_NAME 格式不安全" >&2; exit 1; }
-MYSQL_CNF="$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
-cleanup_mysql_cnf() { rm -f -- "$MYSQL_CNF"; }
-trap cleanup_mysql_cnf EXIT
-{
-  printf '[client]\n'
-  printf 'host=%s\n' "$DB_HOST_VALUE"
-  printf 'port=%s\n' "$DB_PORT_VALUE"
-  printf 'user=%s\n' "$DB_USER_VALUE"
-  printf 'password=%s\n' "$DB_PASSWORD_VALUE"
-  printf 'default-character-set=utf8mb4\n'
-} > "$MYSQL_CNF"
-chmod 600 "$MYSQL_CNF"
-
-docker pull "$MYSQL_CLIENT_IMAGE" >/dev/null
-docker inspect --format '{{.Id}}' "$MYSQL_CLIENT_IMAGE" > mysql-client-image-id.txt
-failed_migration_count="$(docker run --rm \
-  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
-  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
-  -e "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0" \
-  "$DB_NAME_VALUE")"
-[[ "$failed_migration_count" =~ ^[0-9]+$ ]] \
-  || { echo "MIGRATION_PRECHECK_FAILED: 无法确认 Flyway 失败历史" >&2; exit 1; }
-printf '%s\n' "$failed_migration_count" > failed-migration-count.txt
-if [[ "$failed_migration_count" -ne 0 ]]; then
-  echo "MIGRATION_PRECHECK_FAILED: 存在 $failed_migration_count 条失败迁移，禁止自动 repair 后继续发布" >&2
-  docker run --rm \
-    -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-    --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
-    --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
-    -e "SELECT installed_rank, COALESCE(version, 'repeatable'), LEFT(description, 80) FROM flyway_schema_history WHERE success = 0 ORDER BY installed_rank" \
-    "$DB_NAME_VALUE" >&2
-  exit 1
-fi
-current_version="$(docker run --rm \
-  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
-  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
-  -e "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1" \
-  "$DB_NAME_VALUE")"
-[[ "$current_version" =~ ^[0-9]+$ ]] \
-  || { echo "MIGRATION_PRECHECK_FAILED: 当前 Flyway 版本不是整数：$current_version" >&2; exit 1; }
-printf '%s\n' "$current_version" > current-flyway-version.txt
+CANDIDATE_IMAGE_ID="$(cat candidate-image-id.txt)"
+[[ "$CANDIDATE_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 候选应用镜像 ID 不是完整 SHA-256" >&2; exit 1; }
+candidate_tag_image_id="$(docker inspect --format '{{.Id}}' "$CANDIDATE_IMAGE")"
+candidate_immutable_image_id="$(docker inspect --format '{{.Id}}' "$CANDIDATE_IMAGE_ID")"
+[[ "$candidate_tag_image_id" == "$CANDIDATE_IMAGE_ID" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 候选镜像标签在构建后发生漂移" >&2; exit 1; }
+[[ "$candidate_immutable_image_id" == "$CANDIDATE_IMAGE_ID" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 无法按不可变 ID 确认候选镜像" >&2; exit 1; }
 
 migration_dir="$SOURCE_DIR/mateclaw-server/src/main/resources/db/migration/mysql"
 migration_files=()
@@ -498,8 +513,6 @@ done < <(find "$migration_dir" -type f -name '*.sql' -print0 | sort -z)
 [[ "${#migration_files[@]}" -gt 0 ]] \
   || { echo "MIGRATION_PRECHECK_FAILED: 仓库中没有 MySQL 迁移" >&2; exit 1; }
 
-pending_count=0
-pending_versions=()
 repo_max_version=0
 for migration in "${migration_files[@]}"; do
   filename="${migration##*/}"
@@ -519,136 +532,56 @@ for migration in "${migration_files[@]}"; do
   [[ "$version" =~ ^[0-9]+$ ]] \
     || { echo "MIGRATION_PRECHECK_FAILED: 非法迁移文件名 $filename" >&2; exit 1; }
   (( 10#$version > repo_max_version )) && repo_max_version=$((10#$version))
-  (( 10#$version > 10#$current_version )) || continue
-  pending_count=$((pending_count + 1))
-  pending_versions+=("$version")
 done
-printf '%s\n' "$pending_count" > pending-migration-count.txt
 printf '%s\n' "$repo_max_version" > repository-max-migration-version.txt
 
-(( 10#$current_version <= repo_max_version )) \
-  || { echo "MIGRATION_PRECHECK_FAILED: 数据库 V$current_version 高于仓库 V$repo_max_version" >&2; exit 1; }
+[[ "$APPROVED_FOUNDATION_TO" == "$APPROVED_FORMAL_DIAGNOSIS_FROM" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移包不连续" >&2; exit 1; }
+[[ "$APPROVED_FORMAL_DIAGNOSIS_TO" == "$APPROVED_ITDB_FROM" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: ITDB 迁移包与正式排障包不连续" >&2; exit 1; }
+[[ "$APPROVED_ITDB_TO" == "$APPROVED_RUNTIME_FROM" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 运行态迁移包与 ITDB 迁移包不连续" >&2; exit 1; }
+[[ "$repo_max_version" == "$APPROVED_RUNTIME_TO" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: 仓库迁移终点必须为 V$APPROVED_RUNTIME_TO" >&2; exit 1; }
+foundation_migration_sha="$(
+  cd "$migration_dir"
+  sha256sum V{205..217}__*.sql | sha256sum | awk '{print $1}'
+)"
+[[ "$foundation_migration_sha" == "$APPROVED_FOUNDATION_SHA256" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
+formal_diagnosis_migration_sha="$(
+  cd "$migration_dir"
+  sha256sum V{218..223}__*.sql | sha256sum | awk '{print $1}'
+)"
+[[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: V218-V223 内容已变化，必须重新审核" >&2; exit 1; }
+itdb_migration_sha="$(
+  cd "$migration_dir"
+  sha256sum V{224..225}__*.sql | sha256sum | awk '{print $1}'
+)"
+[[ "$itdb_migration_sha" == "$APPROVED_ITDB_SHA256" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: V224-V225 ITDB 迁移包已变化，必须重新审核" >&2; exit 1; }
+runtime_migration_sha="$(
+  cd "$migration_dir"
+  sha256sum V{226..228}__*.sql | sha256sum | awk '{print $1}'
+)"
+[[ "$runtime_migration_sha" == "$APPROVED_RUNTIME_SHA256" ]] \
+  || { echo "MIGRATION_PRECHECK_FAILED: V226-V228 运行态迁移包已变化，必须重新审核" >&2; exit 1; }
 
-migration_policy="NO_PENDING_MIGRATIONS"
-if [[ "$pending_count" -gt 0 ]]; then
-  [[ "$APPROVED_FOUNDATION_TO" == "$APPROVED_FORMAL_DIAGNOSIS_FROM" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 已审核迁移包不连续" >&2; exit 1; }
-  [[ "$APPROVED_FORMAL_DIAGNOSIS_TO" == "$APPROVED_ITDB_FROM" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: ITDB 迁移包与正式排障包不连续" >&2; exit 1; }
-  [[ "$APPROVED_ITDB_TO" == "$APPROVED_RUNTIME_FROM" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 运行态迁移包与 ITDB 迁移包不连续" >&2; exit 1; }
-  [[ "$repo_max_version" == "$APPROVED_RUNTIME_TO" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 待执行迁移的仓库终点必须为 V$APPROVED_RUNTIME_TO" >&2; exit 1; }
-  foundation_migration_sha="$(
-    cd "$migration_dir"
-    sha256sum V{205..217}__*.sql | sha256sum | awk '{print $1}'
-  )"
-  [[ "$foundation_migration_sha" == "$APPROVED_FOUNDATION_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V205-V217 内容已变化，必须重新审核" >&2; exit 1; }
-  formal_diagnosis_migration_sha="$(
-    cd "$migration_dir"
-    sha256sum V{218..223}__*.sql | sha256sum | awk '{print $1}'
-  )"
-  [[ "$formal_diagnosis_migration_sha" == "$APPROVED_FORMAL_DIAGNOSIS_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V218-V223 内容已变化，必须重新审核" >&2; exit 1; }
-  itdb_migration_sha="$(
-    cd "$migration_dir"
-    sha256sum V{224..225}__*.sql | sha256sum | awk '{print $1}'
-  )"
-  [[ "$itdb_migration_sha" == "$APPROVED_ITDB_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V224-V225 ITDB 迁移包已变化，必须重新审核" >&2; exit 1; }
-  runtime_migration_sha="$(
-    cd "$migration_dir"
-    sha256sum V{226..228}__*.sql | sha256sum | awk '{print $1}'
-  )"
-  [[ "$runtime_migration_sha" == "$APPROVED_RUNTIME_SHA256" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: V226-V228 运行态迁移包已变化，必须重新审核" >&2; exit 1; }
-
-  case "$current_version" in
-    "$APPROVED_FOUNDATION_FROM")
-      [[ "$pending_count" -eq 24 ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V204 起点应有 24 个已审核迁移，实际为 $pending_count" >&2; exit 1; }
-      [[ "${pending_versions[*]}" == '205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: 待执行版本不等于已审核的 V205-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_FOUNDATION_FROM}_TO_V${APPROVED_RUNTIME_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    "$APPROVED_FORMAL_DIAGNOSIS_FROM")
-      [[ "$pending_count" -eq 11 && "${pending_versions[*]}" == '218 219 220 221 222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V217 起点只允许已审核的 V218-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_FORMAL_DIAGNOSIS_FROM}_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    218)
-      [[ "$pending_count" -eq 10 && "${pending_versions[*]}" == '219 220 221 222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V218 恢复路径只允许已审核的 V219-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V218_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    219)
-      [[ "$pending_count" -eq 9 && "${pending_versions[*]}" == '220 221 222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V219 恢复路径只允许已审核的 V220-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V219_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    220)
-      [[ "$pending_count" -eq 8 && "${pending_versions[*]}" == '221 222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V220 恢复路径只允许已审核的 V221-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V220_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    221)
-      [[ "$pending_count" -eq 7 && "${pending_versions[*]}" == '222 223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V221 恢复路径只允许已审核的 V222-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V221_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    222)
-      [[ "$pending_count" -eq 6 && "${pending_versions[*]}" == '223 224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V222 恢复路径只允许已审核的 V223-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V222_TO_V${APPROVED_RUNTIME_TO}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    "$APPROVED_ITDB_FROM")
-      [[ "$pending_count" -eq 5 && "${pending_versions[*]}" == '224 225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V223 起点只允许已审核的 V224-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_ITDB_FROM}_TO_V${APPROVED_RUNTIME_TO}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    224)
-      [[ "$pending_count" -eq 4 && "${pending_versions[*]}" == '225 226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V224 起点只允许已审核的 V225-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V224_TO_V${APPROVED_RUNTIME_TO}_${itdb_migration_sha}_${runtime_migration_sha}"
-      ;;
-    "$APPROVED_RUNTIME_FROM")
-      [[ "$pending_count" -eq 3 && "${pending_versions[*]}" == '226 227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V225 起点只允许已审核的 V226-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V${APPROVED_RUNTIME_FROM}_TO_V${APPROVED_RUNTIME_TO}_${runtime_migration_sha}"
-      ;;
-    226)
-      [[ "$pending_count" -eq 2 && "${pending_versions[*]}" == '227 228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V226 起点只允许已审核的 V227-V228" >&2; exit 1; }
-      migration_policy="APPROVED_V226_TO_V${APPROVED_RUNTIME_TO}_${runtime_migration_sha}"
-      ;;
-    227)
-      [[ "$pending_count" -eq 1 && "${pending_versions[*]}" == '228' ]] \
-        || { echo "MIGRATION_PRECHECK_FAILED: V227 起点只允许已审核的 V228" >&2; exit 1; }
-      migration_policy="APPROVED_V227_TO_V${APPROVED_RUNTIME_TO}_${runtime_migration_sha}"
-      ;;
-    *)
-      echo "MIGRATION_PRECHECK_FAILED: 未审核的迁移起点 $current_version" >&2
-      exit 1
-      ;;
-  esac
-else
-  [[ "$current_version" == "$repo_max_version" ]] \
-    || { echo "MIGRATION_PRECHECK_FAILED: 无 pending 但数据库 V$current_version 与仓库 V$repo_max_version 不一致" >&2; exit 1; }
-fi
+migration_policy="STATIC_APPROVED_V205_TO_V${APPROVED_RUNTIME_TO}_${foundation_migration_sha}_${formal_diagnosis_migration_sha}_${itdb_migration_sha}_${runtime_migration_sha}"
 printf '%s\n' "$migration_policy" > migration-policy.txt
 
 {
   echo "resolved_commit=$resolved_commit"
   echo "image_id=$(cat candidate-image-id.txt)"
-  echo "current_flyway_version=$current_version"
   echo "repository_max_migration_version=$repo_max_version"
-  echo "pending_migration_count=$pending_count"
   echo "migration_policy=$migration_policy"
+  echo "database_connection=DEFERRED_TO_APPLICATION_STARTUP"
+  echo "flyway_execution=APPLICATION_MANAGED"
   echo "runtime_smoke=DEFERRED_TO_MAINTENANCE_CUTOVER"
 } > candidate-verification.txt
 cat candidate-verification.txt
-echo "IMAGE_AND_MIGRATION_PRECHECK_OK"
+echo "IMAGE_AND_MIGRATION_PACKAGE_PRECHECK_OK"
 '''
       }
     }
@@ -665,11 +598,10 @@ umask 077
 
 resolved_commit="$(cat resolved-commit.txt)"
 TARGET_IMAGE="$(cat target-image.txt)"
+SOURCE_DIR="$WORKSPACE/source"
 ROLLBACK_CONTAINER="${CONTAINER}-rollback-${BUILD_NUMBER}"
 BACKUP_DATA="${RELEASES_DIR}/data-backup-${BUILD_NUMBER}"
 FAILED_DATA="${RELEASES_DIR}/data-failed-${BUILD_NUMBER}"
-DB_BACKUP="${RELEASES_DIR}/mysql-before-${resolved_commit:0:12}-${BUILD_NUMBER}.sql.gz"
-MYSQL_CNF="$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
 OLD_STOPPED=0
 OLD_RENAMED=0
 NEW_STARTED=0
@@ -677,45 +609,44 @@ BACKUP_CREATED=0
 OLD_IMAGE_ID="NONE"
 OLD_IMAGE_REF="NONE"
 
-env_value() {
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -1
-}
+expected_env_file_sha="$(cat env-file-sha256.txt)"
+actual_env_file_sha="$(sha256sum "$ENV_FILE" | awk '{print $1}')"
+[[ "$actual_env_file_sha" == "$expected_env_file_sha" ]] \
+  || { echo "DEPLOY_FAILED: mateclaw.env 在预检后发生变化" >&2; exit 1; }
 
-DB_HOST_VALUE="$(env_value DB_HOST)"
-DB_PORT_VALUE="$(env_value DB_PORT)"
-DB_NAME_VALUE="$(env_value DB_NAME)"
-DB_USER_VALUE="$(env_value DB_USERNAME)"
-DB_PASSWORD_VALUE="$(env_value DB_PASSWORD)"
-DB_PORT_VALUE="${DB_PORT_VALUE:-3306}"
-PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE="$(env_value PLAYWRIGHT_ALLOW_PRIVATE_NETWORK)"
-PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE="$(env_value PLAYWRIGHT_IGNORE_HTTPS_ERRORS)"
-PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE="$(env_value PLAYWRIGHT_DEFAULT_TIMEOUT_SECONDS)"
-PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE="$(env_value PLAYWRIGHT_NAVIGATION_TIMEOUT_SECONDS)"
-PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE="$(env_value PLAYWRIGHT_SNAPSHOT_MAX_LENGTH)"
-PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE="${PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE:-false}"
-PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE="${PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE:-false}"
-PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE="${PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE:-30}"
-PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE="${PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE:-30}"
-PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE="${PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE:-20000}"
-[[ "$DB_NAME_VALUE" =~ ^[A-Za-z0-9_]+$ ]] \
-  || { echo "DEPLOY_FAILED: DB_NAME 格式不安全" >&2; exit 1; }
-{
-  printf '[client]\n'
-  printf 'host=%s\n' "$DB_HOST_VALUE"
-  printf 'port=%s\n' "$DB_PORT_VALUE"
-  printf 'user=%s\n' "$DB_USER_VALUE"
-  printf 'password=%s\n' "$DB_PASSWORD_VALUE"
-  printf 'default-character-set=utf8mb4\n'
-} > "$MYSQL_CNF"
-chmod 600 "$MYSQL_CNF"
+CANDIDATE_IMAGE_ID="$(cat candidate-image-id.txt)"
+[[ "$CANDIDATE_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+  || { echo "DEPLOY_FAILED: 候选应用镜像 ID 不是完整 SHA-256" >&2; exit 1; }
+candidate_tag_image_id="$(docker inspect --format '{{.Id}}' "$CANDIDATE_IMAGE")"
+candidate_immutable_image_id="$(docker inspect --format '{{.Id}}' "$CANDIDATE_IMAGE_ID")"
+[[ "$candidate_tag_image_id" == "$CANDIDATE_IMAGE_ID" ]] \
+  || { echo "DEPLOY_FAILED: 候选镜像标签在预检后发生漂移" >&2; exit 1; }
+[[ "$candidate_immutable_image_id" == "$CANDIDATE_IMAGE_ID" ]] \
+  || { echo "DEPLOY_FAILED: 无法按不可变 ID 确认候选镜像" >&2; exit 1; }
+
+runtime_security_args=()
+case "$(sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)" in
+  NATIVE_CLONE3_SECCOMP) ;;
+  LEGACY_CUSTOM_SECCOMP)
+    LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
+    expected_seccomp_sha="$(sed -n 's/^legacy_seccomp_profile_sha256=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)"
+    actual_seccomp_sha="$(sha256sum "$LEGACY_SECCOMP_PROFILE" | awk '{print $1}')"
+    [[ -n "$expected_seccomp_sha" && "$actual_seccomp_sha" == "$expected_seccomp_sha" ]] \
+      || { echo "DEPLOY_FAILED: Docker 18 seccomp profile 与预检证据不一致" >&2; exit 1; }
+    runtime_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")
+    ;;
+  *)
+    echo "DEPLOY_FAILED: 缺少有效的 Docker 运行时兼容性结论" >&2
+    exit 1
+    ;;
+esac
 
 rollback() {
   rc=$?
   [[ "$rc" -ne 0 ]] || rc=1
   trap - ERR INT TERM
   set +e
-  rm -f -- "$MYSQL_CNF"
-  echo "DEPLOY_FAILED: 开始应用容器回滚；MySQL 逻辑备份保留在 $DB_BACKUP"
+  echo "DEPLOY_FAILED: 开始应用容器回滚；数据库连接与 Flyway 均由应用启动过程管理"
 
   if [[ "$NEW_STARTED" -eq 1 ]]; then
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -750,10 +681,6 @@ rollback() {
 }
 trap rollback ERR INT TERM
 
-[[ ! -e "$DB_BACKUP" ]] || {
-  echo "DEPLOY_FAILED: MySQL 备份文件已存在：$DB_BACKUP" >&2
-  exit 1
-}
 [[ ! -e "$BACKUP_DATA" ]] || {
   echo "DEPLOY_FAILED: 备份目录已存在：$BACKUP_DATA" >&2
   exit 1
@@ -770,21 +697,6 @@ if docker inspect "$CONTAINER" >/dev/null 2>&1; then
   OLD_STOPPED=1
 fi
 
-# 停止旧应用后再做单事务逻辑备份，避免应用写入跨过备份边界。密码只存在于
-# mode-600 option file，不进入 argv 或 Jenkins 日志。数据库恢复不自动执行：
-# 本次只允许无 pending，或哈希冻结的 V204-V217 基础包与
-# V218-V223 正式排障包与 V224-V225 ITDB 审批员工包；失败时恢复旧容器，
-# 并保留该备份供人工恢复。
-docker run --rm \
-  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-  --entrypoint mysqldump "$MYSQL_CLIENT_IMAGE" \
-  --defaults-extra-file=/tmp/mateclaw-client.cnf \
-  --single-transaction --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF \
-  --quick --routines --triggers --events --hex-blob \
-  "$DB_NAME_VALUE" | gzip -1 > "$DB_BACKUP"
-test -s "$DB_BACKUP"
-gzip -t "$DB_BACKUP"
-
 if [[ -d "$DATA_DIR" ]]; then
   cp -a "$DATA_DIR" "$BACKUP_DATA"
   BACKUP_CREATED=1
@@ -795,34 +707,14 @@ if [[ "$OLD_STOPPED" -eq 1 ]]; then
   OLD_RENAMED=1
 fi
 
-docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
-runtime_security_args=()
-case "$(sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)" in
-  NATIVE_CLONE3_SECCOMP) ;;
-  LEGACY_CUSTOM_SECCOMP)
-    LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
-    expected_seccomp_sha="$(sed -n 's/^legacy_seccomp_profile_sha256=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1)"
-    actual_seccomp_sha="$(sha256sum "$LEGACY_SECCOMP_PROFILE" | awk '{print $1}')"
-    [[ -n "$expected_seccomp_sha" && "$actual_seccomp_sha" == "$expected_seccomp_sha" ]] \
-      || { echo "DEPLOY_FAILED: Docker 18 seccomp profile 与预检证据不一致" >&2; false; }
-    runtime_security_args=(--security-opt "seccomp=$LEGACY_SECCOMP_PROFILE")
-    ;;
-  *)
-    echo "DEPLOY_FAILED: 缺少有效的 Docker 运行时兼容性结论" >&2
-    false
-    ;;
-esac
+docker tag "$CANDIDATE_IMAGE_ID" "$TARGET_IMAGE"
 docker run -d \
   "${runtime_security_args[@]}" \
   --name "$CONTAINER" \
   --restart unless-stopped \
   --env-file "$ENV_FILE" \
+  -e 'MATECLAW_FLYWAY_AUTO_REPAIR=false' \
   -e 'JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Shanghai -Dsun.jnu.encoding=UTF-8 -XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError' \
-  -e "MATECLAW_BROWSER_ALLOW_PRIVATE_NETWORK=$PLAYWRIGHT_ALLOW_PRIVATE_NETWORK_VALUE" \
-  -e "MATECLAW_BROWSER_IGNORE_HTTPS_ERRORS=$PLAYWRIGHT_IGNORE_HTTPS_ERRORS_VALUE" \
-  -e "MATECLAW_BROWSER_DEFAULT_TIMEOUT_SECONDS=$PLAYWRIGHT_DEFAULT_TIMEOUT_VALUE" \
-  -e "MATECLAW_BROWSER_DEFAULT_NAVIGATION_TIMEOUT_SECONDS=$PLAYWRIGHT_NAVIGATION_TIMEOUT_VALUE" \
-  -e "MATECLAW_BROWSER_SNAPSHOT_MAX_LENGTH=$PLAYWRIGHT_SNAPSHOT_MAX_LENGTH_VALUE" \
   --shm-size 2g \
   --memory 6g \
   --cpus 4 \
@@ -853,25 +745,9 @@ done
 curl -fsS --max-time 5 "$HEALTH_URL" > deployed-health.json
 curl -fsS --max-time 5 "$INFO_URL" > deployed-info.json
 grep -Fq "\"commit\":\"$resolved_commit\"" deployed-info.json
-
-deployed_flyway_version="$(docker run --rm \
-  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
-  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
-  -e "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1" \
-  "$DB_NAME_VALUE")"
-deployed_failed_migration_count="$(docker run --rm \
-  -v "$MYSQL_CNF:/tmp/mateclaw-client.cnf:ro" \
-  --entrypoint mysql "$MYSQL_CLIENT_IMAGE" \
-  --defaults-extra-file=/tmp/mateclaw-client.cnf --batch --skip-column-names \
-  -e "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0" \
-  "$DB_NAME_VALUE")"
-printf '%s\n' "$deployed_flyway_version" > deployed-flyway-version.txt
-printf '%s\n' "$deployed_failed_migration_count" > deployed-failed-migration-count.txt
-[[ "$deployed_flyway_version" == "$APPROVED_RUNTIME_TO" ]] \
-  || { echo "DEPLOY_FAILED: 数据库 Flyway 最终版本为 V$deployed_flyway_version，期望 V$APPROVED_RUNTIME_TO" >&2; false; }
-[[ "$deployed_failed_migration_count" == '0' ]] \
-  || { echo "DEPLOY_FAILED: 发布后存在 $deployed_failed_migration_count 条失败迁移" >&2; false; }
+actual_env_file_sha="$(sha256sum "$ENV_FILE" | awk '{print $1}')"
+[[ "$actual_env_file_sha" == "$expected_env_file_sha" ]] \
+  || { echo "DEPLOY_FAILED: mateclaw.env 在应用启动期间发生变化" >&2; false; }
 
 new_image_id="$(docker inspect --format '{{.Image}}' "$CONTAINER")"
 new_state="$(docker inspect --format '{{.State.Status}}' "$CONTAINER")"
@@ -881,7 +757,6 @@ if [[ "$OLD_RENAMED" -eq 1 ]]; then
 fi
 
 trap - ERR INT TERM
-rm -f -- "$MYSQL_CNF"
 
 {
   echo "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -894,11 +769,11 @@ rm -f -- "$MYSQL_CNF"
   echo "new_image_id=$new_image_id"
   echo "container_state=$new_state"
   echo "health=UP"
-  echo "flyway_version=$deployed_flyway_version"
-  echo "failed_migration_count=$deployed_failed_migration_count"
   echo "rollback_data=$BACKUP_DATA"
-  echo "mysql_backup=$DB_BACKUP"
   echo "migration_policy=$(cat migration-policy.txt)"
+  echo "database_connection=APPLICATION_MANAGED_FROM_ENV_FILE"
+  echo "flyway_execution=APPLICATION_STARTUP"
+  echo "env_file_sha256=$expected_env_file_sha"
   echo "listen_address=127.0.0.1:18080"
 } > deployment-manifest.txt
 
@@ -918,15 +793,28 @@ echo "DEPLOY_OK"
       sh returnStatus: true, script: '''#!/usr/bin/env bash
 set +x
 set +e
-docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
-rm -f -- "$WORKSPACE/.mysql-client-${BUILD_NUMBER}.cnf"
+expected_docker_config="$WORKSPACE/.docker-config-${BUILD_NUMBER}"
+if [[ "${DOCKER_CONFIG:-}" == "$expected_docker_config" ]]; then
+  if [[ -L "$DOCKER_CONFIG" ]]; then
+    rm -f -- "$DOCKER_CONFIG"
+  elif [[ -d "$DOCKER_CONFIG" ]]; then
+    find "$DOCKER_CONFIG" -mindepth 1 -delete
+    rmdir -- "$DOCKER_CONFIG" 2>/dev/null || true
+  elif [[ -e "$DOCKER_CONFIG" ]]; then
+    rm -f -- "$DOCKER_CONFIG"
+  fi
+fi
+if command -v timeout >/dev/null 2>&1; then
+  timeout --signal=TERM --kill-after=2s 30 \
+    docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
+fi
 SOURCE_DIR="$WORKSPACE/source"
 if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
   rm -rf -- "$SOURCE_DIR"
 fi
 '''
       archiveArtifacts(
-        artifacts: 'preflight-report.txt,runtime-compatibility.txt,build-security.txt,runtime-package-manifest.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,current-flyway-version.txt,failed-migration-count.txt,repository-max-migration-version.txt,pending-migration-count.txt,migration-policy.txt,mysql-client-image-id.txt,deployed-health.json,deployed-info.json,deployed-flyway-version.txt,deployed-failed-migration-count.txt,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
+        artifacts: 'preflight-report.txt,runtime-compatibility.txt,build-security.txt,runtime-package-manifest.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,repository-max-migration-version.txt,migration-policy.txt,env-file-sha256.txt,deployed-health.json,deployed-info.json,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
         allowEmptyArchive: true,
         fingerprint: true
       )

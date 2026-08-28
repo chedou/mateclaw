@@ -95,6 +95,72 @@ chmod +x "$TMP_DIR/bin/timeout" "$TMP_DIR/bin/docker"
 
 release_commit='1234567890abcdef1234567890abcdef12345678'
 runtime_base_image_id='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+internal_frontend_image='itharbor.sangfor.com/base-image/node:22.18.0-alpine@sha256:ac0d137a585eaaaf648c4f011a6f52cbb71952f9471e76c343fdb2d1cd711b62'
+internal_backend_image='itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:1750ed0e15881d6b9e11d8657026a492cd29e85e009481bbb1d0d7a0056e42b9'
+internal_runtime_image='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e'
+export MATECLAW_RUNTIME_BASE_IMAGE="$internal_runtime_image"
+
+grep -Fq "ARG MATECLAW_FRONTEND_BASE_IMAGE=$internal_frontend_image" "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile must pin the frontend builder to the reviewed internal Node digest"
+grep -Fq 'FROM ${MATECLAW_FRONTEND_BASE_IMAGE} AS frontend-builder' "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile frontend stage must consume the configurable internal image"
+grep -Fq "ARG MATECLAW_BACKEND_BASE_IMAGE=$internal_backend_image" "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile must pin the backend builder to the reviewed internal Maven digest"
+grep -Fq 'FROM ${MATECLAW_BACKEND_BASE_IMAGE} AS builder' "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile backend stage must consume the configurable internal image"
+grep -Fq "ARG MATECLAW_RUNTIME_BASE_IMAGE=$internal_runtime_image" "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile runtime image must pin the reviewed internal Playwright digest"
+grep -Fq 'FROM ${MATECLAW_RUNTIME_BASE_IMAGE}' "${ROOT_DIR}/mateclaw-server/Dockerfile" \
+  || fail "Dockerfile runtime stage must consume the required internal image"
+
+external_runtime_log="$TMP_DIR/external-runtime.log"
+: > "$external_runtime_log"
+if MATECLAW_RUNTIME_BASE_IMAGE='mcr.microsoft.com/playwright:v1.62.0-noble@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+  PATH="$TMP_DIR/bin:$PATH" \
+  FAKE_DOCKER_LOG="$external_runtime_log" FAKE_TIMEOUT_LOG="$TMP_DIR/external-runtime-timeout.log" \
+  "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
+  'mateclaw:external-runtime' "$SECCOMP_PROFILE" "$runtime_base_image_id" \
+  "$TMP_DIR/external-runtime-evidence.txt" "$TMP_DIR/external-runtime-packages.txt" \
+  >"$TMP_DIR/external-runtime.out" 2>&1; then
+  fail "candidate build must reject a runtime base outside Sangfor Harbor"
+fi
+grep -Fq 'itharbor.sangfor.com' "$TMP_DIR/external-runtime.out" \
+  || fail "external runtime rejection must explain the internal Harbor requirement"
+[[ ! -s "$external_runtime_log" ]] \
+  || fail "external runtime base must fail before any Docker action"
+
+wrong_runtime_digest_log="$TMP_DIR/wrong-runtime-digest.log"
+: > "$wrong_runtime_digest_log"
+if MATECLAW_RUNTIME_BASE_IMAGE='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+  PATH="$TMP_DIR/bin:$PATH" \
+  FAKE_DOCKER_LOG="$wrong_runtime_digest_log" FAKE_TIMEOUT_LOG="$TMP_DIR/wrong-runtime-digest-timeout.log" \
+  "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
+  'mateclaw:wrong-runtime-digest' "$SECCOMP_PROFILE" "$runtime_base_image_id" \
+  "$TMP_DIR/wrong-runtime-digest-evidence.txt" "$TMP_DIR/wrong-runtime-digest-packages.txt" \
+  >"$TMP_DIR/wrong-runtime-digest.out" 2>&1; then
+  fail "candidate build must reject an unreviewed digest in the approved runtime repository"
+fi
+grep -Fq '已审核的 Playwright 不可变引用' "$TMP_DIR/wrong-runtime-digest.out" \
+  || fail "wrong runtime digest rejection must explain the exact reviewed-image requirement"
+[[ ! -s "$wrong_runtime_digest_log" ]] \
+  || fail "wrong runtime digest must fail before any Docker action"
+
+wrong_backend_digest_log="$TMP_DIR/wrong-backend-digest.log"
+: > "$wrong_backend_digest_log"
+if MATECLAW_BACKEND_BASE_IMAGE='itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+  PATH="$TMP_DIR/bin:$PATH" \
+  FAKE_DOCKER_LOG="$wrong_backend_digest_log" FAKE_TIMEOUT_LOG="$TMP_DIR/wrong-backend-digest-timeout.log" \
+  "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
+  'mateclaw:wrong-backend-digest' "$SECCOMP_PROFILE" "$runtime_base_image_id" \
+  "$TMP_DIR/wrong-backend-digest-evidence.txt" "$TMP_DIR/wrong-backend-digest-packages.txt" \
+  >"$TMP_DIR/wrong-backend-digest.out" 2>&1; then
+  fail "candidate build must reject an unreviewed digest in the approved Maven repository"
+fi
+grep -Fq '已审核的 Maven 不可变引用' "$TMP_DIR/wrong-backend-digest.out" \
+  || fail "wrong Maven digest rejection must explain the exact reviewed-image requirement"
+[[ ! -s "$wrong_backend_digest_log" ]] \
+  || fail "wrong Maven digest must fail before any Docker action"
+
 legacy_log="$TMP_DIR/legacy-docker.log"
 legacy_timeout_log="$TMP_DIR/legacy-timeout.log"
 legacy_evidence="$TMP_DIR/legacy-evidence.txt"
@@ -111,6 +177,12 @@ FAKE_TIMEOUT_LOG="$legacy_timeout_log" \
 
 grep -Fq 'build <--target> <builder>' "$legacy_log" \
   || fail "Docker 18 path must build only the builder target"
+grep -Fq "<--build-arg> <MATECLAW_FRONTEND_BASE_IMAGE=$internal_frontend_image>" "$legacy_log" \
+  || fail "legacy builder must receive the pinned internal Node image"
+grep -Fq "<--build-arg> <MATECLAW_BACKEND_BASE_IMAGE=$internal_backend_image>" "$legacy_log" \
+  || fail "legacy builder must receive the pinned internal Maven image"
+grep -Fq "<--build-arg> <MATECLAW_RUNTIME_BASE_IMAGE=$internal_runtime_image>" "$legacy_log" \
+  || fail "legacy Docker parse must receive the pinned internal runtime image"
 if grep -E '^build .*security-opt' "$legacy_log" >/dev/null; then
   fail "Docker 18 docker build must not receive --security-opt"
 fi
@@ -123,7 +195,7 @@ grep -Fq "<--security-opt> <seccomp=$SECCOMP_PROFILE>" "$legacy_log" \
 grep -Fq "<$runtime_base_image_id>" "$legacy_log" \
   || fail "legacy runtime assembly must start from the pinned immutable base ID"
 if grep -Fq '<mcr.microsoft.com/playwright:v1.62.0-noble>' "$legacy_log"; then
-  fail "legacy build must not re-inspect or run the mutable runtime tag"
+  fail "legacy build must never use the public runtime image"
 fi
 [[ "$(grep -o 'readonly' "$legacy_log" | wc -l | tr -d ' ')" -ge 3 ]] \
   || fail "installer, keyring, and JAR mounts must all be read-only"
@@ -142,6 +214,8 @@ grep -Fq 'docker_build_security_mode=LEGACY_REVIEWED_SECCOMP_ASSEMBLY' "$legacy_
   || fail "legacy build evidence must identify reviewed-seccomp assembly"
 grep -Fq "runtime_base_image_id=$runtime_base_image_id" "$legacy_evidence" \
   || fail "legacy evidence must record the immutable runtime base ID"
+grep -Fq "runtime_base_image_ref=$internal_runtime_image" "$legacy_evidence" \
+  || fail "legacy evidence must record the digest-pinned internal runtime base"
 grep -Fq 'artifact_image_id=sha256:builder-artifact' "$legacy_evidence" \
   || fail "legacy evidence must record the builder artifact image ID"
 grep -Fq 'candidate_image_id=sha256:candidate-image' "$legacy_evidence" \
@@ -238,6 +312,12 @@ FAKE_BASE_INSPECT_FAIL=1 \
   "$TMP_DIR/native-evidence.txt" "$TMP_DIR/native-packages.txt" >/dev/null
 grep -Fq 'build <--build-arg>' "$native_log" \
   || fail "modern path must retain the full Dockerfile build"
+grep -Fq "<--build-arg> <MATECLAW_FRONTEND_BASE_IMAGE=$internal_frontend_image>" "$native_log" \
+  || fail "modern builder must receive the pinned internal Node image"
+grep -Fq "<--build-arg> <MATECLAW_BACKEND_BASE_IMAGE=$internal_backend_image>" "$native_log" \
+  || fail "modern builder must receive the pinned internal Maven image"
+grep -Fq "<--build-arg> <MATECLAW_RUNTIME_BASE_IMAGE=$internal_runtime_image>" "$native_log" \
+  || fail "modern builder must receive the pinned internal runtime image"
 if grep -Fq '<--target> <builder>' "$native_log"; then
   fail "modern path must not stop at the builder target"
 fi

@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECKER="${ROOT_DIR}/scripts/ci/check-docker-clone3-compatibility.sh"
 SECCOMP_PROFILE="${ROOT_DIR}/deploy/seccomp/docker18-clone3.json"
 SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
+INTERNAL_RUNTIME_IMAGE='itharbor.sangfor.com/test-fixtures/playwright-runtime:v1.62.0-noble@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 TMP_DIR="$(mktemp -d)"
 MAINTENANCE_RECORD="${TMP_DIR}/missing-maintenance-record.txt"
 trap 'rm -rf -- "${TMP_DIR}"' EXIT
@@ -73,9 +74,10 @@ printf '%s\n' \
   > "${TMP_DIR}/bin/timeout"
 chmod +x "${TMP_DIR}/bin/timeout"
 printf '%s\n' \
-  'FROM node:22-alpine AS builder' \
-  'FROM mcr.microsoft.com/playwright:v1.62.0-noble' \
+  'ARG MATECLAW_RUNTIME_BASE_IMAGE=' \
+  'FROM ${MATECLAW_RUNTIME_BASE_IMAGE}' \
   > "${TMP_DIR}/Dockerfile"
+export MATECLAW_RUNTIME_BASE_IMAGE="${INTERNAL_RUNTIME_IMAGE}"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'case "${1:-}" in' \
@@ -124,6 +126,24 @@ expect_fail() {
 }
 
 expect_pass '18.06.0-ce'
+if env -u MATECLAW_RUNTIME_BASE_IMAGE \
+  PATH="${TMP_DIR}/bin:${PATH}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/missing-runtime.out" 2>&1; then
+  fail "Docker 18 gate must reject a missing internal runtime mirror"
+fi
+grep -Fq 'MATECLAW_RUNTIME_BASE_IMAGE 未配置' "${TMP_DIR}/missing-runtime.out" \
+  || fail "missing runtime mirror rejection must explain the required configuration"
+if MATECLAW_RUNTIME_BASE_IMAGE='mcr.microsoft.com/playwright:v1.62.0-noble@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+  PATH="${TMP_DIR}/bin:${PATH}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/external-runtime.out" 2>&1; then
+  fail "Docker 18 gate must reject a runtime mirror outside Sangfor Harbor"
+fi
+grep -Fq 'itharbor.sangfor.com' "${TMP_DIR}/external-runtime.out" \
+  || fail "external runtime rejection must explain the internal Harbor boundary"
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_VERSION=2.3.1 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
   "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/old-libseccomp.out" 2>&1; then
@@ -163,7 +183,7 @@ grep -Fq 'legacy_runtime_probe_image_source=PULLED' <<<"${pulled_output}" \
 
 recorded_image_id="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 printf '%s\n' \
-  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image=${INTERNAL_RUNTIME_IMAGE}" \
   "runtime_image_id=${recorded_image_id}" \
   > "${MAINTENANCE_RECORD}"
 chmod 600 "${MAINTENANCE_RECORD}"
@@ -199,14 +219,14 @@ if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
   >"${TMP_DIR}/forged-record.out" 2>&1; then
   fail "maintenance record with a forged image reference must fail closed"
 fi
-grep -Fq '维护记录引用与 Dockerfile 不一致' "${TMP_DIR}/forged-record.out" \
+grep -Fq '维护记录引用与已配置运行镜像不一致' "${TMP_DIR}/forged-record.out" \
   || fail "forged maintenance record rejection must explain the reference mismatch"
 if grep -Fq 'docker pull ' "${forged_call_log}"; then
   fail "an invalid maintenance record must not fall through to a network pull"
 fi
 
 printf '%s\n' \
-  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image=${INTERNAL_RUNTIME_IMAGE}" \
   "runtime_image_id=${recorded_image_id}" \
   > "${MAINTENANCE_RECORD}"
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
@@ -220,7 +240,7 @@ grep -Fq '权限必须为 0400 或 0600' "${TMP_DIR}/record-permission.out" \
   || fail "unsafe maintenance-record permissions must be explained"
 
 printf '%s\n' \
-  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image=${INTERNAL_RUNTIME_IMAGE}" \
   > "${MAINTENANCE_RECORD}"
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
@@ -232,7 +252,7 @@ grep -Fq '必须且只能包含一个 runtime_image_id' "${TMP_DIR}/record-missi
   || fail "missing maintenance-record image IDs must be explained"
 
 printf '%s\n' \
-  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image=${INTERNAL_RUNTIME_IMAGE}" \
   "runtime_image_id=${recorded_image_id}" \
   > "${MAINTENANCE_RECORD}"
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
@@ -247,7 +267,7 @@ grep -Fq '不可变镜像不存在' "${TMP_DIR}/record-deleted-id.out" \
 
 record_target="${TMP_DIR}/record-target.txt"
 printf '%s\n' \
-  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image=${INTERNAL_RUNTIME_IMAGE}" \
   "runtime_image_id=${recorded_image_id}" \
   > "${record_target}"
 rm -f "${MAINTENANCE_RECORD}"

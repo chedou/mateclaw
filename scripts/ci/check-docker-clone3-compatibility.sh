@@ -92,15 +92,16 @@ legacy_seccomp_sha256="$(sha256sum "${legacy_seccomp_profile}" | awk '{print $1}
   "Docker 18 clone3 seccomp profile 哈希未通过审核：${legacy_seccomp_sha256}"
 [[ -f "${runtime_dockerfile}" ]] || fail \
   "生产运行 Dockerfile 不存在：${runtime_dockerfile}"
-
-runtime_image="$(
-  awk 'toupper($1) == "FROM" { image = $2 } END { print image }' \
-    "${runtime_dockerfile}"
-)"
-case "${runtime_image}" in
-  mcr.microsoft.com/playwright:v*-noble) ;;
-  *) fail "旧 Docker 兼容探针只允许使用生产 Dockerfile 最终固定的 Playwright Noble 镜像，实际为：${runtime_image:-EMPTY}" ;;
-esac
+runtime_from="$(awk 'toupper($1) == "FROM" { image = $2 } END { print image }' "${runtime_dockerfile}")"
+[[ "${runtime_from}" == '${MATECLAW_RUNTIME_BASE_IMAGE}' ]] || fail \
+  "生产 Dockerfile 最终阶段必须由 MATECLAW_RUNTIME_BASE_IMAGE 提供，实际为：${runtime_from:-EMPTY}"
+runtime_image="${MATECLAW_RUNTIME_BASE_IMAGE:-}"
+[[ -n "${runtime_image}" ]] || fail \
+  "MATECLAW_RUNTIME_BASE_IMAGE 未配置；请先将 Playwright v1.62.0-noble 精确镜像同步到深信服 Harbor"
+[[ "${runtime_image}" =~ ^itharbor\.sangfor\.com/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$ ]] || fail \
+  "MATECLAW_RUNTIME_BASE_IMAGE 必须是 itharbor.sangfor.com 下带 tag 且固定 sha256 digest 的镜像引用"
+[[ "${runtime_image}" == *':v1.62.0-noble@sha256:'* ]] || fail \
+  "MATECLAW_RUNTIME_BASE_IMAGE 必须是 Playwright v1.62.0-noble 的内网 digest 镜像"
 
 command -v docker >/dev/null || fail "docker 命令不存在，无法执行旧版本兼容探针"
 command -v timeout >/dev/null || fail "宿主缺少 timeout，无法有界执行旧版本兼容探针"
@@ -161,7 +162,7 @@ else
     [[ "${record_runtime_image_id_count}" -eq 1 ]] || fail \
       "Docker 18 基础镜像维护记录必须且只能包含一个 runtime_image_id"
     [[ "${recorded_runtime_image}" == "${runtime_image}" ]] || fail \
-      "Docker 18 基础镜像维护记录引用与 Dockerfile 不一致：${recorded_runtime_image:-EMPTY}"
+      "Docker 18 基础镜像维护记录引用与已配置运行镜像不一致：${recorded_runtime_image:-EMPTY}"
     [[ "${recorded_runtime_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail \
       "Docker 18 基础镜像维护记录 ID 格式非法：${recorded_runtime_image_id:-EMPTY}"
     recorded_actual_image_id=""

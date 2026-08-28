@@ -1,10 +1,20 @@
 # Multi-stage build
 #
+# 200.200.4.33 is an isolated test host: every build/runtime base must come
+# from Sangfor Harbor and be immutable. Node and Maven already have reviewed
+# internal mirrors, so their tag + repository digest is the safe default. The
+# Maven and Playwright mirrors below were imported through the controlled
+# Jenkins/Harbor path and are pinned to the resulting repository digests. Do
+# not fall back to public registries or replace either digest with a mutable tag.
+ARG MATECLAW_FRONTEND_BASE_IMAGE=itharbor.sangfor.com/base-image/node:22.18.0-alpine@sha256:ac0d137a585eaaaf648c4f011a6f52cbb71952f9471e76c343fdb2d1cd711b62
+ARG MATECLAW_BACKEND_BASE_IMAGE=itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:1750ed0e15881d6b9e11d8657026a492cd29e85e009481bbb1d0d7a0056e42b9
+ARG MATECLAW_RUNTIME_BASE_IMAGE=itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e
+#
 # Stage 1 — Frontend (Node / npm)
 #   Builds the Vue 3 admin SPA and emits static files to /static inside the
 #   build container. These files are later copied into the JAR's classpath so
 #   Spring Boot serves the SPA at the root URL.
-FROM node:22-alpine AS frontend-builder
+FROM ${MATECLAW_FRONTEND_BASE_IMAGE} AS frontend-builder
 WORKDIR /frontend
 # Install dependencies first (layer cache)
 COPY mateclaw-ui/package.json mateclaw-ui/package-lock.json ./
@@ -30,10 +40,10 @@ COPY mateclaw-ui/ ./
 RUN NODE_OPTIONS=--max-old-space-size=6144 npm exec -- vite build --outDir /static --emptyOutDir
 
 # Stage 2 — Backend (Maven)
-# Pin the Alpine variant built in the same generation as the test host's
-# Docker engine. Newer Noble-based Maven layers are pulled successfully by
-# Docker 18.06/legacy-overlay but `/usr/bin/mvn` then fails with EPERM.
-FROM maven:3.9.6-eclipse-temurin-21-alpine AS builder
+# The reviewed internal Maven mirror is pinned by repository digest above.
+# Docker 18's runtime assembly still uses the separately reviewed custom
+# seccomp path; no unsupported --security-opt is passed to `docker build`.
+FROM ${MATECLAW_BACKEND_BASE_IMAGE} AS builder
 
 # Optional Maven extra flags passed at build time.
 # Set MAVEN_FLAGS=-Paliyun-first in .env (or via --build-arg) to put Aliyun
@@ -73,15 +83,16 @@ RUN mvn -pl mateclaw-server -am package -Dmaven.test.skip=true -q ${MAVEN_FLAGS}
 
 # Stage 3 — Runtime
 #
-# Uses Microsoft's official Playwright image (Ubuntu Noble, glibc) with all three
-# browsers (Chromium / Firefox / WebKit) and every system library Chromium needs
-# pre-installed. This avoids the `playwright install` step and the Alpine/musl
-# incompatibility that blocks browser_use on minimal images.
+# Uses the controlled Sangfor Harbor mirror of Microsoft's Playwright image
+# (Ubuntu Noble, glibc) with all three browsers (Chromium / Firefox / WebKit)
+# and every system library Chromium needs pre-installed. This avoids the
+# `playwright install` step and the Alpine/musl incompatibility that blocks
+# browser_use on minimal images.
 # We pin to the exact Playwright version declared in the root pom.xml. If you
 # bump the Java dependency, bump this tag in lockstep — Microsoft rebuilds each
 # tag with the matching driver, so mismatched versions cause the java driver to
 # re-download browsers at runtime (defeating the whole point of this image).
-FROM mcr.microsoft.com/playwright:v1.62.0-noble
+FROM ${MATECLAW_RUNTIME_BASE_IMAGE}
 WORKDIR /app
 
 # Immutable deployment identity. docker-compose passes the clean checkout's

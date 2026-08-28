@@ -6,6 +6,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PIPELINE="${ROOT_DIR}/Jenkinsfile.test-env"
 RELEASE_SCRIPT="${ROOT_DIR}/scripts/release-test-env.sh"
 CANDIDATE_BUILDER="${ROOT_DIR}/scripts/ci/build-test-env-candidate-image.sh"
+APPROVED_RUNTIME_BASE_IMAGE='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:0e5163ed3364179e474b849dbecfaa46a06e21212abe2c67873f706dc609b88e'
+APPROVED_BACKEND_BASE_IMAGE='itharbor.sangfor.com/ai-uat/mateclaw-maven:3.9.6-eclipse-temurin-21-alpine@sha256:1750ed0e15881d6b9e11d8657026a492cd29e85e009481bbb1d0d7a0056e42b9'
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf -- "$TMP_DIR"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -39,6 +43,14 @@ if grep -Eq -- 'docker build[^\n]*(--security-opt|security-opt)' "${PIPELINE}" "
 fi
 grep -Fq 'build-security.txt' "${PIPELINE}" \
   || fail "pipeline must archive image-build seccomp evidence"
+auth_cleanup_line="$(grep -nF 'expected_docker_config="$WORKSPACE/.docker-config-${BUILD_NUMBER}"' "${PIPELINE}" | tail -1 | cut -d: -f1)"
+image_cleanup_line="$(grep -nF 'docker image rm "$CANDIDATE_IMAGE"' "${PIPELINE}" | tail -1 | cut -d: -f1)"
+[[ -n "${auth_cleanup_line}" && -n "${image_cleanup_line}" ]] \
+  || fail "post-build Harbor auth or image cleanup is missing"
+(( auth_cleanup_line < image_cleanup_line )) \
+  || fail "temporary Harbor credentials must be removed before any Docker cleanup"
+grep -Fq 'timeout --signal=TERM --kill-after=2s 30' "${PIPELINE}" \
+  || fail "post-build Docker cleanup must be bounded"
 if grep -Fq -- '--security-opt seccomp=unconfined' "${PIPELINE}" "${RELEASE_SCRIPT}"; then
   fail "maintenance and release must never disable seccomp"
 fi
@@ -46,5 +58,30 @@ grep -Fq 'DEPLOY|VERIFY_ONLY|UPGRADE_LIBSECCOMP' "${RELEASE_SCRIPT}" \
   || fail "release helper must accept the controlled maintenance action"
 grep -Fq 'UPGRADE_LIBSECCOMP requested' "${RELEASE_SCRIPT}" \
   || fail "release helper must skip deployed-site identity checks for host-only maintenance"
+grep -Fq 'ACTION|BRANCH|EXPECTED_COMMIT|MATECLAW_RUNTIME_BASE_IMAGE' "${RELEASE_SCRIPT}" \
+  || fail "release helper must accept the immutable Playwright Harbor reference"
+grep -Fq "APPROVED_RUNTIME_BASE_IMAGE='${APPROVED_RUNTIME_BASE_IMAGE}'" "${RELEASE_SCRIPT}" \
+  || fail "release helper must default to the reviewed Playwright digest"
+grep -Fq 'runtime_base_image" != "$APPROVED_RUNTIME_BASE_IMAGE' "${RELEASE_SCRIPT}" \
+  || fail "release helper must reject any Playwright override that is not the reviewed digest"
+grep -Fq "APPROVED_RUNTIME_BASE_IMAGE = '${APPROVED_RUNTIME_BASE_IMAGE}'" "${PIPELINE}" \
+  || fail "pipeline must pin the reviewed Playwright digest"
+grep -Fq 'params.MATECLAW_RUNTIME_BASE_IMAGE != env.APPROVED_RUNTIME_BASE_IMAGE' "${PIPELINE}" \
+  || fail "pipeline must reject an unreviewed Playwright digest"
+grep -Fq "MATECLAW_BACKEND_BASE_IMAGE = '${APPROVED_BACKEND_BASE_IMAGE}'" "${PIPELINE}" \
+  || fail "pipeline must pin the reviewed Maven digest"
+grep -Fq "approved_runtime_base_image='${APPROVED_RUNTIME_BASE_IMAGE}'" "${CANDIDATE_BUILDER}" \
+  || fail "candidate builder must pin the reviewed Playwright digest"
+grep -Fq "approved_backend_base_image='${APPROVED_BACKEND_BASE_IMAGE}'" "${CANDIDATE_BUILDER}" \
+  || fail "candidate builder must pin the reviewed Maven digest"
+
+wrong_runtime='itharbor.sangfor.com/ai-uat/mateclaw-playwright:v1.62.0-noble@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+if JENKINS_USER=test JENKINS_API_TOKEN=test MATECLAW_RUNTIME_BASE_IMAGE="$wrong_runtime" \
+  "$RELEASE_SCRIPT" --allow-insecure-http --no-wait --no-verify \
+  >"$TMP_DIR/wrong-runtime.out" 2>&1; then
+  fail "release helper must reject an unreviewed digest before contacting Jenkins"
+fi
+grep -Fq 'must equal the reviewed immutable Sangfor Harbor Playwright reference' "$TMP_DIR/wrong-runtime.out" \
+  || fail "release helper wrong-digest rejection must explain the reviewed-image requirement"
 
 printf 'PASS: Jenkins host maintenance is exact-commit, isolated, test-gated and auditable\n'
