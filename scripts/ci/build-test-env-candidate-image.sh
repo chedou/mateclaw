@@ -282,6 +282,7 @@ candidate_env="$(bounded_docker "$docker_command_timeout" inspect --format '{{ra
 candidate_ports="$(
   bounded_docker "$docker_command_timeout" inspect \
     --format '{{range $port, $_ := .Config.ExposedPorts}}{{println $port}}{{end}}' "$candidate_image" \
+    | awk 'NF' \
     | LC_ALL=C sort
 )"
 [[ "$candidate_workdir" == /app ]] || fail "候选镜像 WorkingDir 不是 /app"
