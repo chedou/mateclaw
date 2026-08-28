@@ -86,6 +86,16 @@ if JENKINS_USER=test JENKINS_API_TOKEN=test MATECLAW_RUNTIME_BASE_IMAGE="$wrong_
   fail "release helper must reject an unreviewed digest before contacting Jenkins"
 fi
 grep -Fq 'must equal the reviewed immutable Sangfor Harbor Playwright reference' "$TMP_DIR/wrong-runtime.out" \
-  || fail "release helper wrong-digest rejection must explain the reviewed-image requirement"
+  || {
+    cat "$TMP_DIR/wrong-runtime.out" >&2
+    fail "release helper wrong-digest rejection must explain the reviewed-image requirement"
+  }
+
+runtime_validation_line="$(grep -nF 'runtime_base_image="${runtime_base_image:-$MATECLAW_RUNTIME_BASE_IMAGE}"' "${RELEASE_SCRIPT}" | head -1 | cut -d: -f1)"
+dependency_check_line="$(grep -nF 'command -v python3' "${RELEASE_SCRIPT}" | head -1 | cut -d: -f1)"
+[[ -n "$runtime_validation_line" && -n "$dependency_check_line" ]] \
+  || fail "release helper runtime validation or dependency check is missing"
+(( runtime_validation_line < dependency_check_line )) \
+  || fail "release helper must reject an unreviewed runtime before optional CLI dependency checks"
 
 printf 'PASS: Jenkins host maintenance is exact-commit, isolated, test-gated and auditable\n'

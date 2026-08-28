@@ -151,6 +151,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Reject an unreviewed image before checking local tooling, credentials or any
+# Jenkins endpoint. This keeps the immutable-image boundary deterministic even
+# on the old deployment host where optional CLI dependencies may be absent.
+runtime_base_image="$(parameter_value MATECLAW_RUNTIME_BASE_IMAGE || true)"
+runtime_base_image="${runtime_base_image:-$MATECLAW_RUNTIME_BASE_IMAGE}"
+if [ "$runtime_base_image" != "$APPROVED_RUNTIME_BASE_IMAGE" ]; then
+    die "MATECLAW_RUNTIME_BASE_IMAGE must equal the reviewed immutable Sangfor Harbor Playwright reference"
+fi
+
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required to read Jenkins JSON"
 [ -n "${JENKINS_USER:-}" ] || die "JENKINS_USER is empty"
@@ -189,12 +198,8 @@ fi
 if ! has_parameter EXPECTED_COMMIT; then
     PARAMETERS+=("EXPECTED_COMMIT=$EXPECTED_COMMIT")
 fi
-if ! has_parameter MATECLAW_RUNTIME_BASE_IMAGE && [ -n "$MATECLAW_RUNTIME_BASE_IMAGE" ]; then
-    PARAMETERS+=("MATECLAW_RUNTIME_BASE_IMAGE=$MATECLAW_RUNTIME_BASE_IMAGE")
-fi
-runtime_base_image="$(parameter_value MATECLAW_RUNTIME_BASE_IMAGE || true)"
-if [ "$runtime_base_image" != "$APPROVED_RUNTIME_BASE_IMAGE" ]; then
-    die "MATECLAW_RUNTIME_BASE_IMAGE must equal the reviewed immutable Sangfor Harbor Playwright reference"
+if ! has_parameter MATECLAW_RUNTIME_BASE_IMAGE; then
+    PARAMETERS+=("MATECLAW_RUNTIME_BASE_IMAGE=$runtime_base_image")
 fi
 requested_action="$(parameter_value ACTION)"
 case "$requested_action" in
