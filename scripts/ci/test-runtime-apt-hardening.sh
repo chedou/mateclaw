@@ -53,11 +53,12 @@ keyring_install_line="$(line_of 'install -m 0644 "$decoded_keyring" /usr/share/k
 keyring_trusted_install_line="$(line_of 'install -m 0644 "$decoded_keyring" /etc/apt/trusted.gpg.d/ubuntu-archive-keyring-vendored.gpg')"
 keyring_permission_line="$(line_of 'find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d')"
 apt_update_line="$(line_of 'apt-get update')"
+mirror_line="$(line_of "ubuntu_mirror='https://mirrors.aliyun.com/ubuntu/'")"
 
 for required_line in \
   "$nodesource_line" "$keyring_decode_line" "$keyring_checksum_line" \
   "$keyring_install_line" "$keyring_trusted_install_line" \
-  "$keyring_permission_line" "$apt_update_line"; do
+  "$keyring_permission_line" "$mirror_line" "$apt_update_line"; do
   [[ -n "$required_line" ]] || fail "shared installer is missing a required hardened APT step"
 done
 (( nodesource_line < apt_update_line )) || fail "NodeSource removal must happen before apt-get update"
@@ -67,6 +68,7 @@ done
 (( keyring_install_line < apt_update_line )) || fail "keyring must be restored before apt-get update"
 (( keyring_trusted_install_line < apt_update_line )) || fail "trusted keyring must be restored before apt-get update"
 (( keyring_permission_line < apt_update_line )) || fail "keyring permissions must be repaired before apt-get update"
+(( mirror_line < apt_update_line )) || fail "the single HTTPS Ubuntu mirror must be selected before apt-get update"
 
 grep -Fq -- '/etc/apt/sources.list.d/nodesource.sources' "$INSTALLER" \
   || fail "installer must remove both NodeSource source formats"
@@ -78,6 +80,12 @@ grep -Fq -- "$EXPECTED_KEYRING_SHA256" "$INSTALLER" \
   || fail "installer must pin the decoded Ubuntu keyring digest"
 grep -Fq -- 'ubuntu-keyring_2026.08.18_all.deb' "$INSTALLER" \
   || fail "Ubuntu archive keyring source package must be documented"
+grep -Fq -- 'Acquire::Retries=5' "$INSTALLER" \
+  || fail "APT transport errors must use bounded retries"
+grep -Fq -- 'Acquire::https::Timeout=30' "$INSTALLER" \
+  || fail "APT HTTPS operations must have a bounded timeout"
+grep -Fq -- 'azure\\.archive\\.ubuntu\\.com|archive\\.ubuntu\\.com|security\\.ubuntu\\.com' "$INSTALLER" \
+  || fail "all inherited Ubuntu archive endpoints must be normalized to one mirror"
 grep -Fq -- 'fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40' "$INSTALLER" \
   || fail "Ubuntu archive keyring source package digest must be documented"
 grep -Fq -- "dpkg-query --show --showformat='\${Package}=\${Version}\\n'" "$INSTALLER" \

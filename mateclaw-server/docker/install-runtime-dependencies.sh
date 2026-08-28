@@ -31,7 +31,21 @@ chmod a+rx /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d
 find /usr/share/keyrings /etc/apt/keyrings /etc/apt/trusted.gpg.d \
   -type f \( -name '*.gpg' -o -name '*.asc' \) -exec chmod a+r {} +
 
-apt-get update
+# The test host's transparent HTTP path has returned mixed Ubuntu index
+# generations (BADSIG / Hash Sum mismatch). Use one HTTPS mirror for every
+# Ubuntu pocket so Release and Packages files cannot be mixed across upstream
+# caches. Keep signature verification enabled and retry only transport errors.
+ubuntu_mirror='https://mirrors.aliyun.com/ubuntu/'
+for source_file in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+  [[ -f "$source_file" ]] || continue
+  sed -Ei \
+    "s#https?://(azure\\.archive\\.ubuntu\\.com|archive\\.ubuntu\\.com|security\\.ubuntu\\.com)/ubuntu/?#${ubuntu_mirror}#g" \
+    "$source_file"
+done
+
+apt-get update \
+  -o Acquire::Retries=5 \
+  -o Acquire::https::Timeout=30
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   openjdk-21-jre-headless \
   fonts-noto-cjk \
