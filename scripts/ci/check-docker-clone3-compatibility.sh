@@ -123,7 +123,7 @@ else
       "Docker 18 基础镜像维护记录不允许是符号链接：${legacy_runtime_image_record}"
     [[ -f "${legacy_runtime_image_record}" ]] || fail \
       "Docker 18 基础镜像维护记录不是普通文件：${legacy_runtime_image_record}"
-    record_identity_before="$(stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
+    record_identity_before="$(LC_ALL=C stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
       "无法读取 Docker 18 基础镜像维护记录元数据"
     IFS=: read -r record_device record_inode record_uid record_mode record_type \
       <<<"${record_identity_before}"
@@ -152,7 +152,7 @@ else
           ;;
       esac
     done < "${legacy_runtime_image_record}"
-    record_identity_after="$(stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
+    record_identity_after="$(LC_ALL=C stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
       "无法复核 Docker 18 基础镜像维护记录元数据"
     [[ "${record_identity_after}" == "${record_identity_before}" ]] || fail \
       "Docker 18 基础镜像维护记录在读取期间发生变化"
