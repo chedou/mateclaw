@@ -31,13 +31,14 @@ bounded_docker() {
     docker "$@"
 }
 
-[[ "$#" -eq 4 ]] || fail \
-  "usage: $0 <docker-server-version> <docker-security-options> <runtime-dockerfile> <legacy-seccomp-profile>"
+[[ "$#" -eq 5 ]] || fail \
+  "usage: $0 <docker-server-version> <docker-security-options> <runtime-dockerfile> <legacy-seccomp-profile> <legacy-runtime-image-record>"
 
 raw_version="$1"
 security_options="$2"
 runtime_dockerfile="$3"
 legacy_seccomp_profile="$4"
+legacy_runtime_image_record="$5"
 if [[ "${raw_version}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([-+].*)?$ ]]; then
   normalized_version="${BASH_REMATCH[1]}"
 else
@@ -104,6 +105,7 @@ esac
 command -v docker >/dev/null || fail "docker 命令不存在，无法执行旧版本兼容探针"
 command -v timeout >/dev/null || fail "宿主缺少 timeout，无法有界执行旧版本兼容探针"
 runtime_image_source="LOCAL_CACHE"
+runtime_probe_image="${runtime_image}"
 progress "image-cache-inspect=START timeout=${DOCKER_METADATA_TIMEOUT_SECONDS}s image=${runtime_image}"
 cache_inspect_status=0
 bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect "${runtime_image}" \
@@ -116,22 +118,84 @@ else
     fail "生产运行基础镜像缓存检查超过 ${DOCKER_METADATA_TIMEOUT_SECONDS} 秒"
   fi
   progress "image-cache-inspect=PASSED result=MISS exit=${cache_inspect_status}"
-  progress "image-pull=START timeout=${DOCKER_PULL_TIMEOUT_SECONDS}s image=${runtime_image}"
-  pull_status=0
-  bounded_docker "${DOCKER_PULL_TIMEOUT_SECONDS}" pull "${runtime_image}" \
-    >/dev/null || pull_status=$?
-  if [[ "${pull_status}" -ne 0 ]]; then
-    progress "image-pull=FAILED exit=${pull_status}"
-    fail "宿主不存在生产运行基础镜像，且未能在 ${DOCKER_PULL_TIMEOUT_SECONDS} 秒内拉取 ${runtime_image}"
+  if [[ -e "${legacy_runtime_image_record}" || -L "${legacy_runtime_image_record}" ]]; then
+    [[ ! -L "${legacy_runtime_image_record}" ]] || fail \
+      "Docker 18 基础镜像维护记录不允许是符号链接：${legacy_runtime_image_record}"
+    [[ -f "${legacy_runtime_image_record}" ]] || fail \
+      "Docker 18 基础镜像维护记录不是普通文件：${legacy_runtime_image_record}"
+    record_identity_before="$(stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
+      "无法读取 Docker 18 基础镜像维护记录元数据"
+    IFS=: read -r record_device record_inode record_uid record_mode record_type \
+      <<<"${record_identity_before}"
+    [[ "${record_type}" == "regular file" ]] || fail \
+      "Docker 18 基础镜像维护记录不是普通文件：${record_type}"
+    [[ "${record_uid}" == "0" ]] || fail \
+      "Docker 18 基础镜像维护记录必须归 root 所有，当前 uid=${record_uid}"
+    case "${record_mode}" in
+      400|600) ;;
+      *) fail "Docker 18 基础镜像维护记录权限必须为 0400 或 0600，当前为 ${record_mode}" ;;
+    esac
+
+    record_runtime_image_count=0
+    record_runtime_image_id_count=0
+    recorded_runtime_image=""
+    recorded_runtime_image_id=""
+    while IFS= read -r record_line || [[ -n "${record_line}" ]]; do
+      case "${record_line}" in
+        runtime_image=*)
+          record_runtime_image_count=$((record_runtime_image_count + 1))
+          recorded_runtime_image="${record_line#runtime_image=}"
+          ;;
+        runtime_image_id=*)
+          record_runtime_image_id_count=$((record_runtime_image_id_count + 1))
+          recorded_runtime_image_id="${record_line#runtime_image_id=}"
+          ;;
+      esac
+    done < "${legacy_runtime_image_record}"
+    record_identity_after="$(stat -c '%d:%i:%u:%a:%F' "${legacy_runtime_image_record}")" || fail \
+      "无法复核 Docker 18 基础镜像维护记录元数据"
+    [[ "${record_identity_after}" == "${record_identity_before}" ]] || fail \
+      "Docker 18 基础镜像维护记录在读取期间发生变化"
+    [[ "${record_runtime_image_count}" -eq 1 ]] || fail \
+      "Docker 18 基础镜像维护记录必须且只能包含一个 runtime_image"
+    [[ "${record_runtime_image_id_count}" -eq 1 ]] || fail \
+      "Docker 18 基础镜像维护记录必须且只能包含一个 runtime_image_id"
+    [[ "${recorded_runtime_image}" == "${runtime_image}" ]] || fail \
+      "Docker 18 基础镜像维护记录引用与 Dockerfile 不一致：${recorded_runtime_image:-EMPTY}"
+    [[ "${recorded_runtime_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail \
+      "Docker 18 基础镜像维护记录 ID 格式非法：${recorded_runtime_image_id:-EMPTY}"
+    recorded_actual_image_id=""
+    recorded_image_inspect_status=0
+    recorded_actual_image_id="$(
+      bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect --format '{{.Id}}' \
+        "${recorded_runtime_image_id}"
+    )" || recorded_image_inspect_status=$?
+    [[ "${recorded_image_inspect_status}" -eq 0 ]] || fail \
+      "Docker 18 基础镜像维护记录指向的不可变镜像不存在"
+    [[ "${recorded_actual_image_id}" == "${recorded_runtime_image_id}" ]] || fail \
+      "Docker 18 基础镜像维护记录 ID 与 Docker inspect 结果不一致"
+    runtime_image_source="MAINTENANCE_RECORD"
+    runtime_probe_image="${recorded_runtime_image_id}"
+    progress "maintenance-record-recovery=PASSED image_id=${recorded_runtime_image_id}"
+  else
+    progress "maintenance-record-recovery=SKIPPED result=ABSENT"
+    progress "image-pull=START timeout=${DOCKER_PULL_TIMEOUT_SECONDS}s image=${runtime_image}"
+    pull_status=0
+    bounded_docker "${DOCKER_PULL_TIMEOUT_SECONDS}" pull "${runtime_image}" \
+      >/dev/null || pull_status=$?
+    if [[ "${pull_status}" -ne 0 ]]; then
+      progress "image-pull=FAILED exit=${pull_status}"
+      fail "宿主不存在生产运行基础镜像，且未能在 ${DOCKER_PULL_TIMEOUT_SECONDS} 秒内拉取 ${runtime_image}"
+    fi
+    progress "image-pull=PASSED"
+    runtime_image_source="PULLED"
   fi
-  progress "image-pull=PASSED"
-  runtime_image_source="PULLED"
 fi
-progress "image-id-inspect=START timeout=${DOCKER_METADATA_TIMEOUT_SECONDS}s image=${runtime_image}"
+progress "image-id-inspect=START timeout=${DOCKER_METADATA_TIMEOUT_SECONDS}s image=${runtime_probe_image}"
 runtime_image_id=""
 image_id_inspect_status=0
 runtime_image_id="$(
-  bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect --format '{{.Id}}' "${runtime_image}"
+  bounded_docker "${DOCKER_METADATA_TIMEOUT_SECONDS}" inspect --format '{{.Id}}' "${runtime_probe_image}"
 )" || image_id_inspect_status=$?
 if [[ "${image_id_inspect_status}" -ne 0 ]]; then
   progress "image-id-inspect=FAILED exit=${image_id_inspect_status}"
@@ -166,7 +230,7 @@ bounded_docker "${DOCKER_PROBE_TIMEOUT_SECONDS}" run \
   --name "${probe_container}" \
   --security-opt "seccomp=${legacy_seccomp_profile}" \
   --entrypoint node \
-  "${runtime_image}" \
+  "${runtime_image_id}" \
   -e 'const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));' \
   || probe_status=$?
 if [[ "${probe_status}" -eq 0 ]]; then

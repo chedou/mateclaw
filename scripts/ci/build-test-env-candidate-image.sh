@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'usage: build-test-env-candidate-image.sh MODE RELEASE_COMMIT SOURCE_DIR CANDIDATE_IMAGE SECCOMP_PROFILE EVIDENCE_FILE PACKAGE_MANIFEST_FILE' >&2
+  printf '%s\n' 'usage: build-test-env-candidate-image.sh MODE RELEASE_COMMIT SOURCE_DIR CANDIDATE_IMAGE SECCOMP_PROFILE RUNTIME_BASE_IMAGE_ID EVIDENCE_FILE PACKAGE_MANIFEST_FILE' >&2
   exit 2
 }
 
@@ -12,15 +12,16 @@ fail() {
   exit 1
 }
 
-[[ "$#" -eq 7 ]] || usage
+[[ "$#" -eq 8 ]] || usage
 
 build_mode="$1"
 release_commit="$2"
 source_dir="$3"
 candidate_image="$4"
 legacy_seccomp_profile="$5"
-evidence_file="$6"
-package_manifest_file="$7"
+requested_runtime_base_image_id="$6"
+evidence_file="$7"
+package_manifest_file="$8"
 dockerfile="${source_dir}/mateclaw-server/Dockerfile"
 installer="${source_dir}/mateclaw-server/docker/install-runtime-dependencies.sh"
 keyring_b64="${source_dir}/mateclaw-server/docker/ubuntu-archive-keyring.gpg.b64"
@@ -126,9 +127,14 @@ case "$build_mode" in
     legacy_seccomp_sha256="$(sha256sum "$legacy_seccomp_profile" | awk '{print $1}')"
     [[ "$legacy_seccomp_sha256" == "$reviewed_seccomp_sha256" ]] \
       || fail "Docker 18 seccomp profile 哈希未通过审核：$legacy_seccomp_sha256"
-    runtime_base_image_id="$(bounded_docker "$docker_command_timeout" inspect --format '{{.Id}}' "$runtime_base_image_ref")" \
-      || fail "无法确认 Docker 18 预检已拉取基础镜像的不可变 ID"
-    [[ -n "$runtime_base_image_id" ]] || fail "Docker 18 基础镜像 ID 为空"
+    [[ "$requested_runtime_base_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] \
+      || fail "Docker 18 预检传入的基础镜像 ID 格式非法：${requested_runtime_base_image_id:-EMPTY}"
+    runtime_base_image_id="$(
+      bounded_docker "$docker_command_timeout" inspect --format '{{.Id}}' \
+        "$requested_runtime_base_image_id"
+    )" || fail "无法确认 Docker 18 预检传入的不可变基础镜像 ID"
+    [[ "$runtime_base_image_id" == "$requested_runtime_base_image_id" ]] \
+      || fail "Docker 18 基础镜像 ID 与预检证据不一致"
 
     bounded_docker "$build_timeout" build \
       --target builder \

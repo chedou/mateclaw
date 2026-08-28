@@ -7,6 +7,7 @@ CHECKER="${ROOT_DIR}/scripts/ci/check-docker-clone3-compatibility.sh"
 SECCOMP_PROFILE="${ROOT_DIR}/deploy/seccomp/docker18-clone3.json"
 SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
 TMP_DIR="$(mktemp -d)"
+MAINTENANCE_RECORD="${TMP_DIR}/missing-maintenance-record.txt"
 trap 'rm -rf -- "${TMP_DIR}"' EXIT
 
 fail() {
@@ -23,6 +24,15 @@ printf '%s\n' \
   'esac' \
   > "${TMP_DIR}/bin/python3"
 chmod +x "${TMP_DIR}/bin/python3"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ "${1:-}" == "-c" && "${2:-}" == "%d:%i:%u:%a:%F" ]]; then' \
+  '  printf "%s\n" "${FAKE_RECORD_IDENTITY:-1:2:0:600:regular file}"' \
+  '  exit 0' \
+  'fi' \
+  'exec /usr/bin/stat "$@"' \
+  > "${TMP_DIR}/bin/stat"
+chmod +x "${TMP_DIR}/bin/stat"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'while [[ "${1:-}" == --* ]]; do shift; done' \
@@ -75,6 +85,12 @@ printf '%s\n' \
   '    exit 0' \
   '    ;;' \
   '  inspect)' \
+  '    target="${!#}"' \
+  '    if [[ "${target}" == sha256:* ]]; then' \
+  '      [[ "${FAKE_DOCKER_RECORDED_ID_PRESENT:-1}" == "1" ]] || exit 1' \
+  '      printf "%s\n" "${FAKE_DOCKER_RECORDED_ACTUAL_ID:-$target}"' \
+  '      exit 0' \
+  '    fi' \
   '    if [[ "${FAKE_DOCKER_IMAGE_PRESENT:-1}" == "1" || -f "${FAKE_DOCKER_STATE}" ]]; then' \
   '      printf "sha256:legacy-probe-image\n"' \
   '      exit 0' \
@@ -93,7 +109,7 @@ expect_pass() {
   local security_options="${2:-name=seccomp,profile=default}"
   local docker_run_result="${3:-0}"
   PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_RUN_RESULT="${docker_run_result}" \
-    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null \
+    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >/dev/null \
     || fail "expected Docker ${version} to pass"
 }
 
@@ -102,7 +118,7 @@ expect_fail() {
   local security_options="${2:-name=seccomp,profile=default}"
   local docker_run_result="${3:-0}"
   if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_RUN_RESULT="${docker_run_result}" \
-    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
+    "${CHECKER}" "${version}" "${security_options}" "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >/dev/null 2>&1; then
     fail "expected Docker ${version} to fail"
   fi
 }
@@ -110,14 +126,14 @@ expect_fail() {
 expect_pass '18.06.0-ce'
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_VERSION=2.3.1 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/old-libseccomp.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/old-libseccomp.out" 2>&1; then
   fail "Docker 18 must reject libseccomp versions that cannot resolve clone3"
 fi
 grep -Fq 'libseccomp 2.3.1 不认识 clone3' "${TMP_DIR}/old-libseccomp.out" \
   || fail "old libseccomp rejection must explain the real clone3 blocker"
 if PATH="${TMP_DIR}/bin:${PATH}" FAKE_LIBSECCOMP_RESULT=fail \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >/dev/null 2>&1; then
   fail "Docker 18 must reject an unverifiable libseccomp installation"
 fi
 expect_fail '18.06.0-ce' 'name=apparmor'
@@ -140,15 +156,116 @@ pulled_output="$(
   PATH="${TMP_DIR}/bin:${PATH}" \
     FAKE_DOCKER_IMAGE_PRESENT=0 \
     FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
-    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}"
+    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}"
 )"
 grep -Fq 'legacy_runtime_probe_image_source=PULLED' <<<"${pulled_output}" \
   || fail "legacy probe must report when it pulled a missing runtime image"
 
+recorded_image_id="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+printf '%s\n' \
+  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image_id=${recorded_image_id}" \
+  > "${MAINTENANCE_RECORD}"
+chmod 600 "${MAINTENANCE_RECORD}"
+maintenance_call_log="${TMP_DIR}/maintenance-record.calls"
+maintenance_output="$(
+  PATH="${TMP_DIR}/bin:${PATH}" \
+    FAKE_DOCKER_IMAGE_PRESENT=0 \
+    FAKE_TIMEOUT_CALL_LOG="${maintenance_call_log}" \
+    "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+    "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}"
+)"
+grep -Fq 'legacy_runtime_probe_image_source=MAINTENANCE_RECORD' <<<"${maintenance_output}" \
+  || fail "legacy probe must report maintenance-record recovery"
+grep -Fq "legacy_runtime_probe_image_id=${recorded_image_id}" <<<"${maintenance_output}" \
+  || fail "maintenance-record recovery must preserve the immutable image ID"
+grep -Fq "30s docker run --name mateclaw-clone3-probe-" "${maintenance_call_log}" \
+  || fail "maintenance-record recovery must still run the bounded runtime probe"
+grep -Fq "${recorded_image_id}" "${maintenance_call_log}" \
+  || fail "maintenance-record recovery must probe the immutable image ID"
+if grep -Eq 'docker (pull|tag) ' "${maintenance_call_log}"; then
+  fail "maintenance-record recovery must neither pull nor retag the image"
+fi
+
+printf '%s\n' \
+  'runtime_image=forged.example.invalid/playwright:v1.62.0-noble' \
+  "runtime_image_id=${recorded_image_id}" \
+  > "${MAINTENANCE_RECORD}"
+forged_call_log="${TMP_DIR}/forged-record.calls"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
+  FAKE_TIMEOUT_CALL_LOG="${forged_call_log}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/forged-record.out" 2>&1; then
+  fail "maintenance record with a forged image reference must fail closed"
+fi
+grep -Fq '维护记录引用与 Dockerfile 不一致' "${TMP_DIR}/forged-record.out" \
+  || fail "forged maintenance record rejection must explain the reference mismatch"
+if grep -Fq 'docker pull ' "${forged_call_log}"; then
+  fail "an invalid maintenance record must not fall through to a network pull"
+fi
+
+printf '%s\n' \
+  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image_id=${recorded_image_id}" \
+  > "${MAINTENANCE_RECORD}"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
+  FAKE_RECORD_IDENTITY='1:2:0:644:regular file' \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/record-permission.out" 2>&1; then
+  fail "group/world-readable maintenance records must fail closed"
+fi
+grep -Fq '权限必须为 0400 或 0600' "${TMP_DIR}/record-permission.out" \
+  || fail "unsafe maintenance-record permissions must be explained"
+
+printf '%s\n' \
+  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  > "${MAINTENANCE_RECORD}"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/record-missing-id.out" 2>&1; then
+  fail "maintenance records without an exact image ID must fail closed"
+fi
+grep -Fq '必须且只能包含一个 runtime_image_id' "${TMP_DIR}/record-missing-id.out" \
+  || fail "missing maintenance-record image IDs must be explained"
+
+printf '%s\n' \
+  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image_id=${recorded_image_id}" \
+  > "${MAINTENANCE_RECORD}"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
+  FAKE_DOCKER_RECORDED_ID_PRESENT=0 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/record-deleted-id.out" 2>&1; then
+  fail "maintenance records pointing to deleted image IDs must fail closed"
+fi
+grep -Fq '不可变镜像不存在' "${TMP_DIR}/record-deleted-id.out" \
+  || fail "deleted maintenance-record image IDs must be explained"
+
+record_target="${TMP_DIR}/record-target.txt"
+printf '%s\n' \
+  'runtime_image=mcr.microsoft.com/playwright:v1.62.0-noble' \
+  "runtime_image_id=${recorded_image_id}" \
+  > "${record_target}"
+rm -f "${MAINTENANCE_RECORD}"
+ln -s "${record_target}" "${MAINTENANCE_RECORD}"
+if PATH="${TMP_DIR}/bin:${PATH}" FAKE_DOCKER_IMAGE_PRESENT=0 \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
+  >"${TMP_DIR}/record-symlink.out" 2>&1; then
+  fail "symlinked maintenance records must fail closed"
+fi
+grep -Fq '不允许是符号链接' "${TMP_DIR}/record-symlink.out" \
+  || fail "symlink maintenance-record rejection must be explained"
+rm -f "${MAINTENANCE_RECORD}"
+
 if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_TIMEOUT_CACHE_INSPECT_RESULT=124 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cache-timeout.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/cache-timeout.out" 2>&1; then
   fail "legacy probe must fail when the bounded image-cache inspection times out"
 fi
 grep -Fq 'image-cache-inspect=FAILED exit=124' "${TMP_DIR}/cache-timeout.out" \
@@ -158,7 +275,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_DOCKER_IMAGE_PRESENT=0 \
   FAKE_TIMEOUT_PULL_RESULT=124 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/pull-timeout.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/pull-timeout.out" 2>&1; then
   fail "legacy probe must fail when the bounded production-image pull times out"
 fi
 grep -Fq 'image-pull=FAILED exit=124' "${TMP_DIR}/pull-timeout.out" \
@@ -167,7 +284,7 @@ grep -Fq 'image-pull=FAILED exit=124' "${TMP_DIR}/pull-timeout.out" \
 if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_TIMEOUT_IMAGE_ID_INSPECT_RESULT=124 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/image-id-timeout.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/image-id-timeout.out" 2>&1; then
   fail "legacy probe must fail when the bounded production-image ID inspection times out"
 fi
 grep -Fq 'image-id-inspect=FAILED exit=124' "${TMP_DIR}/image-id-timeout.out" \
@@ -178,7 +295,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_TIMEOUT_RUN_RESULT=124 \
   FAKE_TIMEOUT_CALL_LOG="${run_timeout_log}" \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/run-timeout.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/run-timeout.out" 2>&1; then
   fail "legacy probe must fail when the bounded runtime probe times out"
 fi
 grep -Fq '30s docker run' "${run_timeout_log}" \
@@ -193,7 +310,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_TIMEOUT_CLEANUP_RESULT=124 \
   FAKE_TIMEOUT_CALL_LOG="${cleanup_timeout_log}" \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cleanup-timeout.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/cleanup-timeout.out" 2>&1; then
   fail "legacy probe must fail closed when exact-name cleanup times out"
 fi
 grep -Fq '15s docker rm -f' "${cleanup_timeout_log}" \
@@ -204,7 +321,7 @@ grep -Fq 'exact-name-cleanup=FAILED exit=124' "${TMP_DIR}/cleanup-timeout.out" \
 if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_DOCKER_CLEANUP_RESULT=1 \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" >"${TMP_DIR}/cleanup-failed.out" 2>&1; then
+  "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >"${TMP_DIR}/cleanup-failed.out" 2>&1; then
   fail "legacy probe must fail closed when exact-name cleanup fails"
 fi
 grep -Fq 'exact-name-cleanup=FAILED exit=1' "${TMP_DIR}/cleanup-failed.out" \
@@ -215,7 +332,7 @@ if PATH="${TMP_DIR}/bin:${PATH}" \
   FAKE_DOCKER_IMAGE_PRESENT=0 \
   FAKE_DOCKER_PULL_RESULT=1 \
   FAKE_DOCKER_STATE="${TMP_DIR}/docker-state" \
-  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" \
+  "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' "${TMP_DIR}/Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" \
   >/dev/null 2>&1; then
   fail "legacy probe must fail when the runtime image is absent and cannot be pulled"
 fi
@@ -223,7 +340,7 @@ fi
 printf 'FROM alpine:3.20\n' > "${TMP_DIR}/wrong-runtime.Dockerfile"
 if PATH="${TMP_DIR}/bin:${PATH}" \
   "${CHECKER}" '18.06.0-ce' 'name=seccomp,profile=default' \
-  "${TMP_DIR}/wrong-runtime.Dockerfile" "${SECCOMP_PROFILE}" >/dev/null 2>&1; then
+  "${TMP_DIR}/wrong-runtime.Dockerfile" "${SECCOMP_PROFILE}" "${MAINTENANCE_RECORD}" >/dev/null 2>&1; then
   fail "legacy probe must reject a runtime Dockerfile without the reviewed Playwright base"
 fi
 

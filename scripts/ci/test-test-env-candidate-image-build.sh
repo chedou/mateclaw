@@ -52,11 +52,10 @@ case "$cmd" in
         'JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Shanghai -Dsun.jnu.encoding=UTF-8' \
         'SPRING_PROFILES_ACTIVE=mysql' ;;
       *'.Config.ExposedPorts'*:*) printf '18088/tcp\n1455/tcp\n' ;;
-      *'.RootFS.Layers'*:sha256:pinned-playwright-base) printf 'sha256:base-layer-1\nsha256:base-layer-2\n' ;;
+      *'.RootFS.Layers'*:sha256:*) printf 'sha256:base-layer-1\nsha256:base-layer-2\n' ;;
       *'.RootFS.Layers'*:mateclaw:test-candidate) printf 'sha256:base-layer-1\nsha256:base-layer-2\nsha256:candidate-layer\n' ;;
-      *'.Id'*:mcr.microsoft.com/playwright:*)
-        [[ "${FAKE_BASE_INSPECT_FAIL:-0}" != 1 ]] || exit 92
-        printf 'sha256:pinned-playwright-base\n'
+      *'.Id'*:sha256:*)
+        printf '%s\n' "${FAKE_RUNTIME_BASE_ACTUAL_ID:-$target}"
         ;;
       *'.Id'*:*'-builder') printf 'sha256:builder-artifact\n' ;;
       *'.Id'*:mateclaw-runtime-assembly-*) printf 'sha256:assembly-container\n' ;;
@@ -95,6 +94,7 @@ EOF
 chmod +x "$TMP_DIR/bin/timeout" "$TMP_DIR/bin/docker"
 
 release_commit='1234567890abcdef1234567890abcdef12345678'
+runtime_base_image_id='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 legacy_log="$TMP_DIR/legacy-docker.log"
 legacy_timeout_log="$TMP_DIR/legacy-timeout.log"
 legacy_evidence="$TMP_DIR/legacy-evidence.txt"
@@ -106,7 +106,8 @@ PATH="$TMP_DIR/bin:$PATH" \
 FAKE_DOCKER_LOG="$legacy_log" \
 FAKE_TIMEOUT_LOG="$legacy_timeout_log" \
   "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
-  'mateclaw:test-candidate' "$SECCOMP_PROFILE" "$legacy_evidence" "$legacy_manifest" >/dev/null
+  'mateclaw:test-candidate' "$SECCOMP_PROFILE" "$runtime_base_image_id" \
+  "$legacy_evidence" "$legacy_manifest" >/dev/null
 
 grep -Fq 'build <--target> <builder>' "$legacy_log" \
   || fail "Docker 18 path must build only the builder target"
@@ -119,8 +120,11 @@ grep -Fq '<--user> <0:0>' "$legacy_log" \
   || fail "legacy runtime assembly must run with an explicit root identity"
 grep -Fq "<--security-opt> <seccomp=$SECCOMP_PROFILE>" "$legacy_log" \
   || fail "legacy runtime assembly must use the reviewed seccomp profile"
-grep -Fq '<sha256:pinned-playwright-base>' "$legacy_log" \
+grep -Fq "<$runtime_base_image_id>" "$legacy_log" \
   || fail "legacy runtime assembly must start from the pinned immutable base ID"
+if grep -Fq '<mcr.microsoft.com/playwright:v1.62.0-noble>' "$legacy_log"; then
+  fail "legacy build must not re-inspect or run the mutable runtime tag"
+fi
 [[ "$(grep -o 'readonly' "$legacy_log" | wc -l | tr -d ' ')" -ge 3 ]] \
   || fail "installer, keyring, and JAR mounts must all be read-only"
 for forbidden in --privileged --cap-add /var/run/docker.sock ':rw'; do
@@ -136,7 +140,7 @@ for change in 'WORKDIR /app' 'ENTRYPOINT ["java","-jar","app.jar"]' 'CMD []' 'EX
 done
 grep -Fq 'docker_build_security_mode=LEGACY_REVIEWED_SECCOMP_ASSEMBLY' "$legacy_evidence" \
   || fail "legacy build evidence must identify reviewed-seccomp assembly"
-grep -Fq 'runtime_base_image_id=sha256:pinned-playwright-base' "$legacy_evidence" \
+grep -Fq "runtime_base_image_id=$runtime_base_image_id" "$legacy_evidence" \
   || fail "legacy evidence must record the immutable runtime base ID"
 grep -Fq 'artifact_image_id=sha256:builder-artifact' "$legacy_evidence" \
   || fail "legacy evidence must record the builder artifact image ID"
@@ -181,7 +185,7 @@ for jar_count in 0 2; do
     FAKE_DOCKER_LOG="$jar_log" FAKE_TIMEOUT_LOG="$TMP_DIR/jar-${jar_count}-timeout.log" \
     FAKE_JAR_COUNT="$jar_count" \
     "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
-    "mateclaw:jar-${jar_count}" "$SECCOMP_PROFILE" \
+    "mateclaw:jar-${jar_count}" "$SECCOMP_PROFILE" "$runtime_base_image_id" \
     "$TMP_DIR/jar-${jar_count}-evidence.txt" "$TMP_DIR/jar-${jar_count}-packages.txt" \
     >"$TMP_DIR/jar-${jar_count}.out" 2>&1; then
     fail "legacy build must reject $jar_count JAR artifacts"
@@ -193,13 +197,44 @@ for jar_count in 0 2; do
   fi
 done
 
+for invalid_base_id in NOT_REQUIRED sha256:missing; do
+  invalid_log="$TMP_DIR/invalid-base-${invalid_base_id//:/-}.log"
+  : > "$invalid_log"
+  if PATH="$TMP_DIR/bin:$PATH" \
+    FAKE_DOCKER_LOG="$invalid_log" FAKE_TIMEOUT_LOG="$TMP_DIR/invalid-base-timeout.log" \
+    "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
+    'mateclaw:invalid-base' "$SECCOMP_PROFILE" "$invalid_base_id" \
+    "$TMP_DIR/invalid-base-evidence.txt" "$TMP_DIR/invalid-base-packages.txt" \
+    >"$TMP_DIR/invalid-base.out" 2>&1; then
+    fail "legacy build must reject invalid recorded runtime base ID: $invalid_base_id"
+  fi
+  if grep -Eq '^(build|run|commit) ' "$invalid_log"; then
+    fail "invalid recorded runtime base ID must fail before build or assembly"
+  fi
+done
+
+mismatch_log="$TMP_DIR/mismatched-base.log"
+: > "$mismatch_log"
+if PATH="$TMP_DIR/bin:$PATH" \
+  FAKE_DOCKER_LOG="$mismatch_log" FAKE_TIMEOUT_LOG="$TMP_DIR/mismatched-base-timeout.log" \
+  FAKE_RUNTIME_BASE_ACTUAL_ID='sha256:different-runtime-base' \
+  "$BUILDER" LEGACY_CUSTOM_SECCOMP "$release_commit" "$ROOT_DIR" \
+  'mateclaw:mismatched-base' "$SECCOMP_PROFILE" "$runtime_base_image_id" \
+  "$TMP_DIR/mismatched-base-evidence.txt" "$TMP_DIR/mismatched-base-packages.txt" \
+  >"$TMP_DIR/mismatched-base.out" 2>&1; then
+  fail "legacy build must reject a runtime base ID whose inspect result changed"
+fi
+if grep -Eq '^(build|run|commit) ' "$mismatch_log"; then
+  fail "mismatched runtime base ID must fail before build or assembly"
+fi
+
 native_log="$TMP_DIR/native-docker.log"
 : > "$native_log"
 PATH="$TMP_DIR/bin:$PATH" \
 FAKE_DOCKER_LOG="$native_log" FAKE_TIMEOUT_LOG="$TMP_DIR/native-timeout.log" \
 FAKE_BASE_INSPECT_FAIL=1 \
   "$BUILDER" NATIVE_CLONE3_SECCOMP "$release_commit" "$ROOT_DIR" \
-  'mateclaw:native-candidate' "$SECCOMP_PROFILE" \
+  'mateclaw:native-candidate' "$SECCOMP_PROFILE" NOT_REQUIRED \
   "$TMP_DIR/native-evidence.txt" "$TMP_DIR/native-packages.txt" >/dev/null
 grep -Fq 'build <--build-arg>' "$native_log" \
   || fail "modern path must retain the full Dockerfile build"

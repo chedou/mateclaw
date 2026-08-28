@@ -38,6 +38,7 @@ pipeline {
     HEALTH_URL = 'http://127.0.0.1:18080/actuator/health'
     INFO_URL = 'http://127.0.0.1:18080/actuator/info'
     MYSQL_CLIENT_IMAGE = 'mysql:8.0'
+    LEGACY_RUNTIME_IMAGE_RECORD = '/opt/mateclaw/libseccomp-maintenance/activation-report.txt'
     APPROVED_FOUNDATION_FROM = '204'
     APPROVED_FOUNDATION_TO = '217'
     APPROVED_FOUNDATION_SHA256 = '910e0f45f34074414ed84b01d3c7eb059c6080148228278cad8f69e96aaef4c6'
@@ -195,6 +196,7 @@ test -x "$SOURCE_DIR/scripts/ci/check-docker-clone3-compatibility.sh" \
   "$docker_server_version" "$docker_security_options" \
   "$SOURCE_DIR/mateclaw-server/Dockerfile" \
   "$SOURCE_DIR/deploy/seccomp/docker18-clone3.json" \
+  "$LEGACY_RUNTIME_IMAGE_RECORD" \
   > runtime-compatibility.txt \
   || fail "Docker 宿主不满足现代 glibc 的 seccomp 要求；禁止用 seccomp=unconfined 绕过"
 cat runtime-compatibility.txt
@@ -389,6 +391,10 @@ LEGACY_SECCOMP_PROFILE="$SOURCE_DIR/deploy/seccomp/docker18-clone3.json"
 docker_runtime_compatibility="$(
   sed -n 's/^docker_runtime_compatibility=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1
 )"
+runtime_base_image_id="$(
+  sed -n 's/^legacy_runtime_probe_image_id=//p' "$WORKSPACE/runtime-compatibility.txt" | head -n 1
+)"
+runtime_base_image_id="${runtime_base_image_id:-NOT_REQUIRED}"
 test -x "$BUILD_SCRIPT" \
   || { echo "IMAGE_BUILD_FAILED: 缺少可执行的候选镜像构建器" >&2; exit 1; }
 "$BUILD_SCRIPT" \
@@ -397,6 +403,7 @@ test -x "$BUILD_SCRIPT" \
   "$SOURCE_DIR" \
   "$CANDIDATE_IMAGE" \
   "$LEGACY_SECCOMP_PROFILE" \
+  "$runtime_base_image_id" \
   "$WORKSPACE/build-security.txt" \
   "$WORKSPACE/runtime-package-manifest.txt"
 
