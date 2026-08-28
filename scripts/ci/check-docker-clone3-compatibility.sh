@@ -5,7 +5,7 @@ set -euo pipefail
 MINIMUM_DOCKER_VERSION="20.10.10"
 REVIEWED_LEGACY_DOCKER_VERSION="18.06.0"
 MINIMUM_LEGACY_LIBSECCOMP_VERSION="2.5.0"
-REVIEWED_LEGACY_SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
+REVIEWED_LEGACY_SECCOMP_SHA256="d8410b793a16b91217900bd2bc7509bbdcf33261b659be5c20da33d236aa0cf5"
 DOCKER_METADATA_TIMEOUT_SECONDS="15"
 DOCKER_PULL_TIMEOUT_SECONDS="300"
 DOCKER_PROBE_TIMEOUT_SECONDS="30"
@@ -230,9 +230,12 @@ probe_status=0
 bounded_docker "${DOCKER_PROBE_TIMEOUT_SECONDS}" run \
   --name "${probe_container}" \
   --security-opt "seccomp=${legacy_seccomp_profile}" \
-  --entrypoint node \
+  --entrypoint /bin/bash \
   "${runtime_image_id}" \
-  -e 'const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));' \
+  -ceu '
+    test -r /etc/os-release
+    node -e '\''const {Worker}=require("worker_threads");const w=new Worker("process.exit(0)",{eval:true});w.once("error",()=>process.exit(1));w.once("exit",code=>process.exit(code));'\''
+  ' \
   || probe_status=$?
 if [[ "${probe_status}" -eq 0 ]]; then
   progress "runtime-probe-run=PASSED"

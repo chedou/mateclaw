@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECKER="${ROOT_DIR}/scripts/ci/check-docker-clone3-compatibility.sh"
 SECCOMP_PROFILE="${ROOT_DIR}/deploy/seccomp/docker18-clone3.json"
-SECCOMP_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
+SECCOMP_SHA256="d8410b793a16b91217900bd2bc7509bbdcf33261b659be5c20da33d236aa0cf5"
 INTERNAL_RUNTIME_IMAGE='itharbor.sangfor.com/test-fixtures/playwright-runtime:v1.62.0-noble@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 TMP_DIR="$(mktemp -d)"
 MAINTENANCE_RECORD="${TMP_DIR}/missing-maintenance-record.txt"
@@ -373,6 +373,10 @@ jq -e '.defaultAction == "SCMP_ACT_ERRNO"' "${SECCOMP_PROFILE}" >/dev/null \
   || fail "Docker 18 seccomp profile must remain default-deny"
 jq -e '[.syscalls[].names[]? | select(. == "clone3")] | length == 1' "${SECCOMP_PROFILE}" >/dev/null \
   || fail "Docker 18 seccomp profile must allow clone3 exactly once"
+jq -e '[.syscalls[].names[]? | select(. == "faccessat2")] | length == 1' "${SECCOMP_PROFILE}" >/dev/null \
+  || fail "Docker 18 seccomp profile must allow faccessat2 exactly once for modern Bash access checks"
+grep -Fq 'test -r /etc/os-release' "${CHECKER}" \
+  || fail "Docker 18 runtime probe must exercise Bash file-read access under the reviewed seccomp profile"
 grep -Fq -- 'deploy/seccomp/docker18-clone3.json' "${ROOT_DIR}/Jenkinsfile.test-env" \
   || fail "pipeline must use the reviewed Docker 18 seccomp profile"
 grep -Fq -- 'mateclaw-server/Dockerfile' "${ROOT_DIR}/Jenkinsfile.test-env" \

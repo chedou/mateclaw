@@ -7,7 +7,7 @@ VERSION="2.5.6"
 SOURCE_URL="https://github.com/seccomp/libseccomp/releases/download/v${VERSION}/libseccomp-${VERSION}.tar.gz"
 SOURCE_SHA256="04c37d72965dce218a0c94519b056e1775cf786b5260ee2b7992956c4ee38633"
 RUNTIME_IMAGE="${MATECLAW_RUNTIME_BASE_IMAGE:-}"
-PROFILE_SHA256="959c7b5f83f4fa6f0bec17dab25434fafa399b11e84661a30c725bece3d5473d"
+PROFILE_SHA256="d8410b793a16b91217900bd2bc7509bbdcf33261b659be5c20da33d236aa0cf5"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [[ "${MATECLAW_LIBSECCOMP_TEST_MODE:-0}" == "1" ]]; then
