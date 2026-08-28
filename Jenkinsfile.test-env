@@ -14,6 +14,11 @@ pipeline {
       choices: ['VERIFY_ONLY', 'UPGRADE_LIBSECCOMP', 'DEPLOY'],
       description: 'VERIFY_ONLY 只构建并预检；UPGRADE_LIBSECCOMP 仅受控升级 Docker18 宿主 libseccomp；DEPLOY 才切换测试环境。'
     )
+    choice(
+      name: 'DEPLOY_ENV',
+      choices: ['SIT'],
+      description: '选择 Git 中已审核的发布环境合同；凭据由同名 Jenkins Credentials 注入。'
+    )
     string(
       name: 'BRANCH',
       defaultValue: 'intelligent-troubleshooting-design',
@@ -33,12 +38,14 @@ pipeline {
 
   environment {
     ACTION = "${params.ACTION}"
+    DEPLOY_ENV = "${params.DEPLOY_ENV}"
     BRANCH = "${params.BRANCH}"
     EXPECTED_COMMIT = "${params.EXPECTED_COMMIT}"
     REPOSITORY_URL = 'http://itgitlab.sangfor.com/it-sre/mateclaw.git'
     RELEASES_DIR = '/opt/mateclaw/releases'
     DATA_DIR = '/opt/mateclaw/data'
     ENV_FILE = '/opt/mateclaw/mateclaw.env'
+    DEPLOY_ENV_FILE = "${WORKSPACE}/source/deploy/environments/sit.env"
     CONTAINER = 'mateclaw-server'
     HEALTH_URL = 'http://127.0.0.1:18080/actuator/health'
     INFO_URL = 'http://127.0.0.1:18080/actuator/info'
@@ -146,6 +153,7 @@ umask 077
 # first run. Replays can temporarily clear those properties, so keep the first
 # VERIFY_ONLY run deterministic without weakening DEPLOY's SHA requirement.
 ACTION="${ACTION:-VERIFY_ONLY}"
+DEPLOY_ENV="${DEPLOY_ENV:-SIT}"
 BRANCH="${BRANCH:-intelligent-troubleshooting-design}"
 EXPECTED_COMMIT="${EXPECTED_COMMIT:-}"
 
@@ -172,6 +180,8 @@ docker_security_options="$(docker info --format '{{range .SecurityOptions}}{{pri
 case "$BRANCH" in
   *..*|*//*|*@{*|*/|*.lock) fail "BRANCH 包含不安全片段" ;;
 esac
+[[ "$DEPLOY_ENV" == "SIT" ]] \
+  || fail "DEPLOY_ENV 必须来自已审核的环境列表"
 
 if [[ -n "$EXPECTED_COMMIT" ]]; then
   [[ "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] \
@@ -311,44 +321,72 @@ case "$flyway_auto_repair" in
   ''|false) ;;
   *) fail "测试环境禁止 MATECLAW_FLYWAY_AUTO_REPAIR；失败迁移必须保留证据并 fail-closed" ;;
 esac
-sha256sum "$ENV_FILE" | awk '{print $1}' > env-file-sha256.txt
-itdb_enabled="$(sed -n 's/^MATECLAW_ITDB_ENABLED=//p' "$ENV_FILE" | head -1)"
-itdb_enabled="${itdb_enabled:-false}"
-itdb_integration="DISABLED"
-if [[ "$itdb_enabled" == "true" ]]; then
-  grep -Eq '^MATECLAW_ITDB_BASE_URL=https://[^[:space:]]+$' "$ENV_FILE" \
-    || fail "已启用 ITDB，但环境文件缺少 HTTPS 的 MATECLAW_ITDB_BASE_URL"
-  grep -Eq '^MATECLAW_ITDB_USERNAME=.+$' "$ENV_FILE" \
-    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_USERNAME"
-  grep -Eq '^MATECLAW_ITDB_PASSWORD=.+$' "$ENV_FILE" \
-    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_PASSWORD"
-  grep -Eq '^MATECLAW_ITDB_ALLOWED_HOSTS=.+$' "$ENV_FILE" \
-    || fail "已启用 ITDB，但环境文件缺少 MATECLAW_ITDB_ALLOWED_HOSTS"
-
-  itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' "$ENV_FILE" | head -1)"
-  itdb_username="$(sed -n 's/^MATECLAW_ITDB_USERNAME=//p' "$ENV_FILE" | head -1)"
-  itdb_password="$(sed -n 's/^MATECLAW_ITDB_PASSWORD=//p' "$ENV_FILE" | head -1)"
-  itdb_token_probe="$WORKSPACE/.itdb-token-probe-${BUILD_NUMBER}.json"
-  cleanup_itdb_probe() { rm -f -- "$itdb_token_probe"; }
-  trap cleanup_itdb_probe EXIT
-  curl --fail --silent --show-error --max-time 15 --max-redirs 0 --proto '=https' \
-    --data-urlencode "username=$itdb_username" \
-    --data-urlencode "password=$itdb_password" \
-    -o "$itdb_token_probe" \
-    "$itdb_base_url/api/auth/token/" \
-    || fail "ITDB JWT API 不可直连、发生重定向或账号不可用"
-  grep -Eq '"access"[[:space:]]*:' "$itdb_token_probe" \
-    || fail "ITDB JWT API 未返回 access token"
-  cleanup_itdb_probe
-  trap - EXIT
-  itdb_integration="ENABLED_AND_AUTHENTICATED"
-elif [[ "$itdb_enabled" != "false" ]]; then
-  fail "MATECLAW_ITDB_ENABLED 只允许 true 或 false"
+if grep -Eq '^MATECLAW_ITDB_(USERNAME|PASSWORD)=' "$ENV_FILE"; then
+  fail "ITDB 凭据必须来自 Jenkins Credentials，禁止保存在服务器 mateclaw.env"
 fi
+sha256sum "$ENV_FILE" | awk '{print $1}' > env-file-sha256.txt
+
+expected_deploy_env_file="$SOURCE_DIR/deploy/environments/sit.env"
+[[ "$DEPLOY_ENV_FILE" == "$expected_deploy_env_file" ]] \
+  || fail "DEPLOY_ENV_FILE 必须来自当前精确提交的 SIT 配置"
+test -f "$DEPLOY_ENV_FILE" || fail "缺少 Git 跟踪的 SIT 环境配置"
+[[ ! -L "$DEPLOY_ENV_FILE" ]] || fail "SIT 环境配置不允许是符号链接"
+if grep -Eiq '(PASSWORD|USERNAME|ACCESS[_-]?TOKEN|SECRET)[[:space:]]*=' "$DEPLOY_ENV_FILE"; then
+  fail "Git 环境配置包含疑似凭据"
+fi
+
+deploy_env_value() {
+  local key="$1"
+  local count
+  count="$(grep -Ec "^${key}=" "$DEPLOY_ENV_FILE")"
+  [[ "$count" == "1" ]] || fail "SIT 环境配置中的 ${key} 必须且只能出现一次"
+  sed -n "s/^${key}=//p" "$DEPLOY_ENV_FILE"
+}
+
+configured_deploy_env="$(deploy_env_value DEPLOY_ENV)"
+itdb_enabled="$(deploy_env_value MATECLAW_ITDB_ENABLED_SIT)"
+itdb_base_url="$(deploy_env_value MATECLAW_ITDB_BASE_URL_SIT)"
+itdb_allowed_hosts="$(deploy_env_value MATECLAW_ITDB_ALLOWED_HOSTS_SIT)"
+itdb_allow_insecure_http="$(deploy_env_value MATECLAW_ITDB_ALLOW_INSECURE_HTTP_SIT)"
+itdb_credentials_id="$(deploy_env_value MATECLAW_ITDB_CREDENTIALS_ID_SIT)"
+
+[[ "$configured_deploy_env" == "$DEPLOY_ENV" ]] \
+  || fail "SIT 配置声明的环境与 Jenkins 选择不一致"
+[[ "$itdb_enabled" == "true" ]] \
+  || fail "SIT 环境必须显式启用 ITDB 审核员工"
+[[ "$itdb_base_url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]] \
+  || fail "SIT ITDB 地址格式不合法"
+[[ "$itdb_allowed_hosts" =~ ^[A-Za-z0-9.-]+$ ]] \
+  || fail "SIT ITDB allowed host 必须是单个精确主机"
+itdb_url_host="${itdb_base_url#*://}"
+itdb_url_host="${itdb_url_host%%:*}"
+[[ "$itdb_url_host" == "$itdb_allowed_hosts" ]] \
+  || fail "SIT ITDB 地址与 allowed host 不一致"
+case "$itdb_allow_insecure_http" in
+  true|false) ;;
+  *) fail "MATECLAW_ITDB_ALLOW_INSECURE_HTTP_SIT 只允许 true 或 false" ;;
+esac
+if [[ "$itdb_base_url" == http://* && "$itdb_allow_insecure_http" != "true" ]]; then
+  fail "HTTP ITDB 只能在 SIT 明确声明 trusted-network 例外后使用"
+fi
+[[ "$itdb_credentials_id" == "mateclaw-itdb-sit" ]] \
+  || fail "SIT Jenkins Credentials ID 未经审核"
+
+{
+  echo "DEPLOY_ENV=$DEPLOY_ENV"
+  echo "MATECLAW_ITDB_ENABLED=$itdb_enabled"
+  echo "MATECLAW_ITDB_BASE_URL=$itdb_base_url"
+  echo "MATECLAW_ITDB_ALLOWED_HOSTS=$itdb_allowed_hosts"
+  echo "MATECLAW_ITDB_ALLOW_INSECURE_HTTP=$itdb_allow_insecure_http"
+  echo "MATECLAW_ITDB_CREDENTIALS_ID=$itdb_credentials_id"
+} > deploy-environment.txt
+sha256sum "$DEPLOY_ENV_FILE" | awk '{print $1}' > deploy-environment-sha256.txt
+itdb_integration="CONFIGURED_FOR_JENKINS_AUTH"
 
 {
   echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "action=$ACTION"
+  echo "deploy_environment=$DEPLOY_ENV"
   echo "branch=$BRANCH"
   echo "resolved_commit=$resolved_commit"
   echo "target_image=$(cat target-image.txt)"
@@ -367,6 +405,67 @@ fi
 cat preflight-report.txt
 echo "SOURCE_PRECHECK_OK"
 '''
+      }
+    }
+
+    stage('SIT ITDB API 验证') {
+      when {
+        expression { params.ACTION != 'UPGRADE_LIBSECCOMP' }
+      }
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'mateclaw-itdb-sit',
+          usernameVariable: 'MATECLAW_ITDB_SIT_USR',
+          passwordVariable: 'MATECLAW_ITDB_SIT_PSW'
+        )]) {
+          sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+umask 077
+
+fail() {
+  echo "ITDB_ENV_VALIDATION_FAILED: $*" >&2
+  exit 1
+}
+
+[[ "${DEPLOY_ENV:-}" == "SIT" ]] || fail "只允许验证已审核的 SIT 环境"
+test -f deploy-environment.txt || fail "缺少归一化的 SIT 环境配置"
+itdb_enabled="$(sed -n 's/^MATECLAW_ITDB_ENABLED=//p' deploy-environment.txt | head -n 1)"
+itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' deploy-environment.txt | head -n 1)"
+itdb_credentials_id="$(sed -n 's/^MATECLAW_ITDB_CREDENTIALS_ID=//p' deploy-environment.txt | head -n 1)"
+[[ "$itdb_enabled" == "true" ]] || fail "SIT ITDB 未启用"
+[[ "$itdb_credentials_id" == "mateclaw-itdb-sit" ]] || fail "Jenkins Credentials ID 不一致"
+[[ -n "${MATECLAW_ITDB_SIT_USR:-}" ]] || fail "Jenkins 中缺少 SIT ITDB 用户名"
+[[ -n "${MATECLAW_ITDB_SIT_PSW:-}" ]] || fail "Jenkins 中缺少 SIT ITDB 密码"
+
+case "$itdb_base_url" in
+  https://*) itdb_proto='=https' ;;
+  http://*) itdb_proto='=http' ;;
+  *) fail "ITDB 地址协议不受支持" ;;
+esac
+
+itdb_token_probe="$WORKSPACE/.itdb-token-probe-${BUILD_NUMBER}.json"
+cleanup_itdb_probe() { rm -f -- "$itdb_token_probe"; }
+trap cleanup_itdb_probe EXIT
+curl --fail --silent --show-error --max-time 15 --max-redirs 0 --proto "$itdb_proto" \
+  --data-urlencode "username=$MATECLAW_ITDB_SIT_USR" \
+  --data-urlencode "password=$MATECLAW_ITDB_SIT_PSW" \
+  -o "$itdb_token_probe" \
+  "$itdb_base_url/api/auth/token/" \
+  || fail "ITDB JWT API 不可直连、发生重定向或账号不可用"
+grep -Eq '"access"[[:space:]]*:' "$itdb_token_probe" \
+  || fail "ITDB JWT API 未返回 access token"
+cleanup_itdb_probe
+trap - EXIT
+
+{
+  echo "deploy_environment=$DEPLOY_ENV"
+  echo "credentials_id=$itdb_credentials_id"
+  echo "itdb_authentication=PASSED"
+} > itdb-authentication.txt
+cat itdb-authentication.txt
+'''
+        }
       }
     }
 
@@ -597,7 +696,12 @@ echo "IMAGE_AND_MIGRATION_PACKAGE_PRECHECK_OK"
         expression { params.ACTION == 'DEPLOY' }
       }
       steps {
-        sh '''#!/usr/bin/env bash
+        withCredentials([usernamePassword(
+          credentialsId: 'mateclaw-itdb-sit',
+          usernameVariable: 'MATECLAW_ITDB_SIT_USR',
+          passwordVariable: 'MATECLAW_ITDB_SIT_PSW'
+        )]) {
+          sh '''#!/usr/bin/env bash
 set +x
 set -euo pipefail
 umask 077
@@ -628,6 +732,24 @@ assert_deployed_commit() {
     return 1
   }
 }
+
+test -f deploy-environment.txt \
+  || { echo "DEPLOY_FAILED: 缺少归一化的 SIT 环境配置" >&2; exit 1; }
+itdb_enabled="$(sed -n 's/^MATECLAW_ITDB_ENABLED=//p' deploy-environment.txt | head -n 1)"
+itdb_base_url="$(sed -n 's/^MATECLAW_ITDB_BASE_URL=//p' deploy-environment.txt | head -n 1)"
+itdb_allowed_hosts="$(sed -n 's/^MATECLAW_ITDB_ALLOWED_HOSTS=//p' deploy-environment.txt | head -n 1)"
+itdb_allow_insecure_http="$(sed -n 's/^MATECLAW_ITDB_ALLOW_INSECURE_HTTP=//p' deploy-environment.txt | head -n 1)"
+itdb_credentials_id="$(sed -n 's/^MATECLAW_ITDB_CREDENTIALS_ID=//p' deploy-environment.txt | head -n 1)"
+[[ "${DEPLOY_ENV:-}" == "SIT" && "$itdb_enabled" == "true" ]] \
+  || { echo "DEPLOY_FAILED: SIT ITDB 环境配置不完整" >&2; exit 1; }
+[[ "$itdb_credentials_id" == "mateclaw-itdb-sit" ]] \
+  || { echo "DEPLOY_FAILED: SIT Jenkins Credentials ID 不一致" >&2; exit 1; }
+[[ -n "${MATECLAW_ITDB_SIT_USR:-}" && -n "${MATECLAW_ITDB_SIT_PSW:-}" ]] \
+  || { echo "DEPLOY_FAILED: Jenkins 未注入 SIT ITDB 凭据" >&2; exit 1; }
+expected_deploy_env_sha="$(cat deploy-environment-sha256.txt)"
+actual_deploy_env_sha="$(sha256sum "$DEPLOY_ENV_FILE" | awk '{print $1}')"
+[[ "$actual_deploy_env_sha" == "$expected_deploy_env_sha" ]] \
+  || { echo "DEPLOY_FAILED: Git 跟踪的 SIT 环境配置在预检后发生变化" >&2; exit 1; }
 
 expected_env_file_sha="$(cat env-file-sha256.txt)"
 actual_env_file_sha="$(sha256sum "$ENV_FILE" | awk '{print $1}')"
@@ -733,6 +855,13 @@ docker run -d \
   --name "$CONTAINER" \
   --restart unless-stopped \
   --env-file "$ENV_FILE" \
+  -e "MATECLAW_DEPLOY_ENV=$DEPLOY_ENV" \
+  -e "MATECLAW_ITDB_ENABLED=$itdb_enabled" \
+  -e "MATECLAW_ITDB_BASE_URL=$itdb_base_url" \
+  -e "MATECLAW_ITDB_ALLOWED_HOSTS=$itdb_allowed_hosts" \
+  -e "MATECLAW_ITDB_ALLOW_INSECURE_HTTP=$itdb_allow_insecure_http" \
+  -e "MATECLAW_ITDB_USERNAME=$MATECLAW_ITDB_SIT_USR" \
+  -e "MATECLAW_ITDB_PASSWORD=$MATECLAW_ITDB_SIT_PSW" \
   -e 'MATECLAW_FLYWAY_AUTO_REPAIR=false' \
   -e 'JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Shanghai -Dsun.jnu.encoding=UTF-8 -XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError' \
   --shm-size 2g \
@@ -778,6 +907,7 @@ trap - ERR INT TERM
   echo "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "build_url=$BUILD_URL"
   echo "branch=$BRANCH"
+  echo "deploy_environment=$DEPLOY_ENV"
   echo "release_commit=$resolved_commit"
   echo "previous_image_ref=$OLD_IMAGE_REF"
   echo "previous_image_id=$OLD_IMAGE_ID"
@@ -790,6 +920,8 @@ trap - ERR INT TERM
   echo "database_connection=APPLICATION_MANAGED_FROM_ENV_FILE"
   echo "flyway_execution=APPLICATION_STARTUP"
   echo "env_file_sha256=$expected_env_file_sha"
+  echo "deploy_environment_sha256=$expected_deploy_env_sha"
+  echo "itdb_integration=ENABLED_AND_AUTHENTICATED"
   echo "listen_address=127.0.0.1:18080"
 } > deployment-manifest.txt
 
@@ -800,6 +932,7 @@ echo
 cat deployment-manifest.txt
 echo "DEPLOY_OK"
 '''
+        }
       }
     }
   }
@@ -830,7 +963,7 @@ if [[ "$SOURCE_DIR" == "$WORKSPACE/source" ]]; then
 fi
 '''
       archiveArtifacts(
-        artifacts: 'preflight-report.txt,runtime-compatibility.txt,build-security.txt,runtime-package-manifest.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,repository-max-migration-version.txt,migration-policy.txt,env-file-sha256.txt,deployed-health.json,deployed-info.json,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
+        artifacts: 'preflight-report.txt,deploy-environment.txt,deploy-environment-sha256.txt,itdb-authentication.txt,runtime-compatibility.txt,build-security.txt,runtime-package-manifest.txt,current-health.json,candidate-image-id.txt,candidate-image-env.txt,candidate-verification.txt,repository-max-migration-version.txt,migration-policy.txt,env-file-sha256.txt,deployed-health.json,deployed-info.json,deployment-manifest.txt,resolved-commit.txt,target-image.txt,libseccomp-maintenance.txt,libseccomp-prepare-report.txt,libseccomp-activation-report.txt,libseccomp-host-continuity.txt,libseccomp-before-health.json,libseccomp-after-health.json',
         allowEmptyArchive: true,
         fingerprint: true
       )
