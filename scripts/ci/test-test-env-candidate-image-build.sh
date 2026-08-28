@@ -243,6 +243,8 @@ grep -Fq 'candidate_probe=PASSED' "$legacy_evidence" \
   || fail "legacy evidence must record the bounded candidate probe"
 grep -Fq "| awk 'NF'" "$BUILDER" \
   || fail "Docker 18 inspect output must discard blank port lines before exact comparison"
+[[ "$(grep -Fc "| awk 'NF'" "$BUILDER")" -eq 3 ]] \
+  || fail "Docker 18 port and RootFS inspect outputs must all discard blank lines"
 grep -Fq 'runtime_installer_sha256=' "$legacy_evidence" \
   || fail "legacy evidence must record the shared installer digest"
 grep -Fq 'ubuntu_keyring_sha256=655e378ede8af51ed5f2ffe3669b38f124593abc1aa769c2cc76ef5986a2f835' "$legacy_evidence" \

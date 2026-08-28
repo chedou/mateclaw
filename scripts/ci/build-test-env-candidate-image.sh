@@ -312,9 +312,11 @@ if [[ "$build_mode" == LEGACY_CUSTOM_SECCOMP ]]; then
   candidate_layers_file="${temporary_dir}/candidate-layers.txt"
   bounded_docker "$docker_command_timeout" inspect \
     --format '{{range .RootFS.Layers}}{{println .}}{{end}}' "$runtime_base_image_id" \
+    | awk 'NF' \
     > "$base_layers_file"
   bounded_docker "$docker_command_timeout" inspect \
     --format '{{range .RootFS.Layers}}{{println .}}{{end}}' "$candidate_image" \
+    | awk 'NF' \
     > "$candidate_layers_file"
   base_layer_count="$(grep -c . "$base_layers_file")"
   candidate_layer_count="$(grep -c . "$candidate_layers_file")"
